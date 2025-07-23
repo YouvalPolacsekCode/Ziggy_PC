@@ -1,0 +1,15 @@
+requests
+openai
+python-dotenv
+pyyaml
+pytz
+watchdog
+speechrecognition
+pyaudio
+ffmpeg-python
+gTTS
+whisper
+python-telegram-bot==20.6
+flask
+paho-mqtt
+psutil
