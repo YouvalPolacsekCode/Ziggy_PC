@@ -1,5 +1,5 @@
 import speech_recognition as sr
-from gtts import gTTS
+import pyttsx3
 import os
 import tempfile
 import uuid
@@ -7,11 +7,12 @@ import subprocess
 from faster_whisper import WhisperModel
 from datetime import datetime
 import openai
+import time
 from core.settings_loader import settings
 
-recognizer = sr.Recognizer()
 model = WhisperModel("tiny", compute_type="int8")
 openai.api_key = settings["openai"]["api_key"]
+tts_engine = pyttsx3.init()
 
 def is_hebrew(text):
     return any('\u0590' <= c <= '\u05EA' for c in text)
@@ -28,29 +29,19 @@ def transcribe(audio_path):
 
 def speak(text, lang='en'):
     try:
-        tts = gTTS(text=text, lang=lang)
-        filename = os.path.join(tempfile.gettempdir(), f"ziggy_tts_{uuid.uuid4().hex}.mp3")
-        tts.save(filename)
-
-        ffplay_path = settings["audio"]["ffplay_path"]
-        subprocess.run(
-            [ffplay_path, "-nodisp", "-autoexit", "-loglevel", "quiet", filename],
-            shell=True
-        )
+        start_time = time.time()
+        tts_engine.say(text)
+        tts_engine.runAndWait()
+        print(f"[Voice] TTS completed in {time.time() - start_time:.2f}s")
     except Exception as e:
         print("[Voice] TTS Error:", e)
-    finally:
-        try:
-            if 'filename' in locals() and os.path.exists(filename):
-                os.remove(filename)
-        except Exception:
-            pass
 
 def generate_ziggy_response(transcription):
     try:
         print("[GPT] Sending to OpenAI:", transcription)
+        start_time = time.time()
         completion = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
@@ -59,7 +50,7 @@ def generate_ziggy_response(transcription):
                         "You run on a personal computer and respond to both voice and Telegram commands. "
                         "You can control devices, answer questions, manage tasks, and engage in natural conversation. "
                         "Keep responses clear, concise, and helpful. Use a friendly and confident tone, and avoid sounding robotic. "
-                        "You don’t remember anything between sessions unless explicitly told to."
+                        "You don\u2019t remember anything between sessions unless explicitly told to."
                     )
                 },
                 {"role": "user", "content": transcription}
@@ -68,7 +59,7 @@ def generate_ziggy_response(transcription):
             max_tokens=100
         )
         reply = completion.choices[0].message["content"].strip()
-        print("[GPT] Response:", reply)
+        print(f"[GPT] Response: {reply} (completed in {time.time() - start_time:.2f}s)")
         return reply
     except Exception as e:
         print("[GPT] Error:", e)
@@ -76,14 +67,21 @@ def generate_ziggy_response(transcription):
 
 def start_voice_interface():
     print("[Voice] Listening...")
-    with sr.Microphone() as source:
-        while True:
-            try:
+    iteration = 0
+    while True:
+        iteration += 1
+        print(f"[Voice] Loop iteration: {iteration}")
+        try:
+            recognizer = sr.Recognizer()
+            with sr.Microphone() as source:
                 audio = recognizer.listen(source, timeout=10, phrase_time_limit=8)
+                print(f"[Voice] Audio captured: {len(audio.get_wav_data())} bytes")
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as fp:
                     fp.write(audio.get_wav_data())
                     fp.flush()
+                    transcribe_start = time.time()
                     transcription, lang = transcribe(fp.name)
+                    print(f"[Voice] Transcription completed in {time.time() - transcribe_start:.2f}s")
                     text_lower = transcription.lower()
                     print(f"[Voice] You said: {transcription}")
                     print(f"[Voice] Language: {lang}")
@@ -105,7 +103,7 @@ def start_voice_interface():
                     print(f"[Ziggy] {response}")
                     speak(response, lang='en')
 
-            except sr.WaitTimeoutError:
-                print("[Voice] Error: listening timed out while waiting for phrase to start")
-            except Exception as e:
-                print("[Voice] Error:", e)
+        except sr.WaitTimeoutError:
+            print(f"[Voice] Error: listening timed out while waiting for phrase to start (iteration {iteration})")
+        except Exception as e:
+            print(f"[Voice] Error in loop iteration {iteration}: {e}")

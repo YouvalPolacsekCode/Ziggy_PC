@@ -1,15 +1,40 @@
-requests
+# Core AI + Speech
 openai
-python-dotenv
-pyyaml
-pytz
-watchdog
-speechrecognition
+faster-whisper
+SpeechRecognition
 pyaudio
-ffmpeg-python
-gTTS
-whisper
+langdetect
+
+
+# Dashboard
+Flask
+
+# Telegram Bot
 python-telegram-bot==20.6
-flask
-paho-mqtt
+
+# System, Files, Scheduling
 psutil
+watchdog
+pyyaml
+python-dotenv
+pytz
+
+# MQTT (optional – comment if unused)
+paho-mqtt
+
+# Zigbee / Home Assistant Support (optional – comment if unused)
+zigpy
+bellows
+zigpy-znp
+zha-quirks
+RPi.GPIO; platform_system == "Linux"
+gpiozero; platform_system == "Linux"
+
+# FFmpeg and media support
+ffmpeg-python
+
+# File generation support (optional – future features)
+python-docx
+python-pptx
+openpyxl
+reportlab  # for basic PDFs

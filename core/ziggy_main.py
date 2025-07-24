@@ -30,24 +30,41 @@ from core.logger_module import log_info
 def main():
     log_info("Ziggy startup initiated...")
 
+    def thread_wrapper(name, target):
+        def run():
+            log_info(f"[Thread:{name}] Starting...")
+            try:
+                target()
+            except Exception as e:
+                log_info(f"[Thread:{name}] Exception: {e}")
+            log_info(f"[Thread:{name}] Exited.")
+        return run
+
     threads = []
 
     if settings["features"].get("voice", True):
-        threads.append(threading.Thread(target=start_voice_interface))
+        threads.append(threading.Thread(target=thread_wrapper("Voice", start_voice_interface), daemon=True))
 
     if settings["features"].get("telegram", False) and settings["telegram"].get("enabled", False):
-        threads.append(threading.Thread(target=start_telegram_bot))
+        threads.append(threading.Thread(target=thread_wrapper("Telegram", start_telegram_bot), daemon=True))
 
     if settings["debug"].get("enable_dashboard", False):
-        threads.append(threading.Thread(target=start_dashboard))
+        threads.append(threading.Thread(target=thread_wrapper("Dashboard", start_dashboard), daemon=True))
 
     if settings["features"].get("zigbee_support", False):
-        threads.append(threading.Thread(target=start_mqtt))
+        threads.append(threading.Thread(target=thread_wrapper("MQTT", start_mqtt), daemon=True))
 
     for t in threads:
         t.start()
-    for t in threads:
-        t.join()
+
+    # Main thread stays alive, print status every 10 seconds
+    try:
+        while True:
+            log_info("[Main] Ziggy running. Threads: " + str([t.name for t in threads]))
+            import time
+            time.sleep(10)
+    except KeyboardInterrupt:
+        log_info("[Main] KeyboardInterrupt received. Exiting Ziggy.")
 
 if __name__ == "__main__":
     main()

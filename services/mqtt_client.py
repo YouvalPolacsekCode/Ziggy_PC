@@ -12,12 +12,16 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     print(f"[MQTT] Received on {msg.topic}: {msg.payload.decode()}")
+    # Debug: Confirm callback is triggered for every message
+    with open('logs/mqtt_debug.log', 'a') as f:
+        f.write(f"Received on {msg.topic}: {msg.payload.decode()}\n")
 
 def start_mqtt():
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    client.loop_start()
+    print("[MQTT] loop_forever called")
+    client.loop_forever()
 
 def publish(topic, message):
     client.publish(topic, message)

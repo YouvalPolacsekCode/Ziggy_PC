@@ -1,0 +1,31 @@
+# Home Assistant automation template for Ziggy MQTT integration
+# Copy this block and customize for each device/event you want to send to Ziggy
+
+automation:
+  - alias: "Send Device Event to Ziggy"
+    trigger:
+      platform: state
+      entity_id: <your_device_entity_id>
+      to: <desired_state>
+    action:
+      - service: mqtt.publish
+        data:
+          topic: "ziggy/in"
+          payload: "<custom_message_for_ziggy>"
+
+# Example for a motion sensor:
+#  - alias: "Send Kitchen Motion to Ziggy"
+#    trigger:
+#      platform: state
+#      entity_id: binary_sensor.kitchen_motion
+#      to: "on"
+#    action:
+#      - service: mqtt.publish
+#        data:
+#          topic: "ziggy/in"
+#          payload: "Motion detected in kitchen"
+
+# To add more devices:
+# - Duplicate the automation block
+# - Change 'entity_id', 'to', and 'payload' as needed
+# - Reload automations in Home Assistant
