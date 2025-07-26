@@ -2,17 +2,21 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 import asyncio
 import openai
+import inspect
+
 from core.settings_loader import settings, save_settings
+from core.action_parser import handle_intent
+from core.logger_module import log_info, log_error
+from core.intent_parser import quick_parse
 
 TELEGRAM_TOKEN = settings["telegram"]["token"]
-VERBOSE = settings.get("debug", {}).get("verbose", False)
 openai.api_key = settings["openai"]["api_key"]
 
 def is_verbose():
     return settings.get("debug", {}).get("verbose", False)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ziggy is running on PC!")
+    await update.message.reply_text("👋 Ziggy is active and listening!")
 
 async def toggle_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current = settings["debug"].get("verbose", False)
@@ -22,39 +26,44 @@ async def toggle_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Verbose debug mode is now: {status}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
+    user_text = update.message.text.strip()
     if is_verbose():
-        print(f"[Telegram] Received: {user_text}")
+        log_info(f"[Telegram] User: {user_text}")
 
     try:
-        completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are Ziggy, a smart home AI assistant created by Youval. "
-                        "You run on a personal computer and respond to both voice and Telegram commands. "
-                        "You can control devices, answer questions, manage tasks, and engage in natural conversation. "
-                        "Keep responses clear, concise, and helpful. Use a friendly and confident tone. "
-                        "You don’t remember anything between sessions unless explicitly told to."
-                    )
-                },
-                {"role": "user", "content": user_text}
-            ],
-            temperature=0.7,
-            max_tokens=100
-        )
+        intent_data = quick_parse(user_text)
 
-        reply = completion.choices[0].message["content"].strip()
-        await update.message.reply_text(reply)
+        if intent_data and intent_data.get("intent") != "chat_with_gpt":
+            # Call sync or async version of handle_intent depending on how it's implemented
+            if inspect.iscoroutinefunction(handle_intent):
+                response = await handle_intent(intent_data)
+            else:
+                response = handle_intent(intent_data)
 
-        if is_verbose():
-            print(f"[Telegram] Replied with: {reply}")
+            await update.message.reply_text(response)
+        else:
+            completion = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": (
+                        "You are Ziggy, an AI assistant running on Youval's PC. "
+                        "You can control smart home devices, manage tasks, run system tools, and more. "
+                        "Keep replies short, smart, and user-friendly."
+                    )},
+                    {"role": "user", "content": user_text}
+                ],
+                temperature=0.6,
+                max_tokens=150
+            )
+            reply = completion.choices[0].message["content"].strip()
+            await update.message.reply_text(reply)
+
+            if is_verbose():
+                log_info(f"[Telegram] GPT Reply: {reply}")
 
     except Exception as e:
-        print(f"[Telegram] Error generating reply: {e}")
-        await update.message.reply_text("⚠️ Sorry, I had trouble thinking of a reply.")
+        log_error(f"[Telegram] Error: {e}")
+        await update.message.reply_text("⚠️ Oops, something went wrong.")
 
 def start_telegram_bot():
     if not TELEGRAM_TOKEN:
