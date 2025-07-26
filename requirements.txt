@@ -4,7 +4,10 @@ faster-whisper
 SpeechRecognition
 pyaudio
 langdetect
-
+gTTS
+playsound
+pvporcupine 
+sounddevice
 
 # Dashboard
 Flask
