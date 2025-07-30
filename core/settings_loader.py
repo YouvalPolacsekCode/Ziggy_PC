@@ -12,3 +12,12 @@ def save_settings(settings_data):
         yaml.dump(settings_data, f, allow_unicode=True, default_flow_style=False)
 
 settings = load_settings()
+
+# Expose HA_URL and HEADERS for Home Assistant
+HA_URL = settings["home_assistant"]["url"]
+HA_TOKEN = settings["home_assistant"]["token"]
+
+HEADERS = {
+    "Authorization": f"Bearer {HA_TOKEN}",
+    "Content-Type": "application/json"
+}

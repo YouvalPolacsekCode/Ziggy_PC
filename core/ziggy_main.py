@@ -3,27 +3,41 @@ import os
 import sys
 import threading
 import time
+import signal
 from dotenv import load_dotenv
 import yaml
 import openai
 
+# Ensure current directory is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 load_dotenv()
 
+# Load settings
 with open("config/settings.yaml", "r", encoding="utf-8") as f:
     settings = yaml.safe_load(f)
 
 openai.api_key = settings["openai"]["api_key"]
 os.environ["FFPLAY_PATH"] = settings["audio"]["ffplay_path"]
 
+# Global shutdown event
+from core.shared_flags import shutdown_event
+
+# Import Ziggy modules
 from interfaces.voice_interface import start_voice_interface
 from interfaces.telegram_interface import start_telegram_bot
 from interfaces.dashboard import start_dashboard
 from services.mqtt_client import start_mqtt
 from core.logger_module import log_info
 
+# Handle SIGTERM (used in restart or external kill)
+def handle_sigterm(signum, frame):
+    log_info("[Main] 🛑 SIGTERM received. Shutting down Ziggy gracefully.")
+    shutdown_event.set()
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+
 def main():
-    log_info("Ziggy startup initiated...")
+    log_info("🚀 Ziggy startup initiated...")
 
     def thread_wrapper(name, target):
         def run():
@@ -68,17 +82,20 @@ def main():
     for t in threads:
         t.start()
 
-    # Main thread keeps alive, logs status occasionally
+    # Keep main thread alive until shutdown
     try:
         count = 0
-        while True:
+        while not shutdown_event.is_set():
             count += 1
-            if count % 6 == 0:  # Every 60 seconds
+            if count % 6 == 0:  # every 60 seconds
                 active_names = [t.name for t in threading.enumerate()]
-                log_info(f"[Main] Ziggy still running. Threads: {active_names}")
+                log_info(f"[Main] Ziggy still running. Active threads: {active_names}")
             time.sleep(10)
     except KeyboardInterrupt:
-        log_info("[Main] KeyboardInterrupt received. Exiting Ziggy.")
+        log_info("[Main] 🔌 KeyboardInterrupt received. Exiting Ziggy.")
+
+    log_info("[Main] 📴 Ziggy has been shut down.")
 
 if __name__ == "__main__":
+    print("💡 Ziggy launched via ziggy_main.py")
     main()

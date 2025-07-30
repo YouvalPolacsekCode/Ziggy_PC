@@ -26,21 +26,35 @@ async def toggle_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Verbose debug mode is now: {status}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
+    user_text = update.message.text.strip().lower()
+    chat_id = update.effective_chat.id
+
     if is_verbose():
         log_info(f"[Telegram] User: {user_text}")
+
+    # Protect against repeated shutdown/restart
+    recent_command = context.chat_data.get("last_command", "")
+    protected_commands = ["shutdown ziggy", "restart ziggy"]
+
+    if user_text in protected_commands and user_text == recent_command:
+        await update.message.reply_text("⚠️ Command ignored to prevent repeat execution.")
+        return
+    context.chat_data["last_command"] = user_text
 
     try:
         intent_data = quick_parse(user_text)
 
         if intent_data and intent_data.get("intent") != "chat_with_gpt":
-            # Call sync or async version of handle_intent depending on how it's implemented
             if inspect.iscoroutinefunction(handle_intent):
                 response = await handle_intent(intent_data)
             else:
                 response = handle_intent(intent_data)
 
-            await update.message.reply_text(response)
+            if isinstance(response, list):
+                for chunk in response:
+                    await update.message.reply_text(chunk)
+            else:
+                await update.message.reply_text(response)
         else:
             completion = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
