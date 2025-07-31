@@ -24,9 +24,10 @@ from core.shared_flags import shutdown_event
 
 # Import Ziggy modules
 from interfaces.voice_interface import start_voice_interface
-from interfaces.telegram_interface import start_telegram_bot
+from interfaces.telegram_interface import start_telegram_bot, send_reminder_message
 from interfaces.dashboard import start_dashboard
 from services.mqtt_client import start_mqtt
+from services.task_manager import start_reminder_thread
 from core.logger_module import log_info
 
 # Handle SIGTERM (used in restart or external kill)
@@ -77,7 +78,15 @@ def main():
             target=thread_wrapper("MQTT", start_mqtt),
             name="MQTT",
             daemon=True
-        ))
+        ))  
+
+    # ✅ Start reminder thread as a named thread
+    threads.append(threading.Thread(
+        target=thread_wrapper("Reminder", lambda: start_reminder_thread(send_reminder_message)),
+        name="Reminder",
+        daemon=True
+    ))
+
 
     for t in threads:
         t.start()

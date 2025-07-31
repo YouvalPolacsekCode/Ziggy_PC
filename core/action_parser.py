@@ -6,7 +6,9 @@ from services.home_automation import (
     set_ac_temperature,
     set_tv_source
 )
-from services.task_manager import add_task, list_tasks, remove_task
+from dateparser import parse as parse_date
+from dateparser.search import search_dates
+from services.task_manager import add_task, list_tasks, remove_task, mark_done
 from services.file_manager import create_note, read_notes
 from services.system_tools import (
     get_time,
@@ -21,7 +23,13 @@ from services.system_tools import (
     ping_test
 )
 from core.logger_module import log_info, log_error
+from core.memory import remember, recall, list_memory, delete_memory, append_chat, get_chat_history
+from core.task_file import load_task_json
 import asyncio
+import json
+import openai
+
+chat_history = []  # in-memory history for now
 
 def normalize_room(params: dict) -> str:
     room = params.get("room") or params.get("area") or params.get("location")
@@ -126,9 +134,6 @@ async def handle_intent(intent_result, **kwargs):
         if intent == "get_date":
             return get_date()
 
-        #if intent == "restart_ziggy":
-        #    return restart_ziggy()
-
         if intent == "shutdown_ziggy":
             return shutdown_ziggy()
 
@@ -152,7 +157,42 @@ async def handle_intent(intent_result, **kwargs):
             return ping_test(domain)
 
         if intent == "add_task":
-            return add_task(params.get("task", "Unnamed task"))
+            task_text = params.get("task", "Unnamed task")
+            reminder = params.get("reminder")
+            due = params.get("due")
+            priority = params.get("priority")
+            notes = params.get("notes")
+            repeat = params.get("repeat")
+            time_str = params.get("time")
+            source = kwargs.get("source", "unknown")
+
+            # Extract priority from text if not explicitly provided
+            if not priority:
+                if "high priority" in task_text.lower():
+                    priority = "high"
+                    task_text = task_text.replace("high priority", "").strip()
+                elif "low priority" in task_text.lower():
+                    priority = "low"
+                    task_text = task_text.replace("low priority", "").strip()
+
+            # Extract date/time from task text if due/reminder/time missing
+            if not due and not reminder and not time_str:
+                results = search_dates(task_text, settings={"PREFER_DATES_FROM": "future"})
+                if results:
+                    text_to_remove, dt = results[-1]
+                    time_str = dt.strftime("%Y-%m-%d %H:%M")
+                    task_text = task_text.replace(text_to_remove, "").strip()
+
+            return add_task(
+                task=task_text,
+                due=due,
+                priority=priority,
+                reminder=reminder or due or time_str,
+                notes=notes,
+                repeat=repeat,
+                source=source,
+                time=time_str
+            )
 
         if intent == "list_tasks":
             tasks = list_tasks()
@@ -160,12 +200,26 @@ async def handle_intent(intent_result, **kwargs):
 
         if intent == "remove_task":
             return remove_task(params.get("task", ""))
+        
+        if intent == "remove_tasks":
+            return remove_task("all")
 
-        if intent == "create_note":
-            return create_note(params.get("note", ""))
+        if intent == "remove_last_task":
+            return remove_task("last")
 
-        if intent == "read_notes":
-            return read_notes()
+
+        if intent == "mark_task_done":
+            task_ref = params.get("task") or params.get("task_name") or params.get("index")
+            if not task_ref:
+                return "Please specify a task name or index to mark as done."
+
+            return mark_done(task_ref)
+
+        # if intent == "create_note":
+        #     return create_note(params.get("note", ""))
+
+        # if intent == "read_notes":
+        #     return read_notes()
 
         if intent == "ziggy_status":
             status = get_system_status()
@@ -183,17 +237,73 @@ async def handle_intent(intent_result, **kwargs):
         if intent == "ziggy_chat":
             return "Here’s something interesting: Did you know octopuses have three hearts?"
 
-        if intent == "confirm_yes":
-            return "✅ Got it."
+        # if intent == "confirm_yes":
+        #     return "✅ Got it."
 
-        if intent == "confirm_no":
-            return "❌ Okay, cancelled."
+        # if intent == "confirm_no":
+        #     return "❌ Okay, cancelled."
+
+        # Memory Intents
+        if intent == "remember_memory":
+            key = params.get("key")
+            value = params.get("value")
+            if key and value:
+                remember(key, value)
+                return f"✅ Remembered: {key} → {value}"
+            return "⚠️ Missing key or value."
+
+        if intent == "recall_memory":
+            key = params.get("key")
+            if key:
+                value = recall(key)
+                return f"🧠 {key}: {value}" if value else f"🤔 I have no memory of '{key}'."
+            return "⚠️ Missing key."
+
+        if intent == "delete_memory":
+            key = params.get("key")
+            if key:
+                success = delete_memory(key)
+                return f"🗑️ Deleted memory for '{key}'." if success else f"🤷 Nothing found for '{key}'."
+            return "⚠️ Missing key."
 
         if intent == "chat_with_gpt":
-            return params.get("text", "Let's chat!")
+            log_info(f"[chat_with_gpt] Raw params: {params}")
+            text = str(params.get("text") or params.get("message") or params or "").strip()
+
+            memory_context = list_memory()
+            task_context = load_task_json()
+            append_chat("user", text)
+            chat_history = get_chat_history()
+
+            system_prompt = (
+                "You are Ziggy, the smart home assistant. Use the user's memory and tasks to answer contextually.\n\n"
+                f"User memory:\n{json.dumps(memory_context)}\n\n"
+                f"Task list:\n{json.dumps(task_context)}"
+            )
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                *chat_history
+            ]
+
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=messages,
+                    temperature=0.6,
+                    max_tokens=250
+                )
+                reply = response.choices[0].message["content"].strip()
+                append_chat("assistant", reply)
+                return reply
+            except Exception as e:
+                log_error(f"[chat_with_gpt] GPT error: {e}")
+                return "⚠️ GPT error while chatting."
+
+        # [Insert the rest of your current `handle_intent()` logic here — already complete and functional.]
 
     except Exception as e:
-        log_info(f"[Intent Handler] Exception: {e}")
+        log_error(f"[Intent Handler] Exception: {e}")
         return f"⚠️ Error while handling intent '{intent}': {str(e)}"
 
     log_info(f"[Intent Handler] Unrecognized intent: {intent}")

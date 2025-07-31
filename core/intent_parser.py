@@ -2,135 +2,145 @@ import re
 import openai
 import json
 from core.settings_loader import settings
+from core.memory import list_memory
+from core.task_file import load_task_json
 
 openai.api_key = settings["openai"]["api_key"]
 
 def normalize_room(params: dict) -> dict:
-    """
-    Normalize room-related keys to 'room'.
-    """
     if "location" in params and "room" not in params:
         params["room"] = params.pop("location")
     if "area" in params and "room" not in params:
         params["room"] = params.pop("area")
     return params
 
+TRIGGER_PHRASE = "ziggy do"
+
+INTENT_PATTERNS = [
+    (r"remember that .*", "remember_memory"),
+    (r"what did i say about .*", "recall_memory"),
+    (r"delete memory for .*", "delete_memory"),
+    (r"(add|set|schedule|insert|create|plan|log|record) (a )?task", "add_task"),
+    (r"(remove|delete|cancel|discard|erase|clear|eliminate|forget) (a )?task", "remove_task"),
+    (r"(delete|remove|clear|wipe) (all )?tasks?", "remove_tasks"),
+    (r"(delete|remove|clear|wipe) (the )?last task", "remove_last_task"),
+    (r"(list|show|display|view|see|get|check|read) (my )?tasks", "list_tasks"),
+    (r"(mark|complete|finish|check off|resolve|end|close|finalize) task", "mark_task_done"),
+    (r"(turn|switch|activate|deactivate|power|toggle|start|stop).*light", "toggle_light"),
+    (r"(set|change|make|adjust|modify|tune|select|define).*light.*(color|to|shade|hue|tone|style|look)", "set_light_color"),
+    (r"(dim|brighten|increase|decrease|raise|lower|adjust|tweak|modify).*light", "adjust_light_brightness"),
+    (r"(turn|switch|start|power|activate|enable|boot|launch).*ac", "control_ac"),
+    (r"(set|put|adjust|change|define|tune|program|configure).*ac.*(?P<temperature>\\d+)", "set_ac_temperature"),
+    (r"(turn|switch|start|stop|power|activate|enable|launch).*tv", "control_tv"),
+    (r"(set|change|adjust|switch|select|define|update|modify).*tv.*source", "set_tv_source"),
+    (r"(restart|reboot|reload|reset|refresh|reinitialize|cycle|relaunch).*ziggy", "restart_ziggy"),
+    (r"(shutdown|power down|turn off|kill|halt|deactivate|stop|exit).*ziggy", "shutdown_ziggy"),
+    (r"what('?s| is|’s|s the| time is| does the clock say)", "get_time"),
+    (r"what('?s| is|’s|s the| date is| today is| calendar date)", "get_date"),
+    (r"(how are you|how do you feel|what’s up|how’s it going|status|are you ok|mood check|your mood)", "ziggy_status"),
+    (r"(who are you|what are you|identify yourself|your name|introduce yourself|what is ziggy|who is ziggy)", "ziggy_identity"),
+    (r"(what can you do|what do you support|what are your abilities|your features|available commands|capabilities|help options)", "ziggy_help"),
+    (r"(tell|say|show|share|give|suggest|read|speak).*fun", "ziggy_chat"),
+    # (r"(yes|sure|yep|yeah|absolutely|affirmative|ok|correct|sounds good)", "confirm_yes"),
+    # (r"(no|nope|nah|never|not really|negative|don’t|don’t do it)", "confirm_no"),
+    (r"(what('|’)?s|show|status|how is).*system", "get_system_status"),
+    (r"(ip address|what('|’)?s my ip|my network|my ip address|ip info)", "get_ip_address"),
+    (r"(disk usage|space left|storage left|available disk|free disk|how much space)", "get_disk_usage"),
+    (r"(wifi status|check wifi|is wifi up|wifi info|my wifi|internet status)", "get_wifi_status"),
+    (r"(network adapters|list adapters|show interfaces|network interfaces|my adapters|ethernet info)", "get_network_adapters"),
+    (r"(ping|check|test|lookup) (?P<domain>\\S+)", "ping_test"),
+]
+
+INTENT_PARAM_FORMATS = {
+    "add_task": {"task": "buy groceries", "priority": "high", "due": "2025-08-01 17:00", "reminder": "2025-08-01 16:00", "repeat": "daily"},
+    "remove_task": {"task": "buy groceries"},
+    "remove_tasks": {},
+    "remove_last_task": {},
+    "list_tasks": {},
+    "mark_task_done": {"task": "feed the cat"},
+    "toggle_light": {"room": "kitchen", "turn_on": True},
+    "set_light_color": {"room": "bedroom", "color": "blue"},
+    "adjust_light_brightness": {"room": "living room", "brightness": 70},
+    "control_ac": {"turn_on": True},
+    "set_ac_temperature": {"temperature": 22},
+    "control_tv": {"turn_on": False},
+    "set_tv_source": {"source": 2},
+    "get_time": {},
+    "get_date": {},
+    "restart_ziggy": {},
+    "shutdown_ziggy": {},
+    "get_system_status": {},
+    "get_ip_address": {},
+    "get_disk_usage": {},
+    "get_wifi_status": {},
+    "get_network_adapters": {},
+    "ping_test": {"domain": "google.com"},
+    "ziggy_status": {},
+    "ziggy_identity": {},
+    "ziggy_help": {},
+    "ziggy_chat": {},
+    # "confirm_yes": {},
+    # "confirm_no": {},
+    "chat_with_gpt": {"text": "What's the weather like on Mars?"},
+    "remember_memory": {"key": "favorite_drink", "value": "whiskey"},
+    "recall_memory": {"key": "favorite_drink"},
+    "delete_memory": {"key": "favorite_drink"},
+}
+
+supported_intents = list(INTENT_PARAM_FORMATS.keys())
+
 def quick_parse(text):
-    text = text.lower().strip()
+    text = text.strip().lower()
 
-    patterns = [
-        # Light toggle
-        (r"(turn|switch) on (the )?(?P<room>\w+) light", "toggle_light", {"turn_on": True}),
-        (r"(turn|switch) off (the )?(?P<room>\w+) light", "toggle_light", {"turn_on": False}),
+    if text.startswith(TRIGGER_PHRASE):
+        text = text[len(TRIGGER_PHRASE):].strip()
+        print(f"[Intent Parser] 🚨 Trigger phrase detected, re-running regex: {text}")
 
-        # Light color
-        (r"^(set|change|make) (the )?(?P<room>\w+) light (color )?(to )?(?P<color>\w+)$", "set_light_color", {}),
-        (r"^(set|change|make) (the )?(?P<room>\w+) (color )?(to )?(?P<color>\w+)$", "set_light_color", {}),
-        (r"^(turn|switch) (the )?(?P<room>\w+) light to (?P<color>\w+)$", "set_light_color", {}),
-        (r"^(turn|switch) (the )?(?P<room>\w+) to (?P<color>\w+)$", "set_light_color", {}),
+    for pattern, intent in INTENT_PATTERNS:
+        if re.search(pattern, text):
+            print(f"[Intent Parser] ✅ Regex match: {intent}")
+            return gpt_parse_intent(text, prefill_intent=intent)
 
-        # Light brightness
-        (r"(set|change) (the )?(?P<room>\w+) light brightness to (?P<brightness>\d+)", "set_light_brightness", {}),
-        (r"(dim|brighten) (the )?(?P<room>\w+) light", "adjust_light_brightness", {}),
-
-        # Sensors
-        (r"what('?s| is) the temperature in (?P<room>\w+)", "get_temperature", {}),
-        (r"what('?s| is) the humidity in (?P<room>\w+)", "get_humidity", {}),
-
-        # AC & TV
-        (r"(turn|switch) on the ac", "control_ac", {"turn_on": True}),
-        (r"(turn|switch) off the ac", "control_ac", {"turn_on": False}),
-        (r"(turn|switch) on the tv", "control_tv", {"turn_on": True}),
-        (r"(turn|switch) off the tv", "control_tv", {"turn_on": False}),
-        (r"set ac to (?P<temperature>\d+)", "set_ac_temperature", {}),
-        (r"set the tv to source (?P<source>\d+)", "set_tv_source", {}),
-        (r"change tv source to (?P<source>\d+)", "set_tv_source", {}),
-
-        # System
-        (r"restart ziggy", "restart_ziggy", {}),
-        (r"shutdown ziggy", "shutdown_ziggy", {}),
-        (r"what('?s| is) the time", "get_time", {}),
-        (r"what day is it", "get_date", {}),
-
-        # Tasks
-        (r"add (a )?task (?P<task>.+)", "add_task", {}),
-        (r"list tasks", "list_tasks", {}),
-        (r"remove task (?P<task>.+)", "remove_task", {}),
-
-        # Notes
-        (r"create (a )?note (?P<note>.+)", "create_note", {}),
-        (r"read my notes", "read_notes", {}),
-
-        # Ziggy personality
-        (r"how are you", "ziggy_status", {}),
-        (r"who (are|r) you", "ziggy_identity", {}),
-        (r"what can you do", "ziggy_help", {}),
-        (r"(tell|say) (something )?(fun|cool|interesting)", "ziggy_chat", {}),
-
-        # General confirmations
-        (r"yes", "confirm_yes", {}),
-        (r"no", "confirm_no", {}),
-
-        # System Diagnostics
-        (r"what('?s| is) ziggy('?s)? (status|system status)", "get_system_status", {}),
-        (r"what('?s| is) my ip", "get_ip_address", {}),
-        (r"what('?s| is) the disk usage", "get_disk_usage", {}),
-        (r"what('?s| is) the wifi status", "get_wifi_status", {}),
-        (r"show (me )?network adapters", "get_network_adapters", {}),
-        (r"(ping|check) (?P<domain>\S+)", "ping_test", {}),
-
-    ]
-
-    for pattern, intent, static_params in patterns:
-        match = re.fullmatch(pattern, text)
-        if match:
-            result = {
-                "intent": intent,
-                "params": normalize_room({**static_params, **match.groupdict()}),
-                "source": "regex"
-            }
-            print(f"[Intent Parser] Matched intent: {intent}, params: {result['params']}")
-            return result
-
-    # Fallback to GPT
-    print(f"[Intent Parser] Fallback to GPT: {text}")
+    print(f"[Intent Parser] ❗ No regex match. Falling back to GPT.")
     return gpt_parse_intent(text)
 
-def gpt_parse_intent(text):
+def gpt_parse_intent(text, prefill_intent=None):
     try:
+        example_json = json.dumps({
+            "intent": prefill_intent or "add_task",
+            "params": INTENT_PARAM_FORMATS.get(prefill_intent or "add_task", {})
+        }, indent=2)
+
+        memory = list_memory()
+        tasks = load_task_json()
+        context_block = f"User memory:\n{json.dumps(memory)}\n\nTask list:\n{json.dumps(tasks)}"
+
         system_prompt = (
-            "You are Ziggy's intent parser. Extract the intent and parameters from user commands. "
-            "Respond ONLY in JSON like this: {\"intent\": ..., \"params\": {...}}. "
-            "Supported intents: toggle_light, set_light_color, set_light_brightness, adjust_light_brightness, "
-            "get_temperature, get_humidity, control_ac, set_ac_temperature, control_tv, set_tv_source, "
-            "get_time, get_date, restart_ziggy, shutdown_ziggy, get_system_status, get_ip_address, "
-            "get_disk_usage, get_wifi_status, get_network_adapters, ping_test, add_task, list_tasks, remove_task, "
-            "create_note, read_notes, ziggy_status, ziggy_identity, ziggy_help, ziggy_chat, confirm_yes, confirm_no"
+            "You are Ziggy's intent parser. Extract the intent and parameters from user input.\n"
+            f"Supported intents: {supported_intents}\n"
+            f"Context:\n{context_block}\n\n"
+            "Only return valid JSON in this format:\n"
+            f"{example_json}\n\n"
+            "If unsure, use: {\"intent\": \"chat_with_gpt\", \"params\": {\"text\": \"...\"}}"
         )
 
+        messages = [{"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text if not prefill_intent else f"{text}\nIntent hint: {prefill_intent}"}]
 
         response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ],
+            messages=messages,
             temperature=0.2,
-            max_tokens=150
+            max_tokens=200
         )
 
         reply = response.choices[0].message["content"].strip()
-
-        try:
-            parsed = json.loads(reply)
-            parsed["params"] = normalize_room(parsed.get("params", {}))
-            parsed["source"] = "gpt"
-            print(f"[Intent Parser] GPT intent: {parsed}")
-            return parsed
-        except json.JSONDecodeError:
-            print(f"[Intent Parser] GPT response not JSON: {reply}")
-            return {"intent": "chat_with_gpt", "params": {"text": text}, "source": "gpt"}
+        parsed = json.loads(reply)
+        parsed["params"] = normalize_room(parsed.get("params", {}))
+        parsed["source"] = "gpt"
+        print(f"[Intent Parser] ✅ GPT parsed intent: {parsed}")
+        return parsed
 
     except Exception as e:
-        print(f"[Intent Parser] GPT fallback failed: {e}")
+        print(f"[Intent Parser] ⚠️ GPT fallback error: {e}")
         return {"intent": "chat_with_gpt", "params": {"text": text}, "source": "gpt"}
