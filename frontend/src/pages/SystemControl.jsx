@@ -172,25 +172,23 @@ const SystemControl = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <Activity className="w-8 h-8 mr-3 text-green-600" />
-              System Control Panel
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Monitor system status and control Ziggy operations
-            </p>
-          </div>
-          <button
-            onClick={loadSystemData}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors mt-1"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Refresh</span>
-          </button>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+        <div className="mb-4">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+            <Activity className="w-8 h-8 mr-3 text-green-600 dark:text-green-400" />
+            System Control Panel
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300 mt-1">
+            Monitor system status and control Ziggy operations
+          </p>
         </div>
+        <button
+          onClick={loadSystemData}
+          className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
+        >
+          <RotateCcw className="w-4 h-4" />
+          <span>Refresh</span>
+        </button>
       </div>
 
       {/* Alerts */}
