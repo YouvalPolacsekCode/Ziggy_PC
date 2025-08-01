@@ -191,7 +191,6 @@ const SmartHomeDashboard = () => {
 
   return (
     <div className="space-y-6">
-    <div className="space-y-6">
       {/* Header */}
       <div className="mb-6">
         <div className="mb-4">
