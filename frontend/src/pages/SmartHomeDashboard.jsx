@@ -425,12 +425,12 @@ const SmartHomeDashboard = () => {
       </div>
 
       {/* Status Information */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-blue-900 mb-2">🏠 Smart Home Status</h3>
-        <p className="text-sm text-blue-800 mb-2">
+      <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-200 mb-2">🏠 Smart Home Status</h3>
+        <p className="text-sm text-blue-800 dark:text-blue-300 mb-2">
           This dashboard controls your connected smart home devices through Ziggy's Home Assistant integration.
         </p>
-        <ul className="text-sm text-blue-700 space-y-1">
+        <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
           <li>• Light controls work with room-specific smart bulbs</li>
           <li>• AC controls connect to your climate control system</li>
           <li>• TV controls work with compatible smart TVs or media players</li>
