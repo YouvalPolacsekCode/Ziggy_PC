@@ -115,31 +115,31 @@ const Dashboard = () => {
       </div>
 
       {/* Main Clock Display */}
-      <div className={`rounded-lg shadow-sm p-8 text-center ${
+      <div className={`rounded-lg shadow-sm p-4 text-center ${
         isNightTime() 
           ? 'bg-gradient-to-br from-indigo-900 to-purple-900 text-white' 
           : 'bg-gradient-to-br from-blue-400 to-cyan-400 text-white'
       }`}>
-        <div className="flex items-center justify-center mb-4">
+        <div className="flex items-center justify-center mb-2">
           {isNightTime() ? (
-            <Moon className="w-8 h-8 mr-3" />
+            <Moon className="w-5 h-5 mr-2" />
           ) : (
-            <Sun className="w-8 h-8 mr-3" />
+            <Sun className="w-5 h-5 mr-2" />
           )}
-          <h2 className="text-2xl font-semibold">{getGreeting()}!</h2>
+          <h2 className="text-lg font-semibold">{getGreeting()}!</h2>
         </div>
         
-        <div className="mb-6">
-          <div className="text-4xl md:text-6xl font-bold mb-2 font-mono">
+        <div className="mb-2">
+          <div className="text-2xl md:text-3xl font-bold mb-1 font-mono">
             {formatTime(currentTime)}
           </div>
-          <div className="text-lg md:text-xl opacity-90">
+          <div className="text-sm opacity-90">
             {formatDate(currentTime)}
           </div>
         </div>
 
-        <div className="text-sm md:text-base opacity-75">
-          <Globe className="w-4 h-4 md:w-5 md:h-5 inline mr-2" />
+        <div className="text-xs opacity-75">
+          <Globe className="w-3 h-3 inline mr-1" />
           {timeZone}
         </div>
       </div>
