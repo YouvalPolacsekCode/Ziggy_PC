@@ -147,7 +147,7 @@ const NotesManager = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Notes Manager</h1>
           <p className="text-gray-600 mt-1">
@@ -156,7 +156,7 @@ const NotesManager = () => {
         </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors mt-1"
         >
           <Plus className="w-4 h-4" />
           <span>Add Note</span>
