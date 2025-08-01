@@ -227,13 +227,13 @@ const SmartHomeDashboard = () => {
       {/* Room Sensors */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {rooms.map((room) => (
-          <div key={room.id} className="bg-white rounded-lg shadow-sm p-6">
+          <div key={room.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">{room.name}</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{room.name}</h3>
               <button
                 onClick={() => handleLightToggle(room.id)}
                 disabled={loading}
-                className="bg-yellow-500 hover:bg-yellow-600 text-white p-2 rounded-lg transition-colors disabled:opacity-50"
+                className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 <Lightbulb className="w-4 h-4" />
               </button>
@@ -243,9 +243,9 @@ const SmartHomeDashboard = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <Thermometer className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-gray-600">Temperature</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">Temperature</span>
                 </div>
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
                   {sensorData[room.id]?.temperature || 'Loading...'}
                 </span>
               </div>
@@ -253,9 +253,9 @@ const SmartHomeDashboard = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <Droplets className="w-4 h-4 text-blue-500" />
-                  <span className="text-sm text-gray-600">Humidity</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">Humidity</span>
                 </div>
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
                   {sensorData[room.id]?.humidity || 'Loading...'}
                 </span>
               </div>
