@@ -341,8 +341,8 @@ const SmartHomeDashboard = () => {
       {/* AC and TV Controls */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* AC Controls */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
             <Wind className="w-6 h-6 mr-2 text-blue-500" />
             Air Conditioning
           </h2>
@@ -351,7 +351,7 @@ const SmartHomeDashboard = () => {
             <button
               onClick={handleACToggle}
               disabled={loading}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50"
+              className="w-full bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50"
             >
               <Power className="w-5 h-5" />
               <span>Toggle AC</span>
@@ -359,7 +359,7 @@ const SmartHomeDashboard = () => {
             </button>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Temperature: {acSettings.temperature}°C
               </label>
               <input
@@ -373,7 +373,7 @@ const SmartHomeDashboard = () => {
               <button
                 onClick={handleACTemperature}
                 disabled={loading}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="w-full bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {loading ? <LoadingSpinner size="sm" /> : 'Set Temperature'}
               </button>
@@ -382,9 +382,9 @@ const SmartHomeDashboard = () => {
         </div>
 
         {/* TV Controls */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
-            <Tv className="w-6 h-6 mr-2 text-gray-700" />
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+            <Tv className="w-6 h-6 mr-2 text-gray-700 dark:text-gray-400" />
             Television
           </h2>
           
@@ -392,7 +392,7 @@ const SmartHomeDashboard = () => {
             <button
               onClick={handleTVToggle}
               disabled={loading}
-              className="w-full bg-gray-700 hover:bg-gray-800 text-white py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50"
+              className="w-full bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50"
             >
               <Power className="w-5 h-5" />
               <span>Toggle TV</span>
@@ -400,13 +400,13 @@ const SmartHomeDashboard = () => {
             </button>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Input Source
               </label>
               <select
                 value={tvSettings.source}
                 onChange={(e) => setTvSettings({...tvSettings, source: parseInt(e.target.value)})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 mb-3"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 mb-3"
               >
                 {tvSources.map(source => (
                   <option key={source.id} value={source.id}>{source.name}</option>
@@ -415,7 +415,7 @@ const SmartHomeDashboard = () => {
               <button
                 onClick={handleTVSource}
                 disabled={loading}
-                className="w-full bg-gray-700 hover:bg-gray-800 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="w-full bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {loading ? <LoadingSpinner size="sm" /> : 'Set Source'}
               </button>
