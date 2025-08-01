@@ -259,15 +259,18 @@ frontend:
 
   - task: "Create Main Navigation & Layout"
     implemented: true
-    working: true
+    working: false
     file: "src/components/Layout.jsx"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
         - working: true
           agent: "main"
           comment: "Professional sidebar navigation with 8 main sections, responsive design, active states, and consistent branding. Screenshot verified working perfectly."
+        - working: false
+          agent: "user"
+          comment: "User reported dark mode background issues: background not extending fully to right (shows white when sliding), and inconsistent container colors across pages. Some pages have white containers instead of dark containers in dark mode."
 
   - task: "Create Notes & File Manager"
     implemented: true
