@@ -225,7 +225,7 @@ const SmartHomeDashboard = () => {
       )}
 
       {/* Room Sensors */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {rooms.map((room) => (
           <div key={room.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
@@ -233,31 +233,41 @@ const SmartHomeDashboard = () => {
               <button
                 onClick={() => handleLightToggle(room.id)}
                 disabled={loading}
-                className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50"
+                className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
                 <Lightbulb className="w-4 h-4" />
               </button>
             </div>
             
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
+              <div className="flex items-center justify-between min-h-[1.5rem]">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   <Thermometer className="w-4 h-4 text-red-500" />
                   <span className="text-sm text-gray-600 dark:text-gray-300">Temperature</span>
                 </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {sensorData[room.id]?.temperature || 'Loading...'}
-                </span>
+                <div className="text-right min-w-0 flex-1 ml-2">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white block truncate">
+                    {(() => {
+                      const temp = sensorData[room.id]?.temperature || 'Loading...';
+                      return temp.length > 15 ? 'Unavailable' : temp;
+                    })()}
+                  </span>
+                </div>
               </div>
               
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
+              <div className="flex items-center justify-between min-h-[1.5rem]">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   <Droplets className="w-4 h-4 text-blue-500" />
                   <span className="text-sm text-gray-600 dark:text-gray-300">Humidity</span>
                 </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {sensorData[room.id]?.humidity || 'Loading...'}
-                </span>
+                <div className="text-right min-w-0 flex-1 ml-2">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white block truncate">
+                    {(() => {
+                      const humidity = sensorData[room.id]?.humidity || 'Loading...';
+                      return humidity.length > 15 ? 'Unavailable' : humidity;
+                    })()}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
