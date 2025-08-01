@@ -42,7 +42,7 @@ const Layout = () => {
           {/* Logo & Toggle */}
           <div className="flex items-center justify-between h-16 px-3 bg-gray-800 dark:bg-gray-700 flex-shrink-0">
             {!sidebarCollapsed && (
-              <h1 className="text-base font-bold text-white truncate">🤖 Ziggy Control</h1>
+              <h1 className="text-base font-bold text-white truncate">🤖 Ziggy</h1>
             )}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
