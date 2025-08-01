@@ -27,8 +27,8 @@ const Layout = () => {
     { path: '/clock', icon: Clock, label: 'Clock' }
   ];
 
-  const sidebarWidth = sidebarCollapsed ? 'w-16' : 'w-64';
-  const mainMargin = sidebarCollapsed ? 'ml-16' : 'ml-64';
+  const sidebarWidth = sidebarCollapsed ? 'w-16' : 'w-48'; // Reduced from w-64 to w-48
+  const mainMargin = sidebarCollapsed ? 'ml-16' : 'ml-48'; // Reduced accordingly
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -38,7 +38,7 @@ const Layout = () => {
           {/* Logo & Toggle */}
           <div className="flex items-center justify-between h-16 px-3 bg-gray-800 flex-shrink-0">
             {!sidebarCollapsed && (
-              <h1 className="text-lg font-bold text-white truncate">🤖 Ziggy Control</h1>
+              <h1 className="text-base font-bold text-white truncate">🤖 Ziggy Control</h1>
             )}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -72,7 +72,7 @@ const Layout = () => {
           {/* Footer */}
           <div className="px-2 py-3 border-t border-gray-800 flex-shrink-0">
             <p className={`text-xs text-gray-400 ${sidebarCollapsed ? 'text-center' : ''}`}>
-              {sidebarCollapsed ? 'v1.0' : 'Ziggy Web Interface v1.0'}
+              {sidebarCollapsed ? 'v1.0' : 'Ziggy Web v1.0'}
             </p>
           </div>
         </div>
