@@ -93,9 +93,9 @@ const Layout = () => {
       </div>
 
       {/* Main Content */}
-      <div className={`flex-1 ${mainMargin} transition-all duration-300 ease-in-out bg-gray-50 dark:bg-gray-900`}>
+      <div className={`flex-1 ${mainMargin} transition-all duration-300 ease-in-out`}>
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-          <main className="max-w-full mx-auto px-8 py-8">
+          <main className="w-full px-8 py-8">
             <Outlet />
           </main>
         </div>
