@@ -114,8 +114,8 @@ const ClockPage = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <div className="flex items-center justify-between">
+      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div className="flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center">
               <Clock className="w-8 h-8 mr-3 text-blue-600" />
@@ -128,7 +128,7 @@ const ClockPage = () => {
           <button
             onClick={loadZiggyTime}
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50 mt-1"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Sync with Ziggy</span>
