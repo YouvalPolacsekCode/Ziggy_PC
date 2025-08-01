@@ -122,36 +122,34 @@ const ChatPanel = () => {
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <MessageCircle className="w-8 h-8 mr-3 text-blue-600" />
-              Chat with Ziggy
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Have a conversation with your AI assistant
-            </p>
-          </div>
-          <div className="flex space-x-2 mt-1">
-            <button
-              onClick={handleForceIntentRecheck}
-              disabled={loading || !messages.length}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
-              title="Force intent recheck on last message"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span className="hidden sm:inline">Recheck</span>
-            </button>
-            <button
-              onClick={clearChat}
-              disabled={loading || !messages.length}
-              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Clear</span>
-            </button>
-          </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+        <div className="mb-4">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+            <MessageCircle className="w-8 h-8 mr-3 text-blue-600 dark:text-blue-400" />
+            Chat with Ziggy
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300 mt-1">
+            Have a conversation with your AI assistant
+          </p>
+        </div>
+        <div className="flex space-x-2">
+          <button
+            onClick={handleForceIntentRecheck}
+            disabled={loading || !messages.length}
+            className="bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+            title="Force intent recheck on last message"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span className="hidden sm:inline">Recheck</span>
+          </button>
+          <button
+            onClick={clearChat}
+            disabled={loading || !messages.length}
+            className="bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Clear</span>
+          </button>
         </div>
       </div>
 
