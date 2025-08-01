@@ -351,7 +351,7 @@ const SmartHomeDashboard = () => {
       </div>
 
       {/* AC and TV Controls */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* AC Controls */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
