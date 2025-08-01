@@ -283,53 +283,57 @@ const SmartHomeDashboard = () => {
         
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Room Selection */}
-          <div className="space-y-4">
+          <div className="flex flex-col h-full">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Select Room
             </label>
-            <select
-              value={lightSettings.room}
-              onChange={(e) => setLightSettings({...lightSettings, room: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
-            >
-              {rooms.map(room => (
-                <option key={room.id} value={room.id}>{room.name}</option>
-              ))}
-            </select>
+            <div className="flex-1 flex flex-col justify-between space-y-4">
+              <select
+                value={lightSettings.room}
+                onChange={(e) => setLightSettings({...lightSettings, room: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              >
+                {rooms.map(room => (
+                  <option key={room.id} value={room.id}>{room.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Color Selection */}
-          <div className="space-y-4">
+          <div className="flex flex-col h-full">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Color
             </label>
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {lightColors.map(color => (
-                <button
-                  key={color.id}
-                  onClick={() => setLightSettings({...lightSettings, color: color.id})}
-                  className={`w-12 h-8 rounded border-2 ${color.color} ${
-                    lightSettings.color === color.id ? 'ring-2 ring-yellow-500' : ''
-                  } transition-all flex-shrink-0`}
-                  title={color.name}
-                />
-              ))}
+            <div className="flex-1 flex flex-col justify-between space-y-4">
+              <div className="grid grid-cols-4 gap-2">
+                {lightColors.map(color => (
+                  <button
+                    key={color.id}
+                    onClick={() => setLightSettings({...lightSettings, color: color.id})}
+                    className={`w-12 h-8 rounded border-2 ${color.color} ${
+                      lightSettings.color === color.id ? 'ring-2 ring-yellow-500' : ''
+                    } transition-all flex-shrink-0`}
+                    title={color.name}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={handleLightColor}
+                disabled={loading}
+                className="w-full bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {loading ? <LoadingSpinner size="sm" /> : 'Set Color'}
+              </button>
             </div>
-            <button
-              onClick={handleLightColor}
-              disabled={loading}
-              className="w-full bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {loading ? <LoadingSpinner size="sm" /> : 'Set Color'}
-            </button>
           </div>
 
           {/* Brightness Control */}
-          <div className="space-y-4">
+          <div className="flex flex-col h-full">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Brightness: {lightSettings.brightness}%
             </label>
-            <div className="space-y-4">
+            <div className="flex-1 flex flex-col justify-between space-y-4">
               <input
                 type="range"
                 min="0"
