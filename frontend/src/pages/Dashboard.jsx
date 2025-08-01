@@ -70,23 +70,13 @@ const Dashboard = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Welcome to Ziggy Control
-            </h1>
-            <p className="text-gray-600 dark:text-gray-300 mt-2">
-              Your AI-powered smart home assistant dashboard
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {currentTime.toLocaleTimeString()}
-            </div>
-            <div className="text-gray-600 dark:text-gray-300">
-              {currentTime.toLocaleDateString()}
-            </div>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Welcome to Ziggy Control
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300 mt-2">
+            Your AI-powered smart home assistant dashboard
+          </p>
         </div>
       </div>
 
