@@ -115,32 +115,37 @@ const Dashboard = () => {
       </div>
 
       {/* Main Clock Display */}
-      <div className={`rounded-lg shadow-sm p-4 text-center ${
+      <div className={`rounded-lg shadow-sm p-3 ${
         isNightTime() 
-          ? 'bg-gradient-to-br from-indigo-900 to-purple-900 text-white' 
-          : 'bg-gradient-to-br from-blue-400 to-cyan-400 text-white'
+          ? 'bg-gradient-to-r from-indigo-900 to-purple-900 text-white' 
+          : 'bg-gradient-to-r from-blue-400 to-cyan-400 text-white'
       }`}>
-        <div className="flex items-center justify-center mb-2">
-          {isNightTime() ? (
-            <Moon className="w-5 h-5 mr-2" />
-          ) : (
-            <Sun className="w-5 h-5 mr-2" />
-          )}
-          <h2 className="text-lg font-semibold">{getGreeting()}!</h2>
-        </div>
-        
-        <div className="mb-2">
-          <div className="text-2xl md:text-3xl font-bold mb-1 font-mono">
-            {formatTime(currentTime)}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            {isNightTime() ? (
+              <Moon className="w-5 h-5" />
+            ) : (
+              <Sun className="w-5 h-5" />
+            )}
+            <span className="text-lg font-semibold">{getGreeting()}!</span>
           </div>
-          <div className="text-sm opacity-90">
-            {formatDate(currentTime)}
+          
+          <div className="flex items-center space-x-4">
+            <div className="text-right">
+              <span className="text-xl font-bold font-mono">
+                {formatTime(currentTime)}
+              </span>
+            </div>
+            <div className="text-center">
+              <span className="text-sm opacity-90">
+                {formatDate(currentTime)}
+              </span>
+            </div>
+            <div className="flex items-center text-xs opacity-75">
+              <Globe className="w-3 h-3 mr-1" />
+              {timeZone}
+            </div>
           </div>
-        </div>
-
-        <div className="text-xs opacity-75">
-          <Globe className="w-3 h-3 inline mr-1" />
-          {timeZone}
         </div>
       </div>
 
