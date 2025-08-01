@@ -176,42 +176,42 @@ const ClockPage = () => {
       {/* Time Comparison */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Local Time Details */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-            <Clock className="w-6 h-6 mr-2 text-blue-600" />
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+            <Clock className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" />
             Local Time Details
           </h3>
           
           <div className="space-y-4">
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Current Time:</span>
-              <span className="font-mono text-lg text-gray-900">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-gray-600 dark:text-gray-300">Current Time:</span>
+              <span className="font-mono text-lg text-gray-900 dark:text-white">
                 {formatTime(currentTime)}
               </span>
             </div>
             
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Date:</span>
-              <span className="font-medium text-gray-900">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-gray-600 dark:text-gray-300">Date:</span>
+              <span className="font-medium text-gray-900 dark:text-white">
                 {currentTime.toLocaleDateString()}
               </span>
             </div>
             
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Day of Week:</span>
-              <span className="font-medium text-gray-900">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-gray-600 dark:text-gray-300">Day of Week:</span>
+              <span className="font-medium text-gray-900 dark:text-white">
                 {getDayOfWeek(currentTime)}
               </span>
             </div>
             
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Timezone:</span>
-              <span className="font-medium text-gray-900">{timeZone}</span>
+            <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-gray-600 dark:text-gray-300">Timezone:</span>
+              <span className="font-medium text-gray-900 dark:text-white">{timeZone}</span>
             </div>
             
             <div className="flex justify-between items-center py-2">
-              <span className="text-gray-600">UTC Offset:</span>
-              <span className="font-medium text-gray-900">
+              <span className="text-gray-600 dark:text-gray-300">UTC Offset:</span>
+              <span className="font-medium text-gray-900 dark:text-white">
                 {new Intl.DateTimeFormat('en', {timeZoneName: 'short'})
                   .formatToParts(currentTime)
                   .find(part => part.type === 'timeZoneName')?.value}
@@ -221,9 +221,9 @@ const ClockPage = () => {
         </div>
 
         {/* Ziggy Time */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-            <Calendar className="w-6 h-6 mr-2 text-purple-600" />
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+            <Calendar className="w-6 h-6 mr-2 text-purple-600 dark:text-purple-400" />
             Ziggy System Time
           </h3>
           
@@ -233,23 +233,23 @@ const ClockPage = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-gray-600">Ziggy Time:</span>
-                <span className="font-mono text-lg text-gray-900">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span className="text-gray-600 dark:text-gray-300">Ziggy Time:</span>
+                <span className="font-mono text-lg text-gray-900 dark:text-white">
                   {ziggyTime || 'N/A'}
                 </span>
               </div>
               
-              <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-gray-600">Ziggy Date:</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span className="text-gray-600 dark:text-gray-300">Ziggy Date:</span>
+                <span className="font-medium text-gray-900 dark:text-white">
                   {ziggyDate || 'N/A'}
                 </span>
               </div>
               
               <div className="flex justify-between items-center py-2">
-                <span className="text-gray-600">Sync Status:</span>
-                <span className="font-medium text-green-600">
+                <span className="text-gray-600 dark:text-gray-300">Sync Status:</span>
+                <span className="font-medium text-green-600 dark:text-green-400">
                   ✓ Connected
                 </span>
               </div>
@@ -259,22 +259,22 @@ const ClockPage = () => {
       </div>
 
       {/* World Clock */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
-          <Globe className="w-6 h-6 mr-2 text-green-600" />
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+          <Globe className="w-6 h-6 mr-2 text-green-600 dark:text-green-400" />
           World Clock
         </h3>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {timeZones.map((zone) => (
-            <div key={zone.value} className="bg-gray-50 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-600 mb-1">
+            <div key={zone.value} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+              <div className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
                 {zone.label}
               </div>
-              <div className="text-xl font-mono text-gray-900">
+              <div className="text-xl font-mono text-gray-900 dark:text-white">
                 {getTimeInZone(zone.value)}
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {zone.value}
               </div>
             </div>
@@ -283,9 +283,9 @@ const ClockPage = () => {
       </div>
 
       {/* Clock Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-blue-900 mb-2">🕐 Time & Date Features</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
+      <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-200 mb-2">🕐 Time & Date Features</h3>
+        <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
           <li>• Real-time clock updates every second</li>
           <li>• Comparison between local time and Ziggy system time</li>
           <li>• World clock showing multiple time zones</li>

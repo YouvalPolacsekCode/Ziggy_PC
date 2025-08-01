@@ -102,22 +102,22 @@ const Dashboard = () => {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Tasks Card */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Tasks</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.tasks.total}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Tasks</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.tasks.total}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {stats.tasks.completed} completed, {stats.tasks.pending} pending
               </p>
             </div>
-            <CheckSquare className="w-8 h-8 text-blue-600" />
+            <CheckSquare className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           {stats.tasks.total > 0 && (
             <div className="mt-4">
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div
-                  className="bg-blue-600 h-2 rounded-full"
+                  className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full"
                   style={{
                     width: `${(stats.tasks.completed / stats.tasks.total) * 100}%`
                   }}
@@ -128,40 +128,40 @@ const Dashboard = () => {
         </div>
 
         {/* Memory Card */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Memories</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.memories}</p>
-              <p className="text-xs text-gray-500">Stored memories</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Memories</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.memories}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Stored memories</p>
             </div>
-            <Brain className="w-8 h-8 text-purple-600" />
+            <Brain className="w-8 h-8 text-purple-600 dark:text-purple-400" />
           </div>
         </div>
 
         {/* System Status Card */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">System</p>
-              <p className="text-lg font-bold text-green-600">Online</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">System</p>
+              <p className="text-lg font-bold text-green-600 dark:text-green-400">Online</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {stats.systemStatus?.message || 'Status unavailable'}
               </p>
             </div>
-            <Activity className="w-8 h-8 text-green-600" />
+            <Activity className="w-8 h-8 text-green-600 dark:text-green-400" />
           </div>
         </div>
 
         {/* Quick Actions Card */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Quick Chat</p>
-              <p className="text-lg font-bold text-orange-600">Ready</p>
-              <p className="text-xs text-gray-500">AI assistant available</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Quick Chat</p>
+              <p className="text-lg font-bold text-orange-600 dark:text-orange-400">Ready</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">AI assistant available</p>
             </div>
-            <MessageCircle className="w-8 h-8 text-orange-600" />
+            <MessageCircle className="w-8 h-8 text-orange-600 dark:text-orange-400" />
           </div>
         </div>
       </div>
@@ -169,15 +169,15 @@ const Dashboard = () => {
       {/* Quick Actions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Recent Tasks */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             Recent Tasks
           </h3>
           <div className="space-y-3">
             {stats.tasks.total === 0 ? (
-              <p className="text-gray-500 text-sm">No tasks yet</p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">No tasks yet</p>
             ) : (
-              <p className="text-blue-600 text-sm cursor-pointer hover:underline">
+              <p className="text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline">
                 View all {stats.tasks.total} tasks →
               </p>
             )}
@@ -185,32 +185,32 @@ const Dashboard = () => {
         </div>
 
         {/* Smart Home Status */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             Smart Home
           </h3>
           <div className="flex items-center space-x-2">
             <Lightbulb className="w-5 h-5 text-yellow-500" />
-            <span className="text-sm text-gray-600">Lights & Controls</span>
+            <span className="text-sm text-gray-600 dark:text-gray-300">Lights & Controls</span>
           </div>
-          <p className="text-blue-600 text-sm cursor-pointer hover:underline mt-2">
+          <p className="text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline mt-2">
             Manage devices →
           </p>
         </div>
 
         {/* System Information */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             System Info
           </h3>
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Status:</span>
-              <span className="text-green-600 font-medium">Operational</span>
+              <span className="text-gray-600 dark:text-gray-300">Status:</span>
+              <span className="text-green-600 dark:text-green-400 font-medium">Operational</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Uptime:</span>
-              <span className="text-gray-900">Active</span>
+              <span className="text-gray-600 dark:text-gray-300">Uptime:</span>
+              <span className="text-gray-900 dark:text-white">Active</span>
             </div>
           </div>
         </div>

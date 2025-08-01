@@ -122,14 +122,14 @@ const SystemControl = () => {
       id: 'restart',
       name: 'Restart Ziggy',
       icon: RotateCcw,
-      color: 'bg-orange-600 hover:bg-orange-700',
+      color: 'bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600',
       description: 'Restart the Ziggy system'
     },
     {
       id: 'shutdown',
       name: 'Shutdown Ziggy',
       icon: Power,
-      color: 'bg-red-600 hover:bg-red-700',
+      color: 'bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600',
       description: 'Shutdown the Ziggy system'
     }
   ];
@@ -139,25 +139,25 @@ const SystemControl = () => {
       id: 'get_ip_address',
       name: 'IP Address',
       icon: Network,
-      color: 'bg-blue-600 hover:bg-blue-700'
+      color: 'bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
     },
     {
       id: 'get_disk_usage',
       name: 'Disk Usage',
       icon: HardDrive,
-      color: 'bg-green-600 hover:bg-green-700'
+      color: 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600'
     },
     {
       id: 'get_wifi_status',
       name: 'WiFi Status',
       icon: Wifi,
-      color: 'bg-purple-600 hover:bg-purple-700'
+      color: 'bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600'
     },
     {
       id: 'get_network_adapters',
       name: 'Network Adapters',
       icon: Monitor,
-      color: 'bg-indigo-600 hover:bg-indigo-700'
+      color: 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600'
     }
   ];
 
@@ -210,14 +210,14 @@ const SystemControl = () => {
       {/* System Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* System Status */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <CheckCircle className="w-8 h-8 text-green-600" />
+              <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
             </div>
             <div className="ml-4">
-              <h3 className="text-lg font-semibold text-gray-900">System Status</h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">System Status</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                 {systemData.status?.message || 'Online'}
               </p>
             </div>
@@ -225,14 +225,14 @@ const SystemControl = () => {
         </div>
 
         {/* Current Time */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <Clock className="w-8 h-8 text-blue-600" />
+              <Clock className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             </div>
             <div className="ml-4">
-              <h3 className="text-lg font-semibold text-gray-900">Current Time</h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Time</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                 {systemData.time?.message || 'Loading...'}
               </p>
             </div>
@@ -240,14 +240,14 @@ const SystemControl = () => {
         </div>
 
         {/* Current Date */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <Calendar className="w-8 h-8 text-purple-600" />
+              <Calendar className="w-8 h-8 text-purple-600 dark:text-purple-400" />
             </div>
             <div className="ml-4">
-              <h3 className="text-lg font-semibold text-gray-900">Current Date</h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Date</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                 {systemData.date?.message || 'Loading...'}
               </p>
             </div>
@@ -256,8 +256,8 @@ const SystemControl = () => {
       </div>
 
       {/* System Actions */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
           <Zap className="w-6 h-6 mr-2 text-orange-500" />
           System Actions
         </h2>
@@ -290,8 +290,8 @@ const SystemControl = () => {
       </div>
 
       {/* Network Tools */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
           <Network className="w-6 h-6 mr-2 text-blue-500" />
           Network Tools
         </h2>
@@ -320,20 +320,20 @@ const SystemControl = () => {
         </div>
 
         {/* Ping Test */}
-        <div className="border-t border-gray-200 pt-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Ping Test</h3>
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Ping Test</h3>
           <div className="flex space-x-3">
             <input
               type="text"
               value={pingDomain}
               onChange={(e) => setPingDomain(e.target.value)}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Enter domain (e.g., google.com)"
             />
             <button
               onClick={handlePingTest}
               disabled={actionLoading === 'ping_test' || !pingDomain.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
+              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
             >
               {actionLoading === 'ping_test' ? (
                 <LoadingSpinner size="sm" />
@@ -345,8 +345,8 @@ const SystemControl = () => {
           </div>
           
           {pingResult && (
-            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-700">
+            <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
                 <strong>Result:</strong> {pingResult.message}
               </p>
             </div>
@@ -355,12 +355,12 @@ const SystemControl = () => {
       </div>
 
       {/* System Information */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-yellow-900 mb-2 flex items-center">
+      <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-200 mb-2 flex items-center">
           <AlertTriangle className="w-5 h-5 mr-2" />
           Important Notes
         </h3>
-        <ul className="text-sm text-yellow-800 space-y-1">
+        <ul className="text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
           <li>• System actions will affect the Ziggy instance running on your local machine</li>
           <li>• Restart will temporarily interrupt all Ziggy services</li>
           <li>• Shutdown will completely stop Ziggy until manually restarted</li>

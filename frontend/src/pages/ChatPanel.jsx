@@ -165,28 +165,28 @@ const ChatPanel = () => {
       )}
 
       {/* Chat Container */}
-      <div className="flex-1 bg-white rounded-lg shadow-sm flex flex-col">
+      <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm flex flex-col">
         {/* Messages */}
         <div className="flex-1 p-6 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="text-center py-12">
-              <Bot className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <Bot className="w-16 h-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
                 Start a conversation with Ziggy
               </h3>
-              <p className="text-gray-600 mb-6">
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
                 Ask questions, give commands, or just chat!
               </p>
               
               {/* Quick Commands */}
               <div className="max-w-2xl mx-auto">
-                <p className="text-sm font-medium text-gray-700 mb-3">Try these commands:</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Try these commands:</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {quickCommands.map((command, index) => (
                     <button
                       key={index}
                       onClick={() => setNewMessage(command)}
-                      className="text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors"
+                      className="text-left p-3 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 transition-colors"
                     >
                       "{command}"
                     </button>
@@ -205,7 +205,7 @@ const ChatPanel = () => {
                     className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                       message.role === 'user'
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-900'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
                     }`}
                   >
                     <div className="flex items-start space-x-2">
@@ -219,7 +219,7 @@ const ChatPanel = () => {
                         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                         <p
                           className={`text-xs mt-1 ${
-                            message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
+                            message.role === 'user' ? 'text-blue-200' : 'text-gray-500 dark:text-gray-400'
                           }`}
                         >
                           {formatTimestamp(message.timestamp)}
@@ -232,11 +232,11 @@ const ChatPanel = () => {
               
               {loading && (
                 <div className="flex justify-start">
-                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg bg-gray-100">
+                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700">
                     <div className="flex items-center space-x-2">
                       <Bot className="w-4 h-4" />
                       <LoadingSpinner size="sm" />
-                      <span className="text-sm text-gray-600">Ziggy is thinking...</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-300">Ziggy is thinking...</span>
                     </div>
                   </div>
                 </div>
@@ -248,21 +248,21 @@ const ChatPanel = () => {
         </div>
 
         {/* Input Form */}
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           <form onSubmit={handleSendMessage} className="flex space-x-3">
             <input
               ref={inputRef}
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Type your message..."
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading || !newMessage.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
+              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
             >
               {loading ? (
                 <LoadingSpinner size="sm" />
@@ -272,16 +272,16 @@ const ChatPanel = () => {
             </button>
           </form>
           
-          <div className="mt-2 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             💡 Tip: Start messages with "ziggy do" to force intent recognition
           </div>
         </div>
       </div>
 
       {/* Chat Info */}
-      <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-blue-900 mb-1">🤖 Chat Features</h3>
-        <ul className="text-xs text-blue-800 space-y-1">
+      <div className="mt-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-1">🤖 Chat Features</h3>
+        <ul className="text-xs text-blue-800 dark:text-blue-300 space-y-1">
           <li>• Ask questions about your tasks, memories, and system status</li>
           <li>• Give commands like "turn on lights" or "add task"</li>
           <li>• Chat context is preserved with your memories and task list</li>
