@@ -281,9 +281,9 @@ const SmartHomeDashboard = () => {
           Light Controls
         </h2>
         
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Room Selection */}
-          <div>
+          <div className="space-y-4">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Select Room
             </label>
@@ -299,18 +299,18 @@ const SmartHomeDashboard = () => {
           </div>
 
           {/* Color Selection */}
-          <div>
+          <div className="space-y-4">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Color
             </label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2 mb-4">
               {lightColors.map(color => (
                 <button
                   key={color.id}
                   onClick={() => setLightSettings({...lightSettings, color: color.id})}
                   className={`w-12 h-8 rounded border-2 ${color.color} ${
                     lightSettings.color === color.id ? 'ring-2 ring-yellow-500' : ''
-                  } transition-all`}
+                  } transition-all flex-shrink-0`}
                   title={color.name}
                 />
               ))}
@@ -318,32 +318,34 @@ const SmartHomeDashboard = () => {
             <button
               onClick={handleLightColor}
               disabled={loading}
-              className="w-full mt-3 bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
+              className="w-full bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
             >
               {loading ? <LoadingSpinner size="sm" /> : 'Set Color'}
             </button>
           </div>
 
           {/* Brightness Control */}
-          <div>
+          <div className="space-y-4">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Brightness: {lightSettings.brightness}%
             </label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={lightSettings.brightness}
-              onChange={(e) => setLightSettings({...lightSettings, brightness: parseInt(e.target.value)})}
-              className="w-full mb-3"
-            />
-            <button
-              onClick={handleLightBrightness}
-              disabled={loading}
-              className="w-full bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {loading ? <LoadingSpinner size="sm" /> : 'Set Brightness'}
-            </button>
+            <div className="space-y-4">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={lightSettings.brightness}
+                onChange={(e) => setLightSettings({...lightSettings, brightness: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <button
+                onClick={handleLightBrightness}
+                disabled={loading}
+                className="w-full bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {loading ? <LoadingSpinner size="sm" /> : 'Set Brightness'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
