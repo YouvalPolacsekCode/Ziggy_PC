@@ -26,17 +26,17 @@ const Layout = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
       {/* Navigation Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-gray-900">
+      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 flex flex-col">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-center h-16 px-4 bg-gray-800">
+          <div className="flex items-center justify-center h-16 px-4 bg-gray-800 flex-shrink-0">
             <h1 className="text-xl font-bold text-white">🤖 Ziggy Control</h1>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2">
+          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
             {navItems.map(({ path, icon: Icon, label }) => (
               <NavLink
                 key={path}
@@ -49,14 +49,14 @@ const Layout = () => {
                   }`
                 }
               >
-                <Icon className="w-5 h-5 mr-3" />
+                <Icon className="w-5 h-5 mr-3 flex-shrink-0" />
                 {label}
               </NavLink>
             ))}
           </nav>
 
           {/* Footer */}
-          <div className="px-4 py-4 border-t border-gray-800">
+          <div className="px-4 py-4 border-t border-gray-800 flex-shrink-0">
             <p className="text-xs text-gray-400 text-center">
               Ziggy Web Interface v1.0
             </p>
@@ -65,9 +65,11 @@ const Layout = () => {
       </div>
 
       {/* Main Content */}
-      <div className="ml-64">
-        <div className="min-h-screen p-6">
-          <Outlet />
+      <div className="flex-1 ml-64">
+        <div className="min-h-screen">
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <Outlet />
+          </main>
         </div>
       </div>
     </div>
