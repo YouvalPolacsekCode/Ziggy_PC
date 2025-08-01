@@ -15,6 +15,9 @@ def get_time():
 def get_date():
     return datetime.datetime.now().strftime("%Y-%m-%d")
 
+def get_day_of_week():
+    return f"Today is {datetime.datetime.now().strftime('%A')}."
+
 def restart_ziggy():
     """
     Restart the Ziggy process using restart_ziggy.bat located in /core.

@@ -59,12 +59,12 @@ def main():
             daemon=True
         ))
 
-    if settings["features"].get("telegram", False) and settings["telegram"].get("enabled", False):
-        threads.append(threading.Thread(
-            target=thread_wrapper("Telegram", start_telegram_bot),
-            name="Telegram",
-            daemon=True
-        ))
+    # ✅ Force Telegram to always start
+    threads.append(threading.Thread(
+        target=thread_wrapper("Telegram", start_telegram_bot),
+        name="Telegram",
+        daemon=True
+    ))
 
     if settings["debug"].get("enable_dashboard", False):
         threads.append(threading.Thread(
@@ -78,7 +78,7 @@ def main():
             target=thread_wrapper("MQTT", start_mqtt),
             name="MQTT",
             daemon=True
-        ))  
+        ))
 
     # ✅ Start reminder thread as a named thread
     threads.append(threading.Thread(
@@ -86,7 +86,6 @@ def main():
         name="Reminder",
         daemon=True
     ))
-
 
     for t in threads:
         t.start()

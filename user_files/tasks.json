@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "task": "laundry",
+    "done": false,
+    "due": "2025-08-03 00:00",
+    "priority": "medium",
+    "reminder": "2025-08-03 00:00",
+    "reminded": false,
+    "created": "2025-08-01 14:40",
+    "notes": "",
+    "repeat": "none",
+    "source": "telegram",
+    "missed": false
+  },
+  {
+    "task": "Test",
+    "done": false,
+    "due": "2025-08-03 14:41",
+    "priority": "medium",
+    "reminder": "2025-08-03 14:41",
+    "reminded": false,
+    "created": "2025-08-01 14:41",
+    "notes": "",
+    "repeat": "none",
+    "source": "telegram",
+    "missed": false
+  }
+]

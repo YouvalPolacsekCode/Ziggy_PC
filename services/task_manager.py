@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from threading import Thread
 import time
 import dateparser
+from telegram.helpers import escape_markdown
 
 TASK_FILE = "user_files/tasks.json"
 REMINDER_CHECK_INTERVAL = 60  # seconds
@@ -55,26 +56,53 @@ def add_task(task, due=None, priority=None, reminder=None, notes=None, repeat=No
     save_tasks(tasks)
     return f"Task added: {task} (due: {due_date}, priority: {task_data['priority']})"
 
-def list_tasks():
+import inspect
+
+def list_tasks(formatted=False):
+    caller = inspect.stack()[1]
+    print(f"[DEBUG] list_tasks called with formatted={formatted} from {caller.function} in {caller.filename}:{caller.lineno}")
     tasks = load_tasks()
     if not tasks:
-        return ["No tasks yet."]
+        return "📭 No tasks yet." if formatted else ["No tasks yet."]
 
     now_dt = datetime.now()
     lines = []
 
-    for t in tasks:
+    for i, t in enumerate(tasks, start=1):
         due_dt = datetime.strptime(t["due"], "%Y-%m-%d %H:%M")
         overdue = not t["done"] and due_dt < now_dt
         if overdue:
             t["missed"] = True
-        status = "Missed" if t.get("missed") else ("Overdue" if overdue else "Done" if t["done"] else "Pending")
-        lines.append(
-            f"[{'x' if t['done'] else ' '}] {t['task']} | Due: {t['due']} | Priority: {t['priority']} | Status: {status} | Notes: {t.get('notes', '')}"
+
+        if t.get("missed"):
+            status = "❌ Missed"
+        elif overdue:
+            status = "⚠️ Overdue"
+        elif t["done"]:
+            status = "✅ Done"
+        else:
+            status = "🕒 Pending"
+
+        task_text = (
+            f"{i}. {t['task']}\n"
+            f"📅 Due: {t['due']}\n"
+            f"⚡ Priority: {t['priority']}\n"
+            f"📌 Status: {status}"
         )
 
+        if t.get("notes"):
+            task_text += f"\n📝 Notes: {t['notes']}"
+
+        lines.append(task_text)
+
     save_tasks(tasks)
-    return lines
+
+    result = "📝 Your Tasks:\n\n" + "\n\n────────────\n\n".join(lines)
+
+    if formatted:
+        return escape_markdown(result, version=2)  # ✅ Escape text for MarkdownV2
+    else:
+        return lines
 
 def get_overdue_tasks():
     tasks = load_tasks()
@@ -160,7 +188,6 @@ def check_reminders():
 
             print(f"[Reminder Thread] Checking: {t['task']} | Reminder: {reminder_time} | Now: {now_str}")
 
-            # Skip if no reminder or already done/reminded
             if not reminder_time or already_reminded or is_done:
                 continue
 
@@ -170,7 +197,6 @@ def check_reminders():
                 print(f"[Reminder Thread] ⚠️ Invalid reminder format for task '{t['task']}': {e}")
                 continue
 
-            # If reminder time has passed, trigger it
             if reminder_dt <= now_dt:
                 late = now_dt > reminder_dt
                 msg = f"🔔 Reminder: {t['task']} (Due: {t['due']})"
@@ -184,7 +210,6 @@ def check_reminders():
                 t["reminded"] = True
                 updated = True
 
-            # Update missed field if task is overdue and not done
             try:
                 due_dt = datetime.strptime(t.get("due"), "%Y-%m-%d %H:%M")
                 if not is_done and due_dt < now_dt:
@@ -202,3 +227,6 @@ def check_reminders():
             save_tasks(tasks)
 
         time.sleep(REMINDER_CHECK_INTERVAL)
+
+def get_all_tasks():
+    return load_tasks()

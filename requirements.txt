@@ -9,12 +9,14 @@ playsound
 pvporcupine 
 sounddevice
 onnxruntime
+openwakeword
 
 # Dashboard
 Flask
 
 # Telegram Bot
 python-telegram-bot==20.6
+telegram
 
 # System, Files, Scheduling
 psutil
@@ -22,6 +24,7 @@ watchdog
 pyyaml
 python-dotenv
 pytz
+dateparser
 
 # MQTT (optional – comment if unused)
 paho-mqtt
@@ -42,3 +45,6 @@ python-docx
 python-pptx
 openpyxl
 reportlab  # for basic PDFs
+dotenv
+PyYAML
+numpy

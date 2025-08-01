@@ -13,6 +13,7 @@ from services.file_manager import create_note, read_notes
 from services.system_tools import (
     get_time,
     get_date,
+    get_day_of_week,
     restart_ziggy,
     shutdown_ziggy,
     get_system_status,
@@ -133,9 +134,15 @@ async def handle_intent(intent_result, **kwargs):
 
         if intent == "get_date":
             return get_date()
+        
+        if intent == "get_day_of_week":
+            return get_day_of_week()
 
         if intent == "shutdown_ziggy":
             return shutdown_ziggy()
+        
+        if intent == "restart_ziggy":
+            return restart_ziggy()
 
         if intent == "get_system_status":
             return get_system_status()
@@ -195,8 +202,7 @@ async def handle_intent(intent_result, **kwargs):
             )
 
         if intent == "list_tasks":
-            tasks = list_tasks()
-            return "\n".join(tasks) if tasks else "No tasks found."
+            return list_tasks(formatted=True)
 
         if intent == "remove_task":
             return remove_task(params.get("task", ""))
@@ -207,19 +213,12 @@ async def handle_intent(intent_result, **kwargs):
         if intent == "remove_last_task":
             return remove_task("last")
 
-
         if intent == "mark_task_done":
             task_ref = params.get("task") or params.get("task_name") or params.get("index")
             if not task_ref:
                 return "Please specify a task name or index to mark as done."
 
             return mark_done(task_ref)
-
-        # if intent == "create_note":
-        #     return create_note(params.get("note", ""))
-
-        # if intent == "read_notes":
-        #     return read_notes()
 
         if intent == "ziggy_status":
             status = get_system_status()
@@ -237,13 +236,6 @@ async def handle_intent(intent_result, **kwargs):
         if intent == "ziggy_chat":
             return "Here’s something interesting: Did you know octopuses have three hearts?"
 
-        # if intent == "confirm_yes":
-        #     return "✅ Got it."
-
-        # if intent == "confirm_no":
-        #     return "❌ Okay, cancelled."
-
-        # Memory Intents
         if intent == "remember_memory":
             key = params.get("key")
             value = params.get("value")
@@ -299,8 +291,6 @@ async def handle_intent(intent_result, **kwargs):
             except Exception as e:
                 log_error(f"[chat_with_gpt] GPT error: {e}")
                 return "⚠️ GPT error while chatting."
-
-        # [Insert the rest of your current `handle_intent()` logic here — already complete and functional.]
 
     except Exception as e:
         log_error(f"[Intent Handler] Exception: {e}")
