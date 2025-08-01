@@ -72,41 +72,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Main Clock Display */}
-      <div className={`rounded-lg shadow-sm p-3 ${
-        isNightTime() 
-          ? 'bg-gradient-to-r from-indigo-900 to-purple-900 text-white' 
-          : 'bg-gradient-to-r from-blue-400 to-cyan-400 text-white'
-      }`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {isNightTime() ? (
-              <Moon className="w-5 h-5" />
-            ) : (
-              <Sun className="w-5 h-5" />
-            )}
-            <span className="text-lg font-semibold">{getGreeting()}!</span>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <div className="text-right">
-              <span className="text-xl font-bold font-mono">
-                {formatTime(currentTime)}
-              </span>
-            </div>
-            <div className="text-center">
-              <span className="text-sm opacity-90">
-                {formatDate(currentTime)}
-              </span>
-            </div>
-            <div className="flex items-center text-xs opacity-75">
-              <Globe className="w-3 h-3 mr-1" />
-              {timeZone}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Error Alert */}
       {error && (
         <Alert
