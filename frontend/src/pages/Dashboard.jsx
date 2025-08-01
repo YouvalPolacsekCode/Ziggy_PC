@@ -6,7 +6,10 @@ import {
   Lightbulb, 
   MessageCircle,
   Clock,
-  TrendingUp
+  TrendingUp,
+  Sun,
+  Moon,
+  Globe
 } from 'lucide-react';
 import { taskAPI, memoryAPI, systemAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
