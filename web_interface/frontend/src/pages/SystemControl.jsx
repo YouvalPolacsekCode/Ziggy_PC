@@ -11,8 +11,7 @@ import {
   MdRefresh,
   MdWarning,
   MdCheckCircle,
-  MdBolt,
-  MdActivity
+  MdBolt
 } from 'react-icons/md';
 import { systemAPI, sendIntent } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
