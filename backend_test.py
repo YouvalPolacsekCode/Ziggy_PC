@@ -5,7 +5,7 @@ from datetime import datetime
 import uuid
 
 class ZiggyAPITester:
-    def __init__(self, base_url="http://localhost:8001"):
+    def __init__(self, base_url="http://localhost:8001/api"):
         self.base_url = base_url
         self.tests_run = 0
         self.tests_passed = 0
