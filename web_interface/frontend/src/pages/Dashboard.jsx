@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  MdActivity, 
+  MdShowChart, 
   MdCheckBox, 
   MdMemory, 
   MdLightbulb, 
