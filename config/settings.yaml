@@ -10,6 +10,7 @@ telegram:
 
 home_assistant:
   url: "http://homeassistant.local:8123/"
+  token: "your-home-assistant-token-here"
 
 features:
   voice: true
