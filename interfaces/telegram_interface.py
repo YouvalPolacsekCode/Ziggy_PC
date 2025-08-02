@@ -16,7 +16,8 @@ from core.memory import append_chat, get_chat_history, load_long_term_memory
 
 from ui.ziggy_buttons import (
     get_main_menu, get_task_menu, get_home_menu,
-    get_system_menu, get_memory_menu, get_core_menu
+    get_system_menu, get_memory_menu, get_core_menu,
+    get_datetime_menu
 )
 
 from routers.telegram_action_router import handle_telegram_button
@@ -40,7 +41,7 @@ def send_reminder_message(message: str):
 
     async def send():
         try:
-            await telegram_bot_instance.send_message(chat_id=chat_id, text=message, parse_mode="MarkdownV2")
+            await telegram_bot_instance.send_message(chat_id=chat_id, text=message, parse_mode=None)
             log_info(f"[Telegram] Reminder sent: {message}")
         except Exception as e:
             log_error(f"[Telegram] Failed to send reminder: {e}")
@@ -57,68 +58,125 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings["telegram"]["default_chat_id"] = chat_id
     save_settings(settings)
 
-    await update.message.reply_text("👋 Ziggy is active and listening!", reply_markup=get_main_menu(), parse_mode="MarkdownV2")
+    await update.message.reply_text("👋 Ziggy is active and listening!", reply_markup=get_main_menu(), parse_mode=None)
     log_info(f"[Telegram] Registered chat ID: {chat_id}")
 
 async def send_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_info("[Telegram] /menu command triggered")
-    await update.message.reply_text("Here’s the main menu:", reply_markup=get_main_menu(), parse_mode="MarkdownV2")
+    await update.message.reply_text("Here’s the main menu:", reply_markup=get_main_menu(), parse_mode=None)
 
 async def toggle_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current = settings["debug"].get("verbose", False)
     settings["debug"]["verbose"] = not current
     save_settings(settings)
     status = "ON 🟢" if settings["debug"]["verbose"] else "OFF ⚫"
-    await update.message.reply_text(f"Verbose mode: {status}", parse_mode="MarkdownV2")
+    await update.message.reply_text(f"Verbose mode: {status}", parse_mode=None)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
     chat_id = update.effective_chat.id
-
     log_info(f"[Telegram] Incoming message: {user_text}")
 
-    # 🔹 Multi-step input check
     pending_action = context.chat_data.get("pending_action")
 
+    # === Handle multi-step commands ===
     if pending_action == "add_task":
         context.chat_data["pending_action"] = None
         intent_data = {"intent": "add_task", "params": {"task": user_text}}
         response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"✅ Task added: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode="MarkdownV2")
+        await update.message.reply_text(f"✅ Task added: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode=None)
         return
 
     if pending_action == "remove_task_select":
         context.chat_data["pending_action"] = None
         intent_data = {"intent": "remove_task", "params": {"task": user_text}}
         response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"🗑 Removed: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode="MarkdownV2")
+        await update.message.reply_text(f"🗑 Removed: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode=None)
         return
 
-    # 🔸 Prevent repeated destructive commands
-    recent_command = context.chat_data.get("last_command", "")
-    if user_text.lower() in ["shutdown ziggy", "restart ziggy"] and user_text.lower() == recent_command:
-        await update.message.reply_text("⚠️ Command ignored to prevent repeat execution.", parse_mode="MarkdownV2")
+    if pending_action == "set_ac_temperature":
+        context.chat_data["pending_action"] = None
+        try:
+            temp = int(user_text)
+            intent_data = {"intent": "set_ac_temperature", "params": {"temperature": temp}}
+            response = await handle_intent(intent_data, source="telegram")
+            await update.message.reply_text(f"🌡️ {response}", reply_markup=get_main_menu(), parse_mode=None)
+        except ValueError:
+            await update.message.reply_text("❌ Please enter a valid temperature number.", reply_markup=get_main_menu(), parse_mode=None)
+        return
+
+    if pending_action == "set_tv_source":
+        context.chat_data["pending_action"] = None
+        try:
+            source = int(user_text)
+            intent_data = {"intent": "set_tv_source", "params": {"source": source}}
+            response = await handle_intent(intent_data, source="telegram")
+            await update.message.reply_text(f"📡 {response}", reply_markup=get_main_menu(), parse_mode=None)
+        except ValueError:
+            await update.message.reply_text("❌ Please enter a valid source number.", reply_markup=get_main_menu(), parse_mode=None)
+        return
+
+    if pending_action == "ping_test":
+        context.chat_data["pending_action"] = None
+        intent_data = {"intent": "ping_test", "params": {"domain": user_text}}
+        response = await handle_intent(intent_data, source="telegram")
+        await update.message.reply_text(f"📡 {response}", reply_markup=get_system_menu(), parse_mode=None)
+        return
+
+    if pending_action == "remember_memory":
+        context.chat_data["pending_action"] = None
+        if "=" in user_text:
+            key, value = map(str.strip, user_text.split("=", 1))
+            intent_data = {"intent": "remember_memory", "params": {"key": key, "value": value}}
+            response = await handle_intent(intent_data, source="telegram")
+            await update.message.reply_text(f"💾 {response}", reply_markup=get_memory_menu(), parse_mode=None)
+        else:
+            await update.message.reply_text("❌ Please use format: key = value", reply_markup=get_memory_menu(), parse_mode=None)
+        return
+
+    if pending_action == "recall_memory":
+        context.chat_data["pending_action"] = None
+        intent_data = {"intent": "recall_memory", "params": {"key": user_text}}
+        response = await handle_intent(intent_data, source="telegram")
+        await update.message.reply_text(f"📤 {response}", reply_markup=get_memory_menu(), parse_mode=None)
+        return
+
+    if pending_action == "delete_memory":
+        context.chat_data["pending_action"] = None
+        intent_data = {"intent": "delete_memory", "params": {"key": user_text}}
+        response = await handle_intent(intent_data, source="telegram")
+        await update.message.reply_text(f"🗑️ {response}", reply_markup=get_memory_menu(), parse_mode=None)
+        return
+
+    if pending_action == "chat_with_gpt":
+        context.chat_data["pending_action"] = None
+        intent_data = {"intent": "chat_with_gpt", "params": {"text": user_text}}
+        response = await handle_intent(intent_data, source="telegram")
+        await update.message.reply_text(f"💬 {response}", reply_markup=get_core_menu(), parse_mode=None)
+        return
+
+    # === Prevent repeated destructive commands ===
+    if user_text.lower() in ["shutdown ziggy", "restart ziggy"] and user_text.lower() == context.chat_data.get("last_command"):
+        await update.message.reply_text("⚠️ Command ignored to prevent repeat execution.", parse_mode=None)
         return
     context.chat_data["last_command"] = user_text.lower()
 
-    # 🔍 Intent parsing
+    # === Try quick intent parse first ===
     try:
         intent_data = quick_parse(user_text)
-
         if intent_data:
-            response = await handle_intent(intent_data, source="telegram") \
-                if inspect.iscoroutinefunction(handle_intent) else handle_intent(intent_data)
-
+            response = await handle_intent(intent_data, source="telegram")
             append_chat("user", user_text)
             append_chat("assistant", response if isinstance(response, str) else str(response))
 
             if isinstance(response, list):
                 for chunk in response:
-                    await update.message.reply_text(chunk, parse_mode=None)  # ✅ Add parse_mode here
+                    await update.message.reply_text(chunk, parse_mode=None)
             else:
                 await update.message.reply_text(response, parse_mode=None)
+            return
 
-        # 🧠 Fallback to GPT chat mode
+        # === Fallback: GPT Conversation ===
         memory = load_long_term_memory()
         memory_facts = ", ".join(f"{k}: {v}" for k, v in memory.items())
         chat_history = get_chat_history()[-10:] + [{"role": "user", "content": user_text}]
@@ -139,11 +197,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = completion.choices[0].message["content"].strip()
         append_chat("user", user_text)
         append_chat("assistant", reply)
-        await update.message.reply_text(reply, parse_mode="MarkdownV2")
+        await update.message.reply_text(reply, parse_mode=None)
 
     except Exception as e:
         log_error(f"[Telegram] Error: {e}")
-        await update.message.reply_text("⚠️ Something went wrong.", parse_mode="MarkdownV2")
+        await update.message.reply_text("⚠️ Something went wrong.", parse_mode=None)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -152,25 +210,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         menu_map = {
-            "main_menu": (get_main_menu, "Main Menu:"),
+            "main_menu": (get_main_menu, "🏠 Main Menu:"),
             "menu_tasks": (get_task_menu, "📅 Task Manager:"),
             "menu_home": (get_home_menu, "💡 Home Automation:"),
             "menu_system": (get_system_menu, "🛠 System Tools:"),
-            "menu_memory": (get_memory_menu, "🧠 Memory:"),
-            "menu_core": (get_core_menu, "🤖 Ziggy Core:")
+            "menu_memory": (get_memory_menu, "🧠 Memory Management:"),
+            "menu_core": (get_core_menu, "🤖 Ziggy Core:"),
+            "menu_datetime": (get_datetime_menu, "🕐 Date & Time:")
         }
 
         if data in menu_map:
             menu_fn, title = menu_map[data]
-            await query.edit_message_text(title, reply_markup=menu_fn(), parse_mode='MarkdownV2')
+            await query.edit_message_text(title, reply_markup=menu_fn(), parse_mode=None)
         else:
             handled = await handle_telegram_button(query, context)
             if not handled:
-                await query.edit_message_text("⚠️ Unknown action.", parse_mode='MarkdownV2')
+                await query.edit_message_text("⚠️ Unknown action.", reply_markup=get_main_menu(), parse_mode=None)
 
     except Exception as e:
         log_error(f"[Telegram] Button error: {e}")
-        await query.edit_message_text("⚠️ Failed to process button.", parse_mode='MarkdownV2')
+        await query.edit_message_text("⚠️ Failed to process button.", reply_markup=get_main_menu(), parse_mode=None)
 
 def start_telegram_bot():
     global telegram_bot_instance, telegram_loop
