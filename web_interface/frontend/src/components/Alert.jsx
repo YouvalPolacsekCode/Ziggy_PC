@@ -1,31 +1,31 @@
 import React from 'react';
-import { CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
+import { MdCheckCircle, MdCancel, MdWarning, MdInfo } from 'react-icons/md';
 
 const Alert = ({ type = 'info', message, onClose }) => {
   const alertConfig = {
     success: {
-      icon: CheckCircle,
+      icon: MdCheckCircle,
       bgColor: 'bg-green-50',
       borderColor: 'border-green-200',
       textColor: 'text-green-800',
       iconColor: 'text-green-600'
     },
     error: {
-      icon: XCircle,
+      icon: MdCancel,
       bgColor: 'bg-red-50',
       borderColor: 'border-red-200',
       textColor: 'text-red-800',
       iconColor: 'text-red-600'
     },
     warning: {
-      icon: AlertCircle,
+      icon: MdWarning,
       bgColor: 'bg-yellow-50',
       borderColor: 'border-yellow-200',
       textColor: 'text-yellow-800',
       iconColor: 'text-yellow-600'
     },
     info: {
-      icon: Info,
+      icon: MdInfo,
       bgColor: 'bg-blue-50',
       borderColor: 'border-blue-200',
       textColor: 'text-blue-800',
@@ -48,7 +48,7 @@ const Alert = ({ type = 'info', message, onClose }) => {
             onClick={onClose}
             className={`ml-2 ${config.textColor} hover:opacity-75`}
           >
-            <XCircle className="w-4 h-4" />
+            <MdCancel className="w-4 h-4" />
           </button>
         )}
       </div>
