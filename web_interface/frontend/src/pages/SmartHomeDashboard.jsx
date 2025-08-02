@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Lightbulb, 
-  Wind, 
-  Tv, 
-  Thermometer,
-  Droplets,
-  Power,
-  Palette,
-  Sun,
-  RefreshCw
-} from 'lucide-react';
+  MdLightbulb, 
+  MdAir, 
+  MdTv, 
+  MdThermostat,
+  MdOpacity,
+  MdPowerSettingsNew,
+  MdPalette,
+  MdWbSunny,
+  MdRefresh
+} from 'react-icons/md';
 import { smartHomeAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -203,7 +203,7 @@ const SmartHomeDashboard = () => {
           onClick={loadSensorData}
           className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
         >
-          <RefreshCw className="w-4 h-4" />
+          <MdRefresh className="w-4 h-4" />
           <span>Refresh Sensors</span>
         </button>
       </div>
@@ -235,14 +235,14 @@ const SmartHomeDashboard = () => {
                 disabled={loading}
                 className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
-                <Lightbulb className="w-4 h-4" />
+                <MdLightbulb className="w-4 h-4" />
               </button>
             </div>
             
             <div className="space-y-3">
               <div className="flex items-center justify-between min-h-[1.5rem]">
                 <div className="flex items-center space-x-2 flex-shrink-0">
-                  <Thermometer className="w-4 h-4 text-red-500" />
+                  <MdThermostat className="w-4 h-4 text-red-500" />
                   <span className="text-sm text-gray-600 dark:text-gray-300">Temperature</span>
                 </div>
                 <div className="text-right min-w-0 flex-1 ml-2">
@@ -257,7 +257,7 @@ const SmartHomeDashboard = () => {
               
               <div className="flex items-center justify-between min-h-[1.5rem]">
                 <div className="flex items-center space-x-2 flex-shrink-0">
-                  <Droplets className="w-4 h-4 text-blue-500" />
+                  <MdOpacity className="w-4 h-4 text-blue-500" />
                   <span className="text-sm text-gray-600 dark:text-gray-300">Humidity</span>
                 </div>
                 <div className="text-right min-w-0 flex-1 ml-2">
@@ -277,7 +277,7 @@ const SmartHomeDashboard = () => {
       {/* Light Controls */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-          <Lightbulb className="w-6 h-6 mr-2 text-yellow-500" />
+          <MdLightbulb className="w-6 h-6 mr-2 text-yellow-500" />
           Light Controls
         </h2>
         
@@ -359,7 +359,7 @@ const SmartHomeDashboard = () => {
         {/* AC Controls */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-            <Wind className="w-6 h-6 mr-2 text-blue-500" />
+            <MdAir className="w-6 h-6 mr-2 text-blue-500" />
             Air Conditioning
           </h2>
           
@@ -369,7 +369,7 @@ const SmartHomeDashboard = () => {
               disabled={loading}
               className="w-full bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50"
             >
-              <Power className="w-5 h-5" />
+              <MdPowerSettingsNew className="w-5 h-5" />
               <span>Toggle AC</span>
               {loading && <LoadingSpinner size="sm" />}
             </button>
@@ -400,7 +400,7 @@ const SmartHomeDashboard = () => {
         {/* TV Controls */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-            <Tv className="w-6 h-6 mr-2 text-gray-700 dark:text-gray-400" />
+            <MdTv className="w-6 h-6 mr-2 text-gray-700 dark:text-gray-400" />
             Television
           </h2>
           
@@ -410,7 +410,7 @@ const SmartHomeDashboard = () => {
               disabled={loading}
               className="w-full bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors disabled:opacity-50"
             >
-              <Power className="w-5 h-5" />
+              <MdPowerSettingsNew className="w-5 h-5" />
               <span>Toggle TV</span>
               {loading && <LoadingSpinner size="sm" />}
             </button>
