@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Activity, 
-  CheckSquare, 
-  Brain, 
-  Lightbulb, 
-  MessageCircle,
-  Clock,
-  TrendingUp
-} from 'lucide-react';
+  MdActivity, 
+  MdCheckBox, 
+  MdMemory, 
+  MdLightbulb, 
+  MdMessage,
+  MdAccessTime,
+  MdTrendingUp
+} from 'react-icons/md';
 import { taskAPI, memoryAPI, systemAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -93,7 +93,7 @@ const Dashboard = () => {
                 {stats.tasks.completed} completed, {stats.tasks.pending} pending
               </p>
             </div>
-            <CheckSquare className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            <MdCheckBox className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           {stats.tasks.total > 0 && (
             <div className="mt-4">
@@ -117,7 +117,7 @@ const Dashboard = () => {
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.memories}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">Stored memories</p>
             </div>
-            <Brain className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+            <MdMemory className="w-8 h-8 text-purple-600 dark:text-purple-400" />
           </div>
         </div>
 
@@ -131,7 +131,7 @@ const Dashboard = () => {
                 {stats.systemStatus?.message || 'Status unavailable'}
               </p>
             </div>
-            <Activity className="w-8 h-8 text-green-600 dark:text-green-400" />
+            <MdActivity className="w-8 h-8 text-green-600 dark:text-green-400" />
           </div>
         </div>
 
@@ -143,7 +143,7 @@ const Dashboard = () => {
               <p className="text-lg font-bold text-orange-600 dark:text-orange-400">Ready</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">AI assistant available</p>
             </div>
-            <MessageCircle className="w-8 h-8 text-orange-600 dark:text-orange-400" />
+            <MdMessage className="w-8 h-8 text-orange-600 dark:text-orange-400" />
           </div>
         </div>
       </div>
@@ -172,7 +172,7 @@ const Dashboard = () => {
             Smart Home
           </h3>
           <div className="flex items-center space-x-2">
-            <Lightbulb className="w-5 h-5 text-yellow-500" />
+            <MdLightbulb className="w-5 h-5 text-yellow-500" />
             <span className="text-sm text-gray-600 dark:text-gray-300">Lights & Controls</span>
           </div>
           <p className="text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline mt-2">
