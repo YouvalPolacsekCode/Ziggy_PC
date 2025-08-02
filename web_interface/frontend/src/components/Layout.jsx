@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { 
-  Home, 
-  CheckSquare, 
-  Brain, 
-  Lightbulb, 
-  FileText, 
-  Settings, 
-  MessageCircle,
-  Clock,
-  Menu,
-  X,
-  Sun,
-  Moon
-} from 'lucide-react';
+  MdHome, 
+  MdCheckBox, 
+  MdMemory, 
+  MdLightbulb, 
+  MdTextSnippet, 
+  MdSettings, 
+  MdMessage,
+  MdAccessTime,
+  MdMenu,
+  MdClose,
+  MdLightMode,
+  MdDarkMode
+} from 'react-icons/md';
 import { useTheme } from '../contexts/ThemeContext';
 
 const Layout = () => {
