@@ -176,7 +176,7 @@ const SystemControl = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
         <div className="mb-4">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <MdActivity className="w-8 h-8 mr-3 text-green-600 dark:text-green-400" />
+            <MdShowChart className="w-8 h-8 mr-3 text-green-600 dark:text-green-400" />
             System Control Panel
           </h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">
