@@ -131,7 +131,7 @@ const Dashboard = () => {
                 {stats.systemStatus?.message || 'Status unavailable'}
               </p>
             </div>
-            <MdActivity className="w-8 h-8 text-green-600 dark:text-green-400" />
+            <MdShowChart className="w-8 h-8 text-green-600 dark:text-green-400" />
           </div>
         </div>
 
