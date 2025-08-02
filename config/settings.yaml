@@ -1,0 +1,26 @@
+openai:
+  api_key: "your-openai-api-key-here"
+
+audio:
+  ffplay_path: "ffplay"
+
+telegram:
+  bot_token: "your-telegram-bot-token-here"
+  chat_id: "your-telegram-chat-id-here"
+
+features:
+  voice: true
+  zigbee_support: false
+  telegram: true
+
+debug:
+  enable_dashboard: true
+  verbose_logging: true
+
+database:
+  url: "mongodb://localhost:27017"
+  name: "ziggy_web"
+
+web_interface:
+  backend_port: 8001
+  frontend_port: 3000
