@@ -9,6 +9,7 @@ voice:
 
 telegram:
   bot_token: "your-telegram-bot-token-here"
+  token: "your-telegram-bot-token-here"
   chat_id: "your-telegram-chat-id-here"
 
 home_assistant:
