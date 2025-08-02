@@ -258,7 +258,7 @@ const SystemControl = () => {
       {/* System Actions */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-          <MdFlash className="w-6 h-6 mr-2 text-orange-500" />
+          <MdBolt className="w-6 h-6 mr-2 text-orange-500" />
           System Actions
         </h2>
         
