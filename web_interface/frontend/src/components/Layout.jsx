@@ -80,7 +80,7 @@ const Layout = () => {
               className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2 text-sm font-medium rounded-md transition-colors text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-600 hover:text-white`}
               title={sidebarCollapsed ? (isDarkMode ? 'Light Mode' : 'Dark Mode') : undefined}
             >
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {isDarkMode ? <MdLightMode className="w-5 h-5" /> : <MdDarkMode className="w-5 h-5" />}
               {!sidebarCollapsed && (
                 <span className="ml-3">{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
               )}
