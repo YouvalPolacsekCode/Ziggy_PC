@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Activity, 
-  Clock, 
-  Calendar,
-  HardDrive,
-  Wifi,
-  Network,
-  Monitor,
-  Power,
-  RotateCcw,
-  AlertTriangle,
-  CheckCircle,
-  Zap
-} from 'lucide-react';
+  MdActivity, 
+  MdAccessTime, 
+  MdCalendarToday,
+  MdStorage,
+  MdWifi,
+  MdNetworkCheck,
+  MdMonitor,
+  MdPowerSettingsNew,
+  MdRefresh,
+  MdWarning,
+  MdCheckCircle,
+  MdFlash
+} from 'react-icons/md';
 import { systemAPI, sendIntent } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -121,14 +121,14 @@ const SystemControl = () => {
     {
       id: 'restart',
       name: 'Restart Ziggy',
-      icon: RotateCcw,
+      icon: MdRefresh,
       color: 'bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600',
       description: 'Restart the Ziggy system'
     },
     {
       id: 'shutdown',
       name: 'Shutdown Ziggy',
-      icon: Power,
+      icon: MdPowerSettingsNew,
       color: 'bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600',
       description: 'Shutdown the Ziggy system'
     }
@@ -138,25 +138,25 @@ const SystemControl = () => {
     {
       id: 'get_ip_address',
       name: 'IP Address',
-      icon: Network,
+      icon: MdNetworkCheck,
       color: 'bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
     },
     {
       id: 'get_disk_usage',
       name: 'Disk Usage',
-      icon: HardDrive,
+      icon: MdStorage,
       color: 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600'
     },
     {
       id: 'get_wifi_status',
       name: 'WiFi Status',
-      icon: Wifi,
+      icon: MdWifi,
       color: 'bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600'
     },
     {
       id: 'get_network_adapters',
       name: 'Network Adapters',
-      icon: Monitor,
+      icon: MdMonitor,
       color: 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600'
     }
   ];
@@ -175,7 +175,7 @@ const SystemControl = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
         <div className="mb-4">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <Activity className="w-8 h-8 mr-3 text-green-600 dark:text-green-400" />
+            <MdActivity className="w-8 h-8 mr-3 text-green-600 dark:text-green-400" />
             System Control Panel
           </h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">
@@ -186,7 +186,7 @@ const SystemControl = () => {
           onClick={loadSystemData}
           className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
         >
-          <RotateCcw className="w-4 h-4" />
+          <MdRefresh className="w-4 h-4" />
           <span>Refresh</span>
         </button>
       </div>
@@ -213,7 +213,7 @@ const SystemControl = () => {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
+              <MdCheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
             </div>
             <div className="ml-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">System Status</h3>
@@ -228,7 +228,7 @@ const SystemControl = () => {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <Clock className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+              <MdAccessTime className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             </div>
             <div className="ml-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Time</h3>
@@ -243,7 +243,7 @@ const SystemControl = () => {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <Calendar className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+              <MdCalendarToday className="w-8 h-8 text-purple-600 dark:text-purple-400" />
             </div>
             <div className="ml-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Date</h3>
@@ -258,7 +258,7 @@ const SystemControl = () => {
       {/* System Actions */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-          <Zap className="w-6 h-6 mr-2 text-orange-500" />
+          <MdFlash className="w-6 h-6 mr-2 text-orange-500" />
           System Actions
         </h2>
         
@@ -292,7 +292,7 @@ const SystemControl = () => {
       {/* Network Tools */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-          <Network className="w-6 h-6 mr-2 text-blue-500" />
+          <MdNetworkCheck className="w-6 h-6 mr-2 text-blue-500" />
           Network Tools
         </h2>
         
@@ -338,7 +338,7 @@ const SystemControl = () => {
               {actionLoading === 'ping_test' ? (
                 <LoadingSpinner size="sm" />
               ) : (
-                <Zap className="w-4 h-4" />
+                <MdFlash className="w-4 h-4" />
               )}
               <span>Ping</span>
             </button>
@@ -357,7 +357,7 @@ const SystemControl = () => {
       {/* System Information */}
       <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-200 mb-2 flex items-center">
-          <AlertTriangle className="w-5 h-5 mr-2" />
+          <MdWarning className="w-5 h-5 mr-2" />
           Important Notes
         </h3>
         <ul className="text-sm text-yellow-800 dark:text-yellow-300 space-y-1">

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Clock, 
-  Calendar, 
-  Sun, 
-  Moon,
-  RefreshCw,
-  Globe
-} from 'lucide-react';
+  MdAccessTime, 
+  MdCalendarToday, 
+  MdWbSunny, 
+  MdBrightness2,
+  MdRefresh,
+  MdLanguage
+} from 'react-icons/md';
 import { systemAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -117,7 +117,7 @@ const ClockPage = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
         <div className="mb-4">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <Clock className="w-8 h-8 mr-3 text-blue-600 dark:text-blue-400" />
+            <MdAccessTime className="w-8 h-8 mr-3 text-blue-600 dark:text-blue-400" />
             Clock & Date Tools
           </h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">
@@ -129,7 +129,7 @@ const ClockPage = () => {
           disabled={loading}
           className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <MdRefresh className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           <span>Sync with Ziggy</span>
         </button>
       </div>
@@ -151,9 +151,9 @@ const ClockPage = () => {
       }`}>
         <div className="flex items-center justify-center mb-4">
           {isNightTime() ? (
-            <Moon className="w-8 h-8 mr-3" />
+            <MdBrightness2 className="w-8 h-8 mr-3" />
           ) : (
-            <Sun className="w-8 h-8 mr-3" />
+            <MdWbSunny className="w-8 h-8 mr-3" />
           )}
           <h2 className="text-2xl font-semibold">{getGreeting()}!</h2>
         </div>
@@ -168,7 +168,7 @@ const ClockPage = () => {
         </div>
 
         <div className="text-lg opacity-75">
-          <Globe className="w-5 h-5 inline mr-2" />
+          <MdLanguage className="w-5 h-5 inline mr-2" />
           {timeZone}
         </div>
       </div>
@@ -178,7 +178,7 @@ const ClockPage = () => {
         {/* Local Time Details */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <Clock className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" />
+            <MdAccessTime className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" />
             Local Time Details
           </h3>
           
@@ -223,7 +223,7 @@ const ClockPage = () => {
         {/* Ziggy Time */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <Calendar className="w-6 h-6 mr-2 text-purple-600 dark:text-purple-400" />
+            <MdCalendarToday className="w-6 h-6 mr-2 text-purple-600 dark:text-purple-400" />
             Ziggy System Time
           </h3>
           
@@ -261,7 +261,7 @@ const ClockPage = () => {
       {/* World Clock */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
-          <Globe className="w-6 h-6 mr-2 text-green-600 dark:text-green-400" />
+          <MdLanguage className="w-6 h-6 mr-2 text-green-600 dark:text-green-400" />
           World Clock
         </h3>
         
