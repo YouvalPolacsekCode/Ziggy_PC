@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Send, 
-  MessageCircle, 
-  Bot, 
-  User, 
-  RotateCcw,
-  Trash2,
-  Volume2
-} from 'lucide-react';
+  MdSend, 
+  MdMessage, 
+  MdAndroid, 
+  MdPerson, 
+  MdRefresh,
+  MdDelete,
+  MdVolumeUp
+} from 'react-icons/md';
 import { chatAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -125,7 +125,7 @@ const ChatPanel = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
         <div className="mb-4">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <MessageCircle className="w-8 h-8 mr-3 text-blue-600 dark:text-blue-400" />
+            <MdMessage className="w-8 h-8 mr-3 text-blue-600 dark:text-blue-400" />
             Chat with Ziggy
           </h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">
@@ -139,7 +139,7 @@ const ChatPanel = () => {
             className="bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
             title="Force intent recheck on last message"
           >
-            <RotateCcw className="w-4 h-4" />
+            <MdRefresh className="w-4 h-4" />
             <span className="hidden sm:inline">Recheck</span>
           </button>
           <button
@@ -147,7 +147,7 @@ const ChatPanel = () => {
             disabled={loading || !messages.length}
             className="bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
           >
-            <Trash2 className="w-4 h-4" />
+            <MdDelete className="w-4 h-4" />
             <span className="hidden sm:inline">Clear</span>
           </button>
         </div>
@@ -170,7 +170,7 @@ const ChatPanel = () => {
         <div className="flex-1 p-6 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="text-center py-12">
-              <Bot className="w-16 h-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <MdAndroid className="w-16 h-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
                 Start a conversation with Ziggy
               </h3>
@@ -210,10 +210,10 @@ const ChatPanel = () => {
                   >
                     <div className="flex items-start space-x-2">
                       {message.role === 'assistant' && (
-                        <Bot className="w-4 h-4 mt-1 flex-shrink-0" />
+                        <MdAndroid className="w-4 h-4 mt-1 flex-shrink-0" />
                       )}
                       {message.role === 'user' && (
-                        <User className="w-4 h-4 mt-1 flex-shrink-0 text-blue-200" />
+                        <MdPerson className="w-4 h-4 mt-1 flex-shrink-0 text-blue-200" />
                       )}
                       <div className="flex-1">
                         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -234,7 +234,7 @@ const ChatPanel = () => {
                 <div className="flex justify-start">
                   <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700">
                     <div className="flex items-center space-x-2">
-                      <Bot className="w-4 h-4" />
+                      <MdAndroid className="w-4 h-4" />
                       <LoadingSpinner size="sm" />
                       <span className="text-sm text-gray-600 dark:text-gray-300">Ziggy is thinking...</span>
                     </div>
@@ -267,7 +267,7 @@ const ChatPanel = () => {
               {loading ? (
                 <LoadingSpinner size="sm" />
               ) : (
-                <Send className="w-4 h-4" />
+                <MdSend className="w-4 h-4" />
               )}
             </button>
           </form>
