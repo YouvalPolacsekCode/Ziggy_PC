@@ -13,7 +13,7 @@ class ZiggyAPITester:
 
     def run_test(self, name, method, endpoint, expected_status, data=None, headers=None):
         """Run a single API test"""
-        url = f"{self.base_url}/{endpoint}"
+        url = f"{self.base_url}/{endpoint}" if endpoint else self.base_url
         if headers is None:
             headers = {'Content-Type': 'application/json'}
 
