@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, 
-  Brain, 
-  Search, 
-  Trash2, 
-  Edit3,
-  Key,
-  Quote
-} from 'lucide-react';
+  MdAdd, 
+  MdMemory, 
+  MdSearch, 
+  MdDelete, 
+  MdEdit,
+  MdVpnKey,
+  MdFormatQuote
+} from 'react-icons/md';
 import { memoryAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -134,7 +134,7 @@ const MemoryManager = () => {
           onClick={() => setShowAddForm(!showAddForm)}
           className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
         >
-          <Plus className="w-4 h-4" />
+          <MdAdd className="w-4 h-4" />
           <span>Add Memory</span>
         </button>
       </div>
@@ -158,7 +158,7 @@ const MemoryManager = () => {
       {/* Search */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+          <MdSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
           <input
             type="text"
             value={searchTerm}
@@ -234,7 +234,7 @@ const MemoryManager = () => {
       {/* Memory Statistics */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <div className="flex items-center">
-          <Brain className="w-8 h-8 text-purple-600 dark:text-purple-400 mr-3" />
+          <MdMemory className="w-8 h-8 text-purple-600 dark:text-purple-400 mr-3" />
           <div>
             <p className="text-2xl font-bold text-gray-900 dark:text-white">{memories.length}</p>
             <p className="text-sm text-gray-600 dark:text-gray-300">Stored Memories</p>
@@ -260,7 +260,7 @@ const MemoryManager = () => {
           <div className="p-12 text-center">
             {searchTerm ? (
               <>
-                <Search className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+                <MdSearch className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No memories found</h3>
                 <p className="text-gray-600 dark:text-gray-300 mb-4">
                   No memories match your search term "{searchTerm}".
@@ -274,7 +274,7 @@ const MemoryManager = () => {
               </>
             ) : (
               <>
-                <Brain className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+                <MdMemory className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No memories yet</h3>
                 <p className="text-gray-600 dark:text-gray-300 mb-4">
                   Start building Ziggy's knowledge by adding your first memory.
@@ -283,7 +283,7 @@ const MemoryManager = () => {
                   onClick={() => setShowAddForm(true)}
                   className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors"
                 >
-                  <Plus className="w-4 h-4" />
+                  <MdAdd className="w-4 h-4" />
                   <span>Add Your First Memory</span>
                 </button>
               </>
@@ -296,14 +296,14 @@ const MemoryManager = () => {
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2 mb-2">
-                      <Key className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      <MdVpnKey className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                         {memory.key}
                       </h3>
                     </div>
                     
                     <div className="flex items-start space-x-2 mb-3">
-                      <Quote className="w-4 h-4 text-gray-400 dark:text-gray-600 mt-1 flex-shrink-0" />
+                      <MdFormatQuote className="w-4 h-4 text-gray-400 dark:text-gray-600 mt-1 flex-shrink-0" />
                       <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
                         {memory.value}
                       </p>
@@ -323,14 +323,14 @@ const MemoryManager = () => {
                       className="text-gray-400 dark:text-gray-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                       title="Edit memory"
                     >
-                      <Edit3 className="w-4 h-4" />
+                      <MdEdit className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteMemory(memory.key)}
                       className="text-gray-400 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                       title="Delete memory"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <MdDelete className="w-4 h-4" />
                     </button>
                   </div>
                 </div>

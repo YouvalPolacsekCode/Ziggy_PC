@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, 
-  FileText, 
-  Search, 
-  Trash2, 
-  Edit3,
-  Save,
-  X
-} from 'lucide-react';
+  MdAdd, 
+  MdTextSnippet, 
+  MdSearch, 
+  MdDelete, 
+  MdEdit,
+  MdSave,
+  MdClose
+} from 'react-icons/md';
 import { notesAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -158,7 +158,7 @@ const NotesManager = () => {
           onClick={() => setShowAddForm(!showAddForm)}
           className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
         >
-          <Plus className="w-4 h-4" />
+          <MdAdd className="w-4 h-4" />
           <span>Add Note</span>
         </button>
       </div>
@@ -182,7 +182,7 @@ const NotesManager = () => {
       {/* Search */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+          <MdSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
           <input
             type="text"
             value={searchTerm}
@@ -234,7 +234,7 @@ const NotesManager = () => {
                 onClick={cancelEdit}
                 className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center space-x-2 transition-colors"
               >
-                <X className="w-4 h-4" />
+                <MdClose className="w-4 h-4" />
                 <span>Cancel</span>
               </button>
               <button
@@ -243,7 +243,7 @@ const NotesManager = () => {
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
               >
                 {submitting && <LoadingSpinner size="sm" />}
-                <Save className="w-4 h-4" />
+                <MdSave className="w-4 h-4" />
                 <span>{editingNote ? 'Update Note' : 'Save Note'}</span>
               </button>
             </div>
@@ -254,7 +254,7 @@ const NotesManager = () => {
       {/* Notes Statistics */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <div className="flex items-center">
-          <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400 mr-3" />
+          <MdTextSnippet className="w-8 h-8 text-blue-600 dark:text-blue-400 mr-3" />
           <div>
             <p className="text-2xl font-bold text-gray-900 dark:text-white">{notes.length}</p>
             <p className="text-sm text-gray-600 dark:text-gray-300">Total Notes</p>
@@ -273,7 +273,7 @@ const NotesManager = () => {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-12 text-center">
           {searchTerm ? (
             <>
-              <Search className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <MdSearch className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No notes found</h3>
               <p className="text-gray-600 dark:text-gray-300 mb-4">
                 No notes match your search term "{searchTerm}".
@@ -287,7 +287,7 @@ const NotesManager = () => {
             </>
           ) : (
             <>
-              <FileText className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <MdTextSnippet className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No notes yet</h3>
               <p className="text-gray-600 dark:text-gray-300 mb-4">
                 Create your first note to get started.
@@ -296,7 +296,7 @@ const NotesManager = () => {
                 onClick={() => setShowAddForm(true)}
                 className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors"
               >
-                <Plus className="w-4 h-4" />
+                <MdAdd className="w-4 h-4" />
                 <span>Add Your First Note</span>
               </button>
             </>
@@ -316,14 +316,14 @@ const NotesManager = () => {
                     className="text-gray-400 dark:text-gray-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                     title="Edit note"
                   >
-                    <Edit3 className="w-4 h-4" />
+                    <MdEdit className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleDeleteNote(note.id)}
                     className="text-gray-400 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                     title="Delete note"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <MdDelete className="w-4 h-4" />
                   </button>
                 </div>
               </div>

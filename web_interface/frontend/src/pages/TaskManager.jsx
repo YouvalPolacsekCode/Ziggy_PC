@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, 
-  CheckSquare, 
-  Square, 
-  Trash2, 
-  Calendar,
-  Clock,
-  Flag,
-  RotateCcw
-} from 'lucide-react';
+  MdAdd, 
+  MdCheckBox, 
+  MdCheckBoxOutlineBlank, 
+  MdDelete, 
+  MdCalendarToday,
+  MdAccessTime,
+  MdFlag,
+  MdRefresh
+} from 'react-icons/md';
 import { taskAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
@@ -145,7 +145,7 @@ const TaskManager = () => {
             onClick={() => setShowAddForm(!showAddForm)}
             className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
           >
-            <Plus className="w-4 h-4" />
+            <MdAdd className="w-4 h-4" />
             <span>Add Task</span>
           </button>
           {tasks.length > 0 && (
@@ -153,7 +153,7 @@ const TaskManager = () => {
               onClick={handleDeleteAllTasks}
               className="bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center space-x-1.5 transition-colors"
             >
-              <Trash2 className="w-4 h-4" />
+              <MdDelete className="w-4 h-4" />
               <span>Clear All</span>
             </button>
           )}
@@ -290,7 +290,7 @@ const TaskManager = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
-            <CheckSquare className="w-8 h-8 text-blue-600 dark:text-blue-400 mr-3" />
+            <MdCheckBox className="w-8 h-8 text-blue-600 dark:text-blue-400 mr-3" />
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{tasks.length}</p>
               <p className="text-sm text-gray-600 dark:text-gray-300">Total Tasks</p>
@@ -299,7 +299,7 @@ const TaskManager = () => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
-            <Square className="w-8 h-8 text-orange-600 dark:text-orange-400 mr-3" />
+            <MdCheckBoxOutlineBlank className="w-8 h-8 text-orange-600 dark:text-orange-400 mr-3" />
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {tasks.filter(t => !t.completed).length}
@@ -310,7 +310,7 @@ const TaskManager = () => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center">
-            <CheckSquare className="w-8 h-8 text-green-600 dark:text-green-400 mr-3" />
+            <MdCheckBox className="w-8 h-8 text-green-600 dark:text-green-400 mr-3" />
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {tasks.filter(t => t.completed).length}
@@ -331,7 +331,7 @@ const TaskManager = () => {
         
         {tasks.length === 0 ? (
           <div className="p-12 text-center">
-            <CheckSquare className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+            <MdCheckBox className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No tasks yet</h3>
             <p className="text-gray-600 dark:text-gray-300 mb-4">
               Add your first task to get started with task management.
@@ -340,7 +340,7 @@ const TaskManager = () => {
               onClick={() => setShowAddForm(true)}
               className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors"
             >
-              <Plus className="w-4 h-4" />
+              <MdAdd className="w-4 h-4" />
               <span>Add Your First Task</span>
             </button>
           </div>
@@ -355,9 +355,9 @@ const TaskManager = () => {
                     disabled={task.completed}
                   >
                     {task.completed ? (
-                      <CheckSquare className="w-5 h-5" />
+                      <MdCheckBox className="w-5 h-5" />
                     ) : (
-                      <Square className="w-5 h-5" />
+                      <MdCheckBoxOutlineBlank className="w-5 h-5" />
                     )}
                   </button>
 
@@ -371,7 +371,7 @@ const TaskManager = () => {
                       </span>
                       {task.repeat && (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
-                          <RotateCcw className="w-3 h-3 mr-1" />
+                          <MdRefresh className="w-3 h-3 mr-1" />
                           {task.repeat}
                         </span>
                       )}
@@ -380,13 +380,13 @@ const TaskManager = () => {
                     <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
                       {task.due && (
                         <div className="flex items-center space-x-1">
-                          <Calendar className="w-4 h-4" />
+                          <MdCalendarToday className="w-4 h-4" />
                           <span>Due: {new Date(task.due).toLocaleString()}</span>
                         </div>
                       )}
                       {task.reminder && (
                         <div className="flex items-center space-x-1">
-                          <Clock className="w-4 h-4" />
+                          <MdAccessTime className="w-4 h-4" />
                           <span>Reminder: {new Date(task.reminder).toLocaleString()}</span>
                         </div>
                       )}
@@ -405,7 +405,7 @@ const TaskManager = () => {
                     onClick={() => handleDeleteTask(task.id)}
                     className="text-gray-400 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <MdDelete className="w-4 h-4" />
                   </button>
                 </div>
               </div>
