@@ -338,7 +338,7 @@ const SystemControl = () => {
               {actionLoading === 'ping_test' ? (
                 <LoadingSpinner size="sm" />
               ) : (
-                <MdFlash className="w-4 h-4" />
+                <MdBolt className="w-4 h-4" />
               )}
               <span>Ping</span>
             </button>
