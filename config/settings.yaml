@@ -8,6 +8,9 @@ telegram:
   bot_token: "your-telegram-bot-token-here"
   chat_id: "your-telegram-chat-id-here"
 
+home_assistant:
+  url: "http://homeassistant.local:8123/"
+
 features:
   voice: true
   zigbee_support: false
