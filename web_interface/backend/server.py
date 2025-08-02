@@ -28,7 +28,7 @@ db = client[os.environ['DB_NAME']]
 app = FastAPI(title="Ziggy Web Interface API", version="1.0.0")
 
 # Create a router with the /api prefix
-api_router = APIRouter()
+api_router = APIRouter(prefix="/api")
 
 # Configure CORS
 app.add_middleware(
