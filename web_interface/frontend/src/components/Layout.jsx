@@ -48,7 +48,7 @@ const Layout = () => {
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="text-gray-300 hover:text-white p-1 rounded transition-colors"
             >
-              {sidebarCollapsed ? <Menu className="w-5 h-5" /> : <X className="w-5 h-5" />}
+              {sidebarCollapsed ? <MdMenu className="w-5 h-5" /> : <MdClose className="w-5 h-5" />}
             </button>
           </div>
 
