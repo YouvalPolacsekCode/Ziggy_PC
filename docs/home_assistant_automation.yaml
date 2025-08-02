@@ -1,0 +1,11 @@
+automation:
+  - alias: "Send Motion Event to Ziggy"
+    trigger:
+      platform: state
+      entity_id: binary_sensor.kitchen_motion
+      to: "on"
+    action:
+      - service: mqtt.publish
+        data:
+          topic: "ziggy/in"
+          payload: "Motion detected in kitchen"
