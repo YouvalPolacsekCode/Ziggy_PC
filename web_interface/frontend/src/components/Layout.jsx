@@ -21,14 +21,14 @@ const Layout = () => {
   const { isDarkMode, toggleDarkMode } = useTheme();
 
   const navItems = [
-    { path: '/', icon: Home, label: 'Dashboard' },
-    { path: '/tasks', icon: CheckSquare, label: 'Tasks' },
-    { path: '/memory', icon: Brain, label: 'Memory' },
-    { path: '/smarthome', icon: Lightbulb, label: 'Smart Home' },
-    { path: '/notes', icon: FileText, label: 'Notes' },
-    { path: '/system', icon: Settings, label: 'System' },
-    { path: '/chat', icon: MessageCircle, label: 'Chat' },
-    { path: '/clock', icon: Clock, label: 'Clock' }
+    { path: '/', icon: MdHome, label: 'Dashboard' },
+    { path: '/tasks', icon: MdCheckBox, label: 'Tasks' },
+    { path: '/memory', icon: MdMemory, label: 'Memory' },
+    { path: '/smarthome', icon: MdLightbulb, label: 'Smart Home' },
+    { path: '/notes', icon: MdTextSnippet, label: 'Notes' },
+    { path: '/system', icon: MdSettings, label: 'System' },
+    { path: '/chat', icon: MdMessage, label: 'Chat' },
+    { path: '/clock', icon: MdAccessTime, label: 'Clock' }
   ];
 
   const sidebarWidth = sidebarCollapsed ? 'w-16' : 'w-44'; // Reduced from w-48 to w-44
