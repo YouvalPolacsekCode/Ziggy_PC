@@ -1,15 +1,46 @@
-# Ignore virtual environment
+# --- Python ---
 .venv/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
+*.log
 
-# Ignore system files
+# --- Node.js (frontend) ---
+node_modules/
+web_interface/frontend/node_modules/
+*.tsbuildinfo
+*.lock
+npm-debug.log
+yarn-error.log
+
+# --- Environment & secrets ---
+.env
+.env.*
+config/settings.yaml  # Optional: include only if it contains secrets
+
+# --- VS Code / IDEs ---
+.vscode/
+.idea/
+
+# --- OS clutter ---
 .DS_Store
 Thumbs.db
 
-# Ignore logs and environment
-*.log
-.env
-settings.yaml
+# --- Build / cache ---
+dist/
+build/
+coverage/
+.cache/
+*.bak
+*.swp
+
+# --- Frontend build folders ---
+web_interface/frontend/.next/
+web_interface/frontend/.turbo/
+
+# --- Mongo (if using dumps) ---
+dump/
+*.bson
+*.json
