@@ -16,6 +16,12 @@ home_assistant:
   url: "http://homeassistant.local:8123/"
   token: "your-home-assistant-token-here"
 
+mqtt:
+  host: "localhost"
+  port: 1883
+  username: ""
+  password: ""
+
 features:
   voice: false
   zigbee_support: false
