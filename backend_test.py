@@ -228,7 +228,7 @@ def main():
     print("=" * 60)
     
     # Setup
-    tester = ZiggyAPITester("http://localhost:8001")
+    tester = ZiggyAPITester("http://localhost:8001/api")
     
     # Run all tests
     try:
