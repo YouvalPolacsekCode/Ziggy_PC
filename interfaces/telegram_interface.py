@@ -82,15 +82,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # === Handle multi-step commands ===
     if pending_action == "add_task":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "add_task", "params": {"task": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
+        intent_data = {"intent": "add_task", "params": {"task": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
         await update.message.reply_text(f"✅ Task added: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode=None)
         return
 
     if pending_action == "remove_task_select":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "remove_task", "params": {"task": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
+        intent_data = {"intent": "remove_task", "params": {"task": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
         await update.message.reply_text(f"🗑 Removed: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode=None)
         return
 
@@ -98,8 +98,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["pending_action"] = None
         try:
             temp = int(user_text)
-            intent_data = {"intent": "set_ac_temperature", "params": {"temperature": temp}}
-            response = await handle_intent(intent_data, source="telegram")
+            intent_data = {"intent": "set_ac_temperature", "params": {"temperature": temp}, "source": "telegram"}
+            response = await handle_intent(intent_data)
             await update.message.reply_text(f"🌡️ {response}", reply_markup=get_main_menu(), parse_mode=None)
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid temperature number.", reply_markup=get_main_menu(), parse_mode=None)
@@ -109,8 +109,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["pending_action"] = None
         try:
             source = int(user_text)
-            intent_data = {"intent": "set_tv_source", "params": {"source": source}}
-            response = await handle_intent(intent_data, source="telegram")
+            intent_data = {"intent": "set_tv_source", "params": {"source": source}, "source": "telegram"}
+            response = await handle_intent(intent_data)
             await update.message.reply_text(f"📡 {response}", reply_markup=get_main_menu(), parse_mode=None)
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid source number.", reply_markup=get_main_menu(), parse_mode=None)
@@ -118,8 +118,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if pending_action == "ping_test":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "ping_test", "params": {"domain": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
+        intent_data = {"intent": "ping_test", "params": {"domain": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
         await update.message.reply_text(f"📡 {response}", reply_markup=get_system_menu(), parse_mode=None)
         return
 
@@ -127,8 +127,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["pending_action"] = None
         if "=" in user_text:
             key, value = map(str.strip, user_text.split("=", 1))
-            intent_data = {"intent": "remember_memory", "params": {"key": key, "value": value}}
-            response = await handle_intent(intent_data, source="telegram")
+            intent_data = {"intent": "remember_memory", "params": {"key": key, "value": value}, "source": "telegram"}
+            response = await handle_intent(intent_data)
             await update.message.reply_text(f"💾 {response}", reply_markup=get_memory_menu(), parse_mode=None)
         else:
             await update.message.reply_text("❌ Please use format: key = value", reply_markup=get_memory_menu(), parse_mode=None)
@@ -136,22 +136,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if pending_action == "recall_memory":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "recall_memory", "params": {"key": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
+        intent_data = {"intent": "recall_memory", "params": {"key": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
         await update.message.reply_text(f"📤 {response}", reply_markup=get_memory_menu(), parse_mode=None)
         return
 
     if pending_action == "delete_memory":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "delete_memory", "params": {"key": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
+        intent_data = {"intent": "delete_memory", "params": {"key": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
         await update.message.reply_text(f"🗑️ {response}", reply_markup=get_memory_menu(), parse_mode=None)
         return
 
     if pending_action == "chat_with_gpt":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "chat_with_gpt", "params": {"text": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
+        intent_data = {"intent": "chat_with_gpt", "params": {"text": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
         await update.message.reply_text(f"💬 {response}", reply_markup=get_core_menu(), parse_mode=None)
         return
 
@@ -164,41 +164,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # === Try quick intent parse first ===
     try:
         intent_data = quick_parse(user_text)
-        if intent_data:
-            response = await handle_intent(intent_data, source="telegram")
-            append_chat("user", user_text)
-            append_chat("assistant", response if isinstance(response, str) else str(response))
+        intent_data["source"] = "telegram"  # ✅ ensure source is always set
 
-            if isinstance(response, list):
-                for chunk in response:
-                    await update.message.reply_text(chunk, parse_mode=None)
-            else:
-                await update.message.reply_text(response, parse_mode=None)
-            return
-
-        # === Fallback: GPT Conversation ===
-        memory = load_long_term_memory()
-        memory_facts = ", ".join(f"{k}: {v}" for k, v in memory.items())
-        chat_history = get_chat_history()[-10:] + [{"role": "user", "content": user_text}]
-
-        system_prompt = (
-            f"You are Ziggy, a smart home assistant.\n"
-            f"Known facts: {memory_facts}\n"
-            f"Reply clearly. Ask questions if unsure of the user's intent."
-        )
-
-        completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": system_prompt}] + chat_history,
-            temperature=0.6,
-            max_tokens=300
-        )
-
-        reply = completion.choices[0].message["content"].strip()
+        response = await handle_intent(intent_data)
         append_chat("user", user_text)
-        append_chat("assistant", reply)
-        await update.message.reply_text(reply, parse_mode=None)
+        append_chat("assistant", response if isinstance(response, str) else str(response))
 
+        if isinstance(response, list):
+            for chunk in response:
+                await update.message.reply_text(chunk, parse_mode=None)
+        else:
+            await update.message.reply_text(response, parse_mode=None)
+        return
+
+    # === Fallback: GPT Conversation ===
     except Exception as e:
         log_error(f"[Telegram] Error: {e}")
         await update.message.reply_text("⚠️ Something went wrong.", parse_mode=None)
