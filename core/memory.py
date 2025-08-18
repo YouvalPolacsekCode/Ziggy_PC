@@ -51,3 +51,13 @@ def get_chat_history():
 
 def clear_chat_history():
     SHORT_TERM_HISTORY.clear()
+
+def search_memory(keyword: str):
+    """
+    Return [{'key': k, 'value': v}] for entries containing keyword (case-insensitive).
+    """
+    if not keyword:
+        return []
+    data = load_long_term_memory() or {}
+    q = keyword.lower()
+    return [{"key": k, "value": v} for k, v in data.items() if q in f"{k} {v}".lower()]
