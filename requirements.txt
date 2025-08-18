@@ -52,3 +52,13 @@ numpy
 #web-app
 flask
 flask-cors
+
+feedparser>=6.0.11
+recipe-scrapers>=14.55.0
+trafilatura>=1.9.0
+requests>=2.32.3
+yfinance>=0.2.40
+spotipy>=2.24.0
+google-api-python-client>=2.136.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
