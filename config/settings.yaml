@@ -1,0 +1,281 @@
+<<<<<<< ziggy_rouge
+# Ziggy Smart Home Assistant Configuration
+
+audio:
+  ffplay_path: C:/ffmpeg/ffmpeg/bin/ffplay.exe
+  input_device: null
+  output_device: null
+
+debug:
+  enable_dashboard: true
+  verbose: false
+  verbose_logging: true
+
+devices:
+  bedroom_lamp:
+    command_topic: homeassistant/light/bedroom_lamp/set
+    component: light
+    object_id: bedroom_lamp
+  living_room_light:
+    command_topic: homeassistant/light/living_room_light/set
+    component: light
+    object_id: living_room_light
+    state_topic: homeassistant/light/living_room_light/state
+  thermostat:
+    command_topic: homeassistant/climate/thermostat/set
+    component: climate
+    object_id: thermostat
+
+features:
+  buddy_mode: true
+  file_management: true
+  ifttt: true
+  local_storage: true
+  smart_home: true
+  task_tracking: true
+  telegram: true
+  voice: true
+  zigbee_support: true
+
+home_assistant:
+  url: http://homeassistant.local:8123/
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI5YTc2MmY5MTVjN2E0ODdjYjJkNTNjNWEyOThjNTJhYSIsImlhdCI6MTc1MzU1ODQ5NiwiZXhwIjoyMDY4OTE4NDk2fQ.U_Bs7H3omzQQIgPpNwu0uPUPIltQzaEGI3OR5yk2hsU
+
+ifttt:
+  webhook_key: YOUR_IFTTT_WEBHOOK_KEY
+  triggers:
+    - light_on
+    - light_off
+    - send_notification
+
+language: en
+
+mqtt:
+  base_topic: ziggy
+  host: localhost
+  port: 1883
+  username: your_mqtt_username
+  password: 6584ypSB!
+
+openai:
+
+paths:
+  file_store: files/
+  logs: logs/
+  memory_log: memory/memory_log.json
+  task_log: memory/task_log.json
+
+roles:
+  superadmin:
+    - youval
+  guests: []
+  trusted_users: []
+
+telegram:
+  enabled: true
+  token: 7805408143:AAHsLHS78_XOWyrRXl2MxMi0REGFrbagBxs
+  default_chat_id: 316341835
+  allowed_users:
+    - 316341835
+
+serpapi:
+  api_key: 67b5c8e58494d77454f5b5be6fd81bdf82c7ebe1de671f72a57ea1107613a19b
+
+voice:
+  tts_engine: gTTS
+  tts_language: en
+  wakeword_enabled: false
+  wakeword_model: hey_mycroft.onnx
+  enabled: true
+  language: en
+  speed: 1.0
+
+wake_word:
+  enabled: true
+  sensitivity: 0.5
+
+system:
+  timezone: "UTC"
+  language: "en"
+=======
+openai:
+  api_key: "your-openai-api-key-here"
+
+audio:
+  ffplay_path: "ffplay"
+
+voice:
+  wakeword_enabled: false
+
+telegram:
+  bot_token: "your-telegram-bot-token-here"
+  token: "your-telegram-bot-token-here"
+  chat_id: "your-telegram-chat-id-here"
+
+home_assistant:
+  url: "http://homeassistant.local:8123/"
+  token: "your-home-assistant-token-here"
+
+mqtt:
+  host: "localhost"
+  port: 1883
+  username: ""
+  password: ""
+
+features:
+  voice: false
+  zigbee_support: false
+  telegram: false
+
+debug:
+  enable_dashboard: true
+  verbose_logging: true
+>>>>>>> main
+
+database:
+  url: "mongodb://localhost:27017"
+  name: "ziggy_web"
+
+web_interface:
+<<<<<<< ziggy_rouge
+  backend_port: 8001       # backend/server.py
+  frontend_port: 3000      # React app
+
+room_aliases:
+  living room: living_room
+  livingroom: living_room
+  salon: living_room
+  main room: living_room
+
+  bedroom: bedroom
+  master bedroom: bedroom
+  main bedroom: bedroom
+
+  roni room: roni_room
+  roni's room: roni_room
+  baby room: roni_room
+  nursery: roni_room
+
+  kitchen: kitchen
+
+  bathroom: bathroom
+  bath room: bathroom
+  restroom: bathroom
+  wc: bathroom
+
+  stairs: stairs
+  stairway: stairs
+  staircase: stairs
+
+  office: office
+  work room: office
+  study: office
+
+  corridor: corridor
+  hallway: corridor
+  hall: corridor
+
+
+device_map:
+  bedroom:
+    temperature: null  # No dedicated temp sensor found
+    humidity: null     # No dedicated humidity sensor found
+    motion: binary_sensor.bedroom_motion_sensor_occupancy
+    illuminance: sensor.bedroom_motion_sensor_illuminance
+    light: light.bedroom_light
+
+  living_room:
+    temperature: sensor.living_room_temp_temperature
+    humidity: sensor.living_room_temp_humidity
+    motion: binary_sensor.living_room_motion_sensor_occupancy
+    illuminance: sensor.living_room_motion_sensor_illuminance
+    light: light.dining_room_light
+    balcony_door: binary_sensor.balcony_door_sensor_opening
+
+  bathroom:
+    temperature: null
+    humidity: null
+    motion: null
+    illuminance: null
+    light: null
+
+  kitchen:
+    temperature: null
+    humidity: null
+    motion: binary_sensor.kitchen_motion_sensor_occupancy
+    illuminance: sensor.kitchen_motion_sensor_illuminance
+    light: light.kitchen_light
+
+  office:
+    temperature: null
+    humidity: null
+    motion: null
+    illuminance: null
+    light: light.tz3210_r5afgmkl_ts0505b_2
+
+  roni_room:
+    temperature: sensor.roni_room_temp_temperature
+    humidity: sensor.roni_room_temp_humidity
+    motion: null  # No motion sensor found in entity list
+    illuminance: null
+    light: null
+
+  laundry:
+    motion: null
+    illuminance: null
+    light: null
+
+  storage:
+    motion: null
+    illuminance: null
+    light: null
+
+  stairs:
+    motion: null
+    illuminance: null
+    light: null
+
+  entry:
+    door: binary_sensor.front_door_sensor_opening
+
+media:
+  default_cast_device: "media_player.living_room_tv"
+  default_speaker: "media_player.living_room_speaker"
+  default_volume: 0.35
+  device_map:
+    living room tv: "media_player.living_room_tv"
+    living room speaker: "media_player.living_room_speaker"
+    living room mibox: "media_player.mibox4"
+    living room mibox 2: "media_player.mibox4_2"
+    living room mibox 3: "media_player.mibox4_3"
+    dining room light: "light.dining_room_light"
+    kitchen light: "light.kitchen_light"
+    bedroom light: "light.bedroom_light"
+    bedroom tv: "media_player.lg_webos_tv_ur78006ll"
+  camera_map:
+    entry: "camera.entry"
+    front door: "camera.front_door"
+  # app_map: { netflix: "com.netflix.ninja", prime: "com.amazon.avod.thirdpartyclient" }
+
+news:
+  rss_sources:
+    - "https://feeds.bbci.co.uk/news/rss.xml"
+    - "https://www.ynet.co.il/Integration/StoryRss1854.xml"
+
+calendar:
+  cast_today_to_device: false
+  default_device: null
+
+contacts:
+  # This mirrors config/contacts.yaml for convenience if your loader merges it
+  maya:
+    email: "maya@example.com"
+    telegram: "@maya_handle"
+    whatsapp: "+15551234567"
+  youval:
+    email: "youval@example.com"
+    telegram: "@youval_handle"
+=======
+  backend_port: 8001
+  frontend_port: 3000
+>>>>>>> main
