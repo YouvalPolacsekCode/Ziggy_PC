@@ -30,6 +30,12 @@ from services.mqtt_client import start_mqtt
 from services.task_manager import start_reminder_thread
 from core.logger_module import log_info
 
+def render_result(res):
+    """Convert a Ziggy result (dict or other) into a displayable string."""
+    if isinstance(res, dict):
+        return res.get("message") or str(res.get("data") or res)
+    return str(res)
+
 # Handle SIGTERM (used in restart or external kill)
 def handle_sigterm(signum, frame):
     log_info("[Main] 🛑 SIGTERM received. Shutting down Ziggy gracefully.")
@@ -59,7 +65,6 @@ def main():
             daemon=True
         ))
 
-    # ✅ Force Telegram to always start
     threads.append(threading.Thread(
         target=thread_wrapper("Telegram", start_telegram_bot),
         name="Telegram",
@@ -80,7 +85,6 @@ def main():
             daemon=True
         ))
 
-    # ✅ Start reminder thread as a named thread
     threads.append(threading.Thread(
         target=thread_wrapper("Reminder", lambda: start_reminder_thread(send_reminder_message)),
         name="Reminder",
@@ -90,12 +94,11 @@ def main():
     for t in threads:
         t.start()
 
-    # Keep main thread alive until shutdown
     try:
         count = 0
         while not shutdown_event.is_set():
             count += 1
-            if count % 6 == 0:  # every 60 seconds
+            if count % 6 == 0:
                 active_names = [t.name for t in threading.enumerate()]
                 log_info(f"[Main] Ziggy still running. Active threads: {active_names}")
             time.sleep(10)

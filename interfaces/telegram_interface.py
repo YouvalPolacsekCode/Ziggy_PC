@@ -13,6 +13,7 @@ from core.logger_module import log_info, log_error
 from core.intent_parser import quick_parse
 from services.task_manager import start_reminder_thread
 from core.memory import append_chat, get_chat_history, load_long_term_memory
+from core.result_utils import render_result
 
 from ui.ziggy_buttons import (
     get_main_menu, get_task_menu, get_home_menu,
@@ -32,6 +33,7 @@ def is_verbose():
     return settings.get("debug", {}).get("verbose", False)
 
 def send_reminder_message(message: str):
+    """Used by the Reminder thread to push messages into Telegram."""
     global telegram_bot_instance, telegram_loop
     chat_id = settings["telegram"].get("default_chat_id") or 316341835
 
@@ -82,25 +84,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # === Handle multi-step commands ===
     if pending_action == "add_task":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "add_task", "params": {"task": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"✅ Task added: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode=None)
+        intent_data = {"intent": "add_task", "params": {"task": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
+        await update.message.reply_text(
+            f"✅ Task added: {user_text}\n\n{render_result(response)}",
+            reply_markup=get_task_menu(), parse_mode=None
+        )
         return
 
     if pending_action == "remove_task_select":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "remove_task", "params": {"task": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"🗑 Removed: {user_text}\n\n{response}", reply_markup=get_task_menu(), parse_mode=None)
+        intent_data = {"intent": "remove_task", "params": {"task": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
+        await update.message.reply_text(
+            f"🗑 Removed: {user_text}\n\n{render_result(response)}",
+            reply_markup=get_task_menu(), parse_mode=None
+        )
         return
 
     if pending_action == "set_ac_temperature":
         context.chat_data["pending_action"] = None
         try:
             temp = int(user_text)
-            intent_data = {"intent": "set_ac_temperature", "params": {"temperature": temp}}
-            response = await handle_intent(intent_data, source="telegram")
-            await update.message.reply_text(f"🌡️ {response}", reply_markup=get_main_menu(), parse_mode=None)
+            intent_data = {"intent": "set_ac_temperature", "params": {"temperature": temp}, "source": "telegram"}
+            response = await handle_intent(intent_data)
+            await update.message.reply_text(f"🌡️ {render_result(response)}", reply_markup=get_main_menu(), parse_mode=None)
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid temperature number.", reply_markup=get_main_menu(), parse_mode=None)
         return
@@ -109,50 +117,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["pending_action"] = None
         try:
             source = int(user_text)
-            intent_data = {"intent": "set_tv_source", "params": {"source": source}}
-            response = await handle_intent(intent_data, source="telegram")
-            await update.message.reply_text(f"📡 {response}", reply_markup=get_main_menu(), parse_mode=None)
+            intent_data = {"intent": "set_tv_source", "params": {"source": source}, "source": "telegram"}
+            response = await handle_intent(intent_data)
+            await update.message.reply_text(f"📡 {render_result(response)}", reply_markup=get_main_menu(), parse_mode=None)
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid source number.", reply_markup=get_main_menu(), parse_mode=None)
         return
 
     if pending_action == "ping_test":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "ping_test", "params": {"domain": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"📡 {response}", reply_markup=get_system_menu(), parse_mode=None)
+        intent_data = {"intent": "ping_test", "params": {"domain": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
+        await update.message.reply_text(f"📡 {render_result(response)}", reply_markup=get_system_menu(), parse_mode=None)
         return
 
     if pending_action == "remember_memory":
         context.chat_data["pending_action"] = None
         if "=" in user_text:
             key, value = map(str.strip, user_text.split("=", 1))
-            intent_data = {"intent": "remember_memory", "params": {"key": key, "value": value}}
-            response = await handle_intent(intent_data, source="telegram")
-            await update.message.reply_text(f"💾 {response}", reply_markup=get_memory_menu(), parse_mode=None)
+            intent_data = {"intent": "remember_memory", "params": {"key": key, "value": value}, "source": "telegram"}
+            response = await handle_intent(intent_data)
+            await update.message.reply_text(f"💾 {render_result(response)}", reply_markup=get_memory_menu(), parse_mode=None)
         else:
             await update.message.reply_text("❌ Please use format: key = value", reply_markup=get_memory_menu(), parse_mode=None)
         return
 
     if pending_action == "recall_memory":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "recall_memory", "params": {"key": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"📤 {response}", reply_markup=get_memory_menu(), parse_mode=None)
+        intent_data = {"intent": "recall_memory", "params": {"key": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
+        await update.message.reply_text(f"📤 {render_result(response)}", reply_markup=get_memory_menu(), parse_mode=None)
         return
 
     if pending_action == "delete_memory":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "delete_memory", "params": {"key": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"🗑️ {response}", reply_markup=get_memory_menu(), parse_mode=None)
+        intent_data = {"intent": "delete_memory", "params": {"key": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
+        await update.message.reply_text(f"🗑️ {render_result(response)}", reply_markup=get_memory_menu(), parse_mode=None)
         return
 
     if pending_action == "chat_with_gpt":
         context.chat_data["pending_action"] = None
-        intent_data = {"intent": "chat_with_gpt", "params": {"text": user_text}}
-        response = await handle_intent(intent_data, source="telegram")
-        await update.message.reply_text(f"💬 {response}", reply_markup=get_core_menu(), parse_mode=None)
+        intent_data = {"intent": "chat_with_gpt", "params": {"text": user_text}, "source": "telegram"}
+        response = await handle_intent(intent_data)
+        await update.message.reply_text(f"💬 {render_result(response)}", reply_markup=get_core_menu(), parse_mode=None)
         return
 
     # === Prevent repeated destructive commands ===
@@ -164,41 +172,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # === Try quick intent parse first ===
     try:
         intent_data = quick_parse(user_text)
-        if intent_data:
-            response = await handle_intent(intent_data, source="telegram")
-            append_chat("user", user_text)
-            append_chat("assistant", response if isinstance(response, str) else str(response))
+        intent_data["source"] = "telegram"  # ✅ ensure source is always set
 
-            if isinstance(response, list):
-                for chunk in response:
-                    await update.message.reply_text(chunk, parse_mode=None)
-            else:
-                await update.message.reply_text(response, parse_mode=None)
-            return
-
-        # === Fallback: GPT Conversation ===
-        memory = load_long_term_memory()
-        memory_facts = ", ".join(f"{k}: {v}" for k, v in memory.items())
-        chat_history = get_chat_history()[-10:] + [{"role": "user", "content": user_text}]
-
-        system_prompt = (
-            f"You are Ziggy, a smart home assistant.\n"
-            f"Known facts: {memory_facts}\n"
-            f"Reply clearly. Ask questions if unsure of the user's intent."
-        )
-
-        completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": system_prompt}] + chat_history,
-            temperature=0.6,
-            max_tokens=300
-        )
-
-        reply = completion.choices[0].message["content"].strip()
+        response = await handle_intent(intent_data)
         append_chat("user", user_text)
-        append_chat("assistant", reply)
-        await update.message.reply_text(reply, parse_mode=None)
+        append_chat("assistant", render_result(response))
 
+        await update.message.reply_text(render_result(response), parse_mode=None)
+        return
+
+    # === Fallback ===
     except Exception as e:
         log_error(f"[Telegram] Error: {e}")
         await update.message.reply_text("⚠️ Something went wrong.", parse_mode=None)
@@ -232,6 +215,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ Failed to process button.", reply_markup=get_main_menu(), parse_mode=None)
 
 def start_telegram_bot():
+    """Runs the Telegram bot in its own event loop/thread."""
     global telegram_bot_instance, telegram_loop
 
     if not TELEGRAM_TOKEN:
@@ -262,3 +246,16 @@ def start_telegram_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(run_bot())
+
+# ===== Public helper used by services.communication_manager.quick_message =====
+def send_direct_message(username_or_chat_id: str, text: str) -> None:
+    """
+    Direct send used by communication_manager.quick_message (Telegram channel).
+    Raises RuntimeError if bot isn't running.
+    """
+    global telegram_bot_instance, telegram_loop
+    if not telegram_bot_instance or not telegram_loop or not telegram_loop.is_running():
+        raise RuntimeError("Telegram bot not running")
+    async def send():
+        await telegram_bot_instance.send_message(chat_id=username_or_chat_id, text=text, parse_mode=None)
+    asyncio.run_coroutine_threadsafe(send(), telegram_loop)
