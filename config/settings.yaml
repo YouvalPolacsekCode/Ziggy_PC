@@ -1,16 +1,83 @@
-<<<<<<< ziggy_rouge
-# Ziggy Smart Home Assistant Configuration
-
 audio:
   ffplay_path: C:/ffmpeg/ffmpeg/bin/ffplay.exe
   input_device: null
   output_device: null
-
+calendar:
+  cast_today_to_device: false
+  default_device: null
+contacts:
+  maya:
+    email: maya@example.com
+    telegram: '@maya_handle'
+    whatsapp: '+15551234567'
+  youval:
+    email: youval@example.com
+    telegram: '@youval_handle'
+database:
+  name: ziggy_web
+  url: mongodb://localhost:27017
 debug:
   enable_dashboard: true
   verbose: false
   verbose_logging: true
-
+device_map:
+  bathroom:
+    light: light.bathroom_light
+  bedroom:
+    humidity: sensor.bedroom_humidity
+    illuminance: sensor.bedroom_motion_sensor_illuminance
+    light: light.bedroom_light
+    motion: binary_sensor.bedroom_motion_sensor_occupancy
+    plug_1: switch.bedroom_plug_1
+    plug_2: switch.bedroom_plug_2
+    plug_3: switch.bedroom_plug_3
+    temperature: sensor.bedroom_temperature
+    tv: media_player.lg_webos_tv_ur78006ll
+  corridor:
+    light: null
+  entry:
+    door: binary_sensor.front_door_sensor_opening
+  kitchen:
+    illuminance: sensor.kitchen_motion_sensor_illuminance
+    light: light.kitchen_light
+    motion: binary_sensor.kitchen_motion_sensor_occupancy
+  living_room:
+    ac: climate.living_room_ac
+    balcony_door: binary_sensor.balcony_door_sensor_opening
+    humidity: sensor.living_room_temp_humidity
+    illuminance: sensor.living_room_motion_sensor_illuminance
+    light: light.dining_room_light
+    motion: binary_sensor.living_room_motion_sensor_occupancy
+    plug_1: switch.living_room_plug_1
+    plug_2: switch.living_room_plug_2
+    plug_3: switch.living_room_plug_3
+    streamer: media_player.streamer
+    streamer_2: media_player.streamer_2
+    temperature: sensor.living_room_temp_temperature
+    tv: media_player.living_room_tv
+  master_bathroom:
+    light: light.master_bathroom_light
+  office:
+    humidity: sensor.office_humidity
+    illuminance: sensor.office_illuminance
+    light: light.tz3210_r5afgmkl_ts0505b_2
+    motion: binary_sensor.office_motion
+    plug_1: switch.office_plug_1
+    plug_2: switch.office_plug_2
+    plug_3: switch.office_plug_3
+    temperature: sensor.office_temperature
+  roni_room:
+    humidity: sensor.roni_s_room_temp_humidity
+    illuminance: sensor.roni_room_illuminance
+    light: light.roni_room_light
+    motion: binary_sensor.roni_room_motion
+    plug_1: switch.roni_room_plug_1
+    plug_2: switch.roni_room_plug_2
+    plug_3: switch.roni_room_plug_3
+    pressure: sensor.roni_s_room_temp_pressure
+    temperature: sensor.roni_s_room_temp_temperature
+  stairs:
+    light: null
 devices:
   bedroom_lamp:
     command_topic: homeassistant/light/bedroom_lamp/set
@@ -25,7 +92,6 @@ devices:
     command_topic: homeassistant/climate/thermostat/set
     component: climate
     object_id: thermostat
-
 features:
   buddy_mode: true
   file_management: true
@@ -36,246 +102,165 @@ features:
   telegram: true
   voice: true
   zigbee_support: true
-
 home_assistant:
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJiMzBjNzA4YjZlMjk0M2ZkOWQ0ZGNiZDA1YjgyY2ViOCIsImlhdCI6MTc1NzI3MDYzMCwiZXhwIjoyMDcyNjMwNjMwfQ.eySRw7a_ajlP3dKaCKXp3CCP0Vp6tUXPbcSXZ0SXFxg
   url: http://homeassistant.local:8123/
-  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI5YTc2MmY5MTVjN2E0ODdjYjJkNTNjNWEyOThjNTJhYSIsImlhdCI6MTc1MzU1ODQ5NiwiZXhwIjoyMDY4OTE4NDk2fQ.U_Bs7H3omzQQIgPpNwu0uPUPIltQzaEGI3OR5yk2hsU
-
 ifttt:
-  webhook_key: YOUR_IFTTT_WEBHOOK_KEY
   triggers:
-    - light_on
-    - light_off
-    - send_notification
+  - light_on
+  - light_off
+  - send_notification
+  webhook_key: YOUR_IFTTT_WEBHOOK_KEY
+global_sensors:
+  internet_download: sensor.sagemcom_f_st_5670_download_speed
+  internet_upload: sensor.sagemcom_f_st_5670_upload_speed
+  internet_ip: sensor.sagemcom_f_st_5670_external_ip
+  internet_status: binary_sensor.sagemcom_f_st_5670_wan_status
+  sun_rising: sensor.sun_next_rising
+  sun_setting: sensor.sun_next_setting
+  sun_dawn: sensor.sun_next_dawn
+  sun_dusk: sensor.sun_next_dusk
+  person_home: person.youvalpolacsek
+
+todo:
+  shopping_list: todo.shopping_list
+
+calendar:
+  birthdays: calendar.birthdays
+  holidays: calendar.holidays_in_israel
+  personal: calendar.youvalpolacsek_gmail_com
 
 language: en
-
+media:
+  camera_map:
+    entry: camera.entry
+    front door: camera.front_door
+  default_cast_device: media_player.living_room_tv
+  default_speaker: media_player.living_room_speaker
+  default_volume: 0.35
+  device_map:
+    bedroom tv: media_player.lg_webos_tv_ur78006ll
+    living room mibox: media_player.mibox4
+    living room mibox 2: media_player.mibox4_2
+    living room mibox 3: media_player.mibox4_3
+    living room speaker: media_player.living_room_speaker
+    living room streamer: media_player.streamer
+    living room streamer 2: media_player.streamer_2
+    living room tv: media_player.living_room_tv
 mqtt:
   base_topic: ziggy
-  host: localhost
-  port: 1883
-  username: your_mqtt_username
+  host: 10.100.102.21
   password: 6584ypSB!
-
+  port: 1883
+  username: ziggy
+news:
+  rss_sources:
+  - https://feeds.bbci.co.uk/news/rss.xml
+  - https://www.ynet.co.il/Integration/StoryRss1854.xml
 openai:
-
+  api_key: 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
 paths:
   file_store: files/
   logs: logs/
   memory_log: memory/memory_log.json
   task_log: memory/task_log.json
-
 roles:
-  superadmin:
-    - youval
   guests: []
+  superadmin:
+  - youval
   trusted_users: []
-
-telegram:
+room_aliases:
+  baby room: roni_room
+  bath room: bathroom
+  bathroom: bathroom
+  bedroom: bedroom
+  corridor: corridor
+  en suite: master_bathroom
+  ensuite: master_bathroom
+  entrance: entry
+  entry: entry
+  front door: entry
+  hall: corridor
+  hallway: corridor
+  honey's room: roni_room
+  honeys room: roni_room
+  kids room: roni_room
+  kitchen: kitchen
+  living room: living_room
+  livingroom: living_room
+  lounge: living_room
+  main bedroom: bedroom
+  main room: living_room
+  master bathroom: master_bathroom
+  master bedroom: bedroom
+  nursery: roni_room
+  office: office
+  our room: bedroom
+  parents bathroom: master_bathroom
+  restroom: bathroom
+  roni room: roni_room
+  roni's room: roni_room
+  salon: living_room
+  staircase: stairs
+  stairs: stairs
+  stairway: stairs
+  study: office
+  toilet: bathroom
+  wc: bathroom
+  work room: office
+sensor_alerts:
   enabled: true
-  token: 7805408143:AAHsLHS78_XOWyrRXl2MxMi0REGFrbagBxs
-  default_chat_id: 316341835
-  allowed_users:
-    - 316341835
+  poll_interval_s: 20
+  cooldown_minutes: 10
+  sensors:
+    - entity_id: binary_sensor.front_door_sensor_opening
+      label: Front door
+      trigger_state: "on"
+      message: "Front door opened"
+    - entity_id: binary_sensor.balcony_door_sensor_opening
+      label: Balcony door
+      trigger_state: "on"
+      message: "Balcony door opened"
+    - entity_id: binary_sensor.living_room_motion_sensor_occupancy
+      label: Living room
+      trigger_state: "on"
+      message: "Motion detected in the living room"
+    - entity_id: binary_sensor.bedroom_motion_sensor_occupancy
+      label: Bedroom
+      trigger_state: "on"
+      message: "Motion detected in the bedroom"
+    - entity_id: binary_sensor.kitchen_motion_sensor_occupancy
+      label: Kitchen
+      trigger_state: "on"
+      message: "Motion detected in the kitchen"
 
 serpapi:
   api_key: 67b5c8e58494d77454f5b5be6fd81bdf82c7ebe1de671f72a57ea1107613a19b
-
+system:
+  language: en
+  timezone: UTC
+telegram:
+  allowed_users:
+  - 316341835
+  default_chat_id: 316341835
+  enabled: true
+  token: 8763855823:AAF99ZcXGxbnbEPPmp69Iy-Gu-rgy4o8aO8
 voice:
-  tts_engine: gTTS
-  tts_language: en
-  wakeword_enabled: false
-  wakeword_model: hey_mycroft.onnx
+  active_timeout_s: 90
   enabled: true
   language: en
-  speed: 1.0
-
-wake_word:
-  enabled: true
   sensitivity: 0.5
-
-system:
-  timezone: "UTC"
-  language: "en"
-=======
-openai:
-  api_key: "your-openai-api-key-here"
-
-audio:
-  ffplay_path: "ffplay"
-
-voice:
-  wakeword_enabled: false
-
-telegram:
-  bot_token: "your-telegram-bot-token-here"
-  token: "your-telegram-bot-token-here"
-  chat_id: "your-telegram-chat-id-here"
-
-home_assistant:
-  url: "http://homeassistant.local:8123/"
-  token: "your-home-assistant-token-here"
-
-mqtt:
-  host: "localhost"
-  port: 1883
-  username: ""
-  password: ""
-
-features:
-  voice: false
-  zigbee_support: false
-  telegram: false
-
-debug:
-  enable_dashboard: true
-  verbose_logging: true
->>>>>>> main
-
-database:
-  url: "mongodb://localhost:27017"
-  name: "ziggy_web"
-
+  speed: 1.0
+  stt_language: auto
+  tts_engine: piper
+  tts_language: en
+  wakeword_cooldown_ms: 1200
+  wakeword_enabled: true
+  wakeword_engine: oww
+  wakeword_hits: 3
+  wakeword_model: hey_mycroft
+  wakeword_threshold: 0.65
 web_interface:
-<<<<<<< ziggy_rouge
-  backend_port: 8001       # backend/server.py
-  frontend_port: 3000      # React app
-
-room_aliases:
-  living room: living_room
-  livingroom: living_room
-  salon: living_room
-  main room: living_room
-
-  bedroom: bedroom
-  master bedroom: bedroom
-  main bedroom: bedroom
-
-  roni room: roni_room
-  roni's room: roni_room
-  baby room: roni_room
-  nursery: roni_room
-
-  kitchen: kitchen
-
-  bathroom: bathroom
-  bath room: bathroom
-  restroom: bathroom
-  wc: bathroom
-
-  stairs: stairs
-  stairway: stairs
-  staircase: stairs
-
-  office: office
-  work room: office
-  study: office
-
-  corridor: corridor
-  hallway: corridor
-  hall: corridor
-
-
-device_map:
-  bedroom:
-    temperature: null  # No dedicated temp sensor found
-    humidity: null     # No dedicated humidity sensor found
-    motion: binary_sensor.bedroom_motion_sensor_occupancy
-    illuminance: sensor.bedroom_motion_sensor_illuminance
-    light: light.bedroom_light
-
-  living_room:
-    temperature: sensor.living_room_temp_temperature
-    humidity: sensor.living_room_temp_humidity
-    motion: binary_sensor.living_room_motion_sensor_occupancy
-    illuminance: sensor.living_room_motion_sensor_illuminance
-    light: light.dining_room_light
-    balcony_door: binary_sensor.balcony_door_sensor_opening
-
-  bathroom:
-    temperature: null
-    humidity: null
-    motion: null
-    illuminance: null
-    light: null
-
-  kitchen:
-    temperature: null
-    humidity: null
-    motion: binary_sensor.kitchen_motion_sensor_occupancy
-    illuminance: sensor.kitchen_motion_sensor_illuminance
-    light: light.kitchen_light
-
-  office:
-    temperature: null
-    humidity: null
-    motion: null
-    illuminance: null
-    light: light.tz3210_r5afgmkl_ts0505b_2
-
-  roni_room:
-    temperature: sensor.roni_room_temp_temperature
-    humidity: sensor.roni_room_temp_humidity
-    motion: null  # No motion sensor found in entity list
-    illuminance: null
-    light: null
-
-  laundry:
-    motion: null
-    illuminance: null
-    light: null
-
-  storage:
-    motion: null
-    illuminance: null
-    light: null
-
-  stairs:
-    motion: null
-    illuminance: null
-    light: null
-
-  entry:
-    door: binary_sensor.front_door_sensor_opening
-
-media:
-  default_cast_device: "media_player.living_room_tv"
-  default_speaker: "media_player.living_room_speaker"
-  default_volume: 0.35
-  device_map:
-    living room tv: "media_player.living_room_tv"
-    living room speaker: "media_player.living_room_speaker"
-    living room mibox: "media_player.mibox4"
-    living room mibox 2: "media_player.mibox4_2"
-    living room mibox 3: "media_player.mibox4_3"
-    dining room light: "light.dining_room_light"
-    kitchen light: "light.kitchen_light"
-    bedroom light: "light.bedroom_light"
-    bedroom tv: "media_player.lg_webos_tv_ur78006ll"
-  camera_map:
-    entry: "camera.entry"
-    front door: "camera.front_door"
-  # app_map: { netflix: "com.netflix.ninja", prime: "com.amazon.avod.thirdpartyclient" }
-
-news:
-  rss_sources:
-    - "https://feeds.bbci.co.uk/news/rss.xml"
-    - "https://www.ynet.co.il/Integration/StoryRss1854.xml"
-
-calendar:
-  cast_today_to_device: false
-  default_device: null
-
-contacts:
-  # This mirrors config/contacts.yaml for convenience if your loader merges it
-  maya:
-    email: "maya@example.com"
-    telegram: "@maya_handle"
-    whatsapp: "+15551234567"
-  youval:
-    email: "youval@example.com"
-    telegram: "@youval_handle"
-=======
+  enabled: true
   backend_port: 8001
   frontend_port: 3000
->>>>>>> main

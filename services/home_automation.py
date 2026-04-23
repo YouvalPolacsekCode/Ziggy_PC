@@ -319,7 +319,71 @@ def get_sensor_state(room: str, sensor_type: str) -> Dict[str, Any]:
 
 
 def get_binary_sensor_state(room: str, device_type: str) -> Dict[str, Any]:
-    """
-    Alias for get_sensor_state for binary sensors. Returns a standard result dict.
-    """
+    """Alias for get_sensor_state for binary sensors."""
     return get_sensor_state(room, device_type)
+
+
+# -----------------------------------------------------------------------------
+# Global sensor helpers (internet, sun, person, etc.)
+# -----------------------------------------------------------------------------
+
+_global_sensors: Dict[str, str] = settings.get("global_sensors", {})
+
+
+def get_global_sensor(key: str) -> Dict[str, Any]:
+    """
+    Fetch a global (non-room) sensor by its settings key.
+    Keys live under global_sensors in settings.yaml.
+    """
+    entity_id = _global_sensors.get(key)
+    if not entity_id:
+        return {"ok": False, "message": f"No entity configured for global sensor '{key}'.", "data": {}}
+    result = get_state(entity_id)
+    if not result.get("ok"):
+        return result
+    state_val = result["data"].get("state", "unknown")
+    attrs = result["data"].get("attributes", {})
+    unit = attrs.get("unit_of_measurement", "")
+    return {"ok": True, "message": f"{state_val} {unit}".strip(), "data": {"entity_id": entity_id, "state": state_val, "unit": unit, "attributes": attrs}}
+
+
+# -----------------------------------------------------------------------------
+# HA Todo / Shopping list helpers
+# -----------------------------------------------------------------------------
+
+_todo_cfg: Dict[str, str] = settings.get("todo", {})
+
+
+def add_todo_item(item: str, list_key: str = "shopping_list") -> Dict[str, Any]:
+    entity_id = _todo_cfg.get(list_key)
+    if not entity_id:
+        return {"ok": False, "message": f"No todo list configured for '{list_key}'.", "data": {}}
+    result = call_service("todo", "add_item", {"entity_id": entity_id, "item": item})
+    if result.get("ok"):
+        return {"ok": True, "message": f"Added '{item}' to the shopping list.", "data": {}}
+    return result
+
+
+def get_todo_items(list_key: str = "shopping_list") -> Dict[str, Any]:
+    """Fetch items from an HA todo list."""
+    entity_id = _todo_cfg.get(list_key)
+    if not entity_id:
+        return {"ok": False, "message": f"No todo list configured for '{list_key}'.", "data": {}}
+    endpoint = _ha_endpoint(f"/api/states/{entity_id}")
+    try:
+        resp = requests.get(endpoint, headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        if resp.status_code != 200:
+            return {"ok": False, "message": f"Couldn't fetch shopping list ({resp.status_code}).", "data": {}}
+        js = resp.json()
+        count = js.get("state", "0")
+        attrs = js.get("attributes", {})
+        items = attrs.get("items") or []
+        if items:
+            names = [i.get("summary", str(i)) for i in items if isinstance(i, dict)]
+            msg = "Shopping list: " + ", ".join(names) if names else f"Shopping list has {count} items."
+        else:
+            msg = f"The shopping list has {count} item(s). Open Home Assistant to see the full list."
+        return {"ok": True, "message": msg, "data": {"items": items, "count": count}}
+    except Exception as e:
+        log_error(f"[HA] Exception in get_todo_items: {e}")
+        return {"ok": False, "message": "Couldn't fetch the shopping list.", "data": {"details": str(e)}}

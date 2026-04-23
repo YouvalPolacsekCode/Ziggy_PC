@@ -1,11 +1,9 @@
-import openai
-import os
+from integrations.openai_client import get_client
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def gpt_reply(prompt, model="gpt-3.5-turbo"):
+def gpt_reply(prompt: str, model: str = "gpt-4o-mini") -> str:
     try:
-        response = openai.ChatCompletion.create(
+        response = get_client().chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}]
         )
