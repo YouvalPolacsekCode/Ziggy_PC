@@ -31,6 +31,7 @@ export async function postIntent(text, source = 'web') {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, source }),
   })
+  if (!res.ok) throw new Error(`${res.status}`)
   return res.json()
 }
 
@@ -40,5 +41,6 @@ export async function patchVoiceSettings(patch) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   })
+  if (!res.ok) throw new Error(`${res.status}`)
   return res.json()
 }
