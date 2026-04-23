@@ -4,8 +4,6 @@ from telegram.ext import (
     ContextTypes, filters
 )
 import asyncio
-import openai
-import inspect
 
 from core.settings_loader import settings, save_settings
 from core.action_parser import handle_intent
@@ -24,7 +22,6 @@ from ui.ziggy_buttons import (
 from routers.telegram_action_router import handle_telegram_button
 
 TELEGRAM_TOKEN = settings["telegram"]["token"]
-openai.api_key = settings["openai"]["api_key"]
 
 telegram_bot_instance = None
 telegram_loop = None

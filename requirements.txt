@@ -1,11 +1,11 @@
 # Core AI + Speech
-openai
+openai>=1.0.0
 faster-whisper
 SpeechRecognition
 pyaudio
 langdetect
 gTTS
-playsound
+playsound==1.2.2
 pvporcupine 
 sounddevice
 onnxruntime
@@ -52,6 +52,10 @@ numpy
 #web-app
 flask
 flask-cors
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart>=0.0.6
+websockets>=11.0
 
 feedparser>=6.0.11
 recipe-scrapers>=14.55.0

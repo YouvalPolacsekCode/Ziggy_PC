@@ -1,18 +1,28 @@
+from __future__ import annotations
+
+import json
+import re
+
+from dateparser.search import search_dates
+
+from core.logger_module import log_info, log_error
+from core.memory import remember, recall, list_memory, delete_memory, append_chat, get_chat_history
+from core.settings_loader import settings
+from core.task_file import load_task_json
+from integrations.openai_client import get_client
 from services.home_automation import (
     toggle_light,
     set_light_color,
     set_light_brightness,
     get_sensor_state,
     set_ac_temperature,
-    set_tv_source
+    resolve_entity,
+    get_global_sensor,
+    add_todo_item,
+    get_todo_items,
 )
-from core.settings_loader import settings
 from services.media_manager import set_tv_power, set_tv_source
 from services import media_manager, web_manager, communication_manager, visual_manager, reference_manager
-from dateparser import parse as parse_date
-from dateparser.search import search_dates
-from services.task_manager import add_task, list_tasks, remove_task, mark_done
-from services.file_manager import create_note, read_notes
 from services.system_tools import (
     get_time,
     get_date,
@@ -24,17 +34,35 @@ from services.system_tools import (
     get_disk_usage,
     get_wifi_status,
     get_network_adapters,
-    ping_test
+    ping_test,
 )
-from core.logger_module import log_info, log_error
-from core.memory import remember, recall, list_memory, delete_memory, append_chat, get_chat_history
-from core.task_file import load_task_json
-import asyncio
-import json
-import openai
-import re
+from services.task_manager import add_task, list_tasks, remove_task, mark_done
+from services.file_manager import save_file, read_file, list_files, create_note, read_notes
 
-chat_history = []  # in-memory history for now
+# ---------------------------------------------------------------------------
+# Result helpers — module-level so they are not re-created on each call
+# ---------------------------------------------------------------------------
+
+def _ok(message: str, data: dict | None = None) -> dict:
+    return {"ok": True, "message": message, "data": data or {}}
+
+
+def _err(message: str, details: str | None = None, data: dict | None = None) -> dict:
+    out = {"ok": False, "message": message, "data": data or {}}
+    if details:
+        out["data"]["details"] = details
+    return out
+
+
+def _wrap(res) -> dict:
+    if isinstance(res, dict):
+        return res
+    return _ok(str(res))
+
+
+# ---------------------------------------------------------------------------
+# TV source normalisation
+# ---------------------------------------------------------------------------
 
 TV_APP_MAP = {
     "netflix": "Netflix", "netfilx": "Netflix",
@@ -49,15 +77,6 @@ TV_APP_MAP = {
     "youtube tv": "YouTube TV",
 }
 
-def _looks_webby(q: str) -> bool:
-    ql = (q or "").strip().lower()
-    if not ql:
-        return False
-    return (
-        ql.endswith("?")
-        or re.search(r"\b(who|what|when|where|which|whom|whose|how)\b", ql)
-        or re.search(r"\b(current|latest|today|now)\b", ql)
-    )
 
 def _normalize_tv_source(val: object) -> str:
     s = str(val or "").strip().lower()
@@ -70,6 +89,13 @@ def _normalize_tv_source(val: object) -> str:
         return f"HDMI {int(s)}"
     return " ".join(part.capitalize() for part in s.split())
 
+
+
+
+# ---------------------------------------------------------------------------
+# Room normalisation
+# ---------------------------------------------------------------------------
+
 def normalize_room(params: dict) -> str:
     room = params.get("room") or params.get("area") or params.get("location")
     if not room:
@@ -77,23 +103,12 @@ def normalize_room(params: dict) -> str:
         return "unknown"
     return room.replace(" ", "_").lower()
 
-async def handle_intent(intent_result, **kwargs):
-    # ---- local helpers for uniform results ----
-    def _ok(message: str, data: dict | None = None) -> dict:
-        return {"ok": True, "message": message, "data": data or {}}
 
-    def _err(message: str, details: str | None = None, data: dict | None = None) -> dict:
-        out = {"ok": False, "message": message, "data": data or {}}
-        if details:
-            out["data"]["details"] = details
-        return out
+# ---------------------------------------------------------------------------
+# Main intent dispatcher
+# ---------------------------------------------------------------------------
 
-    def _wrap(res) -> dict:
-        # Normalize any plain string result to an OK dict
-        if isinstance(res, dict):
-            return res
-        return _ok(str(res))
-
+async def handle_intent(intent_result: dict, **kwargs) -> dict:
     intent = intent_result.get("intent")
     params = intent_result.get("params", {})
     source = kwargs.get("source", "unknown")
@@ -106,50 +121,49 @@ async def handle_intent(intent_result, **kwargs):
             room = normalize_room(params)
             if room == "unknown":
                 return _err("Missing room name.")
-            entity_id = f"light.{room}_light"
+            entity_id = resolve_entity(room, "light")
+            if not entity_id:
+                return _err(f"No light configured for {room.replace('_', ' ')}.")
 
             if "turn_on" not in params:
-                status = params.get("status", "").lower()
-                if status == "on":
-                    params["turn_on"] = True
-                elif status == "off":
-                    params["turn_on"] = False
-                else:
-                    params["turn_on"] = True
+                status_str = (params.get("status") or "").lower()
+                params["turn_on"] = status_str != "off"
 
             toggle_light(entity_id, params["turn_on"])
-            return _ok(f"{'Turning on' if params['turn_on'] else 'Turning off'} {room.replace('_', ' ')} light")
+            action_word = "Turning on" if params["turn_on"] else "Turning off"
+            return _ok(f"{action_word} {room.replace('_', ' ')} light")
 
         if intent == "set_light_color":
             room = normalize_room(params)
-            color = params.get("color", "white").lower()
             if room == "unknown":
                 return _err("Missing room name.")
-            entity_id = f"light.{room}_light"
+            entity_id = resolve_entity(room, "light")
+            if not entity_id:
+                return _err(f"No light configured for {room.replace('_', ' ')}.")
+            color = (params.get("color") or "white").lower()
             color_map = {
                 "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
                 "yellow": (255, 223, 160), "white": (255, 255, 255),
                 "orange": (255, 165, 0), "purple": (128, 0, 128),
-                "pink": (255, 105, 180)
+                "pink": (255, 105, 180),
             }
             rgb = color_map.get(color, (255, 255, 255))
             toggle_light(entity_id, True)
             set_light_color(entity_id, rgb_color=rgb)
-            return _ok(f"{room.capitalize()} light color set to {color}.")
+            return _ok(f"{room.replace('_', ' ').title()} light color set to {color}.")
 
-        if intent == "set_light_brightness":
+        if intent in ("set_light_brightness", "adjust_light_brightness"):
             room = normalize_room(params)
+            entity_id = resolve_entity(room, "light")
+            if not entity_id:
+                return _err(f"No light configured for {room.replace('_', ' ')}.")
             try:
                 brightness = int(params.get("brightness", 100))
             except Exception:
                 return _err("Please provide a valid brightness number (0-100).")
-            entity_id = f"light.{room}_light"
             toggle_light(entity_id, True)
             set_light_brightness(entity_id, brightness)
-            return _ok(f"{room.capitalize()} light brightness set to {brightness}%.")
-
-        if intent == "adjust_light_brightness":
-            return _ok("Brightness adjustment is not yet implemented. Try 'set light brightness to 70' instead.")
+            return _ok(f"{room.replace('_', ' ').title()} light brightness set to {brightness}%.")
 
         # ---------- Sensors ----------
         if intent == "get_temperature":
@@ -162,23 +176,51 @@ async def handle_intent(intent_result, **kwargs):
 
         # ---------- AC ----------
         if intent == "control_ac":
-            toggle_light("switch.ac_main", params.get("turn_on", True))
-            return _ok(f"{'Turning on' if params.get('turn_on') else 'Turning off'} the AC.")
+            room = normalize_room(params)
+            action_text = (params.get("action") or "").lower()
+            # If it looks like a temperature query, route to sensor read
+            if any(k in action_text for k in ["get", "status", "query", "temperature"]):
+                return _wrap(get_sensor_state(room, "temperature"))
+            entity_id = resolve_entity(room, "ac") if room != "unknown" else None
+            if not entity_id:
+                return _err(
+                    f"No AC configured for {room.replace('_', ' ')}. "
+                    "Add an 'ac' entity under device_map in settings.yaml, or say 'set temperature to 24'."
+                )
+            turn_on = params.get("turn_on")
+            if turn_on is None:
+                if "off" in action_text:
+                    turn_on = False
+                elif "on" in action_text:
+                    turn_on = True
+                else:
+                    return _err("Say 'turn on' or 'turn off' the AC, or 'set AC to 24 degrees'.")
+            from services.home_automation import call_service
+            service = "turn_on" if turn_on else "turn_off"
+            result = call_service("climate", service, {"entity_id": entity_id})
+            if result.get("ok"):
+                return _ok(f"{'Turning on' if turn_on else 'Turning off'} {room.replace('_', ' ')} AC.")
+            return _err("Couldn't control the AC.", details=result.get("message"))
 
         if intent == "set_ac_temperature":
+            room = normalize_room(params)
+            entity_id = resolve_entity(room, "ac") if room != "unknown" else None
+            if not entity_id:
+                return _err(f"No AC configured for {room.replace('_', ' ')}. Add an 'ac' entity under device_map.{room} in settings.yaml.")
             try:
                 temp = int(params.get("temperature", 24))
             except Exception:
                 return _err("Please provide a valid temperature number.")
             try:
-                set_ac_temperature("climate.ac_main", temp)
-                return _ok(f"Setting AC temperature to {temp}°C.")
+                set_ac_temperature(entity_id, temp)
+                return _ok(f"Setting {room.replace('_', ' ')} AC to {temp}°C.")
             except Exception as e:
                 log_error(f"[set_ac_temperature] Exception: {e}")
                 return _err("Couldn't set the AC right now. Check Home Assistant connection.", details=str(e))
 
         # ---------- TV ----------
         if intent == "control_tv":
+            alias = params.get("device")
             action = params.get("turn_on")
             if action is None:
                 action_text = (params.get("action") or "").lower()
@@ -189,46 +231,36 @@ async def handle_intent(intent_result, **kwargs):
                 else:
                     return _err("Please specify whether to turn the TV on or off.")
 
-            status, text = set_tv_power(turn_on=action, alias=params.get("device"))  # <-- no settings here
-            return _ok("Turning {} the TV.".format("on" if action else "off")) if status == 200 else _err(text)
-
-            # Use alias from voice command if available, or fall back to settings.media.default_cast_device
-            alias = params.get("device")  # e.g., "living room tv"
-            status, text = set_tv_power(settings, turn_on=action, alias=alias)
-
-            if status == 200:
+            status_code, text = set_tv_power(turn_on=action, alias=alias)
+            if status_code == 200:
                 return _ok(f"{'Turning on' if action else 'Turning off'} the TV.")
-            else:
-                return _err("Couldn't control the TV.", details=text)
-            
+            return _err("Couldn't control the TV.", details=text)
+
         if intent == "set_tv_source":
             raw = params.get("source") or ""
             if not raw.strip():
                 return _err("Please specify a TV source (e.g., HDMI 2 or Netflix).")
-
             normalized = _normalize_tv_source(raw)
-            alias = params.get("device")  # e.g., "living room tv"
-            status, text = set_tv_source(settings, source=normalized, alias=alias)
-
-            if status == 200:
+            alias = params.get("device")
+            status_code, text = set_tv_source(source=normalized, alias=alias)
+            if status_code == 200:
                 return _ok(f"Switching TV to {normalized}.")
-            else:
-                return _err(f"Couldn't switch TV to {normalized}. Check Home Assistant connection.", details=text)
-       
+            return _err(f"Couldn't switch TV to {normalized}. Check Home Assistant connection.", details=text)
+
         # ---------- Time/Date ----------
         if intent == "get_time":
             return _wrap(get_time())
 
         if intent == "get_date":
             return _wrap(get_date())
-        
+
         if intent == "get_day_of_week":
             return _wrap(get_day_of_week())
 
         # ---------- Ziggy lifecycle ----------
         if intent == "shutdown_ziggy":
             return _wrap(shutdown_ziggy())
-        
+
         if intent == "restart_ziggy":
             return _wrap(restart_ziggy())
 
@@ -252,6 +284,60 @@ async def handle_intent(intent_result, **kwargs):
             domain = params.get("domain", "google.com")
             return _wrap(ping_test(domain))
 
+        # ---------- Files & Notes ----------
+        if intent == "save_note":
+            content = (params.get("content") or params.get("text") or "").strip()
+            if not content:
+                return _err("What should I save in the note?")
+            result = create_note(content)
+            return _ok(f"Note saved. ({result})")
+
+        if intent == "read_notes":
+            limit = int(params.get("limit", 3))
+            return _ok(read_notes(limit))
+
+        if intent == "save_file":
+            filename = (params.get("filename") or "").strip()
+            content = (params.get("content") or "").strip()
+            if not filename:
+                return _err("Please specify a filename.")
+            if not content:
+                return _err("Please specify the file content.")
+            return _ok(save_file(filename, content))
+
+        if intent == "read_file":
+            filename = (params.get("filename") or "").strip()
+            if not filename:
+                return _err("Please specify a filename.")
+            return _ok(read_file(filename))
+
+        if intent == "list_files":
+            files = list_files()
+            if not files:
+                return _ok("No files saved yet.")
+            return _ok("Saved files: " + ", ".join(sorted(files)))
+
+        # ---------- Countdown ----------
+        if intent == "countdown":
+            import dateparser
+            from datetime import datetime as dt
+            target = (params.get("date") or params.get("event") or "").strip()
+            if not target:
+                return _err("Please specify a date or event to count down to.")
+            parsed = dateparser.parse(target, settings={"PREFER_DATES_FROM": "future"})
+            if not parsed:
+                return _err(f"I couldn't understand the date: '{target}'.")
+            today = dt.now().date()
+            delta = (parsed.date() - today).days
+            if delta < 0:
+                return _ok(f"That was {abs(delta)} day(s) ago ({parsed.strftime('%B %d, %Y')}).")
+            elif delta == 0:
+                return _ok(f"That's today! ({parsed.strftime('%B %d, %Y')})")
+            elif delta == 1:
+                return _ok(f"Tomorrow! ({parsed.strftime('%B %d, %Y')})")
+            else:
+                return _ok(f"{delta} days until {parsed.strftime('%B %d, %Y')}.")
+
         # ---------- Tasks ----------
         if intent == "add_task":
             task_text = params.get("task", "Unnamed task")
@@ -261,9 +347,8 @@ async def handle_intent(intent_result, **kwargs):
             notes = params.get("notes")
             repeat = params.get("repeat")
             time_str = params.get("time")
-            source = kwargs.get("source", "unknown")
+            task_source = kwargs.get("source", "unknown")
 
-            # Extract priority from text if not explicitly provided
             if not priority:
                 if "high priority" in task_text.lower():
                     priority = "high"
@@ -272,7 +357,6 @@ async def handle_intent(intent_result, **kwargs):
                     priority = "low"
                     task_text = task_text.replace("low priority", "").strip()
 
-            # Extract date/time from task text if due/reminder/time missing
             if not due and not reminder and not time_str:
                 results = search_dates(task_text, settings={"PREFER_DATES_FROM": "future"})
                 if results:
@@ -287,8 +371,8 @@ async def handle_intent(intent_result, **kwargs):
                 reminder=reminder or due or time_str,
                 notes=notes,
                 repeat=repeat,
-                source=source,
-                time=time_str
+                source=task_source,
+                time=time_str,
             ))
 
         if intent == "list_tasks":
@@ -296,7 +380,7 @@ async def handle_intent(intent_result, **kwargs):
 
         if intent == "remove_task":
             return _wrap(remove_task(params.get("task", "")))
-        
+
         if intent == "remove_tasks":
             return _wrap(remove_task("all"))
 
@@ -311,8 +395,8 @@ async def handle_intent(intent_result, **kwargs):
 
         # ---------- Ziggy info ----------
         if intent == "ziggy_status":
-            status = get_system_status()
-            return _ok("I'm Ziggy, your home assistant. Feeling sharp and ready!\n\nHere's how I'm doing:\n" + str(status))
+            sys_status = get_system_status()
+            return _ok("I'm Ziggy, your home assistant. Feeling sharp and ready!\n\nHere's how I'm doing:\n" + str(sys_status))
 
         if intent == "ziggy_identity":
             return _ok("I'm Ziggy, built by Youval to make your home smarter and life easier.")
@@ -324,7 +408,7 @@ async def handle_intent(intent_result, **kwargs):
             )
 
         if intent == "ziggy_chat":
-            return _ok("Here’s something interesting: Did you know octopuses have three hearts?")
+            return _ok("Here's something interesting: Did you know octopuses have three hearts?")
 
         # ---------- Memory ----------
         if intent == "remember_memory":
@@ -349,21 +433,62 @@ async def handle_intent(intent_result, **kwargs):
                 return _ok(f"🗑️ Deleted memory for '{key}'.") if success else _ok(f"🤷 Nothing found for '{key}'.")
             return _err("Missing key.")
 
+        # ---------- Internet / Network ----------
+        if intent == "get_internet_speed":
+            dl = get_global_sensor("internet_download")
+            ul = get_global_sensor("internet_upload")
+            if dl.get("ok") and ul.get("ok"):
+                return _ok(f"Download: {dl['message']}, Upload: {ul['message']}")
+            return _err("Couldn't read internet speed from Home Assistant.")
+
+        if intent == "get_internet_status":
+            status = get_global_sensor("internet_status")
+            if status.get("ok"):
+                state = status["data"].get("state", "unknown")
+                msg = "Internet is connected." if state in ("on", "true", "connected") else "Internet appears to be down."
+                ip = get_global_sensor("internet_ip")
+                if ip.get("ok"):
+                    msg += f" External IP: {ip['message']}."
+                return _ok(msg)
+            return _err("Couldn't check internet status.")
+
+        # ---------- Sun / Daylight ----------
+        if intent == "get_sun_times":
+            rising = get_global_sensor("sun_rising")
+            setting = get_global_sensor("sun_setting")
+            parts = []
+            if rising.get("ok"):
+                parts.append(f"Sunrise: {rising['data'].get('state', '?')}")
+            if setting.get("ok"):
+                parts.append(f"Sunset: {setting['data'].get('state', '?')}")
+            if parts:
+                return _ok(", ".join(parts))
+            return _err("Couldn't get sun times.")
+
+        # ---------- Person / Presence ----------
+        if intent == "is_someone_home":
+            result = get_global_sensor("person_home")
+            if result.get("ok"):
+                state = result["data"].get("state", "unknown")
+                home = state.lower() == "home"
+                name = params.get("name", "You")
+                return _ok(f"{name} {'are' if home else 'are not'} home." if name == "You" else f"{name} is {'home' if home else 'away'}.")
+            return _err("Couldn't check presence.")
+
+        # ---------- Shopping list ----------
+        if intent == "add_shopping_list_item":
+            item = (params.get("item") or "").strip()
+            if not item:
+                return _err("Please specify what to add to the shopping list.")
+            return _wrap(add_todo_item(item))
+
+        if intent == "get_shopping_list":
+            return _wrap(get_todo_items())
+
         # ---------- Chat ----------
         if intent == "chat_with_gpt":
             log_info(f"[chat_with_gpt] Raw params: {params}")
             text = str(params.get("text") or params.get("message") or params or "").strip()
-
-            # Try web first for general knowledge/current-events questions
-            if _looks_webby(text):
-                try:
-                    web_result = web_manager.web_search_and_summary(query=text, device_hint=None)
-                    if isinstance(web_result, dict) and web_result.get("ok"):
-                        return web_result
-                    log_error(f"[chat_with_gpt -> web] Non-OK web_result: {web_result}")
-                except Exception as e:
-                    log_error(f"[chat_with_gpt -> web] Exception: {e}")
-                # fall through to GPT fallback
 
             memory_context = list_memory()
             task_context = load_task_json()
@@ -376,26 +501,21 @@ async def handle_intent(intent_result, **kwargs):
                 f"Task list:\n{json.dumps(task_context)}"
             )
 
-            messages = [
-                {"role": "system", "content": system_prompt},
-                *chat_history
-            ]
-
             try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=messages,
+                response = get_client().chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "system", "content": system_prompt}, *chat_history],
                     temperature=0.6,
-                    max_tokens=250
+                    max_tokens=250,
                 )
-                reply = response.choices[0].message["content"].strip()
+                reply = response.choices[0].message.content.strip()
                 append_chat("assistant", reply)
                 return _ok(reply)
             except Exception as e:
                 log_error(f"[chat_with_gpt] GPT error: {e}")
                 return _err("GPT error while chatting.", details=str(e))
 
-        # ---------- New Media ----------
+        # ---------- Media ----------
         if intent == "media_stream_youtube":
             return media_manager.stream_youtube_to_chromecast_hd(
                 input_text=params.get("input_text", ""),
@@ -424,7 +544,7 @@ async def handle_intent(intent_result, **kwargs):
                 device_hint=params.get("device_hint"),
             )
 
-        # ---------- New Web ----------
+        # ---------- Web ----------
         if intent == "web_recipe_read":
             return web_manager.read_recipe_from_url(
                 input_text=params.get("input_text", ""),
@@ -436,9 +556,7 @@ async def handle_intent(intent_result, **kwargs):
                 voice=bool(params.get("voice", True)),
             )
         if intent == "web_trip_updates":
-            return web_manager.trip_updates(
-                city_or_route=params.get("city_or_route", ""),
-            )
+            return web_manager.trip_updates(city_or_route=params.get("city_or_route", ""))
         if intent == "web_stocks_update":
             return web_manager.stocks_update(
                 tickers=params.get("tickers", ""),
@@ -450,11 +568,9 @@ async def handle_intent(intent_result, **kwargs):
                 device_hint=params.get("device_hint"),
             )
 
-        # ---------- New Communication ----------
+        # ---------- Communication ----------
         if intent == "comm_read_emails":
-            return communication_manager.read_latest_emails(
-                limit=int(params.get("limit", 5)),
-            )
+            return communication_manager.read_latest_emails(limit=int(params.get("limit", 5)))
         if intent == "comm_send_email":
             return communication_manager.send_email_to_contact(
                 name=params.get("name", ""),
@@ -473,11 +589,9 @@ async def handle_intent(intent_result, **kwargs):
                 rooms_or_all=params.get("rooms_or_all", "all"),
             )
         if intent == "comm_read_sms":
-            return communication_manager.read_latest_sms(
-                limit=int(params.get("limit", 5)),
-            )
+            return communication_manager.read_latest_sms(limit=int(params.get("limit", 5)))
 
-        # ---------- New Visual ----------
+        # ---------- Visual ----------
         if intent == "visual_cast_album":
             return visual_manager.cast_photo_album(
                 source=params.get("source", ""),
@@ -485,9 +599,7 @@ async def handle_intent(intent_result, **kwargs):
                 device_hint=params.get("device_hint", ""),
             )
         if intent == "visual_cast_calendar":
-            return visual_manager.cast_today_calendar(
-                device_hint=params.get("device_hint", ""),
-            )
+            return visual_manager.cast_today_calendar(device_hint=params.get("device_hint", ""))
         if intent == "visual_cast_camera":
             return visual_manager.cast_security_camera(
                 camera_name=params.get("camera_name", ""),
@@ -500,16 +612,14 @@ async def handle_intent(intent_result, **kwargs):
                 duration=params.get("duration"),
             )
 
-        # ---------- New Reference ----------
+        # ---------- Reference ----------
         if intent == "ref_read_note_or_file":
             return reference_manager.read_note_or_file(
                 query=params.get("query", ""),
                 device_hint=params.get("device_hint"),
             )
         if intent == "ref_show_grocery":
-            return reference_manager.show_grocery_list(
-                device_hint=params.get("device_hint"),
-            )
+            return reference_manager.show_grocery_list(device_hint=params.get("device_hint"))
         if intent == "ref_search_history_or_memory":
             return reference_manager.search_history_or_memory(
                 keyword=params.get("keyword", ""),

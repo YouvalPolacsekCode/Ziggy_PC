@@ -4,44 +4,33 @@ import sys
 import threading
 import time
 import signal
-from dotenv import load_dotenv
-import yaml
-import openai
-
-# Ensure current directory is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-# Load settings
-with open("config/settings.yaml", "r", encoding="utf-8") as f:
-    settings = yaml.safe_load(f)
-
-openai.api_key = settings["openai"]["api_key"]
-os.environ["FFPLAY_PATH"] = settings["audio"]["ffplay_path"]
-
-# Global shutdown event
+from core.settings_loader import settings
 from core.shared_flags import shutdown_event
-
-# Import Ziggy modules
+from core.logger_module import log_info
 from interfaces.voice_interface import start_voice_interface
 from interfaces.telegram_interface import start_telegram_bot, send_reminder_message
 from interfaces.dashboard import start_dashboard
 from services.mqtt_client import start_mqtt
 from services.task_manager import start_reminder_thread
-from core.logger_module import log_info
+from backend.server import start_api_server
 
-def render_result(res):
-    """Convert a Ziggy result (dict or other) into a displayable string."""
-    if isinstance(res, dict):
-        return res.get("message") or str(res.get("data") or res)
-    return str(res)
+os.environ["FFPLAY_PATH"] = settings.get("audio", {}).get("ffplay_path", "ffplay")
 
-# Handle SIGTERM (used in restart or external kill)
+
 def handle_sigterm(signum, frame):
     log_info("[Main] 🛑 SIGTERM received. Shutting down Ziggy gracefully.")
     shutdown_event.set()
 
+
 signal.signal(signal.SIGTERM, handle_sigterm)
+
 
 def main():
     log_info("🚀 Ziggy startup initiated...")
@@ -58,38 +47,53 @@ def main():
 
     threads = []
 
-    if settings["features"].get("voice", True):
+    if settings.get("features", {}).get("voice", True):
         threads.append(threading.Thread(
             target=thread_wrapper("Voice", start_voice_interface),
             name="Voice",
-            daemon=True
+            daemon=True,
         ))
 
     threads.append(threading.Thread(
         target=thread_wrapper("Telegram", start_telegram_bot),
         name="Telegram",
-        daemon=True
+        daemon=True,
     ))
 
-    if settings["debug"].get("enable_dashboard", False):
+    if settings.get("debug", {}).get("enable_dashboard", False):
         threads.append(threading.Thread(
             target=thread_wrapper("Dashboard", start_dashboard),
             name="Dashboard",
-            daemon=True
+            daemon=True,
         ))
 
-    if settings["features"].get("zigbee_support", False):
+    if settings.get("features", {}).get("zigbee_support", False):
         threads.append(threading.Thread(
             target=thread_wrapper("MQTT", start_mqtt),
             name="MQTT",
-            daemon=True
+            daemon=True,
         ))
 
     threads.append(threading.Thread(
         target=thread_wrapper("Reminder", lambda: start_reminder_thread(send_reminder_message)),
         name="Reminder",
-        daemon=True
+        daemon=True,
     ))
+
+    if settings.get("sensor_alerts", {}).get("enabled", True):
+        from services.sensor_alerts import start_sensor_alerts
+        threads.append(threading.Thread(
+            target=thread_wrapper("SensorAlerts", lambda: start_sensor_alerts(send_reminder_message)),
+            name="SensorAlerts",
+            daemon=True,
+        ))
+
+    if settings.get("web_interface", {}).get("enabled", True):
+        threads.append(threading.Thread(
+            target=thread_wrapper("API", start_api_server),
+            name="API",
+            daemon=True,
+        ))
 
     for t in threads:
         t.start()
@@ -106,6 +110,7 @@ def main():
         log_info("[Main] 🔌 KeyboardInterrupt received. Exiting Ziggy.")
 
     log_info("[Main] 📴 Ziggy has been shut down.")
+
 
 if __name__ == "__main__":
     print("💡 Ziggy launched via ziggy_main.py")

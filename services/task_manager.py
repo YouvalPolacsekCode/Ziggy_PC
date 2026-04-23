@@ -56,11 +56,7 @@ def add_task(task, due=None, priority=None, reminder=None, notes=None, repeat=No
     save_tasks(tasks)
     return f"Task added: {task} (due: {due_date}, priority: {task_data['priority']})"
 
-import inspect
-
 def list_tasks(formatted=False):
-    caller = inspect.stack()[1]
-    print(f"[DEBUG] list_tasks called with formatted={formatted} from {caller.function} in {caller.filename}:{caller.lineno}")
     tasks = load_tasks()
     if not tasks:
         return "📭 No tasks yet." if formatted else ["No tasks yet."]

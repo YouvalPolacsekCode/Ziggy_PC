@@ -1,303 +1,596 @@
 import re
-import openai
 import json
 from core.settings_loader import settings
-from core.memory import list_memory
-from core.task_file import load_task_json
+from integrations.openai_client import get_client
 
-openai.api_key = settings["openai"]["api_key"]
-
-def normalize_room(params: dict) -> dict:
-    if "location" in params and "room" not in params:
-        params["room"] = params.pop("location")
-    if "area" in params and "room" not in params:
-        params["room"] = params.pop("area")
-    return params
-
-TRIGGER_PHRASE = "ziggy do"
-
-# ---------- Safer Web Q&A routing guard (define ABOVE the patterns list) ----------
-_LOCAL_NEG = r"(light|lamp|bulb|ac|air ?con|climate|hvac|tv|television|source|hdmi|task|todo|reminder|note|memory|wifi|network|ip|disk|adapter|ziggy|camera|album|slideshow|calendar|ping)"
-
-INTENT_PATTERNS = [
-    # ---------------- Memory ----------------
-    (r"(remember|save|store|note|log|record|memorize|keep|retain|jot|take note|write down|stash|bookmark) (that )?.*", "remember_memory"),  # Remember memory entry
-    (r"(what did i say|what have i said|what did i tell you|what have i told you|do you remember|what do you remember|recall|retrieve|bring up|look up|remind me|show me what you remember) (about|regarding|concerning|on|for)? .*", "recall_memory"),  # Recall memory entry
-    (r"(delete|remove|clear|forget|discard|wipe|erase|purge|drop|clear out|trash) (memory|fact|note|info|entry|record|item)?(s)?( for| about)? .*", "delete_memory"),  # Delete memory entry
-
-    # ---------------- Tasks ----------------
-    (r"(add|set|schedule|insert|create|plan|log|record|track|make|start|open) (a )?(task|todo|to-?do|reminder|item)", "add_task"),  # Add task
-    (r"(remove|delete|cancel|discard|erase|clear|eliminate|forget|drop) (a )?(task|todo|to-?do|reminder|item)", "remove_task"),  # Remove task
-    (r"(delete|remove|clear|wipe|empty|purge) (all )?(tasks|todos|to-?dos|reminders|items)", "remove_tasks"),  # Remove all tasks
-    (r"(delete|remove|clear|wipe|drop) (the )?(last|previous|most recent) (task|todo|to-?do|reminder|item)", "remove_last_task"),  # Remove last task
-    (r"(list|show|display|view|see|get|check|read|review|what('?| )?s on) (my )?(tasks|todos|to-?dos|reminders|list)", "list_tasks"),  # List tasks
-    (r"(mark|complete|finish|check off|resolve|end|close|finalize|done|set as done) (task|todo|to-?do|reminder)", "mark_task_done"),  # Mark task done
-
-    # ---------------- Lights ----------------
-    (r"(turn|switch|activate|deactivate|power|toggle|start|stop|kill|enable|disable).* (light|lights|lamp|lamps|bulb|bulbs|lighting)", "toggle_light"),  # Toggle light
-    (r"(set|change|make|adjust|modify|tune|select|define|shift|switch).* (light|lights|lamp|lamps|bulb|bulbs|lighting).*(color|to|shade|hue|tone|style|look)", "set_light_color"),  # Set light color
-    (r"(dim|brighten|increase|decrease|raise|lower|adjust|tweak|modify|reduce|boost).* (light|lights|lamp|lamps|bulb|bulbs|lighting)", "adjust_light_brightness"),  # Adjust light brightness
-
-    # ---------------- AC / Climate ----------------
-    (r"(turn|switch|start|power|activate|enable|boot|launch|toggle).* (ac|a/c|air ?con(ditioner)?|climate|hvac|thermostat)", "control_ac"),  # Control AC
-    (r"(set|put|adjust|change|define|tune|program|configure).* (ac|a/c|air ?con(ditioner)?|climate|hvac|thermostat).*(?P<temperature>\d+)", "set_ac_temperature"),  # Set AC temperature
-    (r"\b(what('?| is)?|what's|tell me|show|get)\b.*\b(temp(erature)?|how (hot|cold))\b.*\b(in|at)\b.*", "get_temperature"),
-    (r"\b(what('?| is)?|what's|tell me|show|get)\b.*\b(humidity|how humid)\b.*\b(in|at)\b.*", "get_humidity"),
-
-    # ---------------- TV ----------------
-    (r"(turn|switch|start|stop|power|activate|enable|launch|toggle).* (tv|television|screen|display)", "control_tv"),  # Control TV
-    # 1) Generic “set tv source …” (we’ll extract the value with a helper)
-    (r"\b(set|change|adjust|switch|select|define|update|modify|put)\b.*\b(tv|television|screen|display)\b.*\b(source|input)\b", "set_tv_source"),
-    # 2) Common phrasing that already includes the value after "to"
-    (r"\b(set|change|adjust|switch|select|define|update|modify|put)\b.*\b(tv|television|screen|display)\b.*\b(source|input)\b\s*(to|=)?\s*(?P<tvsrc>(hdmi[\s\-]*\d+|\d+|netflix|netfilx|youtube|yt|prime(?: video)?|disney(?:\+| plus)?|apple tv|hbo|max|hulu|paramount\+?|peacock|youtube tv))\b", "set_tv_source"),
-
-    # ---------------- Ziggy System Control ----------------
-    (r"(restart|reboot|reload|reset|refresh|reinitialize|cycle|relaunch|kick|bounce).* (ziggy|assistant|service|app)", "restart_ziggy"),  # Restart Ziggy
-    (r"(shutdown|power down|turn off|kill|halt|deactivate|stop|exit|quit|close).* (ziggy|assistant|service|app)", "shutdown_ziggy"),  # Shutdown Ziggy
-
-    # ---------------- Date & Time ----------------
-    (r"(what day is it|tell me the day|which day is it|day of the week|what weekday is it|current day|today('?| )?s day|day today)", "get_day_of_week"),  # Get day of week
-    (r"(what(\\'?s| is|\\u2019s|s the| time is| does the clock say| tell me the time| current time| time now| clock time| give me the time| what time))", "get_time"),  # Get time
-    (r"(what(\\'?s| is|\\u2019s|s the| date is| calendar date| current date| what date| today('?| )?s date))", "get_date"),  # Get date
-
-    # ---------------- Ziggy Info ----------------
-    (r"(how are you|how do you feel|what’s up|how’s it going|status|are you ok|mood check|your mood|how are things|how do you feel today)", "ziggy_status"),  # Ziggy status/mood
-    (r"(who are you|what are you|identify yourself|your name|introduce yourself|what is ziggy|who is ziggy|tell me about yourself|what do i call you)", "ziggy_identity"),  # Ziggy identity
-    (r"(what can you do|what do you support|what are your abilities|your features|available commands|capabilities|help options|how can you help|what commands do you understand)", "ziggy_help"),  # Ziggy help/abilities
-    (r"(tell|say|show|share|give|suggest|read|speak|entertain me|fun fact|something fun|joke|random fact).* (fun|joke|fact)?", "ziggy_chat"),  # Fun/chat mode
-
-    # ---------------- System Info ----------------
-    (r"(what('|’)?s|show|status|how is|check|report).* (system|machine|host|server|computer|status|health|diagnostics?)", "get_system_status"),  # Get system status
-    (r"(ip address|what('|’)?s my ip|my network|my ip address|ip info|external ip|public ip|local ip)", "get_ip_address"),  # Get IP address
-    (r"(disk usage|space left|storage left|available disk|free disk|how much space|disk space|storage usage|drive space)", "get_disk_usage"),  # Get disk usage
-    (r"(wifi status|check wifi|is wifi up|wifi info|my wifi|internet status|network up|online status|connectivity)", "get_wifi_status"),  # Get Wi-Fi status
-    (r"(network adapters|list adapters|show interfaces|network interfaces|my adapters|ethernet info|nic list|interfaces list)", "get_network_adapters"),  # Get network adapters
-    #(r"(ping|check|test|lookup|probe|latency test) (?P<domain>\S+)", "ping_test"),  # Ping test
-
-    # ---------------- Media ----------------
-    (r"\b(stream|cast|play|send|put on|throw|beam|watch|open|start|resume)\b.*\b(youtube|yt|video|clip|link)\b", "media_stream_youtube"),  # Stream YouTube
-    (r"\b(play|start|put on|resume|queue|shuffle|mix)\b.*\b(spotify|playlist|album|artist|track|song|music)\b", "media_spotify_playlist"),  # Play Spotify
-    (r"\b(start|play|open|launch|watch|resume|continue)\b.*\b(movie|film|show|episode|series|season)\b.*\b(netflix|prime(?: video)?|disney(?:\+| plus)?|apple tv|hbo|max|hulu|paramount|peacock|youtube tv)\b", "media_start_movie_in_app"),  # Play movie/show in app
-    (r"\b(cast|show|display|play|stream|view|put|open)\b.*\b(camera|cam|doorbell|security|cctv|live|feed|stream)\b", "media_cast_camera_live"),  # Cast live camera
-    (r"\b(play|start|resume|continue|listen(?: to)?|queue|put on)\b.*\b(podcast|episode|show)\b", "media_play_podcast_episode"),  # Play podcast episode
-
-    # ---------------- Web & Online Content ----------------
-    (r"\b(read|show|open|display|summarize|speak|walk me through|tell me|go through|explain)\b.*\b(recipe|ingredients|cooking|instructions)\b", "web_recipe_read"),  # Read recipe
-    (r"\b(news|headlines|brief|update|summary|bulletin|what('?| )?s happening|top stories|latest|catch me up)\b", "web_news_brief"),  # News brief
-    (r"\b(trip|travel|route|flight|itinerary|traffic|commute|drive to|train|bus|travel update|road conditions|delays|weather)\b.*", "web_trip_updates"),  # Trip updates
-    (r"\b(stocks?|stock market|market|quote|price|ticker|portfolio|share price|equities|indices?)\b.*", "web_stocks_update"),  # Stocks update
-    (r"\b(search|google|lookup|find info|web|internet|look up|research|dig up|what does the web say)\b.*", "web_search_summary"),  # Web search
-
-    # 1) Question form (ends with ?) and not about local stuff
-    (rf"^(?!.*\b{_LOCAL_NEG}\b).*\?\s*$", "web_search_summary"),
-
-    # 2) Interrogatives at start, but not local
-    (rf"^(?!.*\b{_LOCAL_NEG}\b)\s*(who|what|when|where|which|whom|whose|how)\b.*", "web_search_summary"),
-
-    # 3) “Tell me about …” or “Explain …” / “What’s the story on …” (not local)
-    (rf"^(?!.*\b{_LOCAL_NEG}\b)\s*(tell me about|explain|give me info on|what'?s the story on)\b.*", "web_search_summary"),
-
-    # 4) News brief phrasing (explicit) — safer than “current/latest” alone
-    (r"^(top|latest|current)\s+(news|headlines|stories|updates?)\b.*", "web_news_brief"),
-    (r".*\b(news brief|news summary|catch me up)\b.*", "web_news_brief"),
-
-    # ---------------- Communication ----------------
-    (r"\b(read|check|show|get|list|fetch|what('?| )?s in|scan|summarize)\b.*\b(email|emails|inbox|mail|gmail|outlook|messages)\b", "comm_read_emails"),  # Read emails
-    (r"\b(send|email|mail|compose|draft|shoot|fire off)\b.*\b(email|message|mail)\b", "comm_send_email"),  # Send email
-    (r"\b(message|send|dm|text|ping|notify|im|shoot a message|drop a note)\b.*\b(telegram|whatsapp|tg|wa)\b", "comm_quick_message"),  # Send quick message
-    (r"\b(broadcast|announce|announcement|tts|say|speak|tell everyone|page|call out|make an announcement)\b.*", "comm_broadcast_announcement"),  # Broadcast announcement
-    (r"\b(read|check|show|get|list|fetch|pull)\b.*\b(sms|texts?|text messages|messages|phone messages)\b", "comm_read_sms"),  # Read SMS
-
-    # ---------------- Visual & Display ----------------
-    (r"\b(show|cast|display|put|project|throw up|bring up)\b.*\b(calendar|agenda|today('?| )?s schedule|events)\b", "visual_cast_calendar"),  # Cast calendar
-    (r"\b(show|cast|display|play|start|put on|open)\b.*\b(album|photos?|pictures?|gallery|slideshow|memories)\b", "visual_cast_album"),  # Cast album/photos
-    (r"\b(show|cast|display|stream|view|put|bring up)\b.*\b(camera|cam|doorbell|security|cctv|live|feed|stream)\b", "visual_cast_camera"),  # Cast camera
-    (r"\b(slideshow|start a slideshow|show|play)\b.*\b(images?|pictures?|photos?|folder|gallery|collection)\b", "visual_image_slideshow"),  # Show slideshow
-
-    # ---------------- Reference & Look-up ----------------
-    (r"\b(show|read|open|display|view|pull up|find|locate|bring up)\b.*\b(note|file|document|doc|txt|markdown|md|readme)\b", "ref_read_note_or_file"),  # Read note/file
-    (r"\b(show|read|open|display|get|list|what('?| )?s on|pull up)\b.*\b(grocery|shopping|pantry) list\b", "ref_show_grocery"),  # Show grocery list
-    (r"\b(search|find|look up|scan|query|grep|filter|look through)\b.*\b(history|memory|memories|log|logs|past commands?|command history)\b", "ref_search_history_or_memory"),  # Search history/memory
-    (r"\b(read|show|open|display|get|pull up)\b.*\b(saved recipe|recipe note|my recipe|stored recipe)\b", "ref_read_saved_recipe"),  # Read saved recipe
+# ---------------------------------------------------------------------------
+# Fast path — answered locally, no API call
+# ---------------------------------------------------------------------------
+_FAST_PATTERNS = [
+    (re.compile(r"\b(what time|what'?s the time|current time|time now|tell me the time)\b"), "get_time"),
+    (re.compile(r"\b(what'?s the date|today'?s date|current date|what date is it)\b"), "get_date"),
+    (re.compile(r"\b(what day|which day|day of the week|what weekday)\b"), "get_day_of_week"),
 ]
 
-INTENT_PARAM_FORMATS = {
-    # tasks
-    "add_task": {"task": "buy groceries", "priority": "high", "due": "2025-08-01 17:00", "reminder": "2025-08-01 16:00", "repeat": "daily"},
-    "remove_task": {"task": "buy groceries"},
-    "remove_tasks": {},
-    "remove_last_task": {},
-    "list_tasks": {},
-    "mark_task_done": {"task": "feed the cat"},
+_TRIGGER_PREFIX = "ziggy do"
 
-    # home automation
-    "toggle_light": {"room": "kitchen", "turn_on": True},
-    "set_light_color": {"room": "bedroom", "color": "blue"},
-    "adjust_light_brightness": {"room": "living room", "brightness": 70},
-    "control_ac": {"turn_on": True},
-    "set_ac_temperature": {"temperature": 22},
-    "control_tv": {"turn_on": False},
-    "set_tv_source": {"source": 2},
+# ---------------------------------------------------------------------------
+# Build the room list from settings so tool descriptions stay in sync
+# with whatever aliases are defined in settings.yaml.
+# ---------------------------------------------------------------------------
+_ROOMS = ", ".join(sorted(settings.get("room_aliases", {}).keys()))
 
-    #system commands
-    "get_time": {},
-    "get_date": {},
-    "get_day_of_week": {},
-    "restart_ziggy": {},
-    "shutdown_ziggy": {},
-    "get_system_status": {},
-    "get_ip_address": {},
-    "get_disk_usage": {},
-    "get_wifi_status": {},
-    "get_network_adapters": {},
-    "ping_test": {"domain": "google.com"},
+TOOLS = [
+    # ---- Lights ----
+    {"type": "function", "function": {
+        "name": "toggle_light",
+        "description": "Turn a light on or off in a room",
+        "parameters": {"type": "object", "properties": {
+            "room":    {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "turn_on": {"type": "boolean", "description": "true = on, false = off"},
+        }, "required": ["room", "turn_on"]},
+    }},
+    {"type": "function", "function": {
+        "name": "set_light_color",
+        "description": "Change the colour of a light in a room",
+        "parameters": {"type": "object", "properties": {
+            "room":  {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "color": {"type": "string", "description": "Colour name e.g. blue, red, warm white"},
+        }, "required": ["room", "color"]},
+    }},
+    {"type": "function", "function": {
+        "name": "adjust_light_brightness",
+        "description": "Set the brightness of a light (0–100%)",
+        "parameters": {"type": "object", "properties": {
+            "room":       {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "brightness": {"type": "integer", "description": "Percentage 0–100"},
+        }, "required": ["room", "brightness"]},
+    }},
 
-    #ziggy commands
-    "ziggy_status": {},
-    "ziggy_identity": {},
-    "ziggy_help": {},
-    "ziggy_chat": {},
-    "chat_with_gpt": {"text": "What's the weather like on Mars?"},
+    # ---- AC / Climate ----
+    {"type": "function", "function": {
+        "name": "control_ac",
+        "description": "Turn air conditioning on or off",
+        "parameters": {"type": "object", "properties": {
+            "room":    {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "turn_on": {"type": "boolean"},
+        }, "required": ["room", "turn_on"]},
+    }},
+    {"type": "function", "function": {
+        "name": "set_ac_temperature",
+        "description": "Set the AC thermostat to a target temperature",
+        "parameters": {"type": "object", "properties": {
+            "room":        {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "temperature": {"type": "integer", "description": "Target temperature in °C"},
+        }, "required": ["room", "temperature"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_temperature",
+        "description": "Get the current temperature reading from a room sensor",
+        "parameters": {"type": "object", "properties": {
+            "room": {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+        }, "required": ["room"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_humidity",
+        "description": "Get the current humidity reading from a room sensor",
+        "parameters": {"type": "object", "properties": {
+            "room": {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+        }, "required": ["room"]},
+    }},
 
-    # memory management
-    "remember_memory": {"key": "favorite_drink", "value": "whiskey"},
-    "recall_memory": {"key": "favorite_drink"},
-    "delete_memory": {"key": "favorite_drink"},
+    # ---- TV ----
+    {"type": "function", "function": {
+        "name": "control_tv",
+        "description": "Turn a TV on or off",
+        "parameters": {"type": "object", "properties": {
+            "turn_on": {"type": "boolean"},
+            "device":  {"type": "string", "description": "TV alias e.g. living room tv, bedroom tv (optional)"},
+        }, "required": ["turn_on"]},
+    }},
+    {"type": "function", "function": {
+        "name": "set_tv_source",
+        "description": "Switch the TV input or launch a streaming app",
+        "parameters": {"type": "object", "properties": {
+            "source": {"type": "string", "description": "Input or app: HDMI 1, HDMI 2, Netflix, YouTube, Prime Video, Disney+, etc."},
+            "device": {"type": "string", "description": "TV alias (optional)"},
+        }, "required": ["source"]},
+    }},
 
-    # Media
-    "media_stream_youtube": {"input_text": "https://youtu.be/dQw4w9WgXcQ", "device_hint": "living room tv"},
-    "media_spotify_playlist": {"target": "Deep Focus", "device_hint": "living room speaker"},
-    "media_start_movie_in_app": {"title": "Inception", "app": "Netflix", "device_hint": "living room tv"},
-    "media_cast_camera_live": {"camera_name": "Entry", "device_hint": "living room tv"},
-    "media_play_podcast_episode": {"podcast_name": "Lex Fridman", "episode_hint": "Elon", "device_hint": "speaker"},
+    # ---- Files & Notes ----
+    {"type": "function", "function": {
+        "name": "save_note",
+        "description": "Save a quick note or memo",
+        "parameters": {"type": "object", "properties": {
+            "content": {"type": "string", "description": "The note content to save"},
+        }, "required": ["content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "read_notes",
+        "description": "Read recent saved notes",
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer", "description": "How many notes to show (default 3)"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "save_file",
+        "description": "Save content to a named file",
+        "parameters": {"type": "object", "properties": {
+            "filename": {"type": "string", "description": "Filename including extension e.g. shopping.txt"},
+            "content":  {"type": "string", "description": "File content"},
+        }, "required": ["filename", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "read_file",
+        "description": "Read the contents of a saved file by name",
+        "parameters": {"type": "object", "properties": {
+            "filename": {"type": "string"},
+        }, "required": ["filename"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_files",
+        "description": "List all saved files",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
-    # Web
-    "web_recipe_read": {"input_text": "https://example.com/best-shakshuka", "device_hint": "kitchen display"},
-    "web_news_brief": {"device_hint": "speaker", "voice": True},
-    "web_trip_updates": {"city_or_route": "Tel Aviv"},
-    "web_stocks_update": {"tickers": "AAPL, MSFT", "device_hint": "dashboard"},
-    "web_search_summary": {"query": "how to prune olive trees", "device_hint": "tv"},
+    # ---- Countdown ----
+    {"type": "function", "function": {
+        "name": "countdown",
+        "description": "Count how many days until (or since) a date or event",
+        "parameters": {"type": "object", "properties": {
+            "date":  {"type": "string", "description": "Date or event name e.g. 'Christmas', 'March 15', '2025-06-01'"},
+            "event": {"type": "string", "description": "Event description (alternative to date)"},
+        }},
+    }},
 
-    # Communication
-    "comm_read_emails": {"limit": 5},
-    "comm_send_email": {"name": "maya", "subject": "Dinner plans", "body": "Shall we meet at 7?"},
-    "comm_quick_message": {"contact_name": "maya", "text": "On my way", "channel": "telegram"},
-    "comm_broadcast_announcement": {"text": "Dinner is ready", "rooms_or_all": "all"},
-    "comm_read_sms": {"limit": 5},
+    # ---- Tasks ----
+    {"type": "function", "function": {
+        "name": "add_task",
+        "description": "Create a new task, to-do item, or reminder",
+        "parameters": {"type": "object", "properties": {
+            "task":     {"type": "string"},
+            "due":      {"type": "string", "description": "Due date/time in natural language or ISO format"},
+            "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+            "reminder": {"type": "string", "description": "When to send a reminder"},
+            "repeat":   {"type": "string", "description": "Repeat frequency e.g. daily, weekly"},
+        }, "required": ["task"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_tasks",
+        "description": "Show all current tasks and reminders",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "mark_task_done",
+        "description": "Mark a task as completed",
+        "parameters": {"type": "object", "properties": {
+            "task": {"type": "string", "description": "Task name or number"},
+        }, "required": ["task"]},
+    }},
+    {"type": "function", "function": {
+        "name": "remove_task",
+        "description": "Delete a specific task by name",
+        "parameters": {"type": "object", "properties": {
+            "task": {"type": "string"},
+        }, "required": ["task"]},
+    }},
+    {"type": "function", "function": {
+        "name": "remove_tasks",
+        "description": "Delete ALL tasks at once",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "remove_last_task",
+        "description": "Delete the most recently added task",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
-    # Visual
-    "visual_cast_album": {"source": "google_photos", "album_name": "Family 2025", "device_hint": "living room tv"},
-    "visual_cast_calendar": {"device_hint": "living room tv"},
-    "visual_cast_camera": {"camera_name": "Front Door", "device_hint": "living room tv"},
-    "visual_image_slideshow": {"criteria_or_folder": "C:/Photos/Favorites", "device_hint": "living room tv", "duration": 5.0},
+    # ---- Memory ----
+    {"type": "function", "function": {
+        "name": "remember_memory",
+        "description": "Save a fact or preference to long-term memory",
+        "parameters": {"type": "object", "properties": {
+            "key":   {"type": "string"},
+            "value": {"type": "string"},
+        }, "required": ["key", "value"]},
+    }},
+    {"type": "function", "function": {
+        "name": "recall_memory",
+        "description": "Retrieve a saved fact or preference from memory",
+        "parameters": {"type": "object", "properties": {
+            "key": {"type": "string"},
+        }, "required": ["key"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_memory",
+        "description": "Delete a saved memory entry",
+        "parameters": {"type": "object", "properties": {
+            "key": {"type": "string"},
+        }, "required": ["key"]},
+    }},
 
-    # Reference
-    "ref_read_note_or_file": {"query": "wifi password", "device_hint": "dashboard"},
-    "ref_show_grocery": {"device_hint": "kitchen display"},
-    "ref_search_history_or_memory": {"keyword": "router"},
-    "ref_read_saved_recipe": {"meal_name": "shakshuka", "device_hint": "kitchen display"},
+    # ---- Date / Time (also handled by fast path) ----
+    {"type": "function", "function": {
+        "name": "get_time",
+        "description": "Get the current time",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_date",
+        "description": "Get today's date",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_day_of_week",
+        "description": "Get the current day of the week",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
-}
+    # ---- System info ----
+    {"type": "function", "function": {
+        "name": "get_system_status",
+        "description": "Get system health: CPU, RAM, uptime",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_ip_address",
+        "description": "Get the device IP address",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_disk_usage",
+        "description": "Check available disk space",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_wifi_status",
+        "description": "Check WiFi connection status",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_network_adapters",
+        "description": "List network adapters and interface details",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "ping_test",
+        "description": "Ping a domain to test network connectivity",
+        "parameters": {"type": "object", "properties": {
+            "domain": {"type": "string", "description": "Domain to ping e.g. google.com"},
+        }, "required": ["domain"]},
+    }},
 
-supported_intents = list(INTENT_PARAM_FORMATS.keys())
+    # ---- Ziggy lifecycle ----
+    {"type": "function", "function": {
+        "name": "restart_ziggy",
+        "description": "Restart the Ziggy assistant service",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "shutdown_ziggy",
+        "description": "Shut down the Ziggy assistant completely",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
-def _quick_params_for_web_query(text: str) -> dict | None:
-    s = (text or "").strip()
-    if not s:
-        return None
-    return {"query": s}
+    # ---- Ziggy identity ----
+    {"type": "function", "function": {
+        "name": "ziggy_status",
+        "description": "Ask how Ziggy is doing or check its mood/status",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "ziggy_identity",
+        "description": "Ask who or what Ziggy is",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "ziggy_help",
+        "description": "Ask what Ziggy can do or what commands are available",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "ziggy_chat",
+        "description": "Ask for a fun fact, joke, or entertaining response",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
-def _quick_params_for_tv_source(text: str) -> dict | None:
-    """
-    Extract the source value only when the user *says the phrase* (set tv source ...).
-    Supports: number (3), hdmi2, app names (netflix, youtube, etc.).
-    """
-    s = (text or "").strip().lower()
+    # ---- Media ----
+    {"type": "function", "function": {
+        "name": "media_stream_youtube",
+        "description": "Cast or stream a YouTube video to a screen",
+        "parameters": {"type": "object", "properties": {
+            "input_text":  {"type": "string", "description": "YouTube URL or search query"},
+            "device_hint": {"type": "string", "description": "Target device e.g. living room tv"},
+        }, "required": ["input_text"]},
+    }},
+    {"type": "function", "function": {
+        "name": "media_spotify_playlist",
+        "description": "Play a Spotify playlist, album, or artist",
+        "parameters": {"type": "object", "properties": {
+            "target":      {"type": "string", "description": "Playlist, album, or artist name"},
+            "device_hint": {"type": "string"},
+        }, "required": ["target"]},
+    }},
+    {"type": "function", "function": {
+        "name": "media_start_movie_in_app",
+        "description": "Launch a movie or show in a streaming app",
+        "parameters": {"type": "object", "properties": {
+            "title":       {"type": "string"},
+            "app":         {"type": "string", "description": "Netflix, Prime Video, Disney+, etc."},
+            "device_hint": {"type": "string"},
+        }, "required": ["title", "app"]},
+    }},
+    {"type": "function", "function": {
+        "name": "media_cast_camera_live",
+        "description": "Show a security camera live feed on a screen",
+        "parameters": {"type": "object", "properties": {
+            "camera_name": {"type": "string", "description": "Camera name e.g. front door, entry"},
+            "device_hint": {"type": "string"},
+        }, "required": ["camera_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "media_play_podcast_episode",
+        "description": "Play a podcast episode on a speaker",
+        "parameters": {"type": "object", "properties": {
+            "podcast_name": {"type": "string"},
+            "episode_hint": {"type": "string", "description": "Episode title or keyword"},
+            "device_hint":  {"type": "string"},
+        }, "required": ["podcast_name"]},
+    }},
 
-    # explicit "... source to VALUE"
-    m = re.search(r"(source|input)\s*(to|=)?\s*(hdmi[\s\-]*\d+|\d+|netflix|netfilx|youtube|yt|prime(?: video)?|disney(?:\+| plus)?|apple tv|hbo|max|hulu|paramount\+?|peacock|youtube tv)\b", s)
-    if m:
-        return {"source": m.group(3)}
+    # ---- Web ----
+    {"type": "function", "function": {
+        "name": "web_recipe_read",
+        "description": "Fetch and read a recipe from a URL or by dish name",
+        "parameters": {"type": "object", "properties": {
+            "input_text":  {"type": "string", "description": "Recipe URL or dish name"},
+            "device_hint": {"type": "string"},
+        }, "required": ["input_text"]},
+    }},
+    {"type": "function", "function": {
+        "name": "web_news_brief",
+        "description": "Summarise the latest news headlines",
+        "parameters": {"type": "object", "properties": {
+            "device_hint": {"type": "string"},
+            "voice":       {"type": "boolean"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "web_trip_updates",
+        "description": "Get travel, traffic, or route information",
+        "parameters": {"type": "object", "properties": {
+            "city_or_route": {"type": "string"},
+        }, "required": ["city_or_route"]},
+    }},
+    {"type": "function", "function": {
+        "name": "web_stocks_update",
+        "description": "Get stock prices or market quotes",
+        "parameters": {"type": "object", "properties": {
+            "tickers":     {"type": "string", "description": "Comma-separated tickers e.g. AAPL, TSLA"},
+            "device_hint": {"type": "string"},
+        }, "required": ["tickers"]},
+    }},
+    {"type": "function", "function": {
+        "name": "web_search_summary",
+        "description": "Search the web for a topic and summarise the results",
+        "parameters": {"type": "object", "properties": {
+            "query":       {"type": "string"},
+            "device_hint": {"type": "string"},
+        }, "required": ["query"]},
+    }},
 
-    # fallback: "... tv ... to VALUE" (still requires set/change/etc. + tv phrase)
-    m2 = re.search(r"\btv|television|screen|display\b.*\bto\b\s*(hdmi[\s\-]*\d+|\d+|netflix|netfilx|youtube|yt|prime(?: video)?|disney(?:\+| plus)?|apple tv|hbo|max|hulu|paramount\+?|peacock|youtube tv)\b", s)
-    if m2:
-        return {"source": m2.group(1)}
+    # ---- Communication ----
+    {"type": "function", "function": {
+        "name": "comm_read_emails",
+        "description": "Read recent emails from inbox",
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "comm_send_email",
+        "description": "Send an email to a contact",
+        "parameters": {"type": "object", "properties": {
+            "name":    {"type": "string"},
+            "subject": {"type": "string"},
+            "body":    {"type": "string"},
+        }, "required": ["name", "subject", "body"]},
+    }},
+    {"type": "function", "function": {
+        "name": "comm_quick_message",
+        "description": "Send a quick message via Telegram or WhatsApp",
+        "parameters": {"type": "object", "properties": {
+            "contact_name": {"type": "string"},
+            "text":         {"type": "string"},
+            "channel":      {"type": "string", "enum": ["telegram", "whatsapp"]},
+        }, "required": ["contact_name", "text"]},
+    }},
+    {"type": "function", "function": {
+        "name": "comm_broadcast_announcement",
+        "description": "Broadcast a text-to-speech announcement to one or all rooms",
+        "parameters": {"type": "object", "properties": {
+            "text":         {"type": "string"},
+            "rooms_or_all": {"type": "string", "description": "Room name or 'all'"},
+        }, "required": ["text"]},
+    }},
+    {"type": "function", "function": {
+        "name": "comm_read_sms",
+        "description": "Read recent SMS text messages",
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer"},
+        }},
+    }},
 
-    return None
+    # ---- Visual ----
+    {"type": "function", "function": {
+        "name": "visual_cast_calendar",
+        "description": "Show today's calendar or schedule on a screen",
+        "parameters": {"type": "object", "properties": {
+            "device_hint": {"type": "string"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "visual_cast_album",
+        "description": "Show a photo album or slideshow on a screen",
+        "parameters": {"type": "object", "properties": {
+            "album_name":  {"type": "string"},
+            "source":      {"type": "string", "description": "google_photos or local"},
+            "device_hint": {"type": "string"},
+        }, "required": ["album_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "visual_cast_camera",
+        "description": "Display a security camera feed on screen",
+        "parameters": {"type": "object", "properties": {
+            "camera_name": {"type": "string"},
+            "device_hint": {"type": "string"},
+        }, "required": ["camera_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "visual_image_slideshow",
+        "description": "Play an image slideshow from a folder or criteria",
+        "parameters": {"type": "object", "properties": {
+            "criteria_or_folder": {"type": "string"},
+            "device_hint":        {"type": "string"},
+            "duration":           {"type": "number", "description": "Seconds per image"},
+        }, "required": ["criteria_or_folder"]},
+    }},
 
-def quick_parse(text):
+    # ---- Internet / Network ----
+    {"type": "function", "function": {
+        "name": "get_internet_speed",
+        "description": "Get current internet download and upload speed",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_internet_status",
+        "description": "Check whether the internet is connected and get the external IP",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+
+    # ---- Sun / Daylight ----
+    {"type": "function", "function": {
+        "name": "get_sun_times",
+        "description": "Get today's sunrise and sunset times",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+
+    # ---- Presence ----
+    {"type": "function", "function": {
+        "name": "is_someone_home",
+        "description": "Check whether someone is home or away",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Person name (optional)"},
+        }},
+    }},
+
+    # ---- Shopping list ----
+    {"type": "function", "function": {
+        "name": "add_shopping_list_item",
+        "description": "Add an item to the shopping list",
+        "parameters": {"type": "object", "properties": {
+            "item": {"type": "string", "description": "Item to add"},
+        }, "required": ["item"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_shopping_list",
+        "description": "Show the current shopping list",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+
+    # ---- Reference ----
+    {"type": "function", "function": {
+        "name": "ref_read_note_or_file",
+        "description": "Find and read a saved note or file",
+        "parameters": {"type": "object", "properties": {
+            "query":       {"type": "string"},
+            "device_hint": {"type": "string"},
+        }, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "ref_show_grocery",
+        "description": "Show the grocery or shopping list",
+        "parameters": {"type": "object", "properties": {
+            "device_hint": {"type": "string"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "ref_search_history_or_memory",
+        "description": "Search command history or memory logs by keyword",
+        "parameters": {"type": "object", "properties": {
+            "keyword":     {"type": "string"},
+            "device_hint": {"type": "string"},
+        }, "required": ["keyword"]},
+    }},
+    {"type": "function", "function": {
+        "name": "ref_read_saved_recipe",
+        "description": "Read a previously saved recipe note",
+        "parameters": {"type": "object", "properties": {
+            "meal_name":   {"type": "string"},
+            "device_hint": {"type": "string"},
+        }, "required": ["meal_name"]},
+    }},
+]
+
+_SYSTEM_PROMPT = (
+    "You are Ziggy, a smart home assistant. "
+    "The user is giving a voice or text command. "
+    "Use the available tools to handle smart home control, tasks, media, and system queries. "
+    f"Known rooms: {_ROOMS}. "
+    "If the input is conversational and doesn't match any tool, do NOT call a tool — just respond naturally."
+)
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def quick_parse(text: str) -> dict:
     if not isinstance(text, str) or not text.strip():
-        print("[Intent Parser] ⚠️ Ignored empty or invalid input.")
         return {"intent": "chat_with_gpt", "params": {"text": ""}, "source": "noop"}
 
-    original_text = text.strip()          # keep original casing for params (e.g., web queries)
-    text = original_text.lower()          # use lowercased for regex matching
+    text = text.strip()
 
-    if text.startswith(TRIGGER_PHRASE):
-        text = text[len(TRIGGER_PHRASE):].strip()
-        original_text = original_text[len(TRIGGER_PHRASE):].strip()
-        print(f"[Intent Parser] 🚨 Trigger phrase detected, re-running regex: {text}")
+    # Strip optional trigger prefix
+    lower = text.lower()
+    if lower.startswith(_TRIGGER_PREFIX):
+        text = text[len(_TRIGGER_PREFIX):].strip()
+        lower = text.lower()
 
-    for pattern, intent in INTENT_PATTERNS:
-        if re.search(pattern, text):
-            print(f"[Intent Parser] ✅ Regex match: {intent}")
+    # Fast path: time/date/day — no API call
+    for pattern, intent in _FAST_PATTERNS:
+        if pattern.search(lower):
+            print(f"[Intent Parser] ⚡ Fast path: {intent}")
+            return {"intent": intent, "params": {}, "source": "fast"}
 
-            # Fast path for TV source so "set tv source to 3/hdmi2/netflix" doesn't rely on GPT
-            if intent == "set_tv_source":
-                fast_tv = _quick_params_for_tv_source(original_text)
-                if fast_tv:
-                    return {"intent": "set_tv_source", "params": fast_tv, "source": "regex"}
+    return _parse_with_tools(text)
 
-            # Fast path for general web Q&A/news → pass full original query
-            if intent in ("web_search_summary", "web_news_brief"):
-                fast_web = _quick_params_for_web_query(original_text)
-                if fast_web:
-                    return {"intent": intent, "params": fast_web, "source": "regex"}
 
-            # Otherwise, let GPT fill params with the intent hint
-            return gpt_parse_intent(original_text, prefill_intent=intent)
-
-    print(f"[Intent Parser] ❗ No regex match. Falling back to GPT.")
-    return gpt_parse_intent(original_text)
-
-def gpt_parse_intent(text, prefill_intent=None):
+def _parse_with_tools(text: str) -> dict:
     try:
-        example_json = json.dumps({
-            "intent": prefill_intent or "add_task",
-            "params": INTENT_PARAM_FORMATS.get(prefill_intent or "add_task", {})
-        }, indent=2)
-
-        memory = list_memory()
-        tasks = load_task_json()
-        context_block = f"User memory:\n{json.dumps(memory)}\n\nTask list:\n{json.dumps(tasks)}"
-
-        system_prompt = (
-            "You are Ziggy's intent parser. Extract the intent and parameters from user input.\n"
-            f"Supported intents: {supported_intents}\n"
-            f"Context:\n{context_block}\n\n"
-            "Only return valid JSON in this format:\n"
-            f"{example_json}\n\n"
-            "If unsure, use: {\"intent\": \"chat_with_gpt\", \"params\": {\"text\": \"...\"}}"
+        response = get_client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user",   "content": text},
+            ],
+            tools=TOOLS,
+            tool_choice="auto",
         )
 
-        messages = [{"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text if not prefill_intent else f"{text}\nIntent hint: {prefill_intent}"}]
+        msg = response.choices[0].message
 
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=messages,
-            temperature=0.2,
-            max_tokens=200
-        )
+        if msg.tool_calls:
+            call = msg.tool_calls[0]
+            intent = call.function.name
+            params = json.loads(call.function.arguments)
+            print(f"[Intent Parser] ✅ Tool: {intent} | params: {params}")
+            return {"intent": intent, "params": params, "source": "tools"}
 
-        reply = response.choices[0].message["content"].strip()
-        parsed = json.loads(reply)
-        parsed["params"] = normalize_room(parsed.get("params", {}))
-        parsed["source"] = "gpt"
-        print(f"[Intent Parser] ✅ GPT parsed intent: {parsed}")
-        return parsed
+        # No tool matched → conversation
+        print("[Intent Parser] 💬 No tool matched, routing to chat")
+        return {"intent": "chat_with_gpt", "params": {"text": text}, "source": "tools"}
 
     except Exception as e:
-        print(f"[Intent Parser] ⚠️ GPT fallback error: {e}")
-        return {"intent": "chat_with_gpt", "params": {"text": text}, "source": "gpt"}
+        print(f"[Intent Parser] ⚠️ Error: {e}")
+        return {"intent": "chat_with_gpt", "params": {"text": text}, "source": "error"}
