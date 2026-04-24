@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
-const WS_URL = `ws://${window.location.hostname}:8001/ws`
+const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const WS_URL = `${proto}//${window.location.host}/ws`
 
 export function useWebSocket() {
   const ws = useRef(null)
   const [messages, setMessages] = useState([])
   const [connected, setConnected] = useState(false)
   const reconnectTimer = useRef(null)
+  const retryCount = useRef(0)
 
   const connect = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN) return
@@ -16,6 +18,7 @@ export function useWebSocket() {
 
     socket.onopen = () => {
       setConnected(true)
+      retryCount.current = 0
       clearTimeout(reconnectTimer.current)
     }
 
@@ -28,7 +31,9 @@ export function useWebSocket() {
 
     socket.onclose = () => {
       setConnected(false)
-      reconnectTimer.current = setTimeout(connect, 3000)
+      const delay = Math.min(3000 * 2 ** retryCount.current, 30000)
+      retryCount.current += 1
+      reconnectTimer.current = setTimeout(connect, delay)
     }
 
     socket.onerror = () => socket.close()
