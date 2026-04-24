@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { postIntent } from '../hooks/useApi'
 import { VoiceButton } from './VoiceButton'
+import { addToast } from '../App'
 
 function Message({ m }) {
   const isError = m.ok === false
+  const ago = Math.floor((Date.now() - m.ts) / 60000)
+  const timeLabel = ago < 1 ? 'just now' : ago === 1 ? '1m ago' : ago < 60 ? `${ago}m ago` : new Date(m.ts).toLocaleTimeString()
   return (
     <div className="fade-in" style={{
       display: 'flex',
@@ -20,7 +23,7 @@ function Message({ m }) {
           textTransform: 'uppercase', color: 'var(--text-3)',
         }}>{m.source || 'ziggy'}</span>
         <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 'auto' }}>
-          {new Date(m.ts).toLocaleTimeString()}
+          {timeLabel}
         </span>
       </div>
       {m.input && (
@@ -47,10 +50,32 @@ function ThinkingDot() {
   )
 }
 
+function PillButton({ label, onClick }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'var(--bg-3)',
+        border: `1px solid ${hovered ? 'var(--purple)' : 'var(--border)'}`,
+        color: hovered ? 'var(--purple)' : 'var(--text-2)',
+        padding: '4px 12px', borderRadius: 20,
+        fontSize: 12, cursor: 'pointer', transition: 'all .15s',
+      }}
+    >{label}</button>
+  )
+}
+
+const QUICK_ACTIONS = ['lights off', 'room summary', 'my tasks', 'internet speed', 'who is home']
+
 export function Console({ messages }) {
   const bottomRef = useRef(null)
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
+  const [announce, setAnnounce] = useState('')
+  const [announcing, setAnnouncing] = useState(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -61,8 +86,41 @@ export function Console({ messages }) {
     if (!text || thinking) return
     setInput('')
     setThinking(true)
-    await postIntent(text)
-    setThinking(false)
+    try {
+      const res = await postIntent(text)
+      if (res && res.ok === false) addToast(res.reply || res.message || 'Command failed')
+    } catch {
+      addToast('Could not reach Ziggy — check connection')
+    } finally {
+      setThinking(false)
+    }
+  }
+
+  async function sendQuick(q) {
+    if (thinking) return
+    setThinking(true)
+    try {
+      const res = await postIntent(q)
+      if (res && res.ok === false) addToast(res.reply || res.message || 'Command failed')
+    } catch {
+      addToast('Could not reach Ziggy — check connection')
+    } finally {
+      setThinking(false)
+    }
+  }
+
+  async function broadcast() {
+    const text = announce.trim()
+    if (!text || announcing) return
+    setAnnouncing(true)
+    try {
+      await postIntent(`announce: ${text}`)
+      setAnnounce('')
+    } catch {
+      addToast('Broadcast failed')
+    } finally {
+      setAnnouncing(false)
+    }
   }
 
   function onKey(e) {
@@ -80,23 +138,35 @@ export function Console({ messages }) {
             <div style={{ fontSize: 12 }}>Ask anything or use the quick actions below</div>
           </div>
         )}
-        {messages.map(m => <Message key={m.ts} m={m} />)}
+        {messages.map((m, i) => <Message key={`${m.ts}-${i}`} m={m} />)}
         {thinking && <ThinkingDot />}
         <div ref={bottomRef} style={{ height: 20 }} />
       </div>
 
       {/* Quick pills */}
-      <div style={{ padding: '10px 20px', display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--border-dim)' }}>
-        {['lights off', 'room summary', 'my tasks', 'internet speed', 'who is home'].map(q => (
-          <button key={q} onClick={() => { setThinking(true); postIntent(q).then(() => setThinking(false)) }} style={{
-            background: 'var(--bg-3)', border: '1px solid var(--border)',
-            color: 'var(--text-2)', padding: '4px 12px', borderRadius: 20,
-            fontSize: 12, cursor: 'pointer', transition: 'all .15s',
-          }}
-          onMouseEnter={e => { e.target.style.borderColor = 'var(--purple)'; e.target.style.color = 'var(--purple)' }}
-          onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-2)' }}
-          >{q}</button>
+      <div style={{ padding: '10px 20px', display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--border-dim)', alignItems: 'center' }}>
+        {QUICK_ACTIONS.map(q => (
+          <PillButton key={q} label={q} onClick={() => sendQuick(q)} />
         ))}
+        <div style={{ flex: 1 }} />
+        {/* TTS Broadcast */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input
+            value={announce}
+            onChange={e => setAnnounce(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && broadcast()}
+            placeholder="Broadcast announcement…"
+            style={{
+              background: 'var(--bg-3)', border: '1px solid var(--border)',
+              borderRadius: 20, color: 'var(--text)', padding: '4px 12px',
+              fontSize: 12, outline: 'none', fontFamily: 'var(--font)', width: 200,
+              transition: 'border-color .15s',
+            }}
+            onFocus={e => e.target.style.borderColor = 'var(--teal)'}
+            onBlur={e => e.target.style.borderColor = 'var(--border)'}
+          />
+          <PillButton label={announcing ? '…' : '📢'} onClick={broadcast} />
+        </div>
       </div>
 
       {/* Input bar */}
