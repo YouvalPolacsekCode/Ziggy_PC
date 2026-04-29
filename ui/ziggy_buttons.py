@@ -8,7 +8,8 @@ def get_main_menu():
         [InlineKeyboardButton("🛠 System Tools", callback_data="menu_system")],
         [InlineKeyboardButton("🧠 Memory", callback_data="menu_memory")],
         [InlineKeyboardButton("🤖 Ziggy Core", callback_data="menu_core")],
-        [InlineKeyboardButton("🕐 Date & Time", callback_data="menu_datetime")]
+        [InlineKeyboardButton("🕐 Date & Time", callback_data="menu_datetime")],
+        [InlineKeyboardButton("💡 Automation Suggestions", callback_data="menu_suggestions")],
     ])
 
 # === TASK MENU ===
@@ -135,6 +136,30 @@ def get_color_selection_menu():
     keyboard = [[InlineKeyboardButton(label, callback_data=data)] for label, data in colors]
     keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_lights")])
     return InlineKeyboardMarkup(keyboard)
+
+# === SUGGESTIONS MENU ===
+def get_suggestions_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 List Suggestions", callback_data="list_suggestions")],
+        [InlineKeyboardButton("🔍 Run Analysis Now", callback_data="run_pattern_analysis")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="main_menu")],
+    ])
+
+
+def get_suggestion_action_menu(sug_id: str):
+    """Inline keyboard shown beneath a single suggestion."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Accept", callback_data=f"sug_accept_{sug_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"sug_reject_{sug_id}"),
+        ],
+        [
+            InlineKeyboardButton("💤 Snooze 3d", callback_data=f"sug_snooze_{sug_id}"),
+            InlineKeyboardButton("❓ Why?", callback_data=f"sug_explain_{sug_id}"),
+        ],
+        [InlineKeyboardButton("⬅️ Back", callback_data="menu_suggestions")],
+    ])
+
 
 # === HELPER: PRIORITY MENU ===
 def get_priority_menu():

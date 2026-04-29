@@ -1,0 +1,175 @@
+"""
+HA Scripts — CRUD via HA REST config API.
+Ziggy routines map directly to HA scripts (manual sequences of actions).
+"""
+from __future__ import annotations
+import re
+import uuid
+from typing import Optional
+import requests
+
+from core.settings_loader import settings
+from core.logger_module import log_error
+
+HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
+HA_TOKEN: str = settings["home_assistant"]["token"]
+HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+
+
+def _slug(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    return s or uuid.uuid4().hex
+
+
+# ── Ziggy → HA ────────────────────────────────────────────────────────────────
+
+def _step_to_ha(step: dict) -> Optional[dict]:
+    kind = step.get("type", "device")
+    if kind == "device":
+        entity_id = step.get("entity_id", "")
+        action = step.get("action", "turn_on")
+        domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
+        return {"service": f"{domain}.{action}", "target": {"entity_id": entity_id}}
+    if kind == "scene":
+        return {"service": "scene.turn_on", "target": {"entity_id": step.get("entity_id", "")}}
+    if kind == "delay":
+        secs = int(step.get("delay_seconds", 0))
+        m, s = divmod(secs, 60)
+        h, m = divmod(m, 60)
+        return {"delay": f"{h:02d}:{m:02d}:{s:02d}"}
+    if kind == "message":
+        return {"service": "notify.persistent_notification",
+                "data": {"message": step.get("text", "")}}
+    if kind == "ziggy_intent":
+        label = step.get("virtual_device_name") or step.get("capability", "ziggy_action")
+        return {"service": "notify.persistent_notification",
+                "data": {"message": f"[Ziggy] Run: {label}", "title": "Ziggy Capability"}}
+    if kind == "ir_command":
+        label = f"{step.get('ir_device_name', 'IR device')} → {step.get('ir_sequence') or step.get('ir_command', '')}"
+        return {"service": "notify.persistent_notification",
+                "data": {"message": f"[Ziggy IR] {label}", "title": "Ziggy IR"}}
+    return None
+
+
+# ── HA → Ziggy ────────────────────────────────────────────────────────────────
+
+def _ha_step_to_ziggy(s: dict) -> dict:
+    if "service" in s:
+        svc = s["service"]
+        target = s.get("target") or s.get("data") or {}
+        entity_id = target.get("entity_id", "")
+        if isinstance(entity_id, list):
+            entity_id = entity_id[0] if entity_id else ""
+        if svc.startswith("scene."):
+            return {"type": "scene", "entity_id": entity_id}
+        return {"type": "device", "entity_id": entity_id, "action": svc.split(".")[-1]}
+    if "delay" in s:
+        d = s["delay"]
+        if isinstance(d, str):
+            parts = d.split(":")
+            secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2]) if len(parts) == 3 else 0
+        elif isinstance(d, dict):
+            secs = d.get("seconds", 0) + d.get("minutes", 0) * 60 + d.get("hours", 0) * 3600
+        else:
+            secs = 0
+        return {"type": "delay", "delay_seconds": secs}
+    return {"type": "message", "text": str(s)}
+
+
+# ── API calls ─────────────────────────────────────────────────────────────────
+
+def list_scripts() -> list:
+    try:
+        resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
+        if resp.status_code != 200:
+            return []
+        result = []
+        for s in resp.json():
+            eid = s.get("entity_id", "")
+            if not eid.startswith("script."):
+                continue
+            script_id = eid[len("script."):]
+            attrs = s.get("attributes", {})
+            result.append({
+                "id": script_id,
+                "entity_id": eid,
+                "name": attrs.get("friendly_name", script_id),
+                "description": attrs.get("description", ""),
+                "icon": "⚡",
+                "enabled": True,
+                "schedule": {"type": "manual"},
+                "steps": [],
+            })
+        return sorted(result, key=lambda x: x["name"])
+    except Exception as e:
+        log_error(f"[HA Scripts] list: {e}")
+        return []
+
+
+def get_script_for_ui(script_id: str) -> Optional[dict]:
+    try:
+        resp = requests.get(f"{HA_URL}/api/config/script/config/{script_id}",
+                            headers=HEADERS, timeout=10)
+        if resp.status_code != 200:
+            return None
+        cfg = resp.json()
+        sequence = cfg.get("sequence", [])
+        if isinstance(sequence, dict):
+            sequence = [sequence]
+        from services.local_automation_actions import get_all_saved_actions
+        saved_steps = get_all_saved_actions(script_id)
+        return {
+            "id": script_id,
+            "name": cfg.get("alias", script_id),
+            "description": cfg.get("description", ""),
+            "icon": "⚡",
+            "enabled": True,
+            "schedule": {"type": "manual"},
+            "steps": saved_steps if saved_steps else [_ha_step_to_ziggy(s) for s in sequence],
+        }
+    except Exception as e:
+        log_error(f"[HA Scripts] get_for_ui {script_id}: {e}")
+        return None
+
+
+def save_script(data: dict, script_id: Optional[str] = None) -> dict:
+    if not script_id:
+        script_id = _slug(data.get("name", "ziggy_script"))
+    sequence = [_step_to_ha(s) for s in data.get("steps", [])]
+    sequence = [s for s in sequence if s is not None]
+    ha_cfg = {
+        "alias": data.get("name", "Ziggy Script"),
+        "description": data.get("description", ""),
+        "sequence": sequence,
+        "mode": "single",
+    }
+    try:
+        resp = requests.post(f"{HA_URL}/api/config/script/config/{script_id}",
+                             headers=HEADERS, json=ha_cfg, timeout=10)
+        if resp.status_code in (200, 201):
+            return {"ok": True, "id": script_id}
+        return {"ok": False, "error": f"HA {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def delete_script(script_id: str) -> bool:
+    try:
+        resp = requests.delete(f"{HA_URL}/api/config/script/config/{script_id}",
+                               headers=HEADERS, timeout=10)
+        return resp.status_code in (200, 204)
+    except Exception as e:
+        log_error(f"[HA Scripts] delete {script_id}: {e}")
+        return False
+
+
+def run_script(script_id: str) -> bool:
+    try:
+        resp = requests.post(f"{HA_URL}/api/services/script/turn_on",
+                             headers=HEADERS,
+                             json={"entity_id": f"script.{script_id}"},
+                             timeout=10)
+        return resp.status_code == 200
+    except Exception as e:
+        log_error(f"[HA Scripts] run {script_id}: {e}")
+        return False

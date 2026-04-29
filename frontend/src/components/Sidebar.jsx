@@ -18,7 +18,15 @@ export function Sidebar({ active, onChange, connected }) {
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       style={{
-        width,
+        width: 64,
+        flexShrink: 0,
+        position: 'relative',
+        zIndex: 100,
+      }}
+    >
+    <div style={{
+        position: 'absolute', top: 0, left: 0, bottom: 0,
+        width: expanded ? 130 : 64,
         background: 'var(--bg-1)',
         borderRight: '1px solid var(--border-dim)',
         display: 'flex',
@@ -26,7 +34,6 @@ export function Sidebar({ active, onChange, connected }) {
         alignItems: 'center',
         paddingTop: 16,
         gap: 4,
-        flexShrink: 0,
         transition: 'width .2s ease',
         overflow: 'hidden',
       }}
@@ -97,6 +104,7 @@ export function Sidebar({ active, onChange, connected }) {
           </span>
         )}
       </div>
+    </div>
     </aside>
   )
 }

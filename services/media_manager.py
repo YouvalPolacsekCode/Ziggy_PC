@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import time
 from typing import Optional, Dict, Any
 
@@ -65,18 +66,60 @@ def set_tv_power(turn_on: bool, alias: str | None = None) -> tuple[int, str]:
     if 200 <= status < 300:
         return 200, "OK"
 
-    # webostv fallback only for LG WebOS TVs — other devices don't support this domain
+    # LG WebOS fallback
     if "webos" in entity_id.lower() or "lg_" in entity_id.lower():
         status2, text2 = _ha_call("webostv", service, {"entity_id": entity_id})
         if 200 <= status2 < 300:
             log_info(f"[media_manager] Fallback webostv.{service} succeeded for {entity_id}")
-            return 200, "OK (fallback)"
-        err = f"HA call failed: media_player.{service} -> {status} {text}; fallback webostv.{service} -> {status2} {text2}"
-    else:
-        err = f"HA call failed: media_player.{service} -> {status} {text}"
+            return 200, "OK (webostv fallback)"
 
-    log_error(f"[media_manager] {err}")
-    return 502, err
+    # IR blaster fallback — when the TV is physically off, HA can't reach it over the network.
+    # If an IR TV device is configured for this room, fire the IR power command instead.
+    ir_result = _try_ir_power_fallback(entity_id, turn_on)
+    if ir_result:
+        return 200, "OK (IR fallback)"
+
+    if status == 500:
+        msg = (
+            "The TV is off and unreachable over the network. "
+            "No IR device is configured for this TV — set one up in the Devices panel."
+        )
+        log_error(f"[media_manager] TV turn_on failed (500) for {entity_id}, no IR fallback available")
+        return 502, msg
+
+    log_error(f"[media_manager] set_tv_power failed: {status} {text}")
+    return 502, text
+
+
+def _try_ir_power_fallback(entity_id: str, turn_on: bool) -> bool:
+    """
+    Look up an IR TV device for the same room as entity_id and send an IR power command.
+    Returns True if the IR command was sent successfully.
+    """
+    try:
+        from services.ir_manager import resolve_ir_device, send_ir_command
+        room = _room_for_entity(entity_id)
+        if not room:
+            return False
+        ir_device, _ = resolve_ir_device(room, "tv")
+        if not ir_device:
+            return False
+        result = send_ir_command(ir_device["id"], "power")
+        if result.get("ok"):
+            log_info(f"[media_manager] IR power fallback succeeded for {entity_id} in {room}")
+            return True
+    except Exception as e:
+        log_error(f"[media_manager] IR fallback error: {e}")
+    return False
+
+
+def _room_for_entity(entity_id: str) -> Optional[str]:
+    """Find which room key in device_map contains this entity_id."""
+    dm = settings.get("device_map", {}) or {}
+    for room, devices in dm.items():
+        if entity_id in (devices or {}).values():
+            return room
+    return None
 
 
 def set_tv_source(source: str, alias: Optional[str] = None) -> tuple[int, str]:
@@ -91,7 +134,6 @@ def set_tv_source(source: str, alias: Optional[str] = None) -> tuple[int, str]:
 
 def stream_youtube_to_chromecast_hd(input_text: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
     try:
-        url = _extract_url_from_text(input_text) or input_text.strip()
         dev = _resolve_cast_device(device_hint) or DEFAULT_CAST
         if not (HA_URL and HA_TOKEN and dev):
             return _todo("Home Assistant URL/token/default media_player not set. "
@@ -99,17 +141,24 @@ def stream_youtube_to_chromecast_hd(input_text: str, device_hint: Optional[str] 
         if not _ensure_device_on(dev):
             return {"ok": False, "message": f"Failed to turn on {dev}.", "data": {}}
 
-        parsed = _parse_media_request(url)
-        if parsed.get("type") == "youtube":
-            res = _cast_youtube(parsed["url"], dev, quality="1080p")
-        else:
-            res = _cast_generic_stream(parsed.get("url", url), dev)
+        raw = _extract_url_from_text(input_text) or input_text.strip()
+        parsed = _parse_media_request(raw)
 
+        if parsed.get("type") == "youtube":
+            play_url = parsed["url"]
+        elif parsed.get("type") == "search":
+            play_url = _youtube_search_url(parsed["query"])
+            if not play_url:
+                return {"ok": False, "message": f"Could not find a YouTube video for '{parsed['query']}'.", "data": {}}
+        else:
+            play_url = parsed.get("url", raw)
+
+        res = _cast_youtube(play_url, dev)
         if not res["ok"]:
             return res
 
         ok = _confirm_playback(dev)
-        return {"ok": ok, "message": f"Casting to {dev}.", "data": {"device": dev, "url": url}}
+        return {"ok": ok, "message": f"Casting to {dev}.", "data": {"device": dev, "url": play_url}}
     except Exception as e:
         log_error(f"[media.stream_youtube_to_chromecast_hd] {e}")
         return {"ok": False, "message": f"Error: {e}", "data": {}}
@@ -183,7 +232,29 @@ def _parse_media_request(query_or_url: str) -> Dict[str, Any]:
     url = query_or_url.strip()
     if re.search(r"(youtu\.be/|youtube\.com/)", url, re.I):
         return {"type": "youtube", "url": url}
-    return {"type": "url", "url": url}
+    if url.startswith("http"):
+        return {"type": "url", "url": url}
+    return {"type": "search", "query": url}
+
+
+def _youtube_search_url(query: str) -> Optional[str]:
+    """Resolve a search query to the first YouTube result URL using yt-dlp."""
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--no-playlist", "--print", "webpage_url", f"ytsearch1:{query}"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip().split("\n")[0]
+            if url.startswith("http"):
+                log_info(f"[media] yt-dlp resolved '{query}' → {url}")
+                return url
+        log_error(f"[media._youtube_search_url] yt-dlp returned code {result.returncode}: {result.stderr.strip()}")
+    except FileNotFoundError:
+        log_error("[media._youtube_search_url] yt-dlp not found. Install with: pip install yt-dlp")
+    except Exception as e:
+        log_error(f"[media._youtube_search_url] {e}")
+    return None
 
 
 def _resolve_cast_device(device_hint: Optional[str]) -> Optional[str]:
@@ -235,7 +306,28 @@ def _confirm_playback(entity_id: str) -> bool:
 
 
 def _podcast_search(name: str, episode_hint: Optional[str]) -> Dict[str, Any]:
-    return _todo("Podcast search not configured. Add PodcastIndex keys to .env and implement API call.")
+    """Search iTunes for a podcast episode. Free, no API key required."""
+    try:
+        query = f"{name} {episode_hint}".strip() if episode_hint else name
+        r = requests.get(
+            "https://itunes.apple.com/search",
+            params={"term": query, "entity": "podcastEpisode", "limit": 5},
+            timeout=12,
+        )
+        if not r.ok:
+            return {"ok": False, "message": f"Podcast search failed (HTTP {r.status_code}).", "data": {}}
+        results = r.json().get("results", [])
+        if not results:
+            return {"ok": False, "message": f"No podcast episodes found for '{name}'.", "data": {}}
+        ep = results[0]
+        stream_url = ep.get("episodeUrl") or ep.get("previewUrl")
+        if not stream_url:
+            return {"ok": False, "message": "Episode found but no playable stream URL.", "data": ep}
+        log_info(f"[media] podcast resolved: {ep.get('trackName')}")
+        return {"ok": True, "message": ep.get("trackName", name), "data": {"stream_url": stream_url, "episode": ep}}
+    except Exception as e:
+        log_error(f"[media._podcast_search] {e}")
+        return {"ok": False, "message": f"Podcast search error: {e}", "data": {}}
 
 
 def _play_podcast(stream_url: str, entity_id: str) -> Dict[str, Any]:
@@ -281,6 +373,8 @@ def _resolve_camera_entity(name: str) -> Optional[str]:
 
 
 def _get_camera_stream_url(entity_id: str) -> Optional[str]:
+    if HA_URL and HA_TOKEN and entity_id:
+        return f"{HA_URL}/api/camera_proxy_stream/{entity_id}?token={HA_TOKEN}"
     return None
 
 

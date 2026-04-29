@@ -9,7 +9,12 @@ export function Memory() {
   const [valInput, setValInput] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const entries = data?.memory || []
+  const raw = data?.memory
+  const entries = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? Object.entries(raw).map(([key, value]) => ({ key, value }))
+      : []
   const visible = search
     ? entries.filter(e => {
         const s = search.toLowerCase()
@@ -127,7 +132,12 @@ export function Memory() {
               ) : (
                 <>
                   {entry.key && <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>{entry.key}</div>}
-                  <div style={{ color: 'var(--text)', lineHeight: 1.6 }}>{entry.value || JSON.stringify(entry)}</div>
+                  <div style={{ color: 'var(--text)', lineHeight: 1.6 }}>
+                    {entry.value == null ? '—'
+                      : typeof entry.value === 'object'
+                        ? JSON.stringify(entry.value)
+                        : String(entry.value)}
+                  </div>
                 </>
               )}
             </div>

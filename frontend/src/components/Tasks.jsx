@@ -121,8 +121,14 @@ export function Tasks() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '20px 20px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800 }}>Tasks</h2>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{pendingCount} pending</span>
+        </div>
+      </div>
       {/* Add task bar */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-dim)', display: 'flex', gap: 10 }}>
+      <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border-dim)', display: 'flex', gap: 10 }}>
         <input
           value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addTask()}

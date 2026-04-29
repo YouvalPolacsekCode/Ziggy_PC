@@ -35,7 +35,11 @@ def read_recipe_from_url(input_text: str, device_hint: Optional[str] = None) -> 
     """
     url = _extract_url(input_text)
     if not url:
-        return {"ok": False, "message": "No URL found in input.", "data": {}}
+        # Treat input as a dish name — search for a recipe page
+        results = _web_search(f"{input_text.strip()} recipe site:allrecipes.com OR site:bbcgoodfood.com OR site:food.com")
+        url = next((r.get("url") for r in results if r.get("url")), None)
+        if not url:
+            return {"ok": False, "message": f"No recipe found for '{input_text}'.", "data": {}}
     html = _fetch_webpage(url)
     if not html:
         return {"ok": False, "message": "Failed to fetch page.", "data": {"url": url}}
@@ -332,8 +336,14 @@ def _stocks_fetch_quotes(tickers: List[str]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for t in tickers:
         try:
-            info = yf.Ticker(t).fast_info
-            out[t] = {"last": float(info.get("last_price") or 0), "currency": info.get("currency"), "exchange": info.get("exchange")}
+            fi = yf.Ticker(t).fast_info
+            # fast_info is an object, not a dict — use getattr
+            last = getattr(fi, "last_price", None) or getattr(fi, "previous_close", None)
+            out[t] = {
+                "last": round(float(last), 2) if last else None,
+                "currency": getattr(fi, "currency", None),
+                "exchange": getattr(fi, "exchange", None),
+            }
         except Exception as e:
             log_error(f"[web._stocks_fetch_quotes] {t}: {e}")
             out[t] = {"error": str(e)}

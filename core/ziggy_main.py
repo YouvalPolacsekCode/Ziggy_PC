@@ -35,6 +35,13 @@ signal.signal(signal.SIGTERM, handle_sigterm)
 def main():
     log_info("🚀 Ziggy startup initiated...")
 
+    try:
+        from services.device_registry import init as init_device_registry, start_reconciliation_loop
+        init_device_registry()
+        start_reconciliation_loop()
+    except Exception as e:
+        log_info(f"[Main] DeviceRegistry init failed (HA may be offline): {e} — continuing with degraded device resolution")
+
     def thread_wrapper(name, target):
         def run():
             log_info(f"[Thread:{name}] Starting...")
@@ -85,6 +92,21 @@ def main():
         threads.append(threading.Thread(
             target=thread_wrapper("SensorAlerts", lambda: start_sensor_alerts(send_reminder_message)),
             name="SensorAlerts",
+            daemon=True,
+        ))
+
+    if settings.get("pattern_learning", {}).get("enabled", True):
+        from services.suggestion_engine import start_pattern_scheduler
+        from core.shared_flags import shutdown_event as _shutdown_event
+        threads.append(threading.Thread(
+            target=thread_wrapper(
+                "PatternEngine",
+                lambda: start_pattern_scheduler(
+                    notify_fn=send_reminder_message,
+                    shutdown=_shutdown_event,
+                ),
+            ),
+            name="PatternEngine",
             daemon=True,
         ))
 

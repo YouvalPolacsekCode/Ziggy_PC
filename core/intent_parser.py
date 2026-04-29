@@ -13,11 +13,6 @@ _FAST_PATTERNS = [
 ]
 
 _TRIGGER_PREFIX = "ziggy do"
-
-# ---------------------------------------------------------------------------
-# Build the room list from settings so tool descriptions stay in sync
-# with whatever aliases are defined in settings.yaml.
-# ---------------------------------------------------------------------------
 _ROOMS = ", ".join(sorted(settings.get("room_aliases", {}).keys()))
 
 TOOLS = [
@@ -45,6 +40,19 @@ TOOLS = [
             "room":       {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
             "brightness": {"type": "integer", "description": "Percentage 0–100"},
         }, "required": ["room", "brightness"]},
+    }},
+    {"type": "function", "function": {
+        "name": "toggle_all_lights_in_room",
+        "description": "Turn on or off ALL lights in a room at once",
+        "parameters": {"type": "object", "properties": {
+            "room":    {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "turn_on": {"type": "boolean", "description": "true = on, false = off"},
+        }, "required": ["room", "turn_on"]},
+    }},
+    {"type": "function", "function": {
+        "name": "turn_off_everything",
+        "description": "Turn off all lights and devices in the entire house",
+        "parameters": {"type": "object", "properties": {}},
     }},
 
     # ---- AC / Climate ----
@@ -78,23 +86,127 @@ TOOLS = [
             "room": {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
         }, "required": ["room"]},
     }},
+    {"type": "function", "function": {
+        "name": "report_all_temperatures",
+        "description": "Get temperature readings from every room at once",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
-    # ---- TV ----
+    # ---- TV (smart TV with native HA media_player entity) ----
     {"type": "function", "function": {
         "name": "control_tv",
-        "description": "Turn a TV on or off",
+        "description": (
+            "Turn a smart TV on or off. "
+            "Use this only for TVs that have a Home Assistant media_player entity (e.g. LG WebOS, Android TV, Chromecast). "
+            "For TVs controlled via IR blaster (no HA entity), use ir_send_command instead."
+        ),
         "parameters": {"type": "object", "properties": {
             "turn_on": {"type": "boolean"},
-            "device":  {"type": "string", "description": "TV alias e.g. living room tv, bedroom tv (optional)"},
+            "device":  {"type": "string", "description": "TV alias e.g. living room tv (optional)"},
         }, "required": ["turn_on"]},
     }},
     {"type": "function", "function": {
         "name": "set_tv_source",
-        "description": "Switch the TV input or launch a streaming app",
+        "description": (
+            "Switch the input source or launch a streaming app on a smart TV with a HA media_player entity. "
+            "For IR-only TVs, use ir_send_command with action='hdmi_1' etc."
+        ),
         "parameters": {"type": "object", "properties": {
             "source": {"type": "string", "description": "Input or app: HDMI 1, HDMI 2, Netflix, YouTube, Prime Video, Disney+, etc."},
             "device": {"type": "string", "description": "TV alias (optional)"},
         }, "required": ["source"]},
+    }},
+
+    # ---- IR Blaster devices (Broadlink) ----
+    {"type": "function", "function": {
+        "name": "ir_send_command",
+        "description": (
+            "Control a device managed by an IR blaster (Broadlink): "
+            "TV volume/navigation/HDMI/channels, AC power/mode/fan, ceiling fan speed, soundbar input. "
+            "Use this for devices WITHOUT a native Home Assistant entity. "
+            "Do NOT use for smart TVs with HA media_player (use control_tv / set_tv_source). "
+            "Do NOT use for smart ACs with HA climate entity (use control_ac / set_ac_temperature). "
+            "For AC temperature, use ir_set_ac_temperature instead of this tool."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "device_type": {
+                "type": "string",
+                "enum": ["tv", "ac", "fan", "soundbar", "projector", "custom"],
+                "description": "Type of the IR device",
+            },
+            "action": {
+                "type": "string",
+                "description": (
+                    "Exact action to send. "
+                    "TV: power, volume_up, volume_down, mute, hdmi_1, hdmi_2, hdmi_3, "
+                    "nav_up, nav_down, nav_left, nav_right, nav_ok, back, menu, home, channel_up, channel_down. "
+                    "AC: power, mode_cool, mode_heat, mode_fan, mode_dry, mode_auto, "
+                    "fan_low, fan_medium, fan_high, fan_auto, swing_on, swing_off. "
+                    "Fan: power, speed_low, speed_medium, speed_high, oscillate. "
+                    "Soundbar: power, volume_up, volume_down, mute, input_hdmi, input_optical, input_bluetooth."
+                ),
+            },
+            "room": {"type": "string", "description": f"Room name (optional if only one device of this type). Options: {_ROOMS}"},
+        }, "required": ["device_type", "action"]},
+    }},
+    {"type": "function", "function": {
+        "name": "ir_set_ac_temperature",
+        "description": (
+            "Set the temperature of an AC unit controlled via IR blaster. "
+            "Use this when the AC has NO Home Assistant climate entity. "
+            "For smart thermostats with HA support, use set_ac_temperature instead. "
+            "Can optionally set the mode (cool, heat, fan, auto, dry) at the same time."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "temperature": {"type": "integer", "description": "Target temperature in °C (16–30)"},
+            "mode": {
+                "type": "string",
+                "enum": ["cool", "heat", "fan", "auto", "dry"],
+                "description": "AC mode (optional — omit to keep current mode)",
+            },
+            "room": {"type": "string", "description": f"Room name (optional). Options: {_ROOMS}"},
+        }, "required": ["temperature"]},
+    }},
+    {"type": "function", "function": {
+        "name": "ir_send_channel",
+        "description": (
+            "Switch an IR-controlled TV to a specific channel number by sending digit codes. "
+            "Use when the user says 'channel 5', 'go to channel 12', etc. "
+            "Only for IR-blaster TVs — not for smart TVs with HA media_player."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "channel": {"type": "integer", "description": "Channel number to switch to (e.g. 5, 12, 100)"},
+            "room": {"type": "string", "description": f"Room name (optional). Options: {_ROOMS}"},
+        }, "required": ["channel"]},
+    }},
+    {"type": "function", "function": {
+        "name": "ir_play_sequence",
+        "description": (
+            "Play a named command sequence (macro) on an IR device. "
+            "Examples: 'open Netflix' → sequence_name='netflix', 'sleep mode' → sequence_name='sleep_mode'. "
+            "Sequences are pre-programmed ordered steps of IR commands with delays."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "sequence_name": {"type": "string", "description": "Sequence name (e.g. 'netflix', 'sleep_mode', 'hdmi_gaming')"},
+            "device_type": {
+                "type": "string",
+                "enum": ["tv", "ac", "fan", "soundbar", "projector", "custom"],
+                "description": "Device type the sequence belongs to (default: tv)",
+            },
+            "room": {"type": "string", "description": f"Room name (optional). Options: {_ROOMS}"},
+        }, "required": ["sequence_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "ir_learn_command",
+        "description": (
+            "Put an IR blaster into 20-second learning mode to record a new command from a remote. "
+            "Use when the user says 'learn command', 'teach Ziggy a button', etc. "
+            "Requires device_id and command_name."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "device_id": {"type": "string", "description": "ID of the IR virtual device"},
+            "command_name": {"type": "string", "description": "Logical command name to learn (e.g. 'power', 'volume_up', 'netflix')"},
+        }, "required": ["device_id", "command_name"]},
     }},
 
     # ---- Files & Notes ----
@@ -103,6 +215,7 @@ TOOLS = [
         "description": "Save a quick note or memo",
         "parameters": {"type": "object", "properties": {
             "content": {"type": "string", "description": "The note content to save"},
+            "title":   {"type": "string", "description": "Optional title for the note"},
         }, "required": ["content"]},
     }},
     {"type": "function", "function": {
@@ -111,6 +224,28 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "limit": {"type": "integer", "description": "How many notes to show (default 3)"},
         }},
+    }},
+    {"type": "function", "function": {
+        "name": "search_notes",
+        "description": "Search saved notes by keyword or title",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Search keyword"},
+        }, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "append_to_note",
+        "description": "Append text to an existing note",
+        "parameters": {"type": "object", "properties": {
+            "filename": {"type": "string", "description": "Note filename or title keyword"},
+            "content":  {"type": "string", "description": "Text to append"},
+        }, "required": ["filename", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_note",
+        "description": "Delete a note by title or keyword",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Note title or keyword to match"},
+        }, "required": ["query"]},
     }},
     {"type": "function", "function": {
         "name": "save_file",
@@ -123,6 +258,13 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "read_file",
         "description": "Read the contents of a saved file by name",
+        "parameters": {"type": "object", "properties": {
+            "filename": {"type": "string"},
+        }, "required": ["filename"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_file",
+        "description": "Delete a saved file by name",
         "parameters": {"type": "object", "properties": {
             "filename": {"type": "string"},
         }, "required": ["filename"]},
@@ -184,6 +326,57 @@ TOOLS = [
         "description": "Delete the most recently added task",
         "parameters": {"type": "object", "properties": {}},
     }},
+    {"type": "function", "function": {
+        "name": "postpone_task",
+        "description": "Delay a task's due date by a number of days",
+        "parameters": {"type": "object", "properties": {
+            "task": {"type": "string", "description": "Task name"},
+            "days": {"type": "integer", "description": "Number of days to postpone (default 1)"},
+        }, "required": ["task"]},
+    }},
+    {"type": "function", "function": {
+        "name": "task_summary",
+        "description": "Get a summary of pending, done, and overdue task counts",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+
+    # ---- Events ----
+    {"type": "function", "function": {
+        "name": "add_event",
+        "description": "Add a named event or occasion with a date (e.g., birthday, anniversary)",
+        "parameters": {"type": "object", "properties": {
+            "name":     {"type": "string", "description": "Event name e.g. 'Adi's birthday'"},
+            "date_str": {"type": "string", "description": "Date in natural language or YYYY-MM-DD"},
+            "notes":    {"type": "string"},
+            "repeat":   {"type": "string", "description": "yearly, monthly, none (default none)"},
+        }, "required": ["name", "date_str"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_events",
+        "description": "List upcoming events and occasions",
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "remove_event",
+        "description": "Remove a named event",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "days_until_event",
+        "description": "How many days until a named event",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "next_event",
+        "description": "What is the next upcoming event",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 
     # ---- Memory ----
     {"type": "function", "function": {
@@ -209,7 +402,7 @@ TOOLS = [
         }, "required": ["key"]},
     }},
 
-    # ---- Date / Time (also handled by fast path) ----
+    # ---- Date / Time ----
     {"type": "function", "function": {
         "name": "get_time",
         "description": "Get the current time",
@@ -378,6 +571,13 @@ TOOLS = [
             "device_hint": {"type": "string"},
         }, "required": ["query"]},
     }},
+    {"type": "function", "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {"type": "object", "properties": {
+            "city": {"type": "string", "description": "City name e.g. Tel Aviv, London"},
+        }, "required": ["city"]},
+    }},
 
     # ---- Communication ----
     {"type": "function", "function": {
@@ -498,6 +698,49 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {}},
     }},
 
+    # ---- Automations ----
+    {"type": "function", "function": {
+        "name": "create_automation",
+        "description": (
+            "Create a scheduled or triggered automation. "
+            "Use this when the user says 'every day at X', 'automatically turn on/off', "
+            "'schedule X to happen at Y time', etc."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "name":              {"type": "string", "description": "Friendly name, e.g. 'Kitchen lights noon'"},
+            "trigger_type":      {"type": "string", "enum": ["time", "state", "sunrise", "sunset"],
+                                  "description": "What triggers the automation"},
+            "trigger_time":      {"type": "string", "description": "HH:MM for time triggers, e.g. '12:00'"},
+            "trigger_entity_id": {"type": "string", "description": "Entity ID for state triggers"},
+            "trigger_state":     {"type": "string", "description": "State value for state triggers, e.g. 'on'"},
+            "trigger_offset":    {"type": "string", "description": "Offset for sunrise/sunset, e.g. '+00:30:00'"},
+            "action_room":       {"type": "string", "description": f"Room to act on. Options: {_ROOMS}"},
+            "action_device_type":{"type": "string", "description": "Device type: light, ac, switch"},
+            "action_service":    {"type": "string", "enum": ["turn_on", "turn_off"],
+                                  "description": "Action to perform"},
+        }, "required": ["trigger_type", "action_room", "action_device_type", "action_service"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_automations",
+        "description": "List all existing automations",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_automation",
+        "description": "Delete an automation by ID",
+        "parameters": {"type": "object", "properties": {
+            "automation_id": {"type": "string", "description": "The automation ID to delete"},
+        }, "required": ["automation_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "toggle_automation",
+        "description": "Enable or disable an automation",
+        "parameters": {"type": "object", "properties": {
+            "automation_id": {"type": "string", "description": "The automation ID"},
+            "enable":         {"type": "boolean", "description": "true to enable, false to disable"},
+        }, "required": ["automation_id", "enable"]},
+    }},
+
     # ---- Reference ----
     {"type": "function", "function": {
         "name": "ref_read_note_or_file",
@@ -535,9 +778,20 @@ TOOLS = [
 _SYSTEM_PROMPT = (
     "You are Ziggy, a smart home assistant. "
     "The user is giving a voice or text command. "
-    "Use the available tools to handle smart home control, tasks, media, and system queries. "
+    "ALWAYS prefer to use a tool to handle the request — call the most appropriate tool rather than responding conversationally. "
+    "Only skip tool calls when the user is explicitly having casual small-talk or explicitly asking for general information with no actionable command. "
+    "For ANY request involving home control, scheduling, automation, tasks, reminders, files, system, or media — ALWAYS call a tool. "
+    "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule' — ALWAYS use create_automation. "
+    "Never instruct the user to use external apps or Home Assistant UI — use Ziggy's own tools to fulfill requests directly. "
     f"Known rooms: {_ROOMS}. "
-    "If the input is conversational and doesn't match any tool, do NOT call a tool — just respond naturally."
+    "IR routing rules: "
+    "use ir_send_command / ir_set_ac_temperature for devices without a HA entity (IR blaster only). "
+    "use ir_send_channel for 'channel N' commands on IR TVs. "
+    "use ir_play_sequence for named macros ('open Netflix', 'sleep mode') on IR devices. "
+    "use ir_learn_command when the user wants to teach Ziggy a new IR button. "
+    "use control_ac / set_ac_temperature for smart ACs with a HA climate entity. "
+    "use control_tv / set_tv_source for smart TVs with a HA media_player entity. "
+    "Only use chat_with_gpt if no other tool applies and the input is pure casual conversation."
 )
 
 
@@ -550,14 +804,11 @@ def quick_parse(text: str) -> dict:
         return {"intent": "chat_with_gpt", "params": {"text": ""}, "source": "noop"}
 
     text = text.strip()
-
-    # Strip optional trigger prefix
     lower = text.lower()
     if lower.startswith(_TRIGGER_PREFIX):
         text = text[len(_TRIGGER_PREFIX):].strip()
         lower = text.lower()
 
-    # Fast path: time/date/day — no API call
     for pattern, intent in _FAST_PATTERNS:
         if pattern.search(lower):
             print(f"[Intent Parser] ⚡ Fast path: {intent}")
@@ -568,10 +819,21 @@ def quick_parse(text: str) -> dict:
 
 def _parse_with_tools(text: str) -> dict:
     try:
+        # Append live IR device list so GPT knows which devices exist and picks
+        # the right intent (ir_send_command vs control_tv / control_ac).
+        system = _SYSTEM_PROMPT
+        try:
+            from services.ir_manager import build_ir_context_hint
+            ir_hint = build_ir_context_hint()
+            if ir_hint:
+                system = system + "\n\n" + ir_hint
+        except Exception:
+            pass  # IR manager not yet configured — ignore silently
+
         response = get_client().chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system},
                 {"role": "user",   "content": text},
             ],
             tools=TOOLS,
@@ -587,7 +849,6 @@ def _parse_with_tools(text: str) -> dict:
             print(f"[Intent Parser] ✅ Tool: {intent} | params: {params}")
             return {"intent": intent, "params": params, "source": "tools"}
 
-        # No tool matched → conversation
         print("[Intent Parser] 💬 No tool matched, routing to chat")
         return {"intent": "chat_with_gpt", "params": {"text": text}, "source": "tools"}
 

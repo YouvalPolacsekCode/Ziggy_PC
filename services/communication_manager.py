@@ -1,84 +1,162 @@
-# services/communication_manager.py
 from __future__ import annotations
 
+import base64
 import os
-from typing import Optional, Dict, Any, List
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, List, Optional
 
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings
 
-# Optional integrations
-# Telegram: reuse interfaces/telegram_interface.py if present
 try:
     from interfaces.telegram_interface import send_direct_message as _tg_send
 except Exception:
     _tg_send = None
 
-CONTACTS = settings.get("contacts", {})  # also mirrored from config/contacts.yaml if your loader merges it
+CONTACTS: Dict[str, Any] = settings.get("contacts", {})
 
 
-# ---------- Public Scenarios ----------
+# ---------------------------------------------------------------------------
+# Gmail helpers
+# ---------------------------------------------------------------------------
+
+_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+]
+
+
+def _get_gmail_service():
+    """Load or refresh Gmail credentials. Returns (service, error_message)."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+    except ImportError:
+        return None, "google-api-python-client not installed. Run: pip install google-api-python-client google-auth-oauthlib"
+
+    token_path = os.getenv("GMAIL_TOKEN_PATH", "config/gmail_token.json")
+    creds_path = os.getenv("GMAIL_CREDENTIALS_PATH", "config/gmail_credentials.json")
+
+    creds = None
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, _SCOPES)
+
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            with open(token_path, "w") as f:
+                f.write(creds.to_json())
+        except Exception as e:
+            return None, f"Failed to refresh Gmail token: {e}. Run scripts/setup_gmail.py again."
+
+    if not creds or not creds.valid:
+        if not os.path.exists(creds_path):
+            return None, (
+                "Gmail not configured. Follow these steps:\n"
+                "1. Go to Google Cloud Console > APIs > Gmail API > Enable\n"
+                "2. Create OAuth2 credentials (Desktop app)\n"
+                "3. Download credentials.json to config/gmail_credentials.json\n"
+                "4. Run: python scripts/setup_gmail.py"
+            )
+        return None, (
+            "Gmail token missing. Run: python scripts/setup_gmail.py\n"
+            f"(credentials found at {creds_path})"
+        )
+
+    try:
+        service = build("gmail", "v1", credentials=creds)
+        return service, None
+    except Exception as e:
+        return None, f"Failed to build Gmail service: {e}"
+
+
+def _decode_body(payload: dict) -> str:
+    """Extract plain-text body from a Gmail message payload."""
+    if payload.get("mimeType") == "text/plain":
+        data = payload.get("body", {}).get("data", "")
+        return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace") if data else ""
+    for part in payload.get("parts", []):
+        result = _decode_body(part)
+        if result:
+            return result
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Public Scenarios
+# ---------------------------------------------------------------------------
 
 def read_latest_emails(limit: int = 5) -> Dict[str, Any]:
-    """
-    Read/summarize latest unread emails.
+    service, err = _get_gmail_service()
+    if err:
+        return {"ok": False, "message": err, "data": {}}
+    try:
+        result = service.users().messages().list(userId="me", labelIds=["INBOX", "UNREAD"], maxResults=limit).execute()
+        messages = result.get("messages", [])
+        if not messages:
+            return {"ok": True, "message": "No unread emails.", "data": {"threads": []}}
 
-    TODO:
-      - Configure Gmail or MS Graph OAuth and token path per .env and perform initial authorization flow.
+        threads = []
+        for msg in messages:
+            detail = service.users().messages().get(userId="me", id=msg["id"], format="full").execute()
+            headers = {h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])}
+            snippet = detail.get("snippet", "")
+            body = _decode_body(detail.get("payload", {}))
+            threads.append({
+                "id": msg["id"],
+                "from": headers.get("From", ""),
+                "subject": headers.get("Subject", "(no subject)"),
+                "date": headers.get("Date", ""),
+                "snippet": snippet,
+                "body": body[:500],
+            })
 
-    Args:
-        limit: Max threads/messages.
-
-    Returns:
-        Standard result dict.
-    """
-    chk = _mail_auth_check()
-    if not chk["ok"]:
-        return chk
-    threads = _mail_fetch_unread(limit)
-    summary = _mail_summarize_threads(threads)
-    return {"ok": True, "message": f"{len(threads)} threads.", "data": {"threads": threads, "summary": summary}}
+        summary_parts = [f"From {t['from']}: {t['subject']} — {t['snippet'][:80]}" for t in threads]
+        summary = "\n".join(summary_parts)
+        log_info(f"[Gmail] Read {len(threads)} emails")
+        return {"ok": True, "message": summary, "data": {"threads": threads}}
+    except Exception as e:
+        log_error(f"[Gmail] read_latest_emails: {e}")
+        return {"ok": False, "message": f"Gmail error: {e}", "data": {}}
 
 
 def send_email_to_contact(name: str, subject: str, body: str) -> Dict[str, Any]:
-    """
-    Compose and send an email via configured provider.
-
-    Args:
-        name: Contact key in contacts.yaml.
-        subject: Subject line.
-        body: Message body.
-
-    Returns:
-        Standard result dict.
-    """
     c = _contact_resolve(name)
-    if not c.get("email"):
-        return {"ok": False, "message": f"No email for contact '{name}'.", "data": {}}
-    msg = _mail_compose(c["email"], subject, body)
-    res = _mail_send(msg)
-    return res
+    email_addr = c.get("email")
+    if not email_addr:
+        return {"ok": False, "message": f"No email address for contact '{name}'.", "data": {}}
+
+    service, err = _get_gmail_service()
+    if err:
+        return {"ok": False, "message": err, "data": {}}
+
+    sender = os.getenv("GMAIL_SENDER", "me")
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = email_addr
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+    try:
+        service.users().messages().send(userId="me", body={"raw": raw}).execute()
+        log_info(f"[Gmail] Sent email to {email_addr}")
+        return {"ok": True, "message": f"Email sent to {name} ({email_addr}).", "data": {}}
+    except Exception as e:
+        log_error(f"[Gmail] send_email_to_contact: {e}")
+        return {"ok": False, "message": f"Failed to send email: {e}", "data": {}}
 
 
 def quick_message(contact_name: str, text: str, channel: str = "telegram") -> Dict[str, Any]:
-    """
-    Send a quick IM via Telegram/WhatsApp.
-
-    Args:
-        contact_name: Contact name key.
-        text: Message content.
-        channel: 'telegram' or 'whatsapp'.
-
-    Returns:
-        Standard result dict.
-    """
     c = _contact_resolve(contact_name)
     if channel == "telegram":
         if not _tg_send:
-            return _todo("Telegram interface not wired. Implement interfaces/telegram_interface.send_direct_message")
+            return {"ok": False, "message": "Telegram interface not loaded.", "data": {}}
         handle = c.get("telegram")
         if not handle:
-            return {"ok": False, "message": f"Contact '{contact_name}' missing telegram handle.", "data": {}}
+            return {"ok": False, "message": f"Contact '{contact_name}' has no Telegram handle.", "data": {}}
         try:
             _tg_send(handle, text)
             return {"ok": True, "message": f"Sent Telegram to {handle}.", "data": {}}
@@ -87,120 +165,73 @@ def quick_message(contact_name: str, text: str, channel: str = "telegram") -> Di
             return {"ok": False, "message": f"Telegram send failed: {e}", "data": {}}
     elif channel == "whatsapp":
         return _msg_send_whatsapp(c, text)
-    else:
-        return {"ok": False, "message": f"Unsupported channel '{channel}'.", "data": {}}
+    return {"ok": False, "message": f"Unsupported channel '{channel}'.", "data": {}}
 
 
 def broadcast_announcement(text: str, rooms_or_all: str | List[str] = "all") -> Dict[str, Any]:
-    """
-    Broadcast a short announcement via TTS to all or selected rooms.
-
-    TODO:
-      - Configure HA TTS and a notify/tts service (e.g., tts.google_translate_say) and media targets.
-
-    Args:
-        text: Announcement.
-        rooms_or_all: "all" or list of room keys.
-
-    Returns:
-        Standard result dict.
-    """
-    res = _tts_broadcast(text, rooms_or_all)
-    if not res["ok"]:
-        return res
-    ok = _confirm_broadcast()
-    return {"ok": ok, "message": "Announcement sent." if ok else "Announcement may have failed.", "data": {}}
+    """Send TTS announcement via HA media_player targets from settings.tts."""
+    tts_cfg = settings.get("tts", {})
+    tts_service = tts_cfg.get("service", "tts.google_translate_say")
+    media_players = tts_cfg.get("media_players", [])
+    if not media_players:
+        return {
+            "ok": False,
+            "message": "No TTS targets configured. Add 'tts.media_players' to settings.yaml with a list of media_player entity_ids.",
+            "data": {},
+        }
+    # Parse "domain.service_name" from settings
+    svc_parts = tts_service.rsplit(".", 1)
+    tts_domain = svc_parts[0] if len(svc_parts) == 2 else "tts"
+    tts_svc_name = svc_parts[1] if len(svc_parts) == 2 else tts_service
+    from services.home_automation import call_service
+    sent = 0
+    for entity_id in media_players:
+        r = call_service(tts_domain, tts_svc_name, {"entity_id": entity_id, "message": text, "cache": False})
+        if r.get("ok"):
+            sent += 1
+    return {"ok": sent > 0, "message": f"Announcement sent to {sent} device(s).", "data": {}}
 
 
 def read_latest_sms(limit: int = 5) -> Dict[str, Any]:
-    """
-    Read/summarize latest SMS messages.
-
-    TODO:
-      - Wire Twilio or Android Companion App integration.
-
-    Args:
-        limit: Max messages.
-
-    Returns:
-        Standard result dict.
-    """
-    msgs = _sms_fetch_unread(limit)
-    if not isinstance(msgs, list):
-        return msgs
-    summary = _sms_summarize(msgs)
-    return {"ok": True, "message": f"{len(msgs)} messages.", "data": {"messages": msgs, "summary": summary}}
-
-# ---------- Atomic ----------
-
-def _mail_auth_check() -> Dict[str, Any]:
-    # TODO steps:
-    # 1) Fill GMAIL_* or MS_* values in .env
-    # 2) Run a one-time local OAuth flow to create token file (paths in .env: GMAIL_TOKEN_PATH/MS_TOKEN_PATH)
-    # 3) Implement provider-specific code below.
-    return _todo("Email provider OAuth not configured. Fill .env and implement Gmail/MS Graph code.")
+    return {
+        "ok": False,
+        "message": "SMS integration not configured. Requires Twilio or Android Companion App add-on.",
+        "data": {},
+    }
 
 
-def _mail_fetch_unread(limit: int) -> List[Dict[str, Any]]:
-    return []  # TODO: Fetch unread threads via Gmail API or MS Graph
-
-
-def _mail_summarize_threads(threads: List[Dict[str, Any]]) -> str:
-    if not threads:
-        return "No unread emails."
-    return f"Unread: {len(threads)} threads."
-
-
-def _mail_compose(to: str, subject: str, body: str) -> Dict[str, Any]:
-    return {"to": to, "subject": subject, "body": body}
-
-
-def _mail_send(message: Dict[str, Any]) -> Dict[str, Any]:
-    # TODO: Use Gmail API send or MS Graph send-mail
-    return _todo("Email send not implemented. Use Gmail API or MS Graph send-mail endpoints.")
-
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _contact_resolve(name: str) -> Dict[str, Any]:
     key = (name or "").strip().lower()
     return settings.get("contacts", {}).get(key, {})
 
 
-def _msg_send_telegram(contact: Dict[str, Any], text: str) -> Dict[str, Any]:
-    if not _tg_send:
-        return _todo("Telegram interface not available.")
-    try:
-        _tg_send(contact["telegram"], text)
-        return {"ok": True, "message": "Telegram sent.", "data": {}}
-    except Exception as e:
-        log_error(f"[comm._msg_send_telegram] {e}")
-        return {"ok": False, "message": f"Telegram error: {e}", "data": {}}
-
-
 def _msg_send_whatsapp(contact: Dict[str, Any], text: str) -> Dict[str, Any]:
-    # TODO steps:
-    # 1) Add WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in .env
-    # 2) Call Facebook Graph API /messages with template or text
-    return _todo("WhatsApp Cloud API not configured.")
-
-
-def _sms_fetch_unread(limit: int) -> List[Dict[str, Any]] | Dict[str, Any]:
-    # TODO steps:
-    # 1) Twilio creds in .env OR Android Companion App add-on and REST endpoint
-    return _todo("SMS integration not configured.")
-
-
-def _sms_summarize(messages: List[Dict[str, Any]]) -> str:
-    return "No SMS messages." if not messages else f"{len(messages)} messages."
-
-
-def _tts_broadcast(text: str, target: str | List[str]) -> Dict[str, Any]:
-    # TODO: Implement via HA tts service + media_player targets
-    return _todo("TTS broadcast not set. Configure HA TTS and targets in settings.yaml.")
-
-
-def _confirm_broadcast() -> bool:
-    return True  # Best-effort; can poll HA media state if desired.
-
-
-def _todo(msg: str) -> Dict[str, Any]:
-    return {"ok": False, "message": f"TODO: {msg}", "data": {}}
+    phone = contact.get("whatsapp")
+    if not phone:
+        return {"ok": False, "message": "Contact has no WhatsApp number.", "data": {}}
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    token = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    if not (phone_id and token):
+        return {
+            "ok": False,
+            "message": "WhatsApp Cloud API not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in .env.",
+            "data": {},
+        }
+    import requests as req
+    try:
+        resp = req.post(
+            f"https://graph.facebook.com/v18.0/{phone_id}/messages",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}},
+            timeout=10,
+        )
+        if resp.ok:
+            return {"ok": True, "message": f"WhatsApp sent to {phone}.", "data": {}}
+        return {"ok": False, "message": f"WhatsApp API error: {resp.status_code}", "data": {}}
+    except Exception as e:
+        log_error(f"[comm._msg_send_whatsapp] {e}")
+        return {"ok": False, "message": f"WhatsApp error: {e}", "data": {}}

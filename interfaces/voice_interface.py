@@ -59,14 +59,24 @@ def fix_hebrew_direction(text: str) -> str:
     words = (text or "").split()
     return " ".join(word[::-1] if is_hebrew(word) else word for word in words)
 
+_HE_TO_EN_SYSTEM = (
+    "You are a translator for a smart home voice assistant. "
+    "Translate the Hebrew voice command to English accurately. "
+    "Preserve smart home terminology: "
+    "סלון=living room, חדר שינה=bedroom, מטבח=kitchen, "
+    "אמבטיה=bathroom, כניסה=entrance, מרפסת=balcony, "
+    "משרד=office, חדר ילדים=kids room. "
+    "Return only the English translation, nothing else."
+)
+
 def _translate(text: str, to_lang: str) -> str:
     """Translate text to 'en' or 'he' via gpt-4o-mini. Source language is auto-detected."""
     try:
         from integrations.openai_client import get_client
         if to_lang == "en":
-            system = "Translate the following text to English. Return only the translation, nothing else."
+            system = _HE_TO_EN_SYSTEM
         else:
-            system = "Translate the following text to Hebrew. Return only the translation, nothing else."
+            system = "Translate the following smart home response to Hebrew. Return only the translation, nothing else."
         resp = get_client().chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -96,18 +106,24 @@ def transcribe(audio_path: str):
 
     print(f"[STT] Auto-detect: lang={detected!r}, segments={len(segments)}")
 
+    # Languages Whisper commonly confuses with Hebrew (Semitic family + Yiddish + common misdetections)
+    _HEBREW_CONFUSED = {"he", "ar", "fa", "yi", "ur", "hy", "ka"}
+
     if detected == "en":
         # Confirmed English — use as-is
         lang = "en"
-    else:
-        # Anything non-English (he, ar, fr, de, …) → retry forced as Hebrew.
-        # Whisper frequently mislabels Hebrew as Arabic, French, German, etc.
-        print(f"[STT] Non-English ({detected!r}) → retrying as Hebrew")
+    elif detected in _HEBREW_CONFUSED:
+        # Likely Hebrew misidentified — retry forced as Hebrew
+        print(f"[STT] Possible Hebrew misdetected as {detected!r} → retrying as Hebrew")
         segs2, _ = whisper_model.transcribe(audio_path, beam_size=5, language="he")
         segments = list(segs2)
         detected = "he"
         lang = "he"
         print(f"[STT] Hebrew re-pass: {len(segments)} segments")
+    else:
+        # Other language (French, German, Spanish…) — trust detection, keep as-is
+        print(f"[STT] Non-Hebrew foreign language ({detected!r}) — keeping detection")
+        lang = detected
 
     # Filter silence / pure noise
     if segments:

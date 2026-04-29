@@ -5,7 +5,8 @@ from ui.ziggy_buttons import (
     get_main_menu, get_task_menu, get_home_menu, get_system_menu,
     get_memory_menu, get_core_menu, get_datetime_menu, get_lights_menu,
     get_ac_menu, get_tv_menu, get_sensors_menu, get_room_selection_menu,
-    get_color_selection_menu, get_priority_menu
+    get_color_selection_menu, get_priority_menu,
+    get_suggestions_menu, get_suggestion_action_menu,
 )
 from core.logger_module import log_error
 from core.memory import list_memory
@@ -44,7 +45,8 @@ async def handle_telegram_button(query, context):
             "menu_system": (get_system_menu, "🛠 System Tools:"),
             "menu_memory": (get_memory_menu, "🧠 Memory Management:"),
             "menu_core": (get_core_menu, "🤖 Ziggy Core:"),
-            "menu_datetime": (get_datetime_menu, "🕐 Date & Time:")
+            "menu_datetime": (get_datetime_menu, "🕐 Date & Time:"),
+            "menu_suggestions": (get_suggestions_menu, "💡 Automation Suggestions:"),
         }
 
         if data in menu_map:
@@ -208,6 +210,67 @@ async def handle_telegram_button(query, context):
         elif data == "chat_with_gpt":
             context.chat_data["pending_action"] = "chat_with_gpt"
             await query.edit_message_text("💬 Please type your message for GPT:", parse_mode=None)
+            return True
+
+        # ================= Pattern Learning / Suggestions =================
+        elif data == "list_suggestions":
+            response = await handle_intent({"intent": "list_suggestions", "params": {}}, source="telegram")
+            from services.suggestion_manager import get_pending
+            pending = get_pending()
+            if not pending:
+                await query.edit_message_text(
+                    "No pending suggestions right now. Ziggy is still learning your habits.",
+                    reply_markup=get_suggestions_menu(), parse_mode=None,
+                )
+            else:
+                # Show each suggestion with its own accept/reject/snooze/why buttons
+                first = pending[0]
+                pct = int(first["confidence"] * 100)
+                msg = (
+                    f"Suggestion 1 of {len(pending)}:\n\n"
+                    f"{first['user_message']}\n\n"
+                    f"Confidence: {pct}% | ID: {first['id']}"
+                )
+                await query.edit_message_text(
+                    msg,
+                    reply_markup=get_suggestion_action_menu(first["id"]),
+                    parse_mode=None,
+                )
+            return True
+
+        elif data == "run_pattern_analysis":
+            await query.edit_message_text("Running pattern analysis...", parse_mode=None)
+            response = await handle_intent({"intent": "run_pattern_analysis", "params": {}}, source="telegram")
+            msg = response.get("message", "Analysis complete.")
+            await query.edit_message_text(msg, reply_markup=get_suggestions_menu(), parse_mode=None)
+            return True
+
+        elif data.startswith("sug_accept_"):
+            sug_id = data[len("sug_accept_"):]
+            response = await handle_intent({"intent": "accept_suggestion", "params": {"suggestion_id": sug_id}}, source="telegram")
+            await query.edit_message_text(response.get("message", "Accepted."), reply_markup=get_suggestions_menu(), parse_mode=None)
+            return True
+
+        elif data.startswith("sug_reject_"):
+            sug_id = data[len("sug_reject_"):]
+            response = await handle_intent({"intent": "reject_suggestion", "params": {"suggestion_id": sug_id}}, source="telegram")
+            await query.edit_message_text(response.get("message", "Rejected."), reply_markup=get_suggestions_menu(), parse_mode=None)
+            return True
+
+        elif data.startswith("sug_snooze_"):
+            sug_id = data[len("sug_snooze_"):]
+            response = await handle_intent({"intent": "snooze_suggestion", "params": {"suggestion_id": sug_id, "days": 3}}, source="telegram")
+            await query.edit_message_text(response.get("message", "Snoozed."), reply_markup=get_suggestions_menu(), parse_mode=None)
+            return True
+
+        elif data.startswith("sug_explain_"):
+            sug_id = data[len("sug_explain_"):]
+            response = await handle_intent({"intent": "explain_suggestion", "params": {"suggestion_id": sug_id}}, source="telegram")
+            await query.edit_message_text(
+                response.get("message", "No explanation available."),
+                reply_markup=get_suggestion_action_menu(sug_id),
+                parse_mode=None,
+            )
             return True
 
         # ================= Static Intent Map =================
