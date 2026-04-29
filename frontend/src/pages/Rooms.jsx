@@ -457,6 +457,7 @@ export function RoomDetail() {
     domain: d.domain || (d.entity_id ? d.entity_id.split('.')[0] : 'unknown'),
     display_name: d.display_name || d.entity_id || d.device_type,
     attributes: d.ha_attributes || {},
+    ...(d.ha_attributes || {}),
     ziggyStatus: d.status,
   }))
   const entityCount = roomDevices.length

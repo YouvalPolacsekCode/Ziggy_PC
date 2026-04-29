@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, forwardRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil } from 'lucide-react'
 import { Card } from '../components/ui/Card'
@@ -433,7 +433,7 @@ const STATUS_LABEL = {
   unconfigured: 'No entity set',
 }
 
-function DeviceCard({ entity, rooms, onToggle, onService, onHide, onAssign, isHidden, showAssign, ziggyStatus }) {
+const DeviceCard = forwardRef(function DeviceCard({ entity, rooms, onToggle, onService, onHide, onAssign, isHidden, showAssign, ziggyStatus }, ref) {
   const isOn = entity.state === 'on'
   const isToggleable = TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
   const { primary: stateLabel, secondary: stateSecondary } = isHidden
@@ -445,6 +445,7 @@ function DeviceCard({ entity, rooms, onToggle, onService, onHide, onAssign, isHi
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: isHidden ? 0.45 : 1, scale: 1 }}
@@ -502,7 +503,7 @@ function DeviceCard({ entity, rooms, onToggle, onService, onHide, onAssign, isHi
       </Card>
     </motion.div>
   )
-}
+})
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Devices() {
