@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Cpu, MessageCircle, Zap, ListTodo,
-  MoreHorizontal, Home, RotateCcw, Settings, Brain, X, Sparkles, Boxes, Lightbulb,
+  MoreHorizontal, Home, RotateCcw, Settings, Brain, X, Sparkles, Boxes, Lightbulb, Bolt,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -20,6 +20,7 @@ const MORE_NAV = [
   { to: '/virtual-devices', icon: Boxes, label: 'Capabilities' },
   { to: '/routines', icon: RotateCcw, label: 'Routines' },
   { to: '/scenes', icon: Sparkles, label: 'Scenes' },
+  { to: '/quick-asks', icon: Bolt, label: 'Quick Asks' },
   { to: '/suggestions', icon: Lightbulb, label: 'Suggestions' },
   { to: '/memory', icon: Brain, label: 'Memory' },
   { to: '/settings', icon: Settings, label: 'Settings' },

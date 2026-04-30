@@ -13,6 +13,7 @@ import Settings from './pages/Settings'
 import Memory from './pages/Memory'
 import VirtualDevices from './pages/VirtualDevices'
 import Suggestions from './pages/Suggestions'
+import QuickAsks from './pages/QuickAsks'
 import { useUIStore } from './stores/uiStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
         <Route path="virtual-devices" element={<VirtualDevices />} />
         <Route path="suggestions" element={<Suggestions />} />
+        <Route path="quick-asks" element={<QuickAsks />} />
       </Route>
     </Routes>
   )

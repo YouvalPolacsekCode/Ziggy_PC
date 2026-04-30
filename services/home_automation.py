@@ -167,6 +167,31 @@ def toggle_all_lights_in_room(room: str, turn_on: bool) -> Dict[str, Any]:
     return {"ok": True, "message": f"{verb} all lights in {room.replace('_', ' ')} ({count} lights)."}
 
 
+def turn_off_all_lights() -> Dict[str, Any]:
+    """Turn off every light entity reported by HA (lights only — no media players)."""
+    try:
+        all_states = get_all_states()
+    except Exception:
+        all_states = []
+    light_ids = [
+        s["entity_id"] for s in all_states
+        if s.get("entity_id", "").startswith("light.")
+        and s.get("state") not in ("off", "unavailable", "unknown")
+    ]
+    if not light_ids:
+        # Nothing is on — still report success
+        return {"ok": True, "message": "All lights are already off."}
+    errors = []
+    for eid in light_ids:
+        r = call_service("light", "turn_off", {"entity_id": eid})
+        if not r.get("ok"):
+            errors.append(eid)
+    count = len(light_ids) - len(errors)
+    if errors:
+        return {"ok": count > 0, "message": f"Turned off {count}/{len(light_ids)} lights."}
+    return {"ok": True, "message": f"All lights turned off ({count} light{'s' if count != 1 else ''})."}
+
+
 def turn_off_everything() -> Dict[str, Any]:
     """Turn off every light and media_player configured in device_map."""
     errors = []
@@ -316,15 +341,41 @@ def get_binary_sensor_state(room: str, device_type: str) -> Dict[str, Any]:
 
 
 def get_all_temperatures() -> Dict[str, Any]:
-    """Read temperature from every room that has a temperature sensor configured."""
+    """Read temperature from all HA sensor entities, supplemented by device_map entries."""
     results = {}
+
+    # Primary: scan all HA temperature sensor states directly
+    try:
+        all_states = get_all_states()
+        for s in all_states:
+            eid = s.get("entity_id", "")
+            attrs = s.get("attributes", {}) or {}
+            if not eid.startswith("sensor."):
+                continue
+            if attrs.get("device_class") != "temperature":
+                continue
+            state = s.get("state", "unknown")
+            if state in ("unavailable", "unknown"):
+                continue
+            unit = attrs.get("unit_of_measurement", "°C")
+            name = (attrs.get("friendly_name") or eid.split(".", 1)[1]).replace("_", " ").title()
+            results[name] = f"{state} {unit}"
+    except Exception:
+        pass
+
+    # Fallback: device_map rooms that weren't found above
     for room, devices in device_map.items():
-        if "temperature" in devices:
+        if "temperature" not in devices:
+            continue
+        label = room.replace("_", " ").title()
+        if label not in results:
             r = get_sensor_state(room, "temperature")
-            results[room] = r.get("message", "unavailable") if r.get("ok") else "unavailable"
+            if r.get("ok"):
+                results[label] = r.get("message", "unavailable")
+
     if not results:
-        return {"ok": False, "message": "No temperature sensors configured in device_map.", "data": {}}
-    lines = [f"{room.replace('_', ' ').title()}: {v}" for room, v in results.items()]
+        return {"ok": False, "message": "No temperature sensors found.", "data": {}}
+    lines = [f"{name}: {v}" for name, v in sorted(results.items())]
     return {"ok": True, "message": "\n".join(lines), "data": results}
 
 

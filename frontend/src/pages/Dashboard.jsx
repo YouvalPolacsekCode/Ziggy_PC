@@ -9,23 +9,23 @@ import { useTaskStore } from '../stores/taskStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
 import { greetingByTime, domainIcon, formatEntityState } from '../lib/utils'
-import { callHaService } from '../lib/api'
+import { controlDevice } from '../lib/api'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { cn } from '../lib/utils'
+import { CONTROLLABLE_DOMAINS } from '../stores/deviceStore'
+import { useQuickAskStore } from '../stores/quickAskStore'
 
 const stagger = { animate: { transition: { staggerChildren: 0.06 } } }
 const item = { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: 0.25 } } }
 
-// Only physical controllable domains show in "Active now"
-const PHYSICAL_DOMAINS = new Set(['light', 'switch', 'climate', 'cover', 'media_player', 'fan', 'lock', 'vacuum'])
-
-function HomeStatusCard({ entities }) {
+function HomeStatusCard({ entities, presenceSummary = [] }) {
   const lights = entities.filter((e) => e.domain === 'light' && e.state === 'on')
   const playing = entities.filter((e) => e.domain === 'media_player' && e.state === 'playing')
   const climate = entities.filter((e) => e.domain === 'climate' && e.state !== 'off' && e.state !== 'unavailable')
   const fans = entities.filter((e) => e.domain === 'fan' && e.state === 'on')
 
   const items = []
+  if (presenceSummary.length) presenceSummary.forEach((text) => items.push({ icon: '👤', text }))
   if (lights.length) items.push({ icon: '💡', text: `${lights.length} light${lights.length !== 1 ? 's' : ''} on` })
   if (playing.length) items.push({ icon: '🎵', text: playing.map((e) => e.friendly_name || e.entity_id.split('.')[1]).join(', ') + ' playing' })
   if (climate.length) {
@@ -81,18 +81,12 @@ function SensorPill({ entity }) {
   )
 }
 
-function OccupancyBadge({ entities }) {
-  const persons = entities.filter((e) => e.domain === 'person' && e.state === 'home')
-  const occupied = persons.length === 0 && entities.some((e) =>
-    e.domain === 'binary_sensor' &&
-    ['occupancy', 'presence'].includes(e.device_class) &&
-    e.state === 'on'
-  )
-  if (!persons.length && !occupied) return null
+function OccupancyBadge({ presenceSummary = [] }) {
+  if (!presenceSummary.length) return null
   return (
     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300">
       <Users size={11} />
-      <span>{persons.length ? `${persons.map(p => p.friendly_name || p.entity_id.split('.')[1]).join(', ')} home` : 'Home'}</span>
+      <span>{presenceSummary[0]}</span>
     </div>
   )
 }
@@ -137,16 +131,18 @@ function ActiveDeviceChip({ entity, onToggle }) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { entities, fetchAll, getRooms } = useDeviceStore()
+  const { entities, fetchAll, getRooms, updateEntityState, getActiveCount, getTotalControllable, getPresenceSummary } = useDeviceStore()
   const { tasks, fetch: fetchTasks } = useTaskStore()
   const { automations, fetchAutomations, fetchRoutines } = useAutomationStore()
   const { addToast } = useUIStore()
   const { fetch: fetchSuggestions, pendingCount } = useSuggestionStore()
+  const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
 
-  useEffect(() => { fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions() }, [])
+  useEffect(() => { fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions(); fetchQuickAsks() }, [])
 
   const rooms = getRooms()
-  const activeDevices = entities.filter((e) => PHYSICAL_DOMAINS.has(e.domain) && e.state === 'on').slice(0, 6)
+  const presenceSummary = getPresenceSummary()
+  const activeDeviceChips = entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain) && e.state === 'on').slice(0, 6)
   const pendingTasks = tasks.filter((t) => !t.done && !t.completed)
   const enabledAutomations = automations.filter((a) => a.enabled)
 
@@ -155,9 +151,13 @@ export default function Dashboard() {
     .slice(0, 4)
 
   const handleToggleDevice = async (entity, on) => {
+    updateEntityState(entity.entity_id, on ? 'on' : 'off')
     try {
-      await callHaService(entity.domain, on ? 'turn_on' : 'turn_off', { entity_id: entity.entity_id })
+      await controlDevice(entity.entity_id, on ? 'turn_on' : 'turn_off')
+      addToast(`${on ? 'On' : 'Off'}`, 'success')
+      setTimeout(() => fetchAll(), 1500)
     } catch {
+      updateEntityState(entity.entity_id, on ? 'off' : 'on')
       addToast('Failed to control device', 'error')
     }
   }
@@ -169,16 +169,16 @@ export default function Dashboard() {
         <p className="text-sm text-zinc-400 dark:text-zinc-600 font-medium mb-0.5">{greetingByTime()}</p>
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Your Smart Home</h1>
-          <OccupancyBadge entities={entities} />
+          <OccupancyBadge presenceSummary={presenceSummary} />
         </div>
       </motion.div>
 
       {/* What's on right now */}
-      <HomeStatusCard entities={entities} />
+      <HomeStatusCard entities={entities} presenceSummary={presenceSummary} />
 
       {/* Stats row */}
       <motion.div variants={stagger} initial="initial" animate="animate" className="grid grid-cols-3 gap-2 mb-4">
-        <StatCard icon={<Cpu size={18} className="text-zinc-700 dark:text-zinc-300" />} label="Active" value={activeDevices.length} sub={`${entities.filter(e => PHYSICAL_DOMAINS.has(e.domain)).length} devices`} color="bg-zinc-100 dark:bg-zinc-800" />
+        <StatCard icon={<Cpu size={18} className="text-zinc-700 dark:text-zinc-300" />} label="Active" value={getActiveCount()} sub={`${getTotalControllable()} devices`} color="bg-zinc-100 dark:bg-zinc-800" />
         <StatCard icon={<Zap size={18} className="text-violet-600" />} label="Automations" value={enabledAutomations.length} sub="enabled" color="bg-violet-50 dark:bg-violet-900/20" />
         <StatCard icon={<ListTodo size={18} className="text-blue-600" />} label="Tasks" value={pendingTasks.length} sub="pending" color="bg-blue-50 dark:bg-blue-900/20" />
       </motion.div>
@@ -194,14 +194,14 @@ export default function Dashboard() {
       )}
 
       {/* Active devices */}
-      {activeDevices.length > 0 && (
+      {activeDeviceChips.length > 0 && (
         <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Active now</h2>
             <button onClick={() => navigate('/devices')} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">See all</button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {activeDevices.map((e) => <ActiveDeviceChip key={e.entity_id} entity={e} onToggle={handleToggleDevice} />)}
+            {activeDeviceChips.map((e) => <ActiveDeviceChip key={e.entity_id} entity={e} onToggle={handleToggleDevice} />)}
           </div>
         </motion.section>
       )}
@@ -255,13 +255,14 @@ export default function Dashboard() {
       <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Quick ask</h2>
         <div className="flex flex-wrap gap-2">
-          {["Turn off all lights", "What's the temperature?", "Who's home?", "Room summary", "Good night"].map((q) => (
+          {quickAsks.map((qa) => (
             <button
-              key={q}
-              onClick={() => navigate('/chat', { state: { prefill: q } })}
-              className="px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+              key={qa.id}
+              onClick={() => navigate('/chat', { state: { quickAsk: qa } })}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
             >
-              {q}
+              {qa.icon && <span>{qa.icon}</span>}
+              {qa.label}
             </button>
           ))}
         </div>

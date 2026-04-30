@@ -8,7 +8,7 @@ import { DeviceControls, TOGGLEABLE_DOMAINS } from '../components/ui/DeviceContr
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
-import { sendIntent, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, getRooms, irLearn, irSend } from '../lib/api'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, getRooms, irLearn, irSend } from '../lib/api'
 import { cn } from '../lib/utils'
 import { useSearchParams } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
@@ -547,7 +547,7 @@ export default function Devices() {
       return
     }
     try {
-      await sendIntent(`turn ${on ? 'on' : 'off'} ${entityId}`)
+      await controlDevice(entityId, on ? 'turn_on' : 'turn_off')
       addToast(`${on ? 'Turned on' : 'Turned off'}`, 'success')
     } catch { addToast('Failed', 'error') }
   }
@@ -746,14 +746,6 @@ export default function Devices() {
       )}
 
       {/* Grid */}
-      {loading && (
-        <div className="grid grid-cols-2 gap-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-28 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-          ))}
-        </div>
-      )}
-
       {!loading && filtered.length === 0 && (
         <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
           <p className="text-4xl mb-3">{domain === 'unassigned' ? '✅' : '🔌'}</p>
@@ -763,9 +755,12 @@ export default function Devices() {
         </div>
       )}
 
-      <motion.div layout className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 items-start">
+        {loading && [1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="h-28 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+        ))}
         <AnimatePresence mode="popLayout">
-          {filtered.map((entity) => (
+          {!loading && filtered.map((entity) => (
             <DeviceCard
               key={entity.entity_id}
               entity={entity}
@@ -780,7 +775,7 @@ export default function Devices() {
             />
           ))}
         </AnimatePresence>
-      </motion.div>
+      </div>
 
       {/* IR Devices section */}
       <div className="mt-8 mb-6">

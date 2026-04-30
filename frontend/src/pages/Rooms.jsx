@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { ArrowLeft, Plus, Trash2, EyeOff } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
@@ -13,7 +13,7 @@ import { EntitySelect } from '../components/ui/EntitySelect'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
-import { sendIntent, createRoom, deleteRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
+import { controlDevice, createRoom, deleteRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cn } from '../lib/utils'
 
 const ROOM_PHOTOS = {
@@ -67,18 +67,18 @@ function RoomCard({ room, onClick, onDelete, onEditPhoto }) {
       <img src={photo} alt={room.name} className="absolute inset-0 w-full h-full object-cover" onClick={onClick} />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" onClick={onClick} />
 
-      {/* Action buttons */}
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-150">
+      {/* Action buttons — always visible on touch, hover-enhanced on desktop */}
+      <div className="absolute top-2 right-2 flex gap-1">
         <button
           onClick={(e) => { e.stopPropagation(); onEditPhoto(room) }}
           title="Change photo"
-          className="p-1.5 rounded-lg bg-black/40 text-white/70 hover:text-white hover:bg-black/60"
+          className="p-1.5 rounded-lg bg-black/50 text-white/80 hover:text-white hover:bg-black/70 active:scale-95 transition-all"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(room) }}
-          className="p-1.5 rounded-lg bg-black/40 text-white/60 hover:text-red-400 hover:bg-black/60"
+          className="p-1.5 rounded-lg bg-black/50 text-white/80 hover:text-red-400 hover:bg-black/70 active:scale-95 transition-all"
         >
           <Trash2 size={13} />
         </button>
@@ -103,7 +103,7 @@ function RoomCard({ room, onClick, onDelete, onEditPhoto }) {
 
 export function RoomsList() {
   const navigate = useNavigate()
-  const { loading, fetchAll, ziggyRooms, unclaimedDevices } = useDeviceStore()
+  const { loading, fetchAll, ziggyRooms, getUnassigned } = useDeviceStore()
   const { addToast } = useUIStore()
   const [showAdd, setShowAdd] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
@@ -121,7 +121,7 @@ export function RoomsList() {
     entityCount: r.devices.length,
     activeCount: r.devices.filter((d) => d.ha_state === 'on').length,
   }))
-  const unassigned = unclaimedDevices
+  const unassigned = getUnassigned()
 
   const handleAddRoom = async () => {
     if (!newRoomName.trim()) return
@@ -185,15 +185,7 @@ export function RoomsList() {
         </Button>
       </div>
 
-      {loading && (
-        <div className="grid grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse aspect-[4/3]" />
-          ))}
-        </div>
-      )}
-
-      {!loading && rooms.length === 0 && (
+      {!loading && rooms.length === 0 && unassigned.length === 0 && (
         <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
           <p className="text-4xl mb-3">🏠</p>
           <p className="text-sm font-medium">No rooms yet</p>
@@ -204,16 +196,18 @@ export function RoomsList() {
         </div>
       )}
 
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        variants={{ visible: { transition: { staggerChildren: 0.06 } } }}
-        className="grid grid-cols-2 gap-3"
-      >
-        {rooms.map((room) => (
+      {/* Stable grid — skeleton and real cards share the same container to prevent CLS */}
+      <div className="grid grid-cols-2 gap-3">
+        {loading && [1, 2, 3, 4].map((i) => (
+          <div key={`skel-${i}`} className="rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse aspect-[4/3]" />
+        ))}
+
+        {!loading && rooms.map((room) => (
           <motion.div
             key={room.id}
-            variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
           >
             <RoomCard
               room={room}
@@ -225,8 +219,8 @@ export function RoomsList() {
         ))}
 
         {/* Unclaimed devices card */}
-        {unassigned.length > 0 && (
-          <motion.div variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}>
+        {!loading && unassigned.length > 0 && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
             <Link
               to="/devices?filter=unassigned"
               className="relative overflow-hidden rounded-2xl aspect-[4/3] flex flex-col items-center justify-center gap-2 border-2 border-dashed border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
@@ -243,7 +237,7 @@ export function RoomsList() {
             </Link>
           </motion.div>
         )}
-      </motion.div>
+      </div>
 
       {/* Add room modal */}
       <Modal open={showAdd} onClose={() => { setShowAdd(false); setNewRoomName(''); setNewRoomPhoto('living_room') }} title="Add Room">
@@ -433,7 +427,7 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
 export function RoomDetail() {
   const { roomId } = useParams()
   const navigate = useNavigate()
-  const { fetchAll, ziggyRooms, hideEntity, updateEntityState } = useDeviceStore()
+  const { fetchAll, ziggyRooms, hideEntity, updateEntityState, loading } = useDeviceStore()
   const { addToast } = useUIStore()
   const [showAdd, setShowAdd] = useState(false)
   const [addEntityId, setAddEntityId] = useState('')
@@ -472,7 +466,7 @@ export function RoomDetail() {
     }
     updateEntityState(entityId, on ? 'on' : 'off')
     try {
-      await sendIntent(`turn ${on ? 'on' : 'off'} ${entityId}`)
+      await controlDevice(entityId, on ? 'turn_on' : 'turn_off')
       addToast(`${on ? 'On' : 'Off'}`, 'success')
       setTimeout(() => fetchAll(), 1500)
     } catch {
@@ -537,6 +531,17 @@ export function RoomDetail() {
   }
 
   if (!room) {
+    if (loading) {
+      return (
+        <div className="max-w-2xl mx-auto animate-pulse">
+          <div className="h-48 bg-zinc-200 dark:bg-zinc-800" />
+          <div className="px-4 pt-4 space-y-3">
+            <div className="h-5 bg-zinc-100 dark:bg-zinc-800 rounded-lg w-1/3" />
+            <div className="h-32 bg-zinc-100 dark:bg-zinc-800/60 rounded-2xl" />
+          </div>
+        </div>
+      )
+    }
     return <div className="flex items-center justify-center h-64 text-zinc-400">Room not found</div>
   }
 

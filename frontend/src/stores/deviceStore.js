@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices } from '../lib/api'
 
+export const CONTROLLABLE_DOMAINS = new Set([
+  'light', 'switch', 'climate', 'cover', 'media_player', 'fan', 'lock', 'vacuum',
+])
+
 const HIDDEN_KEY = 'ziggy_hidden_entities'
 const loadHidden = () => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')) } catch { return new Set() } }
 const saveHidden = (s) => localStorage.setItem(HIDDEN_KEY, JSON.stringify([...s]))
@@ -96,6 +100,43 @@ export const useDeviceStore = create((set, get) => ({
     return entities.filter(
       (e) => DEVICE_DOMAINS.has(e.domain) && !assigned.has(e.entity_id)
     )
+  },
+
+  getActiveCount: () =>
+    get().entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain) && e.state === 'on').length,
+
+  getTotalControllable: () =>
+    get().entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain)).length,
+
+  getUnavailableCount: () =>
+    get().entities.filter((e) => e.state === 'unavailable').length,
+
+  getPresenceSummary: () => {
+    const { entities } = get()
+    const results = []
+    for (const e of entities) {
+      if (e.domain === 'person' && e.state === 'home') {
+        const name = (e.friendly_name || e.entity_id.split('.')[1]).replace(/_/g, ' ')
+        results.push(`${name} is home`)
+      }
+    }
+    for (const e of entities) {
+      if (e.domain !== 'binary_sensor') continue
+      if (!['occupancy', 'presence', 'motion'].includes(e.device_class)) continue
+      if (e.state !== 'on') continue
+      const room = (e.friendly_name || e.entity_id.split('.')[1]).replace(/_/g, ' ')
+      results.push(`Someone is in the ${room}`)
+    }
+    for (const e of entities) {
+      if (e.domain !== 'sensor') continue
+      const id = e.entity_id.toLowerCase()
+      if (!id.includes('presence') && !id.includes('occupancy')) continue
+      if (e.state === 'occupied') {
+        const room = (e.friendly_name || id.split('.')[1]).replace(/_/g, ' ')
+        results.push(`${room} is occupied`)
+      }
+    }
+    return results
   },
 
   // For Devices page: HA entity objects enriched with room data (legacy join, kept for entity browser)

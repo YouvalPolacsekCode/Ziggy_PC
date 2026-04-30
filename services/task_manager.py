@@ -108,7 +108,12 @@ def task_summary() -> str:
     now_dt = datetime.now()
     done = sum(1 for t in tasks if t["done"])
     pending = sum(1 for t in tasks if not t["done"])
-    overdue = sum(1 for t in tasks if not t["done"] and datetime.strptime(t["due"], "%Y-%m-%d %H:%M") < now_dt)
+    def _is_overdue(t):
+        try:
+            return datetime.strptime(t["due"], "%Y-%m-%d %H:%M") < now_dt
+        except Exception:
+            return False
+    overdue = sum(1 for t in tasks if not t["done"] and _is_overdue(t))
     high = sum(1 for t in tasks if not t["done"] and t.get("priority") == "high")
     lines = [
         f"📊 Task summary: {len(tasks)} total",

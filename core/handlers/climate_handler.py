@@ -1,5 +1,6 @@
 from __future__ import annotations
 from core.intent_utils import ok, err, wrap, normalize_room
+from core.conversation_context import set_context
 from services.home_automation import get_sensor_state, set_ac_temperature, resolve_entity, call_service
 
 
@@ -25,6 +26,8 @@ async def handle_control_ac(params: dict, *, source: str = "unknown") -> dict:
     service = "turn_on" if turn_on else "turn_off"
     result = call_service("climate", service, {"entity_id": entity_id})
     if result.get("ok"):
+        set_context(room=room, device_type="ac", entity_id=entity_id,
+                    action="on" if turn_on else "off", intent="control_ac")
         return ok(f"{'Turning on' if turn_on else 'Turning off'} {room.replace('_', ' ')} AC.")
     return err("Couldn't control the AC.", details=result.get("message"))
 
@@ -40,6 +43,7 @@ async def handle_set_ac_temperature(params: dict, *, source: str = "unknown") ->
         return err("Please provide a valid temperature number.")
     try:
         set_ac_temperature(entity_id, temp)
+        set_context(room=room, device_type="ac", entity_id=entity_id, action="temperature", intent="set_ac_temperature")
         return ok(f"Setting {room.replace('_', ' ')} AC to {temp}°C.")
     except Exception as e:
         return err("Couldn't set the AC right now.", details=str(e))

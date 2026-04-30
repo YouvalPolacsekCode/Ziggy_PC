@@ -14,6 +14,7 @@ GPT sends one of these intents after seeing ir_manager's device list in the syst
 from __future__ import annotations
 
 from core.intent_utils import ok, err, normalize_room
+from core.conversation_context import set_context
 from core.logger_module import log_info, log_error
 from services.ir_manager import (
     resolve_ir_device,
@@ -154,6 +155,8 @@ async def handle_ir_send_command(params: dict, *, source: str = "unknown") -> di
     result = send_ir_command(device["id"], action)
     if result.get("ok"):
         room_str = (device.get("room") or "").replace("_", " ")
+        set_context(room=device.get("room") or room, device_type=device_type,
+                    entity_id=device["id"], action=action, intent="ir_send_command")
         return ok(f"Sent {raw_action} to {device['name']} in {room_str}.")
 
     # Command not found — give a helpful message
@@ -189,6 +192,8 @@ async def handle_ir_set_ac_temperature(params: dict, *, source: str = "unknown")
     mode = raw_mode if raw_mode else None
     result = send_ac_temperature(device["id"], temperature, mode=mode)
     if result.get("ok"):
+        set_context(room=device.get("room") or room, device_type="ac",
+                    entity_id=device["id"], action="temperature", intent="ir_set_ac_temperature")
         return result
     return err(result.get("message") or "Couldn't set AC temperature.")
 

@@ -35,7 +35,7 @@ from services.ha_scripts import (
     list_scripts, get_script_for_ui, save_script, delete_script, run_script,
 )
 from services.entity_filter import filter_entities
-from services.home_automation import HEADERS, HA_URL, get_state, call_service
+from services.home_automation import HEADERS, HA_URL, get_state, get_all_states, call_service
 from services.system_tools import get_system_status
 from services.task_manager import add_task
 from services.event_manager import add_event, list_events, remove_event, days_until_event, next_event, get_all_events
@@ -144,8 +144,6 @@ async def process_voice(file: UploadFile = File(...)):
             return {"reply": "", "transcription": "", "ok": False, "error": "No speech detected"}
 
         pipeline_text = transcription
-        if lang == "he":
-            pipeline_text = _translate(transcription, "en")
 
         intent_data = quick_parse(pipeline_text)
         intent_data["source"] = "web_voice"
@@ -153,7 +151,7 @@ async def process_voice(file: UploadFile = File(...)):
         reply = render_result(result)
 
         if lang == "he":
-            reply = _translate(reply, "he")
+            reply = _translate(reply)
 
         await manager.broadcast({
             "type": "ziggy_response",
@@ -523,6 +521,50 @@ async def ha_call_service(body: HaServiceCall):
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
     return result
+
+
+class HaControlBody(BaseModel):
+    entity_id: str
+    action: str          # "turn_on" | "turn_off"
+    source: str = "web"
+
+
+@app.post("/api/ha/control")
+async def ha_control(body: HaControlBody):
+    """
+    UI device toggle — deterministic path for on/off from any dashboard view.
+    Calls HA directly (no LLM), then broadcasts state change via WebSocket
+    and logs to the pattern store so the suggestion engine has data.
+    """
+    if body.action not in ("turn_on", "turn_off"):
+        raise HTTPException(status_code=422, detail="action must be 'turn_on' or 'turn_off'")
+
+    domain = body.entity_id.split(".")[0]
+    result = call_service(domain, body.action, {"entity_id": body.entity_id})
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
+
+    new_state = "on" if body.action == "turn_on" else "off"
+
+    await manager.broadcast({
+        "type": "entity_state_changed",
+        "entity_id": body.entity_id,
+        "state": new_state,
+        "source": body.source,
+    })
+
+    try:
+        from services.pattern_logger import log_event
+        log_event(
+            intent="toggle_device",
+            params={"entity_id": body.entity_id, "turn_on": body.action == "turn_on", "action": body.action},
+            result=result,
+            source=body.source,
+        )
+    except Exception:
+        pass
+
+    return {"ok": True, "entity_id": body.entity_id, "state": new_state}
 
 
 @app.get("/api/devices/validate")
@@ -1258,6 +1300,98 @@ async def api_run_pattern_analysis():
     except Exception as e:
         log_error(f"[API] Pattern analysis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Quick Asks  /api/quick-asks
+# ---------------------------------------------------------------------------
+
+import json as _json
+from pathlib import Path as _Path
+
+_QUICK_ASKS_FILE = _Path(__file__).parent.parent / "user_files" / "quick_asks.json"
+
+def _load_quick_asks() -> list:
+    try:
+        return _json.loads(_QUICK_ASKS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+def _save_quick_asks(data: list) -> None:
+    _QUICK_ASKS_FILE.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+class QuickAskCreate(BaseModel):
+    label: str
+    icon: str = "⚡"
+    intent: str
+    params: dict = {}
+
+class QuickAskUpdate(BaseModel):
+    label: str | None = None
+    icon: str | None = None
+    intent: str | None = None
+    params: dict | None = None
+
+@app.get("/api/quick-asks")
+async def api_get_quick_asks():
+    return _load_quick_asks()
+
+@app.post("/api/quick-asks")
+async def api_create_quick_ask(body: QuickAskCreate):
+    import uuid
+    items = _load_quick_asks()
+    new = {"id": str(uuid.uuid4())[:8], "label": body.label, "icon": body.icon,
+           "intent": body.intent, "params": body.params}
+    items.append(new)
+    _save_quick_asks(items)
+    return new
+
+@app.patch("/api/quick-asks/{qa_id}")
+async def api_update_quick_ask(qa_id: str, body: QuickAskUpdate):
+    items = _load_quick_asks()
+    for item in items:
+        if item["id"] == qa_id:
+            if body.label is not None: item["label"] = body.label
+            if body.icon is not None: item["icon"] = body.icon
+            if body.intent is not None: item["intent"] = body.intent
+            if body.params is not None: item["params"] = body.params
+            _save_quick_asks(items)
+            return item
+    raise HTTPException(status_code=404, detail="Quick ask not found")
+
+@app.delete("/api/quick-asks/{qa_id}")
+async def api_delete_quick_ask(qa_id: str):
+    items = _load_quick_asks()
+    updated = [i for i in items if i["id"] != qa_id]
+    if len(updated) == len(items):
+        raise HTTPException(status_code=404, detail="Quick ask not found")
+    _save_quick_asks(updated)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Direct Intent  POST /api/direct-intent  (bypasses LLM parser)
+# ---------------------------------------------------------------------------
+
+class DirectIntentRequest(BaseModel):
+    intent: str
+    params: dict = {}
+    source: str = "web"
+
+@app.post("/api/direct-intent")
+async def process_direct_intent(req: DirectIntentRequest):
+    intent_data = {"intent": req.intent, "params": req.params, "source": req.source}
+    result = await handle_intent(intent_data)
+    reply = render_result(result)
+    await manager.broadcast({
+        "type": "ziggy_response",
+        "reply": reply,
+        "source": req.source,
+        "ok": result.get("ok", True),
+        "intent": req.intent,
+        "params": req.params,
+    })
+    return {"reply": reply, "ok": result.get("ok", True), "intent": req.intent, "params": req.params}
 
 
 # ---------------------------------------------------------------------------

@@ -8,12 +8,33 @@ from integrations.openai_client import get_client
 # ---------------------------------------------------------------------------
 _FAST_PATTERNS = [
     (re.compile(r"\b(what time|what'?s the time|current time|time now|tell me the time)\b"), "get_time"),
+    (re.compile(r"מה השעה|איזו שעה|מה השעה עכשיו"), "get_time"),
     (re.compile(r"\b(what'?s the date|today'?s date|current date|what date is it)\b"), "get_date"),
+    (re.compile(r"מה התאריך|איזה תאריך"), "get_date"),
     (re.compile(r"\b(what day|which day|day of the week|what weekday)\b"), "get_day_of_week"),
+    (re.compile(r"איזה יום|מה היום"), "get_day_of_week"),
 ]
 
 _TRIGGER_PREFIX = "ziggy do"
 _ROOMS = ", ".join(sorted(settings.get("room_aliases", {}).keys()))
+
+# Hebrew room name → English canonical slug, sorted longest-match first
+_ROOMS_HE_SORTED = sorted(
+    settings.get("room_aliases_he", {}).items(),
+    key=lambda kv: len(kv[0]),
+    reverse=True,
+)
+
+def _normalize_hebrew_rooms(text: str) -> str:
+    """Replace Hebrew room names with English display names before sending to GPT."""
+    for he_name, en_slug in _ROOMS_HE_SORTED:
+        if he_name in text:
+            en_display = next(
+                (k for k, v in settings.get("room_aliases", {}).items() if v == en_slug),
+                en_slug,
+            )
+            text = text.replace(he_name, en_display)
+    return text
 
 TOOLS = [
     # ---- Lights ----
@@ -50,8 +71,13 @@ TOOLS = [
         }, "required": ["room", "turn_on"]},
     }},
     {"type": "function", "function": {
+        "name": "turn_off_all_lights",
+        "description": "Turn off ALL lights in the house. Use this when the user says 'turn off all lights', 'lights off', 'all lights off'. Does NOT affect TVs, media players, or other devices.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
         "name": "turn_off_everything",
-        "description": "Turn off all lights and devices in the entire house",
+        "description": "Turn off all lights AND all devices (including TV, media players) in the entire house. Only use when the user explicitly says 'everything off', 'shut everything down', or 'good night' meaning all devices.",
         "parameters": {"type": "object", "properties": {}},
     }},
 
@@ -784,6 +810,7 @@ _SYSTEM_PROMPT = (
     "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule' — ALWAYS use create_automation. "
     "Never instruct the user to use external apps or Home Assistant UI — use Ziggy's own tools to fulfill requests directly. "
     f"Known rooms: {_ROOMS}. "
+    # _ROOMS keys are English display names like "living room", "kitchen" — not slugs.
     "IR routing rules: "
     "use ir_send_command / ir_set_ac_temperature for devices without a HA entity (IR blaster only). "
     "use ir_send_channel for 'channel N' commands on IR TVs. "
@@ -792,6 +819,14 @@ _SYSTEM_PROMPT = (
     "use control_ac / set_ac_temperature for smart ACs with a HA climate entity. "
     "use control_tv / set_tv_source for smart TVs with a HA media_player entity. "
     "Only use chat_with_gpt if no other tool applies and the input is pure casual conversation."
+    "\n\nHebrew support: The user may speak Hebrew or mix Hebrew with English. "
+    "ALWAYS call the correct tool regardless of input language. "
+    "Respond in the same language the user used. "
+    "Hebrew action verbs: תדליק/הדלק = turn on, תכבה/כבה = turn off, "
+    "הגדל/תגדיל = increase/brighten, הקטן/תקטין = decrease/dim, "
+    "מה הטמפרטורה = get_temperature, מה הלחות = get_humidity, "
+    "כבה הכל = turn_off_all_lights, לילה טוב = turn_off_everything. "
+    "Hebrew room names are pre-normalized to English display names before this prompt arrives."
 )
 
 
@@ -818,6 +853,7 @@ def quick_parse(text: str) -> dict:
 
 
 def _parse_with_tools(text: str) -> dict:
+    text = _normalize_hebrew_rooms(text)
     try:
         # Append live IR device list so GPT knows which devices exist and picks
         # the right intent (ir_send_command vs control_tv / control_ac).
@@ -829,6 +865,16 @@ def _parse_with_tools(text: str) -> dict:
                 system = system + "\n\n" + ir_hint
         except Exception:
             pass  # IR manager not yet configured — ignore silently
+
+        # Inject last-device context so GPT can resolve pronouns like
+        # "it", "that", "turn it back on", "the light", etc.
+        try:
+            from core.conversation_context import build_context_hint
+            ctx_hint = build_context_hint()
+            if ctx_hint:
+                system = system + ctx_hint
+        except Exception:
+            pass
 
         response = get_client().chat.completions.create(
             model="gpt-4o-mini",

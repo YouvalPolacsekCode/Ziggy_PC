@@ -1,9 +1,10 @@
 import { useRef, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, RotateCcw } from 'lucide-react'
 import { VoiceOrb } from '../components/orb/VoiceOrb'
-import { sendIntent, sendVoice } from '../lib/api'
+import { sendIntent, sendVoice, sendDirectIntent } from '../lib/api'
+import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
 import { formatTime } from '../lib/utils'
@@ -12,15 +13,6 @@ import { useState } from 'react'
 
 const HEBREW_RE = /[\u0590-\u05FF]/
 const isHebrew = (text) => HEBREW_RE.test(text)
-
-const SUGGESTIONS = [
-  'Turn off all lights',
-  "What's the temperature?",
-  'Who is home?',
-  'Lock the front door',
-  'Good night mode',
-  'Room summary',
-]
 
 function Message({ msg }) {
   const isUser = msg.role === 'user'
@@ -38,8 +30,8 @@ function Message({ msg }) {
       <div className={cn(
         'max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
         isUser
-          ? 'bg-violet-600 text-white rounded-br-sm'
-          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-bl-sm',
+          ? 'bg-gradient-to-br from-violet-600 to-violet-700 text-white rounded-br-sm shadow-[0_2px_12px_rgba(124,58,237,0.3)]'
+          : 'bg-white dark:bg-zinc-800/80 border border-zinc-100 dark:border-zinc-700/50 text-zinc-900 dark:text-zinc-100 rounded-bl-sm',
         rtl && 'text-right'
       )}
         dir={rtl ? 'rtl' : 'ltr'}
@@ -55,11 +47,11 @@ function ThinkingBubble() {
   return (
     <div className="flex gap-3">
       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 flex-shrink-0 mt-auto mb-1" />
-      <div className="bg-zinc-100 dark:bg-zinc-800 px-4 py-3 rounded-2xl rounded-bl-sm flex gap-1.5 items-center">
+      <div className="bg-white dark:bg-zinc-800/80 border border-zinc-100 dark:border-zinc-700/50 px-4 py-3 rounded-2xl rounded-bl-sm flex gap-1.5 items-center">
         {[0, 1, 2].map((i) => (
           <motion.div
             key={i}
-            className="w-1.5 h-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
+            className="w-1.5 h-1.5 rounded-full bg-violet-400/70 dark:bg-violet-500/60"
             animate={{ y: [0, -4, 0] }}
             transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
           />
@@ -71,9 +63,11 @@ function ThinkingBubble() {
 
 export default function AIChat() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { addToast } = useUIStore()
   const { messages, addMessage, clearMessages } = useChatStore()
-  const [input, setInput] = useState(location.state?.prefill || '')
+  const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
+  const [input, setInput] = useState('')
   const [orbState, setOrbState] = useState('idle')
   const [thinking, setThinking] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -81,12 +75,22 @@ export default function AIChat() {
   const chunksRef = useRef([])
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
+  const sentPrefillRef = useRef(false)
 
-  // Auto-send prefill once on mount
+  useEffect(() => { fetchQuickAsks() }, [])
+
+  // Auto-send prefill exactly once — guard against React StrictMode double-invocation
   useEffect(() => {
-    if (location.state?.prefill) {
-      handleSend(location.state.prefill)
-      window.history.replaceState({}, '')
+    if (sentPrefillRef.current) return
+    const { quickAsk, prefill } = location.state || {}
+    if (quickAsk) {
+      sentPrefillRef.current = true
+      handleDirectQuickAsk(quickAsk)
+      navigate(location.pathname, { replace: true, state: {} })
+    } else if (prefill) {
+      sentPrefillRef.current = true
+      handleSend(prefill)
+      navigate(location.pathname, { replace: true, state: {} })
     }
   }, [])
 
@@ -103,6 +107,23 @@ export default function AIChat() {
     setOrbState('thinking')
     try {
       const res = await sendIntent(t)
+      addMessage('assistant', res.reply || '…')
+      setOrbState('speaking')
+      setTimeout(() => setOrbState('idle'), 2500)
+    } catch {
+      addMessage('assistant', 'Something went wrong. Please try again.')
+      setOrbState('idle')
+    } finally {
+      setThinking(false)
+    }
+  }
+
+  const handleDirectQuickAsk = async (qa) => {
+    addMessage('user', `${qa.icon ? qa.icon + ' ' : ''}${qa.label}`)
+    setThinking(true)
+    setOrbState('thinking')
+    try {
+      const res = await sendDirectIntent(qa.intent, qa.params)
       addMessage('assistant', res.reply || '…')
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
@@ -165,7 +186,7 @@ export default function AIChat() {
   const hasMessages = messages.length > 0
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-4rem)] md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-4rem)] md:h-screen bg-gradient-to-b from-violet-50/30 dark:from-violet-950/10 to-transparent">
       {/* Orb header */}
       <div className={cn(
         'flex flex-col items-center justify-center transition-all duration-500 pt-6 relative',
@@ -235,13 +256,14 @@ export default function AIChat() {
             exit={{ opacity: 0 }}
             className="px-4 pb-4 flex flex-wrap gap-2 justify-center"
           >
-            {SUGGESTIONS.map((q) => (
+            {quickAsks.map((qa) => (
               <button
-                key={q}
-                onClick={() => handleSend(q)}
-                className="px-3 py-1.5 rounded-full text-xs text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:border-violet-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all"
+                key={qa.id}
+                onClick={() => handleDirectQuickAsk(qa)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:border-violet-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all"
               >
-                {q}
+                {qa.icon && <span>{qa.icon}</span>}
+                {qa.label}
               </button>
             ))}
           </motion.div>
@@ -258,7 +280,7 @@ export default function AIChat() {
       )}
 
       {/* Input */}
-      <div className="px-4 pb-3 pt-2 flex gap-2 border-t border-zinc-100 dark:border-zinc-800">
+      <div className="px-4 pb-3 pt-2 flex gap-2 border-t border-zinc-200/60 dark:border-zinc-700/50">
         <input
           ref={inputRef}
           value={input}

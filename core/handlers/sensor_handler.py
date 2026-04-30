@@ -67,7 +67,8 @@ def _check_person_by_name(name: str) -> dict | None:
 
 async def handle_is_someone_home(params: dict, *, source: str = "unknown") -> dict:
     name = params.get("name")
-    room = params.get("room") or normalize_room(params)
+    _room = params.get("room") or normalize_room(params)
+    room = None if _room == "unknown" else _room
 
     # Named person — try person.* entity first, then room motion sensor
     if name:

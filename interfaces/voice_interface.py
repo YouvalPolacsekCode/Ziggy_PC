@@ -25,6 +25,7 @@ from core.result_utils import render_result
 
 # ===== Settings / Config =====
 VOICE_CFG = settings.get("voice", {})
+HEBREW_MODEL_ID = VOICE_CFG.get("hebrew_model", "ivrit-ai/whisper-large-v3-turbo-ct2")
 WAKEWORD_ENABLED = bool(VOICE_CFG.get("wakeword_enabled", False))
 WAKEWORD_ENGINE = str(VOICE_CFG.get("wakeword_engine", "oww")).lower()
 WAKEWORD_MODEL_NAME = VOICE_CFG.get("wakeword_model", "hey_mycroft")
@@ -44,102 +45,111 @@ recognizer = sr.Recognizer()
 recognizer.energy_threshold = 200           # starting point; calibration may adjust
 recognizer.dynamic_energy_threshold = False  # OFF — dynamic mode drifts too high after loud sounds
 recognizer.pause_threshold = 1.0            # wait 1s of silence before cutting off
-whisper_model = WhisperModel("base", compute_type="int8")
+
+_whisper_base = None
+
+def _get_whisper() -> WhisperModel:
+    """Local base model — used for language detection and English transcription."""
+    global _whisper_base
+    if _whisper_base is None:
+        _whisper_base = WhisperModel("base", compute_type="int8")
+    return _whisper_base
+
+
+def _transcribe_api(audio_path: str) -> tuple[str, str]:
+    """Transcribe Hebrew audio via OpenAI Whisper API. Fast, accurate, no local GPU needed."""
+    t0 = time.time()
+    try:
+        from integrations.openai_client import get_client
+        with open(audio_path, "rb") as f:
+            result = get_client().audio.transcriptions.create(
+                model="whisper-1",
+                file=f,
+                language="he",
+            )
+        text = result.text.strip()
+        print(f"[TIMING] openai-whisper-api: {time.time() - t0:.2f}s")
+        return text, "he"
+    except Exception as e:
+        print(f"[STT] OpenAI API failed ({e}) — returning empty")
+        return "", "he"
 
 # ===== Piper TTS =====
 _REPO_ROOT = Path(__file__).parent.parent
 _PIPER_EXE = shutil.which("piper") or shutil.which("piper.exe")
 _PIPER_VOICE = _REPO_ROOT / "piper_voices" / "en_US-libritts_r-medium.onnx"
+_PIPER_VOICE_HE = _REPO_ROOT / "piper_voices" / "he_IL-sivri-medium.onnx"
 
 # ===== Hebrew helpers =====
 def is_hebrew(text: str) -> bool:
     return any('\u0590' <= c <= '\u05EA' for c in text or "")
 
-def fix_hebrew_direction(text: str) -> str:
-    words = (text or "").split()
-    return " ".join(word[::-1] if is_hebrew(word) else word for word in words)
+try:
+    from bidi.algorithm import get_display as _bidi_display
+    def fix_hebrew_direction(text: str) -> str:
+        return _bidi_display(text or "") if is_hebrew(text) else (text or "")
+except ImportError:
+    def fix_hebrew_direction(text: str) -> str:
+        return text or ""
 
-_HE_TO_EN_SYSTEM = (
-    "You are a translator for a smart home voice assistant. "
-    "Translate the Hebrew voice command to English accurately. "
-    "Preserve smart home terminology: "
-    "סלון=living room, חדר שינה=bedroom, מטבח=kitchen, "
-    "אמבטיה=bathroom, כניסה=entrance, מרפסת=balcony, "
-    "משרד=office, חדר ילדים=kids room. "
-    "Return only the English translation, nothing else."
-)
-
-def _translate(text: str, to_lang: str) -> str:
-    """Translate text to 'en' or 'he' via gpt-4o-mini. Source language is auto-detected."""
+def _translate(text: str) -> str:
+    """Translate smart home response text to Hebrew via gpt-4o-mini."""
+    t0 = time.time()
     try:
         from integrations.openai_client import get_client
-        if to_lang == "en":
-            system = _HE_TO_EN_SYSTEM
-        else:
-            system = "Translate the following smart home response to Hebrew. Return only the translation, nothing else."
         resp = get_client().chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system},
+                {"role": "system", "content": "Translate the following smart home response to Hebrew. Return only the translation, nothing else."},
                 {"role": "user", "content": text},
             ],
-            max_tokens=300,
+            max_tokens=150,
+            timeout=4,
         )
-        return resp.choices[0].message.content.strip()
+        result = resp.choices[0].message.content.strip()
+        print(f"[TIMING] translate: {time.time() - t0:.2f}s")
+        return result
     except Exception as e:
-        print(f"[Voice] Translation error: {e}")
+        print(f"[TIMING] translate: {time.time() - t0:.2f}s (FAILED: {e})")
+        print(f"[Voice] Translation skipped ({e}) — returning English")
         return text
 
-def _stt_language_arg():
-    if STT_LANGUAGE in ("", "auto", "autodetect"):
-        return None
-    return STT_LANGUAGE
-
-_NO_SPEECH_EN = 0.80
-_NO_SPEECH_HE = 0.95  # Hebrew: Whisper is less confident, be very permissive
+_NO_SPEECH_THRESHOLD = 0.80
 
 def transcribe(audio_path: str):
-    # First pass: auto-detect
-    segments_iter, info = whisper_model.transcribe(audio_path, beam_size=5, language=_stt_language_arg())
+    """
+    Two-path STT:
+      English → local base Whisper (~1s)
+      Hebrew  → local base detects language, OpenAI Whisper API transcribes (~1-2s)
+    """
+    t0 = time.time()
+    model = _get_whisper()
+    print(f"[TIMING] whisper model ready: {time.time() - t0:.2f}s")
+
+    # Local base pass: language detection + English transcription
+    t1 = time.time()
+    segments_iter, info = model.transcribe(audio_path, beam_size=5, language=None)
     segments = list(segments_iter)
-    detected = (info.language or "en").lower()
+    detected_lang = (info.language or "en").lower()
+    print(f"[TIMING] whisper detect: {time.time() - t1:.2f}s, detected={detected_lang!r}")
 
-    print(f"[STT] Auto-detect: lang={detected!r}, segments={len(segments)}")
-
-    # Languages Whisper commonly confuses with Hebrew (Semitic family + Yiddish + common misdetections)
-    _HEBREW_CONFUSED = {"he", "ar", "fa", "yi", "ur", "hy", "ka"}
-
-    if detected == "en":
-        # Confirmed English — use as-is
-        lang = "en"
-    elif detected in _HEBREW_CONFUSED:
-        # Likely Hebrew misidentified — retry forced as Hebrew
-        print(f"[STT] Possible Hebrew misdetected as {detected!r} → retrying as Hebrew")
-        segs2, _ = whisper_model.transcribe(audio_path, beam_size=5, language="he")
-        segments = list(segs2)
-        detected = "he"
-        lang = "he"
-        print(f"[STT] Hebrew re-pass: {len(segments)} segments")
-    else:
-        # Other language (French, German, Spanish…) — trust detection, keep as-is
-        print(f"[STT] Non-Hebrew foreign language ({detected!r}) — keeping detection")
-        lang = detected
-
-    # Filter silence / pure noise
-    if segments:
-        avg_no_speech = sum(getattr(s, "no_speech_prob", 0.0) for s in segments) / len(segments)
-    else:
-        avg_no_speech = 1.0
-
-    threshold = _NO_SPEECH_HE if lang == "he" else _NO_SPEECH_EN
-    print(f"[STT] no_speech_prob={avg_no_speech:.2f} (threshold={threshold})")
-
-    if avg_no_speech > threshold:
+    # Silence check
+    avg_no_speech = (
+        sum(getattr(s, "no_speech_prob", 0.0) for s in segments) / len(segments)
+        if segments else 1.0
+    )
+    print(f"[STT] no_speech_prob={avg_no_speech:.2f}")
+    if avg_no_speech > _NO_SPEECH_THRESHOLD:
         print("[STT] Discarded — silence or noise")
         return "", "en"
 
+    if detected_lang == "he":
+        print("[STT] Hebrew detected — routing to OpenAI Whisper API")
+        return _transcribe_api(audio_path)
+
     text = " ".join(s.text for s in segments).strip()
-    return text, lang
+    print(f"[STT] lang={detected_lang!r}, segments={len(segments)}")
+    return text, detected_lang
 
 # ===== One-time mic calibration =====
 _MIN_ENERGY_THRESHOLD = 200  # never go below this — prevents TV/background pickup
@@ -161,15 +171,16 @@ def _calibrate_mic():
 _tts_guard_until = 0.0
 _GTTS_LANG_MAP = {"he": "iw"}  # gTTS uses "iw" for Hebrew, not "he"
 
-def _speak_piper(text: str) -> bool:
+def _speak_piper(text: str, lang: str = "en") -> bool:
     """Speak using local Piper TTS. Returns True if successful."""
-    if _PIPER_EXE is None or not _PIPER_VOICE.exists():
+    voice = _PIPER_VOICE_HE if lang == "he" and _PIPER_VOICE_HE.exists() else _PIPER_VOICE
+    if _PIPER_EXE is None or not voice.exists():
         return False
     out_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
             out_path = fp.name
-        cmd = [_PIPER_EXE, "-m", str(_PIPER_VOICE), "-f", out_path]
+        cmd = [_PIPER_EXE, "-m", str(voice), "-f", out_path]
         proc = subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, timeout=15)
         if proc.returncode != 0:
             if is_verbose():
@@ -195,8 +206,8 @@ def speak(text: str, lang: str = "en"):
         est_sec = max(1.0, len(text.split()) / 2.3 + 0.6)
         _tts_guard_until = time.time() + est_sec
 
-        # Piper is English-only — fast, local, no internet
-        if lang == "en" and _speak_piper(text):
+        # Piper — local, no internet; Hebrew voice used if available
+        if _speak_piper(text, lang=lang):
             if is_verbose():
                 print("[Voice] Piper TTS used.")
             return
@@ -215,9 +226,14 @@ def speak(text: str, lang: str = "en"):
 # ===== Intent pipeline (sync wrapper) =====
 def _handle_intent_sync(text: str):
     try:
+        t0 = time.time()
         intent_data = quick_parse(text)
+        print(f"[TIMING] quick_parse: {time.time() - t0:.2f}s → intent={intent_data.get('intent')}")
         intent_data["source"] = "voice"
-        return asyncio.run(handle_intent(intent_data))
+        t1 = time.time()
+        result = asyncio.run(handle_intent(intent_data))
+        print(f"[TIMING] handle_intent: {time.time() - t1:.2f}s")
+        return result
     except Exception as e:
         print(f"[Voice] Intent handling error: {e}")
         return {"ok": False, "message": "Sorry, something went wrong.", "data": {}}
@@ -382,16 +398,24 @@ def start_voice_interface():
                     audio = recognizer.listen(source, timeout=10, phrase_time_limit=12)
                     print("[Voice] Processing...")
 
+                _t_audio_end = time.time()
+
+                t_wav0 = time.time()
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as fp:
                     fp.write(audio.get_wav_data())
                     fp.flush()
-                    transcription, detected_lang = transcribe(fp.name)
+                    _wav_path = fp.name
+                print(f"[TIMING] wav write: {time.time() - t_wav0:.2f}s")
+
+                t_stt0 = time.time()
+                transcription, detected_lang = transcribe(_wav_path)
+                print(f"[TIMING] stt total: {time.time() - t_stt0:.2f}s")
 
                 if not transcription.strip():
                     print("[STT] Empty transcription — discarded")
                 else:
                     lang_tag = "[HE]" if detected_lang == "he" else "[EN]"
-                    print(f"[Voice] You said {lang_tag}: {transcription}")
+                    print(f"[Voice] You said {lang_tag}: {fix_hebrew_direction(transcription)}")
                     last_active_time = time.time()
 
                     tl = transcription.lower()
@@ -408,27 +432,32 @@ def start_voice_interface():
                         speak("Shutting down.")
                         os._exit(0)
 
-                    # Non-English: translate to English for pipeline, reply in Hebrew
-                    # (Whisper may return "ar" for Hebrew speech — treat both as Hebrew)
                     pipeline_text = transcription
                     reply_lang = detected_lang
-                    if detected_lang != "en":
-                        reply_lang = "he"
-                        pipeline_text = _translate(transcription, "en")
-                        if is_verbose():
-                            print(f"[Voice] Translated ({detected_lang}→en): {pipeline_text}")
 
+                    t_intent0 = time.time()
                     result = _handle_intent_sync(pipeline_text)
+                    print(f"[TIMING] intent+action: {time.time() - t_intent0:.2f}s")
+
+                    t_render0 = time.time()
                     reply = render_result(result)
+                    print(f"[TIMING] render: {time.time() - t_render0:.3f}s")
 
                     if reply_lang == "he":
-                        reply = _translate(reply, "he")
+                        t_tr0 = time.time()
+                        reply = _translate(reply)
+                        print(f"[TIMING] translate (logged inside too): {time.time() - t_tr0:.2f}s")
                         if is_verbose():
                             print(f"[Voice] Translated reply (en→he): {reply}")
 
                     lang_tag = "[HE]" if reply_lang == "he" else "[EN]"
-                    print(f"[Ziggy] {lang_tag}: {reply}")
+                    print(f"[Ziggy] {lang_tag}: {fix_hebrew_direction(reply)}")
+
+                    t_tts0 = time.time()
                     speak(reply, lang=reply_lang)
+                    print(f"[TIMING] tts+play: {time.time() - t_tts0:.2f}s")
+
+                    print(f"[TIMING] total end-to-end (audio captured → done): {time.time() - _t_audio_end:.2f}s")
 
             except sr.WaitTimeoutError:
                 print(f"[Voice] No speech detected (threshold={recognizer.energy_threshold:.0f}). Speak louder or say 'enable debug'.")

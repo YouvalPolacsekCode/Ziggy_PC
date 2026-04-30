@@ -101,9 +101,13 @@ export const getAlertSettings = () => get('/settings/alerts')
 // Memory
 export const getMemory = () => get('/memory')
 
-// Direct HA service call (for UI controls)
+// Direct HA service call — use only for advanced controls (brightness, climate, media)
 export const callHaService = (domain, service, data) =>
   post('/ha/service', { domain, service, data })
+
+// UI device toggle — deterministic on/off path with WS broadcast + pattern logging
+export const controlDevice = (entityId, action, source = 'web') =>
+  post('/ha/control', { entity_id: entityId, action, source })
 
 // Capabilities catalog
 export const getCapabilities = () => get('/capabilities')
@@ -134,6 +138,14 @@ export const irLearn = (deviceId, commandName) =>
   post('/ir/learn', { device_id: deviceId, command_name: commandName })
 export const irSend = (deviceId, command) =>
   post('/ir/send', { device_id: deviceId, command })
+
+// Quick Asks
+export const getQuickAsks = () => get('/quick-asks')
+export const createQuickAsk = (data) => post('/quick-asks', data)
+export const updateQuickAsk = (id, data) => patch(`/quick-asks/${id}`, data)
+export const deleteQuickAsk = (id) => del(`/quick-asks/${id}`)
+export const sendDirectIntent = (intent, params = {}, source = 'web') =>
+  post('/direct-intent', { intent, params, source })
 
 // Pattern Learning — Suggestions
 export const getSuggestions = () => get('/suggestions')
