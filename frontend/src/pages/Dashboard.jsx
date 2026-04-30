@@ -121,7 +121,7 @@ function ActiveDeviceChip({ entity, onToggle }) {
       isOn ? 'bg-zinc-900 dark:bg-white border-zinc-900 dark:border-white' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700'
     )}>
       <span className="text-sm">{domainIcon(entity.domain)}</span>
-      <span className={cn('text-xs font-medium truncate max-w-[80px]', isOn ? 'text-white dark:text-zinc-900' : 'text-zinc-600 dark:text-zinc-400')}>
+      <span className={cn('text-xs font-medium truncate max-w-[110px]', isOn ? 'text-white dark:text-zinc-900' : 'text-zinc-600 dark:text-zinc-400')}>
         {name}
       </span>
       <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity, v)} className="shrink-0 scale-75" />
@@ -131,7 +131,7 @@ function ActiveDeviceChip({ entity, onToggle }) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { entities, fetchAll, getRooms, updateEntityState, getActiveCount, getTotalControllable, getPresenceSummary } = useDeviceStore()
+  const { entities, ziggyRooms, fetchAll, updateEntityState, getActiveCount, getTotalControllable, getPresenceSummary } = useDeviceStore()
   const { tasks, fetch: fetchTasks } = useTaskStore()
   const { automations, fetchAutomations, fetchRoutines } = useAutomationStore()
   const { addToast } = useUIStore()
@@ -140,7 +140,14 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions(); fetchQuickAsks() }, [])
 
-  const rooms = getRooms()
+  const rooms = ziggyRooms
+    .filter((r) => (r.devices || []).length > 0)
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      entityCount: (r.devices || []).length,
+      activeCount: (r.devices || []).filter((d) => d.ha_state === 'on').length,
+    }))
   const presenceSummary = getPresenceSummary()
   const activeDeviceChips = entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain) && e.state === 'on').slice(0, 6)
   const pendingTasks = tasks.filter((t) => !t.done && !t.completed)
