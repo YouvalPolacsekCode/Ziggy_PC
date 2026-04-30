@@ -124,7 +124,8 @@ export const useDeviceStore = create((set, get) => ({
       if (e.domain !== 'binary_sensor') continue
       if (!['occupancy', 'presence', 'motion'].includes(e.device_class)) continue
       if (e.state !== 'on') continue
-      const room = (e.friendly_name || e.entity_id.split('.')[1]).replace(/_/g, ' ')
+      const raw = (e.friendly_name || e.entity_id.split('.')[1]).replace(/_/g, ' ')
+      const room = raw.replace(/\s+(Motion Occupancy|Occupancy|Motion|Presence|Sensor)$/i, '').trim()
       results.push(`Someone is in the ${room}`)
     }
     for (const e of entities) {
