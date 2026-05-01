@@ -2,6 +2,8 @@ from __future__ import annotations
 from core.intent_utils import ok, err, wrap, normalize_room
 from services.home_automation import get_sensor_state, get_global_sensor, get_all_temperatures, get_all_states
 
+_ACTIVE_DOMAINS = {"light", "switch", "media_player", "fan", "climate", "cover", "lock", "vacuum"}
+
 
 async def handle_get_temperature(params: dict, *, source: str = "unknown") -> dict:
     return wrap(get_sensor_state(normalize_room(params), "temperature"))
@@ -110,6 +112,23 @@ async def handle_is_someone_home(params: dict, *, source: str = "unknown") -> di
     return ok("Nobody is home.")
 
 
+async def handle_list_active_devices(params: dict, *, source: str = "unknown") -> dict:
+    all_states = get_all_states()
+    active = [
+        e for e in all_states
+        if e.get("entity_id", "").split(".")[0] in _ACTIVE_DOMAINS
+        and e.get("state") == "on"
+    ]
+    if not active:
+        return ok("No devices are currently active.")
+    lines = []
+    for e in active:
+        name = e.get("attributes", {}).get("friendly_name") or e["entity_id"].split(".")[1].replace("_", " ").title()
+        lines.append(f"- {name}")
+    word = "device" if len(active) == 1 else "devices"
+    return ok(f"{len(active)} active {word}:\n" + "\n".join(lines), data={"devices": active})
+
+
 HANDLERS = {
     "get_temperature": handle_get_temperature,
     "get_humidity": handle_get_humidity,
@@ -118,4 +137,5 @@ HANDLERS = {
     "get_internet_status": handle_get_internet_status,
     "get_sun_times": handle_get_sun_times,
     "is_someone_home": handle_is_someone_home,
+    "list_active_devices": handle_list_active_devices,
 }

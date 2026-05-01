@@ -747,6 +747,11 @@ TOOLS = [
         }, "required": ["trigger_type", "action_room", "action_device_type", "action_service"]},
     }},
     {"type": "function", "function": {
+        "name": "list_active_devices",
+        "description": "List all devices that are currently active (on, playing, running). Use when user asks 'what is on?', 'list active devices', 'what devices are active?', 'show active devices'.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
         "name": "list_automations",
         "description": "List all existing automations",
         "parameters": {"type": "object", "properties": {}},

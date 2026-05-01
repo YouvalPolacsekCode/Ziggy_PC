@@ -51,7 +51,8 @@ async def handle_list_automations(params: dict, *, source: str = "unknown") -> d
     if not autos:
         return ok("No automations found.")
     lines = [f"- {a['name']} ({'on' if a['enabled'] else 'off'})" for a in autos]
-    return ok(f"You have {len(autos)} automation(s):\n" + "\n".join(lines), data={"automations": autos})
+    word = "automation" if len(autos) == 1 else "automations"
+    return ok(f"You have {len(autos)} {word}:\n" + "\n".join(lines), data={"automations": autos})
 
 
 async def handle_delete_automation(params: dict, *, source: str = "unknown") -> dict:
