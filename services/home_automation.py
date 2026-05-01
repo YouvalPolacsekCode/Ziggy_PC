@@ -329,7 +329,12 @@ def get_sensor_state(room: str, sensor_type: str) -> Dict[str, Any]:
         value = data.get("state")
         attrs = data.get("attributes", {}) or {}
         unit = attrs.get("unit_of_measurement", "")
-        friendly = f"The {sensor_type_l} in {room} is {value} {unit}.".strip()
+        room_label = room.replace("_", " ").title()
+        if value in ("unavailable", "unknown", None):
+            friendly = f"The {sensor_type_l} in {room_label} is currently unavailable."
+        else:
+            unit_str = f" {unit}" if unit else ""
+            friendly = f"The {sensor_type_l} in {room_label} is {value}{unit_str}."
         return {"ok": True, "message": friendly, "data": {"room": room, "entity_id": entity_id, "value": value, "unit": unit, "attributes": attrs}}
     except Exception as e:
         log_error(f"[HA] Exception in get_sensor_state({room}, {sensor_type_l}): {e}")
