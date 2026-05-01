@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Cpu, Zap, RotateCcw, MessageCircle,
-  ListTodo, Settings, ChevronRight, Wifi, WifiOff, Brain, Sparkles, Lightbulb,
+  ListTodo, Settings, ChevronRight, Wifi, WifiOff, Brain, Sparkles, Lightbulb, Bolt,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUIStore } from '../../stores/uiStore'
@@ -32,6 +32,7 @@ const NAV_GROUPS = [
     label: 'AI',
     items: [
       { to: '/chat', icon: MessageCircle, label: 'Ziggy AI' },
+      { to: '/quick-asks', icon: Bolt, label: 'Quick Asks' },
     ],
   },
   {

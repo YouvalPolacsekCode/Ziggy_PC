@@ -31,7 +31,7 @@ function Message({ msg }) {
         'max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
         isUser
           ? 'bg-gradient-to-br from-violet-600 to-violet-700 text-white rounded-br-sm shadow-[0_2px_12px_rgba(124,58,237,0.3)]'
-          : 'bg-white dark:bg-zinc-800/80 border border-zinc-100 dark:border-zinc-700/50 text-zinc-900 dark:text-zinc-100 rounded-bl-sm',
+          : 'bg-white dark:bg-zinc-700 border border-zinc-100 dark:border-zinc-600 text-zinc-900 dark:text-zinc-100 rounded-bl-sm',
         rtl && 'text-right'
       )}
         dir={rtl ? 'rtl' : 'ltr'}
@@ -47,7 +47,7 @@ function ThinkingBubble() {
   return (
     <div className="flex gap-3">
       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 flex-shrink-0 mt-auto mb-1" />
-      <div className="bg-white dark:bg-zinc-800/80 border border-zinc-100 dark:border-zinc-700/50 px-4 py-3 rounded-2xl rounded-bl-sm flex gap-1.5 items-center">
+      <div className="bg-white dark:bg-zinc-700 border border-zinc-100 dark:border-zinc-600 px-4 py-3 rounded-2xl rounded-bl-sm flex gap-1.5 items-center">
         {[0, 1, 2].map((i) => (
           <motion.div
             key={i}
