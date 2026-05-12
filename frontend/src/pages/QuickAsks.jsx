@@ -9,37 +9,58 @@ import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn } from '../lib/utils'
 
-// Curated list of useful no-or-simple-param intents for quick asks
+// Curated list of useful intents for quick asks.
+// Params shown in the form as JSON — labels indicate what each param does.
 const INTENT_OPTIONS = [
-  { group: 'Lights', intents: [
-    { value: 'turn_off_all_lights',      label: 'Turn off all lights' },
-    { value: 'toggle_all_lights_in_room', label: 'All lights in room (requires room param)' },
-    { value: 'toggle_light',             label: 'Single light (requires room param)' },
+  { group: 'Lights — global', intents: [
+    { value: 'turn_off_all_lights',       label: 'Turn off all lights' },
+    { value: 'turn_off_everything',       label: 'Turn off everything (lights + media)' },
   ]},
-  { group: 'Climate', intents: [
-    { value: 'report_all_temperatures',  label: 'All temperatures' },
-    { value: 'get_temperature',          label: 'Temperature in room (requires room param)' },
-    { value: 'get_humidity',             label: 'Humidity in room (requires room param)' },
+  { group: 'Lights — room', intents: [
+    { value: 'toggle_all_lights_in_room', label: 'Toggle all lights in room  {"room":"living_room","turn_on":true}' },
+    { value: 'toggle_light',              label: 'Toggle a single light  {"room":"office","turn_on":true}' },
+    { value: 'set_light_brightness',      label: 'Set brightness  {"room":"bedroom","brightness_pct":50}' },
+    { value: 'set_light_color_temp',      label: 'Set color temperature  {"room":"kitchen","kelvin":2700}' },
+    { value: 'set_light_color',           label: 'Set RGB color  {"room":"living_room","rgb":[255,80,0]}' },
+    { value: 'set_light_effect',          label: 'Set light effect  {"room":"living_room","effect":"Rainbow"}' },
   ]},
-  { group: 'Devices', intents: [
-    { value: 'turn_off_everything',      label: 'Turn off everything (lights + TV)' },
-    { value: 'control_tv',               label: 'TV on/off' },
-    { value: 'control_ac',               label: 'AC on/off (requires room param)' },
+  { group: 'Climate / AC', intents: [
+    { value: 'report_all_temperatures',   label: 'All room temperatures' },
+    { value: 'get_temperature',           label: 'Temperature in room  {"room":"bedroom"}' },
+    { value: 'get_humidity',              label: 'Humidity in room  {"room":"living_room"}' },
+    { value: 'control_ac',               label: 'AC on/off  {"room":"bedroom","turn_on":true}' },
+    { value: 'set_ac_temperature',        label: 'Set AC temperature  {"room":"bedroom","temperature":22}' },
+    { value: 'set_ac_mode',              label: 'Set AC mode  {"room":"bedroom","mode":"cool"}' },
+    { value: 'set_climate_fan_mode',      label: 'Set fan mode  {"room":"bedroom","fan_mode":"auto"}' },
+    { value: 'set_climate_preset',        label: 'Set preset  {"room":"bedroom","preset":"eco"}' },
+  ]},
+  { group: 'Media & TV', intents: [
+    { value: 'control_tv',               label: 'TV on/off  {"room":"living_room","turn_on":true}' },
+    { value: 'set_tv_volume',            label: 'Set TV volume  {"room":"living_room","volume":30}' },
+    { value: 'tv_select_source',         label: 'Select TV source  {"room":"living_room","source":"HDMI 1"}' },
+    { value: 'media_play',               label: 'Play/resume  {"room":"living_room"}' },
+    { value: 'media_pause',              label: 'Pause  {"room":"living_room"}' },
+  ]},
+  { group: 'Covers & Blinds', intents: [
+    { value: 'open_cover',               label: 'Open cover  {"room":"bedroom"}' },
+    { value: 'close_cover',              label: 'Close cover  {"room":"bedroom"}' },
+    { value: 'set_cover_position',       label: 'Set cover position  {"room":"bedroom","position":50}' },
   ]},
   { group: 'Presence & Status', intents: [
-    { value: 'is_someone_home',          label: "Who's home?" },
-    { value: 'get_system_status',        label: 'System status' },
-    { value: 'get_sun_times',            label: 'Sunrise / sunset times' },
+    { value: 'is_someone_home',           label: "Who's home?" },
+    { value: 'list_active_devices',       label: 'List active devices' },
+    { value: 'get_system_status',         label: 'System status' },
+    { value: 'get_sun_times',             label: 'Sunrise / sunset times' },
   ]},
   { group: 'Tasks & Lists', intents: [
-    { value: 'task_summary',             label: 'Task summary' },
+    { value: 'task_summary',              label: 'Task summary' },
     { value: 'list_tasks',               label: 'All tasks' },
-    { value: 'get_shopping_list',        label: 'Shopping list' },
+    { value: 'get_shopping_list',         label: 'Shopping list' },
   ]},
-  { group: 'Info', intents: [
-    { value: 'get_weather',              label: 'Weather (requires city param)' },
-    { value: 'web_news_brief',           label: 'News brief' },
-    { value: 'get_time',                 label: 'Current time' },
+  { group: 'Info & Web', intents: [
+    { value: 'get_weather',               label: 'Weather  {"city":"Tel Aviv"}' },
+    { value: 'web_news_brief',            label: 'News brief' },
+    { value: 'get_time',                  label: 'Current time' },
     { value: 'list_events',              label: 'Upcoming events' },
   ]},
 ]

@@ -1,9 +1,17 @@
 const BASE = '/api'
 
+function getToken() {
+  return localStorage.getItem('ziggy_token') || ''
+}
+
 async function request(method, path, body) {
+  const token = getToken()
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
   const res = await fetch(`${BASE}${path}`, opts)
@@ -22,6 +30,10 @@ const del = (path) => request('DELETE', path)
 // Intent / Voice
 export const sendIntent = (text, source = 'web') => post('/intent', { text, source })
 
+// Chat mode — always routes through GPT with session history and autonomous web search
+export const sendChat = (text, chatHistory = [], source = 'web') =>
+  post('/chat', { text, chat_history: chatHistory, source })
+
 export async function sendVoice(blob) {
   const fd = new FormData()
   fd.append('file', blob, 'recording.webm')
@@ -33,15 +45,20 @@ export async function sendVoice(blob) {
 // Devices / HA entities
 export const getEntities = (domain) =>
   get(domain ? `/ha/entities?domain=${domain}` : '/ha/entities')
+export const getEntityProtocols = () => get('/ha/entity-protocols')
 export const getEntityState = (entityId) => get(`/ha/state/${entityId}`)
 export const getDeviceMap = () => get('/devices')
 export const getZiggyDevices = () => get('/devices')
 export const saveDevice = (data) => post('/devices', data)
 export const removeDevice = (room, dtype) => del(`/devices/${room}/${dtype}`)
 
-// Entity ↔ Area assignment
+// Entity ↔ Area assignment (HA areas only)
 export const assignEntityToArea = (entityId, areaId) =>
   patch(`/ha/entity/${encodeURIComponent(entityId)}/area`, { area_id: areaId ?? null })
+
+// Entity ↔ Ziggy-native room assignment (device registry, no HA sync)
+export const assignEntityToZiggyRoom = (entityId, roomKey) =>
+  patch(`/registry/entity/${encodeURIComponent(entityId)}/room`, { room: roomKey ?? null })
 
 // Device ↔ Area assignment (device-level, shows in HA device page)
 export const assignDeviceToArea = (deviceId, areaId) =>
@@ -49,6 +66,7 @@ export const assignDeviceToArea = (deviceId, areaId) =>
 
 // Rooms — backed by HA Areas
 export const getRooms = () => get('/rooms')
+export const getAllRooms = () => get('/rooms/all')   // HA areas UNION device-registry rooms
 export const getRoomsWithDevices = () => get('/rooms/devices')
 export const createRoom = (name) => post('/rooms', { name })
 export const deleteRoom = (areaId) => del(`/rooms/${areaId}`)
@@ -97,6 +115,35 @@ export const getStatus = () => get('/status')
 export const getVoiceSettings = () => get('/settings/voice')
 export const patchVoiceSettings = (data) => patch('/settings/voice', data)
 export const getAlertSettings = () => get('/settings/alerts')
+export const patchAlertSettings = (data) => patch('/settings/alerts', data)
+export const getGeneralSettings = () => get('/settings/general')
+export const patchGeneralSettings = (data) => patch('/settings/general', data)
+export const getAnomalySettings = () => get('/settings/anomaly')
+export const patchAnomalySettings = (data) => patch('/settings/anomaly', data)
+
+// Auth management
+export const getAuthStatus = () => get('/auth/status')
+export const changePassword = (data) => post('/auth/change-password', data)
+
+// Admin settings
+export const getHaSettings = () => get('/settings/ha')
+export const patchHaSettings = (data) => patch('/settings/ha', data)
+export const getTelegramSettings = () => get('/settings/telegram')
+export const patchTelegramSettings = (data) => patch('/settings/telegram', data)
+export const getIntegrationsSettings = () => get('/settings/integrations')
+export const patchIntegrationsSettings = (data) => patch('/settings/integrations', data)
+export const getMqttSettings = () => get('/settings/mqtt')
+export const patchMqttSettings = (data) => patch('/settings/mqtt', data)
+export const getFeaturesSettings = () => get('/settings/features')
+export const patchFeaturesSettings = (data) => patch('/settings/features', data)
+export const getDebugSettings = () => get('/settings/debug')
+export const patchDebugSettings = (data) => patch('/settings/debug', data)
+export const getOllamaSettings = () => get('/settings/ollama')
+export const patchOllamaSettings = (data) => patch('/settings/ollama', data)
+export const getPatternLearningSettings = () => get('/settings/pattern-learning')
+export const patchPatternLearningSettings = (data) => patch('/settings/pattern-learning', data)
+export const getRoomAliases = () => get('/settings/room-aliases')
+export const patchRoomAliases = (data) => patch('/settings/room-aliases', data)
 
 // Memory
 export const getMemory = () => get('/memory')
@@ -154,3 +201,13 @@ export const acceptSuggestion = (id) => post(`/suggestions/${id}/accept`)
 export const rejectSuggestion = (id) => post(`/suggestions/${id}/reject`)
 export const snoozeSuggestion = (id, days = 3) => post(`/suggestions/${id}/snooze`, { days })
 export const runPatternAnalysis = () => post('/suggestions/analyze')
+
+// Home Map (visualizer)
+export const getMapRoomsSummary = () => get('/map/rooms/summary')
+export const getMapCanvas = () => get('/map/canvas')
+export const putMapCanvasPosition = (roomId, position) => request('PUT', `/map/canvas/${encodeURIComponent(roomId)}`, position)
+export const getActiveAnomalies = () => get('/map/anomalies/active')
+export const getMapRender = () => get('/map/render')
+export const triggerMapRender = (rooms) => post('/map/render/generate', { rooms })
+export const snoozeMapAnomaly = (roomId, ruleId, durationMinutes = 60) =>
+  post(`/map/anomalies/snooze/${encodeURIComponent(roomId)}/${encodeURIComponent(ruleId)}`, { duration_minutes: durationMinutes })

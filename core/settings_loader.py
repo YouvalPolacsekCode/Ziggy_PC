@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 import yaml
 from dotenv import load_dotenv
 
@@ -89,19 +90,15 @@ def load_settings() -> dict:
     return data
 
 
+_save_lock = threading.Lock()
+
+
 def save_settings(settings_data: dict) -> None:
     path = _config_path()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        yaml.dump(settings_data, f, allow_unicode=True, default_flow_style=False)
+    with _save_lock:
+        with open(path, 'w', encoding='utf-8') as f:
+            yaml.dump(settings_data, f, allow_unicode=True, default_flow_style=False)
 
 
 settings = load_settings()
-
-HA_URL = settings["home_assistant"]["url"]
-HA_TOKEN = settings["home_assistant"]["token"]
-
-HEADERS = {
-    "Authorization": f"Bearer {HA_TOKEN}",
-    "Content-Type": "application/json",
-}

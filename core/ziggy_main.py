@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import subprocess
 import threading
 import time
 import signal
@@ -95,7 +96,16 @@ def main():
             daemon=True,
         ))
 
-    if settings.get("pattern_learning", {}).get("enabled", True):
+    _pl = settings.get("pattern_learning", {})
+    if _pl.get("enabled", True) and _pl.get("llm_synthesis", True):
+        from integrations.ollama_client import ensure_server_running
+        threads.append(threading.Thread(
+            target=thread_wrapper("Ollama", ensure_server_running),
+            name="Ollama",
+            daemon=True,
+        ))
+
+    if _pl.get("enabled", True):
         from services.suggestion_engine import start_pattern_scheduler
         from core.shared_flags import shutdown_event as _shutdown_event
         threads.append(threading.Thread(
@@ -114,6 +124,26 @@ def main():
         threads.append(threading.Thread(
             target=thread_wrapper("API", start_api_server),
             name="API",
+            daemon=True,
+        ))
+
+    if settings.get("web_interface", {}).get("frontend_dev", True):
+        def start_vite():
+            frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+            frontend_dir = os.path.abspath(frontend_dir)
+            log_info(f"[Vite] Starting frontend dev server in {frontend_dir}")
+            proc = subprocess.Popen(
+                ["npm", "run", "dev"],
+                cwd=frontend_dir,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            proc.wait()
+
+        threads.append(threading.Thread(
+            target=thread_wrapper("Vite", start_vite),
+            name="Vite",
             daemon=True,
         ))
 

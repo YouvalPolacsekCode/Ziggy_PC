@@ -15,7 +15,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/rooms', icon: null, label: 'Rooms', emoji: '🏠' },
-      { to: '/devices', icon: Cpu, label: 'HA Devices' },
+      { to: '/devices', icon: Cpu, label: 'Devices' },
       { to: '/virtual-devices', icon: null, label: 'Capabilities', emoji: '⚡' },
     ],
   },

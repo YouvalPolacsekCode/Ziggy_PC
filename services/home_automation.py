@@ -10,21 +10,30 @@ import requests
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 
-HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
-HA_TOKEN: str = settings["home_assistant"]["token"]
-
-HEADERS: Dict[str, str] = {
-    "Authorization": f"Bearer {HA_TOKEN}",
-    "Content-Type": "application/json",
-}
-
-room_aliases: Dict[str, str] = settings.get("room_aliases", {})
-device_map: Dict[str, Dict[str, str]] = settings.get("device_map", {})
 DEFAULT_TIMEOUT: int = 10
 
 
+def _ha_url() -> str:
+    return settings["home_assistant"]["url"].rstrip("/")
+
+
+def _headers() -> Dict[str, str]:
+    return {
+        "Authorization": f"Bearer {settings['home_assistant']['token']}",
+        "Content-Type": "application/json",
+    }
+
+
+def _room_aliases() -> Dict[str, str]:
+    return settings.get("room_aliases", {})
+
+
+def _device_map() -> Dict[str, Dict[str, str]]:
+    return settings.get("device_map", {})
+
+
 def _ha_endpoint(path: str) -> str:
-    return f"{HA_URL}{path}"
+    return f"{_ha_url()}{path}"
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +43,7 @@ def _ha_endpoint(path: str) -> str:
 def call_service(domain: str, service: str, data: Dict[str, Any]) -> Dict[str, Any]:
     endpoint = _ha_endpoint(f"/api/services/{domain}/{service}")
     try:
-        resp = requests.post(endpoint, headers=HEADERS, json=data, timeout=DEFAULT_TIMEOUT)
+        resp = requests.post(endpoint, headers=_headers(), json=data, timeout=DEFAULT_TIMEOUT)
         if resp.status_code == 200:
             try:
                 payload = resp.json()
@@ -52,7 +61,7 @@ def call_service(domain: str, service: str, data: Dict[str, Any]) -> Dict[str, A
 def get_state(entity_id: str) -> Dict[str, Any]:
     endpoint = _ha_endpoint(f"/api/states/{entity_id}")
     try:
-        resp = requests.get(endpoint, headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        resp = requests.get(endpoint, headers=_headers(), timeout=DEFAULT_TIMEOUT)
         if resp.status_code == 200:
             js = resp.json()
             data = {"state": js.get("state"), "attributes": js.get("attributes", {})}
@@ -72,7 +81,7 @@ def get_state(entity_id: str) -> Dict[str, Any]:
 def get_all_states() -> List[Dict[str, Any]]:
     """Fetch all HA entity states."""
     try:
-        resp = requests.get(_ha_endpoint("/api/states"), headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        resp = requests.get(_ha_endpoint("/api/states"), headers=_headers(), timeout=DEFAULT_TIMEOUT)
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
@@ -94,7 +103,7 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
       3. None — callers should surface a clear "not configured" message
     """
     room_key = (room or "").lower().replace("_", " ").strip()
-    normalized_room = room_aliases.get(room_key, room_key)
+    normalized_room = _room_aliases().get(room_key, room_key)
     normalized_type = (sensor_type or "").lower()
 
     # --- Path 1: DeviceRegistry ---
@@ -134,8 +143,8 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
 def get_all_light_entities_in_room(room: str) -> List[str]:
     """Return all light entity_ids mapped to a room (any key containing 'light')."""
     room_key = (room or "").lower().replace("_", " ").strip()
-    normalized_room = room_aliases.get(room_key, room_key)
-    room_devices = device_map.get(normalized_room, {})
+    normalized_room = _room_aliases().get(room_key, room_key)
+    room_devices = _device_map().get(normalized_room, {})
     return [v for k, v in room_devices.items() if "light" in k.lower() and v]
 
 
@@ -196,7 +205,7 @@ def turn_off_everything() -> Dict[str, Any]:
     """Turn off every light and media_player configured in device_map."""
     errors = []
     turned_off = 0
-    for room_devices in device_map.values():
+    for room_devices in _device_map().values():
         for dtype, entity_id in room_devices.items():
             if not entity_id:
                 continue
@@ -222,7 +231,7 @@ def toggle_light(entity_id: str, turn_on: bool = True) -> Tuple[int, str]:
     action = "turn_on" if turn_on else "turn_off"
     endpoint = _ha_endpoint(f"/api/services/light/{action}")
     try:
-        response = requests.post(endpoint, headers=HEADERS, json={"entity_id": entity_id}, timeout=DEFAULT_TIMEOUT)
+        response = requests.post(endpoint, headers=_headers(), json={"entity_id": entity_id}, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             log_info(f"[HA] {action.upper()} sent to {entity_id}")
         else:
@@ -235,7 +244,7 @@ def toggle_light(entity_id: str, turn_on: bool = True) -> Tuple[int, str]:
 
 def get_light_state(entity_id: str) -> Optional[dict]:
     try:
-        response = requests.get(_ha_endpoint(f"/api/states/{entity_id}"), headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        response = requests.get(_ha_endpoint(f"/api/states/{entity_id}"), headers=_headers(), timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             state_data = response.json()
             log_info(f"[HA] State of {entity_id}: {state_data['state']}")
@@ -254,7 +263,7 @@ def set_light_color(entity_id: str, rgb_color: Optional[tuple] = None, color_tem
     if color_temp is not None:
         payload["color_temp"] = color_temp
     try:
-        response = requests.post(_ha_endpoint("/api/services/light/turn_on"), headers=HEADERS, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = requests.post(_ha_endpoint("/api/services/light/turn_on"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             log_info(f"[HA] Color change sent to {entity_id}: {payload}")
         else:
@@ -268,7 +277,7 @@ def set_light_color(entity_id: str, rgb_color: Optional[tuple] = None, color_tem
 def set_light_brightness(entity_id: str, brightness: int) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "brightness_pct": max(0, min(int(brightness), 100))}
     try:
-        response = requests.post(_ha_endpoint("/api/services/light/turn_on"), headers=HEADERS, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = requests.post(_ha_endpoint("/api/services/light/turn_on"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             log_info(f"[HA] Brightness {brightness}% for {entity_id}")
         else:
@@ -286,7 +295,7 @@ def set_light_brightness(entity_id: str, brightness: int) -> Tuple[int, str]:
 def set_ac_temperature(entity_id: str, temperature: int) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "temperature": int(temperature)}
     try:
-        response = requests.post(_ha_endpoint("/api/services/climate/set_temperature"), headers=HEADERS, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = requests.post(_ha_endpoint("/api/services/climate/set_temperature"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             log_info(f"[HA] AC temp {temperature}°C for {entity_id}")
         else:
@@ -300,7 +309,7 @@ def set_ac_temperature(entity_id: str, temperature: int) -> Tuple[int, str]:
 def set_tv_source(entity_id: str, source: Union[int, str]) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "source": str(source)}
     try:
-        response = requests.post(_ha_endpoint("/api/services/media_player/select_source"), headers=HEADERS, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = requests.post(_ha_endpoint("/api/services/media_player/select_source"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             log_info(f"[HA] TV source {source} for {entity_id}")
         else:
@@ -321,7 +330,7 @@ def get_sensor_state(room: str, sensor_type: str) -> Dict[str, Any]:
     if not entity_id:
         return {"ok": False, "message": f"Missing {sensor_type_l} sensor mapping for {room}.", "data": {}}
     try:
-        resp = requests.get(_ha_endpoint(f"/api/states/{entity_id}"), headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        resp = requests.get(_ha_endpoint(f"/api/states/{entity_id}"), headers=_headers(), timeout=DEFAULT_TIMEOUT)
         if resp.status_code != 200:
             log_error(f"[HA] Fetch failed: {resp.status_code}")
             return {"ok": False, "message": f"Couldn't get {sensor_type_l} data for {room}.", "data": {"status": resp.status_code}}
@@ -369,7 +378,7 @@ def get_all_temperatures() -> Dict[str, Any]:
         pass
 
     # Fallback: device_map rooms that weren't found above
-    for room, devices in device_map.items():
+    for room, devices in _device_map().items():
         if "temperature" not in devices:
             continue
         label = room.replace("_", " ").title()
@@ -388,11 +397,8 @@ def get_all_temperatures() -> Dict[str, Any]:
 # Global sensor helpers
 # ---------------------------------------------------------------------------
 
-_global_sensors: Dict[str, str] = settings.get("global_sensors", {})
-
-
 def get_global_sensor(key: str) -> Dict[str, Any]:
-    entity_id = _global_sensors.get(key)
+    entity_id = settings.get("global_sensors", {}).get(key)
     if not entity_id:
         return {"ok": False, "message": f"No entity configured for global sensor '{key}'.", "data": {}}
     result = get_state(entity_id)
@@ -408,11 +414,8 @@ def get_global_sensor(key: str) -> Dict[str, Any]:
 # HA Todo / Shopping list helpers
 # ---------------------------------------------------------------------------
 
-_todo_cfg: Dict[str, str] = settings.get("todo", {})
-
-
 def add_todo_item(item: str, list_key: str = "shopping_list") -> Dict[str, Any]:
-    entity_id = _todo_cfg.get(list_key)
+    entity_id = settings.get("todo", {}).get(list_key)
     if not entity_id:
         return {"ok": False, "message": f"No todo list configured for '{list_key}'.", "data": {}}
     result = call_service("todo", "add_item", {"entity_id": entity_id, "item": item})
@@ -422,11 +425,11 @@ def add_todo_item(item: str, list_key: str = "shopping_list") -> Dict[str, Any]:
 
 
 def get_todo_items(list_key: str = "shopping_list") -> Dict[str, Any]:
-    entity_id = _todo_cfg.get(list_key)
+    entity_id = settings.get("todo", {}).get(list_key)
     if not entity_id:
         return {"ok": False, "message": f"No todo list configured for '{list_key}'.", "data": {}}
     try:
-        resp = requests.get(_ha_endpoint(f"/api/states/{entity_id}"), headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        resp = requests.get(_ha_endpoint(f"/api/states/{entity_id}"), headers=_headers(), timeout=DEFAULT_TIMEOUT)
         if resp.status_code != 200:
             return {"ok": False, "message": f"Couldn't fetch shopping list ({resp.status_code}).", "data": {}}
         js = resp.json()

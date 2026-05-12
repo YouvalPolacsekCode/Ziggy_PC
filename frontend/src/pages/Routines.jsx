@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, Play, RotateCcw, Clock, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Edit2, Play, RotateCcw, Clock, ChevronRight, ChevronDown } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
@@ -11,8 +11,9 @@ import { Select } from '../components/ui/Select'
 import { EntitySelect, getActionsForDomain } from '../components/ui/EntitySelect'
 import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
+import { useDeviceStore } from '../stores/deviceStore'
 import { cn } from '../lib/utils'
-import { getVirtualDevices, getCapabilities } from '../lib/api'
+import { getVirtualDevices, getCapabilities, getEntityState } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
 
 const ICONS = ['⚡', '☀️', '🌙', '🏠', '🎬', '🏋️', '🛏️', '☕', '🌿', '🔒', '💡', '🎵']
@@ -89,6 +90,143 @@ function VirtualDeviceSelect({ value, runtimeParams, onDeviceChange, onParamChan
   )
 }
 
+// ─── Send Intent — structured command templates ───────────────────────────────
+
+const SEND_INTENT_TEMPLATES = [
+  { group: 'Lights', items: [
+    'Turn off all lights',
+    'Turn on the lights in [room]',
+    'Set brightness in [room] to 50%',
+    'Set lights in [room] to warm white',
+    'Set lights in [room] to cool white',
+    'Set lights in [room] to red',
+  ]},
+  { group: 'Climate', items: [
+    'Set AC in [room] to 22 degrees',
+    'Turn on AC in [room]',
+    'Set AC mode to cool in [room]',
+    'Set fan mode to auto in [room]',
+  ]},
+  { group: 'TV & Media', items: [
+    'Turn on the TV in [room]',
+    'Turn off the TV in [room]',
+    'Set volume to 30 on TV in [room]',
+    'Switch TV source to HDMI 1 in [room]',
+  ]},
+  { group: 'Covers', items: [
+    'Open the blinds in [room]',
+    'Close the blinds in [room]',
+    'Set blinds to 50% in [room]',
+  ]},
+  { group: 'General', items: [
+    'Turn off everything',
+    'Good night',
+    'Good morning',
+  ]},
+]
+
+function SendIntentEditor({ value, onChange }) {
+  const [showTemplates, setShowTemplates] = useState(false)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <Input
+          placeholder="e.g. set bedroom lights to 50% brightness"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex-1"
+        />
+        <button
+          onClick={() => setShowTemplates((v) => !v)}
+          className="shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+          title="Command templates"
+        >
+          📝
+        </button>
+      </div>
+      {showTemplates && (
+        <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
+          {SEND_INTENT_TEMPLATES.map(({ group, items }) => (
+            <div key={group}>
+              <p className="px-3 pt-2 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">{group}</p>
+              {items.map((tpl) => (
+                <button
+                  key={tpl}
+                  onClick={() => { onChange(tpl); setShowTemplates(false) }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  {tpl}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-[10px] text-zinc-400">
+        Ziggy's AI interprets this at run time. Replace <span className="font-mono text-zinc-500">[room]</span> with the actual room name.
+      </p>
+    </div>
+  )
+}
+
+// ─── NeedsInputFields — live entity-aware parameter picker ────────────────────
+const SELECT_CLS = 'h-10 rounded-xl px-3 text-sm appearance-none bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-colors'
+
+function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }) {
+  const [attrs, setAttrs] = useState({})
+
+  useEffect(() => {
+    if (!entityId || !fields.some((f) => f.fetchKey)) return
+    getEntityState(entityId)
+      .then((data) => setAttrs(data.attributes || {}))
+      .catch(() => {})
+  }, [entityId])
+
+  return fields.map(({ key, label, placeholder, isNumber, fetchKey }) => {
+    const options = fetchKey ? (attrs[fetchKey] || []) : []
+    const currentVal = (serviceData || {})[key] ?? ''
+
+    if (fetchKey && options.length > 0) {
+      return (
+        <div key={key} className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{label}</label>
+          <select
+            value={currentVal}
+            onChange={(e) => onChangeServiceData({ ...(serviceData || {}), [key]: e.target.value })}
+            className={SELECT_CLS}
+          >
+            <option value="">— Pick {label} —</option>
+            {options.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    if (fetchKey && !entityId) {
+      return (
+        <p key={key} className="text-xs text-zinc-400 italic">Select an entity above to see {label.toLowerCase()} options.</p>
+      )
+    }
+
+    return (
+      <Input
+        key={key}
+        label={label}
+        placeholder={fetchKey && entityId ? 'Loading…' : placeholder}
+        type={isNumber ? 'number' : 'text'}
+        value={currentVal}
+        onChange={(e) => {
+          const raw = e.target.value
+          const val = isNumber ? (raw === '' ? '' : Number(raw)) : raw
+          onChangeServiceData({ ...(serviceData || {}), [key]: val })
+        }}
+      />
+    )
+  })
+}
+
 const STEPS_WIZARD = ['Name', 'Schedule', 'Steps', 'Review']
 
 function StepIndicator({ current }) {
@@ -116,7 +254,68 @@ function StepIndicator({ current }) {
   )
 }
 
+// ─── Linked IR section — same component as in Automations ────────────────────
+function LinkedIrSection({ irDevice, onPickCommand }) {
+  const [expanded, setExpanded] = useState(false)
+  const learned = new Set(irDevice.learned_commands || [])
+  const cmds = irDevice.commands || {}
+  const canDo = (cmd) => cmd in cmds && learned.has(cmd)
+  const available = Object.keys(cmds).filter(canDo)
+  if (available.length === 0) return null
+
+  const hasPower = canDo('power')
+  const others = available.filter((c) => c !== 'power')
+
+  return (
+    <div className="rounded-xl border border-violet-200 dark:border-violet-800/50 p-3 bg-violet-50/40 dark:bg-violet-900/10">
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-violet-500">IR Remote</span>
+          <span className="text-[10px] text-zinc-400 truncate">· {irDevice.name}</span>
+        </div>
+        <span className="text-[9px] text-zinc-400 shrink-0">{available.length} cmds</span>
+      </div>
+      <p className="text-[10px] text-zinc-400 mb-2 leading-relaxed">
+        Select an IR command — this step will switch to an IR command type.
+      </p>
+      {hasPower && (
+        <button
+          onClick={() => onPickCommand('power')}
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 mb-2 rounded-lg bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-semibold hover:bg-violet-200 dark:hover:bg-violet-900/60 transition-colors"
+        >
+          ⏻ Power (IR)
+        </button>
+      )}
+      {others.length > 0 && (
+        <>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-[10px] text-violet-500 hover:text-violet-600 font-medium transition-colors"
+          >
+            <ChevronDown size={10} className={cn('transition-transform duration-150', expanded && 'rotate-180')} />
+            {expanded ? 'Less' : `${others.length} more IR commands`}
+          </button>
+          {expanded && (
+            <div className="flex gap-1.5 flex-wrap mt-2">
+              {others.map((cmd) => (
+                <button
+                  key={cmd}
+                  onClick={() => onPickCommand(cmd)}
+                  className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-[10px] font-medium"
+                >
+                  {cmd.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse }) {
+  const { entities } = useDeviceStore()
   const domain = step.entity_id?.split('.')?.[0] || null
   const availableActions = (step.type === 'device' && domain)
     ? getActionsForDomain(domain)
@@ -126,8 +325,11 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
         { value: 'toggle', label: 'Toggle' },
       ]
 
+  // Linked IR device for the selected entity (if any)
+  const linkedIr = entities.find((e) => e.entity_id === step.entity_id)?._linkedIr || null
+
   const stepLabel = step.type === 'device'
-    ? `${availableActions.find(a => a.value === step.action)?.label || 'Control'} · ${step.entity_id || '?'}`
+    ? `${availableActions.find((a) => a.value === step.action)?.label || step.action?.replace(/_/g, ' ') || 'Control'} · ${step.entity_id || '?'}`
     : step.type === 'ir_command' ? `📡 ${step.ir_device_name || 'IR'} → ${step.ir_sequence || step.ir_command || '?'}`
     : step.type === 'ziggy_intent' ? `⚡ ${step.virtual_device_name || step.capability || 'Capability'}`
     : step.type === 'delay' ? `Wait ${step.delay_seconds || '?'}s`
@@ -195,14 +397,54 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
         <>
           <EntitySelect
             value={step.entity_id || ''}
-            onChange={(v) => onChange({ ...step, entity_id: v, action: 'turn_on' })}
+            onChange={(v) => onChange({ ...step, entity_id: v, action: 'turn_on', ha_service: 'turn_on', service_data: undefined })}
             placeholder="Select entity…"
           />
           <Select
             options={availableActions}
             value={step.action || 'turn_on'}
-            onChange={(e) => onChange({ ...step, action: e.target.value })}
+            onChange={(e) => {
+              const selectedVal = e.target.value
+              const def = availableActions.find((a) => a.value === selectedVal) || {}
+              onChange({
+                ...step,
+                action: selectedVal,
+                ha_service: def.haService || selectedVal,
+                service_data: def.serviceData || undefined,
+              })
+            }}
           />
+          {/* needsInput: live entity-aware parameter picker */}
+          {(() => {
+            const def = availableActions.find((a) => a.value === (step.action || 'turn_on'))
+            return def?.needsInput ? (
+              <NeedsInputFields
+                fields={def.needsInput}
+                entityId={step.entity_id}
+                serviceData={step.service_data}
+                onChangeServiceData={(data) => onChange({ ...step, service_data: data })}
+              />
+            ) : null
+          })()}
+
+          {/* Linked IR device — IR commands alongside HA device actions */}
+          {linkedIr && step.entity_id && (
+            <LinkedIrSection
+              irDevice={linkedIr}
+              onPickCommand={(cmd) => onChange({
+                ...step,
+                type: 'ir_command',
+                ir_device_id: linkedIr.id,
+                ir_device_name: linkedIr.name,
+                ir_command: cmd,
+                ir_sequence: undefined,
+                // Clear device-step fields
+                action: undefined,
+                ha_service: undefined,
+                service_data: undefined,
+              })}
+            />
+          )}
         </>
       )}
       {step.type === 'delay' && (
@@ -214,11 +456,7 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
         />
       )}
       {step.type === 'message' && (
-        <Input
-          placeholder="Command (e.g. turn off all lights)"
-          value={step.text || ''}
-          onChange={(e) => onChange({ ...step, text: e.target.value })}
-        />
+        <SendIntentEditor value={step.text || ''} onChange={(text) => onChange({ ...step, text })} />
       )}
       {step.type === 'scene' && (
         <EntitySelect

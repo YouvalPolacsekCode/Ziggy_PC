@@ -281,19 +281,58 @@ def _news_summarize(items: List[Dict[str, Any]]) -> str:
 
 def _web_search(query: str) -> List[Dict[str, Any]]:
     key = os.getenv("SERPAPI_API_KEY", "")
-    if not key:
-        # Barebones fallback: attempt simple GET to DuckDuckGo HTML (very limited)
-        return [{"title": query, "url": f"https://duckduckgo.com/?q={requests.utils.quote(query)}", "snippet": ""}]
+    if key:
+        try:
+            r = requests.get(
+                "https://serpapi.com/search.json",
+                params={"engine": "google", "q": query, "api_key": key, "num": "8"},
+                timeout=12,
+            )
+            j = r.json()
+            results = []
+            for itm in (j.get("organic_results") or [])[:8]:
+                results.append({
+                    "title": itm.get("title", ""),
+                    "url": itm.get("link", ""),
+                    "snippet": itm.get("snippet", ""),
+                })
+            if results:
+                return results
+        except Exception as e:
+            log_error(f"[web._web_search] SerpAPI error: {e}")
+
+    # DuckDuckGo fallback via duckduckgo-search package (free, no key needed)
     try:
-        r = requests.get("https://serpapi.com/search.json", params={"engine": "google", "q": query, "api_key": key}, timeout=12)
-        j = r.json()
-        results = []
-        for itm in (j.get("organic_results") or [])[:8]:
-            results.append({"title": itm.get("title"), "url": itm.get("link"), "snippet": itm.get("snippet", "")})
-        return results
+        from ddgs import DDGS
+        with DDGS() as ddgs:
+            hits = ddgs.text(query, max_results=6)
+        return [
+            {"title": h.get("title", ""), "snippet": h.get("body", ""), "url": h.get("href", "")}
+            for h in (hits or [])
+        ]
     except Exception as e:
-        log_error(f"[web._web_search] {e}")
-        return []
+        log_error(f"[web._web_search] DuckDuckGo fallback error: {e}")
+
+    return []
+
+
+def search_for_gpt(query: str) -> dict:
+    """Return structured search snippets suitable for GPT synthesis.
+
+    Used by chat_handler when GPT autonomously decides to search the web.
+    Returns {"ok": bool, "query": str, "snippets": [{title, snippet, url}, ...]}.
+    """
+    results = _web_search(query)
+    snippets = [
+        {
+            "title": r.get("title", ""),
+            "snippet": r.get("snippet", ""),
+            "url": r.get("url", ""),
+        }
+        for r in results[:5]
+        if r.get("snippet") or r.get("title")
+    ]
+    return {"ok": bool(snippets), "query": query, "snippets": snippets}
 
 
 def _web_fetch_top_n(results: List[Dict[str, Any]], n: int = 3) -> List[Dict[str, Any]]:

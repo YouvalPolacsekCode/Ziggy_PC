@@ -22,6 +22,15 @@ from services.debug_control import is_verbose, toggle_verbose
 from core.intent_parser import quick_parse
 from core.action_parser import handle_intent
 from core.result_utils import render_result
+from core.session_manager import (
+    MODE_COMMAND, MODE_CHAT,
+    CHAT_ALLOWED_INTENTS,
+    is_chat_trigger, is_command_trigger,
+    get_voice_mode, set_voice_mode,
+    get_voice_chat_history, append_voice_chat,
+    reset_voice_session,
+)
+from core.response_templates import get_response
 
 # ===== Settings / Config =====
 VOICE_CFG = settings.get("voice", {})
@@ -238,6 +247,33 @@ def _handle_intent_sync(text: str):
         print(f"[Voice] Intent handling error: {e}")
         return {"ok": False, "message": "Sorry, something went wrong.", "data": {}}
 
+
+def _handle_chat_sync(text: str) -> dict:
+    """Chat mode: try whitelisted info intents first, then fall back to GPT conversation."""
+    try:
+        parsed = quick_parse(text)
+        parsed["source"] = "voice"
+
+        if parsed.get("intent") in CHAT_ALLOWED_INTENTS:
+            return asyncio.run(handle_intent(parsed))
+
+        # Pure GPT conversation with session-scoped history.
+        append_voice_chat("user", text)
+        chat_history = get_voice_chat_history()
+        intent_data = {
+            "intent": "chat_with_gpt",
+            "params": {"text": text, "chat_history": chat_history},
+            "source": "voice",
+        }
+        result = asyncio.run(handle_intent(intent_data))
+        reply = render_result(result)
+        if reply:
+            append_voice_chat("assistant", reply)
+        return result
+    except Exception as e:
+        print(f"[Voice] Chat mode error: {e}")
+        return {"ok": False, "message": "Sorry, something went wrong.", "data": {}}
+
 # ===== Wake engines init =====
 wake_engine = None
 wakeword_model = None
@@ -376,6 +412,7 @@ def start_voice_interface():
 
                 if should_trigger:
                     print("[Voice] Wake word detected. Entering conversation mode...")
+                    reset_voice_session()
                     speak("Yes?")
                     is_active = True
                     last_active_time = now
@@ -435,8 +472,23 @@ def start_voice_interface():
                     pipeline_text = transcription
                     reply_lang = detected_lang
 
+                    # === Session mode: trigger phrase detection ===
+                    tl_stripped = transcription.strip().lower()
+                    if is_chat_trigger(tl_stripped):
+                        set_voice_mode(MODE_CHAT)
+                        speak(get_response("chat_mode_entered", reply_lang), lang=reply_lang)
+                        continue
+                    if is_command_trigger(tl_stripped):
+                        set_voice_mode(MODE_COMMAND)
+                        speak(get_response("chat_mode_exited", reply_lang), lang=reply_lang)
+                        continue
+
+                    # === Route by mode ===
                     t_intent0 = time.time()
-                    result = _handle_intent_sync(pipeline_text)
+                    if get_voice_mode() == MODE_CHAT:
+                        result = _handle_chat_sync(pipeline_text)
+                    else:
+                        result = _handle_intent_sync(pipeline_text)
                     print(f"[TIMING] intent+action: {time.time() - t_intent0:.2f}s")
 
                     t_render0 = time.time()

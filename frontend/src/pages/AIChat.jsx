@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, RotateCcw } from 'lucide-react'
 import { VoiceOrb } from '../components/orb/VoiceOrb'
-import { sendIntent, sendVoice, sendDirectIntent } from '../lib/api'
+import { sendChat, sendVoice, sendDirectIntent } from '../lib/api'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
@@ -102,11 +102,19 @@ export default function AIChat() {
     const t = (text || input).trim()
     if (!t) return
     setInput('')
+
+    // Build GPT-format history from current messages, then append the new user turn.
+    // Done before addMessage so the store snapshot excludes the turn we're about to send.
+    const historyForApi = [
+      ...messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
+      { role: 'user', content: t },
+    ]
+
     addMessage('user', t)
     setThinking(true)
     setOrbState('thinking')
     try {
-      const res = await sendIntent(t)
+      const res = await sendChat(t, historyForApi)
       addMessage('assistant', res.reply || '…')
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)

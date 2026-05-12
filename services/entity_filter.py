@@ -21,6 +21,15 @@ HIDDEN_DOMAINS: frozenset[str] = frozenset({
     "conversation", # HA assistant internal
     "zone",         # Home zone geography
     "sun",          # sun.sun — sensor.sun_* are kept (they're in global_sensors)
+    "automation",   # HA automations are not devices; deleted automations would appear as "lost"
+    "script",       # HA scripts are not devices either
+    "timer",        # HA helper timer — not a physical device
+    "counter",      # HA helper counter
+    "input_select", # HA input helpers — UI controls, not hardware
+    "input_number",
+    "input_text",
+    "input_datetime",
+    "input_button",
 })
 
 # Entity ID substrings that indicate noise within otherwise useful domains

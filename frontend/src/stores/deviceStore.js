@@ -1,16 +1,47 @@
 import { create } from 'zustand'
-import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices } from '../lib/api'
+import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices } from '../lib/api'
 
 export const CONTROLLABLE_DOMAINS = new Set([
   'light', 'switch', 'climate', 'cover', 'media_player', 'fan', 'lock', 'vacuum',
 ])
+
+// IR device type → HA-compatible domain (mirrors backend _IR_TYPE_TO_DOMAIN)
+const IR_TYPE_TO_DOMAIN = {
+  tv:        'media_player',
+  soundbar:  'media_player',
+  projector: 'media_player',
+  ac:        'climate',
+  fan:       'fan',
+  custom:    'switch',
+}
+
+// Transform a raw IR device object into an entity-shaped object so it can live
+// in the same entities array as HA entities and respond to the same filters.
+function irToEntity(ir) {
+  return {
+    entity_id:    `ir.${ir.id}`,
+    state:        ir.assumed_state || 'unknown',
+    domain:       IR_TYPE_TO_DOMAIN[ir.type] || 'switch',
+    display_name: ir.name,
+    friendly_name: ir.name,
+    // IR-specific fields — used by IRDeviceCard / IRQuickControls
+    _ir:             true,
+    _irDevice:       ir,
+    // Mirror the attributes that DeviceControls might read
+    commands:        ir.commands || {},
+    learned_commands: ir.learned_commands || [],
+    assumed_state:   ir.assumed_state,
+    ac_memory:       ir.ac_memory,
+    capabilities:    ir.capabilities || [],
+  }
+}
 
 const HIDDEN_KEY = 'ziggy_hidden_entities'
 const loadHidden = () => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')) } catch { return new Set() } }
 const saveHidden = (s) => localStorage.setItem(HIDDEN_KEY, JSON.stringify([...s]))
 
 export const useDeviceStore = create((set, get) => ({
-  // HA entity browser (Devices page)
+  // Unified entity list — HA entities + IR-shaped entities
   entities: [],
   // HA areas (used by Devices page for room assignment UI)
   rooms: [],
@@ -46,22 +77,55 @@ export const useDeviceStore = create((set, get) => ({
   fetchAll: async () => {
     set({ loading: true, error: null })
     try {
-      const [entRes, roomsRes, roomsDevRes] = await Promise.all([
+      const [entRes, roomsRes, roomsDevRes, irRaw] = await Promise.all([
         getEntities(),
         getRooms(),
         getRoomsWithDevices().catch(() => ({ rooms: [], unclaimed: [] })),
+        getIrDevices().catch(() => []),
       ])
+
+      // Build status map from device registry
       const statusMap = {}
       for (const room of (roomsDevRes.rooms || [])) {
         for (const d of (room.devices || [])) {
           if (d.entity_id) statusMap[d.entity_id] = d.status
+          if (d.ir_device_id && !d.entity_id) {
+            statusMap[`ir.${d.ir_device_id}`] = d.status
+          }
         }
       }
       for (const d of (roomsDevRes.unclaimed || [])) {
         if (d.entity_id) statusMap[d.entity_id] = d.status
       }
+
+      // ── IR ↔ HA entity linking ────────────────────────────────────────────
+      const irList = Array.isArray(irRaw) ? irRaw : []
+      const haEntityIdSet = new Set((entRes.entities || []).map((e) => e.entity_id))
+
+      // Index IR devices by their linked HA entity — but ONLY when that HA entity
+      // actually exists in the current entity list. If the HA entity is unavailable
+      // or deleted, the IR device falls back to appearing as a standalone card.
+      const irByHaEntityId = {}
+      for (const ir of irList) {
+        if (ir.ha_entity_id && haEntityIdSet.has(ir.ha_entity_id)) {
+          irByHaEntityId[ir.ha_entity_id] = ir
+        }
+      }
+      const linkedIrIds = new Set(Object.values(irByHaEntityId).map((ir) => ir.id))
+
+      // Attach linked IR to each HA entity (null if no link)
+      const haEntities = (entRes.entities || []).map((e) => ({
+        ...e,
+        _linkedIr: irByHaEntityId[e.entity_id] || null,
+      }))
+
+      // Standalone IR entities: those NOT currently merged into an HA entity card
+      const irEntities = irList.filter((ir) => !linkedIrIds.has(ir.id)).map(irToEntity)
+
+      const allEntities = [...haEntities, ...irEntities]
+
       set({
-        entities: entRes.entities || [],
+        entities: allEntities,
         rooms: roomsRes.rooms || [],
         deviceStatusMap: statusMap,
         ziggyRooms: roomsDevRes.rooms || [],
@@ -88,7 +152,19 @@ export const useDeviceStore = create((set, get) => ({
     }))
   },
 
-  // For Devices page: HA entities not in any HA area
+  // Update IR device assumed state optimistically in the entity list
+  updateIrAssumedState: (irId, newState) => {
+    set((s) => ({
+      entities: s.entities.map((e) =>
+        e._ir && e._irDevice?.id === irId
+          ? { ...e, state: newState, assumed_state: newState, _irDevice: { ...e._irDevice, assumed_state: newState } }
+          : e
+      ),
+    }))
+  },
+
+  // For Devices page: HA entities not in any HA area.
+  // IR devices are excluded — they use room assignment via patchIrDevice.
   getUnassigned: () => {
     const DEVICE_DOMAINS = new Set([
       'light', 'switch', 'climate', 'cover', 'media_player',
@@ -98,7 +174,7 @@ export const useDeviceStore = create((set, get) => ({
     const { rooms, entities } = get()
     const assigned = new Set(rooms.flatMap((r) => r.entities || []))
     return entities.filter(
-      (e) => DEVICE_DOMAINS.has(e.domain) && !assigned.has(e.entity_id)
+      (e) => !e._ir && DEVICE_DOMAINS.has(e.domain) && !assigned.has(e.entity_id)
     )
   },
 
@@ -109,7 +185,7 @@ export const useDeviceStore = create((set, get) => ({
     get().entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain)).length,
 
   getUnavailableCount: () =>
-    get().entities.filter((e) => e.state === 'unavailable').length,
+    get().entities.filter((e) => !e._ir && e.state === 'unavailable').length,
 
   getPresenceSummary: () => {
     const { entities } = get()
@@ -140,7 +216,6 @@ export const useDeviceStore = create((set, get) => ({
     return results
   },
 
-  // For Devices page: HA entity objects enriched with room data (legacy join, kept for entity browser)
   getRooms: () => {
     const { rooms, entities } = get()
     const entityMap = Object.fromEntries(entities.map((e) => [e.entity_id, e]))

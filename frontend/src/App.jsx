@@ -14,20 +14,37 @@ import Memory from './pages/Memory'
 import VirtualDevices from './pages/VirtualDevices'
 import Suggestions from './pages/Suggestions'
 import QuickAsks from './pages/QuickAsks'
+import AdminSettings from './pages/AdminSettings'
 import { useUIStore } from './stores/uiStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
+import { useAutomationStore } from './stores/automationStore'
+import { useAuthStore } from './stores/authStore'
+import LoginPage from './pages/LoginPage'
+
+const _AUTOMATION_INTENTS = new Set([
+  'create_automation', 'update_automation', 'delete_automation',
+  'toggle_automation', 'assign_automation_to_room',
+])
 
 function AppRoutes() {
   const { connected, messages } = useWebSocket()
   const { updateEntityState } = useDeviceStore()
+  const { fetchAutomations } = useAutomationStore()
 
-  // Apply live HA state updates from WebSocket
   useEffect(() => {
     const last = messages[messages.length - 1]
     if (!last) return
+
+    // Live HA entity state push
     if (last.type === 'state_changed' && last.entity_id) {
       updateEntityState(last.entity_id, last.new_state, last.attributes)
+    }
+
+    // Automation store refresh — fires whenever a chat command modifies automations
+    // so Automations page and room detail views reflect the change immediately.
+    if (last.type === 'ziggy_response' && last.ok && _AUTOMATION_INTENTS.has(last.intent)) {
+      fetchAutomations()
     }
   }, [messages])
 
@@ -48,6 +65,7 @@ function AppRoutes() {
         <Route path="virtual-devices" element={<VirtualDevices />} />
         <Route path="suggestions" element={<Suggestions />} />
         <Route path="quick-asks" element={<QuickAsks />} />
+        <Route path="admin" element={<AdminSettings />} />
       </Route>
     </Routes>
   )
@@ -55,6 +73,7 @@ function AppRoutes() {
 
 export default function App() {
   const { theme } = useUIStore()
+  const { authenticated } = useAuthStore()
 
   useEffect(() => {
     const root = document.documentElement
@@ -64,6 +83,8 @@ export default function App() {
       root.classList.remove('dark')
     }
   }, [theme])
+
+  if (!authenticated) return <LoginPage />
 
   return (
     <BrowserRouter>

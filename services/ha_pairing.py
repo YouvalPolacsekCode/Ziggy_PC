@@ -7,7 +7,7 @@ from __future__ import annotations
 import requests
 
 from services.ha_areas import _ws
-from services.home_automation import HEADERS, HA_URL
+from services.home_automation import _headers, _ha_url
 from core.logger_module import log_error
 
 WIFI_INTEGRATIONS = frozenset({
@@ -23,7 +23,7 @@ WIFI_INTEGRATIONS = frozenset({
 async def _find_zwave_controller_device_id() -> str | None:
     """Find the HA device_id of the Z-Wave JS controller node."""
     try:
-        resp = requests.get(f"{HA_URL}/api/config/config_entries", headers=HEADERS, timeout=10)
+        resp = requests.get(f"{_ha_url()}/api/config/config_entries", headers=_headers(), timeout=10)
         if resp.status_code != 200:
             return None
         entries = [e for e in resp.json() if e.get("domain") == "zwave_js"]
@@ -117,12 +117,12 @@ def get_pending_config_flows(integrations: list[str] | None = None) -> dict:
     """
     try:
         resp = requests.get(
-            f"{HA_URL}/api/config/config_entries/flow",
-            headers=HEADERS,
+            f"{_ha_url()}/api/config/config_entries/flow",
+            headers=_headers(),
             timeout=10,
         )
         if resp.status_code != 200:
-            return {"ok": False, "error": f"HA returned {resp.status_code}", "flows": [], "ha_url": HA_URL}
+            return {"ok": False, "error": f"HA returned {resp.status_code}", "flows": [], "ha_url": _ha_url()}
 
         flows = resp.json()
         if integrations:
@@ -130,7 +130,7 @@ def get_pending_config_flows(integrations: list[str] | None = None) -> dict:
 
         return {
             "ok": True,
-            "ha_url": HA_URL,
+            "ha_url": _ha_url(),
             "flows": [
                 {
                     "flow_id": f.get("flow_id"),
@@ -146,4 +146,4 @@ def get_pending_config_flows(integrations: list[str] | None = None) -> dict:
         }
     except Exception as e:
         log_error(f"[Pairing] get_pending_config_flows: {e}")
-        return {"ok": False, "error": str(e), "flows": [], "ha_url": HA_URL}
+        return {"ok": False, "error": str(e), "flows": [], "ha_url": _ha_url()}

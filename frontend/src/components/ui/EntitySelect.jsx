@@ -4,70 +4,148 @@ import { getEntities, getRooms } from '../../lib/api'
 import { domainIcon, slugToTitle } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 
-// Actions available per HA domain
+/**
+ * Actions available per HA domain.
+ *
+ * Each action has:
+ *   value       — unique key used as the <select> option value and for UI round-tripping
+ *   label       — human-readable label shown in the dropdown
+ *   haService   — the actual HA service name called (e.g. 'turn_on', 'set_hvac_mode')
+ *   serviceData — optional payload merged into the HA service call data
+ *
+ * The automation builder stores { service_value, service: `domain.haService`, service_data }
+ * in each action step, which ha_automations._action_to_ha() translates correctly to HA.
+ */
 export const DOMAIN_ACTIONS = {
   light: [
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
-    { value: 'toggle', label: 'Toggle' },
-    { value: 'set_brightness_50', label: 'Set Brightness 50%' },
-    { value: 'set_brightness_100', label: 'Set Brightness 100%' },
+    { value: 'turn_on',       label: 'Turn On',           haService: 'turn_on' },
+    { value: 'turn_off',      label: 'Turn Off',          haService: 'turn_off' },
+    { value: 'toggle',        label: 'Toggle',            haService: 'toggle' },
+    { value: 'brightness_10', label: 'Brightness 10%',    haService: 'turn_on', serviceData: { brightness_pct: 10 } },
+    { value: 'brightness_25', label: 'Brightness 25%',    haService: 'turn_on', serviceData: { brightness_pct: 25 } },
+    { value: 'brightness_50', label: 'Brightness 50%',    haService: 'turn_on', serviceData: { brightness_pct: 50 } },
+    { value: 'brightness_75', label: 'Brightness 75%',    haService: 'turn_on', serviceData: { brightness_pct: 75 } },
+    { value: 'brightness_100',label: 'Brightness 100%',   haService: 'turn_on', serviceData: { brightness_pct: 100 } },
+    { value: 'brightness_custom', label: 'Set Brightness…',  haService: 'turn_on',
+      needsInput: [{ key: 'brightness_pct', label: 'Brightness (1–100 %)', placeholder: '75', isNumber: true }] },
+    { value: 'set_effect',       label: 'Set Effect',        haService: 'turn_on',
+      needsInput: [{ key: 'effect', label: 'Effect', fetchKey: 'effect_list', placeholder: 'Select an entity first' }] },
+    { value: 'color_warm',    label: 'Color: Warm White', haService: 'turn_on', serviceData: { color_temp_kelvin: 2700 } },
+    { value: 'color_neutral', label: 'Color: Neutral',    haService: 'turn_on', serviceData: { color_temp_kelvin: 4000 } },
+    { value: 'color_cool',    label: 'Color: Cool White', haService: 'turn_on', serviceData: { color_temp_kelvin: 6500 } },
+    { value: 'color_red',     label: 'Color: Red',        haService: 'turn_on', serviceData: { rgb_color: [255, 30, 0] } },
+    { value: 'color_green',   label: 'Color: Green',      haService: 'turn_on', serviceData: { rgb_color: [0, 200, 0] } },
+    { value: 'color_blue',    label: 'Color: Blue',       haService: 'turn_on', serviceData: { rgb_color: [0, 60, 255] } },
+    { value: 'color_purple',  label: 'Color: Purple',     haService: 'turn_on', serviceData: { rgb_color: [160, 0, 255] } },
   ],
   switch: [
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
-    { value: 'toggle', label: 'Toggle' },
+    { value: 'turn_on',  label: 'Turn On',  haService: 'turn_on' },
+    { value: 'turn_off', label: 'Turn Off', haService: 'turn_off' },
+    { value: 'toggle',   label: 'Toggle',   haService: 'toggle' },
   ],
   climate: [
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
-    { value: 'set_temperature', label: 'Set Temperature' },
-    { value: 'set_hvac_mode_cool', label: 'Mode: Cool' },
-    { value: 'set_hvac_mode_heat', label: 'Mode: Heat' },
-    { value: 'set_hvac_mode_auto', label: 'Mode: Auto' },
+    { value: 'turn_on',            label: 'Turn On',          haService: 'turn_on' },
+    { value: 'turn_off',           label: 'Turn Off',         haService: 'turn_off' },
+    { value: 'set_temp_custom',    label: 'Set Temperature…', haService: 'set_temperature',
+      needsInput: [{ key: 'temperature', label: 'Temperature (°C)', placeholder: '22', isNumber: true }] },
+    { value: 'set_hvac_mode_dyn', label: 'Set Mode',         haService: 'set_hvac_mode',
+      needsInput: [{ key: 'hvac_mode', label: 'HVAC mode', fetchKey: 'hvac_modes', placeholder: 'Select an entity first' }] },
+    { value: 'set_fan_mode_dyn',  label: 'Set Fan Mode',     haService: 'set_fan_mode',
+      needsInput: [{ key: 'fan_mode', label: 'Fan mode', fetchKey: 'fan_modes', placeholder: 'Select an entity first' }] },
+    { value: 'set_preset_dyn',    label: 'Set Preset',       haService: 'set_preset_mode',
+      needsInput: [{ key: 'preset_mode', label: 'Preset', fetchKey: 'preset_modes', placeholder: 'Select an entity first' }] },
+    { value: 'hvac_cool',          label: 'Mode: Cool',       haService: 'set_hvac_mode', serviceData: { hvac_mode: 'cool' } },
+    { value: 'hvac_heat',          label: 'Mode: Heat',       haService: 'set_hvac_mode', serviceData: { hvac_mode: 'heat' } },
+    { value: 'hvac_auto',          label: 'Mode: Auto',       haService: 'set_hvac_mode', serviceData: { hvac_mode: 'auto' } },
+    { value: 'hvac_fan',           label: 'Mode: Fan Only',   haService: 'set_hvac_mode', serviceData: { hvac_mode: 'fan_only' } },
+    { value: 'hvac_dry',           label: 'Mode: Dry',        haService: 'set_hvac_mode', serviceData: { hvac_mode: 'dry' } },
+    { value: 'temp_18',            label: 'Temperature 18°',  haService: 'set_temperature', serviceData: { temperature: 18 } },
+    { value: 'temp_20',            label: 'Temperature 20°',  haService: 'set_temperature', serviceData: { temperature: 20 } },
+    { value: 'temp_22',            label: 'Temperature 22°',  haService: 'set_temperature', serviceData: { temperature: 22 } },
+    { value: 'temp_24',            label: 'Temperature 24°',  haService: 'set_temperature', serviceData: { temperature: 24 } },
+    { value: 'temp_26',            label: 'Temperature 26°',  haService: 'set_temperature', serviceData: { temperature: 26 } },
+    { value: 'fan_auto',           label: 'Fan: Auto',        haService: 'set_fan_mode', serviceData: { fan_mode: 'auto' } },
+    { value: 'fan_low',            label: 'Fan: Low',         haService: 'set_fan_mode', serviceData: { fan_mode: 'low' } },
+    { value: 'fan_medium',         label: 'Fan: Medium',      haService: 'set_fan_mode', serviceData: { fan_mode: 'medium' } },
+    { value: 'fan_high',           label: 'Fan: High',        haService: 'set_fan_mode', serviceData: { fan_mode: 'high' } },
+    { value: 'preset_eco',         label: 'Preset: Eco',      haService: 'set_preset_mode', serviceData: { preset_mode: 'eco' } },
+    { value: 'preset_comfort',     label: 'Preset: Comfort',  haService: 'set_preset_mode', serviceData: { preset_mode: 'comfort' } },
+    { value: 'preset_away',        label: 'Preset: Away',     haService: 'set_preset_mode', serviceData: { preset_mode: 'away' } },
+    { value: 'preset_boost',       label: 'Preset: Boost',    haService: 'set_preset_mode', serviceData: { preset_mode: 'boost' } },
   ],
   cover: [
-    { value: 'open_cover', label: 'Open' },
-    { value: 'close_cover', label: 'Close' },
-    { value: 'toggle', label: 'Toggle' },
+    { value: 'open_cover',        label: 'Open',            haService: 'open_cover' },
+    { value: 'close_cover',       label: 'Close',           haService: 'close_cover' },
+    { value: 'stop_cover',        label: 'Stop',            haService: 'stop_cover' },
+    { value: 'toggle',            label: 'Toggle',          haService: 'toggle' },
+    { value: 'position_custom',    label: 'Set Position…',   haService: 'set_cover_position',
+      needsInput: [{ key: 'position', label: 'Position %', placeholder: '50', isNumber: true }] },
+    { value: 'position_0',        label: 'Position: 0%',    haService: 'set_cover_position', serviceData: { position: 0 } },
+    { value: 'position_25',       label: 'Position: 25%',   haService: 'set_cover_position', serviceData: { position: 25 } },
+    { value: 'position_50',       label: 'Position: 50%',   haService: 'set_cover_position', serviceData: { position: 50 } },
+    { value: 'position_75',       label: 'Position: 75%',   haService: 'set_cover_position', serviceData: { position: 75 } },
+    { value: 'position_100',      label: 'Position: 100%',  haService: 'set_cover_position', serviceData: { position: 100 } },
   ],
   media_player: [
-    { value: 'media_play', label: 'Play' },
-    { value: 'media_pause', label: 'Pause' },
-    { value: 'media_stop', label: 'Stop' },
-    { value: 'volume_up', label: 'Volume Up' },
-    { value: 'volume_down', label: 'Volume Down' },
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
+    { value: 'turn_on',             label: 'Turn On',           haService: 'turn_on' },
+    { value: 'turn_off',            label: 'Turn Off',          haService: 'turn_off' },
+    { value: 'media_play',          label: 'Play',              haService: 'media_play' },
+    { value: 'media_pause',         label: 'Pause',             haService: 'media_pause' },
+    { value: 'media_stop',          label: 'Stop',              haService: 'media_stop' },
+    { value: 'media_next_track',    label: 'Next Track',        haService: 'media_next_track' },
+    { value: 'media_previous_track',label: 'Previous Track',    haService: 'media_previous_track' },
+    { value: 'volume_up',           label: 'Volume Up',         haService: 'volume_up' },
+    { value: 'volume_down',         label: 'Volume Down',       haService: 'volume_down' },
+    { value: 'volume_10',           label: 'Volume 10%',        haService: 'volume_set', serviceData: { volume_level: 0.10 } },
+    { value: 'volume_20',           label: 'Volume 20%',        haService: 'volume_set', serviceData: { volume_level: 0.20 } },
+    { value: 'volume_30',           label: 'Volume 30%',        haService: 'volume_set', serviceData: { volume_level: 0.30 } },
+    { value: 'volume_50',           label: 'Volume 50%',        haService: 'volume_set', serviceData: { volume_level: 0.50 } },
+    { value: 'volume_70',           label: 'Volume 70%',        haService: 'volume_set', serviceData: { volume_level: 0.70 } },
+    { value: 'mute_on',             label: 'Mute',              haService: 'volume_mute', serviceData: { is_volume_muted: true } },
+    { value: 'mute_off',            label: 'Unmute',            haService: 'volume_mute', serviceData: { is_volume_muted: false } },
+    { value: 'select_source',       label: 'Select Source',     haService: 'select_source',
+      needsInput: [{ key: 'source', label: 'Source / app', fetchKey: 'source_list', placeholder: 'Select an entity first' }] },
+    { value: 'shuffle_on',          label: 'Shuffle On',        haService: 'shuffle_set', serviceData: { shuffle: true } },
+    { value: 'shuffle_off',         label: 'Shuffle Off',       haService: 'shuffle_set', serviceData: { shuffle: false } },
+    { value: 'repeat_off',          label: 'Repeat: Off',       haService: 'repeat_set', serviceData: { repeat: 'off' } },
+    { value: 'repeat_all',          label: 'Repeat: All',       haService: 'repeat_set', serviceData: { repeat: 'all' } },
+    { value: 'repeat_one',          label: 'Repeat: One',       haService: 'repeat_set', serviceData: { repeat: 'one' } },
   ],
   lock: [
-    { value: 'lock', label: 'Lock' },
-    { value: 'unlock', label: 'Unlock' },
+    { value: 'lock',   label: 'Lock',   haService: 'lock' },
+    { value: 'unlock', label: 'Unlock', haService: 'unlock' },
   ],
   fan: [
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
-    { value: 'toggle', label: 'Toggle' },
+    { value: 'turn_on',       label: 'Turn On',      haService: 'turn_on' },
+    { value: 'turn_off',      label: 'Turn Off',     haService: 'turn_off' },
+    { value: 'toggle',        label: 'Toggle',       haService: 'toggle' },
+    { value: 'speed_low',     label: 'Speed: Low',   haService: 'set_percentage', serviceData: { percentage: 33 } },
+    { value: 'speed_medium',  label: 'Speed: Medium',haService: 'set_percentage', serviceData: { percentage: 66 } },
+    { value: 'speed_high',    label: 'Speed: High',  haService: 'set_percentage', serviceData: { percentage: 100 } },
+    { value: 'oscillate_on',  label: 'Oscillate On', haService: 'oscillate', serviceData: { oscillating: true } },
+    { value: 'oscillate_off', label: 'Oscillate Off',haService: 'oscillate', serviceData: { oscillating: false } },
   ],
   scene: [
-    { value: 'turn_on', label: 'Activate Scene' },
+    { value: 'turn_on', label: 'Activate Scene', haService: 'turn_on' },
   ],
   script: [
-    { value: 'turn_on', label: 'Run Script' },
+    { value: 'turn_on', label: 'Run Script', haService: 'turn_on' },
   ],
   input_boolean: [
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
-    { value: 'toggle', label: 'Toggle' },
+    { value: 'turn_on',  label: 'Turn On',  haService: 'turn_on' },
+    { value: 'turn_off', label: 'Turn Off', haService: 'turn_off' },
+    { value: 'toggle',   label: 'Toggle',   haService: 'toggle' },
   ],
 }
 
+const _DEFAULT_ACTIONS = [
+  { value: 'turn_on',  label: 'Turn On',  haService: 'turn_on' },
+  { value: 'turn_off', label: 'Turn Off', haService: 'turn_off' },
+  { value: 'toggle',   label: 'Toggle',   haService: 'toggle' },
+]
+
 export function getActionsForDomain(domain) {
-  return DOMAIN_ACTIONS[domain] || [
-    { value: 'turn_on', label: 'Turn On' },
-    { value: 'turn_off', label: 'Turn Off' },
-    { value: 'toggle', label: 'Toggle' },
-  ]
+  return DOMAIN_ACTIONS[domain] || _DEFAULT_ACTIONS
 }
 
 export function EntitySelect({ value, onChange, label, placeholder = 'Search entities…', domain: filterDomain }) {

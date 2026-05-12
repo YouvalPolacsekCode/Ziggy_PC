@@ -95,26 +95,38 @@ def _seed_from_yaml(devices: list[dict]) -> list[dict]:
 
 
 def _merge_ir_devices(devices: list[dict]) -> list[dict]:
+    """
+    Rebuild pure IR-only entries from live ir_devices.json on every call.
+    Dropping stale entries first ensures room changes and deletions are
+    reflected immediately without waiting for the 60-second reconciliation loop.
+    Hybrid entries (entity_id + ir_device_id) are preserved unchanged.
+    """
     try:
         from services.ir_manager import list_ir_devices
-        existing = {(d["room"], d["device_type"]) for d in devices}
+
+        # Keep non-IR and hybrid (linked) entries; drop pure IR-only ones for rebuild
+        kept = [d for d in devices if not (d.get("ir_device_id") and not d.get("entity_id"))]
+        existing_keys = {(d.get("room"), d.get("device_type")) for d in kept}
+
         for ir in list_ir_devices(enabled_only=False):
-            room = ir.get("room")
+            room = ir.get("room") or None
             dtype = ir.get("type")
             key = (room, dtype)
-            if key not in existing:
-                devices.append({
+            if key not in existing_keys:
+                kept.append({
                     "room": room,
                     "device_type": dtype,
                     "entity_id": None,
                     "ir_device_id": ir["id"],
                     "status": IR_ONLY,
-                    "name": ir.get("name", f"{room} {dtype}"),
+                    "name": ir.get("name", f"{room or ''} {dtype}").strip(),
                 })
-                existing.add(key)
+                existing_keys.add(key)
+
+        return kept
     except Exception as e:
         log_error(f"[DeviceRegistry] Failed to merge IR devices: {e}")
-    return devices
+        return devices
 
 
 # ---------------------------------------------------------------------------
@@ -130,19 +142,35 @@ def _live_entity_ids() -> set[str]:
         return set()
 
 
+_NON_DEVICE_DOMAINS = frozenset({
+    "automation", "script", "scene", "timer", "counter",
+    "input_select", "input_number", "input_text", "input_datetime", "input_button",
+    "group", "zone", "sun", "stt", "tts", "conversation",
+})
+
+
 def _reconcile(devices: list[dict], live_ids: set[str]) -> list[dict]:
     if not live_ids:
         return devices
+    keep = []
     for d in devices:
         if d.get("ir_device_id") and not d.get("entity_id"):
             d["status"] = IR_ONLY
+            keep.append(d)
             continue
         eid = d.get("entity_id")
         if not eid:
             d["status"] = UNCONFIGURED
+            keep.append(d)
+            continue
+        domain = eid.split(".")[0]
+        if domain in _NON_DEVICE_DOMAINS:
+            # Non-device entities should never be in the registry; silently remove them
+            log_info(f"[DeviceRegistry] Removing non-device entity from registry: {eid}")
             continue
         d["status"] = CONNECTED if eid in live_ids else LOST
-    return devices
+        keep.append(d)
+    return keep
 
 
 def _add_unclaimed(devices: list[dict], live_ids: set[str]) -> list[dict]:
@@ -264,6 +292,71 @@ def get_all_for_room(room: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Background reconciliation loop
 # ---------------------------------------------------------------------------
+
+async def sync_rooms_to_ha() -> None:
+    """Ensure every room in the device registry exists as an HA area.
+
+    Called once on startup. Finds registry rooms with no matching HA area,
+    creates those areas in HA, then updates the registry room keys to match
+    the canonical normalized form so joins never diverge again.
+
+    This is the guard that prevents Ziggy-only orphan rooms from accumulating.
+    """
+    import re as _re
+
+    def _norm(name: str) -> str:
+        s = name.lower()
+        s = _re.sub(r"[''`]", "", s)
+        s = _re.sub(r"[^a-z0-9]+", "_", s)
+        return s.strip("_")
+
+    try:
+        from services.ha_areas import get_areas, create_area
+        ha_areas = await get_areas()
+        ha_norm_to_area = {_norm(a["name"]): a for a in ha_areas}
+    except Exception as e:
+        log_error(f"[DeviceRegistry] sync_rooms_to_ha: could not fetch HA areas: {e}")
+        return
+
+    with _lock:
+        # Collect unique non-null room keys in the registry
+        registry_rooms: set[str] = {d["room"] for d in _registry if d.get("room")}
+
+        created: dict[str, str] = {}  # old_norm → new_norm after HA creation
+
+        for room_key in sorted(registry_rooms):
+            norm = _norm(room_key)
+            if norm in ha_norm_to_area:
+                continue  # already backed by an HA area
+
+            # No matching HA area — create one now
+            display_name = room_key.replace("_", " ").title()
+            try:
+                result = await create_area(display_name)
+                if result.get("ok"):
+                    new_area_name: str = result["area"]["name"]
+                    new_norm = _norm(new_area_name)
+                    ha_norm_to_area[new_norm] = result["area"]
+                    created[norm] = new_norm
+                    log_info(
+                        f"[DeviceRegistry] sync_rooms_to_ha: created HA area '{new_area_name}' "
+                        f"for orphan room '{room_key}'"
+                    )
+                else:
+                    log_error(f"[DeviceRegistry] sync_rooms_to_ha: failed to create '{display_name}': {result.get('error')}")
+            except Exception as e:
+                log_error(f"[DeviceRegistry] sync_rooms_to_ha: exception creating '{display_name}': {e}")
+
+        if created:
+            # Update registry room keys to match the new HA area's normalized name
+            for d in _registry:
+                old_key = d.get("room") or ""
+                old_norm = _norm(old_key) if old_key else ""
+                if old_norm in created:
+                    d["room"] = created[old_norm]
+            _save_persistent(_registry)
+            log_info(f"[DeviceRegistry] sync_rooms_to_ha: migrated room keys: {created}")
+
 
 def start_reconciliation_loop(interval_s: int = 60) -> threading.Thread:
     def _loop():

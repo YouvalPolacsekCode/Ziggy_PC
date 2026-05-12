@@ -2,16 +2,18 @@
 Suggestion engine for Ziggy pattern learning.
 
 Flow:
-  1. detect_patterns()  — heuristic analysis of event log
-  2. _synthesize()      — optionally ask OpenAI to improve/filter/phrase suggestions
-  3. add_suggestion()   — persist new suggestions to suggestions.json
-  4. notify_fn()        — push pending suggestions to Telegram (if provided)
+  1. update_and_detect()   — accumulate events into persistent candidates,
+                             return those that pass the evidence gate + confidence threshold
+  2. _quality_gate()       — ask Ollama (local, free) whether each candidate is worth
+                             surfacing; filter out noise; generate polished user copy
+  3. add_suggestion()      — persist at most 1 new suggestion per run (hard cap)
+  4. notify_fn()           — push to Telegram if provided
 
-The engine runs in a background thread via start_pattern_scheduler().
-It fires once per day at the configured analysis_hour.
+Ollama runs locally — no tokens, no billing, no internet required.
+Falls back to heuristic copy if Ollama is unavailable.
 
-Privacy note: only redacted pattern summaries (no raw entity IDs or values)
-are sent to OpenAI. The raw event log never leaves the device.
+Privacy: the raw event log never leaves the device. Ollama receives only
+structured summaries (intent names, room names, occurrence counts, timing stats).
 """
 from __future__ import annotations
 
@@ -22,31 +24,40 @@ from threading import Event
 
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings
-from services.pattern_detector import detect_patterns, PatternMatch
-from services.suggestion_manager import add_suggestion, get_pending
+from services.pattern_detector import (
+    update_and_detect,
+    QualifiedCandidate,
+    mark_candidate_surfaced,
+)
+from services.suggestion_manager import (
+    add_suggestion,
+    get_pending,
+    pending_slots_available,
+    is_suppressed,
+    within_rejection_cooldown,
+)
 
 
-_SYSTEM_PROMPT = """\
-You are Ziggy's pattern analysis engine. You receive detected household behavior
-patterns and must return practical automation suggestions.
+_QUALITY_GATE_SYSTEM_PROMPT = """\
+You are Ziggy's suggestion quality filter. You evaluate detected household behavior patterns
+and decide whether each one is worth showing to the user as an automation suggestion.
+
+You will receive a JSON list of candidates. For each, return a JSON object with:
+  "recommend": true or false
+  "reason": one short sentence explaining why
+  "user_message": a natural, friendly message to show the user (only if recommend=true)
+  "trigger": {"type": "time|sequence|manual", "value": "HH:MM or description"}
+  "actions": [{"intent": "...", "params": {}}]
+
+Return a JSON array, one object per input candidate, in the same order.
 
 Rules:
-- Only suggest automations that are clearly useful and privacy-respecting.
-- Never suggest anything dangerous, noisy, or creepy.
-- Skip patterns that are too vague or not actionable.
-- Return ONLY valid JSON: {"suggestions": [ ... ]}.
-
-Each suggestion object must have:
-{
-  "pattern_type": "time_based" | "sequence" | "group",
-  "pattern_summary": "concise description of the pattern",
-  "user_message": "natural-language message to show the user",
-  "trigger": {"type": "time|state|sequence|manual", "value": "..."},
-  "actions": [{"intent": "...", "params": {}}],
-  "confidence": 0.0-1.0,
-  "reasoning": "why this automation is useful",
-  "safety_note": null
-}
+- Recommend ONLY if the behavior is genuinely habitual (consistent across multiple weeks, active recently).
+- Do NOT recommend if an existing automation already covers it.
+- Do NOT recommend query-only patterns (checking temperature, checking if someone is home).
+- Do NOT recommend anything that could be creepy, noisy, or unsafe.
+- Keep user_message concise, friendly, and specific (mention the time or context).
+- For trigger.value on time-based patterns use "HH:MM" format.
 """
 
 
@@ -56,50 +67,66 @@ Each suggestion object must have:
 
 def run_analysis(notify_fn=None, shutdown: Event | None = None) -> list[dict]:
     """
-    Run pattern detection + LLM synthesis, save new suggestions, and notify.
-    Returns list of newly created suggestion dicts (created today).
+    Run the full pipeline: detect → quality gate → surface at most 1 new suggestion.
+    Returns list of newly created suggestion dicts (created in this run).
     """
-    log_info("[PatternEngine] Starting pattern analysis...")
+    log_info("[SuggestionEngine] Starting analysis...")
 
-    patterns = detect_patterns()
-    if not patterns:
-        log_info("[PatternEngine] No patterns above threshold. Nothing to suggest.")
+    candidates = update_and_detect()
+    if not candidates:
+        log_info("[SuggestionEngine] No qualified candidates above threshold.")
         return []
 
-    log_info(f"[PatternEngine] Detected {len(patterns)} pattern(s). Synthesizing...")
+    log_info(f"[SuggestionEngine] {len(candidates)} candidate(s) qualified. Running quality gate...")
 
-    cfg = settings.get("pattern_learning", {})
-    if cfg.get("llm_synthesis", True):
-        suggestions_data = _synthesize_with_llm(patterns)
-    else:
-        suggestions_data = _heuristic_suggestions(patterns)
+    # Filter out already-surfaced, suppressed, or cooled-down candidates
+    open_candidates = [
+        c for c in candidates
+        if not is_suppressed(c.key)
+        and not within_rejection_cooldown(c.key)
+    ]
 
-    today_prefix = datetime.now().strftime("%Y-%m-%d")
+    if not open_candidates:
+        log_info("[SuggestionEngine] All candidates suppressed or in cooldown.")
+        return []
+
+    if pending_slots_available() == 0:
+        log_info("[SuggestionEngine] Pending cap reached — no new suggestions this run.")
+        return []
+
+    existing_automations = _get_existing_automation_names()
+    evaluated = _quality_gate(open_candidates, existing_automations)
+
+    if not evaluated:
+        log_info("[SuggestionEngine] Quality gate filtered all candidates.")
+        return []
+
+    # Promote at most 1 new suggestion per run
     new_suggestions: list[dict] = []
-
-    for sug_data in suggestions_data:
+    for ev in evaluated[:1]:
         try:
             sug = add_suggestion(
-                pattern_type=sug_data.get("pattern_type", "unknown"),
-                pattern_summary=sug_data.get("pattern_summary", ""),
-                user_message=sug_data.get("user_message", ""),
-                trigger=sug_data.get("trigger", {}),
-                actions=sug_data.get("actions", []),
-                confidence=float(sug_data.get("confidence", 0.5)),
-                reasoning=sug_data.get("reasoning", ""),
-                safety_note=sug_data.get("safety_note"),
+                canonical_key=ev["canonical_key"],
+                pattern_type=ev["pattern_type"],
+                pattern_summary=ev.get("pattern_summary", ev["canonical_key"]),
+                user_message=ev["user_message"],
+                trigger=ev["trigger"],
+                actions=ev["actions"],
+                confidence=ev["confidence"],
+                reasoning=ev.get("reason", ""),
+                safety_note=ev.get("safety_note"),
             )
-            if sug.get("created_at", "").startswith(today_prefix):
+            if sug:
+                mark_candidate_surfaced(ev["canonical_key"], sug["id"])
                 new_suggestions.append(sug)
+                log_info(f"[SuggestionEngine] Created suggestion {sug['id']} — {ev['canonical_key']}")
         except Exception as e:
-            log_error(f"[PatternEngine] Failed to save suggestion: {e}")
+            log_error(f"[SuggestionEngine] Failed to save suggestion: {e}")
 
     if new_suggestions and notify_fn:
         _notify_pending(notify_fn)
 
-    log_info(
-        f"[PatternEngine] Done. {len(new_suggestions)} new suggestion(s) created."
-    )
+    log_info(f"[SuggestionEngine] Done. {len(new_suggestions)} new suggestion(s) created.")
     return new_suggestions
 
 
@@ -108,17 +135,15 @@ def start_pattern_scheduler(
 ) -> None:
     """
     Blocking loop that runs run_analysis() once per day at the configured hour.
-    Designed to run in a daemon thread. Exits when shutdown is set.
+    Designed to run in a daemon thread.
     """
     cfg = settings.get("pattern_learning", {})
     if not cfg.get("enabled", True):
-        log_info("[PatternEngine] Pattern learning disabled — scheduler not started.")
+        log_info("[SuggestionEngine] Pattern learning disabled — scheduler not started.")
         return
 
     analysis_hour = cfg.get("analysis_hour", 9)
-    log_info(
-        f"[PatternEngine] Scheduler running. Analysis fires daily at {analysis_hour:02d}:00."
-    )
+    log_info(f"[SuggestionEngine] Scheduler running. Analysis fires daily at {analysis_hour:02d}:00.")
 
     last_run_date = None
 
@@ -132,120 +157,197 @@ def start_pattern_scheduler(
             try:
                 run_analysis(notify_fn=notify_fn, shutdown=shutdown)
             except Exception as e:
-                log_error(f"[PatternEngine] Scheduled analysis failed: {e}")
+                log_error(f"[SuggestionEngine] Scheduled analysis failed: {e}")
 
         time.sleep(60)
 
 
 # ---------------------------------------------------------------------------
-# LLM synthesis
+# Quality gate — Ollama binary filter
 # ---------------------------------------------------------------------------
 
-def _synthesize_with_llm(patterns: list[PatternMatch]) -> list[dict]:
-    """Ask OpenAI to filter, rephrase, and enrich pattern matches."""
-    try:
-        from integrations.openai_client import get_client
-    except ImportError:
-        log_error("[PatternEngine] OpenAI client unavailable. Using heuristic fallback.")
-        return _heuristic_suggestions(patterns)
-
+def _quality_gate(
+    candidates: list[QualifiedCandidate],
+    existing_automations: list[str],
+) -> list[dict]:
+    """
+    Ask Ollama to evaluate each candidate.
+    Returns list of enriched dicts for candidates that pass (recommend=true).
+    Falls back to heuristic conversion if Ollama is unavailable.
+    """
     cfg = settings.get("pattern_learning", {})
-    lookback = settings.get("pattern_learning", {}).get("lookback_days", 14)
-    model = cfg.get("llm_model", "gpt-4o-mini")
+    if not cfg.get("llm_synthesis", True):
+        return _heuristic_enrich(candidates)
 
-    # Privacy-safe summary: no raw entity IDs or personal values
-    pattern_summaries = [
-        {
-            "type": p.pattern_type,
-            "draft_message": p.user_message,
-            "occurrences": p.occurrences,
-            "confidence": round(p.confidence, 2),
-        }
-        for p in patterns
-    ]
+    try:
+        from integrations.ollama_client import get_client, is_available, default_model
+    except ImportError:
+        log_info("[SuggestionEngine] Ollama client not importable. Using heuristic fallback.")
+        return _heuristic_enrich(candidates)
 
-    user_content = (
-        f"Detected patterns from the past {lookback} days:\n"
-        + json.dumps(pattern_summaries, indent=2)
-    )
+    if not is_available():
+        log_info("[SuggestionEngine] Ollama not reachable. Using heuristic fallback.")
+        return _heuristic_enrich(candidates)
+
+    model = settings.get("ollama", {}).get("model", default_model())
+
+    # Build structured input — no raw event data, only derived stats
+    payload = []
+    for c in candidates:
+        ev_scores = c.scores
+        payload.append({
+            "index": len(payload),
+            "canonical_key": c.key,
+            "pattern_type": c.pattern_type,
+            "behavior_summary": c.user_message,
+            "occurrences": c.occurrences,
+            "confidence": c.confidence,
+            "scores": {
+                "consistency_across_weeks": ev_scores.get("consistency"),
+                "recency_last_7d": ev_scores.get("recency"),
+                "timing_precision": ev_scores.get("temporal_precision"),
+            },
+            "existing_automations": existing_automations,
+            "details": c.details,
+        })
+
+    user_content = json.dumps(payload, ensure_ascii=False)
 
     try:
         client = get_client()
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": _QUALITY_GATE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
-            temperature=0.3,
-            max_tokens=1500,
-            response_format={"type": "json_object"},
+            temperature=0.2,
+            max_tokens=1200,
         )
-        raw = response.choices[0].message.content
-        parsed = json.loads(raw)
+        raw = response.choices[0].message.content or ""
+        results = _parse_llm_response(raw)
 
+        enriched = []
+        for i, item in enumerate(results):
+            if not item.get("recommend"):
+                continue
+            if i >= len(candidates):
+                continue
+            c = candidates[i]
+            enriched.append({
+                "canonical_key": c.key,
+                "pattern_type": c.pattern_type,
+                "pattern_summary": c.user_message,
+                "user_message": item.get("user_message") or c.user_message,
+                "trigger": item.get("trigger") or _default_trigger(c),
+                "actions": item.get("actions") or _default_actions(c),
+                "confidence": c.confidence,
+                "reason": item.get("reason", ""),
+                "safety_note": item.get("safety_note"),
+            })
+
+        log_info(f"[SuggestionEngine] Ollama approved {len(enriched)}/{len(candidates)} candidate(s).")
+        return enriched
+
+    except Exception as e:
+        log_error(f"[SuggestionEngine] Ollama quality gate failed: {e}. Using heuristic fallback.")
+        return _heuristic_enrich(candidates)
+
+
+def _parse_llm_response(raw: str) -> list[dict]:
+    """Extract a JSON array from the LLM response, tolerating markdown fences."""
+    raw = raw.strip()
+    # Strip markdown code fences if present
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        raw = "\n".join(
+            l for l in lines if not l.startswith("```")
+        ).strip()
+
+    try:
+        parsed = json.loads(raw)
         if isinstance(parsed, list):
             return parsed
         if isinstance(parsed, dict):
-            for key in ("suggestions", "results", "data"):
+            for key in ("suggestions", "results", "data", "candidates"):
                 if isinstance(parsed.get(key), list):
                     return parsed[key]
-            # Fallback: return first list value found
-            for v in parsed.values():
-                if isinstance(v, list):
-                    return v
+        return []
+    except json.JSONDecodeError:
         return []
 
-    except Exception as e:
-        log_error(f"[PatternEngine] LLM synthesis error: {e}. Using heuristic fallback.")
-        return _heuristic_suggestions(patterns)
-
 
 # ---------------------------------------------------------------------------
-# Heuristic fallback (no LLM)
+# Heuristic fallback (Ollama unavailable)
 # ---------------------------------------------------------------------------
 
-def _heuristic_suggestions(patterns: list[PatternMatch]) -> list[dict]:
-    """Convert PatternMatch objects directly into suggestion dicts."""
-    suggestions: list[dict] = []
-
-    for p in patterns:
-        d = p.details
-
-        if p.pattern_type == "time_based":
-            h, m = d.get("avg_hour", 0), d.get("avg_minute", 0)
-            trigger = {"type": "time", "value": f"{h:02d}:{m:02d}"}
-            actions = [{
-                "intent": d.get("intent", ""),
-                "params": {
-                    "room": d.get("room", ""),
-                    "turn_on": d.get("action") == "on",
-                },
-            }]
-
-        elif p.pattern_type == "sequence":
-            trigger = {
-                "type": "sequence",
-                "value": f"{d.get('a_intent')} in {d.get('a_room')}",
-            }
-            actions = [{"intent": d.get("b_intent", ""), "params": {"room": d.get("b_room", "")}}]
-
-        else:  # group
-            trigger = {"type": "manual", "value": "user_initiated"}
-            actions = [{"intent": "group", "params": {"signature": d.get("signature", "")}}]
-
-        suggestions.append({
-            "pattern_type": p.pattern_type,
-            "pattern_summary": p.key,
-            "user_message": p.user_message,
-            "trigger": trigger,
-            "actions": actions,
-            "confidence": p.confidence,
-            "reasoning": f"Observed {p.occurrences} time(s) in the lookback window.",
+def _heuristic_enrich(candidates: list[QualifiedCandidate]) -> list[dict]:
+    """Convert QualifiedCandidates directly to enriched dicts without LLM."""
+    result = []
+    for c in candidates:
+        result.append({
+            "canonical_key": c.key,
+            "pattern_type": c.pattern_type,
+            "pattern_summary": c.user_message,
+            "user_message": c.user_message,
+            "trigger": _default_trigger(c),
+            "actions": _default_actions(c),
+            "confidence": c.confidence,
+            "reason": f"Observed {c.occurrences} time(s). Confidence: {c.confidence:.0%}.",
             "safety_note": None,
         })
+    return result
 
-    return suggestions
+
+def _default_trigger(c: QualifiedCandidate) -> dict:
+    if c.pattern_type == "time_based":
+        h = c.details.get("avg_hour", 0)
+        m = c.details.get("avg_minute", 0)
+        return {"type": "time", "value": f"{h:02d}:{m:02d}"}
+    if c.pattern_type == "sequence":
+        return {
+            "type": "sequence",
+            "value": f"{c.intent} in {c.room or 'home'}",
+        }
+    return {"type": "manual", "value": "user_initiated"}
+
+
+def _default_actions(c: QualifiedCandidate) -> list[dict]:
+    if c.pattern_type == "sequence":
+        b = c.details
+        return [{"intent": b.get("b_intent", ""), "params": {"room": b.get("b_room", "")}}]
+    return [{"intent": c.intent, "params": {"room": c.room, "turn_on": c.action == "on"}}]
+
+
+# ---------------------------------------------------------------------------
+# HA automation context
+# ---------------------------------------------------------------------------
+
+def _get_existing_automation_names() -> list[str]:
+    """
+    Return a list of existing Home Assistant automation / routine names.
+    Used by the LLM to avoid suggesting something already automated.
+    Falls back to empty list on any error.
+    """
+    try:
+        from services.ha_automations import list_automations
+        automations = list_automations()
+        return [a.get("alias") or a.get("friendly_name") or "" for a in automations if a]
+    except Exception:
+        pass
+
+    try:
+        from pathlib import Path
+        import json as _json
+        automations_file = Path("user_files/automations.json")
+        if automations_file.exists():
+            data = _json.loads(automations_file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [a.get("name") or a.get("alias") or "" for a in data]
+    except Exception:
+        pass
+
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -258,9 +360,9 @@ def _notify_pending(notify_fn) -> None:
         return
 
     lines = [f"Ziggy has {len(pending)} automation suggestion(s) for you:\n"]
-    for s in pending[:3]:  # Cap at 3 to avoid Telegram wall-of-text
+    for s in pending[:3]:
         pct = int(s["confidence"] * 100)
-        lines.append(f"• {s['user_message']} [{pct}% confidence | ID: {s['id']}]")
+        lines.append(f"• {s['user_message']} [{pct}% | {s['id']}]")
 
     if len(pending) > 3:
         lines.append(f"  ...and {len(pending) - 3} more. Say 'list suggestions' to see all.")
@@ -270,4 +372,4 @@ def _notify_pending(notify_fn) -> None:
     try:
         notify_fn("\n".join(lines))
     except Exception as e:
-        log_error(f"[PatternEngine] Notification failed: {e}")
+        log_error(f"[SuggestionEngine] Notification failed: {e}")

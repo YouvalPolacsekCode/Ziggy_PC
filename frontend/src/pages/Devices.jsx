@@ -4,11 +4,13 @@ import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermo
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
-import { DeviceControls, TOGGLEABLE_DOMAINS } from '../components/ui/DeviceControls'
+import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel } from '../components/ui/DeviceControls'
+import { EntitySelect } from '../components/ui/EntitySelect'
+import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, getRooms, irLearn, irSend } from '../lib/api'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend } from '../lib/api'
 import { cn } from '../lib/utils'
 import { useSearchParams } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
@@ -85,7 +87,7 @@ function IREditModal({ device, onClose, onSaved }) {
   const learned = new Set(device.learned_commands || [])
 
   useEffect(() => {
-    getRooms().then((r) => setRooms(Array.isArray(r) ? r : r.areas ?? r.rooms ?? [])).catch(() => {})
+    getAllRooms().then((r) => setRooms(Array.isArray(r) ? r : r.rooms ?? [])).catch(() => {})
   }, [])
 
   const handleSave = async () => {
@@ -216,14 +218,88 @@ function IREditModal({ device, onClose, onSaved }) {
   )
 }
 
-function IRDeviceCard({ device, onDelete, onEdit }) {
+const IR_STATE_OPTIONS = {
+  default:  ['on', 'off'],
+  ac:       ['cool', 'heat', 'fan_only', 'off'],
+  fan:      ['on', 'off'],
+  tv:       ['on', 'off'],
+  soundbar: ['on', 'off'],
+  projector:['on', 'off'],
+}
+
+// Quick-fire button definitions per device type.
+// Each entry: { cmd, icon, label }  — only shown when command is learned.
+const IR_QUICK_BUTTONS = {
+  tv: [
+    { cmd: 'power',       icon: '⏻', label: 'Power' },
+    { cmd: 'volume_up',   icon: '🔊', label: 'Vol+' },
+    { cmd: 'volume_down', icon: '🔉', label: 'Vol−' },
+    { cmd: 'mute',        icon: '🔇', label: 'Mute' },
+  ],
+  soundbar: [
+    { cmd: 'power',       icon: '⏻', label: 'Power' },
+    { cmd: 'volume_up',   icon: '🔊', label: 'Vol+' },
+    { cmd: 'volume_down', icon: '🔉', label: 'Vol−' },
+    { cmd: 'mute',        icon: '🔇', label: 'Mute' },
+  ],
+  projector: [
+    { cmd: 'power',       icon: '⏻', label: 'Power' },
+  ],
+  fan: [
+    { cmd: 'power',        icon: '⏻', label: 'Power' },
+    { cmd: 'speed_low',    icon: '〜', label: 'Low' },
+    { cmd: 'speed_medium', icon: '≈', label: 'Med' },
+    { cmd: 'speed_high',   icon: '≋', label: 'High' },
+  ],
+  ac: [
+    { cmd: 'power',     icon: '⏻', label: 'Power' },
+    { cmd: 'mode_cool', icon: '❄', label: 'Cool' },
+    { cmd: 'mode_heat', icon: '🔥', label: 'Heat' },
+    { cmd: 'mode_fan',  icon: '💨', label: 'Fan' },
+  ],
+}
+const IR_DEFAULT_QUICK = [{ cmd: 'power', icon: '⏻', label: 'Power' }]
+
+function IRQuickControls({ device, onCommand }) {
+  const dtype   = device.device_type || device.type || ''
+  const learned = new Set(device.learned_commands || [])
+  const cmds    = device.commands || {}
+
+  const canDo = (cmd) => cmd in cmds && learned.has(cmd)
+
+  const buttons = (IR_QUICK_BUTTONS[dtype] || IR_DEFAULT_QUICK).filter((b) => canDo(b.cmd))
+  if (buttons.length === 0) return null
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex gap-1.5 flex-wrap">
+      {buttons.map(({ cmd, icon, label }) => (
+        <button
+          key={cmd}
+          onClick={() => onCommand(device.id, cmd)}
+          title={label}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-xs font-medium"
+        >
+          <span className="text-[11px]">{icon}</span>
+          <span className="text-[10px]">{label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   const Icon = IR_TYPE_ICONS[device.device_type ?? device.type] || Zap
   const learnedCount = (device.learned_commands || []).length
   const totalCount = Object.keys(device.commands || {}).length
   const room = (device.room || '').replace(/_/g, ' ')
+  const [showStatePicker, setShowStatePicker] = useState(false)
+  const assumedState = device.assumed_state && device.assumed_state !== 'unknown'
+    ? device.assumed_state : null
+  const stateOptions = IR_STATE_OPTIONS[device.device_type ?? device.type] || IR_STATE_OPTIONS.default
 
   return (
-    <Card className="p-4 flex items-start justify-between gap-3">
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3">
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
           <Icon className="w-4 h-4 text-violet-400" />
@@ -231,14 +307,61 @@ function IRDeviceCard({ device, onDelete, onEdit }) {
         <div>
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 leading-tight">{device.name}</p>
           {room && <p className="text-xs text-zinc-400 mt-0.5 capitalize">{room}</p>}
-          <p className="text-xs text-zinc-400 mt-0.5">
-            {learnedCount}/{totalCount} commands learned
-            {device.assumed_state && device.assumed_state !== 'unknown' && (
-              <span className={cn('ml-2 font-medium', device.assumed_state === 'on' ? 'text-emerald-500' : 'text-zinc-500')}>
-                · {device.assumed_state}
-              </span>
-            )}
-          </p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className="text-xs text-zinc-400">{learnedCount}/{totalCount} commands</span>
+            {/* Interactive assumed-state chip */}
+            <div className="relative">
+              <button
+                onClick={() => setShowStatePicker((v) => !v)}
+                title="IR state is estimated — tap to correct manually"
+                className={cn(
+                  'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors',
+                  assumedState === 'on' || (assumedState && assumedState !== 'off')
+                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : assumedState === 'off'
+                    ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500'
+                    : 'bg-zinc-50 dark:bg-zinc-800/50 border-dashed border-zinc-200 dark:border-zinc-700 text-zinc-400'
+                )}
+              >
+                <span>{assumedState ?? 'unknown'}</span>
+                <span className="text-[9px] opacity-60 ml-0.5">assumed ▾</span>
+              </button>
+              <AnimatePresence>
+                {showStatePicker && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                    transition={{ duration: 0.1 }}
+                    className="absolute bottom-full left-0 mb-1 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-800 overflow-hidden min-w-[100px]"
+                  >
+                    <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">Set assumed state</p>
+                    {stateOptions.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { onStateChange(device.id, s); setShowStatePicker(false) }}
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors capitalize',
+                          assumedState === s ? 'text-violet-600 dark:text-violet-400 font-semibold' : 'text-zinc-700 dark:text-zinc-300'
+                        )}
+                      >
+                        {assumedState === s && <span className="text-violet-400 text-[10px]">✓</span>}
+                        {s}
+                      </button>
+                    ))}
+                    <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1 pb-1">
+                      <button
+                        onClick={() => { onStateChange(device.id, 'unknown'); setShowStatePicker(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        Clear assumption
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0 mt-0.5">
@@ -257,6 +380,8 @@ function IRDeviceCard({ device, onDelete, onEdit }) {
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
+      </div>
+      <IRQuickControls device={device} onCommand={onCommand} />
     </Card>
   )
 }
@@ -272,6 +397,61 @@ const DOMAIN_FILTER = [
   { id: 'media_player', label: 'Media' },
   { id: 'sensor', label: 'Sensors' },
 ]
+
+// Connectivity groups — order determines display order
+// Domain → display group (first match wins). IR devices map naturally here because
+// their domain is already mapped: tv/soundbar/projector → media_player, ac → climate, etc.
+const DOMAIN_GROUPS = [
+  { id: 'lights',   label: 'Lights',   domains: ['light'] },
+  { id: 'climate',  label: 'Climate',  domains: ['climate', 'fan', 'humidifier'] },
+  { id: 'media',    label: 'Media',    domains: ['media_player'] },
+  { id: 'switches', label: 'Switches', domains: ['switch', 'input_boolean'] },
+  { id: 'sensors',  label: 'Sensors',  domains: ['sensor', 'binary_sensor'] },
+  { id: 'security', label: 'Security', domains: ['lock', 'cover', 'alarm_control_panel', 'camera'] },
+  { id: 'other',    label: 'Other',    domains: [] },
+]
+
+function domainGroup(entity) {
+  for (const g of DOMAIN_GROUPS) {
+    if (g.domains.includes(entity.domain)) return g.id
+  }
+  return 'other'
+}
+
+// ── Collapsible group header ───────────────────────────────────────────────────
+function CollapsibleGroup({ label, count, open, onToggle, children, action }) {
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-2 flex-1 min-w-0"
+        >
+          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{label}</span>
+          {count != null && <span className="text-xs text-zinc-400 dark:text-zinc-600">{count}</span>}
+          <ChevronDown
+            size={15}
+            className={cn('text-zinc-400 transition-transform duration-200 ml-auto mr-1', open ? 'rotate-180' : '')}
+          />
+        </button>
+        {action && <div className="shrink-0 ml-2">{action}</div>}
+      </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{ overflow: 'hidden' }}
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
 
 // ── Assign-to-room inline dropdown ──────────────────────────────────────────
 function AssignRoomDropdown({ entityId, rooms, onAssign }) {
@@ -328,28 +508,45 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
 }
 
 // ── Per-card "…" context menu ─────────────────────────────────────────────────
-function DeviceMenu({ entity, rooms, onHide, onAssign }) {
+function DeviceMenu({ entity, rooms, onHide, onAssign, extraItems = [] }) {
   const [open, setOpen] = useState(false)
-  const [alignLeft, setAlignLeft] = useState(false)
-  const ref = useRef(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: undefined, right: 0 })
+  const btnRef = useRef(null)
+  const menuRef = useRef(null)
 
   const currentRoom = rooms.find((r) => (r.entities || []).includes(entity.entity_id))
 
+  const handleOpen = (e) => {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const menuW = 192  // w-48
+      const spaceBelow = window.innerHeight - rect.bottom
+      const wouldClipLeft = rect.right - menuW < 0
+      setMenuPos({
+        top:    spaceBelow >= 280 ? rect.bottom + 4 : undefined,
+        bottom: spaceBelow  < 280 ? window.innerHeight - rect.top + 4 : undefined,
+        left:  wouldClipLeft ? rect.left : undefined,
+        right: wouldClipLeft ? undefined : window.innerWidth - rect.right,
+      })
+    }
+    setOpen((v) => !v)
+  }
+
   useEffect(() => {
     if (!open) return
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect()
-      setAlignLeft(rect.left < window.innerWidth / 2)
+    const h = (e) => {
+      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) setOpen(false)
     }
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [open])
 
   return (
-    <div ref={ref} className="relative">
+    <div>
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
+        ref={btnRef}
+        onClick={handleOpen}
         className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
       >
         <MoreVertical size={14} />
@@ -358,11 +555,13 @@ function DeviceMenu({ entity, rooms, onHide, onAssign }) {
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={menuRef}
+            style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999 }}
             initial={{ opacity: 0, scale: 0.95, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ duration: 0.12 }}
-            className={cn('absolute top-7 z-50 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden', alignLeft ? 'left-0' : 'right-0')}
+            className="w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
           >
             <div className="py-1">
               {currentRoom && (
@@ -411,6 +610,13 @@ function DeviceMenu({ entity, rooms, onHide, onAssign }) {
                 >
                   <EyeOff size={12} /> Hide device
                 </button>
+                {extraItems.map((item, i) => (
+                  <button key={i} onClick={() => { item.onClick(); setOpen(false) }}
+                    className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors', item.className || 'text-zinc-700 dark:text-zinc-300')}
+                  >
+                    {item.icon} {item.label}
+                  </button>
+                ))}
               </div>
             </div>
           </motion.div>
@@ -420,7 +626,42 @@ function DeviceMenu({ entity, rooms, onHide, onAssign }) {
   )
 }
 
-// ── Device card ───────────────────────────────────────────────────────────────
+// ── Link IR device to a Wi-Fi/HA entity ──────────────────────────────────────
+// Maps IR device type → HA domain for the entity picker filter
+const IR_TYPE_TO_DOMAIN_FE = {
+  tv: 'media_player', soundbar: 'media_player', projector: 'media_player',
+  ac: 'climate', fan: 'fan', custom: 'switch',
+}
+
+function LinkIrModal({ irDevice, open, onClose, onLink }) {
+  const [entityId, setEntityId] = useState('')
+  const domain = IR_TYPE_TO_DOMAIN_FE[irDevice?.type] || 'media_player'
+
+  return (
+    <Modal open={open} onClose={() => { setEntityId(''); onClose() }} title={`Link "${irDevice?.name}" to Wi-Fi device`}>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4 -mt-1 leading-relaxed">
+        Select the Wi-Fi / Zigbee entity that controls the <strong>same physical device</strong>.
+        Once linked, both control paths appear on one unified card. The IR remote is used for power-on
+        and IR-specific commands; Wi-Fi handles live state and smart controls.
+      </p>
+      <EntitySelect
+        domain={domain}
+        value={entityId}
+        onChange={setEntityId}
+        placeholder={`Search ${domain.replace('_', ' ')} entities…`}
+        label="Wi-Fi / smart entity"
+      />
+      <div className="flex gap-2 mt-4">
+        <Button variant="secondary" onClick={() => { setEntityId(''); onClose() }} className="flex-1">Cancel</Button>
+        <Button onClick={() => { onLink(entityId); setEntityId('') }} disabled={!entityId} className="flex-1">
+          Link devices
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Shared status constants ───────────────────────────────────────────────────
 const STATUS_DOT = {
   lost:         'bg-red-400',
   unclaimed:    'bg-amber-400',
@@ -433,33 +674,178 @@ const STATUS_LABEL = {
   unconfigured: 'No entity set',
 }
 
-const DeviceCard = forwardRef(function DeviceCard({ entity, rooms, onToggle, onService, onHide, onAssign, isHidden, showAssign, ziggyStatus }, ref) {
-  const isOn = entity.state === 'on'
-  const isToggleable = TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
-  const { primary: stateLabel, secondary: stateSecondary } = isHidden
-    ? { primary: 'Hidden', secondary: null }
-    : formatEntityState(entity)
+// Normalize a room display name to the slug IR manager uses (matches backend _norm_room_key)
+function normRoomSlug(name) {
+  return name.toLowerCase().replace(/[''`]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
 
-  const isActive = entity.state !== 'off' && entity.state !== 'unavailable' && entity.state !== 'unknown'
-  const showStatusBadge = ziggyStatus && ziggyStatus !== 'connected' && STATUS_LABEL[ziggyStatus]
+// ── IR card context menu ──────────────────────────────────────────────────────
+// Uses fixed positioning so it never gets clipped by card/grid overflow.
+function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi, onUnlinkFromWifi }) {
+  const [open, setOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
+  const btnRef = useRef(null)
+  const menuRef = useRef(null)
+
+  const handleOpen = (e) => {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const menuW = 208 // w-52
+      const spaceBelow = window.innerHeight - rect.bottom
+      const wouldClipLeft = rect.right - menuW < 0
+      setMenuPos({
+        top:    spaceBelow >= 320 ? rect.bottom + 4 : undefined,
+        bottom: spaceBelow  < 320 ? window.innerHeight - rect.top + 4 : undefined,
+        // If the menu would clip the left edge, anchor left side to button left side instead
+        left:  wouldClipLeft ? rect.left : undefined,
+        right: wouldClipLeft ? undefined : window.innerWidth - rect.right,
+      })
+    }
+    setOpen((v) => !v)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const h = (e) => {
+      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+
+  const currentRoomSlug = irDevice?.room || ''
+  const currentRoom = rooms.find((r) => normRoomSlug(r.name) === currentRoomSlug)
+
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        onClick={handleOpen}
+        className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+      >
+        <MoreVertical size={14} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            ref={menuRef}
+            style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999 }}
+            initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.12 }}
+            className="w-52 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+          >
+            <div className="py-1">
+              {currentRoom && (
+                <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    In <span className="font-semibold text-zinc-700 dark:text-zinc-200">{currentRoom.name}</span>
+                  </span>
+                </div>
+              )}
+              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Assign to room</p>
+              <button onClick={() => { onAssign(null); setOpen(false) }}
+                className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800', !currentRoom ? 'text-violet-600 font-medium' : 'text-zinc-500')}
+              >
+                <Home size={12} /> No room
+              </button>
+              {rooms.map((r) => (
+                <button key={r.id} onClick={() => { onAssign(r.id); setOpen(false) }}
+                  className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800', currentRoom?.id === r.id ? 'text-violet-600 font-semibold' : 'text-zinc-700 dark:text-zinc-300')}
+                >
+                  <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-300 dark:bg-zinc-600')} />
+                  {r.name}
+                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
+                </button>
+              ))}
+              <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1">
+                <button onClick={() => { onEdit(); setOpen(false) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                >
+                  <Pencil size={12} /> Edit IR device
+                </button>
+                {irDevice?.ha_entity_id ? (
+                  <button onClick={() => { onUnlinkFromWifi?.(); setOpen(false) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-violet-600 dark:text-violet-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  >
+                    ⬡ Unlink from Wi-Fi device
+                  </button>
+                ) : (
+                  <button onClick={() => { onLinkToWifi?.(); setOpen(false) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-violet-600 dark:text-violet-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  >
+                    ⬡ Link to Wi-Fi device
+                  </button>
+                )}
+                <button onClick={() => { onDelete(); setOpen(false) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                >
+                  <Trash2 size={12} /> Remove
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ── Device card ───────────────────────────────────────────────────────────────
+const IR_STATE_OPTIONS_MAP = {
+  ac:      ['cool', 'heat', 'fan_only', 'off'],
+  default: ['on', 'off'],
+}
+
+const DeviceCard = forwardRef(function DeviceCard({
+  entity, rooms, onToggle, onService, onHide, onAssign,
+  onIrCommand, onIrStateChange, onEditIr, onDeleteIr,
+  onLinkIr, onUnlinkIr,
+  isHidden, showAssign, ziggyStatus,
+}, ref) {
+  const isIr = entity._ir === true
+  const irDevice = entity._irDevice
+  const linkedIr = entity._linkedIr || null  // IR device linked to this HA entity
+
+  const isOn = entity.state === 'on'
+  const isOff = entity.state === 'off' || entity.state === 'unavailable' || entity.state === 'unknown'
+  const isToggleable = !isIr && TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
+  const { primary: stateLabel, secondary: stateSecondary } = (!isIr && !isHidden)
+    ? formatEntityState(entity)
+    : { primary: isHidden ? 'Hidden' : '', secondary: null }
+  const isActive = !isOff
+  const showStatusBadge = !isIr && !linkedIr && ziggyStatus && ziggyStatus !== 'connected' && STATUS_LABEL[ziggyStatus]
+
+  // IR assumed-state picker (standalone IR cards only)
+  const [showStatePicker, setShowStatePicker] = useState(false)
+  const irStateOptions = IR_STATE_OPTIONS_MAP[irDevice?.type] || IR_STATE_OPTIONS_MAP.default
+  const assumedState = irDevice?.assumed_state && irDevice.assumed_state !== 'unknown' ? irDevice.assumed_state : null
 
   return (
     <motion.div
-      ref={ref}
-      layout
+      ref={ref} layout
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: isHidden ? 0.45 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.15 }}
     >
       <Card className={cn('p-4 transition-all duration-200', isActive && !isHidden && 'shadow-card-hover')}>
+        {/* ── Card header ── */}
         <div className="flex items-start justify-between mb-3">
           <div className={cn(
             'w-10 h-10 rounded-xl flex items-center justify-center text-xl relative',
-            isActive ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800'
+            isActive ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
           )}>
             {domainIcon(entity.domain, entity.device_class)}
-            {ziggyStatus && STATUS_DOT[ziggyStatus] && (
+            {isIr && (
+              <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none tracking-tight">IR</span>
+            )}
+            {linkedIr && (
+              <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none tracking-tight">IR</span>
+            )}
+            {!isIr && !linkedIr && ziggyStatus && STATUS_DOT[ziggyStatus] && (
               <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900', STATUS_DOT[ziggyStatus])} />
             )}
           </div>
@@ -467,37 +853,127 @@ const DeviceCard = forwardRef(function DeviceCard({ entity, rooms, onToggle, onS
             {isToggleable && (
               <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />
             )}
-            <DeviceMenu entity={entity} rooms={rooms} onHide={onHide} onAssign={onAssign} />
+            {isIr ? (
+              <IRCardMenu
+                irDevice={irDevice}
+                rooms={rooms}
+                onEdit={() => onEditIr(irDevice)}
+                onDelete={() => onDeleteIr(irDevice.id)}
+                onAssign={(roomId) => onAssign(entity.entity_id, roomId)}
+                onLinkToWifi={() => onLinkIr(irDevice)}
+                onUnlinkFromWifi={() => onUnlinkIr(irDevice.id)}
+              />
+            ) : linkedIr ? (
+              // Merged HA+IR card — HA menu with IR extras
+              <DeviceMenu
+                entity={entity}
+                rooms={rooms}
+                onHide={onHide}
+                onAssign={onAssign}
+                extraItems={[
+                  { label: 'Edit IR remote', icon: <Pencil size={12} />, onClick: () => onEditIr(linkedIr) },
+                  { label: 'Unlink IR', icon: <span className="text-[11px]">⬡</span>, onClick: () => onUnlinkIr(linkedIr.id), className: 'text-violet-600 dark:text-violet-400' },
+                ]}
+              />
+            ) : (
+              <DeviceMenu entity={entity} rooms={rooms} onHide={onHide} onAssign={onAssign} />
+            )}
           </div>
         </div>
 
+        {/* ── Name ── */}
         <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">
           {entity.display_name || entity.friendly_name || entity.entity_id.split('.')[1]}
         </p>
-        {showStatusBadge ? (
+
+        {/* ── State ── */}
+        {isIr ? (
+          // Standalone IR: assumed state chip with picker
+          <div className="relative">
+            <button
+              onClick={() => setShowStatePicker((v) => !v)}
+              title="IR state is estimated — tap to correct manually"
+              className={cn(
+                'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors',
+                assumedState === 'on' || (assumedState && assumedState !== 'off')
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                  : assumedState === 'off'
+                  ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500'
+                  : 'bg-zinc-50 dark:bg-zinc-800/50 border-dashed border-zinc-200 dark:border-zinc-700 text-zinc-400',
+              )}
+            >
+              <span>{assumedState ?? 'unknown'}</span>
+              <span className="text-[9px] opacity-60 ml-0.5">assumed ▾</span>
+            </button>
+            <AnimatePresence>
+              {showStatePicker && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.1 }}
+                  className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-800 overflow-hidden min-w-[110px]"
+                >
+                  <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">Set assumed state</p>
+                  {irStateOptions.map((s) => (
+                    <button key={s} onClick={() => { onIrStateChange(irDevice.id, s); setShowStatePicker(false) }}
+                      className={cn('w-full text-left px-3 py-2 text-xs capitalize hover:bg-zinc-50 dark:hover:bg-zinc-800', assumedState === s ? 'text-violet-600 font-semibold' : 'text-zinc-700 dark:text-zinc-300')}
+                    >
+                      {assumedState === s && <span className="text-violet-400 mr-1 text-[10px]">✓</span>}{s}
+                    </button>
+                  ))}
+                  <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1">
+                    <button onClick={() => { onIrStateChange(irDevice.id, 'unknown'); setShowStatePicker(false) }}
+                      className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    >Clear assumption</button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ) : showStatusBadge ? (
           <p className="text-xs font-medium text-red-400">{STATUS_LABEL[ziggyStatus]}</p>
         ) : (
-        <p className={cn(
-          'text-xs font-medium',
-          isHidden ? 'text-zinc-300 dark:text-zinc-700' :
-          entity.state === 'unavailable' ? 'text-zinc-300 dark:text-zinc-600' :
-          isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600'
-        )}>
-          {stateLabel}
-        </p>
+          <p className={cn(
+            'text-xs font-medium',
+            isHidden ? 'text-zinc-300 dark:text-zinc-700' :
+            entity.state === 'unavailable' ? 'text-zinc-300 dark:text-zinc-600' :
+            isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600',
+          )}>
+            {stateLabel}
+          </p>
         )}
-        {stateSecondary && !isHidden && (
+        {!isIr && stateSecondary && !isHidden && (
           <p className="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">{stateSecondary}</p>
         )}
 
+        {/* ── Controls ── */}
         {!isHidden && (
-          <DeviceControls
-            entity={entity}
-            onService={(service, data) => onService(entity, service, data)}
-          />
+          isIr ? (
+            // Standalone IR card: quick controls only
+            <IRQuickControls device={irDevice} onCommand={onIrCommand} />
+          ) : linkedIr ? (
+            // Merged card: HA controls + IR Power-On + IR Remote panel
+            <>
+              {/* Power On via IR — shown prominently when device is off/unavailable */}
+              {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
+                <button
+                  onClick={() => onIrCommand(linkedIr.id, 'power')}
+                  className="w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-xl bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 text-xs font-semibold hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors border border-violet-200 dark:border-violet-800/50"
+                >
+                  ⏻ Turn On via IR
+                </button>
+              )}
+              {/* Standard HA controls (play/pause, volume, sources, climate modes, etc.) */}
+              <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
+              {/* IR Remote panel — all learned IR commands */}
+              <IRRemotePanel irDevice={linkedIr} onCommand={onIrCommand} />
+            </>
+          ) : (
+            // Regular HA entity
+            <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
+          )
         )}
 
-        {showAssign && (
+        {showAssign && !isIr && (
           <AssignRoomDropdown entityId={entity.entity_id} rooms={rooms} onAssign={onAssign} />
         )}
       </Card>
@@ -507,7 +983,7 @@ const DeviceCard = forwardRef(function DeviceCard({ entity, rooms, onToggle, onS
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Devices() {
-  const { entities, rooms, deviceStatusMap, loading, fetchAll, hiddenEntities, showHidden, hideEntity, toggleShowHidden, getUnassigned, ziggyRooms, unclaimedDevices } = useDeviceStore()
+  const { entities, rooms, deviceStatusMap, loading, fetchAll, hiddenEntities, showHidden, hideEntity, toggleShowHidden, getUnassigned, ziggyRooms, unclaimedDevices, updateIrAssumedState } = useDeviceStore()
   const { addToast } = useUIStore()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
@@ -521,7 +997,17 @@ export default function Devices() {
     if (f) setDomain(f)
   }, [searchParams])
 
+  // HA-area room list with entity assignments (needed by DeviceMenu to detect current room)
   const allRooms = rooms.map((r) => ({ id: r.id, name: r.name, entities: r.entities || [] }))
+
+  // Full room picker list: use ziggyRooms (all rooms) enriched with HA entity lists
+  // This ensures every room the user created is shown, not only HA areas
+  const haAreaMap = Object.fromEntries(rooms.map((r) => [r.id, r]))
+  const roomsForPicker = ziggyRooms.map((zr) => ({
+    id:       zr.id,
+    name:     zr.name,
+    entities: haAreaMap[zr.id]?.entities || [],
+  }))
   const unassigned = getUnassigned()
 
   const filtered = (() => {
@@ -560,28 +1046,75 @@ export default function Devices() {
     }
   }
 
-  const handleAssign = async (entityId, areaId) => {
+  const handleAssign = async (entityId, roomId) => {
     try {
-      await assignEntityToArea(entityId, areaId)
+      if (entityId?.startsWith('ir.')) {
+        // IR device — assign by normalized room name slug, not HA area ID.
+        // Send '' (empty string) to unassign; backend treats '' as "no room".
+        const irId = entityId.replace('ir.', '')
+        const room = roomsForPicker.find((r) => r.id === roomId)
+        const roomSlug = roomId === null
+          ? ''
+          : room ? normRoomSlug(room.name) : roomId
+        await patchIrDevice(irId, { room: roomSlug })
+      } else {
+        await assignEntityToArea(entityId, roomId)
+      }
       await fetchAll()
-      addToast(areaId ? 'Assigned to room' : 'Removed from room', 'success')
+      addToast(roomId ? 'Assigned to room' : 'Removed from room', 'success')
     } catch (e) { addToast(e.message || 'Failed', 'error') }
   }
 
-  const [showPairing, setShowPairing]     = useState(false)
-  const [showIRWizard, setShowIRWizard]   = useState(false)
-  const [irDevices, setIrDevices]         = useState([])
+  const [showPairing, setShowPairing]         = useState(false)
+  const [showIRWizard, setShowIRWizard]       = useState(false)
   const [editingIrDevice, setEditingIrDevice] = useState(null)
+  const [linkingIrDevice, setLinkingIrDevice] = useState(null) // IR device being linked to HA entity
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set())
 
-  const fetchIrDevices = () => getIrDevices().then(setIrDevices).catch(() => {})
-  useEffect(() => { fetchIrDevices() }, [])
-
-  const handleDeleteIrDevice = async (id) => {
+  const handleLinkIr = async (haEntityId) => {
+    if (!linkingIrDevice || !haEntityId) return
     try {
-      await deleteIrDevice(id)
-      await fetchIrDevices()
+      await patchIrDevice(linkingIrDevice.id, { ha_entity_id: haEntityId })
+      await fetchAll()
+      addToast('Devices linked — controls merged', 'success')
+    } catch { addToast('Failed to link', 'error') }
+    setLinkingIrDevice(null)
+  }
+
+  const handleUnlinkIr = async (irId) => {
+    try {
+      await patchIrDevice(irId, { ha_entity_id: '' })
+      await fetchAll()
+      addToast('IR device unlinked', 'success')
+    } catch { addToast('Failed to unlink', 'error') }
+  }
+  const toggleGroup = (id) => setCollapsedGroups((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const handleDeleteIr = async (irId) => {
+    try {
+      await deleteIrDevice(irId)
+      await fetchAll()
       addToast('IR device removed', 'success')
     } catch { addToast('Failed to remove', 'error') }
+  }
+
+  const handleIrStateChange = async (id, newState) => {
+    try {
+      await patchIrDevice(id, { assumed_state: newState === 'unknown' ? null : newState })
+      updateIrAssumedState(id, newState === 'unknown' ? 'unknown' : newState)
+      addToast(`State set to "${newState}"`, 'success')
+    } catch { addToast('Failed to update state', 'error') }
+  }
+
+  const handleIrCommand = async (deviceId, cmd) => {
+    try {
+      await irSend(deviceId, cmd)
+      addToast('Command sent', 'success')
+    } catch { addToast('IR command failed', 'error') }
   }
 
   const activeCount = entities.filter((e) => e.state === 'on').length
@@ -592,7 +1125,12 @@ export default function Devices() {
     ...ziggyRooms.flatMap((r) => (r.devices || []).map((d) => ({ ...d, roomName: r.name }))),
     ...(unclaimedDevices || []).map((d) => ({ ...d, roomName: null })),
   ]
-  const attentionDevices = allZiggyDevices.filter((d) => d.status === 'lost' || d.status === 'unconfigured')
+  const NON_DEVICE_DOMAINS = new Set(['automation', 'script', 'scene', 'timer', 'counter', 'input_select', 'input_number', 'input_text', 'input_datetime', 'input_button', 'group', 'zone'])
+  const attentionDevices = allZiggyDevices.filter((d) => {
+    if (d.status !== 'lost' && d.status !== 'unconfigured') return false
+    const domain = (d.entity_id || '').split('.')[0] || d.device_type || ''
+    return !NON_DEVICE_DOMAINS.has(domain)
+  })
 
   return (
     <div className="max-w-2xl mx-auto px-5 pt-6">
@@ -745,7 +1283,14 @@ export default function Devices() {
         </div>
       )}
 
-      {/* Grid */}
+      {loading && (
+        <div className="grid grid-cols-2 gap-3 items-start">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-28 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+          ))}
+        </div>
+      )}
+
       {!loading && filtered.length === 0 && (
         <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
           <p className="text-4xl mb-3">{domain === 'unassigned' ? '✅' : '🔌'}</p>
@@ -755,59 +1300,86 @@ export default function Devices() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 items-start">
-        {loading && [1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="h-28 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-        ))}
-        <AnimatePresence mode="popLayout">
-          {!loading && filtered.map((entity) => (
-            <DeviceCard
-              key={entity.entity_id}
-              entity={entity}
-              rooms={allRooms}
-              onToggle={handleToggle}
-              onService={handleService}
-              onHide={hideEntity}
-              onAssign={handleAssign}
-              isHidden={hiddenEntities.has(entity.entity_id)}
-              showAssign={domain === 'unassigned'}
-              ziggyStatus={deviceStatusMap[entity.entity_id]}
-            />
-          ))}
-        </AnimatePresence>
-      </div>
+      {/* Grouped view — always used except for the 'unassigned' special case */}
+      {!loading && domain !== 'unassigned' && filtered.length > 0 && (() => {
+        const groups = DOMAIN_GROUPS.map((g) => ({
+          ...g,
+          items: filtered.filter((e) => domainGroup(e) === g.id),
+        })).filter((g) => g.items.length > 0)
+        return groups.map((g) => (
+          <CollapsibleGroup
+            key={g.id}
+            label={g.label}
+            count={g.items.length}
+            open={!collapsedGroups.has(g.id)}
+            onToggle={() => toggleGroup(g.id)}
+          >
+            <div className="grid grid-cols-2 gap-3 items-start">
+              <AnimatePresence mode="popLayout">
+                {g.items.map((entity) => (
+                  <DeviceCard
+                    key={entity.entity_id}
+                    entity={entity}
+                    rooms={roomsForPicker}
+                    onToggle={handleToggle}
+                    onService={handleService}
+                    onHide={hideEntity}
+                    onAssign={handleAssign}
+                    onIrCommand={handleIrCommand}
+                    onIrStateChange={handleIrStateChange}
+                    onEditIr={setEditingIrDevice}
+                    onDeleteIr={handleDeleteIr}
+                    onLinkIr={setLinkingIrDevice}
+                    onUnlinkIr={handleUnlinkIr}
+                    isHidden={hiddenEntities.has(entity.entity_id)}
+                    showAssign={false}
+                    ziggyStatus={deviceStatusMap[entity.entity_id]}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </CollapsibleGroup>
+        ))
+      })()}
 
-      {/* IR Devices section */}
-      <div className="mt-8 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">IR Devices</h2>
-            <p className="text-xs text-zinc-400 mt-0.5">Broadlink blaster — TV, AC, fan, soundbar</p>
-          </div>
-          <Button size="sm" variant="secondary" onClick={() => setShowIRWizard(true)}>
-            <Plus size={13} /> Add IR device
-          </Button>
-        </div>
-
-        {irDevices.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 py-8 text-center text-zinc-400 dark:text-zinc-600 text-sm">
-            No IR devices yet — add one to control TV, AC, or other IR gear via your Broadlink blaster.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-2">
-            {irDevices.map((d) => (
-              <IRDeviceCard key={d.id} device={d} onDelete={handleDeleteIrDevice} onEdit={setEditingIrDevice} />
+      {/* Flat grid — unassigned only (needs "Assign to room" button per card) */}
+      {!loading && domain === 'unassigned' && filtered.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <AnimatePresence mode="popLayout">
+            {filtered.map((entity) => (
+              <DeviceCard
+                key={entity.entity_id}
+                entity={entity}
+                rooms={roomsForPicker}
+                onToggle={handleToggle}
+                onService={handleService}
+                onHide={hideEntity}
+                onAssign={handleAssign}
+                onIrCommand={handleIrCommand}
+                onIrStateChange={handleIrStateChange}
+                onEditIr={setEditingIrDevice}
+                onDeleteIr={handleDeleteIr}
+                onLinkIr={setLinkingIrDevice}
+                onUnlinkIr={handleUnlinkIr}
+                isHidden={hiddenEntities.has(entity.entity_id)}
+                showAssign={true}
+                ziggyStatus={deviceStatusMap[entity.entity_id]}
+              />
             ))}
-          </div>
-        )}
-      </div>
+          </AnimatePresence>
+        </div>
+      )}
 
-      <PairingWizard open={showPairing} onClose={() => setShowPairing(false)} />
+      <PairingWizard
+        open={showPairing}
+        onClose={() => setShowPairing(false)}
+        onAddIrDevice={() => setShowIRWizard(true)}
+      />
 
       {showIRWizard && (
         <IRWizard
           onClose={() => setShowIRWizard(false)}
-          onCreated={() => { fetchIrDevices(); setShowIRWizard(false) }}
+          onCreated={() => { fetchAll(); setShowIRWizard(false) }}
         />
       )}
 
@@ -815,9 +1387,16 @@ export default function Devices() {
         <IREditModal
           device={editingIrDevice}
           onClose={() => setEditingIrDevice(null)}
-          onSaved={() => { fetchIrDevices(); setEditingIrDevice(null) }}
+          onSaved={() => { fetchAll(); setEditingIrDevice(null) }}
         />
       )}
+
+      <LinkIrModal
+        irDevice={linkingIrDevice}
+        open={!!linkingIrDevice}
+        onClose={() => setLinkingIrDevice(null)}
+        onLink={handleLinkIr}
+      />
     </div>
   )
 }

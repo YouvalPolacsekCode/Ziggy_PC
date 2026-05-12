@@ -12,6 +12,14 @@ from core.intent_parser import quick_parse
 from services.task_manager import start_reminder_thread
 from core.memory import append_chat, get_chat_history, load_long_term_memory
 from core.result_utils import render_result
+from core.session_manager import (
+    MODE_COMMAND, MODE_CHAT,
+    CHAT_ALLOWED_INTENTS,
+    is_chat_trigger, is_command_trigger,
+    get_telegram_mode, set_telegram_mode,
+    get_telegram_chat_history, append_telegram_chat,
+)
+from core.response_templates import get_response_for
 
 from ui.ziggy_buttons import (
     get_main_menu, get_task_menu, get_home_menu,
@@ -166,10 +174,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     context.chat_data["last_command"] = user_text.lower()
 
-    # === Try quick intent parse first ===
+    # === Session mode: trigger phrase detection ===
+    if is_chat_trigger(user_text):
+        set_telegram_mode(context.chat_data, MODE_CHAT)
+        await update.message.reply_text(get_response_for("chat_mode_entered", user_text), parse_mode=None)
+        return
+
+    if is_command_trigger(user_text):
+        set_telegram_mode(context.chat_data, MODE_COMMAND)
+        await update.message.reply_text(get_response_for("chat_mode_exited", user_text), parse_mode=None)
+        return
+
+    current_mode = get_telegram_mode(context.chat_data)
+
+    # === Chat mode ===
+    if current_mode == MODE_CHAT:
+        try:
+            # Try intent parser first — execute whitelisted info/read intents directly.
+            parsed = quick_parse(user_text)
+            parsed["source"] = "telegram"
+
+            if parsed.get("intent") in CHAT_ALLOWED_INTENTS:
+                response = await handle_intent(parsed)
+                await update.message.reply_text(render_result(response), parse_mode=None)
+            else:
+                # Pure GPT conversation with session-scoped history.
+                append_telegram_chat(context.chat_data, "user", user_text)
+                chat_history = get_telegram_chat_history(context.chat_data)
+                intent_data = {
+                    "intent": "chat_with_gpt",
+                    "params": {"text": user_text, "chat_history": chat_history},
+                    "source": "telegram",
+                }
+                response = await handle_intent(intent_data)
+                reply = render_result(response)
+                append_telegram_chat(context.chat_data, "assistant", reply)
+                await update.message.reply_text(f"💬 {reply}", parse_mode=None)
+        except Exception as e:
+            log_error(f"[Telegram] Chat mode error: {e}")
+            await update.message.reply_text("⚠️ Something went wrong.", parse_mode=None)
+        return
+
+    # === Command mode: intent parser pipeline ===
     try:
         intent_data = quick_parse(user_text)
-        intent_data["source"] = "telegram"  # ✅ ensure source is always set
+        intent_data["source"] = "telegram"
 
         response = await handle_intent(intent_data)
         append_chat("user", user_text)
@@ -178,7 +227,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(render_result(response), parse_mode=None)
         return
 
-    # === Fallback ===
     except Exception as e:
         log_error(f"[Telegram] Error: {e}")
         await update.message.reply_text("⚠️ Something went wrong.", parse_mode=None)

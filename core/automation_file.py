@@ -36,7 +36,7 @@ def create_automation(data: dict) -> dict:
     automations = _load()
     now = datetime.utcnow().isoformat()
     automation = {
-        "id": str(uuid.uuid4()),
+        "id": data.get("id") or str(uuid.uuid4()),
         "name": data.get("name", "Unnamed"),
         "description": data.get("description", ""),
         "enabled": data.get("enabled", True),

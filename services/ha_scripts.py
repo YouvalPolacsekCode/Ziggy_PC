@@ -27,9 +27,14 @@ def _step_to_ha(step: dict) -> Optional[dict]:
     kind = step.get("type", "device")
     if kind == "device":
         entity_id = step.get("entity_id", "")
-        action = step.get("action", "turn_on")
+        # ha_service is the real HA service name; action is the UI value key (may differ for rich actions)
+        ha_service = step.get("ha_service") or step.get("action", "turn_on")
         domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
-        return {"service": f"{domain}.{action}", "target": {"entity_id": entity_id}}
+        ha_step: dict = {"service": f"{domain}.{ha_service}", "target": {"entity_id": entity_id}}
+        service_data = step.get("service_data") or {}
+        if service_data:
+            ha_step["data"] = service_data
+        return ha_step
     if kind == "scene":
         return {"service": "scene.turn_on", "target": {"entity_id": step.get("entity_id", "")}}
     if kind == "delay":

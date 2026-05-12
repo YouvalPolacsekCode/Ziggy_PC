@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown,
-  Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw,
+  Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap,
 } from 'lucide-react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
@@ -37,10 +37,17 @@ const PROTOCOLS = [
     description: 'Eve, Nanoleaf, newer IKEA & Philips, Apple Home compatible',
   },
   {
+    id: 'ir_device',
+    label: 'IR Device',
+    Icon: Zap,
+    description: 'TV, AC, fan, soundbar — controlled by IR blaster (Broadlink RM)',
+    immediate: true,  // handled instantly by parent — no HA pairing flow
+  },
+  {
     id: 'broadlink',
-    label: 'Broadlink',
+    label: 'IR Blaster (Broadlink)',
     Icon: Tv2,
-    description: 'RM4 Mini / Pro — IR & RF blaster for TVs, ACs, fans',
+    description: 'RM4 Mini / Pro infrastructure — add the blaster hardware to HA first',
   },
   {
     id: 'wifi',
@@ -169,7 +176,7 @@ function RoomPicker({ rooms, value, onChange }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export function PairingWizard({ open, onClose }) {
+export function PairingWizard({ open, onClose, onAddIrDevice }) {
   const { rooms, fetchAll } = useDeviceStore()
 
   const [step,        setStep]        = useState('select')
@@ -341,6 +348,11 @@ export function PairingWizard({ open, onClose }) {
     else if (protocol === 'matter')         startMatter()
     else if (protocol === 'broadlink')      startWifiScan('broadlink')
     else if (protocol === 'wifi')           startWifiScan('wifi')
+    else if (protocol === 'ir_device') {
+      // Hand off to IRWizard in the parent — close this modal first
+      onClose()
+      onAddIrDevice?.()
+    }
   }
 
   const handleCancel = async () => {
@@ -444,7 +456,8 @@ export function PairingWizard({ open, onClose }) {
                 {protocol === 'zigbee' && 'Opens a 60-second pairing window on your Zigbee network.'}
                 {protocol === 'zwave'  && 'Puts your Z-Wave network into inclusion mode for 2 minutes.'}
                 {protocol === 'matter' && 'Enter the setup code from the device label or its companion app.'}
-                {protocol === 'broadlink' && 'Make sure your Broadlink device is powered on and connected to Wi-Fi. Home Assistant auto-discovers it.'}
+                {protocol === 'ir_device'  && 'Configure your IR device — name it, select the blaster, and teach it the remote codes.'}
+              {protocol === 'broadlink' && 'Make sure your Broadlink device is powered on and connected to Wi-Fi. Home Assistant auto-discovers it.'}
                 {protocol === 'wifi'  && 'Make sure the device is powered on and connected to your network. Home Assistant will discover it via mDNS.'}
               </p>
             </div>
@@ -475,7 +488,13 @@ export function PairingWizard({ open, onClose }) {
                   '3. Wait — Ziggy will detect it automatically',
                 ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
 
-                {protocol === 'broadlink' && [
+                {protocol === 'ir_device' && [
+                  '1. Click "Set up IR device" below',
+                  '2. Name the device and choose your blaster',
+                  '3. Point your remote at the blaster and teach each button',
+                ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
+
+              {protocol === 'broadlink' && [
                   '1. Power on your Broadlink device',
                   '2. Connect it to your Wi-Fi using the Broadlink app',
                   '3. Click "Scan" — Ziggy will show devices HA has discovered',
@@ -498,8 +517,9 @@ export function PairingWizard({ open, onClose }) {
                 disabled={protocol === 'matter' && !matterCode.trim()}
                 className="flex-1"
               >
-                {protocol === 'matter'                  ? 'Commission' :
-                 protocol === 'broadlink' || protocol === 'wifi' ? 'Scan'      :
+                {protocol === 'matter'                  ? 'Commission'        :
+                 protocol === 'ir_device'               ? 'Set up IR device'  :
+                 protocol === 'broadlink' || protocol === 'wifi' ? 'Scan'     :
                  'Start pairing'}
               </Button>
             </div>

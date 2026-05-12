@@ -9,6 +9,7 @@ import os
 from typing import Any
 
 STORE_FILE = "user_files/local_automation_actions.json"
+META_FILE = "user_files/automation_meta.json"
 
 
 def _load() -> dict:
@@ -24,7 +25,40 @@ def _save(data: dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-_LOCAL_TYPES = {"ziggy_intent", "ir_command"}
+def _load_meta() -> dict:
+    if not os.path.exists(META_FILE):
+        return {}
+    with open(META_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_meta(data: dict) -> None:
+    os.makedirs(os.path.dirname(META_FILE), exist_ok=True)
+    with open(META_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def save_automation_meta(automation_id: str, meta: dict) -> None:
+    """Persist trigger + name for fast list display without an HA config round-trip."""
+    store = _load_meta()
+    store[automation_id] = meta
+    _save_meta(store)
+
+
+def get_automation_meta(automation_id: str) -> dict:
+    return _load_meta().get(automation_id, {})
+
+
+def delete_automation_meta(automation_id: str) -> None:
+    store = _load_meta()
+    store.pop(automation_id, None)
+    _save_meta(store)
+
+
+# All step types that Ziggy's own executor can run.
+# call_service, delay, notify, send_intent are now handled natively so that
+# time-triggered automations stored in automations.json don't need HA.
+_LOCAL_TYPES = {"ziggy_intent", "ir_command", "call_service", "delay", "notify", "send_intent", "message"}
 
 
 def save_ziggy_actions(automation_id: str, actions: list[dict]) -> None:
@@ -56,43 +90,132 @@ def delete_ziggy_actions(automation_id: str) -> None:
     _save(store)
 
 
+# Guards against re-entrant / duplicate triggering of the same automation.
+# If the user taps "Run" multiple times before the first execution completes,
+# subsequent requests are dropped rather than queued up and run back-to-back.
+_running_automations: set[str] = set()
+
+
 async def execute_ziggy_actions(automation_id: str) -> list[dict]:
-    """Run all local (ziggy_intent / ir_command) steps stored for an automation. Returns list of results."""
+    """Run all stored steps for an automation/routine in sequence.
+
+    Called as a FastAPI BackgroundTask after the HTTP response is sent so that:
+    - Delay steps don't block the HTTP connection
+    - Client disconnection / proxy timeouts can't cancel the sequence
+    - The full IR/delay/capability chain executes reliably to completion
+    """
+    import asyncio
+    from core.logger_module import log_info, log_error
     from core.action_parser import handle_intent
+
+    if automation_id in _running_automations:
+        log_info(f"[Executor] {automation_id} already running — duplicate trigger ignored")
+        return []
+
+    _running_automations.add(automation_id)
     steps = get_ziggy_actions(automation_id)
-    results = []
-    for step in steps:
-        kind = step.get("type")
+    results: list[dict] = []
+    prev_kind: str | None = None
 
-        if kind == "ir_command":
-            from services.ir_manager import send_ir_command, send_ac_temperature, send_sequence
-            device_id = step.get("ir_device_id", "")
-            command = step.get("ir_command", "")
-            sequence = step.get("ir_sequence") or ""
-            if not device_id:
-                result = {"ok": False, "message": "IR command step has no device_id."}
-            elif sequence:
-                result = await send_sequence(device_id, sequence)
-            elif step.get("ir_temperature") is not None:
-                result = await send_ac_temperature(device_id, int(step["ir_temperature"]), mode=step.get("ir_mode"))
-            elif command:
-                result = send_ir_command(device_id, command)
-            else:
-                result = {"ok": False, "message": "IR command step has no command or sequence selected."}
+    try:
+        for i, step in enumerate(steps):
+            kind = step.get("type", "")
+            try:
+                log_info(f"[Executor] {automation_id} step {i+1}/{len(steps)}: {kind}")
 
-        elif kind == "ziggy_intent":
-            vd_id = step.get("virtual_device_id")
-            if vd_id:
-                from services.virtual_devices import trigger_virtual_device
-                result = await trigger_virtual_device(vd_id, runtime_params=step.get("runtime_params"))
-            else:
-                result = await handle_intent({
-                    "intent": step.get("capability", ""),
-                    "params": step.get("params", {}),
-                    "source": "automation",
-                })
-        else:
-            result = {"ok": False, "message": f"Unknown local step type: {kind}"}
+                # ── HA service call executed directly by Ziggy ───────────────────
+                if kind == "call_service":
+                    from services.home_automation import call_service as ha_call
+                    entity_id = step.get("entity_id", "")
+                    svc_key = step.get("ha_service") or step.get("service_value") or ""
+                    if not svc_key:
+                        svc_key = step.get("service", "homeassistant.turn_on").split(".")[-1]
+                    domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
+                    payload: dict = {"entity_id": entity_id}
+                    payload.update(step.get("service_data") or {})
+                    result = ha_call(domain, svc_key, payload)
 
-        results.append(result)
-    return results
+                # ── Timed pause ──────────────────────────────────────────────────
+                elif kind == "delay":
+                    secs = max(0, int(step.get("seconds", step.get("delay_seconds", 0))))
+                    log_info(f"[Executor] Waiting {secs}s…")
+                    await asyncio.sleep(secs)
+                    result = {"ok": True, "message": f"Waited {secs}s"}
+
+                # ── Notification ─────────────────────────────────────────────────
+                elif kind == "notify":
+                    msg = step.get("message", "")
+                    try:
+                        from interfaces.telegram_interface import send_message as tg_send
+                        await tg_send(msg)
+                        result = {"ok": True, "message": "Notification sent"}
+                    except Exception as e:
+                        result = {"ok": False, "message": f"Notify failed: {e}"}
+
+                # ── Natural-language command through Ziggy's intent pipeline ─────
+                elif kind in ("send_intent", "message"):
+                    text = step.get("text", "")
+                    if text:
+                        result = await handle_intent(
+                            {"intent": "chat", "params": {"text": text}, "source": "automation"}
+                        )
+                    else:
+                        result = {"ok": False, "message": "send_intent step has no text"}
+
+                # ── IR blaster command ───────────────────────────────────────────
+                elif kind == "ir_command":
+                    from services.ir_manager import send_ir_command, send_ac_temperature, send_sequence
+                    device_id = step.get("ir_device_id", "")
+                    command   = step.get("ir_command", "")
+                    sequence  = step.get("ir_sequence") or ""
+
+                    # When two IR commands are consecutive (no explicit delay step between
+                    # them), give the Broadlink blaster a short breathing gap so it doesn't
+                    # drop the second command due to rate-limiting.
+                    if prev_kind == "ir_command":
+                        await asyncio.sleep(0.6)
+
+                    if not device_id:
+                        result = {"ok": False, "message": "IR command step has no device_id."}
+                    elif sequence:
+                        result = await send_sequence(device_id, sequence)
+                    elif step.get("ir_temperature") is not None:
+                        result = await send_ac_temperature(
+                            device_id, int(step["ir_temperature"]), mode=step.get("ir_mode")
+                        )
+                    elif command:
+                        result = send_ir_command(device_id, command)
+                    else:
+                        result = {"ok": False, "message": "IR command step has no command or sequence selected."}
+
+                # ── Ziggy virtual device capability ──────────────────────────────
+                elif kind == "ziggy_intent":
+                    vd_id = step.get("virtual_device_id")
+                    if vd_id:
+                        from services.virtual_devices import trigger_virtual_device
+                        result = await trigger_virtual_device(vd_id, runtime_params=step.get("runtime_params"))
+                    else:
+                        result = await handle_intent({
+                            "intent": step.get("capability", ""),
+                            "params": step.get("params", {}),
+                            "source": "automation",
+                        })
+
+                else:
+                    result = {"ok": False, "message": f"Unknown step type: {kind}"}
+
+            except asyncio.CancelledError:
+                log_error(f"[Executor] {automation_id} step {i+1} cancelled (server shutdown?)")
+                raise
+            except Exception as exc:
+                log_error(f"[Executor] {automation_id} step {i+1} ({kind}) error: {exc}")
+                result = {"ok": False, "message": str(exc)}
+
+            results.append(result)
+            prev_kind = kind
+
+        log_info(f"[Executor] {automation_id} complete — {len(results)} steps")
+        return results
+
+    finally:
+        _running_automations.discard(automation_id)

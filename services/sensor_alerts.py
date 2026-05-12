@@ -54,6 +54,8 @@ def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
     last_alert: Dict[str, datetime] = {}
     # Track: entity_id → last known state (to detect transitions)
     last_state: Dict[str, str] = {}
+    # Track: entity_id → consecutive missing count (suppress repeated log noise)
+    missing_count: Dict[str, int] = {}
 
     log_info(f"[SensorAlerts] Monitoring {len(sensors)} sensor(s). Poll every {poll_s}s.")
 
@@ -68,9 +70,26 @@ def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
                 if not entity_id:
                     continue
 
+                # Skip the API call entirely for entities already known to be absent —
+                # avoids repeated "Entity not found" log noise from get_state().
+                # Re-probe every 10th poll so we notice if the entity comes online.
+                miss = missing_count.get(entity_id, 0)
+                if miss > 0 and miss % 10 != 0:
+                    missing_count[entity_id] = miss + 1
+                    continue
+
                 result = get_state(entity_id)
                 if not result.get("ok"):
+                    prev_missing = missing_count.get(entity_id, 0)
+                    missing_count[entity_id] = prev_missing + 1
+                    # Log only on first occurrence; suppress subsequent identical misses
+                    if prev_missing == 0:
+                        log_info(f"[SensorAlerts] Sensor not found: {entity_id} — will retry silently")
                     continue
+
+                # Entity came back after being absent — log recovery once
+                if missing_count.pop(entity_id, 0) > 0:
+                    log_info(f"[SensorAlerts] Sensor back online: {entity_id}")
 
                 state = str(result["data"].get("state", "")).lower()
                 prev = last_state.get(entity_id)

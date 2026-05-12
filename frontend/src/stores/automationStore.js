@@ -22,9 +22,20 @@ export const useAutomationStore = create((set, get) => ({
   },
 
   addAutomation: async (data) => {
-    const res = await createAutomation(data)
+    const res = await createAutomation({
+      ...data,
+      rooms: data.rooms || [],
+    })
     const automation = res.automation
-    set((s) => ({ automations: [...s.automations, automation] }))
+    set((s) => {
+      const idx = s.automations.findIndex((a) => a.id === automation.id)
+      if (idx >= 0) {
+        const updated = [...s.automations]
+        updated[idx] = automation
+        return { automations: updated }
+      }
+      return { automations: [...s.automations, automation] }
+    })
     return automation
   },
 
