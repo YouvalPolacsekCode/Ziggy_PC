@@ -1,7 +1,7 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, EyeOff, Trash2, Map, List, Zap, Play } from 'lucide-react'
+import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Map, List, Zap, Play, ChevronRight } from 'lucide-react'
 import { getMapRoomsSummary, getAutomations, triggerAutomation, getFeaturesSettings } from '../lib/api'
 
 const HomeMapCanvas = lazy(() =>
@@ -11,7 +11,7 @@ import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
 import { RoomCard } from '../components/ui/RoomCard'
-import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel } from '../components/ui/DeviceControls'
+import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel, isEntityOn } from '../components/ui/DeviceControls'
 import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
@@ -21,8 +21,24 @@ import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice, irSend } from '../lib/api'
 import { cn } from '../lib/utils'
-import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS } from '../lib/roomPhotos'
-import { getRoomPhoto } from '../lib/roomPhotos'
+import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
+
+const ROOM_DOMAIN_GROUPS = [
+  { id: 'lights',   label: 'Lights',   domains: ['light'] },
+  { id: 'climate',  label: 'Climate',  domains: ['climate', 'fan', 'humidifier'] },
+  { id: 'media',    label: 'Media',    domains: ['media_player'] },
+  { id: 'switches', label: 'Switches', domains: ['switch', 'input_boolean'] },
+  { id: 'sensors',  label: 'Sensors',  domains: ['sensor', 'binary_sensor'] },
+  { id: 'security', label: 'Security', domains: ['lock', 'cover', 'alarm_control_panel', 'camera'] },
+  { id: 'other',    label: 'Other',    domains: [] },
+]
+
+function roomDomainGroup(entity) {
+  for (const g of ROOM_DOMAIN_GROUPS) {
+    if (g.domains.includes(entity.domain)) return g.id
+  }
+  return 'other'
+}
 
 export function RoomsList() {
   const navigate = useNavigate()
@@ -35,6 +51,7 @@ export function RoomsList() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [editPhotoRoom, setEditPhotoRoom] = useState(null)
   const [editPhotoKey, setEditPhotoKey] = useState('living_room')
+  const [editCustomPhoto, setEditCustomPhoto] = useState(null) // data URL of uploaded photo
   const [editRoomName, setEditRoomName] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [view, setView] = useState('rooms')     // 'rooms' | 'map'
@@ -71,7 +88,7 @@ export function RoomsList() {
   const rooms = ziggyRooms.map((r) => ({
     ...r,
     entityCount: r.devices.length,
-    activeCount: r.devices.filter((d) => d.ha_state === 'on').length,
+    activeCount: r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
   }))
   const unassigned = getUnassigned()
 
@@ -97,12 +114,25 @@ export function RoomsList() {
   const handleEditPhoto = (room) => {
     setEditPhotoRoom(room)
     setEditRoomName(room.name)
+    setEditCustomPhoto(getCustomPhoto(room.id))
     try {
       const overrides = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
       setEditPhotoKey(overrides[room.id] || room.id)
     } catch {
       setEditPhotoKey('living_room')
     }
+  }
+
+  const handleUploadEditPhoto = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const dataUrl = await resizeImageToDataUrl(file)
+      setEditCustomPhoto(dataUrl)
+    } catch {
+      addToast('Could not load photo', 'error')
+    }
+    e.target.value = ''
   }
 
   const handleSaveRoomEdit = async () => {
@@ -114,8 +144,14 @@ export function RoomsList() {
         await renameRoom(editPhotoRoom.id, editRoomName.trim())
         await fetchAll()
       }
-      saveRoomPhoto(editPhotoRoom.id, editPhotoKey)
+      if (editCustomPhoto) {
+        storeCustomDataUrl(editPhotoRoom.id, editCustomPhoto)
+      } else {
+        removeCustomPhoto(editPhotoRoom.id)
+        saveRoomPhoto(editPhotoRoom.id, editPhotoKey)
+      }
       setEditPhotoRoom(null)
+      setEditCustomPhoto(null)
       addToast(nameChanged ? 'Room updated' : 'Photo updated', 'success')
     } catch (e) {
       addToast(e.message || 'Failed to save', 'error')
@@ -271,7 +307,7 @@ export function RoomsList() {
           />
           <div>
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Photo</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto scrollbar-thin pr-0.5">
               {PHOTO_OPTIONS.map(({ key, label }) => (
                 <button
                   key={key}
@@ -315,8 +351,8 @@ export function RoomsList() {
         </div>
       </Modal>
 
-      {/* Edit room modal (name + photo) */}
-      <Modal open={!!editPhotoRoom} onClose={() => setEditPhotoRoom(null)} title="Edit Room">
+      {/* Edit room modal (name + photo + upload) */}
+      <Modal open={!!editPhotoRoom} onClose={() => { setEditPhotoRoom(null); setEditCustomPhoto(null) }} title="Edit Room">
         <div className="flex flex-col gap-4">
           <Input
             label="Room name"
@@ -326,15 +362,37 @@ export function RoomsList() {
           />
           <div>
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Photo</p>
-            <div className="grid grid-cols-4 gap-2">
+
+            {/* Custom uploaded photo preview */}
+            {editCustomPhoto ? (
+              <div className="mb-3">
+                <div className="relative rounded-xl overflow-hidden mb-2" style={{ aspectRatio: '16/9' }}>
+                  <img src={editCustomPhoto} alt="Custom" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                  <span className="absolute bottom-2 left-2 text-xs text-white font-medium">Custom photo</span>
+                  <button
+                    onClick={() => setEditCustomPhoto(null)}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs hover:bg-black/70 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-400 dark:text-zinc-600 text-center">
+                  Or pick a preset below to replace it
+                </p>
+              </div>
+            ) : null}
+
+            {/* Preset grid */}
+            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto scrollbar-thin pr-0.5 mb-3">
               {PHOTO_OPTIONS.map(({ key, label }) => (
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setEditPhotoKey(key)}
+                  onClick={() => { setEditPhotoKey(key); setEditCustomPhoto(null) }}
                   className={cn(
                     'relative overflow-hidden rounded-xl aspect-square focus:outline-none transition-all',
-                    editPhotoKey === key
+                    !editCustomPhoto && editPhotoKey === key
                       ? 'ring-2 ring-violet-500 ring-offset-2 dark:ring-offset-zinc-900'
                       : 'opacity-70 hover:opacity-100'
                   )}
@@ -347,6 +405,13 @@ export function RoomsList() {
                 </button>
               ))}
             </div>
+
+            {/* Upload button */}
+            <label className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400 hover:border-violet-400 hover:text-violet-500 transition-colors cursor-pointer">
+              <span>📷</span>
+              <span>Upload a photo of this room</span>
+              <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={handleUploadEditPhoto} />
+            </label>
           </div>
           <Button onClick={handleSaveRoomEdit} disabled={!editRoomName.trim() || editSaving} className="w-full">
             {editSaving ? 'Saving…' : 'Save changes'}
@@ -392,11 +457,10 @@ function IRRowControls({ entity }) {
   )
 }
 
-function DeviceRow({ entity, onToggle, onService, onRemove, onHide, ziggyStatus }) {
+function DeviceRow({ entity, onToggle, onService, onRemove, onHide, onUnhide, isHidden, ziggyStatus }) {
   const isIr = entity._is_ir === true
-  // _linkedIr is set by backend when an IR device has ha_entity_id pointing to this HA entity
   const linkedIr = entity._linkedIr || null
-  const isOn = entity.state === 'on'
+  const isOn = isEntityOn(entity)
   const isOff = entity.state === 'off' || entity.state === 'unavailable' || entity.state === 'unknown'
   const isUnavailable = entity.state === 'unavailable'
   const isToggleable = !isIr && TOGGLEABLE_DOMAINS.has(entity.domain) && !isUnavailable
@@ -406,11 +470,14 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, ziggyStatus 
   const assumedState = entity.assumed_state && entity.assumed_state !== 'unknown' ? entity.assumed_state : null
 
   return (
-    <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 group">
+    <div className={cn(
+      'px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 group transition-opacity',
+      isHidden && 'opacity-40'
+    )}>
       <div className="flex items-center gap-3">
         <div className={cn(
           'w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 relative',
-          isActive ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
+          isActive && !isHidden ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
         )}>
           {domainIcon(entity.domain, entity.device_class)}
           {(isIr || linkedIr) && (
@@ -424,7 +491,9 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, ziggyStatus 
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
             {entity.display_name || entity.friendly_name || entity.entity_id}
           </p>
-          {isIr ? (
+          {isHidden ? (
+            <p className="text-xs text-zinc-300 dark:text-zinc-600 font-medium">Hidden</p>
+          ) : isIr ? (
             <p className={cn('text-xs font-medium', assumedState === 'on' ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600')}>
               {assumedState ? `${assumedState} (assumed)` : 'state unknown'}
             </p>
@@ -438,29 +507,38 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, ziggyStatus 
           )}
         </div>
         {!isIr && entity.entity_id && (
-          <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-            <button title="Hide device" onClick={() => onHide(entity.entity_id)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-              <EyeOff size={13} />
-            </button>
+          // Always visible on mobile; hidden on desktop until hover
+          <div className={cn(
+            'items-center gap-1 shrink-0',
+            isHidden ? 'flex' : 'flex md:hidden md:group-hover:flex'
+          )}>
+            {isHidden ? (
+              <button title="Unhide device" onClick={() => onUnhide?.(entity.entity_id)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
+                <Eye size={13} />
+              </button>
+            ) : (
+              <button title="Hide device" onClick={() => onHide(entity.entity_id)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                <EyeOff size={13} />
+              </button>
+            )}
             <button title="Remove from room" onClick={() => onRemove(entity.entity_id)}
               className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
               <Trash2 size={13} />
             </button>
           </div>
         )}
-        {isToggleable && (
+        {isToggleable && !isHidden && (
           <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} className="shrink-0" />
         )}
       </div>
 
-      {/* Controls */}
-      {isIr ? (
+      {/* Controls — suppressed when device is hidden */}
+      {!isHidden && (isIr ? (
         <IRRowControls entity={entity} />
       ) : linkedIr ? (
-        // Merged HA+IR card
         <>
-          {/* Power On via IR when device is off */}
           {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
             <button
               onClick={() => irSend(linkedIr.id, 'power')}
@@ -474,7 +552,7 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, ziggyStatus 
         </>
       ) : (
         <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-      )}
+      ))}
     </div>
   )
 }
@@ -509,7 +587,7 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
 export function RoomDetail() {
   const { roomId } = useParams()
   const navigate = useNavigate()
-  const { fetchAll, ziggyRooms, hideEntity, updateEntityState, loading } = useDeviceStore()
+  const { fetchAll, ziggyRooms, hideEntity, unhideEntity, hiddenEntities, updateEntityState, loading } = useDeviceStore()
   const { addToast } = useUIStore()
   const [showAdd, setShowAdd] = useState(false)
   const [addEntityId, setAddEntityId] = useState('')
@@ -517,6 +595,7 @@ export function RoomDetail() {
   const [vDevices, setVDevices] = useState([])
   const [triggering, setTriggering] = useState(null)
   const [roomAutomations, setRoomAutomations] = useState([])
+  const [showHiddenDevices, setShowHiddenDevices] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -531,8 +610,10 @@ export function RoomDetail() {
 
   const room = ziggyRooms.find((r) => r.id === roomId)
 
-  // Adapt DeviceRegistry enriched format to the shape DeviceRow expects
+  // Adapt DeviceRegistry enriched format to the shape DeviceRow expects.
+  // Spread d first so IR markers (_is_ir, _ir_device_id, commands, etc.) are preserved.
   const roomDevices = (room?.devices || []).map((d) => ({
+    ...d,
     entity_id: d.entity_id || null,
     state: d.ha_state ?? 'unknown',
     domain: d.domain || (d.entity_id ? d.entity_id.split('.')[0] : 'unknown'),
@@ -542,7 +623,7 @@ export function RoomDetail() {
     ziggyStatus: d.status,
   }))
   const entityCount = roomDevices.length
-  const activeCount = roomDevices.filter((d) => d.state === 'on').length
+  const activeCount = roomDevices.filter((d) => isEntityOn(d)).length
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -583,6 +664,11 @@ export function RoomDetail() {
   const handleHide = (entityId) => {
     hideEntity(entityId)
     addToast('Device hidden', 'success')
+  }
+
+  const handleUnhide = (entityId) => {
+    unhideEntity(entityId)
+    addToast('Device visible again', 'success')
   }
 
   const handleAddDevice = async () => {
@@ -654,35 +740,74 @@ export function RoomDetail() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 flex flex-col gap-4">
-        {/* Devices */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Devices</p>
-            <div className="flex items-center gap-2">
-              {activeCount > 0 && <Badge variant="success">{activeCount} active</Badge>}
-              <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>
-                <Plus size={13} /> Assign device
-              </Button>
+      <div className="px-4 pt-4 pb-8 flex flex-col gap-4">
+        {/* Devices — grouped by domain type */}
+        {(() => {
+          const hiddenCount = roomDevices.filter(e => e.entity_id && hiddenEntities.has(e.entity_id)).length
+          const visibleDevices = roomDevices.filter(e =>
+            showHiddenDevices || !e.entity_id || !hiddenEntities.has(e.entity_id)
+          )
+          const deviceGroups = ROOM_DOMAIN_GROUPS.map(g => ({
+            ...g,
+            devices: visibleDevices.filter(e => roomDomainGroup(e) === g.id),
+          })).filter(g => g.devices.length > 0)
+
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Devices</p>
+                <div className="flex items-center gap-2">
+                  {activeCount > 0 && <Badge variant="success">{activeCount} active</Badge>}
+                  {hiddenCount > 0 && (
+                    <button
+                      onClick={() => setShowHiddenDevices(v => !v)}
+                      className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                    >
+                      {showHiddenDevices ? `Hide ${hiddenCount} hidden` : `${hiddenCount} hidden`}
+                    </button>
+                  )}
+                  <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>
+                    <Plus size={13} /> Assign
+                  </Button>
+                </div>
+              </div>
+
+              {deviceGroups.length === 0 && roomDevices.length === 0 && (
+                <Card>
+                  <p className="text-sm text-zinc-400 dark:text-zinc-600 py-6 text-center">No devices in this room</p>
+                </Card>
+              )}
+              {deviceGroups.length === 0 && roomDevices.length > 0 && !showHiddenDevices && (
+                <Card>
+                  <p className="text-sm text-zinc-400 dark:text-zinc-600 py-6 text-center">All devices are hidden</p>
+                </Card>
+              )}
+
+              {deviceGroups.map((group) => (
+                <div key={group.id} className="mb-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-600 mb-1.5 px-0.5">
+                    {group.label}
+                  </p>
+                  <Card>
+                    {group.devices.map((entity, i) => (
+                      <DeviceRow
+                        key={entity.entity_id || i}
+                        entity={entity}
+                        onToggle={handleToggle}
+                        onService={handleService}
+                        onRemove={handleRemove}
+                        onHide={handleHide}
+                        onUnhide={handleUnhide}
+                        isHidden={!!(entity.entity_id && hiddenEntities.has(entity.entity_id))}
+                        ziggyStatus={entity.ziggyStatus}
+                      />
+                    ))}
+                  </Card>
+                </div>
+              ))}
             </div>
-          </div>
-          <Card>
-            {roomDevices.length === 0 && (
-              <p className="text-sm text-zinc-400 dark:text-zinc-600 py-6 text-center">No devices in this room</p>
-            )}
-            {roomDevices.map((entity, i) => (
-              <DeviceRow
-                key={entity.entity_id || i}
-                entity={entity}
-                onToggle={handleToggle}
-                onService={handleService}
-                onRemove={handleRemove}
-                onHide={handleHide}
-                ziggyStatus={entity.ziggyStatus}
-              />
-            ))}
-          </Card>
-        </div>
+          )
+        })()}
 
         {/* Virtual / Capability Devices */}
         {vDevices.length > 0 && (
@@ -704,27 +829,45 @@ export function RoomDetail() {
         {/* Room automations */}
         {roomAutomations.length > 0 && (
           <div>
-            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Automations</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Automations</p>
+              <button
+                onClick={() => navigate('/automations')}
+                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+              >
+                View all
+              </button>
+            </div>
             <Card>
               {roomAutomations.map((a) => (
-                <div key={a.id} className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 flex items-center gap-3">
-                  <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center shrink-0', a.enabled ? 'bg-violet-50 dark:bg-violet-900/20' : 'bg-zinc-100 dark:bg-zinc-800')}>
-                    <Zap size={14} className={a.enabled ? 'text-violet-500' : 'text-zinc-400'} />
+                <div key={a.id} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    {/* Tapping the row navigates to the Automations page */}
+                    <button
+                      onClick={() => navigate('/automations')}
+                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                    >
+                      <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center shrink-0', a.enabled ? 'bg-violet-50 dark:bg-violet-900/20' : 'bg-zinc-100 dark:bg-zinc-800')}>
+                        <Zap size={14} className={a.enabled ? 'text-violet-500' : 'text-zinc-400'} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{a.name}</p>
+                        {a.description && <p className="text-xs text-zinc-400 truncate mt-0.5">{a.description}</p>}
+                      </div>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try { await triggerAutomation(a.id); addToast(`Triggered: ${a.name}`, 'success') }
+                        catch { addToast('Failed to trigger', 'error') }
+                      }}
+                      className="p-1.5 rounded-lg text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors shrink-0"
+                      title="Run now"
+                    >
+                      <Play size={13} />
+                    </button>
+                    <ChevronRight size={13} className="text-zinc-300 dark:text-zinc-700 shrink-0 pointer-events-none" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{a.name}</p>
-                    {a.description && <p className="text-xs text-zinc-400 truncate mt-0.5">{a.description}</p>}
-                  </div>
-                  <button
-                    onClick={async () => {
-                      try { await triggerAutomation(a.id); addToast(`Triggered: ${a.name}`, 'success') }
-                      catch { addToast('Failed to trigger', 'error') }
-                    }}
-                    className="p-1.5 rounded-lg text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors shrink-0"
-                    title="Run now"
-                  >
-                    <Play size={13} />
-                  </button>
                 </div>
               ))}
             </Card>

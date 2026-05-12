@@ -42,7 +42,16 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
     if trigger_type == "time":
         trigger["time"] = params.get("trigger_time", "08:00")
     elif trigger_type == "state":
-        trigger["entity_id"] = _resolve_trigger_entity(params.get("trigger_entity_id") or "")
+        raw = params.get("trigger_entity_id") or ""
+        # State triggers need an exact HA entity ID (domain.object_id contains a dot).
+        # Room names like "office" are not valid — ask the user to be specific.
+        if not raw or "." not in raw:
+            return err(
+                f"Please specify the exact entity to watch for state changes "
+                f"(e.g. binary_sensor.office_door, sensor.office_motion). "
+                f"'{raw}' doesn't look like a valid entity ID."
+            )
+        trigger["entity_id"] = raw
         trigger["state"] = params.get("trigger_state", "on")
     elif trigger_type == "numeric_state":
         raw_sensor = params.get("trigger_entity_id") or ""

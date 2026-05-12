@@ -16,6 +16,14 @@
 }
 
 @layer components {
+  /* Mobile scroll container clears the bottom navbar + device safe area */
+  .pb-nav {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+  @media (min-width: 768px) {
+    .pb-nav { padding-bottom: 0; }
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgba(113,113,122,0.3) transparent;

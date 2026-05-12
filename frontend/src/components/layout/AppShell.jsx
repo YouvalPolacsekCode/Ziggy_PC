@@ -45,7 +45,7 @@ export function AppShell({ connected }) {
     <div className="flex h-full min-h-screen">
       <Sidebar connected={connected} />
 
-      <main className="flex-1 min-w-0 overflow-y-auto scrollbar-thin pb-16 md:pb-0">
+      <main className="flex-1 min-w-0 overflow-y-auto scrollbar-thin pb-nav">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location.pathname}

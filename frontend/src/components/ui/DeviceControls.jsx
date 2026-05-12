@@ -12,6 +12,16 @@ export const TOGGLEABLE_DOMAINS = new Set([
   'light', 'switch', 'fan', 'input_boolean', 'media_player',
 ])
 
+// Media players report activity via multiple states, not just 'on'
+const MEDIA_ACTIVE = new Set(['on', 'playing', 'paused', 'idle'])
+
+export function isEntityOn(entity) {
+  if (!entity) return false
+  const domain = entity.domain || entity.entity_id?.split('.')[0]
+  if (domain === 'media_player') return MEDIA_ACTIVE.has(entity.state)
+  return entity.state === 'on'
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 const COLOR_SWATCHES = [
@@ -77,7 +87,7 @@ function ModeChips({ label, modes, current, colorActive, colorIdle, onSelect }) 
 
 // ─── Light ────────────────────────────────────────────────────────────────────
 function LightControls({ entity, onService }) {
-  const isOn = entity.state === 'on'
+  const isOn = isEntityOn(entity)
   const rawBrightness = entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 0
   const [brightness, setBrightness] = useState(rawBrightness)
   const [expanded, setExpanded] = useState(false)
@@ -365,12 +375,15 @@ function MediaPlayerControls({ entity, onService }) {
   const [expanded, setExpanded] = useState(false)
   const isPlaying = entity.state === 'playing'
   const isMuted   = entity.is_volume_muted
-  const rawVol    = entity.volume_level != null ? Math.round(entity.volume_level * 100) : null
+  // volume_level=0.0 while playing usually means the TV routes audio through ARC/eARC
+  // and the integration can't read the real volume — treat it as unknown in that case.
+  const volReliable  = entity.volume_level != null && !(entity.volume_level === 0 && entity.state === 'playing')
+  const rawVol       = volReliable ? Math.round(entity.volume_level * 100) : null
   const [volume, setVolume] = useState(rawVol ?? 50)
 
   useEffect(() => {
-    if (entity.volume_level != null) setVolume(Math.round(entity.volume_level * 100))
-  }, [entity.volume_level])
+    if (volReliable) setVolume(Math.round(entity.volume_level * 100))
+  }, [entity.volume_level, entity.state])
 
   const source     = entity.source
   const sourceList = entity.source_list || []
@@ -428,7 +441,7 @@ function MediaPlayerControls({ entity, onService }) {
       </div>
 
       {/* Primary: volume */}
-      {rawVol != null && (
+      {entity.volume_level != null && (
         <div className="flex items-center gap-2">
           <button
             onClick={() => onService('volume_mute', { is_volume_muted: !isMuted })}
@@ -437,13 +450,14 @@ function MediaPlayerControls({ entity, onService }) {
             {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
           </button>
           <Slider
-            value={isMuted ? 0 : volume}
-            onValueChange={setVolume}
-            onValueCommit={(v) => onService('volume_set', { volume_level: v / 100 })}
+            value={isMuted ? 0 : (volReliable ? volume : 0)}
+            onValueChange={volReliable ? setVolume : undefined}
+            onValueCommit={volReliable ? (v) => onService('volume_set', { volume_level: v / 100 }) : undefined}
             min={0} max={100}
+            disabled={!volReliable}
           />
           <span className="text-[10px] text-zinc-400 w-7 text-right tabular-nums shrink-0">
-            {isMuted ? 'M' : `${volume}%`}
+            {isMuted ? 'M' : volReliable ? `${volume}%` : '—'}
           </span>
         </div>
       )}
@@ -601,7 +615,7 @@ function CoverControls({ entity, onService }) {
 
 // ─── Fan ──────────────────────────────────────────────────────────────────────
 function FanControls({ entity, onService }) {
-  const isOn = entity.state === 'on'
+  const isOn = isEntityOn(entity)
   const rawPct = entity.percentage ?? 0
   const [pct, setPct] = useState(rawPct)
   const presetMode  = entity.preset_mode

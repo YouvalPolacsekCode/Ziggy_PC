@@ -79,19 +79,49 @@ def _refresh_with_retry(max_attempts: int = 10, base_delay: float = 2.0) -> None
     log_error("[HASubscriber] State refresh gave up after max attempts — cache may be stale")
 
 
+async def _restore_entity_state(entity_id: str) -> None:
+    """Replay saved settings after a device regains power."""
+    await asyncio.sleep(2)  # Give the device time to fully initialize
+    try:
+        from services.state_memory import get_restore_payload
+        from services.home_automation import call_service
+        payload = get_restore_payload(entity_id)
+        if payload:
+            domain = entity_id.split(".")[0]
+            result = call_service(domain, "turn_on", payload)
+            if result.get("ok"):
+                log_info(f"[StateRestore] Restored {entity_id} → {payload}")
+            else:
+                log_error(f"[StateRestore] Failed to restore {entity_id}: {result.get('message')}")
+    except Exception as e:
+        log_error(f"[StateRestore] Error restoring {entity_id}: {e}")
+
+
 async def _process_event(event: dict) -> None:
     """Handle a single state_changed event from HA."""
     data = event.get("event", {}).get("data", {})
     entity_id = data.get("entity_id")
     new_state = data.get("new_state") or {}
+    old_state = data.get("old_state") or {}
     if not entity_id or not new_state:
         return
 
+    prev_s = old_state.get("state", "")
+    new_s = new_state.get("state", "unknown")
+
     state_cache[entity_id] = {
-        "state": new_state.get("state", "unknown"),
+        "state": new_s,
         "attributes": new_state.get("attributes", {}),
         "last_changed": new_state.get("last_changed", ""),
     }
+
+    # Restore last intentional settings when a device regains power.
+    # Trigger: unavailable/unknown → on (physical switch restored / brief outage).
+    # A normal software turn-on goes off→on and is excluded.
+    if new_s == "on" and prev_s in ("unavailable", "unknown"):
+        domain = entity_id.split(".")[0]
+        if domain in ("light", "climate", "fan"):
+            asyncio.create_task(_restore_entity_state(entity_id))
 
     # Broadcast to frontend via the shared ws_manager
     try:
@@ -99,7 +129,7 @@ async def _process_event(event: dict) -> None:
         await manager.broadcast({
             "type": "state_changed",
             "entity_id": entity_id,
-            "new_state": new_state.get("state", "unknown"),
+            "new_state": new_s,
             "attributes": new_state.get("attributes", {}),
         })
     except Exception as e:

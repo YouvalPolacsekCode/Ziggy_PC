@@ -96,13 +96,16 @@ def delete_ziggy_actions(automation_id: str) -> None:
 _running_automations: set[str] = set()
 
 
-async def execute_ziggy_actions(automation_id: str) -> list[dict]:
+async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dict]:
     """Run all stored steps for an automation/routine in sequence.
 
     Called as a FastAPI BackgroundTask after the HTTP response is sent so that:
     - Delay steps don't block the HTTP connection
     - Client disconnection / proxy timeouts can't cancel the sequence
     - The full IR/delay/capability chain executes reliably to completion
+
+    label — human-readable name shown in the result toast; falls back to meta
+             store, then automation_id if neither is available.
     """
     import asyncio
     from core.logger_module import log_info, log_error
@@ -125,7 +128,7 @@ async def execute_ziggy_actions(automation_id: str) -> list[dict]:
 
                 # ── HA service call executed directly by Ziggy ───────────────────
                 if kind == "call_service":
-                    from services.home_automation import call_service as ha_call
+                    from services.home_automation import call_service as ha_call, get_state
                     entity_id = step.get("entity_id", "")
                     svc_key = step.get("ha_service") or step.get("service_value") or ""
                     if not svc_key:
@@ -133,7 +136,40 @@ async def execute_ziggy_actions(automation_id: str) -> list[dict]:
                     domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
                     payload: dict = {"entity_id": entity_id}
                     payload.update(step.get("service_data") or {})
-                    result = ha_call(domain, svc_key, payload)
+
+                    # Block immediately if HA reports the entity as clearly unreachable.
+                    # "off" is intentionally excluded: HA state can be stale (TV shown as
+                    # "on" while physically off, or vice versa), so we try anyway and retry.
+                    if entity_id and svc_key not in ("turn_on", "turn_off"):
+                        state_res = get_state(entity_id)
+                        entity_state = state_res.get("data", {}).get("state", "unknown")
+                        if entity_state in ("unavailable", "unknown"):
+                            log_error(
+                                f"[Executor] {entity_id} is '{entity_state}' — "
+                                f"skipping {domain}.{svc_key}"
+                            )
+                            result = {
+                                "ok": False,
+                                "message": f"{entity_id} is '{entity_state}' — {domain}.{svc_key} skipped.",
+                            }
+                            results.append(result)
+                            prev_kind = kind
+                            continue
+
+                    # Retry up to 3 times with a 5-second gap. Handles devices that are
+                    # still booting after an IR power command, and stale HA state readings.
+                    log_info(f"[Executor] Calling {domain}.{svc_key} on {entity_id} | data={payload}")
+                    result = {"ok": False, "message": "not attempted"}
+                    for attempt in range(3):
+                        result = ha_call(domain, svc_key, payload)
+                        if result.get("ok"):
+                            break
+                        if attempt < 2:
+                            log_info(
+                                f"[Executor] {domain}.{svc_key} failed "
+                                f"(attempt {attempt + 1}/3) — retrying in 5s…"
+                            )
+                            await asyncio.sleep(5)
 
                 # ── Timed pause ──────────────────────────────────────────────────
                 elif kind == "delay":
@@ -215,6 +251,25 @@ async def execute_ziggy_actions(automation_id: str) -> list[dict]:
             prev_kind = kind
 
         log_info(f"[Executor] {automation_id} complete — {len(results)} steps")
+
+        # Push result to all connected frontend clients so the UI can show a toast.
+        try:
+            from backend.ws_manager import manager
+            if not label:
+                meta = _load_meta().get(automation_id, {})
+                label = meta.get("name") or automation_id
+            failed = [r for r in results if not r.get("ok")]
+            await manager.broadcast({
+                "type": "execution_result",
+                "label": label,
+                "ok": len(failed) == 0,
+                "steps_total": len(results),
+                "steps_failed": len(failed),
+                "errors": [r.get("message", "") for r in failed][:3],
+            })
+        except Exception as _ws_err:
+            log_error(f"[Executor] WS broadcast failed: {_ws_err}")
+
         return results
 
     finally:

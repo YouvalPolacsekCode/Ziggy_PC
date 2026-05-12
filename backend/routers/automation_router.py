@@ -12,7 +12,6 @@ from services.ha_automations import (
     save_automation,
     delete_automation as ha_delete_automation,
     toggle_automation,
-    trigger_automation,
 )
 from services.local_automation_actions import (
     delete_ziggy_actions,
@@ -92,19 +91,13 @@ async def toggle_automation_endpoint(automation_id: str, body: AutomationToggle)
 
 @router.post("/api/automations/{automation_id}/trigger")
 async def trigger_automation_endpoint(automation_id: str, background_tasks: BackgroundTasks):
-    # Only call HA trigger for HA-backed automations. Ziggy-native automations
-    # (stored in automations.json) don't exist in HA — calling trigger_automation
-    # on them wastes a full 10-second HA API timeout before any step runs.
-    from core.automation_file import get_automation as _get_ziggy
-    if not _get_ziggy(automation_id):
-        # HA-backed: ask HA to execute call_service steps natively
-        trigger_automation(automation_id)
-
-    # Run Ziggy-side steps (IR commands, delays, capabilities, etc.) in the
-    # background so the HTTP response returns immediately. This prevents:
-    #   • Client/proxy timeouts killing a sequence mid-delay
-    #   • asyncio.CancelledError when the client navigates away
-    background_tasks.add_task(execute_ziggy_actions, automation_id)
+    # Always use Ziggy's executor — it handles call_service, IR, delay, and all
+    # other step types natively. Calling trigger_automation() in addition would
+    # cause HA to double-execute call_service steps for HA-backed automations.
+    # HA state-triggered automations auto-fire independently of this endpoint.
+    from services.local_automation_actions import get_automation_meta
+    label = get_automation_meta(automation_id).get("name") or automation_id
+    background_tasks.add_task(execute_ziggy_actions, automation_id, label)
     return {"ok": True, "message": "Automation triggered"}
 
 

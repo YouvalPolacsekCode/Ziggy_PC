@@ -135,6 +135,10 @@ async def ha_call_service(body: HaServiceCall):
     result = call_service(body.domain, body.service, body.data)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
+    entity_id = body.data.get("entity_id", "")
+    if entity_id:
+        from services.state_memory import record_service_call
+        record_service_call(entity_id, body.service, body.data)
     return result
 
 
@@ -153,6 +157,9 @@ async def ha_control(body: HaControlBody):
     result = call_service(domain, body.action, {"entity_id": body.entity_id})
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
+
+    from services.state_memory import record_service_call
+    record_service_call(body.entity_id, body.action, {"entity_id": body.entity_id})
 
     new_state = "on" if body.action == "turn_on" else "off"
 

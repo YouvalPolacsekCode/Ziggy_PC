@@ -213,7 +213,8 @@ export const useDeviceStore = create((set, get) => ({
         results.push(`${room} is occupied`)
       }
     }
-    return results
+    // Deduplicate — multiple sensors in the same room can produce identical strings
+    return [...new Set(results)]
   },
 
   getRooms: () => {

@@ -4,7 +4,7 @@ import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermo
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
-import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel } from '../components/ui/DeviceControls'
+import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel, isEntityOn } from '../components/ui/DeviceControls'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -516,16 +516,19 @@ function DeviceMenu({ entity, rooms, onHide, onAssign, extraItems = [] }) {
 
   const currentRoom = rooms.find((r) => (r.entities || []).includes(entity.entity_id))
 
+  const NAV_HEIGHT = 64
+
   const handleOpen = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect()
       const menuW = 192  // w-48
-      const spaceBelow = window.innerHeight - rect.bottom
+      // Subtract navbar height so menu never hides behind it
+      const spaceBelow = window.innerHeight - rect.bottom - NAV_HEIGHT
       const wouldClipLeft = rect.right - menuW < 0
       setMenuPos({
-        top:    spaceBelow >= 280 ? rect.bottom + 4 : undefined,
-        bottom: spaceBelow  < 280 ? window.innerHeight - rect.top + 4 : undefined,
+        top:    spaceBelow >= 260 ? rect.bottom + 4 : undefined,
+        bottom: spaceBelow  < 260 ? window.innerHeight - rect.top + 4 : undefined,
         left:  wouldClipLeft ? rect.left : undefined,
         right: wouldClipLeft ? undefined : window.innerWidth - rect.right,
       })
@@ -535,11 +538,17 @@ function DeviceMenu({ entity, rooms, onHide, onAssign, extraItems = [] }) {
 
   useEffect(() => {
     if (!open) return
+    const close = () => setOpen(false)
     const h = (e) => {
-      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) setOpen(false)
+      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) close()
     }
     document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
+    // Close on any scroll so the fixed menu doesn't drift from its trigger
+    document.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', h)
+      document.removeEventListener('scroll', close, true)
+    }
   }, [open])
 
   return (
@@ -687,17 +696,18 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
   const btnRef = useRef(null)
   const menuRef = useRef(null)
 
+  const NAV_HEIGHT_IR = 64
+
   const handleOpen = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect()
       const menuW = 208 // w-52
-      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceBelow = window.innerHeight - rect.bottom - NAV_HEIGHT_IR
       const wouldClipLeft = rect.right - menuW < 0
       setMenuPos({
-        top:    spaceBelow >= 320 ? rect.bottom + 4 : undefined,
-        bottom: spaceBelow  < 320 ? window.innerHeight - rect.top + 4 : undefined,
-        // If the menu would clip the left edge, anchor left side to button left side instead
+        top:    spaceBelow >= 300 ? rect.bottom + 4 : undefined,
+        bottom: spaceBelow  < 300 ? window.innerHeight - rect.top + 4 : undefined,
         left:  wouldClipLeft ? rect.left : undefined,
         right: wouldClipLeft ? undefined : window.innerWidth - rect.right,
       })
@@ -707,11 +717,16 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
 
   useEffect(() => {
     if (!open) return
+    const close = () => setOpen(false)
     const h = (e) => {
-      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) setOpen(false)
+      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) close()
     }
     document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
+    document.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', h)
+      document.removeEventListener('scroll', close, true)
+    }
   }, [open])
 
   const currentRoomSlug = irDevice?.room || ''
@@ -809,7 +824,7 @@ const DeviceCard = forwardRef(function DeviceCard({
   const irDevice = entity._irDevice
   const linkedIr = entity._linkedIr || null  // IR device linked to this HA entity
 
-  const isOn = entity.state === 'on'
+  const isOn = isEntityOn(entity)
   const isOff = entity.state === 'off' || entity.state === 'unavailable' || entity.state === 'unknown'
   const isToggleable = !isIr && TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
   const { primary: stateLabel, secondary: stateSecondary } = (!isIr && !isHidden)
@@ -1016,7 +1031,7 @@ export default function Devices() {
       const isHidden = hiddenEntities.has(e.entity_id)
       if (isHidden && !showHidden) return false
       let matchDomain = true
-      if (domain === 'active') matchDomain = e.state === 'on'
+      if (domain === 'active') matchDomain = isEntityOn(e)
       else if (domain === 'connected') matchDomain = e.state !== 'unavailable' && e.state !== 'unknown'
       else if (domain !== 'all') matchDomain = e.domain === domain
       const matchSearch = !search ||
@@ -1117,7 +1132,7 @@ export default function Devices() {
     } catch { addToast('IR command failed', 'error') }
   }
 
-  const activeCount = entities.filter((e) => e.state === 'on').length
+  const activeCount = entities.filter((e) => isEntityOn(e)).length
   const hiddenCount = hiddenEntities.size
 
   // Devices in DeviceRegistry with status needing attention (lost/unconfigured) — not visible in HA entity list

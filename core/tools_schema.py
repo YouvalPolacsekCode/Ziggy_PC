@@ -718,7 +718,7 @@ TOOLS = [
                 ),
             },
             "trigger_time":      {"type": "string", "description": "HH:MM for time triggers, e.g. '07:00'"},
-            "trigger_entity_id": {"type": "string", "description": "Entity ID or room name for state/numeric_state triggers, e.g. sensor.roni_room_temperature or 'roni room'"},
+            "trigger_entity_id": {"type": "string", "description": "For 'state' triggers: must be a full HA entity ID with a dot, e.g. binary_sensor.office_door, input_boolean.away_mode. For 'numeric_state' triggers: entity ID or room name (Ziggy will resolve room → sensor)."},
             "trigger_state":     {"type": "string", "description": "Exact state value for state triggers, e.g. 'on', 'home'"},
             "trigger_above":     {"type": "number", "description": "For numeric_state triggers: fire when value rises ABOVE this number (e.g. 24 for 'temp above 24')"},
             "trigger_below":     {"type": "number", "description": "For numeric_state triggers: fire when value falls BELOW this number"},

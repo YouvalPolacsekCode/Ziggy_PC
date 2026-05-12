@@ -254,61 +254,46 @@ function StepIndicator({ current }) {
   )
 }
 
-// ─── Linked IR section — same component as in Automations ────────────────────
-function LinkedIrSection({ irDevice, onPickCommand }) {
-  const [expanded, setExpanded] = useState(false)
-  const learned = new Set(irDevice.learned_commands || [])
-  const cmds = irDevice.commands || {}
-  const canDo = (cmd) => cmd in cmds && learned.has(cmd)
-  const available = Object.keys(cmds).filter(canDo)
-  if (available.length === 0) return null
+// ─── Merged action picker (same logic as in Automations.jsx) ─────────────────
+const SELECT_CLS_R = 'w-full h-10 rounded-xl px-3 text-sm appearance-none bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-colors'
 
-  const hasPower = canDo('power')
-  const others = available.filter((c) => c !== 'power')
+function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIrCommand }) {
+  const learned = new Set(irDevice?.learned_commands || [])
+  const cmds = irDevice?.commands || {}
+  const irList = Object.keys(cmds).filter((c) => cmds[c] && learned.has(c))
+
+  const handleChange = (e) => {
+    const val = e.target.value
+    if (val.startsWith('__ir__:')) {
+      onPickIrCommand(val.slice(7))
+    } else {
+      onChangeHa(val)
+    }
+  }
 
   return (
-    <div className="rounded-xl border border-violet-200 dark:border-violet-800/50 p-3 bg-violet-50/40 dark:bg-violet-900/10">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-violet-500">IR Remote</span>
-          <span className="text-[10px] text-zinc-400 truncate">· {irDevice.name}</span>
-        </div>
-        <span className="text-[9px] text-zinc-400 shrink-0">{available.length} cmds</span>
-      </div>
-      <p className="text-[10px] text-zinc-400 mb-2 leading-relaxed">
-        Select an IR command — this step will switch to an IR command type.
-      </p>
-      {hasPower && (
-        <button
-          onClick={() => onPickCommand('power')}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 mb-2 rounded-lg bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-semibold hover:bg-violet-200 dark:hover:bg-violet-900/60 transition-colors"
-        >
-          ⏻ Power (IR)
-        </button>
-      )}
-      {others.length > 0 && (
-        <>
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-[10px] text-violet-500 hover:text-violet-600 font-medium transition-colors"
-          >
-            <ChevronDown size={10} className={cn('transition-transform duration-150', expanded && 'rotate-180')} />
-            {expanded ? 'Less' : `${others.length} more IR commands`}
-          </button>
-          {expanded && (
-            <div className="flex gap-1.5 flex-wrap mt-2">
-              {others.map((cmd) => (
-                <button
-                  key={cmd}
-                  onClick={() => onPickCommand(cmd)}
-                  className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-[10px] font-medium"
-                >
-                  {cmd.replace(/_/g, ' ')}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Action</label>
+      <select value={haValue} onChange={handleChange} className={SELECT_CLS_R}>
+        <optgroup label="⚙️ Wi-Fi / HA">
+          {haActions.map((a) => (
+            <option key={a.value} value={a.value}>{a.label}</option>
+          ))}
+        </optgroup>
+        {irList.length > 0 && (
+          <optgroup label={`📡 IR Blaster · ${irDevice?.name} (switches step to IR)`}>
+            {irList.map((cmd) => (
+              <option key={cmd} value={`__ir__:${cmd}`}>
+                {cmd.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      {irList.length > 0 && (
+        <p className="text-[10px] text-zinc-400 leading-tight">
+          Choosing an IR Blaster option converts this step to an IR command.
+        </p>
       )}
     </div>
   )
@@ -400,21 +385,50 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
             onChange={(v) => onChange({ ...step, entity_id: v, action: 'turn_on', ha_service: 'turn_on', service_data: undefined })}
             placeholder="Select entity…"
           />
-          <Select
-            options={availableActions}
-            value={step.action || 'turn_on'}
-            onChange={(e) => {
-              const selectedVal = e.target.value
-              const def = availableActions.find((a) => a.value === selectedVal) || {}
-              onChange({
+          {/* Unified action picker: Wi-Fi and IR in one grouped <select> */}
+          {linkedIr && step.entity_id ? (
+            <MergedActionPicker
+              haActions={availableActions}
+              irDevice={linkedIr}
+              haValue={step.action || 'turn_on'}
+              onChangeHa={(val) => {
+                const def = availableActions.find((a) => a.value === val) || {}
+                onChange({
+                  ...step,
+                  action: val,
+                  ha_service: def.haService || val,
+                  service_data: def.serviceData || undefined,
+                })
+              }}
+              onPickIrCommand={(cmd) => onChange({
                 ...step,
-                action: selectedVal,
-                ha_service: def.haService || selectedVal,
-                service_data: def.serviceData || undefined,
-              })
-            }}
-          />
-          {/* needsInput: live entity-aware parameter picker */}
+                type: 'ir_command',
+                ir_device_id: linkedIr.id,
+                ir_device_name: linkedIr.name,
+                ir_command: cmd,
+                ir_sequence: undefined,
+                action: undefined,
+                ha_service: undefined,
+                service_data: undefined,
+              })}
+            />
+          ) : (
+            <Select
+              options={availableActions}
+              value={step.action || 'turn_on'}
+              onChange={(e) => {
+                const selectedVal = e.target.value
+                const def = availableActions.find((a) => a.value === selectedVal) || {}
+                onChange({
+                  ...step,
+                  action: selectedVal,
+                  ha_service: def.haService || selectedVal,
+                  service_data: def.serviceData || undefined,
+                })
+              }}
+            />
+          )}
+          {/* needsInput: live entity-aware parameter picker (Wi-Fi path only) */}
           {(() => {
             const def = availableActions.find((a) => a.value === (step.action || 'turn_on'))
             return def?.needsInput ? (
@@ -426,25 +440,6 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
               />
             ) : null
           })()}
-
-          {/* Linked IR device — IR commands alongside HA device actions */}
-          {linkedIr && step.entity_id && (
-            <LinkedIrSection
-              irDevice={linkedIr}
-              onPickCommand={(cmd) => onChange({
-                ...step,
-                type: 'ir_command',
-                ir_device_id: linkedIr.id,
-                ir_device_name: linkedIr.name,
-                ir_command: cmd,
-                ir_sequence: undefined,
-                // Clear device-step fields
-                action: undefined,
-                ha_service: undefined,
-                service_data: undefined,
-              })}
-            />
-          )}
         </>
       )}
       {step.type === 'delay' && (

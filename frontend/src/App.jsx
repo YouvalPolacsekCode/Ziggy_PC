@@ -31,6 +31,7 @@ function AppRoutes() {
   const { connected, messages } = useWebSocket()
   const { updateEntityState } = useDeviceStore()
   const { fetchAutomations } = useAutomationStore()
+  const { addToast } = useUIStore()
 
   useEffect(() => {
     const last = messages[messages.length - 1]
@@ -45,6 +46,21 @@ function AppRoutes() {
     // so Automations page and room detail views reflect the change immediately.
     if (last.type === 'ziggy_response' && last.ok && _AUTOMATION_INTENTS.has(last.intent)) {
       fetchAutomations()
+    }
+
+    // Automation / routine execution result
+    if (last.type === 'execution_result') {
+      const { label, ok, steps_total, steps_failed, errors } = last
+      if (ok) {
+        addToast(`${label} — ${steps_total} step${steps_total !== 1 ? 's' : ''} completed`, 'success')
+      } else {
+        const detail = errors?.[0] ? `\n${errors[0]}` : ''
+        addToast(
+          `${label} — ${steps_failed}/${steps_total} step${steps_total !== 1 ? 's' : ''} failed${detail}`,
+          'error',
+          7000,
+        )
+      }
     }
   }, [messages])
 

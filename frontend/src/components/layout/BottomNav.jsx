@@ -72,7 +72,7 @@ function ZiggyButton({ active }) {
     <NavLink
       to="/chat"
       className="flex flex-col items-center flex-1"
-      style={{ marginTop: '-20px' }}
+      style={{ marginTop: '-18px' }}
     >
       <div className={cn(
         'w-14 h-14 rounded-full flex items-center justify-center shadow-xl border-4 transition-all duration-200',
@@ -112,7 +112,8 @@ export function BottomNav({ connected }) {
               onClick={() => setShowMore(false)}
             />
             <motion.div
-              className="fixed bottom-16 left-0 right-0 z-40 md:hidden mx-3 mb-1"
+              className="fixed left-0 right-0 z-40 md:hidden mx-3"
+              style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px) + 0.25rem)' }}
               initial={{ opacity: 0, y: 12, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
@@ -144,8 +145,11 @@ export function BottomNav({ connected }) {
       </AnimatePresence>
 
       {/* Bottom bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-zinc-900/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 md:hidden overflow-visible">
-        <div className="flex items-end justify-around px-1 max-w-lg mx-auto" style={{ height: 64 }}>
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-zinc-900/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 md:hidden overflow-visible"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
+        <div className="flex items-center justify-around px-1 max-w-lg mx-auto" style={{ height: 60 }}>
           {LEFT_NAV.map(({ to, icon, label }) => {
             const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
             return (

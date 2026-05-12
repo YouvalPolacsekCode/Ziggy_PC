@@ -136,7 +136,7 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
     except Exception as e:
         log_error(f"[HA] HA areas fallback failed: {e}")
 
-    log_error(f"[HA] No entity_id for {normalized_room} + {normalized_type}")
+    log_info(f"[HA] Entity not found: {normalized_room} + {normalized_type}")
     return None
 
 

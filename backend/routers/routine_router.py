@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from services.ha_scripts import (
-    list_scripts, get_script_for_ui, save_script, delete_script, run_script,
+    list_scripts, get_script_for_ui, save_script, delete_script,
 )
 from services.local_automation_actions import (
     save_ziggy_actions, delete_ziggy_actions, execute_ziggy_actions,
@@ -51,10 +51,9 @@ async def create_routine_endpoint(body: RoutineBody):
 
 @router.post("/api/routines/{script_id}/run")
 async def run_routine_endpoint(script_id: str, background_tasks: BackgroundTasks):
-    # Trigger the HA script so HA-side call_service steps execute natively.
-    # IR / delay / capability steps run via Ziggy in the background.
-    run_script(script_id)
-    background_tasks.add_task(execute_ziggy_actions, script_id)
+    routine = get_script_for_ui(script_id)
+    label = routine.get("name", script_id) if routine else script_id
+    background_tasks.add_task(execute_ziggy_actions, script_id, label)
     return {"ok": True, "message": "Routine running"}
 
 
