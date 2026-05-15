@@ -10,6 +10,7 @@ from core.settings_loader import save_settings, settings
 from services.ha_areas import (
     get_areas, create_area, delete_area, rename_area,
     assign_entity_to_area, assign_device_to_area, sync_device_area_to_ha,
+    _ws,
 )
 from services.home_automation import get_all_states, get_state
 
@@ -135,6 +136,129 @@ def _refresh_device_registry():
         threading.Thread(target=refresh, daemon=True).start()
     except Exception:
         pass
+
+
+async def _sync_device_to_registry_room(device_id: str, area_id: str | None) -> None:
+    """Mirror a completed HA device→area assignment into the Ziggy device registry.
+
+    Called immediately after assign_device_to_area so the room is visible without
+    waiting for the 60-second background reconciliation loop.
+    Handles two cases:
+      1. Entity already in registry (status=UNCLAIMED) — update its room field.
+      2. Entity not yet tracked (registry refresh hasn't fired) — create the entry.
+    """
+    import re
+    import services.device_registry as dr
+    from services.ha_areas import _ws
+
+    if not dr._initialized:
+        return
+
+    try:
+        areas_res, entities_res = await _ws(
+            {"type": "config/area_registry/list"},
+            {"type": "config/entity_registry/list"},
+        )
+    except Exception as e:
+        log_info(f"[API] _sync_device_to_registry_room WS failed: {e}")
+        return
+
+    # Resolve area_id → normalized room key (same logic as _norm_room_key)
+    room_key: str | None = None
+    if area_id:
+        areas = {a["area_id"]: a for a in (areas_res.get("result") or [])}
+        area = areas.get(area_id)
+        if area:
+            name = area["name"]
+            slug = re.sub(r"[''`]", "", name.lower())
+            room_key = re.sub(r"[^a-z0-9]+", "_", slug).strip("_")
+
+    # Find all entities that belong to this HA device
+    entity_ids = {
+        e["entity_id"]
+        for e in (entities_res.get("result") or [])
+        if e.get("device_id") == device_id and e.get("entity_id")
+    }
+    if not entity_ids:
+        return
+
+    with dr._lock:
+        existing_eids = {d.get("entity_id") for d in dr._registry if d.get("entity_id")}
+        updated = 0
+        for d in dr._registry:
+            if d.get("entity_id") in entity_ids:
+                d["room"] = room_key
+                if room_key:
+                    if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
+                        d["status"] = dr.CONNECTED
+                elif d.get("status") == dr.UNCLAIMED:
+                    # Explicit "no room" — promote from unclaimed to connected
+                    d["status"] = dr.CONNECTED
+                updated += 1
+        # Create entries for entities not yet tracked (registry refresh hasn't fired yet)
+        for eid in entity_ids:
+            if eid not in existing_eids:
+                dr._registry.append({
+                    "room":        room_key,
+                    "device_type": eid.split(".")[0] if "." in eid else "unknown",
+                    "entity_id":   eid,
+                    "ir_device_id": None,
+                    "status":      dr.CONNECTED if room_key else dr.UNCLAIMED,
+                    "name":        eid,
+                })
+                updated += 1
+        if updated:
+            dr._save_persistent(dr._registry)
+    log_info(f"[API] Registry room synced to '{room_key}' for {updated} entries (device {device_id})")
+
+
+async def _sync_entity_to_registry_room(entity_id: str, area_id: str | None) -> None:
+    """Sync a single entity's room in the device registry after an entity-level area assignment."""
+    import re
+    import services.device_registry as dr
+    from services.ha_areas import _ws
+
+    if not dr._initialized:
+        return
+
+    room_key: str | None = None
+    if area_id:
+        try:
+            areas_res, = await _ws({"type": "config/area_registry/list"})
+            areas = {a["area_id"]: a for a in (areas_res.get("result") or [])}
+            area = areas.get(area_id)
+            if area:
+                name = area["name"]
+                slug = re.sub(r"[''`]", "", name.lower())
+                room_key = re.sub(r"[^a-z0-9]+", "_", slug).strip("_")
+        except Exception as e:
+            log_info(f"[API] _sync_entity_to_registry_room WS failed: {e}")
+            return
+
+    with dr._lock:
+        found = False
+        for d in dr._registry:
+            if d.get("entity_id") == entity_id:
+                d["room"] = room_key
+                if room_key:
+                    if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
+                        d["status"] = dr.CONNECTED
+                elif d.get("status") == dr.UNCLAIMED:
+                    # Explicit "no room" — promote from unclaimed to connected
+                    d["status"] = dr.CONNECTED
+                found = True
+                break
+        if not found and room_key:
+            dr._registry.append({
+                "room":         room_key,
+                "device_type":  entity_id.split(".")[0] if "." in entity_id else "unknown",
+                "entity_id":    entity_id,
+                "ir_device_id": None,
+                "status":       dr.CONNECTED,
+                "name":         entity_id,
+            })
+        dr._save_persistent(dr._registry)
+    log_info(f"[API] Registry room synced to '{room_key}' for entity {entity_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -321,11 +445,60 @@ async def create_room(body: RoomCreate):
 
 @router.delete("/api/rooms/{area_id}")
 async def delete_room(area_id: str):
-    result = await delete_area(area_id)
-    if not result.get("ok"):
-        raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
-    log_info(f"[API] Room deleted from HA: {area_id}")
-    return result
+    # Fetch area list BEFORE deleting so we can read entity membership and name.
+    area_cache: list[dict] = []
+    ha_area_exists = False
+    try:
+        area_cache = await get_areas()
+        ha_area_exists = any(a.get("id") == area_id for a in area_cache)
+    except Exception:
+        pass
+
+    # Delete from HA only if it actually exists there.
+    # Ziggy-native rooms (source="ziggy") have no HA area — don't 502 on those.
+    if ha_area_exists:
+        result = await delete_area(area_id)
+        if not result.get("ok"):
+            err_msg = result.get("error", "")
+            # "Not found" means already deleted — treat as success
+            if "not found" not in err_msg.lower() and "does not exist" not in err_msg.lower():
+                raise HTTPException(status_code=502, detail=err_msg or "HA error")
+
+    # Always clean device-registry entries pointing to this room.
+    # Matching strategy:
+    #   1. Entity-ID overlap — catches duplicate slugs (e.g. roni_room + ronis_room
+    #      both pointing to the same sensors).
+    #   2. Slug match — catches IR-only rooms and any remaining slug variants.
+    try:
+        import services.device_registry as dr
+        if dr._initialized:
+            area_entity_ids: set[str] = set()
+            area_name_str: str = area_id
+            for a in area_cache:
+                if a.get("id") == area_id:
+                    area_entity_ids = set(a.get("entities") or [])
+                    area_name_str = a.get("name", area_id)
+                    break
+
+            norm_ids = {_norm_room_key(area_id), _norm_room_key(area_name_str)}
+            changed = 0
+            with dr._lock:
+                for d in dr._registry:
+                    eid = d.get("entity_id") or ""
+                    room_raw = d.get("room") or ""
+                    if (eid and eid in area_entity_ids) or \
+                       (room_raw and _norm_room_key(room_raw) in norm_ids):
+                        d["room"] = None
+                        changed += 1
+                if changed:
+                    dr._save_persistent(dr._registry)
+            if changed:
+                log_info(f"[API] Cleared room '{area_id}' from {changed} registry entries")
+    except Exception as e:
+        log_info(f"[API] Registry room cleanup failed for '{area_id}': {e}")
+
+    log_info(f"[API] Room deleted: {area_id} (ha_existed={ha_area_exists})")
+    return {"ok": True}
 
 
 @router.patch("/api/rooms/{area_id}")
@@ -371,11 +544,15 @@ async def get_rooms_with_devices():
     devices = _enrich_devices_with_ha_state(devices_raw)
 
     room_devices: dict[str, list] = {}
-    unclaimed = []
+    unclaimed = []   # status=UNCLAIMED — new HA entities not yet placed in Ziggy
+    no_room   = []   # room=None, non-UNCLAIMED — intentionally left without a room
     for d in devices:
         room = d.get("room")
         if not room:
-            unclaimed.append(d)
+            if d.get("status") == "unclaimed":
+                unclaimed.append(d)
+            else:
+                no_room.append(d)
         else:
             # Normalize device room key the same way so apostrophes don't break the join
             room_devices.setdefault(_norm_room_key(room), []).append(d)
@@ -390,7 +567,7 @@ async def get_rooms_with_devices():
             "devices": room_devices.get(room_key, []),
         })
 
-    return {"rooms": rooms_out, "unclaimed": unclaimed}
+    return {"rooms": rooms_out, "unclaimed": unclaimed, "no_room": no_room}
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +587,11 @@ async def patch_entity_area(entity_id: str, body: EntityAreaPatch):
     result = await assign_entity_to_area(entity_id, body.area_id or None)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
+    # Sync room for this specific entity immediately
+    try:
+        await _sync_entity_to_registry_room(entity_id, body.area_id or None)
+    except Exception as e:
+        log_info(f"[API] Registry room sync failed for entity {entity_id}: {e}")
     _refresh_device_registry()
     return result
 
@@ -419,6 +601,12 @@ async def patch_device_area(device_id: str, body: DeviceAreaPatch):
     result = await assign_device_to_area(device_id, body.area_id or None)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
+    # Sync room into registry immediately so the Rooms page updates without waiting
+    # for the 60-second background reconciliation loop.
+    try:
+        await _sync_device_to_registry_room(device_id, body.area_id or None)
+    except Exception as e:
+        log_info(f"[API] Registry room sync failed for device {device_id}: {e}")
     _refresh_device_registry()
     return result
 
@@ -448,6 +636,11 @@ async def patch_registry_entity_room(entity_id: str, body: ZiggyRoomPatch):
         for d in dr._registry:
             if d.get("entity_id") == entity_id:
                 d["room"] = new_room
+                if new_room:
+                    if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
+                        d["status"] = dr.CONNECTED
+                elif d.get("status") == dr.UNCLAIMED:
+                    d["status"] = dr.CONNECTED
                 found = True
                 break
         if not found:
@@ -463,3 +656,213 @@ async def patch_registry_entity_room(entity_id: str, body: ZiggyRoomPatch):
 
     log_info(f"[API] Registry room updated: {entity_id} → {new_room!r}")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Per-entity detail (device info, diagnostics, siblings, automations)
+# ---------------------------------------------------------------------------
+
+# Domains that are HA helpers/internals — excluded from sibling entity lists.
+_DETAIL_SKIP_DOMAINS = frozenset({
+    "button", "number", "select", "update", "text",
+    "automation", "script", "scene", "timer", "counter",
+    "input_select", "input_number", "input_text", "input_datetime", "input_button",
+    "group", "zone", "sun", "stt", "tts", "conversation",
+})
+
+
+@router.get("/api/ha/entity/{entity_id}/details")
+async def entity_details(entity_id: str):
+    """
+    Rich detail for a single entity.
+
+    Returns:
+      state, attributes, domain_meta, ha_device (manufacturer/model/firmware),
+      diagnostics (battery, signal, last_changed, last_seen),
+      sibling_entities (other entities on the same physical device),
+      automations_using (automations whose actions reference this entity).
+
+    Note: entity_id must be passed URL-encoded when it contains dots
+    (e.g. light.office → /api/ha/entity/light.office/details).
+    No :path modifier is used because HA entity IDs never contain slashes.
+    """
+    import requests as _req
+    from services.home_automation import _ha_endpoint, _headers, DEFAULT_TIMEOUT
+
+    # ── 1. Fetch raw HA state (includes last_changed / last_updated) ───────────
+    try:
+        resp = _req.get(
+            _ha_endpoint(f"/api/states/{entity_id}"),
+            headers=_headers(),
+            timeout=DEFAULT_TIMEOUT,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"HA unreachable: {e}")
+
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found in HA.")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"HA returned {resp.status_code}")
+
+    raw = resp.json()
+    attrs: dict = raw.get("attributes") or {}
+    state_val: str = raw.get("state", "unknown")
+    last_changed: Optional[str] = raw.get("last_changed")
+    last_updated: Optional[str] = raw.get("last_updated")
+
+    # ── 2. Entity & device registry via WebSocket ─────────────────────────────
+    ha_device: dict = {}
+    sibling_ids: list[str] = []
+    try:
+        ent_res, dev_res = await _ws(
+            {"type": "config/entity_registry/list"},
+            {"type": "config/device_registry/list"},
+        )
+        entity_entries: list[dict] = ent_res.get("result") or []
+        device_entries: dict = {d["id"]: d for d in (dev_res.get("result") or [])}
+
+        this_entry = next((e for e in entity_entries if e.get("entity_id") == entity_id), None)
+        device_id: Optional[str] = this_entry.get("device_id") if this_entry else None
+
+        if device_id and device_id in device_entries:
+            d = device_entries[device_id]
+            ha_device = {
+                "id":           device_id,
+                "name":         d.get("name_by_user") or d.get("name") or "",
+                "manufacturer": d.get("manufacturer") or "",
+                "model":        d.get("model") or "",
+                "sw_version":   d.get("sw_version") or "",
+                "hw_version":   d.get("hw_version") or "",
+            }
+            sibling_ids = [
+                e["entity_id"] for e in entity_entries
+                if e.get("device_id") == device_id
+                and e.get("entity_id") != entity_id
+                and e.get("entity_id", "").split(".")[0] not in _DETAIL_SKIP_DOMAINS
+            ]
+    except Exception as e:
+        log_info(f"[EntityDetails] WS registry fetch failed for {entity_id}: {e}")
+
+    # ── 3. Sibling entity states ───────────────────────────────────────────────
+    sibling_states: list[dict] = []
+    if sibling_ids:
+        try:
+            all_states = {s["entity_id"]: s for s in get_all_states()}
+            for sid in sibling_ids[:20]:   # cap to avoid large payloads
+                if sid in all_states:
+                    s = all_states[sid]
+                    sa = s.get("attributes") or {}
+                    sibling_states.append({
+                        "entity_id": sid,
+                        "domain": sid.split(".")[0],
+                        "state": s.get("state"),
+                        "device_class": sa.get("device_class"),
+                        "unit": sa.get("unit_of_measurement"),
+                        "friendly_name": sa.get("friendly_name") or sid,
+                        "last_changed": s.get("last_changed"),
+                    })
+        except Exception as e:
+            log_info(f"[EntityDetails] Sibling states failed: {e}")
+
+    # ── 4. Diagnostics — from attrs + siblings ─────────────────────────────────
+    battery: Optional[int] = None
+    battery_unit = "%"
+    lqi: Optional[int] = None
+    rssi: Optional[int] = None
+    last_seen: Optional[str] = attrs.get("last_seen")
+    # last_changed already extracted from raw HA response above — no override needed
+
+    # Try attributes first (many Zigbee devices embed these directly)
+    for key in ("battery_level", "battery", "battery_percent"):
+        if key in attrs:
+            try:
+                battery = int(attrs[key])
+                break
+            except (ValueError, TypeError):
+                pass
+    for key in ("lqi", "link_quality", "link_quality_index"):
+        if key in attrs:
+            try:
+                lqi = int(attrs[key])
+                break
+            except (ValueError, TypeError):
+                pass
+    for key in ("rssi", "signal", "signal_strength"):
+        if key in attrs:
+            try:
+                rssi = int(attrs[key])
+                break
+            except (ValueError, TypeError):
+                pass
+
+    # Supplement from sibling entities
+    for sib in sibling_states:
+        dc = sib.get("device_class")
+        val = sib.get("state")
+        if dc == "battery" and battery is None:
+            try:
+                battery = int(float(val))
+                battery_unit = sib.get("unit") or "%"
+            except (ValueError, TypeError):
+                pass
+        elif dc == "signal_strength" and rssi is None:
+            try:
+                rssi = int(float(val))
+            except (ValueError, TypeError):
+                pass
+
+    diagnostics = {
+        "battery": battery,
+        "battery_unit": battery_unit,
+        "lqi": lqi,
+        "rssi": rssi,
+        "last_changed": last_changed,
+        "last_seen": last_seen,
+        "firmware": ha_device.get("sw_version") or attrs.get("sw_version") or attrs.get("firmware"),
+    }
+
+    # ── 5. Automations referencing this entity ────────────────────────────────
+    automations_using: list[dict] = []
+    try:
+        from services.ha_automations import list_automations
+        for auto in list_automations():
+            actions = auto.get("actions") or []
+            if any(a.get("entity_id") == entity_id for a in actions):
+                automations_using.append({
+                    "id": auto.get("id"),
+                    "name": auto.get("name"),
+                    "enabled": auto.get("enabled", True),
+                })
+    except Exception:
+        pass
+
+    # ── 6. Domain metadata ────────────────────────────────────────────────────
+    domain = entity_id.split(".")[0]
+    domain_meta_raw: dict = {}
+    try:
+        from services.domain_registry import get as dr_get
+        dm = dr_get(domain)
+        if dm:
+            domain_meta_raw = {
+                "label": dm.label,
+                "icon": dm.icon,
+                "group": dm.group,
+                "controllable": dm.controllable,
+                "safety_level": dm.safety_level,
+            }
+    except Exception:
+        pass
+
+    return {
+        "entity_id":        entity_id,
+        "domain":           domain,
+        "state":            state_val,
+        "attributes":       attrs,
+        "last_changed":     last_changed,
+        "last_updated":     last_updated,
+        "domain_meta":      domain_meta_raw,
+        "ha_device":        ha_device,
+        "diagnostics":      diagnostics,
+        "sibling_entities": sibling_states,
+        "automations_using":automations_using,
+    }

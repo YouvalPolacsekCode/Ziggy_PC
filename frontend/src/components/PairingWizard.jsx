@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown,
-  Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap,
+  Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap, Home,
 } from 'lucide-react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
@@ -139,8 +139,8 @@ function RoomPicker({ rooms, value, onChange }) {
           'text-zinc-900 dark:text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500'
         )}
       >
-        <span className={selected ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}>
-          {selected ? selected.name : 'Select a room…'}
+        <span className={selected || value === null ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}>
+          {value === null ? 'No room' : selected ? selected.name : 'Select a room…'}
         </span>
         <ChevronDown size={14} className={cn('text-zinc-400 transition-transform', open && 'rotate-180')} />
       </button>
@@ -154,6 +154,16 @@ function RoomPicker({ rooms, value, onChange }) {
             transition={{ duration: 0.12 }}
             className="absolute top-full left-0 right-0 mt-1 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden max-h-44 overflow-y-auto"
           >
+            <button
+              onClick={() => { onChange(null); setOpen(false) }}
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors border-b border-zinc-100 dark:border-zinc-800',
+                'hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                value === null && 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300'
+              )}
+            >
+              <Home size={13} className="shrink-0 text-zinc-400" /> No room
+            </button>
             {rooms.map((r) => (
               <button
                 key={r.id}
@@ -382,6 +392,9 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
       }
       if (roomId) {
         await assignDeviceToArea(foundDevice.id, roomId)
+      } else if (roomId === null) {
+        // Explicit "No room" — call with null so the registry promotes UNCLAIMED → CONNECTED
+        await assignDeviceToArea(foundDevice.id, null)
       }
       await fetchAll()
       onClose()

@@ -43,6 +43,29 @@ def needs_ha(data: dict) -> bool:
 
 # ── Ziggy → HA ────────────────────────────────────────────────────────────────
 
+def _condition_to_ha(c: dict) -> Optional[dict]:
+    entity_id = c.get("entity_id", "")
+    if not entity_id:
+        return None
+    operator = c.get("operator", "is")
+    value    = c.get("value", "on")
+    if operator in ("is", "is_not"):
+        # is_not: flip on↔off (works for all binary_sensor values)
+        state_val = ("off" if value == "on" else "on") if operator == "is_not" else str(value)
+        return {"condition": "state", "entity_id": entity_id, "state": state_val}
+    if operator == "above":
+        try:
+            return {"condition": "numeric_state", "entity_id": entity_id, "above": float(value)}
+        except (ValueError, TypeError):
+            return None
+    if operator == "below":
+        try:
+            return {"condition": "numeric_state", "entity_id": entity_id, "below": float(value)}
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def _trigger_to_ha(t: dict) -> list:
     kind = t.get("type", "time")
     if kind == "time":
@@ -236,6 +259,7 @@ def get_automation_for_ui(auto_id: str) -> Optional[dict]:
                 "description": cfg.get("description", ""),
                 "enabled": True,
                 "trigger": trigger,
+                "conditions": meta.get("conditions", []),
                 "actions": saved_actions if saved_actions else [_ha_action_to_ziggy(a) for a in ha_actions],
                 "rooms": meta.get("rooms", []),
                 "source": "ha",
@@ -288,6 +312,7 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
             "name": data.get("name", ""),
             "description": data.get("description", ""),
             "trigger": trigger,
+            "conditions": data.get("conditions", []),
             "rooms": data.get("rooms", []),
         })
         return {"ok": True, "id": auto_id, "source": "ziggy"}
@@ -295,6 +320,9 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     # HA-backed automation.
     ha_actions = [_action_to_ha(a) for a in ziggy_actions]
     ha_actions = [a for a in ha_actions if a is not None]
+    ziggy_conditions = data.get("conditions", [])
+    ha_conditions = [_condition_to_ha(c) for c in ziggy_conditions]
+    ha_conditions = [c for c in ha_conditions if c is not None]
     # HA 2024.1+ uses plural keys only. Sending both "trigger"+"triggers" (or
     # "condition"+"conditions", "action"+"actions") causes a 400 "Message malformed"
     # error. Use plural keys exclusively.
@@ -303,7 +331,7 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         "alias": data.get("name", "Ziggy Automation"),
         "description": data.get("description", ""),
         "triggers": _trigger_to_ha(trigger),
-        "conditions": [],
+        "conditions": ha_conditions,
         "actions": ha_actions,
         "mode": "single",
     }
@@ -318,6 +346,7 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
                 "name": data.get("name", ""),
                 "description": data.get("description", ""),
                 "trigger": trigger,
+                "conditions": data.get("conditions", []),
                 "rooms": data.get("rooms", []),
             })
             return {"ok": True, "id": auto_id, "source": "ha"}

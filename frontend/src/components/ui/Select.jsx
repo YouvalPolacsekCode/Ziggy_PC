@@ -1,27 +1,25 @@
-import { cn } from '../../lib/utils'
-
-export function Select({ label, options = [], className, ...props }) {
+export function Select({ label, options = [], className, style, ...props }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {label && (
-        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{label}</label>
+        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</label>
       )}
       <select
-        className={cn(
-          'h-10 rounded-xl px-3 text-sm appearance-none',
-          'bg-zinc-50 dark:bg-zinc-800',
-          'border border-zinc-200 dark:border-zinc-700',
-          'text-zinc-900 dark:text-zinc-100',
-          'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
-          'transition-colors duration-150',
-          className
-        )}
+        className={className}
+        style={{
+          height: 40, padding: '0 12px',
+          background: 'var(--surface)', border: '0.5px solid var(--line)',
+          borderRadius: 10, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13,
+          outline: 'none', appearance: 'none',
+          backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.4)' d='M0 0h10L5 6z'/></svg>")`,
+          backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+          paddingRight: 28,
+          ...style,
+        }}
         {...props}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+        {options.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
     </div>

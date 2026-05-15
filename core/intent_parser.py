@@ -75,6 +75,19 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
         except Exception:
             pass  # IR manager not yet configured — ignore silently
 
+        # Inject live device-room map so GPT knows which rooms have which devices
+        # (needed for reliable multi-call enumeration like "turn on all lights").
+        try:
+            from services.device_registry import get_rooms_by_device_type
+            room_map = get_rooms_by_device_type()
+            if room_map:
+                parts = []
+                for dtype, rooms in sorted(room_map.items()):
+                    parts.append(f"{dtype}: {', '.join(rooms)}")
+                system = system + "\n\nConfigured devices by room: " + "; ".join(parts) + "."
+        except Exception:
+            pass
+
         # Inject last-device context so GPT can resolve pronouns like
         # "it", "that", "turn it back on", "the light", etc.
         try:
@@ -98,16 +111,25 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
             messages=messages,
             tools=TOOLS,
             tool_choice="auto",
+            parallel_tool_calls=True,
         )
 
         msg = response.choices[0].message
 
         if msg.tool_calls:
-            call = msg.tool_calls[0]
-            intent = call.function.name
-            params = json.loads(call.function.arguments)
-            print(f"[Intent Parser] ✅ Tool: {intent} | params: {params}")
-            return {"intent": intent, "params": params, "source": "tools"}
+            calls = msg.tool_calls
+            intents = []
+            for call in calls:
+                intent = call.function.name
+                params = json.loads(call.function.arguments)
+                intents.append({"intent": intent, "params": params, "source": "tools"})
+                print(f"[Intent Parser] ✅ Tool: {intent} | params: {params}")
+
+            if len(intents) == 1:
+                return intents[0]
+
+            # Multiple tool calls — return a multi-intent envelope
+            return {"intent": "__multi__", "intents": intents, "params": {}, "source": "tools"}
 
         print("[Intent Parser] ❓ No tool matched — unrecognized command")
         return {"intent": "unrecognized_command", "params": {"text": text}, "source": "tools"}

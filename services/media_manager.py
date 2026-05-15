@@ -1,9 +1,9 @@
 # services/media_manager.py
 from __future__ import annotations
 
+import asyncio
 import re
 import subprocess
-import time
 from typing import Optional, Dict, Any
 
 import requests
@@ -132,15 +132,8 @@ def set_tv_source(source: str, alias: Optional[str] = None) -> tuple[int, str]:
 
 # ---------- Public Scenarios ----------
 
-def stream_youtube_to_chromecast_hd(input_text: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
+async def stream_youtube_to_chromecast_hd(input_text: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
     try:
-        dev = _resolve_cast_device(device_hint) or DEFAULT_CAST
-        if not (HA_URL and HA_TOKEN and dev):
-            return _todo("Home Assistant URL/token/default media_player not set. "
-                         "Set HA_BASE_URL, HA_TOKEN in .env and media.default_cast_device in settings.yaml.")
-        if not _ensure_device_on(dev):
-            return {"ok": False, "message": f"Failed to turn on {dev}.", "data": {}}
-
         raw = _extract_url_from_text(input_text) or input_text.strip()
         parsed = _parse_media_request(raw)
 
@@ -153,19 +146,44 @@ def stream_youtube_to_chromecast_hd(input_text: str, device_hint: Optional[str] 
         else:
             play_url = parsed.get("url", raw)
 
+        from services.target_resolver import resolve, TargetCapabilityError
+        try:
+            target = resolve(device_hint, required_capability="video")
+        except TargetCapabilityError as e:
+            return {"ok": False, "message": str(e), "data": {}}
+
+        if target.type == "browser_display":
+            if not target.ws_id:
+                return {"ok": False, "message": f"Display '{target.name}' is not currently connected.", "data": {}}
+            from backend.ws_manager import manager
+            sent = await manager.push_to_display(target.ws_id, {"type": "youtube", "url": play_url, "fullscreen": True})
+            if not sent:
+                return {"ok": False, "message": f"Could not reach '{target.name}' — is the browser open?", "data": {}}
+            return {"ok": True, "message": f"Playing on {target.name}.", "data": {"device": target.name, "url": play_url}}
+
+        # HA media_player path
+        dev = target.ha_entity or DEFAULT_CAST
+        if not (HA_URL and HA_TOKEN and dev):
+            return _todo("Home Assistant URL/token/default media_player not set. "
+                         "Set HA_BASE_URL, HA_TOKEN in .env and media.default_cast_device in settings.yaml.")
+        if not _ensure_device_on(dev):
+            return {"ok": False, "message": f"Failed to turn on {dev}.", "data": {}}
+
         res = _cast_youtube(play_url, dev)
         if not res["ok"]:
             return res
 
-        ok = _confirm_playback(dev)
+        ok = await _confirm_playback(dev)
         return {"ok": ok, "message": f"Casting to {dev}.", "data": {"device": dev, "url": play_url}}
     except Exception as e:
         log_error(f"[media.stream_youtube_to_chromecast_hd] {e}")
         return {"ok": False, "message": f"Error: {e}", "data": {}}
 
 
-def play_spotify_playlist(target: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
-    dev = _resolve_audio_device(device_hint) or DEFAULT_SPEAKER or DEFAULT_CAST
+async def play_spotify_playlist(target: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
+    from services.target_resolver import resolve
+    t = resolve(device_hint, required_capability="audio")
+    dev = t.ha_entity or DEFAULT_SPEAKER or DEFAULT_CAST
     if not (HA_URL and HA_TOKEN and dev):
         return _todo("Configure Spotify integration in Home Assistant and set media.default_speaker or default_cast_device.")
 
@@ -175,40 +193,77 @@ def play_spotify_playlist(target: str, device_hint: Optional[str] = None) -> Dic
         return {"ok": False, "message": f"Failed to send play request to {dev}: {text}", "data": {}}
 
     _set_media_volume(dev, DEFAULT_VOL)
-    ok = _confirm_playback(dev)
-    return {"ok": ok, "message": f"Playing '{target}' on {dev}.", "data": {"device": dev, "target": target}}
+    ok = await _confirm_playback(dev)
+    return {"ok": ok, "message": f"Playing '{target}' on {t.name}.", "data": {"device": dev, "target": target}}
 
 
-def start_movie_in_app(title: str, app: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
-    dev = _resolve_cast_device(device_hint) or DEFAULT_CAST
+async def start_movie_in_app(title: str, app: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
+    """Launch a streaming app on a smart TV via HA source selection.
+    Note: 'title' is accepted but ignored — no title search is available without
+    Plex or platform-specific APIs. This launches the app only."""
+    from services.target_resolver import resolve, TargetCapabilityError
+    try:
+        target = resolve(device_hint, required_capability="video")
+    except TargetCapabilityError as e:
+        return {"ok": False, "message": str(e), "data": {}}
+
+    if target.type == "browser_display":
+        return {"ok": False, "message": "Cannot launch streaming apps on a browser display. Use a smart TV target.", "data": {}}
+
+    dev = target.ha_entity or DEFAULT_CAST
     if not (HA_URL and HA_TOKEN and dev):
         return _todo("Set up AndroidTV/Google TV integration and media.default_cast_device in settings.yaml.")
-    return _todo("Implement app launch via Home Assistant service (e.g., androidtv.adb_command or remote.send_command). "
-                 "Then implement _find_media_in_app() and _play_media_in_app().")
+
+    ok, status, text = _ha_call_detail("media_player", "select_source", {"entity_id": dev, "source": app})
+    if ok:
+        note = "" if not title else f" (title search not supported — browse {app} manually for '{title}')"
+        return {"ok": True, "message": f"Launched {app} on {target.name}.{note}", "data": {"device": dev, "app": app}}
+    return {"ok": False, "message": f"Could not launch {app} on {target.name}: {text}", "data": {}}
 
 
-def cast_camera_live(camera_name: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
-    dev = _resolve_cast_device(device_hint) or DEFAULT_CAST
+async def cast_camera_live(camera_name: str, device_hint: Optional[str] = None) -> Dict[str, Any]:
+    from services.target_resolver import resolve, TargetCapabilityError
+    from services.camera_utils import resolve_camera_entity, ha_camera_stream_url, ziggy_camera_stream_url
+    try:
+        target = resolve(device_hint, required_capability="video")
+    except TargetCapabilityError as e:
+        return {"ok": False, "message": str(e), "data": {}}
+
+    cam_entity = resolve_camera_entity(camera_name)
+    if not cam_entity:
+        return {"ok": False, "message": f"Camera not found: '{camera_name}'. Add it to settings.media.camera_map.", "data": {}}
+
+    if target.type == "browser_display":
+        if not target.ws_id:
+            return {"ok": False, "message": f"Display '{target.name}' is not currently connected.", "data": {}}
+        from backend.ws_manager import manager
+        # Use Ziggy proxy URL so the HA token is never sent to the browser
+        proxy_url = ziggy_camera_stream_url(cam_entity)
+        sent = await manager.push_to_display(target.ws_id, {"type": "camera", "stream_url": proxy_url, "camera_name": camera_name})
+        if not sent:
+            return {"ok": False, "message": f"Could not reach '{target.name}' — is the browser open?", "data": {}}
+        return {"ok": True, "message": f"Showing {camera_name} on {target.name}.", "data": {"device": target.name, "camera": cam_entity}}
+
+    # HA cast path — HA-to-HA stream, raw URL is fine here (server-side only)
+    stream_url = ha_camera_stream_url(cam_entity)
+    if not stream_url:
+        return _todo("Enable camera streaming in HA. Check HA stream component and camera entity.")
+
+    dev = target.ha_entity or DEFAULT_CAST
     if not (HA_URL and HA_TOKEN and dev):
         return _todo("Configure HA and default cast device in settings.yaml > media.default_cast_device.")
-
-    cam_entity = _resolve_camera_entity(camera_name)
-    if not cam_entity:
-        return {"ok": False, "message": f"Camera not found: {camera_name}", "data": {}}
-
-    stream_url = _get_camera_stream_url(cam_entity)
-    if not stream_url:
-        return _todo("Enable camera streaming in HA. Some cameras need stream component. Check camera.get_stream.")
 
     res = _cast_generic_stream(stream_url, dev)
     if not res["ok"]:
         return res
-    ok = _confirm_playback(dev)
-    return {"ok": ok, "message": f"Casting {camera_name} to {dev}.", "data": {"device": dev, "camera": cam_entity}}
+    ok = await _confirm_playback(dev)
+    return {"ok": ok, "message": f"Casting {camera_name} to {target.name}.", "data": {"device": dev, "camera": cam_entity}}
 
 
-def play_podcast_episode(podcast_name: str, episode_hint: Optional[str] = None, device_hint: Optional[str] = None) -> Dict[str, Any]:
-    dev = _resolve_audio_device(device_hint) or DEFAULT_SPEAKER or DEFAULT_CAST
+async def play_podcast_episode(podcast_name: str, episode_hint: Optional[str] = None, device_hint: Optional[str] = None) -> Dict[str, Any]:
+    from services.target_resolver import resolve
+    target = resolve(device_hint, required_capability="audio")
+    dev = target.ha_entity or DEFAULT_SPEAKER or DEFAULT_CAST
     if not (HA_URL and HA_TOKEN and dev):
         return _todo("Set HA URL/token and media.default_speaker in settings.yaml.")
 
@@ -294,9 +349,9 @@ def _set_media_volume(entity_id: str, level: Optional[float] = None) -> None:
         log_error(f"[media._set_media_volume] {e}")
 
 
-def _confirm_playback(entity_id: str) -> bool:
+async def _confirm_playback(entity_id: str) -> bool:
     try:
-        time.sleep(1.2)
+        await asyncio.sleep(1.2)
         st = requests.get(f"{HA_URL}/api/states/{entity_id}", headers=HEADERS, timeout=5)
         if st.ok:
             return st.json().get("state") in {"playing", "on", "idle"}
@@ -363,19 +418,6 @@ def _cast_generic_stream(url: str, entity_id: str) -> Dict[str, Any]:
         "message": "Casting stream." if ok else "Failed to cast stream.",
         "data": {"entity_id": entity_id, "url": url},
     }
-
-
-def _resolve_camera_entity(name: str) -> Optional[str]:
-    if name and name.startswith("camera."):
-        return name
-    devmap = settings.get("media", {}).get("camera_map", {}) or {}
-    return devmap.get(_norm(name or ""))
-
-
-def _get_camera_stream_url(entity_id: str) -> Optional[str]:
-    if HA_URL and HA_TOKEN and entity_id:
-        return f"{HA_URL}/api/camera_proxy_stream/{entity_id}?token={HA_TOKEN}"
-    return None
 
 
 # ---------- HA HTTP helpers ----------

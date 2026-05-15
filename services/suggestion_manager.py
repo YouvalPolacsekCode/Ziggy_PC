@@ -123,6 +123,7 @@ def add_suggestion(
     confidence: float,
     reasoning: str,
     safety_note: str | None = None,
+    evidence_summary: dict | None = None,
 ) -> dict | None:
     """
     Add a new suggestion.
@@ -167,6 +168,7 @@ def add_suggestion(
         "actions": actions,
         "confidence": round(confidence, 3),
         "reasoning": reasoning,
+        "evidence_summary": evidence_summary,
         "safety_note": safety_note,
         "status": "pending",
         "created_at": datetime.now().isoformat(timespec="seconds"),

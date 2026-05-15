@@ -121,6 +121,43 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
     prev_kind: str | None = None
 
     try:
+        # ── Evaluate conditions before running any steps ──────────────────────
+        conditions = get_automation_meta(automation_id).get("conditions") or []
+        if conditions:
+            from services.home_automation import get_state as _get_state
+            for cond in conditions:
+                entity_id = cond.get("entity_id", "")
+                if not entity_id:
+                    continue
+                operator = cond.get("operator", "is")
+                expected = str(cond.get("value", "on"))
+                state_res = _get_state(entity_id)
+                if not state_res.get("ok"):
+                    log_info(
+                        f"[Executor] {automation_id} condition check: "
+                        f"{entity_id} unreachable — skipping automation"
+                    )
+                    return []
+                actual = state_res.get("data", {}).get("state", "")
+                if operator == "is":
+                    passed = actual == expected
+                elif operator == "is_not":
+                    passed = actual != expected
+                elif operator in ("above", "below"):
+                    try:
+                        passed = float(actual) > float(expected) if operator == "above" else float(actual) < float(expected)
+                    except (ValueError, TypeError):
+                        passed = False
+                else:
+                    passed = True
+                if not passed:
+                    log_info(
+                        f"[Executor] {automation_id} condition not met: "
+                        f"{entity_id} = '{actual}' (need {operator} '{expected}') — skipped"
+                    )
+                    return []
+            log_info(f"[Executor] {automation_id} all {len(conditions)} condition(s) passed")
+
         for i, step in enumerate(steps):
             kind = step.get("type", "")
             try:

@@ -44,7 +44,11 @@ and decide whether each one is worth showing to the user as an automation sugges
 
 You will receive a JSON list of candidates. For each, return a JSON object with:
   "recommend": true or false
-  "reason": one short sentence explaining why
+  "reason": a specific sentence that cites the actual evidence — mention the occurrence count,
+             the number of distinct weeks it was observed, and for time-based patterns the
+             observed time window. Example: "You've done this 8 times between 07:15–07:45,
+             across 3 weeks — last seen 2026-05-11." Never write generic benefit statements
+             like "this will save time" or "this will ensure your preferences are met".
   "user_message": a natural, friendly message to show the user (only if recommend=true)
   "trigger": {"type": "time|sequence|manual", "value": "HH:MM or description"}
   "actions": [{"intent": "...", "params": {}}]
@@ -115,6 +119,7 @@ def run_analysis(notify_fn=None, shutdown: Event | None = None) -> list[dict]:
                 confidence=ev["confidence"],
                 reasoning=ev.get("reason", ""),
                 safety_note=ev.get("safety_note"),
+                evidence_summary=ev.get("evidence_summary"),
             )
             if sug:
                 mark_candidate_surfaced(ev["canonical_key"], sug["id"])
@@ -244,6 +249,7 @@ def _quality_gate(
                 "confidence": c.confidence,
                 "reason": item.get("reason", ""),
                 "safety_note": item.get("safety_note"),
+                "evidence_summary": c.evidence_summary,
             })
 
         log_info(f"[SuggestionEngine] Ollama approved {len(enriched)}/{len(candidates)} candidate(s).")
@@ -293,10 +299,41 @@ def _heuristic_enrich(candidates: list[QualifiedCandidate]) -> list[dict]:
             "trigger": _default_trigger(c),
             "actions": _default_actions(c),
             "confidence": c.confidence,
-            "reason": f"Observed {c.occurrences} time(s). Confidence: {c.confidence:.0%}.",
+            "reason": _heuristic_reason(c),
             "safety_note": None,
+            "evidence_summary": c.evidence_summary,
         })
     return result
+
+
+def _heuristic_reason(c: QualifiedCandidate) -> str:
+    """Generate a specific, evidence-citing reason string without the LLM."""
+    es = c.evidence_summary
+    n = es.get("occurrences", c.occurrences)
+    weeks = es.get("unique_weeks", "?")
+    last = es.get("last_seen", "")
+    last_part = f" Last seen {last}." if last else ""
+
+    if c.pattern_type == "time_based" and es.get("time_window"):
+        tw = es["time_window"]
+        avg = es.get("avg_time", "")
+        days = es.get("active_day_names", [])
+        day_part = f" on {', '.join(days)}" if days else ""
+        return (
+            f"You did this {n} time(s) between {tw} (avg {avg})"
+            f"{day_part}, across {weeks} week(s).{last_part}"
+        )
+
+    if c.pattern_type == "sequence":
+        b_intent = c.details.get("b_intent", "").replace("_", " ")
+        b_room = c.details.get("b_room") or ""
+        b_str = f"{b_intent} in {b_room}".strip() if b_room else b_intent
+        return (
+            f"After {c.intent.replace('_', ' ')}, you often {b_str} — "
+            f"{n} time(s) across {weeks} week(s).{last_part}"
+        )
+
+    return f"Observed {n} time(s) across {weeks} week(s).{last_part}"
 
 
 def _default_trigger(c: QualifiedCandidate) -> dict:

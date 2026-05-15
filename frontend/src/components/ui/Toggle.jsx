@@ -1,5 +1,4 @@
 import * as Switch from '@radix-ui/react-switch'
-import { cn } from '../../lib/utils'
 
 export function Toggle({ checked, onCheckedChange, disabled, className }) {
   return (
@@ -7,21 +6,24 @@ export function Toggle({ checked, onCheckedChange, disabled, className }) {
       checked={checked}
       onCheckedChange={onCheckedChange}
       disabled={disabled}
-      className={cn(
-        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full',
-        'transition-colors duration-200 ease-in-out',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
-        checked ? 'bg-violet-600' : 'bg-zinc-200 dark:bg-zinc-700',
-        className
-      )}
+      className={className}
+      style={{
+        position: 'relative', display: 'inline-flex', alignItems: 'center',
+        width: 36, height: 20, borderRadius: 999, border: 'none', padding: 0,
+        background: checked ? 'var(--ok)' : 'var(--line-2)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background 0.15s',
+        flexShrink: 0,
+      }}
     >
       <Switch.Thumb
-        className={cn(
-          'pointer-events-none block h-5 w-5 rounded-full bg-white shadow',
-          'transition-transform duration-200 ease-in-out',
-          checked ? 'translate-x-[22px]' : 'translate-x-[2px]'
-        )}
+        style={{
+          display: 'block', width: 16, height: 16, borderRadius: '50%',
+          background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          transition: 'transform 0.15s',
+          transform: checked ? 'translateX(18px)' : 'translateX(2px)',
+        }}
       />
     </Switch.Root>
   )

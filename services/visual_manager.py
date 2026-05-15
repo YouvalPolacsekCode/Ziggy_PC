@@ -39,20 +39,6 @@ def _cast_stream(url: str, entity_id: str, media_type: str = "video") -> Dict[st
         return {"ok": False, "message": str(e)}
 
 
-def _resolve_camera_entity(name: str) -> Optional[str]:
-    if name and name.startswith("camera."):
-        return name
-    cam_map = settings.get("media", {}).get("camera_map", {}) or {}
-    return cam_map.get(name.strip().lower())
-
-
-def _get_camera_stream_url(entity_id: str) -> Optional[str]:
-    """Return the HA camera proxy stream URL."""
-    if HA_URL and HA_TOKEN and entity_id:
-        return f"{HA_URL}/api/camera_proxy_stream/{entity_id}?token={HA_TOKEN}"
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Public Scenarios
 # ---------------------------------------------------------------------------
@@ -125,8 +111,9 @@ def cast_today_calendar(device_hint: str = "") -> Dict[str, Any]:
 
 
 def cast_security_camera(camera_name: str, device_hint: str = "") -> Dict[str, Any]:
-    """Stream a security camera to a cast device or return the stream URL."""
-    cam_entity = _resolve_camera_entity(camera_name)
+    """Stream a security camera to a cast device."""
+    from services.camera_utils import resolve_camera_entity, ha_camera_stream_url
+    cam_entity = resolve_camera_entity(camera_name)
     if not cam_entity:
         return {
             "ok": False,
@@ -134,7 +121,7 @@ def cast_security_camera(camera_name: str, device_hint: str = "") -> Dict[str, A
             "data": {},
         }
 
-    stream_url = _get_camera_stream_url(cam_entity)
+    stream_url = ha_camera_stream_url(cam_entity)
     if not stream_url:
         return {"ok": False, "message": "Could not build camera stream URL. Check HA URL/token.", "data": {}}
 
@@ -143,10 +130,10 @@ def cast_security_camera(camera_name: str, device_hint: str = "") -> Dict[str, A
         result = _cast_stream(stream_url, dev)
         if result["ok"]:
             log_info(f"[visual] Casting {cam_entity} to {dev}")
-            return {"ok": True, "message": f"Casting {camera_name} to {dev}.", "data": {"stream_url": stream_url, "device": dev}}
+            return {"ok": True, "message": f"Casting {camera_name} to {dev}.", "data": {"device": dev}}
         return result
 
-    return {"ok": True, "message": f"Camera stream URL: {stream_url}", "data": {"stream_url": stream_url, "camera": cam_entity}}
+    return {"ok": True, "message": f"Started camera stream for {camera_name}.", "data": {"camera": cam_entity}}
 
 
 def cast_image_slideshow(criteria_or_folder: str, device_hint: str = "", duration: Optional[float] = None) -> Dict[str, Any]:

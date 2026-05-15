@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from core.settings_loader import save_settings, settings
+from .auth_deps import get_current_user, require_role
 
 router = APIRouter(prefix="/api/settings")
 
@@ -21,7 +22,7 @@ def _mask(value: str) -> str:
 # ---------------------------------------------------------------------------
 
 @router.get("/ha")
-async def get_ha_settings():
+async def get_ha_settings(_: dict = Depends(require_role("super_admin"))):
     ha = settings.get("home_assistant", {})
     token = ha.get("token", "")
     return {
@@ -37,7 +38,7 @@ class HaPatch(BaseModel):
 
 
 @router.patch("/ha")
-async def patch_ha_settings(patch: HaPatch):
+async def patch_ha_settings(patch: HaPatch, _: dict = Depends(require_role("super_admin"))):
     ha = settings.setdefault("home_assistant", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         ha[field] = val
@@ -50,7 +51,7 @@ async def patch_ha_settings(patch: HaPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/telegram")
-async def get_telegram_settings():
+async def get_telegram_settings(_: dict = Depends(require_role("super_admin"))):
     tg = settings.get("telegram", {})
     token = tg.get("token", "")
     return {
@@ -70,7 +71,7 @@ class TelegramPatch(BaseModel):
 
 
 @router.patch("/telegram")
-async def patch_telegram_settings(patch: TelegramPatch):
+async def patch_telegram_settings(patch: TelegramPatch, _: dict = Depends(require_role("super_admin"))):
     tg = settings.setdefault("telegram", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         tg[field] = val
@@ -83,7 +84,7 @@ async def patch_telegram_settings(patch: TelegramPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/integrations")
-async def get_integrations():
+async def get_integrations(_: dict = Depends(require_role("super_admin"))):
     openai_key = settings.get("openai", {}).get("api_key", "")
     serp_key = settings.get("serpapi", {}).get("api_key", "")
     ifttt_key = settings.get("ifttt", {}).get("webhook_key", "")
@@ -104,7 +105,7 @@ class IntegrationsPatch(BaseModel):
 
 
 @router.patch("/integrations")
-async def patch_integrations(patch: IntegrationsPatch):
+async def patch_integrations(patch: IntegrationsPatch, _: dict = Depends(require_role("super_admin"))):
     data = patch.model_dump(exclude_none=True)
     if "openai_key" in data:
         settings.setdefault("openai", {})["api_key"] = data["openai_key"]
@@ -121,7 +122,7 @@ async def patch_integrations(patch: IntegrationsPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/mqtt")
-async def get_mqtt_settings():
+async def get_mqtt_settings(_: dict = Depends(require_role("super_admin"))):
     mqtt = settings.get("mqtt", {})
     pw = mqtt.get("password", "")
     return {
@@ -141,7 +142,7 @@ class MqttPatch(BaseModel):
 
 
 @router.patch("/mqtt")
-async def patch_mqtt_settings(patch: MqttPatch):
+async def patch_mqtt_settings(patch: MqttPatch, _: dict = Depends(require_role("super_admin"))):
     mqtt = settings.setdefault("mqtt", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         mqtt[field] = val
@@ -170,13 +171,13 @@ _FEATURE_DEFAULTS: dict[str, bool] = {
 
 
 @router.get("/features")
-async def get_features():
+async def get_features(_: dict = Depends(require_role("admin"))):
     stored = settings.get("features", {})
     return {**_FEATURE_DEFAULTS, **stored}
 
 
 @router.patch("/features")
-async def patch_features(request: Request):
+async def patch_features(request: Request, _: dict = Depends(require_role("super_admin"))):
     """Accept any {flag: bool} pairs — no model needed, no silent drops."""
     body = await request.json()
     features = settings.setdefault("features", {})
@@ -192,7 +193,7 @@ async def patch_features(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.get("/debug")
-async def get_debug():
+async def get_debug(_: dict = Depends(require_role("super_admin"))):
     return settings.get("debug", {})
 
 
@@ -202,7 +203,7 @@ class DebugPatch(BaseModel):
 
 
 @router.patch("/debug")
-async def patch_debug(patch: DebugPatch):
+async def patch_debug(patch: DebugPatch, _: dict = Depends(require_role("super_admin"))):
     debug = settings.setdefault("debug", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         debug[field] = val
@@ -215,7 +216,7 @@ async def patch_debug(patch: DebugPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/ollama")
-async def get_ollama():
+async def get_ollama(_: dict = Depends(require_role("super_admin"))):
     return settings.get("ollama", {})
 
 
@@ -226,7 +227,7 @@ class OllamaPatch(BaseModel):
 
 
 @router.patch("/ollama")
-async def patch_ollama(patch: OllamaPatch):
+async def patch_ollama(patch: OllamaPatch, _: dict = Depends(require_role("super_admin"))):
     ollama = settings.setdefault("ollama", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         ollama[field] = val
@@ -239,7 +240,7 @@ async def patch_ollama(patch: OllamaPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/pattern-learning")
-async def get_pattern_learning():
+async def get_pattern_learning(_: dict = Depends(require_role("super_admin"))):
     return settings.get("pattern_learning", {})
 
 
@@ -255,7 +256,7 @@ class PatternLearningPatch(BaseModel):
 
 
 @router.patch("/pattern-learning")
-async def patch_pattern_learning(patch: PatternLearningPatch):
+async def patch_pattern_learning(patch: PatternLearningPatch, _: dict = Depends(require_role("super_admin"))):
     pl = settings.setdefault("pattern_learning", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         pl[field] = val
@@ -268,7 +269,7 @@ async def patch_pattern_learning(patch: PatternLearningPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/room-aliases")
-async def get_room_aliases():
+async def get_room_aliases(_: dict = Depends(require_role("admin"))):
     return {
         "en": settings.get("room_aliases", {}),
         "he": settings.get("room_aliases_he", {}),
@@ -281,7 +282,7 @@ class RoomAliasesPatch(BaseModel):
 
 
 @router.patch("/room-aliases")
-async def patch_room_aliases(patch: RoomAliasesPatch):
+async def patch_room_aliases(patch: RoomAliasesPatch, _: dict = Depends(require_role("admin"))):
     if patch.en is not None:
         settings["room_aliases"] = patch.en
     if patch.he is not None:

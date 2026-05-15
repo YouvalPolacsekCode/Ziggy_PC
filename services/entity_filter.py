@@ -10,26 +10,36 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Entire domains that are never useful in Ziggy
+# Entire domains that are never useful in Ziggy as devices.
+# Data from these entities is still accessible via state_cache and direct get_state() calls.
 HIDDEN_DOMAINS: frozenset[str] = frozenset({
-    "button",       # Zigbee "identify" buttons
-    "number",       # Zigbee hardware config params (transition times, start-up levels)
-    "select",       # Zigbee startup behavior options
-    "update",       # Firmware / add-on update trackers
-    "stt",          # HA speech-to-text internals
-    "tts",          # HA text-to-speech internals
-    "conversation", # HA assistant internal
-    "zone",         # Home zone geography
-    "sun",          # sun.sun — sensor.sun_* are kept (they're in global_sensors)
-    "automation",   # HA automations are not devices; deleted automations would appear as "lost"
-    "script",       # HA scripts are not devices either
-    "timer",        # HA helper timer — not a physical device
-    "counter",      # HA helper counter
-    "input_select", # HA input helpers — UI controls, not hardware
+    "button",         # Zigbee "identify" buttons
+    "number",         # Zigbee hardware config params (transition times, start-up levels)
+    "select",         # Zigbee startup behavior options
+    "update",         # Firmware / add-on update trackers
+    "stt",            # HA speech-to-text internals
+    "tts",            # HA text-to-speech internals
+    "conversation",   # HA assistant internal
+    "zone",           # Home zone geography
+    "sun",            # sun.sun — sub-sensors handled by pattern below
+    "automation",     # HA automations are not devices; deleted automations would appear as "lost"
+    "script",         # HA scripts are not devices either
+    "scene",          # HA scenes are not physical devices
+    "group",          # HA entity groups are virtual, not physical
+    "timer",          # HA helper timer — not a physical device
+    "counter",        # HA helper counter
+    "input_select",   # HA input helpers — UI controls, not hardware
     "input_number",
     "input_text",
     "input_datetime",
     "input_button",
+    # HA data sources — useful in automations/routines by entity_id, not as room devices
+    "calendar",       # Google Calendar, birthdays, holidays
+    "weather",        # weather.forecast_home
+    "todo",           # shopping list etc. — accessed via home_automation helpers
+    "person",         # HA person/presence tracking
+    "device_tracker", # phone GPS, etc. — presence data, not a room device
+    "remote",         # IR blaster infrastructure and auto-created media_player companions
 })
 
 # Entity ID substrings that indicate noise within otherwise useful domains
@@ -42,8 +52,9 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         r"^binary_sensor\.backups_",
         r"^binary_sensor\.remote_ui",
         r"^sensor\.backup_",
-        r"^sensor\.sun_next_midnight",  # not mapped anywhere, just noise
-        r"^sensor\.sun_next_noon",
+        r"^sensor\.sun_next_",         # all HA sun sub-sensors — data available via global_sensors, not devices
+        r"^sensor\.phone_",            # HA Companion app sensors (battery, charger, etc.)
+        r"^(sensor|binary_sensor)\.sagemcom_", # router integration entities (speed, IP, WAN status)
     ]
 ]
 

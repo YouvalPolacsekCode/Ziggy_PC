@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield, RefreshCw, Server, Bot, Key, Wifi, Sliders, Bug,
-  Brain, BookMarked, Plus, Trash2, AlertTriangle, Check,
+  Brain, BookMarked, Plus, Trash2, AlertTriangle, Check, Users,
 } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
@@ -11,6 +11,7 @@ import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
 import { useUIStore } from '../stores/uiStore'
+import { useAuthStore } from '../stores/authStore'
 import {
   getHaSettings, patchHaSettings,
   getTelegramSettings, patchTelegramSettings,
@@ -21,6 +22,7 @@ import {
   getOllamaSettings, patchOllamaSettings,
   getPatternLearningSettings, patchPatternLearningSettings,
   getRoomAliases, patchRoomAliases,
+  getUsers, createUser, updateUser, deleteUser,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
@@ -28,13 +30,11 @@ import { cn } from '../lib/utils'
 
 function SectionTitle({ icon: Icon, children, restart }) {
   return (
-    <div className="flex items-center gap-2 mb-3 px-1">
-      {Icon && <Icon size={14} className="text-zinc-400" />}
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-600 flex-1">
-        {children}
-      </h2>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+      {Icon && <Icon size={13} style={{ color: 'var(--ink-faint)' }} />}
+      <p className="z-eyebrow" style={{ flex: 1 }}>{children}</p>
       {restart && (
-        <span className="text-[10px] text-amber-500 font-medium flex items-center gap-1">
+        <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 3 }}>
           <AlertTriangle size={10} />
           Restart required
         </span>
@@ -45,10 +45,10 @@ function SectionTitle({ icon: Icon, children, restart }) {
 
 function SettingRow({ label, subtitle, children }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3.5 gap-4">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</p>
-        {subtitle && <p className="text-xs text-zinc-400 truncate">{subtitle}</p>}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
+        {subtitle && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
       </div>
       {children}
     </div>
@@ -84,60 +84,44 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
 
   if (editing) {
     return (
-      <div className="px-4 py-3 flex flex-col gap-2">
-        <p className="text-xs text-zinc-500">{label}</p>
-        <div className="flex gap-2">
-          <input
-            autoFocus
-            type="password"
-            placeholder={placeholder || 'Enter new value…'}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className={cn(
-              'flex-1 h-9 rounded-xl px-3 text-sm',
-              'bg-zinc-50 dark:bg-zinc-800',
-              'border border-zinc-200 dark:border-zinc-700',
-              'text-zinc-900 dark:text-zinc-100',
-              'placeholder:text-zinc-400 dark:placeholder:text-zinc-600',
-              'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
-            )}
-          />
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? '…' : 'Save'}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setValue('') }}>
-            Cancel
-          </Button>
+      <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{label}</p>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input autoFocus type="password" placeholder={placeholder || 'Enter new value…'} value={value} onChange={e => setValue(e.target.value)} onKeyDown={handleKeyDown} className="z-input" style={{ flex: 1, height: 36, padding: '0 12px', fontSize: 13 }} />
+          <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ padding: '0 12px', borderRadius: 9, height: 36, fontSize: 12 }}>{saving ? '…' : 'Save'}</button>
+          <button onClick={() => { setEditing(false); setValue('') }} className="z-btn-secondary" style={{ padding: '0 10px', borderRadius: 9, height: 36, fontSize: 12 }}>Cancel</button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-3.5 gap-4">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</p>
-        {configured ? (
-          <p className="text-xs font-mono text-zinc-400 truncate">{masked}</p>
-        ) : (
-          <p className="text-xs text-zinc-400">{subtitle || 'Not configured'}</p>
-        )}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
+        {configured
+          ? <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{masked}</p>
+          : <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{subtitle || 'Not configured'}</p>}
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {configured && <Check size={13} className="text-emerald-500" />}
-        <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        {configured && <Check size={12} style={{ color: 'var(--ok)' }} />}
+        <button onClick={() => setEditing(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
           {configured ? 'Update' : 'Set'}
-        </Button>
+        </button>
       </div>
     </div>
   )
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Main component (embeddable in Settings tabs) ────────────────────────────
+
+const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', user: 'User', guest: 'Guest' }
+const ROLE_COLORS = { super_admin: 'var(--accent)', admin: '#8b5cf6', user: 'var(--ok)', guest: 'var(--ink-faint)' }
 
 export default function AdminSettings() {
   const { addToast } = useUIStore()
+  const { role: myRole } = useAuthStore()
+  const isSuperAdmin = myRole === 'super_admin'
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -152,6 +136,11 @@ export default function AdminSettings() {
   const [ollama, setOllama] = useState({ base_url: '', model: '', timeout: 30 })
   const [patternLearning, setPatternLearning] = useState({})
   const [aliases, setAliases] = useState({ en: {}, he: {} })
+
+  // Users state (super_admin only)
+  const [users, setUsers] = useState([])
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' })
+  const [usersSaving, setUsersSaving] = useState(false)
 
   // Per-section saving
   const [saving, setSaving] = useState({})
@@ -184,6 +173,9 @@ export default function AdminSettings() {
       setPatternLearning({ enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30, min_occurrences: 5, max_pending_suggestions: 3, time_window_minutes: 45, sequence_gap_minutes: 5, ...pl })
       setAliases({ en: al?.en || {}, he: al?.he || {} })
     } catch {}
+    if (isSuperAdmin) {
+      try { setUsers(await getUsers()) } catch {}
+    }
   }
 
   useEffect(() => { loadAll().finally(() => setLoading(false)) }, [])
@@ -192,6 +184,36 @@ export default function AdminSettings() {
     setRefreshing(true)
     await loadAll()
     setRefreshing(false)
+  }
+
+  // User management handlers
+  const handleCreateUser = async () => {
+    if (!newUser.username.trim() || !newUser.password.trim()) return
+    setUsersSaving(true)
+    try {
+      await createUser(newUser)
+      setUsers(await getUsers())
+      setNewUser({ username: '', password: '', role: 'user' })
+      addToast(`User "${newUser.username}" created`, 'success')
+    } catch (e) { addToast(e.message || 'Failed to create user', 'error') }
+    finally { setUsersSaving(false) }
+  }
+
+  const handleUpdateRole = async (username, role) => {
+    try {
+      await updateUser(username, { role })
+      setUsers((prev) => prev.map((u) => u.username === username ? { ...u, role } : u))
+      addToast('Role updated', 'success')
+    } catch (e) { addToast(e.message || 'Failed to update role', 'error') }
+  }
+
+  const handleDeleteUser = async (username) => {
+    if (!window.confirm(`Delete user "${username}"?`)) return
+    try {
+      await deleteUser(username)
+      setUsers((prev) => prev.filter((u) => u.username !== username))
+      addToast(`User "${username}" deleted`, 'success')
+    } catch (e) { addToast(e.message || 'Failed to delete user', 'error') }
   }
 
   // Generic section save helper
@@ -241,58 +263,107 @@ export default function AdminSettings() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-6 h-6 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 160 }}>
+        <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6 pb-28">
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2.5">
-          <Shield size={20} className="text-amber-500" />
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Admin</h1>
-        </div>
-        <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={refreshing}>
-          <RefreshCw size={16} className={cn(refreshing && 'animate-spin')} />
-        </Button>
+    <div>
+      {/* Inline toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Some changes require restarting Ziggy.</p>
+        <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
+          <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+        </button>
       </div>
-      <p className="text-xs text-zinc-400 mb-6 px-0.5">
-        Core configuration. Some changes require restarting Ziggy to take effect.
-      </p>
+
+      {/* ── Users (super_admin only) ────────────────────────────────────────── */}
+      {isSuperAdmin && (
+        <div style={{ marginBottom: 22 }}>
+          <SectionTitle icon={Users}>Users</SectionTitle>
+          <Card>
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {users.map((u) => (
+                <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
+                  <select
+                    value={u.role}
+                    onChange={(e) => handleUpdateRole(u.username, e.target.value)}
+                    style={{ fontSize: 11, padding: '3px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLORS[u.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {Object.entries(ROLE_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleDeleteUser(u.username)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}
+                    title="Delete user"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+
+              {/* Add new user */}
+              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>Add user</p>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    placeholder="Username"
+                    value={newUser.username}
+                    onChange={(e) => setNewUser((s) => ({ ...s, username: e.target.value }))}
+                    className="z-input"
+                    style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser((s) => ({ ...s, password: e.target.value }))}
+                    className="z-input"
+                    style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
+                  />
+                  <select
+                    value={newUser.role}
+                    onChange={(e) => setNewUser((s) => ({ ...s, role: e.target.value }))}
+                    style={{ height: 34, padding: '0 6px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12, cursor: 'pointer' }}
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                    <option value="guest">Guest</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                  <button
+                    onClick={handleCreateUser}
+                    disabled={usersSaving || !newUser.username.trim() || !newUser.password.trim()}
+                    className="z-btn-primary"
+                    style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap' }}
+                  >
+                    {usersSaving ? '…' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* ── Home Assistant ───────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Server} restart>Home Assistant</SectionTitle>
         <Card>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {/* URL */}
             <div className="px-4 py-3">
-              <p className="text-xs text-zinc-500 mb-1.5">URL</p>
-              <div className="flex gap-2">
-                <input
-                  value={ha.url}
-                  onChange={(e) => setHa((s) => ({ ...s, url: e.target.value }))}
-                  placeholder="http://homeassistant.local:8123/"
-                  className={cn(
-                    'flex-1 h-9 rounded-xl px-3 text-sm',
-                    'bg-zinc-50 dark:bg-zinc-800',
-                    'border border-zinc-200 dark:border-zinc-700',
-                    'text-zinc-900 dark:text-zinc-100',
-                    'placeholder:text-zinc-400',
-                    'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
-                  )}
-                />
-                <Button
-                  size="sm"
-                  onClick={() => save('ha-url', patchHaSettings, { url: ha.url })}
-                  disabled={saving['ha-url']}
-                >
+              <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 6 }}>URL</p>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input value={ha.url} onChange={e => setHa(s => ({ ...s, url: e.target.value }))} placeholder="http://homeassistant.local:8123/" className="z-input" style={{ flex: 1, height: 36, padding: '0 12px', fontSize: 13 }} />
+                <button onClick={() => save('ha-url', patchHaSettings, { url: ha.url })} disabled={saving['ha-url']} className="z-btn-primary" style={{ padding: '0 12px', borderRadius: 9, height: 36, fontSize: 12 }}>
                   {saving['ha-url'] ? '…' : 'Save'}
-                </Button>
+                </button>
               </div>
             </div>
             {/* Token */}
@@ -309,7 +380,7 @@ export default function AdminSettings() {
       </div>
 
       {/* ── Telegram ────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Bot} restart>Telegram</SectionTitle>
         <Card>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -401,7 +472,7 @@ export default function AdminSettings() {
       </div>
 
       {/* ── API Keys ────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Key}>API Keys</SectionTitle>
         <Card>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -437,10 +508,10 @@ export default function AdminSettings() {
       </div>
 
       {/* ── MQTT ────────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Wifi} restart>MQTT</SectionTitle>
         <Card>
-          <CardBody className="pt-4 flex flex-col gap-3">
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <p className="text-xs text-zinc-500 mb-1.5">Host</p>
@@ -488,7 +559,7 @@ export default function AdminSettings() {
             >
               {saving['mqtt'] ? 'Saving…' : 'Save connection'}
             </Button>
-          </CardBody>
+          </div>
 
           <div className="border-t border-zinc-100 dark:border-zinc-800">
             <SecretField
@@ -504,7 +575,7 @@ export default function AdminSettings() {
       </div>
 
       {/* ── Feature Flags ───────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Sliders} restart>Feature Flags</SectionTitle>
         <Card>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -524,7 +595,7 @@ export default function AdminSettings() {
       </div>
 
       {/* ── Debug ───────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Bug}>Debug</SectionTitle>
         <Card>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -551,10 +622,10 @@ export default function AdminSettings() {
       </div>
 
       {/* ── Ollama ──────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Brain}>Ollama (Local LLM)</SectionTitle>
         <Card>
-          <CardBody className="pt-4 flex flex-col gap-3">
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Input
               label="Base URL"
               placeholder="http://localhost:11434/v1"
@@ -592,15 +663,15 @@ export default function AdminSettings() {
             >
               {saving['ollama'] ? 'Saving…' : 'Save'}
             </Button>
-          </CardBody>
+          </div>
         </Card>
       </div>
 
       {/* ── Pattern Learning ────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Sliders}>Pattern Learning</SectionTitle>
         <Card>
-          <CardBody className="pt-4 flex flex-col gap-5">
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Enabled</p>
@@ -712,12 +783,12 @@ export default function AdminSettings() {
             >
               {saving['pl'] ? 'Saving…' : 'Save'}
             </Button>
-          </CardBody>
+          </div>
         </Card>
       </div>
 
       {/* ── Room Aliases ────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={BookMarked}>Room Aliases</SectionTitle>
         <Card>
           {/* Search + Add */}

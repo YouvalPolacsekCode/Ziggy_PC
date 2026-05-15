@@ -18,7 +18,7 @@ async def handle_toggle_light(params: dict, *, source: str = "unknown") -> dict:
     room = normalize_room(params)
     if room == "unknown":
         return err("Missing room name.")
-    entity_id = resolve_entity(room, "light")
+    entity_id = params.get("entity_id") or resolve_entity(room, "light")
     if not entity_id:
         return err(f"No light configured for {room.replace('_', ' ')}.")
     if "turn_on" not in params:
@@ -34,7 +34,7 @@ async def handle_set_light_color(params: dict, *, source: str = "unknown") -> di
     room = normalize_room(params)
     if room == "unknown":
         return err("Missing room name.")
-    entity_id = resolve_entity(room, "light")
+    entity_id = params.get("entity_id") or resolve_entity(room, "light")
     if not entity_id:
         return err(f"No light configured for {room.replace('_', ' ')}.")
     color = (params.get("color") or "white").lower()
@@ -47,7 +47,7 @@ async def handle_set_light_color(params: dict, *, source: str = "unknown") -> di
 
 async def handle_set_light_brightness(params: dict, *, source: str = "unknown") -> dict:
     room = normalize_room(params)
-    entity_id = resolve_entity(room, "light")
+    entity_id = params.get("entity_id") or resolve_entity(room, "light")
     if not entity_id:
         return err(f"No light configured for {room.replace('_', ' ')}.")
     try:
@@ -69,11 +69,44 @@ async def handle_toggle_all_lights_in_room(params: dict, *, source: str = "unkno
 
 
 async def handle_turn_off_everything(params: dict, *, source: str = "unknown") -> dict:
+    from core.conversation_context import clear_context
+    clear_context()
     return turn_off_everything()
 
 
 async def handle_turn_off_all_lights(params: dict, *, source: str = "unknown") -> dict:
-    return turn_off_all_lights()
+    from core.conversation_context import set_bulk_context
+    from services.home_automation import get_all_states
+    from services.device_registry import get_device_info
+
+    # Snapshot which lights are currently on so we can restore exactly those.
+    try:
+        on_lights = [
+            s["entity_id"] for s in get_all_states()
+            if s.get("entity_id", "").startswith("light.")
+            and s.get("state") not in ("off", "unavailable", "unknown")
+        ]
+    except Exception:
+        on_lights = []
+
+    result = turn_off_all_lights()
+
+    if result.get("ok") and on_lights:
+        # Build per-device context entries with the exact tool call needed to restore each.
+        bulk_devices = []
+        for eid in on_lights:
+            info = get_device_info(eid) or {}
+            room = info.get("room") or eid.split(".")[0]
+            bulk_devices.append({
+                "room":        room,
+                "device_type": "light",
+                "action":      "off",
+                "tool":        "toggle_light",
+                "tool_params": {"room": room, "turn_on": True},
+            })
+        set_bulk_context(bulk_devices)
+
+    return result
 
 
 HANDLERS = {

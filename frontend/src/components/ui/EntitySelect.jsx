@@ -148,7 +148,7 @@ export function getActionsForDomain(domain) {
   return DOMAIN_ACTIONS[domain] || _DEFAULT_ACTIONS
 }
 
-export function EntitySelect({ value, onChange, label, placeholder = 'Search entities…', domain: filterDomain }) {
+export function EntitySelect({ value, onChange, label, placeholder = 'Search entities…', domain: filterDomain, allowedDomains }) {
   const [open, setOpen] = useState(false)
   const [dropdownPos, setDropdownPos] = useState({ top: undefined, bottom: undefined, left: 0, width: 0 })
   const [search, setSearch] = useState('')
@@ -205,6 +205,7 @@ export function EntitySelect({ value, onChange, label, placeholder = 'Search ent
 
   // Group entities by room
   const filteredEntities = entities.filter((e) => {
+    if (allowedDomains && !allowedDomains.has(e.domain)) return false
     const q = search.toLowerCase()
     return !q || e.entity_id.toLowerCase().includes(q) || e.friendly_name?.toLowerCase().includes(q)
   })

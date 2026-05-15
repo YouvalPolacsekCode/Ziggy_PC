@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices } from '../lib/api'
+import { CONTROLLABLE_DOMAINS, TOGGLEABLE_DOMAINS, DOMAIN_REGISTRY } from '../lib/domainRegistry'
 
-export const CONTROLLABLE_DOMAINS = new Set([
-  'light', 'switch', 'climate', 'cover', 'media_player', 'fan', 'lock', 'vacuum',
-])
+export { CONTROLLABLE_DOMAINS }
 
-// IR device type → HA-compatible domain (mirrors backend _IR_TYPE_TO_DOMAIN)
+// IR device type → HA-compatible domain (mirrors backend _IR_TYPE_TO_DOMAIN).
+// Kept as a static map here because IR types are a fixed Ziggy concept,
+// not tied to the HA domain registry.
 const IR_TYPE_TO_DOMAIN = {
   tv:        'media_player',
   soundbar:  'media_player',
@@ -49,8 +50,10 @@ export const useDeviceStore = create((set, get) => ({
   deviceStatusMap: {},
   // DeviceRegistry rooms with enriched devices (Rooms page)
   ziggyRooms: [],
-  // Unclaimed devices (no room assigned in Ziggy)
+  // Unclaimed devices (status=UNCLAIMED — new HA entities not yet placed)
   unclaimedDevices: [],
+  // Devices intentionally left without a room (room=null, non-UNCLAIMED)
+  noRoomDevices: [],
 
   loading: false,
   error: null,
@@ -97,6 +100,10 @@ export const useDeviceStore = create((set, get) => ({
       for (const d of (roomsDevRes.unclaimed || [])) {
         if (d.entity_id) statusMap[d.entity_id] = d.status
       }
+      for (const d of (roomsDevRes.no_room || [])) {
+        if (d.entity_id) statusMap[d.entity_id] = d.status
+        if (d.ir_device_id && !d.entity_id) statusMap[`ir.${d.ir_device_id}`] = d.status
+      }
 
       // ── IR ↔ HA entity linking ────────────────────────────────────────────
       const irList = Array.isArray(irRaw) ? irRaw : []
@@ -130,6 +137,7 @@ export const useDeviceStore = create((set, get) => ({
         deviceStatusMap: statusMap,
         ziggyRooms: roomsDevRes.rooms || [],
         unclaimedDevices: roomsDevRes.unclaimed || [],
+        noRoomDevices: roomsDevRes.no_room || [],
         loading: false,
         lastUpdated: Date.now(),
       })
@@ -163,23 +171,28 @@ export const useDeviceStore = create((set, get) => ({
     }))
   },
 
-  // For Devices page: HA entities not in any HA area.
-  // IR devices are excluded — they use room assignment via patchIrDevice.
+  // Unassigned: status=UNCLAIMED entities — new HA devices not yet placed in Ziggy.
+  // Distinct from "No Room" (intentionally left without a room).
   getUnassigned: () => {
-    const DEVICE_DOMAINS = new Set([
-      'light', 'switch', 'climate', 'cover', 'media_player',
-      'fan', 'lock', 'sensor', 'binary_sensor', 'camera',
-      'vacuum', 'input_boolean',
-    ])
-    const { rooms, entities } = get()
-    const assigned = new Set(rooms.flatMap((r) => r.entities || []))
-    return entities.filter(
-      (e) => !e._ir && DEVICE_DOMAINS.has(e.domain) && !assigned.has(e.entity_id)
-    )
+    const { unclaimedDevices, entities } = get()
+    const unclaimedIds = new Set(unclaimedDevices.map((d) => d.entity_id).filter(Boolean))
+    return entities.filter((e) => !e._ir && unclaimedIds.has(e.entity_id))
+  },
+
+  // No Room: room=null, non-UNCLAIMED — intentionally left without a room assignment.
+  getNoRoom: () => {
+    const { noRoomDevices, entities } = get()
+    const noRoomIds = new Set(noRoomDevices.map((d) => d.entity_id).filter(Boolean))
+    return entities.filter((e) => !e._ir && noRoomIds.has(e.entity_id))
   },
 
   getActiveCount: () =>
-    get().entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain) && e.state === 'on').length,
+    get().entities.filter((e) => {
+      if (!CONTROLLABLE_DOMAINS.has(e.domain)) return false
+      const meta = DOMAIN_REGISTRY[e.domain]
+      if (meta?.activeStates?.length) return meta.activeStates.includes(e.state)
+      return e.state === 'on'
+    }).length,
 
   getTotalControllable: () =>
     get().entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain)).length,

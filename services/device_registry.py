@@ -25,6 +25,7 @@ from typing import Optional
 
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings
+from services.entity_filter import _should_hide
 
 REGISTRY_FILE = "user_files/device_registry.json"
 
@@ -146,6 +147,8 @@ _NON_DEVICE_DOMAINS = frozenset({
     "automation", "script", "scene", "timer", "counter",
     "input_select", "input_number", "input_text", "input_datetime", "input_button",
     "group", "zone", "sun", "stt", "tts", "conversation",
+    # HA data sources — kept in sync with entity_filter.HIDDEN_DOMAINS
+    "calendar", "weather", "todo", "person", "device_tracker", "remote",
 })
 
 
@@ -165,8 +168,11 @@ def _reconcile(devices: list[dict], live_ids: set[str]) -> list[dict]:
             continue
         domain = eid.split(".")[0]
         if domain in _NON_DEVICE_DOMAINS:
-            # Non-device entities should never be in the registry; silently remove them
             log_info(f"[DeviceRegistry] Removing non-device entity from registry: {eid}")
+            continue
+        if _should_hide(eid):
+            # Catches pattern-filtered entities (phone sensors, router sensors, sun sub-sensors)
+            log_info(f"[DeviceRegistry] Removing filtered entity from registry: {eid}")
             continue
         d["status"] = CONNECTED if eid in live_ids else LOST
         keep.append(d)
@@ -289,18 +295,49 @@ def get_all_for_room(room: str) -> list[dict]:
         return [d for d in _registry if d.get("room") == room_norm]
 
 
+def get_device_info(entity_id: str) -> Optional[dict]:
+    """Return the registry entry for an entity_id, or None."""
+    with _lock:
+        for d in _registry:
+            if d.get("entity_id") == entity_id:
+                return dict(d)
+    return None
+
+
+def get_rooms_by_device_type() -> dict[str, list[str]]:
+    """Return {device_type: [room, ...]} for all connected devices with a room assigned.
+
+    Used to inject live device-room knowledge into the GPT system prompt so it
+    can enumerate rooms correctly for multi-device commands like 'turn on all lights'.
+    """
+    result: dict[str, list[str]] = {}
+    with _lock:
+        for d in _registry:
+            room = d.get("room")
+            dtype = d.get("device_type")
+            status = d.get("status", "")
+            if not room or not dtype or status in (UNCLAIMED, UNCONFIGURED, LOST):
+                continue
+            result.setdefault(dtype, [])
+            if room not in result[dtype]:
+                result[dtype].append(room)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Background reconciliation loop
 # ---------------------------------------------------------------------------
 
 async def sync_rooms_to_ha() -> None:
-    """Ensure every room in the device registry exists as an HA area.
+    """Ensure IR-only rooms in the device registry are backed by HA areas.
 
-    Called once on startup. Finds registry rooms with no matching HA area,
-    creates those areas in HA, then updates the registry room keys to match
-    the canonical normalized form so joins never diverge again.
-
-    This is the guard that prevents Ziggy-only orphan rooms from accumulating.
+    Called once on startup. Scope is intentionally narrow:
+      - Only processes rooms whose ALL devices are IR-only (no entity_id).
+      - HA-backed devices (entity_id set) have their room managed entirely by HA.
+        We must NOT recreate an HA area for them — that would silently resurrect
+        rooms the user deliberately deleted.
+      - After creating a missing HA area, normalizes registry room keys to match
+        the canonical area name so future joins don't diverge.
     """
     import re as _re
 
@@ -319,17 +356,27 @@ async def sync_rooms_to_ha() -> None:
         return
 
     with _lock:
-        # Collect unique non-null room keys in the registry
-        registry_rooms: set[str] = {d["room"] for d in _registry if d.get("room")}
+        # Build a map: room_key → set of device types present
+        # Only consider rooms where EVERY device is IR-only (no entity_id).
+        # If a room has even one HA-backed device, HA owns the room lifecycle.
+        room_to_devices: dict[str, list] = {}
+        for d in _registry:
+            room_key = d.get("room")
+            if room_key:
+                room_to_devices.setdefault(room_key, []).append(d)
+
+        ir_only_rooms: set[str] = {
+            room for room, devs in room_to_devices.items()
+            if all(not d.get("entity_id") for d in devs)  # all devices are IR-only
+        }
 
         created: dict[str, str] = {}  # old_norm → new_norm after HA creation
 
-        for room_key in sorted(registry_rooms):
+        for room_key in sorted(ir_only_rooms):
             norm = _norm(room_key)
             if norm in ha_norm_to_area:
                 continue  # already backed by an HA area
 
-            # No matching HA area — create one now
             display_name = room_key.replace("_", " ").title()
             try:
                 result = await create_area(display_name)
@@ -340,7 +387,7 @@ async def sync_rooms_to_ha() -> None:
                     created[norm] = new_norm
                     log_info(
                         f"[DeviceRegistry] sync_rooms_to_ha: created HA area '{new_area_name}' "
-                        f"for orphan room '{room_key}'"
+                        f"for IR-only room '{room_key}'"
                     )
                 else:
                     log_error(f"[DeviceRegistry] sync_rooms_to_ha: failed to create '{display_name}': {result.get('error')}")
@@ -348,7 +395,6 @@ async def sync_rooms_to_ha() -> None:
                 log_error(f"[DeviceRegistry] sync_rooms_to_ha: exception creating '{display_name}': {e}")
 
         if created:
-            # Update registry room keys to match the new HA area's normalized name
             for d in _registry:
                 old_key = d.get("room") or ""
                 old_norm = _norm(old_key) if old_key else ""

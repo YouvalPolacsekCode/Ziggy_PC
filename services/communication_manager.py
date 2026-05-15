@@ -88,15 +88,32 @@ def _decode_body(payload: dict) -> str:
 # Public Scenarios
 # ---------------------------------------------------------------------------
 
-def read_latest_emails(limit: int = 5) -> Dict[str, Any]:
+def read_latest_emails(limit: int = 5, sender: Optional[str] = None, unread_only: bool = True) -> Dict[str, Any]:
     service, err = _get_gmail_service()
     if err:
         return {"ok": False, "message": err, "data": {}}
     try:
-        result = service.users().messages().list(userId="me", labelIds=["INBOX", "UNREAD"], maxResults=limit).execute()
+        # Build Gmail search query
+        q_parts: List[str] = []
+        if unread_only:
+            q_parts.append("is:unread")
+        if sender:
+            contact = _contact_resolve(sender)
+            email_addr = contact.get("email") or sender
+            q_parts.append(f"from:{email_addr}")
+
+        query = " ".join(q_parts) or None
+        list_kwargs: Dict[str, Any] = {"userId": "me", "maxResults": limit}
+        if query:
+            list_kwargs["q"] = query
+        else:
+            list_kwargs["labelIds"] = ["INBOX", "UNREAD"]
+
+        result = service.users().messages().list(**list_kwargs).execute()
         messages = result.get("messages", [])
         if not messages:
-            return {"ok": True, "message": "No unread emails.", "data": {"threads": []}}
+            from_label = f" from {sender}" if sender else ""
+            return {"ok": True, "message": f"No {'unread ' if unread_only else ''}emails{from_label}.", "data": {"threads": []}}
 
         threads = []
         for msg in messages:
@@ -115,7 +132,7 @@ def read_latest_emails(limit: int = 5) -> Dict[str, Any]:
 
         summary_parts = [f"From {t['from']}: {t['subject']} — {t['snippet'][:80]}" for t in threads]
         summary = "\n".join(summary_parts)
-        log_info(f"[Gmail] Read {len(threads)} emails")
+        log_info(f"[Gmail] Read {len(threads)} emails (sender={sender!r})")
         return {"ok": True, "message": summary, "data": {"threads": threads}}
     except Exception as e:
         log_error(f"[Gmail] read_latest_emails: {e}")
@@ -210,15 +227,26 @@ def _contact_resolve(name: str) -> Dict[str, Any]:
 
 
 def _msg_send_whatsapp(contact: Dict[str, Any], text: str) -> Dict[str, Any]:
+    # WhatsApp Cloud API requires a verified Meta Business Account with approved
+    # message templates for initiating conversations. Without one, free-form messages
+    # to most contacts will be rejected by the API (error 131030 / 131026).
+    # Recommend Telegram as the default quick-message channel instead.
     phone = contact.get("whatsapp")
     if not phone:
-        return {"ok": False, "message": "Contact has no WhatsApp number.", "data": {}}
+        return {
+            "ok": False,
+            "message": "Contact has no WhatsApp number. Use Telegram instead (say: 'send [name] a Telegram message').",
+            "data": {},
+        }
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
     token = os.getenv("WHATSAPP_ACCESS_TOKEN")
     if not (phone_id and token):
         return {
             "ok": False,
-            "message": "WhatsApp Cloud API not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in .env.",
+            "message": (
+                "WhatsApp requires a Meta Business Account — not configured. "
+                "Use Telegram instead (say: 'send [name] a Telegram message')."
+            ),
             "data": {},
         }
     import requests as req
@@ -231,7 +259,9 @@ def _msg_send_whatsapp(contact: Dict[str, Any], text: str) -> Dict[str, Any]:
         )
         if resp.ok:
             return {"ok": True, "message": f"WhatsApp sent to {phone}.", "data": {}}
-        return {"ok": False, "message": f"WhatsApp API error: {resp.status_code}", "data": {}}
+        err_data = resp.json() if resp.content else {}
+        err_msg = err_data.get("error", {}).get("message", f"HTTP {resp.status_code}")
+        return {"ok": False, "message": f"WhatsApp API error: {err_msg}", "data": {}}
     except Exception as e:
         log_error(f"[comm._msg_send_whatsapp] {e}")
         return {"ok": False, "message": f"WhatsApp error: {e}", "data": {}}

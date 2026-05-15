@@ -1,18 +1,31 @@
 import { create } from 'zustand'
 
 const TOKEN_KEY = 'ziggy_token'
+const ROLE_KEY  = 'ziggy_role'
 
 export const useAuthStore = create((set, get) => ({
-  token: localStorage.getItem(TOKEN_KEY) || null,
+  token:         localStorage.getItem(TOKEN_KEY) || null,
+  role:          localStorage.getItem(ROLE_KEY)  || null,
   authenticated: !!localStorage.getItem(TOKEN_KEY),
 
-  setToken: (token) => {
+  setToken: (token, role = null) => {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token)
+      if (role) localStorage.setItem(ROLE_KEY, role)
     } else {
       localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(ROLE_KEY)
     }
-    set({ token, authenticated: !!token })
+    set({ token, role: role ?? get().role, authenticated: !!token })
+  },
+
+  setRole: (role) => {
+    if (role) {
+      localStorage.setItem(ROLE_KEY, role)
+    } else {
+      localStorage.removeItem(ROLE_KEY)
+    }
+    set({ role })
   },
 
   logout: () => {
@@ -24,6 +37,7 @@ export const useAuthStore = create((set, get) => ({
       }).catch(() => {})
     }
     localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, authenticated: false })
+    localStorage.removeItem(ROLE_KEY)
+    set({ token: null, role: null, authenticated: false })
   },
 }))

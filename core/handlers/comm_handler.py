@@ -3,7 +3,11 @@ from services import communication_manager
 
 
 async def handle_read_emails(params: dict, *, source: str = "unknown") -> dict:
-    return communication_manager.read_latest_emails(limit=int(params.get("limit", 5)))
+    return communication_manager.read_latest_emails(
+        limit=int(params.get("limit", 5)),
+        sender=params.get("sender"),
+        unread_only=bool(params.get("unread_only", True)),
+    )
 
 
 async def handle_send_email(params: dict, *, source: str = "unknown") -> dict:

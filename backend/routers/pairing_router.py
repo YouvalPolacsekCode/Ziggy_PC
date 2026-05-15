@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional
+import asyncio
+import threading
+from typing import List, Optional
+
+import re
+import requests as _requests
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -17,6 +22,36 @@ from services.ha_pairing import (
 from services.home_automation import call_service, get_all_states
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Shared helper: refresh device registry + broadcast devices_changed to frontend
+# ---------------------------------------------------------------------------
+
+def _schedule_registry_refresh(delay_s: float = 5.0) -> None:
+    """Trigger a device-registry refresh after `delay_s` seconds.
+
+    Called after pairing succeeds so newly joined devices appear promptly
+    without waiting for the 60-second reconciliation loop.
+    """
+    def _run():
+        import time
+        time.sleep(delay_s)
+        try:
+            from services.device_registry import refresh
+            refresh()
+        except Exception:
+            pass
+        try:
+            from backend.ws_manager import manager
+            import asyncio as _aio
+            loop = _aio.new_event_loop()
+            loop.run_until_complete(manager.broadcast({"type": "devices_changed"}))
+            loop.close()
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +89,47 @@ async def activate_scene(body: SceneActivate):
     return {"ok": True}
 
 
+class SceneCreate(BaseModel):
+    name: str
+    snapshot_entities: List[str]
+
+
+@router.post("/api/ha/scenes")
+async def create_scene(body: SceneCreate):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Scene name is required")
+    # Convert name → safe scene_id (lowercase, underscores)
+    scene_id = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    result = call_service("scene", "create", {
+        "scene_id": scene_id,
+        "snapshot_entities": body.snapshot_entities,
+    })
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
+    return {"ok": True, "scene_id": f"scene.{scene_id}"}
+
+
+@router.delete("/api/ha/scenes/{entity_id:path}")
+async def delete_scene(entity_id: str):
+    # Strip scene. prefix to get the scene_id used by HA config API
+    scene_id = entity_id.removeprefix("scene.")
+    from services.home_automation import _ha_endpoint, _headers
+    try:
+        resp = _requests.delete(
+            _ha_endpoint(f"/api/config/scene/config/{scene_id}"),
+            headers=_headers(),
+            timeout=10,
+        )
+        if resp.status_code in (200, 204):
+            return {"ok": True}
+        raise HTTPException(status_code=resp.status_code, detail=f"HA returned {resp.status_code}: {resp.text[:200]}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # ZHA pairing
 # ---------------------------------------------------------------------------
@@ -71,6 +147,8 @@ async def zha_permit(body: ZhaPermitBody):
     result = await start_permit_join(body.duration)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "ZHA error"))
+    # Refresh registry shortly after the permit window closes so new devices appear immediately.
+    _schedule_registry_refresh(delay_s=body.duration + 5)
     return result
 
 
@@ -103,6 +181,7 @@ async def zwave_include():
     result = await start_zwave_inclusion()
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "Z-Wave error"))
+    _schedule_registry_refresh(delay_s=30)
     return result
 
 
@@ -127,6 +206,7 @@ async def matter_commission(body: MatterCommissionBody):
     result = await commission_matter(body.code.strip())
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "Matter error"))
+    _schedule_registry_refresh(delay_s=10)
     return result
 
 

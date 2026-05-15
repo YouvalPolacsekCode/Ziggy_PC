@@ -7,11 +7,8 @@ import { getMapRoomsSummary, getAutomations, triggerAutomation, getFeaturesSetti
 const HomeMapCanvas = lazy(() =>
   import('./HomeMapCanvas').then((m) => ({ default: m.HomeMapCanvas }))
 )
-import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
-import { Badge } from '../components/ui/Badge'
-import { RoomCard } from '../components/ui/RoomCard'
-import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel, isEntityOn } from '../components/ui/DeviceControls'
+import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
 import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
@@ -19,30 +16,67 @@ import { EntitySelect } from '../components/ui/EntitySelect'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
+import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice, irSend } from '../lib/api'
+import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
 
-const ROOM_DOMAIN_GROUPS = [
-  { id: 'lights',   label: 'Lights',   domains: ['light'] },
-  { id: 'climate',  label: 'Climate',  domains: ['climate', 'fan', 'humidifier'] },
-  { id: 'media',    label: 'Media',    domains: ['media_player'] },
-  { id: 'switches', label: 'Switches', domains: ['switch', 'input_boolean'] },
-  { id: 'sensors',  label: 'Sensors',  domains: ['sensor', 'binary_sensor'] },
-  { id: 'security', label: 'Security', domains: ['lock', 'cover', 'alarm_control_panel', 'camera'] },
-  { id: 'other',    label: 'Other',    domains: [] },
-]
+// DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
+const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
+const roomDomainGroup = domainGroup
 
-function roomDomainGroup(entity) {
-  for (const g of ROOM_DOMAIN_GROUPS) {
-    if (g.domains.includes(entity.domain)) return g.id
-  }
-  return 'other'
+function RoomRow({ room, onClick, onDelete, onEditPhoto }) {
+  const [hovered, setHovered] = useState(false)
+  const photo = getRoomPhoto(room)
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ position: 'relative' }}
+    >
+      <button onClick={onClick} style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+        padding: '10px 12px', borderRadius: 12,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+        transition: 'border-color 0.12s',
+        borderColor: hovered ? 'var(--line-2)' : 'var(--line)',
+      }}>
+        <div style={{ width: 52, height: 52, borderRadius: 9, overflow: 'hidden', flexShrink: 0, background: 'var(--surface-2)' }}>
+          <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            {room.entityCount} device{room.entityCount !== 1 ? 's' : ''}
+            {room.activeCount  > 0 && <span style={{ color: 'var(--ok)',    marginLeft: 6 }}>{room.activeCount} on</span>}
+            {room.offlineCount > 0 && <span style={{ color: '#ef4444',      marginLeft: 6 }}>{room.offlineCount} offline</span>}
+          </p>
+        </div>
+        <ChevronRight size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+      </button>
+      {hovered && (onEditPhoto || onDelete) && (
+        <div style={{ position: 'absolute', right: 40, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: 4, zIndex: 1 }}>
+          {onEditPhoto && (
+            <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title="Edit room" style={{ padding: '5px 6px', borderRadius: 7, background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink-2)', display: 'flex' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={e => { e.stopPropagation(); onDelete(room) }} title="Delete room" style={{ padding: '5px 6px', borderRadius: 7, background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--accent)', display: 'flex' }}>
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      )}
+    </motion.div>
+  )
 }
 
 export function RoomsList() {
   const navigate = useNavigate()
-  const { loading, fetchAll, ziggyRooms, getUnassigned } = useDeviceStore()
+  const { loading, fetchAll, ziggyRooms, getUnassigned, getNoRoom } = useDeviceStore()
   const { addToast } = useUIStore()
   const [showAdd, setShowAdd] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
@@ -84,13 +118,15 @@ export function RoomsList() {
       .finally(() => setMapLoading(false))
   }, [view])
 
-  // Enrich ziggyRooms with display counts for RoomCard
+  // Enrich ziggyRooms with display counts for RoomRow
   const rooms = ziggyRooms.map((r) => ({
     ...r,
-    entityCount: r.devices.length,
-    activeCount: r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
+    entityCount:  r.devices.length,
+    activeCount:  r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
+    offlineCount: r.devices.filter((d) => d.ha_state === 'unavailable' || d.ha_state === 'unknown').length,
   }))
   const unassigned = getUnassigned()
+  const noRoomDevices = getNoRoom()
 
   const handleAddRoom = async () => {
     if (!newRoomName.trim()) return
@@ -172,250 +208,225 @@ export function RoomsList() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6">
-      <div className="flex items-center justify-between mb-4">
-        <motion.h1
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100"
-        >
-          Rooms
-        </motion.h1>
-        <div className="flex items-center gap-2">
-          {/* Map tab toggle — only shown when home_map feature flag is on */}
+    <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 20px 16px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Your home</p>
+          <motion.h1 initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>
+            Rooms
+          </motion.h1>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+            {rooms.length} room{rooms.length !== 1 ? 's' : ''}
+            {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {unassigned.length} unassigned</span>}
+            {noRoomDevices.length > 0 && <span style={{ color: 'var(--ink-faint)', marginLeft: 4 }}>· {noRoomDevices.length} no room</span>}
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {mapEnabled && (
-            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1">
-              <button
-                onClick={() => setView('rooms')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  view === 'rooms'
-                    ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <List size={13} /> Rooms
-              </button>
-              <button
-                onClick={() => setView('map')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  view === 'map'
-                    ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <Map size={13} /> Map
-              </button>
+            <div style={{ display: 'flex', gap: 3, background: 'var(--bg-2)', borderRadius: 11, padding: 3 }}>
+              {[{ id: 'rooms', icon: 'list', label: 'Rooms' }, { id: 'map', icon: 'map', label: 'Map' }].map(v => (
+                <button key={v.id} onClick={() => setView(v.id)} style={{
+                  padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  background: view === v.id ? 'var(--surface)' : 'transparent',
+                  color: view === v.id ? 'var(--ink)' : 'var(--ink-mute)',
+                  border: 'none', fontFamily: 'inherit',
+                }}>{v.label}</button>
+              ))}
             </div>
           )}
           {view === 'rooms' && (
-            <Button size="sm" onClick={() => setShowAdd(true)}>
-              <Plus size={14} /> Add room
-            </Button>
+            <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
+              <Plus size={13} /> Add room
+            </button>
           )}
-          {mapEnabled && view === 'map' && mapMode === 'view' && (
-            <Button size="sm" variant="secondary" onClick={() => setMapMode('build')}>
-              Edit Layout
-            </Button>
-          )}
-          {mapEnabled && view === 'map' && mapMode === 'build' && (
-            <Button size="sm" onClick={() => setMapMode('view')}>
-              Done
-            </Button>
+          {mapEnabled && view === 'map' && (
+            <button onClick={() => setMapMode(m => m === 'view' ? 'build' : 'view')} className="z-btn-secondary" style={{ padding: '7px 12px', borderRadius: 9, fontSize: 12, fontFamily: 'inherit' }}>
+              {mapMode === 'view' ? 'Edit Layout' : 'Done'}
+            </button>
           )}
         </div>
       </div>
 
-      {/* Map canvas — only rendered when feature flag is on */}
+      {/* Map canvas */}
       {mapEnabled && view === 'map' && (
-        <div className="mb-4">
+        <div style={{ marginBottom: 16 }}>
           {mapLoading ? (
-            <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" style={{ height: 420 }} />
+            <div style={{ height: 420, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />
           ) : (
-            <Suspense fallback={
-              <div className="flex items-center justify-center h-48 text-zinc-400 text-sm">Loading map…</div>
-            }>
+            <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 192, color: 'var(--ink-faint)', fontSize: 13 }}>Loading map…</div>}>
               <HomeMapCanvas rooms={mapRooms} viewOnly={mapMode === 'view'} />
             </Suspense>
           )}
         </div>
       )}
 
+      {/* Empty state */}
       {view === 'rooms' && !loading && rooms.length === 0 && unassigned.length === 0 && (
-        <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
-          <p className="text-4xl mb-3">🏠</p>
-          <p className="text-sm font-medium">No rooms yet</p>
-          <p className="text-xs mt-1 mb-4">Add a room to start organizing devices</p>
-          <Button variant="secondary" size="sm" onClick={() => setShowAdd(true)}>
-            <Plus size={14} /> Add first room
-          </Button>
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No rooms yet</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Add a room to start organizing devices</p>
+          <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Plus size={13} /> Add first room
+          </button>
         </div>
       )}
 
-      {view === 'rooms' && <div className="grid grid-cols-2 gap-3">
-        {loading && [1, 2, 3, 4].map((i) => (
-          <div key={`skel-${i}`} className="rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse aspect-[4/3]" />
-        ))}
-
-        {!loading && rooms.map((room) => (
-          <motion.div
-            key={room.id}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.2 }}
-          >
-            <RoomCard
+      {/* Room list */}
+      {view === 'rooms' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {loading && [1, 2, 3, 4].map(i => (
+            <div key={i} style={{ height: 72, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />
+          ))}
+          {!loading && rooms.map(room => (
+            <RoomRow
+              key={room.id}
               room={room}
               onClick={() => navigate(`/rooms/${room.id}`)}
-              onDelete={(r) => setConfirmDelete(r)}
+              onDelete={r => setConfirmDelete(r)}
               onEditPhoto={handleEditPhoto}
             />
-          </motion.div>
-        ))}
-
-
-        {/* Unclaimed devices card */}
-        {!loading && unassigned.length > 0 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-            <Link
-              to="/devices?filter=unassigned"
-              className="relative overflow-hidden rounded-2xl aspect-[4/3] flex flex-col items-center justify-center gap-2 border-2 border-dashed border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-            >
-              <span className="text-3xl">📦</span>
-              <div className="text-center px-2">
-                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                  {unassigned.length} new device{unassigned.length !== 1 ? 's' : ''}
-                </p>
-                <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-                  Tap to assign to rooms
-                </p>
+          ))}
+          {!loading && unassigned.length > 0 && (
+            <Link to="/devices?filter=unassigned" style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 12px', borderRadius: 12, textDecoration: 'none',
+              border: `1.5px dashed color-mix(in srgb, var(--warn) 50%, var(--line))`,
+              background: `color-mix(in srgb, var(--warn) 6%, var(--surface))`,
+            }}>
+              <div style={{ width: 52, height: 52, borderRadius: 9, background: `color-mix(in srgb, var(--warn) 15%, var(--surface))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                📦
               </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--warn)', marginBottom: 2 }}>{unassigned.length} unassigned device{unassigned.length !== 1 ? 's' : ''}</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>Tap to assign to rooms</p>
+              </div>
+              <ChevronRight size={14} style={{ color: 'var(--warn)', flexShrink: 0 }} />
             </Link>
-          </motion.div>
-        )}
-      </div>}
+          )}
+          {!loading && noRoomDevices.length > 0 && (
+            <Link to="/devices?filter=noroom" style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 12px', borderRadius: 12, textDecoration: 'none',
+              border: '0.5px solid var(--line)',
+              background: 'var(--surface)',
+            }}>
+              <div style={{ width: 52, height: 52, borderRadius: 9, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                🏠
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length} device{noRoomDevices.length !== 1 ? 's' : ''} — no room</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>Intentionally left without a room</p>
+              </div>
+              <ChevronRight size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Add room modal */}
       <Modal open={showAdd} onClose={() => { setShowAdd(false); setNewRoomName(''); setNewRoomPhoto('living_room') }} title="Add Room">
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Room name"
-            placeholder="e.g. Living Room, Kitchen, Office"
-            value={newRoomName}
-            onChange={(e) => setNewRoomName(e.target.value)}
-            autoFocus
-            onKeyDown={(e) => e.key === 'Enter' && handleAddRoom()}
-          />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Input label="Room name" placeholder="e.g. Living Room, Kitchen, Office" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleAddRoom()} />
           <div>
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Photo</p>
-            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto scrollbar-thin pr-0.5">
-              {PHOTO_OPTIONS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setNewRoomPhoto(key)}
-                  className={cn(
-                    'relative overflow-hidden rounded-xl aspect-square focus:outline-none transition-all',
-                    newRoomPhoto === key
-                      ? 'ring-2 ring-violet-500 ring-offset-2 dark:ring-offset-zinc-900'
-                      : 'opacity-70 hover:opacity-100'
-                  )}
-                >
-                  <img src={ROOM_PHOTOS[key]} alt={label} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                  <span className="absolute bottom-1 left-0 right-0 text-center text-[9px] text-white font-medium leading-tight px-0.5">
-                    {label}
-                  </span>
-                </button>
-              ))}
+            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Photo</p>
+            <div style={{ height: 252, overflowY: 'scroll', borderRadius: 10, border: '0.5px solid var(--line)' }} className="scrollbar-thin">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: 8 }}>
+                {PHOTO_OPTIONS.map(({ key, label }) => {
+                  const isSelected = newRoomPhoto === key
+                  return (
+                    <button key={key} type="button" onClick={() => setNewRoomPhoto(key)} style={{
+                      position: 'relative', overflow: 'hidden', borderRadius: 9,
+                      height: 72,
+                      border: isSelected ? '2.5px solid var(--accent)' : '2.5px solid transparent',
+                      cursor: 'pointer', padding: 0, background: 'var(--surface-2)',
+                      opacity: isSelected ? 1 : 0.7, transition: 'opacity 0.15s, border-color 0.15s',
+                      flexShrink: 0,
+                    }}>
+                      <img src={ROOM_PHOTOS[key]} alt={label} style={{
+                        position: 'absolute', inset: 0, width: '100%', height: '100%',
+                        objectFit: 'cover', display: 'block',
+                      }} />
+                      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 50%)' }} />
+                      <span style={{ position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
-          <Button onClick={handleAddRoom} disabled={!newRoomName.trim() || saving} className="w-full">
+          <button onClick={handleAddRoom} disabled={!newRoomName.trim() || saving} className="z-btn-primary" style={{ width: '100%' }}>
             {saving ? 'Creating…' : 'Create room'}
-          </Button>
+          </button>
         </div>
       </Modal>
 
       {/* Confirm delete modal */}
-      <Modal
-        open={!!confirmDelete}
-        onClose={() => setConfirmDelete(null)}
-        title="Delete room"
-      >
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-5">
-          Delete <strong className="text-zinc-900 dark:text-zinc-100">{confirmDelete?.name}</strong>?
-          This will also remove all devices assigned to this room.
+      <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete room">
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 16, lineHeight: 1.5 }}>
+          Delete <strong style={{ color: 'var(--ink)' }}>{confirmDelete?.name}</strong>? This will also remove all devices assigned to this room.
         </p>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setConfirmDelete(null)} className="flex-1">Cancel</Button>
-          <Button variant="danger" onClick={() => handleDeleteRoom(confirmDelete)} className="flex-1">Delete</Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setConfirmDelete(null)} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+          <button onClick={() => handleDeleteRoom(confirmDelete)} style={{ flex: 1, background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: 10, padding: '10px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
         </div>
       </Modal>
 
-      {/* Edit room modal (name + photo + upload) */}
+      {/* Edit room modal */}
       <Modal open={!!editPhotoRoom} onClose={() => { setEditPhotoRoom(null); setEditCustomPhoto(null) }} title="Edit Room">
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Room name"
-            value={editRoomName}
-            onChange={(e) => setEditRoomName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSaveRoomEdit()}
-          />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Input label="Room name" value={editRoomName} onChange={e => setEditRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveRoomEdit()} />
           <div>
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Photo</p>
-
-            {/* Custom uploaded photo preview */}
-            {editCustomPhoto ? (
-              <div className="mb-3">
-                <div className="relative rounded-xl overflow-hidden mb-2" style={{ aspectRatio: '16/9' }}>
-                  <img src={editCustomPhoto} alt="Custom" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-                  <span className="absolute bottom-2 left-2 text-xs text-white font-medium">Custom photo</span>
-                  <button
-                    onClick={() => setEditCustomPhoto(null)}
-                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs hover:bg-black/70 transition-colors"
-                  >
-                    ✕
-                  </button>
+            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Photo</p>
+            {editCustomPhoto && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ position: 'relative', borderRadius: 11, overflow: 'hidden', height: 120, marginBottom: 6 }}>
+                  <img src={editCustomPhoto} alt="Custom" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  <button onClick={() => setEditCustomPhoto(null)} style={{ position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
                 </div>
-                <p className="text-xs text-zinc-400 dark:text-zinc-600 text-center">
-                  Or pick a preset below to replace it
-                </p>
               </div>
-            ) : null}
-
-            {/* Preset grid */}
-            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto scrollbar-thin pr-0.5 mb-3">
-              {PHOTO_OPTIONS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => { setEditPhotoKey(key); setEditCustomPhoto(null) }}
-                  className={cn(
-                    'relative overflow-hidden rounded-xl aspect-square focus:outline-none transition-all',
-                    !editCustomPhoto && editPhotoKey === key
-                      ? 'ring-2 ring-violet-500 ring-offset-2 dark:ring-offset-zinc-900'
-                      : 'opacity-70 hover:opacity-100'
-                  )}
-                >
-                  <img src={ROOM_PHOTOS[key]} alt={label} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                  <span className="absolute bottom-1 left-0 right-0 text-center text-[9px] text-white font-medium leading-tight px-0.5">
-                    {label}
-                  </span>
-                </button>
-              ))}
+            )}
+            {/* Scrollable photo picker — fixed-height cells so images never squish */}
+            <div style={{ height: 252, overflowY: 'scroll', borderRadius: 10, border: '0.5px solid var(--line)', marginBottom: 12 }} className="scrollbar-thin">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: 8 }}>
+                {PHOTO_OPTIONS.map(({ key, label }) => {
+                  const isSelected = !editCustomPhoto && editPhotoKey === key
+                  return (
+                    <button key={key} type="button" onClick={() => { setEditPhotoKey(key); setEditCustomPhoto(null) }} style={{
+                      position: 'relative', overflow: 'hidden', borderRadius: 9,
+                      height: 72,                           /* fixed height — grid cannot compress this */
+                      border: isSelected ? '2.5px solid var(--accent)' : '2.5px solid transparent',
+                      cursor: 'pointer', padding: 0, background: 'var(--surface-2)',
+                      opacity: isSelected ? 1 : 0.7,
+                      transition: 'opacity 0.15s, border-color 0.15s',
+                      flexShrink: 0,
+                    }}>
+                      <img src={ROOM_PHOTOS[key]} alt={label} style={{
+                        position: 'absolute', inset: 0, width: '100%', height: '100%',
+                        objectFit: 'cover', display: 'block',
+                      }} />
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
-            {/* Upload button */}
-            <label className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400 hover:border-violet-400 hover:text-violet-500 transition-colors cursor-pointer">
-              <span>📷</span>
-              <span>Upload a photo of this room</span>
-              <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={handleUploadEditPhoto} />
-            </label>
+            {/* Two distinct upload options — no forced camera on mobile */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
+                📷 Take photo
+                <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadEditPhoto} />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
+                🖼 Choose file
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUploadEditPhoto} />
+              </label>
+            </div>
           </div>
-          <Button onClick={handleSaveRoomEdit} disabled={!editRoomName.trim() || editSaving} className="w-full">
+          <button onClick={handleSaveRoomEdit} disabled={!editRoomName.trim() || editSaving} className="z-btn-primary" style={{ width: '100%' }}>
             {editSaving ? 'Saving…' : 'Save changes'}
-          </Button>
+          </button>
         </div>
       </Modal>
     </div>
@@ -424,6 +435,42 @@ export function RoomsList() {
 
 const LOST_LABEL = { lost: 'Removed from hub', unclaimed: 'Not in Ziggy', unconfigured: 'No entity set' }
 const LOST_DOT   = { lost: 'bg-red-400', unclaimed: 'bg-amber-400', unconfigured: 'bg-zinc-300 dark:bg-zinc-600' }
+
+function CameraPreview({ entityId }) {
+  const navigate = useNavigate()
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 15_000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div
+      onClick={() => navigate('/cameras')}
+      style={{
+        marginTop: 8, borderRadius: 9, overflow: 'hidden',
+        aspectRatio: '16 / 9', background: 'var(--bg-2)',
+        cursor: 'pointer', position: 'relative',
+      }}
+      title="View live in Security"
+    >
+      <img
+        key={tick}
+        src={`${cameraSnapshotUrl(entityId)}?t=${tick}`}
+        alt=""
+        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        onError={e => { e.target.style.opacity = 0 }}
+      />
+      <div style={{
+        position: 'absolute', bottom: 5, right: 5,
+        padding: '2px 7px', borderRadius: 6,
+        background: 'rgba(0,0,0,0.45)', color: '#fff',
+        fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+      }}>
+        LIVE ▶
+      </div>
+    </div>
+  )
+}
 
 // Minimal IR quick-fire buttons for the room list view
 function IRRowControls({ entity }) {
@@ -483,8 +530,12 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, onUnhide, is
           {(isIr || linkedIr) && (
             <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none">IR</span>
           )}
-          {!isIr && !linkedIr && ziggyStatus && LOST_DOT[ziggyStatus] && (
-            <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900', LOST_DOT[ziggyStatus])} />
+          {!isIr && !linkedIr && (
+            isUnavailable
+              ? <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900 bg-red-400" />
+              : (ziggyStatus && LOST_DOT[ziggyStatus] &&
+                  <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900', LOST_DOT[ziggyStatus])} />
+                )
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -497,10 +548,12 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, onUnhide, is
             <p className={cn('text-xs font-medium', assumedState === 'on' ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600')}>
               {assumedState ? `${assumedState} (assumed)` : 'state unknown'}
             </p>
+          ) : isUnavailable ? (
+            <p className="text-xs font-medium text-red-400">Offline</p>
           ) : showStatusBadge ? (
             <p className="text-xs font-medium text-red-400">{LOST_LABEL[ziggyStatus]}</p>
           ) : (
-            <p className={cn('text-xs font-medium', entity.state === 'unavailable' ? 'text-zinc-300 dark:text-zinc-600' : isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600')}>
+            <p className={cn('text-xs font-medium', isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600')}>
               {stateLabel}
               {stateSecondary && <span className="text-zinc-400 font-normal ml-1">· {stateSecondary}</span>}
             </p>
@@ -548,8 +601,10 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, onUnhide, is
             </button>
           )}
           <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-          <IRRemotePanel irDevice={linkedIr} onCommand={(id, cmd) => irSend(id, cmd)} />
+          <IRRemoteButton irDevice={linkedIr} onCommand={(id, cmd) => irSend(id, cmd)} />
         </>
+      ) : entity.domain === 'camera' && entity.entity_id ? (
+        <CameraPreview entityId={entity.entity_id} />
       ) : (
         <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
       ))}
@@ -558,27 +613,20 @@ function DeviceRow({ entity, onToggle, onService, onRemove, onHide, onUnhide, is
 }
 
 function VirtualDeviceRow({ device, onTrigger, triggering }) {
+  const isTriggering = triggering === device.id
   return (
-    <div className="py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-violet-50 dark:bg-violet-900/20">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: '0.5px solid var(--line)' }}
+      className="last:border-b-0">
+      <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, background: `color-mix(in srgb, var(--info) 10%, var(--surface))`, flexShrink: 0 }}>
         {device.icon}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{device.name}</p>
-        <p className="text-xs text-zinc-400 truncate">{device.capability}</p>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>{device.capability}</p>
       </div>
-      <button
-        onClick={() => onTrigger(device)}
-        disabled={triggering === device.id}
-        className={cn(
-          'p-2 rounded-xl transition-colors text-sm font-medium',
-          triggering === device.id
-            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'
-            : 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 hover:bg-violet-100 dark:hover:bg-violet-900/40'
-        )}
-        title="Run"
-      >
-        ▶
+      <button onClick={() => onTrigger(device)} disabled={isTriggering} title="Run"
+        style={{ padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: isTriggering ? 'default' : 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--ok) 10%, var(--surface))`, color: 'var(--ok)', border: '0.5px solid var(--line)', opacity: isTriggering ? 0.5 : 1 }}>
+        {isTriggering ? '…' : '▶ Run'}
       </button>
     </div>
   )
@@ -622,8 +670,9 @@ export function RoomDetail() {
     ...(d.ha_attributes || {}),
     ziggyStatus: d.status,
   }))
-  const entityCount = roomDevices.length
-  const activeCount = roomDevices.filter((d) => isEntityOn(d)).length
+  const entityCount  = roomDevices.length
+  const activeCount  = roomDevices.filter((d) => isEntityOn(d)).length
+  const offlineCount = roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -706,105 +755,93 @@ export function RoomDetail() {
   if (!room) {
     if (loading) {
       return (
-        <div className="max-w-2xl mx-auto animate-pulse">
-          <div className="h-48 bg-zinc-200 dark:bg-zinc-800" />
-          <div className="px-4 pt-4 space-y-3">
-            <div className="h-5 bg-zinc-100 dark:bg-zinc-800 rounded-lg w-1/3" />
-            <div className="h-32 bg-zinc-100 dark:bg-zinc-800/60 rounded-2xl" />
+        <div style={{ maxWidth: 760, margin: '0 auto' }}>
+          <div style={{ height: 200, background: 'var(--bg-2)', opacity: 0.6 }} />
+          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[1,2,3].map(i => <div key={i} style={{ height: 50, borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
           </div>
         </div>
       )
     }
-    return <div className="flex items-center justify-center h-64 text-zinc-400">Room not found</div>
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240, color: 'var(--ink-faint)', fontSize: 13 }}>Room not found</div>
   }
 
   const photo = getRoomPhoto(room)
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="relative h-48 overflow-hidden">
-        <img src={photo} alt={room.name} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-        <button
-          onClick={() => navigate('/rooms')}
-          className="absolute top-4 left-4 p-2 rounded-xl bg-black/30 backdrop-blur-sm text-white"
-        >
+    <div style={{ maxWidth: 760, margin: '0 auto' }}>
+      {/* Hero photo */}
+      <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
+        <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
+        <button onClick={() => navigate('/rooms')} style={{
+          position: 'absolute', top: 16, left: 16, padding: 8, borderRadius: 10,
+          background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(8px)', color: '#fff', border: 'none', cursor: 'pointer',
+        }}>
           <ArrowLeft size={18} />
         </button>
-        <div className="absolute bottom-4 left-4">
-          <h1 className="text-white text-xl font-semibold">{room.name}</h1>
-          <p className="text-white/70 text-sm">
+        <div style={{ position: 'absolute', bottom: 16, left: 20 }}>
+          <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', margin: 0 }}>{room.name}</h1>
+          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>
             {entityCount} device{entityCount !== 1 ? 's' : ''}
+            {activeCount  > 0 && <span style={{ color: 'rgba(255,255,255,0.9)',  marginLeft: 6 }}>· {activeCount} active</span>}
+            {offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.95)', marginLeft: 6 }}>· {offlineCount} offline</span>}
             {vDevices.length > 0 && ` · ${vDevices.length} capability${vDevices.length !== 1 ? 's' : ''}`}
           </p>
         </div>
       </div>
 
-      <div className="px-4 pt-4 pb-8 flex flex-col gap-4">
+      <div style={{ padding: '20px 20px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Devices — grouped by domain type */}
         {(() => {
           const hiddenCount = roomDevices.filter(e => e.entity_id && hiddenEntities.has(e.entity_id)).length
-          const visibleDevices = roomDevices.filter(e =>
-            showHiddenDevices || !e.entity_id || !hiddenEntities.has(e.entity_id)
-          )
-          const deviceGroups = ROOM_DOMAIN_GROUPS.map(g => ({
-            ...g,
-            devices: visibleDevices.filter(e => roomDomainGroup(e) === g.id),
-          })).filter(g => g.devices.length > 0)
+          const visibleDevices = roomDevices.filter(e => showHiddenDevices || !e.entity_id || !hiddenEntities.has(e.entity_id))
+          const deviceGroups = ROOM_DOMAIN_GROUPS.map(g => ({ ...g, devices: visibleDevices.filter(e => roomDomainGroup(e) === g.id) })).filter(g => g.devices.length > 0)
 
           return (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Devices</p>
-                <div className="flex items-center gap-2">
-                  {activeCount > 0 && <Badge variant="success">{activeCount} active</Badge>}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <p className="z-eyebrow">Devices</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {hiddenCount > 0 && (
-                    <button
-                      onClick={() => setShowHiddenDevices(v => !v)}
-                      className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
-                    >
+                    <button onClick={() => setShowHiddenDevices(v => !v)} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {showHiddenDevices ? `Hide ${hiddenCount} hidden` : `${hiddenCount} hidden`}
                     </button>
                   )}
-                  <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>
-                    <Plus size={13} /> Assign
-                  </Button>
+                  <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Plus size={11} /> Assign
+                  </button>
                 </div>
               </div>
 
-              {deviceGroups.length === 0 && roomDevices.length === 0 && (
-                <Card>
-                  <p className="text-sm text-zinc-400 dark:text-zinc-600 py-6 text-center">No devices in this room</p>
-                </Card>
-              )}
-              {deviceGroups.length === 0 && roomDevices.length > 0 && !showHiddenDevices && (
-                <Card>
-                  <p className="text-sm text-zinc-400 dark:text-zinc-600 py-6 text-center">All devices are hidden</p>
-                </Card>
+              {deviceGroups.length === 0 && (
+                <div style={{ padding: '20px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>
+                  {roomDevices.length === 0 ? 'No devices in this room' : 'All devices are hidden'}
+                </div>
               )}
 
-              {deviceGroups.map((group) => (
-                <div key={group.id} className="mb-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-600 mb-1.5 px-0.5">
-                    {group.label}
-                  </p>
-                  <Card>
-                    {group.devices.map((entity, i) => (
-                      <DeviceRow
-                        key={entity.entity_id || i}
-                        entity={entity}
-                        onToggle={handleToggle}
-                        onService={handleService}
-                        onRemove={handleRemove}
-                        onHide={handleHide}
-                        onUnhide={handleUnhide}
-                        isHidden={!!(entity.entity_id && hiddenEntities.has(entity.entity_id))}
-                        ziggyStatus={entity.ziggyStatus}
-                      />
-                    ))}
-                  </Card>
-                </div>
-              ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {deviceGroups.map(group => (
+                  <div key={group.id}>
+                    <p className="z-eyebrow" style={{ marginBottom: 6 }}>{group.label}</p>
+                    <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
+                      {group.devices.map((entity, i) => (
+                        <DeviceRow
+                          key={entity.entity_id || i}
+                          entity={entity}
+                          onToggle={handleToggle}
+                          onService={handleService}
+                          onRemove={handleRemove}
+                          onHide={handleHide}
+                          onUnhide={handleUnhide}
+                          isHidden={!!(entity.entity_id && hiddenEntities.has(entity.entity_id))}
+                          ziggyStatus={entity.ziggyStatus}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )
         })()}
@@ -812,83 +849,57 @@ export function RoomDetail() {
         {/* Virtual / Capability Devices */}
         {vDevices.length > 0 && (
           <div>
-            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Capabilities</p>
-            <Card>
-              {vDevices.map((device) => (
-                <VirtualDeviceRow
-                  key={device.id}
-                  device={device}
-                  onTrigger={handleTriggerVDevice}
-                  triggering={triggering}
-                />
+            <p className="z-eyebrow" style={{ marginBottom: 8 }}>Capabilities</p>
+            <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
+              {vDevices.map(device => (
+                <VirtualDeviceRow key={device.id} device={device} onTrigger={handleTriggerVDevice} triggering={triggering} />
               ))}
-            </Card>
+            </div>
           </div>
         )}
 
         {/* Room automations */}
         {roomAutomations.length > 0 && (
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Automations</p>
-              <button
-                onClick={() => navigate('/automations')}
-                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
-              >
-                View all
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <p className="z-eyebrow">Automations</p>
+              <button onClick={() => navigate('/automations')} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>View all</button>
             </div>
-            <Card>
-              {roomAutomations.map((a) => (
-                <div key={a.id} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    {/* Tapping the row navigates to the Automations page */}
-                    <button
-                      onClick={() => navigate('/automations')}
-                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                    >
-                      <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center shrink-0', a.enabled ? 'bg-violet-50 dark:bg-violet-900/20' : 'bg-zinc-100 dark:bg-zinc-800')}>
-                        <Zap size={14} className={a.enabled ? 'text-violet-500' : 'text-zinc-400'} />
+            <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
+              {roomAutomations.map((a, i) => (
+                <div key={a.id} style={{ borderBottom: i < roomAutomations.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px' }}>
+                    <button onClick={() => navigate('/automations')} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', padding: 0 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: a.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={a.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{a.name}</p>
-                        {a.description && <p className="text-xs text-zinc-400 truncate mt-0.5">{a.description}</p>}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</p>
+                        {a.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</p>}
                       </div>
                     </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation()
-                        try { await triggerAutomation(a.id); addToast(`Triggered: ${a.name}`, 'success') }
-                        catch { addToast('Failed to trigger', 'error') }
-                      }}
-                      className="p-1.5 rounded-lg text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors shrink-0"
-                      title="Run now"
-                    >
+                    <button onClick={async e => { e.stopPropagation(); try { await triggerAutomation(a.id); addToast(`Triggered: ${a.name}`, 'success') } catch { addToast('Failed', 'error') } }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ok)', padding: 6 }} title="Run now">
                       <Play size={13} />
                     </button>
-                    <ChevronRight size={13} className="text-zinc-300 dark:text-zinc-700 shrink-0 pointer-events-none" />
+                    <span style={{ color: 'var(--ink-faint)' }}><ChevronRight size={12} /></span>
                   </div>
                 </div>
               ))}
-            </Card>
+            </div>
           </div>
         )}
       </div>
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Assign device to room">
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3 -mt-1">
-          Pick an existing HA entity to assign to this room. To add brand-new hardware, pair it in Home Assistant first — it will then appear here.
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14, lineHeight: 1.5 }}>
+          Pick an existing HA entity to assign to this room. To add brand-new hardware, pair it in Home Assistant first.
         </p>
-        <div className="flex flex-col gap-4">
-          <EntitySelect
-            label="Device"
-            placeholder="Search entities…"
-            value={addEntityId}
-            onChange={setAddEntityId}
-          />
-          <Button onClick={handleAddDevice} disabled={!addEntityId || saving} className="w-full">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <EntitySelect label="Device" placeholder="Search entities…" value={addEntityId} onChange={setAddEntityId} />
+          <button onClick={handleAddDevice} disabled={!addEntityId || saving} className="z-btn-primary" style={{ width: '100%' }}>
             {saving ? 'Assigning…' : 'Assign to room'}
-          </Button>
+          </button>
         </div>
       </Modal>
     </div>

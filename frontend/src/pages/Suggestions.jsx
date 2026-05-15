@@ -1,64 +1,43 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Lightbulb, CheckCircle2, XCircle, Clock, ChevronDown,
-  ChevronUp, RefreshCw, Zap, RotateCcw, History,
-} from 'lucide-react'
-import { Card } from '../components/ui/Card'
-import { Badge } from '../components/ui/Badge'
-import { Button } from '../components/ui/Button'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
-import { cn } from '../lib/utils'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const TYPE_META = {
-  time_based: { label: 'Time-based', color: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300', emoji: '⏰' },
-  sequence:   { label: 'Sequence',   color: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',   emoji: '🔁' },
-  group:      { label: 'Group',      color: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', emoji: '📦' },
-}
-
-const STATUS_META = {
-  pending:     { label: 'Pending',     color: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' },
-  accepted:    { label: 'Accepted',    color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-  rejected:    { label: 'Rejected',    color: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
-  snoozed:     { label: 'Snoozed',     color: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
-  implemented: { label: 'Implemented', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-}
-
-function confidenceColor(conf) {
-  if (conf >= 0.8) return 'text-emerald-600 dark:text-emerald-400'
-  if (conf >= 0.6) return 'text-amber-600 dark:text-amber-400'
-  return 'text-zinc-400'
-}
-
-function ConfidenceBar({ value }) {
+// ── Confidence meter ──────────────────────────────────────────────────────────
+function ConfidenceMeter({ value }) {
+  const filled = Math.round(value * 5)
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-        <div
-          className={cn(
-            'h-full rounded-full transition-all duration-500',
-            value >= 0.8 ? 'bg-emerald-400' : value >= 0.6 ? 'bg-amber-400' : 'bg-zinc-300 dark:bg-zinc-600'
-          )}
-          style={{ width: `${Math.round(value * 100)}%` }}
-        />
-      </div>
-      <span className={cn('text-[11px] font-semibold tabular-nums shrink-0', confidenceColor(value))}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 9, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
         {Math.round(value * 100)}%
+      </span>
+      <span style={{ display: 'inline-flex', gap: 2 }}>
+        {[0,1,2,3,4].map(i => (
+          <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: i < filled ? 'var(--ink-2)' : 'var(--line)' }} />
+        ))}
       </span>
     </div>
   )
 }
 
-// ─── Suggestion card ──────────────────────────────────────────────────────────
+const PATTERN_TYPE_META = {
+  time_based: { label: 'Time pattern', tint: 'var(--info)' },
+  sequence:   { label: 'Routine',      tint: 'var(--ok)' },
+  group:      { label: 'Group',        tint: 'var(--warn)' },
+}
+const STATUS_META = {
+  accepted:    { label: 'Accepted',  tint: 'var(--ok)' },
+  rejected:    { label: 'Dismissed', tint: 'var(--accent)' },
+  snoozed:     { label: 'Snoozed',   tint: 'var(--warn)' },
+  implemented: { label: 'Active',    tint: 'var(--ok)' },
+}
 
+// ── Suggestion card (Inbox-A variant) ─────────────────────────────────────────
 function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
   const [expanded, setExpanded] = useState(false)
-  const [acting, setActing] = useState(null)
-  const meta = TYPE_META[suggestion.pattern_type] || TYPE_META.time_based
+  const [acting,   setActing]   = useState(null)
   const isPending = suggestion.status === 'pending'
+  const meta = PATTERN_TYPE_META[suggestion.pattern_type] || PATTERN_TYPE_META.time_based
 
   const act = async (fn, label) => {
     setActing(label)
@@ -68,311 +47,280 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.97 }}
-      transition={{ duration: 0.2 }}
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.18 }}
+      style={{
+        padding: 14, borderRadius: 14,
+        background: isPending ? 'var(--surface)' : 'var(--surface)',
+        border: '0.5px solid var(--line)',
+        opacity: isPending ? 1 : 0.65,
+      }}
     >
-      <Card className={cn('p-4', !isPending && 'opacity-60')}>
-        {/* Top row */}
-        <div className="flex items-start gap-3">
-          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-lg', meta.color)}>
-            {meta.emoji}
-          </div>
+      {/* Type + confidence row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <p className="z-eyebrow" style={{ color: meta.tint }}>{meta.label}</p>
+        <div style={{ flex: 1 }} />
+        <ConfidenceMeter value={suggestion.confidence} />
+        {!isPending && (
+          <span style={{
+            fontSize: 9, padding: '2px 7px', borderRadius: 5,
+            background: `color-mix(in srgb, ${STATUS_META[suggestion.status]?.tint || 'var(--info)'} 14%, transparent)`,
+            color: STATUS_META[suggestion.status]?.tint || 'var(--info)',
+            fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            {STATUS_META[suggestion.status]?.label || suggestion.status}
+          </span>
+        )}
+      </div>
 
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 leading-snug">
-              {suggestion.user_message}
-            </p>
+      {/* Description */}
+      <p style={{ fontSize: 14.5, fontWeight: 500, lineHeight: 1.4, color: 'var(--ink)', textWrap: 'pretty', marginBottom: 8 }}>
+        {suggestion.user_message}
+      </p>
 
-            {/* Badges row */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', meta.color)}>
-                {meta.label}
-              </span>
-              {suggestion.trigger?.type === 'time' && suggestion.trigger.value && (
-                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                  ⏰ {suggestion.trigger.value}
-                </span>
-              )}
-              <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', STATUS_META[suggestion.status]?.color)}>
-                {STATUS_META[suggestion.status]?.label || suggestion.status}
-              </span>
-            </div>
-
-            {/* Confidence bar */}
-            <div className="mt-2.5">
-              <ConfidenceBar value={suggestion.confidence} />
-            </div>
-          </div>
+      {/* Trigger/action summary */}
+      {(suggestion.trigger || suggestion.actions?.length > 0) && (
+        <div style={{
+          padding: '8px 10px', borderRadius: 9, background: 'var(--bg-2)',
+          display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 10 : 0,
+        }}>
+          {suggestion.trigger?.type && (
+            <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+              WHEN  {suggestion.trigger.type}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}
+            </span>
+          )}
+          {suggestion.actions?.slice(0, 2).map((a, i) => (
+            <span key={i} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+              DO    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}
+            </span>
+          ))}
         </div>
+      )}
 
-        {/* Expandable reasoning */}
-        {suggestion.reasoning && (
-          <div className="mt-3">
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
-            >
-              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              Why did Ziggy suggest this?
-            </button>
-            <AnimatePresence>
-              {expanded && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="overflow-hidden"
-                >
-                  <div className="mt-2 pl-3 border-l-2 border-zinc-200 dark:border-zinc-700">
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{suggestion.reasoning}</p>
-                    {suggestion.trigger && (
-                      <p className="text-[11px] text-zinc-400 dark:text-zinc-600 mt-1">
-                        Trigger: <span className="font-mono">{suggestion.trigger.type}
-                        {suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}</span>
-                      </p>
-                    )}
-                    {suggestion.safety_note && (
-                      <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
-                        ⚠️ {suggestion.safety_note}
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
+      {/* Expandable evidence + reasoning */}
+      {(suggestion.reasoning || suggestion.evidence_summary) && (
+        <div style={{ marginBottom: isPending ? 10 : 0, marginTop: (suggestion.trigger || suggestion.actions?.length > 0) ? 8 : 0 }}>
+          <button
+            onClick={() => setExpanded(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', padding: 0 }}
+          >
+            <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
+            Why did Ziggy suggest this?
+          </button>
+          <AnimatePresence>
+            {expanded && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }} style={{ overflow: 'hidden' }}>
+                <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
-        {/* Action buttons — only for pending */}
-        {isPending && (
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={() => act(onAccept, 'accept')}
-              disabled={!!acting}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 disabled:opacity-50 transition-colors"
-            >
-              <CheckCircle2 size={13} />
-              {acting === 'accept' ? 'Accepting…' : 'Accept'}
-            </button>
-            <button
-              onClick={() => act(() => onSnooze(3), 'snooze')}
-              disabled={!!acting}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors"
-              title="Remind me in 3 days"
-            >
-              <Clock size={13} />
-              {acting === 'snooze' ? '…' : '3d'}
-            </button>
-            <button
-              onClick={() => act(onReject, 'reject')}
-              disabled={!!acting}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50 transition-colors"
-              title="Don't suggest this again"
-            >
-              <XCircle size={13} />
-              {acting === 'reject' ? '…' : 'Reject'}
-            </button>
-          </div>
-        )}
+                  {/* Evidence block — only shown when evidence_summary is present */}
+                  {suggestion.evidence_summary && (() => {
+                    const es = suggestion.evidence_summary
+                    const chip = { fontSize: 10, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {/* Counts row */}
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={chip}>{es.occurrences}× observed</span>
+                          <span style={chip}>{es.unique_weeks} week{es.unique_weeks !== 1 ? 's' : ''}</span>
+                          {es.last_seen && <span style={chip}>last {es.last_seen}</span>}
+                          {es.reversal_rate > 0 && (
+                            <span style={{ ...chip, color: 'var(--warn)' }}>
+                              {Math.round(es.reversal_rate * 100)}% reversed
+                            </span>
+                          )}
+                        </div>
+                        {/* Time window (time_based patterns) */}
+                        {es.time_window && (
+                          <span style={chip}>{es.time_window}  avg {es.avg_time}</span>
+                        )}
+                        {/* Active days */}
+                        {es.active_day_names?.length > 0 && (
+                          <span style={chip}>{es.active_day_names.join(' · ')}</span>
+                        )}
+                      </div>
+                    )
+                  })()}
 
-        {/* Accepted state — show actions that would be created */}
-        {suggestion.status === 'accepted' && suggestion.actions?.length > 0 && (
-          <div className="mt-3 pl-3 border-l-2 border-emerald-200 dark:border-emerald-800">
-            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wide mb-1">
-              Actions queued
-            </p>
-            {suggestion.actions.map((a, i) => (
-              <p key={i} className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                {a.intent?.replace(/_/g, ' ')}
-                {a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}
-              </p>
-            ))}
-          </div>
-        )}
-      </Card>
+                  {/* Reasoning text */}
+                  {suggestion.reasoning && (
+                    <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>{suggestion.reasoning}</p>
+                  )}
+
+                  {suggestion.safety_note && (
+                    <p style={{ fontSize: 11, color: 'var(--warn)' }}>⚠ {suggestion.safety_note}</p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Actions — only pending */}
+      {isPending && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={() => act(onAccept, 'accept')}
+            disabled={!!acting}
+            style={{
+              flex: 1, padding: '10px', borderRadius: 9,
+              background: 'var(--ink)', color: 'var(--bg)',
+              border: 'none', fontSize: 13, fontWeight: 600, cursor: acting ? 'default' : 'pointer',
+              opacity: acting ? 0.6 : 1, fontFamily: 'inherit',
+            }}
+          >
+            {acting === 'accept' ? 'Creating…' : 'Yes, create'}
+          </button>
+          <button
+            onClick={() => act(() => onSnooze(3), 'snooze')}
+            disabled={!!acting}
+            style={{
+              padding: '10px 14px', borderRadius: 9,
+              background: 'var(--surface-2)', color: 'var(--ink-2)',
+              border: '0.5px solid var(--line)', fontSize: 13, fontWeight: 500, cursor: acting ? 'default' : 'pointer',
+              opacity: acting ? 0.6 : 1, fontFamily: 'inherit',
+            }}
+          >
+            {acting === 'snooze' ? '…' : 'Later'}
+          </button>
+          <button
+            onClick={() => act(onReject, 'reject')}
+            disabled={!!acting}
+            style={{
+              padding: '10px', borderRadius: 9,
+              background: 'transparent', color: 'var(--ink-faint)',
+              border: '0.5px solid var(--line)', fontSize: 13, cursor: acting ? 'default' : 'pointer',
+              opacity: acting ? 0.6 : 1, fontFamily: 'inherit',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </motion.div>
   )
 }
 
-// ─── Empty states ─────────────────────────────────────────────────────────────
-
-function EmptyPending({ onAnalyze, analyzing }) {
-  return (
-    <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
-      <Lightbulb size={40} className="mx-auto mb-3 opacity-30" />
-      <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">No pending suggestions</p>
-      <p className="text-xs mt-1 max-w-xs mx-auto">
-        Ziggy learns from your daily actions. After a few days of use, patterns will appear here.
-      </p>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="mt-4"
-        onClick={onAnalyze}
-        disabled={analyzing}
-      >
-        <RefreshCw size={13} className={analyzing ? 'animate-spin' : ''} />
-        {analyzing ? 'Analyzing…' : 'Run analysis now'}
-      </Button>
-    </div>
-  )
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
-
-const TABS = ['Pending', 'History']
-
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Suggestions() {
   const { suggestions, loading, analyzing, fetch, accept, reject, snooze, runAnalysis } = useSuggestionStore()
   const { addToast } = useUIStore()
-  const [tab, setTab] = useState('Pending')
+  const [tab, setTab] = useState('pending')
 
   useEffect(() => { fetch() }, [])
 
-  const pending = suggestions.filter((s) => s.status === 'pending')
-  const history = suggestions.filter((s) => s.status !== 'pending')
+  const pending = suggestions.filter(s => s.status === 'pending')
+  const history = suggestions.filter(s => s.status !== 'pending')
 
-  const handleAccept = async (id) => {
-    try {
-      await accept(id)
-      addToast('Suggestion accepted', 'success')
-    } catch {
-      addToast('Failed to accept suggestion', 'error')
-    }
-  }
-
-  const handleReject = async (id) => {
-    try {
-      await reject(id)
-      addToast('Suggestion dismissed', 'success')
-    } catch {
-      addToast('Failed to reject suggestion', 'error')
-    }
-  }
-
-  const handleSnooze = async (id, days) => {
-    try {
-      await snooze(id, days)
-      addToast(`Snoozed for ${days} days`, 'success')
-    } catch {
-      addToast('Failed to snooze', 'error')
-    }
-  }
-
+  const handleAccept  = async (id) => { try { await accept(id);     addToast('Suggestion accepted', 'success') } catch { addToast('Failed', 'error') } }
+  const handleReject  = async (id) => { try { await reject(id);     addToast('Dismissed', 'success')          } catch { addToast('Failed', 'error') } }
+  const handleSnooze  = async (id, days) => { try { await snooze(id, days); addToast(`Snoozed ${days}d`, 'success') } catch { addToast('Failed', 'error') } }
   const handleAnalyze = async () => {
     try {
-      const result = await runAnalysis()
-      if (result?.new_count > 0) {
-        addToast(`Found ${result.new_count} new suggestion${result.new_count !== 1 ? 's' : ''}`, 'success')
-      } else {
-        addToast('Analysis complete — no new patterns yet', 'success')
-      }
-    } catch {
-      addToast('Analysis failed', 'error')
-    }
+      const r = await runAnalysis()
+      addToast(r?.new_count > 0 ? `Found ${r.new_count} new suggestion${r.new_count > 1 ? 's' : ''}` : 'Analysis complete — no new patterns yet', 'success')
+    } catch { addToast('Analysis failed', 'error') }
   }
 
-  const displayed = tab === 'Pending' ? pending : history
+  const displayed = tab === 'pending' ? pending : history
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6 pb-8">
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Suggestions</h1>
-          <p className="text-sm text-zinc-400 dark:text-zinc-600 mt-0.5">
-            {pending.length > 0
-              ? `${pending.length} pending · Ziggy learned these from your habits`
-              : 'Ziggy watches your habits and suggests automations'}
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Pattern-learned proposals</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0, lineHeight: 1 }}>
+            Suggestions
+          </h1>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 6, lineHeight: 1.5, maxWidth: 440 }}>
+            Things Ziggy noticed from your habits. Approve to create an automation. Reject removes permanently.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
+        <button
           onClick={handleAnalyze}
           disabled={analyzing}
-          title="Run pattern analysis now"
+          className="z-btn-secondary"
+          style={{ padding: '8px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
         >
-          <RefreshCw size={13} className={analyzing ? 'animate-spin' : ''} />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: analyzing ? 'spin 1s linear infinite' : 'none' }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
           {analyzing ? 'Analyzing…' : 'Analyze'}
-        </Button>
+        </button>
       </div>
 
-      {/* Stats row */}
+      {/* Stats strip */}
       {suggestions.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-4 gap-2 mb-5"
-        >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 20 }}>
           {[
-            { label: 'Pending',  value: pending.length,                                          icon: <Lightbulb size={14} />,    color: 'text-violet-500' },
-            { label: 'Accepted', value: suggestions.filter(s => s.status === 'accepted').length, icon: <CheckCircle2 size={14} />, color: 'text-emerald-500' },
-            { label: 'Snoozed',  value: suggestions.filter(s => s.status === 'snoozed').length,  icon: <Clock size={14} />,        color: 'text-amber-500' },
-            { label: 'Rejected', value: suggestions.filter(s => s.status === 'rejected').length, icon: <XCircle size={14} />,      color: 'text-red-400' },
-          ].map(({ label, value, icon, color }) => (
-            <Card key={label} className="p-3 text-center">
-              <div className={cn('flex items-center justify-center mb-1', color)}>{icon}</div>
-              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{value}</p>
-              <p className="text-[10px] text-zinc-400 dark:text-zinc-600">{label}</p>
-            </Card>
+            { label: 'Pending',   value: pending.length,                                             tint: 'var(--info)' },
+            { label: 'Accepted',  value: suggestions.filter(s => s.status === 'accepted').length,    tint: 'var(--ok)' },
+            { label: 'Snoozed',   value: suggestions.filter(s => s.status === 'snoozed').length,     tint: 'var(--warn)' },
+            { label: 'Dismissed', value: suggestions.filter(s => s.status === 'rejected').length,    tint: 'var(--ink-faint)' },
+          ].map(({ label, value, tint }) => (
+            <div key={label} style={{ padding: '10px 12px', borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center' }}>
+              <p style={{ fontSize: 22, fontWeight: 700, color: value > 0 ? tint : 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', letterSpacing: '-0.01em', margin: 0 }}>{value}</p>
+              <p className="z-eyebrow" style={{ marginTop: 4 }}>{label}</p>
+            </div>
           ))}
-        </motion.div>
+        </div>
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl w-fit">
-        {TABS.map((t) => (
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+        {[{ id: 'pending', label: 'Pending', count: pending.length }, { id: 'history', label: 'History' }].map(t => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              'px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150',
-              tab === t
-                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-            )}
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              padding: '5px 12px', borderRadius: 999,
+              background: tab === t.id ? 'var(--ink)' : 'var(--surface)',
+              color: tab === t.id ? 'var(--bg)' : 'var(--ink-mute)',
+              border: tab === t.id ? 'none' : '0.5px solid var(--line)',
+              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}
           >
-            {t}
-            {t === 'Pending' && pending.length > 0 && (
-              <span className="ml-1.5 bg-violet-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                {pending.length}
+            {t.label}
+            {t.count > 0 && (
+              <span style={{ background: tab === t.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700 }}>
+                {t.count}
               </span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Loading skeletons */}
+      {/* Loading */}
       {loading && (
-        <div className="flex flex-col gap-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-32 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[1,2,3].map(i => <div key={i} style={{ height: 120, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && displayed.length === 0 && tab === 'Pending' && (
-        <EmptyPending onAnalyze={handleAnalyze} analyzing={analyzing} />
+      {/* Empty */}
+      {!loading && displayed.length === 0 && tab === 'pending' && (
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>No pending suggestions</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto 16px' }}>
+            Ziggy learns from your daily actions. After a few days of use, patterns will appear here.
+          </p>
+          <button onClick={handleAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>
+            {analyzing ? 'Analyzing…' : 'Run analysis now'}
+          </button>
+        </div>
       )}
-
-      {!loading && displayed.length === 0 && tab === 'History' && (
-        <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
-          <History size={36} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No history yet</p>
+      {!loading && displayed.length === 0 && tab === 'history' && (
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p className="z-eyebrow">No history yet</p>
         </div>
       )}
 
       {/* Cards */}
       {!loading && (
-        <AnimatePresence mode="popLayout">
-          <div className="flex flex-col gap-3">
-            {displayed.map((s) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <AnimatePresence mode="popLayout">
+            {displayed.map(s => (
               <SuggestionCard
                 key={s.id}
                 suggestion={s}
@@ -381,38 +329,31 @@ export default function Suggestions() {
                 onSnooze={(days) => handleSnooze(s.id, days)}
               />
             ))}
-          </div>
-        </AnimatePresence>
+          </AnimatePresence>
+        </div>
       )}
 
-      {/* How it works — shown when empty & no suggestions at all */}
+      {/* How it works */}
       {!loading && suggestions.length === 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8"
-        >
-          <Card className="p-5 bg-gradient-to-br from-violet-50 to-zinc-50 dark:from-violet-900/10 dark:to-zinc-900 border-violet-100 dark:border-violet-900/30">
-            <p className="text-xs font-semibold uppercase tracking-wider text-violet-500 dark:text-violet-400 mb-3">
-              How it works
-            </p>
-            <div className="flex flex-col gap-3">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} style={{ marginTop: 24 }}>
+          <div style={{ padding: '18px 20px', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+            <p className="z-eyebrow" style={{ marginBottom: 12 }}>How it works</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
-                { icon: <Zap size={14} />, text: 'Ziggy silently logs every action you take' },
-                { icon: <RotateCcw size={14} />, text: 'Every day at 9:00 AM it scans for repeated patterns' },
-                { icon: <Lightbulb size={14} />, text: 'Patterns are turned into automation suggestions' },
-                { icon: <CheckCircle2 size={14} />, text: 'You review and approve — nothing is created silently' },
-              ].map(({ icon, text }, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-lg bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
-                    {icon}
-                  </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400">{text}</p>
+                'Ziggy silently logs every action you take',
+                'Every day at 9 AM it scans for repeated patterns',
+                'Patterns become automation suggestions',
+                'You review and approve — nothing is created silently',
+              ].map((text, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
+                  </span>
+                  <p style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.4 }}>{text}</p>
                 </div>
               ))}
             </div>
-          </Card>
+          </div>
         </motion.div>
       )}
     </div>

@@ -1,160 +1,167 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Plus, CheckCircle2, Circle, Calendar, Flag, Clock,
-  Trash2, ChevronDown, Check, Square, Pencil, X,
-} from 'lucide-react'
-import { Card } from '../components/ui/Card'
-import { Badge } from '../components/ui/Badge'
-import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Input, Textarea } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { useTaskStore } from '../stores/taskStore'
 import { useUIStore } from '../stores/uiStore'
 import { formatDate } from '../lib/utils'
-import { cn } from '../lib/utils'
 
-const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'pending', label: 'Pending' },
-  { id: 'done', label: 'Done' },
-  { id: 'high', label: 'High' },
-]
+const PRIORITY_COLOR = { high: 'var(--accent)', medium: 'var(--warn)', low: 'var(--line-2)' }
 
-const PRIORITY_VARIANTS = { high: 'danger', medium: 'warning', low: 'default' }
+// ── Icons ─────────────────────────────────────────────────────────────────────
+function ZIcon({ name, size = 14 }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }
+  switch (name) {
+    case 'circle':    return <svg {...p}><circle cx="12" cy="12" r="9"/></svg>
+    case 'check-c':   return <svg {...p}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+    case 'check':     return <svg {...p}><path d="M20 6L9 17l-5-5"/></svg>
+    case 'plus':      return <svg {...p}><path d="M12 5v14M5 12h14"/></svg>
+    case 'trash':     return <svg {...p}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+    case 'edit':      return <svg {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    case 'chev-d':    return <svg {...p}><path d="M6 9l6 6 6-6"/></svg>
+    case 'square':    return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+    case 'x':         return <svg {...p}><path d="M18 6L6 18M6 6l12 12"/></svg>
+    case 'cal':       return <svg {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    case 'clock':     return <svg {...p}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    default: return null
+  }
+}
 
+// ── Sub-item row ──────────────────────────────────────────────────────────────
 function SubItem({ item, onToggle }) {
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-2 w-full text-left group py-0.5"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        width: '100%', padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer',
+        textAlign: 'left',
+      }}
     >
-      {item.done ? (
-        <Check size={13} className="text-emerald-500 shrink-0" />
-      ) : (
-        <Square size={13} className="text-zinc-300 dark:text-zinc-600 shrink-0 group-hover:text-zinc-500 transition-colors" />
-      )}
-      <span className={cn(
-        'text-xs',
-        item.done
-          ? 'text-zinc-400 dark:text-zinc-600 line-through'
-          : 'text-zinc-700 dark:text-zinc-300'
-      )}>
+      <span style={{ color: item.done ? 'var(--ok)' : 'var(--line-2)', flexShrink: 0 }}>
+        <ZIcon name={item.done ? 'check-c' : 'square'} size={13} />
+      </span>
+      <span style={{
+        fontSize: 12, color: item.done ? 'var(--ink-faint)' : 'var(--ink-2)',
+        textDecoration: item.done ? 'line-through' : 'none',
+      }}>
         {item.text}
       </span>
     </button>
   )
 }
 
-function TaskItem({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
+// ── Task row ──────────────────────────────────────────────────────────────────
+function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
   const [expanded, setExpanded] = useState(false)
-  const isDone = task.done || task.completed
-  const items = task.items || []
-  const doneItems = items.filter((i) => i.done).length
+  const isDone  = task.done || task.completed
+  const items   = task.items || []
+  const doneItems = items.filter(i => i.done).length
   const hasExtras = task.description || items.length > 0
-
-  const handleItemToggle = (idx) => {
-    const updated = items.map((it, i) => i === idx ? { ...it, done: !it.done } : it)
-    onUpdateItems(task.id, updated)
-  }
+  const pColor  = PRIORITY_COLOR[task.priority] || PRIORITY_COLOR.low
+  const isOverdue = !isDone && task.due && new Date(task.due) < new Date()
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className="border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -16 }}
+      style={{
+        display: 'flex', flexDirection: 'column',
+        padding: '12px 14px', borderRadius: 11,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+      }}
     >
-      <div className="flex items-start gap-3 py-3 group" onDoubleClick={() => onEdit(task)}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        {/* Priority ring + check */}
         <button
           onClick={() => onToggle(task)}
-          className="mt-0.5 shrink-0 text-zinc-300 dark:text-zinc-600 hover:text-emerald-500 transition-colors"
+          style={{
+            width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+            border: `1.5px solid ${isDone ? 'var(--ok)' : pColor}`,
+            background: isDone ? 'var(--ok)' : 'transparent',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: isDone ? '#fff' : 'transparent',
+          }}
         >
-          {isDone
-            ? <CheckCircle2 size={20} className="text-emerald-500" />
-            : <Circle size={20} />}
+          {isDone && <ZIcon name="check" size={11} />}
         </button>
 
-        <div className="flex-1 min-w-0">
-          <p className={cn(
-            'text-sm font-medium leading-snug',
-            isDone ? 'text-zinc-400 dark:text-zinc-600 line-through' : 'text-zinc-900 dark:text-zinc-100'
-          )}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontSize: 14, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
+            color: isDone ? 'var(--ink-faint)' : 'var(--ink)',
+            lineHeight: 1.3,
+            textDecoration: isDone ? 'line-through' : 'none',
+          }}>
             {task.task || task.title}
           </p>
-
-          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-            {task.priority && (
-              <Badge variant={PRIORITY_VARIANTS[task.priority] || 'default'} className="text-[10px]">
-                <Flag size={9} className="mr-1" />{task.priority}
-              </Badge>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
             {task.due && (
-              <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-                <Calendar size={10} />{formatDate(task.due)}
+              <span style={{
+                fontSize: 10.5, color: isOverdue ? 'var(--accent)' : 'var(--ink-faint)',
+                fontFamily: '"IBM Plex Mono", monospace',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+                <ZIcon name="cal" size={10} />
+                {formatDate(task.due)}
               </span>
             )}
             {task.reminder && (
-              <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-                <Clock size={10} />{task.reminder}
+              <span style={{
+                fontSize: 10.5, color: 'var(--ink-faint)',
+                fontFamily: '"IBM Plex Mono", monospace',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+                <ZIcon name="clock" size={10} />
+                {task.reminder}
               </span>
             )}
             {items.length > 0 && (
-              <span className="text-[10px] text-zinc-400">
-                {doneItems}/{items.length} items
+              <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                {doneItems}/{items.length}
               </span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
           {hasExtras && (
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <ChevronDown size={14} className={cn('transition-transform', expanded && 'rotate-180')} />
+            <button onClick={() => setExpanded(v => !v)} style={{
+              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4,
+              transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
+            }}>
+              <ZIcon name="chev-d" size={13} />
             </button>
           )}
-          <button
-            onClick={() => onEdit(task)}
-            className="p-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
-          >
-            <Pencil size={13} />
+          <button onClick={() => onEdit(task)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
+            <ZIcon name="edit" size={13} />
           </button>
-          <button
-            onClick={() => onDelete(task.id)}
-            className="p-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-          >
-            <Trash2 size={13} />
+          <button onClick={() => onDelete(task.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
+            <ZIcon name="trash" size={13} />
           </button>
         </div>
       </div>
 
+      {/* Expandable sub-items + description */}
       <AnimatePresence>
         {expanded && hasExtras && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.15 }}
-            className="overflow-hidden"
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
+            style={{ overflow: 'hidden' }}
           >
-            <div className="pl-8 pr-3 pb-3 flex flex-col gap-2">
+            <div style={{ paddingLeft: 32, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
               {task.description && (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                  {task.description}
-                </p>
+                <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>{task.description}</p>
               )}
-              {items.length > 0 && (
-                <div className="flex flex-col gap-1 mt-1">
-                  {items.map((item, idx) => (
-                    <SubItem key={idx} item={item} onToggle={() => handleItemToggle(idx)} />
-                  ))}
-                </div>
-              )}
+              {items.map((item, idx) => (
+                <SubItem key={idx} item={item} onToggle={() => {
+                  const updated = items.map((it, i) => i === idx ? { ...it, done: !it.done } : it)
+                  onUpdateItems(task.id, updated)
+                }} />
+              ))}
             </div>
           </motion.div>
         )}
@@ -163,322 +170,150 @@ function TaskItem({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
   )
 }
 
-function AddTaskModal({ open, onClose, onAdd }) {
-  const [taskText, setTaskText] = useState('')
-  const [description, setDescription] = useState('')
-  const [due, setDue] = useState('')
-  const [priority, setPriority] = useState('medium')
-  const [itemInput, setItemInput] = useState('')
-  const [items, setItems] = useState([])
-  const [saving, setSaving] = useState(false)
-
-  const reset = () => {
-    setTaskText(''); setDescription(''); setDue('')
-    setPriority('medium'); setItemInput(''); setItems([])
-  }
-
+// ── Task form (shared by add + edit) ─────────────────────────────────────────
+function TaskForm({ values, onChange }) {
+  const { taskText, description, due, priority, itemInput, items } = values
   const addItem = () => {
     const text = itemInput.trim()
     if (!text) return
-    setItems((prev) => [...prev, { text, done: false }])
-    setItemInput('')
+    onChange({ items: [...items, { text, done: false }], itemInput: '' })
   }
+  const removeItem = (idx) => onChange({ items: items.filter((_, i) => i !== idx) })
+  const toggleItem = (idx) => onChange({ items: items.map((it, i) => i === idx ? { ...it, done: !it.done } : it) })
 
-  const removeItem = (idx) => setItems((prev) => prev.filter((_, i) => i !== idx))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Input label="Task" placeholder="What needs to be done?" value={taskText} onChange={e => onChange({ taskText: e.target.value })} autoFocus onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
+      <Textarea label="Description (optional)" placeholder="Add details or notes…" value={description} onChange={e => onChange({ description: e.target.value })} rows={2} />
+      <Input label="Due date (optional)" type="datetime-local" value={due} onChange={e => onChange({ due: e.target.value })} />
+      <Select label="Priority" value={priority} onChange={e => onChange({ priority: e.target.value })} options={[{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }]} />
 
-  const handleAdd = async () => {
-    if (!taskText.trim()) return
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Checklist items</p>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          <input
+            value={itemInput}
+            onChange={e => onChange({ itemInput: e.target.value })}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+            placeholder="Add an item…"
+            className="z-input"
+            style={{ height: 36, padding: '0 12px', fontSize: 13 }}
+          />
+          <button onClick={addItem} className="z-btn-secondary" style={{ padding: '0 14px', borderRadius: 9, height: 36, whiteSpace: 'nowrap' }}>Add</button>
+        </div>
+        {items.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
+            {items.map((item, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={() => toggleItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: item.done ? 'var(--ok)' : 'var(--line-2)', padding: 0, flexShrink: 0 }}>
+                  <ZIcon name={item.done ? 'check-c' : 'square'} size={14} />
+                </button>
+                <span style={{ flex: 1, fontSize: 12, color: item.done ? 'var(--ink-faint)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
+                <button onClick={() => removeItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 0 }}>
+                  <ZIcon name="x" size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Add modal ─────────────────────────────────────────────────────────────────
+function AddTaskModal({ open, onClose, onAdd }) {
+  const [vals, setVals] = useState({ taskText: '', description: '', due: '', priority: 'medium', itemInput: '', items: [] })
+  const [saving, setSaving] = useState(false)
+  const change = (p) => setVals(v => ({ ...v, ...p }))
+  const reset  = () => setVals({ taskText: '', description: '', due: '', priority: 'medium', itemInput: '', items: [] })
+  const handle = async () => {
+    if (!vals.taskText.trim()) return
     setSaving(true)
-    await onAdd({
-      task: taskText.trim(),
-      due: due || null,
-      priority,
-      description: description.trim() || null,
-      items: items.length > 0 ? items : null,
-    })
-    setSaving(false)
-    reset()
-    onClose()
+    await onAdd({ task: vals.taskText.trim(), due: vals.due || null, priority: vals.priority, description: vals.description.trim() || null, items: vals.items.length ? vals.items : null })
+    setSaving(false); reset(); onClose()
   }
-
   return (
     <Modal open={open} onClose={() => { reset(); onClose() }} title="New Task">
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Task"
-          placeholder="What needs to be done?"
-          value={taskText}
-          onChange={(e) => setTaskText(e.target.value)}
-          autoFocus
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-        />
-        <Textarea
-          label="Description (optional)"
-          placeholder="Add details or notes…"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={2}
-        />
-        <Input
-          label="Due date (optional)"
-          type="datetime-local"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-        />
-        <Select
-          label="Priority"
-          value={priority}
-          onChange={(e) => setPriority(e.target.value)}
-          options={[
-            { value: 'high', label: '🔴 High' },
-            { value: 'medium', label: '🟡 Medium' },
-            { value: 'low', label: '⚪ Low' },
-          ]}
-        />
-
-        {/* Sub-items */}
-        <div>
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-            Items / Checklist
-          </p>
-          <div className="flex gap-2 mb-2">
-            <input
-              value={itemInput}
-              onChange={(e) => setItemInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
-              placeholder="Add an item…"
-              className={cn(
-                'flex-1 h-9 px-3 rounded-xl text-sm',
-                'bg-zinc-50 dark:bg-zinc-800',
-                'border border-zinc-200 dark:border-zinc-700',
-                'text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400',
-                'focus:outline-none focus:ring-2 focus:ring-violet-500'
-              )}
-            />
-            <button
-              type="button"
-              onClick={addItem}
-              className="px-3 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm"
-            >
-              Add
-            </button>
-          </div>
-          {items.length > 0 && (
-            <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
-              {items.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300 group">
-                  <Square size={12} className="text-zinc-300 shrink-0" />
-                  <span className="flex-1">{item.text}</span>
-                  <button
-                    onClick={() => removeItem(idx)}
-                    className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <Button variant="primary" onClick={handleAdd} disabled={!taskText.trim() || saving} className="w-full mt-1">
-          {saving ? 'Adding…' : 'Add task'}
-        </Button>
-      </div>
+      <TaskForm values={vals} onChange={change} />
+      <button className="z-btn-primary" onClick={handle} disabled={!vals.taskText.trim() || saving} style={{ width: '100%', marginTop: 16 }}>
+        {saving ? 'Adding…' : 'Add task'}
+      </button>
     </Modal>
   )
 }
 
+// ── Edit modal ────────────────────────────────────────────────────────────────
 function EditTaskModal({ open, onClose, onSave, task }) {
-  const [taskText, setTaskText] = useState('')
-  const [description, setDescription] = useState('')
-  const [due, setDue] = useState('')
-  const [priority, setPriority] = useState('medium')
-  const [itemInput, setItemInput] = useState('')
-  const [items, setItems] = useState([])
+  const [vals, setVals] = useState({ taskText: '', description: '', due: '', priority: 'medium', itemInput: '', items: [] })
   const [saving, setSaving] = useState(false)
-
+  const change = (p) => setVals(v => ({ ...v, ...p }))
   useEffect(() => {
-    if (task) {
-      setTaskText(task.task || task.title || '')
-      setDescription(task.description || '')
-      setDue(task.due ? task.due.slice(0, 16) : '')
-      setPriority(task.priority || 'medium')
-      setItems(task.items || [])
-    }
+    if (task) setVals({ taskText: task.task || task.title || '', description: task.description || '', due: task.due ? task.due.slice(0, 16) : '', priority: task.priority || 'medium', itemInput: '', items: task.items || [] })
   }, [task])
-
-  const addItem = () => {
-    const text = itemInput.trim()
-    if (!text) return
-    setItems((prev) => [...prev, { text, done: false }])
-    setItemInput('')
-  }
-
-  const removeItem = (idx) => setItems((prev) => prev.filter((_, i) => i !== idx))
-
-  const toggleItem = (idx) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, done: !it.done } : it))
-
-  const handleSave = async () => {
-    if (!taskText.trim()) return
+  const handle = async () => {
+    if (!vals.taskText.trim()) return
     setSaving(true)
-    await onSave(task.id, {
-      task: taskText.trim(),
-      due: due || null,
-      priority,
-      description: description.trim() || null,
-      items: items.length > 0 ? items : null,
-    })
-    setSaving(false)
-    onClose()
+    await onSave(task.id, { task: vals.taskText.trim(), due: vals.due || null, priority: vals.priority, description: vals.description.trim() || null, items: vals.items.length ? vals.items : null })
+    setSaving(false); onClose()
   }
-
   return (
     <Modal open={open} onClose={onClose} title="Edit Task">
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Task"
-          placeholder="What needs to be done?"
-          value={taskText}
-          onChange={(e) => setTaskText(e.target.value)}
-          autoFocus
-        />
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Description (optional)</label>
-            {description && (
-              <button
-                type="button"
-                onClick={() => setDescription('')}
-                className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors flex items-center gap-0.5"
-              >
-                <X size={10} /> Clear
-              </button>
-            )}
-          </div>
-          <Textarea
-            placeholder="Add details or notes…"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-          />
-        </div>
-        <Input
-          label="Due date (optional)"
-          type="datetime-local"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-        />
-        <Select
-          label="Priority"
-          value={priority}
-          onChange={(e) => setPriority(e.target.value)}
-          options={[
-            { value: 'high', label: '🔴 High' },
-            { value: 'medium', label: '🟡 Medium' },
-            { value: 'low', label: '⚪ Low' },
-          ]}
-        />
-        <div>
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Items / Checklist</p>
-          <div className="flex gap-2 mb-2">
-            <input
-              value={itemInput}
-              onChange={(e) => setItemInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
-              placeholder="Add an item…"
-              className={cn(
-                'flex-1 h-9 px-3 rounded-xl text-sm',
-                'bg-zinc-50 dark:bg-zinc-800',
-                'border border-zinc-200 dark:border-zinc-700',
-                'text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400',
-                'focus:outline-none focus:ring-2 focus:ring-violet-500'
-              )}
-            />
-            <button type="button" onClick={addItem} className="px-3 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm">Add</button>
-          </div>
-          {items.length > 0 && (
-            <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
-              {items.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300 group">
-                  <button type="button" onClick={() => toggleItem(idx)} className="shrink-0">
-                    {item.done
-                      ? <Check size={13} className="text-emerald-500" />
-                      : <Square size={13} className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 transition-colors" />}
-                  </button>
-                  <span className={cn('flex-1', item.done && 'line-through text-zinc-400 dark:text-zinc-600')}>
-                    {item.text}
-                  </span>
-                  <button onClick={() => removeItem(idx)} className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <Button variant="primary" onClick={handleSave} disabled={!taskText.trim() || saving} className="w-full mt-1">
-          {saving ? 'Saving…' : 'Save changes'}
-        </Button>
-      </div>
+      <TaskForm values={vals} onChange={change} />
+      <button className="z-btn-primary" onClick={handle} disabled={!vals.taskText.trim() || saving} style={{ width: '100%', marginTop: 16 }}>
+        {saving ? 'Saving…' : 'Save changes'}
+      </button>
     </Modal>
   )
 }
+
+// ── Group section ─────────────────────────────────────────────────────────────
+function TaskGroup({ label, count, tint, tasks, ...rowProps }) {
+  if (!tasks.length) return null
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ width: 4, height: 14, borderRadius: 2, background: tint, flexShrink: 0 }} />
+        <p className="z-eyebrow">{label}</p>
+        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginLeft: 'auto' }}>{count}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <AnimatePresence mode="popLayout">
+          {tasks.map(t => <TaskRow key={t.id || t.task} task={t} {...rowProps} />)}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+const FILTERS = [
+  { id: 'pending', label: 'Pending' },
+  { id: 'all',     label: 'All' },
+  { id: 'high',    label: 'High priority' },
+  { id: 'done',    label: 'Done' },
+]
 
 export default function Tasks() {
   const { tasks, loading, fetch, add, update, remove } = useTaskStore()
   const { addToast } = useUIStore()
-  const [filter, setFilter] = useState('pending')
-  const [showAdd, setShowAdd] = useState(false)
+  const [filter,   setFilter]   = useState('pending')
+  const [showAdd,  setShowAdd]  = useState(false)
   const [editTask, setEditTask] = useState(null)
 
   useEffect(() => { fetch() }, [])
 
-  const handleToggle = async (task) => {
-    try {
-      await update(task.id, { done: !(task.done || task.completed) })
-    } catch {
-      addToast('Failed to update task', 'error')
-    }
-  }
+  const handleToggle      = async (task) => { try { await update(task.id, { done: !(task.done || task.completed) }) } catch { addToast('Failed to update task', 'error') } }
+  const handleUpdateItems = async (id, items) => { try { await update(id, { items }) } catch { addToast('Failed to update', 'error') } }
+  const handleDelete      = async (id) => { try { await remove(id); addToast('Task deleted', 'success') } catch { addToast('Failed to delete', 'error') } }
+  const handleAdd         = async (data) => { try { await add(data); addToast('Task added', 'success') } catch { addToast('Failed to add task', 'error') } }
+  const handleEdit        = async (id, data) => { try { await update(id, data); addToast('Task updated', 'success'); setEditTask(null) } catch { addToast('Failed to update task', 'error') } }
 
-  const handleUpdateItems = async (id, items) => {
-    try {
-      await update(id, { items })
-    } catch {
-      addToast('Failed to update', 'error')
-    }
-  }
+  const now = new Date()
+  const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999)
+  const weekEnd  = new Date(now); weekEnd.setDate(weekEnd.getDate() + 7)
 
-  const handleDelete = async (id) => {
-    try {
-      await remove(id)
-      addToast('Task deleted', 'success')
-    } catch {
-      addToast('Failed to delete', 'error')
-    }
-  }
-
-  const handleAdd = async (data) => {
-    try {
-      await add(data)
-      addToast('Task added', 'success')
-    } catch {
-      addToast('Failed to add task', 'error')
-    }
-  }
-
-  const handleEdit = async (id, data) => {
-    try {
-      await update(id, data)
-      addToast('Task updated', 'success')
-      setEditTask(null)
-    } catch {
-      addToast('Failed to update task', 'error')
-    }
-  }
-
-  const filtered = tasks.filter((t) => {
+  const filtered = tasks.filter(t => {
     const isDone = t.done || t.completed
     if (filter === 'pending') return !isDone
     if (filter === 'done') return isDone
@@ -486,70 +321,109 @@ export default function Tasks() {
     return true
   })
 
-  const pendingCount = tasks.filter((t) => !t.done && !t.completed).length
+  // Group by time bucket (only for pending/all/high)
+  const pending = filtered.filter(t => !(t.done || t.completed))
+  const done    = filtered.filter(t => t.done || t.completed)
+
+  const todayTasks  = pending.filter(t => t.due && new Date(t.due) <= todayEnd)
+  const weekTasks   = pending.filter(t => t.due && new Date(t.due) > todayEnd && new Date(t.due) <= weekEnd)
+  const laterTasks  = pending.filter(t => !t.due || new Date(t.due) > weekEnd)
+  const groupedView = filter !== 'done'
+
+  const pendingCount = tasks.filter(t => !t.done && !t.completed).length
+
+  const rowProps = { onToggle: handleToggle, onUpdateItems: handleUpdateItems, onDelete: handleDelete, onEdit: setEditTask }
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6">
-      <div className="flex items-center justify-between mb-5">
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Tasks</h1>
-          <p className="text-sm text-zinc-400 dark:text-zinc-600 mt-0.5">
-            {pendingCount} pending · {tasks.length} total
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Tasks</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0, lineHeight: 1 }}>
+            {pendingCount > 0 ? `${pendingCount} pending` : 'All clear'}
+          </h1>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+            {tasks.length} total
           </p>
         </div>
-        <Button onClick={() => setShowAdd(true)} size="sm">
-          <Plus size={14} /> New
-        </Button>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="z-btn-primary"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10 }}
+        >
+          <ZIcon name="plus" size={14} />
+          New task
+        </button>
       </div>
 
-      <div className="flex gap-2 mb-5">
-        {FILTERS.map((f) => (
+      {/* Filter chips */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 22, flexWrap: 'wrap' }}>
+        {FILTERS.map(f => (
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
-            className={cn(
-              'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-              filter === f.id
-                ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-            )}
+            style={{
+              padding: '5px 12px', borderRadius: 999,
+              background: filter === f.id ? 'var(--ink)' : 'var(--surface)',
+              color:      filter === f.id ? 'var(--bg)'  : 'var(--ink-mute)',
+              border: filter === f.id ? 'none' : '0.5px solid var(--line)',
+              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+            }}
           >
             {f.label}
           </button>
         ))}
       </div>
 
+      {/* Loading skeleton */}
       {loading && (
-        <div className="flex flex-col gap-2">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-14 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[1,2,3,4].map(i => (
+            <div key={i} style={{ height: 52, borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />
           ))}
         </div>
       )}
 
+      {/* Empty state */}
       {!loading && filtered.length === 0 && (
-        <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
-          <CheckCircle2 size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm">
-            {filter === 'pending' ? 'All caught up!' : 'No tasks here'}
+        <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--ink-faint)' }}>
+          <p className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>
+            {filter === 'pending' ? 'All caught up' : 'Nothing here'}
           </p>
         </div>
       )}
 
-      <Card className="divide-y-0 px-1">
-        <AnimatePresence mode="popLayout">
-          {filtered.map((task) => (
-            <TaskItem
-              key={task.id || task.task}
-              task={task}
-              onToggle={handleToggle}
-              onUpdateItems={handleUpdateItems}
-              onDelete={handleDelete}
-              onEdit={setEditTask}
-            />
-          ))}
-        </AnimatePresence>
-      </Card>
+      {/* Grouped view */}
+      {!loading && groupedView && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          {(todayTasks.length > 0 || weekTasks.length > 0 || laterTasks.length > 0) ? (
+            <>
+              <TaskGroup label="Today" count={todayTasks.length} tint="var(--accent)" tasks={todayTasks} {...rowProps} />
+              <TaskGroup label="This week" count={weekTasks.length} tint="var(--warn)" tasks={weekTasks} {...rowProps} />
+              <TaskGroup label="Later / no date" count={laterTasks.length} tint="var(--line-2)" tasks={laterTasks} {...rowProps} />
+            </>
+          ) : (
+            filtered.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <AnimatePresence mode="popLayout">
+                  {filtered.map(t => <TaskRow key={t.id || t.task} task={t} {...rowProps} />)}
+                </AnimatePresence>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* Done view — flat list */}
+      {!loading && !groupedView && done.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <AnimatePresence mode="popLayout">
+            {done.map(t => <TaskRow key={t.id || t.task} task={t} {...rowProps} />)}
+          </AnimatePresence>
+        </div>
+      )}
 
       <AddTaskModal open={showAdd} onClose={() => setShowAdd(false)} onAdd={handleAdd} />
       <EditTaskModal open={!!editTask} onClose={() => setEditTask(null)} onSave={handleEdit} task={editTask} />

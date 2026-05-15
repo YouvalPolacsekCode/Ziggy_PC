@@ -6,6 +6,102 @@ from core.settings_loader import settings
 
 _ROOMS = ", ".join(sorted(settings.get("room_aliases", {}).keys()))
 
+
+def _automation_device_types() -> str:
+    """
+    Build a human-readable description of all controllable device types for
+    the automation tools.  Returned as a comma-separated hint string for GPT.
+    """
+    try:
+        from services.domain_registry import DOMAIN_REGISTRY
+        # Ziggy alias overrides shown first, then remaining registry domains
+        aliases = {"light": "light", "climate": "ac/climate", "media_player": "tv/media_player",
+                   "switch": "switch", "fan": "fan"}
+        extra = [k for k in DOMAIN_REGISTRY if DOMAIN_REGISTRY[k].controllable and k not in aliases]
+        parts = list(aliases.values()) + sorted(extra)
+        return ", ".join(parts)
+    except Exception:
+        return "light, ac, tv, media_player, switch, valve, lock, cover, vacuum, alarm_control_panel"
+
+
+def _automation_all_services() -> str:
+    """Return all possible action services for the automation builder."""
+    try:
+        from services.domain_registry import DOMAIN_REGISTRY
+        services = set()
+        for meta in DOMAIN_REGISTRY.values():
+            for action in meta.actions.values():
+                services.add(action.service)
+        return ", ".join(sorted(services))
+    except Exception:
+        return "turn_on, turn_off, open_valve, close_valve, lock, unlock"
+
+
+def _build_control_device_tool() -> list[dict]:
+    """
+    Build the generic control_device tool from domain_registry at import time.
+
+    Returns a list (possibly empty on error) so it can be splatted into TOOLS
+    with *_build_control_device_tool() without disrupting the list literal.
+    Adding a new HA domain to domain_registry automatically expands this tool.
+    """
+    try:
+        from services.domain_registry import voice_controllable
+        vc = voice_controllable()
+
+        # Exclude domains already covered by dedicated tools so GPT doesn't
+        # double-route.  Add any new dedicated-tool domain here.
+        _DEDICATED = frozenset({"light", "switch", "climate", "fan", "media_player"})
+        domains = sorted(k for k in vc if k not in _DEDICATED)
+        if not domains:
+            return []
+
+        hints = "; ".join(
+            f"{domain} ({meta.voice_hint})" for domain, meta in vc.items()
+            if domain not in _DEDICATED and meta.voice_hint
+        )
+        return [{
+            "type": "function",
+            "function": {
+                "name": "control_device",
+                "description": (
+                    "Control any smart home device not covered by a more specific tool. "
+                    f"Supports: {hints}. "
+                    "Use this for valves, locks, covers/blinds, alarms, vacuums, lawn mowers, "
+                    "humidifiers, water heaters, and any future device type added to Ziggy."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string",
+                            "enum": domains,
+                            "description": "The HA domain of the device to control",
+                        },
+                        "action": {
+                            "type": "string",
+                            "description": (
+                                "Natural language action: open, close, start, stop, dock, "
+                                "lock, unlock, turn on, turn off, arm away, arm home, disarm, mow, pause"
+                            ),
+                        },
+                        "room": {
+                            "type": "string",
+                            "description": f"Room name (optional). Options: {_ROOMS}",
+                        },
+                        "entity_id": {
+                            "type": "string",
+                            "description": "Specific HA entity ID if known (optional)",
+                        },
+                    },
+                    "required": ["domain", "action"],
+                },
+            },
+        }]
+    except Exception:
+        return []
+
+
 TOOLS = [
     # ---- Lights ----
     {"type": "function", "function": {
@@ -166,9 +262,10 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "ir_send_channel",
         "description": (
-            "Switch an IR-controlled TV to a specific channel number by sending digit codes. "
+            "Switch a TV to a specific channel number by sending IR digit codes. "
             "Use when the user says 'channel 5', 'go to channel 12', etc. "
-            "Only for IR-blaster TVs — not for smart TVs with HA media_player."
+            "Works for any TV controlled via IR blaster, including hybrid TVs that also have a HA media_player entity — "
+            "use this tool for channel entry regardless of whether a media_player entity exists."
         ),
         "parameters": {"type": "object", "properties": {
             "channel": {"type": "integer", "description": "Channel number to switch to (e.g. 5, 12, 100)"},
@@ -204,6 +301,9 @@ TOOLS = [
             "command_name": {"type": "string", "description": "Logical command name to learn (e.g. 'power', 'volume_up', 'netflix')"},
         }, "required": ["device_id", "command_name"]},
     }},
+
+    # ---- Generic device control (any HA domain — auto-built from domain_registry) ----
+    *_build_control_device_tool(),
 
     # ---- Files & Notes ----
     {"type": "function", "function": {
@@ -578,9 +678,11 @@ TOOLS = [
     # ---- Communication ----
     {"type": "function", "function": {
         "name": "comm_read_emails",
-        "description": "Read recent emails from inbox",
+        "description": "Read recent emails from inbox. Use 'sender' to filter by person (e.g. 'Read my latest email from John').",
         "parameters": {"type": "object", "properties": {
-            "limit": {"type": "integer"},
+            "limit":       {"type": "integer", "description": "Max number of emails to return (default 5)"},
+            "sender":      {"type": "string",  "description": "Filter by contact name or email address, e.g. 'John', 'maya@example.com'"},
+            "unread_only": {"type": "boolean", "description": "Only return unread emails (default true)"},
         }},
     }},
     {"type": "function", "function": {
@@ -724,9 +826,9 @@ TOOLS = [
             "trigger_below":     {"type": "number", "description": "For numeric_state triggers: fire when value falls BELOW this number"},
             "trigger_offset":    {"type": "string", "description": "Offset for sunrise/sunset, e.g. '+00:30:00'"},
             "action_room":       {"type": "string", "description": f"Room to act on. Options: {_ROOMS}"},
-            "action_device_type":{"type": "string", "description": "Device type to act on: light, ac, tv, media_player, switch"},
-            "action_service":    {"type": "string", "enum": ["turn_on", "turn_off"],
-                                  "description": "Action to perform"},
+            "action_device_type":{"type": "string", "description": f"Device type to act on: {_automation_device_types()}"},
+            "action_service":    {"type": "string",
+                                  "description": f"HA service to call. Common: turn_on, turn_off. Device-specific: {_automation_all_services()}"},
         }, "required": ["trigger_type", "action_room", "action_device_type", "action_service"]},
     }},
     {"type": "function", "function": {
@@ -776,9 +878,20 @@ TOOLS = [
             "trigger_below":     {"type": "number", "description": "New below threshold for numeric_state triggers"},
             "trigger_offset":    {"type": "string", "description": "New offset for sunrise/sunset triggers"},
             "action_room":       {"type": "string", "description": f"New room for the action. Options: {_ROOMS}"},
-            "action_device_type":{"type": "string", "description": "New device type: light, ac, tv, media_player, switch"},
-            "action_service":    {"type": "string", "enum": ["turn_on", "turn_off"], "description": "New action"},
+            "action_device_type":{"type": "string", "description": f"New device type: {_automation_device_types()}"},
+            "action_service":    {"type": "string", "description": f"New HA service: {_automation_all_services()}"},
         }, "required": ["automation_name"]},
+    }},
+
+    # ---- Anomalies ----
+    {"type": "function", "function": {
+        "name": "get_active_anomalies",
+        "description": (
+            "Get all currently active smart home anomalies and alerts. "
+            "Use when the user asks 'anything I should know?', 'any alerts?', "
+            "'what anomalies are there?', or 'is everything OK at home?'"
+        ),
+        "parameters": {"type": "object", "properties": {}},
     }},
 
     # ---- Reference ----
@@ -821,6 +934,10 @@ SYSTEM_PROMPT = (
     "ALWAYS prefer to use a tool to handle the request — call the most appropriate tool rather than responding conversationally. "
     "Only skip tool calls when the user is explicitly having casual small-talk or explicitly asking for general information with no actionable command. "
     "For ANY request involving home control, scheduling, automation, tasks, reminders, files, system, or media — ALWAYS call a tool. "
+    "MULTI-DEVICE RULE: When a command targets multiple individual devices (e.g. 'turn on all lights', "
+    "'turn them back on' after a bulk off, 'turn on office and bedroom lights'), issue ONE tool call per device "
+    "using the specific per-room tool (e.g. toggle_light). Do NOT invent a new combined tool. "
+    "Use the known rooms list and conversation context to determine which devices to include. "
     "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule', 'create a routine', 'create an automation' — ALWAYS use create_automation. "
     "For ANY change to an existing automation or routine (rename, change time, change device, change room, reassign, update description) — ALWAYS use update_automation. "
     "In create_automation, set action_device_type='tv' for TV/television targets, 'media_player' for any media device, 'light' for lights, 'ac' for air conditioning, 'switch' for wall switches. "
@@ -834,6 +951,7 @@ SYSTEM_PROMPT = (
     "use ir_learn_command when the user wants to teach Ziggy a new IR button. "
     "use control_ac / set_ac_temperature for smart ACs with a HA climate entity. "
     "use control_tv / set_tv_source for smart TVs with a HA media_player entity. "
+    "use control_device for any device type not covered above: valve, lock, cover, alarm, vacuum, lawn_mower, humidifier, water_heater. "
     "Only use chat_with_gpt if no other tool applies and the input is pure casual conversation."
     "\n\nHebrew support: The user may speak Hebrew or mix Hebrew with English. "
     "ALWAYS call the correct tool regardless of input language. "

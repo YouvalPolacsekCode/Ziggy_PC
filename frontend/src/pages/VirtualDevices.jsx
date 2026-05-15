@@ -81,9 +81,9 @@ function ParamField({ schema, value, onChange }) {
   }
   if (schema.type === 'boolean') {
     return (
-      <label className="flex items-center gap-3 cursor-pointer">
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
         <Toggle checked={!!value} onCheckedChange={onChange} />
-        <span className="text-sm text-zinc-700 dark:text-zinc-300">{schema.label}</span>
+        <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{schema.label}</span>
       </label>
     )
   }
@@ -113,20 +113,13 @@ const WIZARD_STEPS = ['Capability', 'Configure', 'Assign']
 
 function StepIndicator({ current }) {
   return (
-    <div className="flex items-center justify-center gap-2 mb-6">
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
       {WIZARD_STEPS.map((s, i) => (
-        <div key={s} className="flex items-center gap-2">
-          <div className={cn(
-            'w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors',
-            i < current ? 'bg-violet-600 text-white'
-              : i === current ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-600 ring-2 ring-violet-600'
-              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
-          )}>
+        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: i < current ? 'var(--ink)' : i === current ? `color-mix(in srgb, var(--ink) 12%, var(--surface))` : 'var(--bg-2)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-faint)', border: i === current ? '1.5px solid var(--ink)' : '0.5px solid var(--line)' }}>
             {i < current ? '✓' : i + 1}
           </div>
-          {i < WIZARD_STEPS.length - 1 && (
-            <div className={cn('w-8 h-0.5 rounded', i < current ? 'bg-violet-600' : 'bg-zinc-200 dark:bg-zinc-700')} />
-          )}
+          {i < WIZARD_STEPS.length - 1 && <div style={{ width: 24, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />}
         </div>
       ))}
     </div>
@@ -198,44 +191,28 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
         >
           {/* Step 0 — pick capability */}
           {step === 0 && (
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setFilterCat('all')}
-                  className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                    filterCat === 'all' ? 'bg-violet-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                  )}
-                >All</button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setFilterCat(cat.id)}
-                    className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                      filterCat === cat.id ? 'bg-violet-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    )}
-                  >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                <button onClick={() => setFilterCat('all')} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>All</button>
+                {categories.map(cat => (
+                  <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === cat.id ? 'var(--ink)' : 'var(--surface)', color: filterCat === cat.id ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === cat.id ? 'none' : '0.5px solid var(--line)' }}>
                     {cat.icon} {cat.label}
                   </button>
                 ))}
               </div>
-              <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto scrollbar-thin pr-1">
-                {filteredCaps.map((cap) => (
-                  <button
-                    key={cap.id}
-                    onClick={() => selectCapability(cap)}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all',
-                      selectedCap?.id === cap.id
-                        ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20'
-                        : 'border-zinc-200 dark:border-zinc-700 hover:border-violet-300 dark:hover:border-violet-700 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                    )}
-                  >
-                    <span className="text-xl shrink-0">{cap.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{cap.name}</p>
-                      <p className="text-xs text-zinc-400 dark:text-zinc-500 truncate">{cap.description}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 260, overflowY: 'auto' }} className="scrollbar-thin">
+                {filteredCaps.map(cap => (
+                  <button key={cap.id} onClick={() => selectCapability(cap)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                    background: selectedCap?.id === cap.id ? `color-mix(in srgb, var(--accent) 8%, var(--surface))` : 'var(--surface)',
+                    border: `0.5px solid ${selectedCap?.id === cap.id ? 'var(--accent)' : 'var(--line)'}`,
+                  }}>
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>{cap.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cap.name}</p>
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cap.description}</p>
                     </div>
-                    {selectedCap?.id === cap.id && <span className="text-violet-500 shrink-0">✓</span>}
+                    {selectedCap?.id === cap.id && <span style={{ color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
                   </button>
                 ))}
               </div>
@@ -318,19 +295,12 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
         </motion.div>
       </AnimatePresence>
 
-      <div className="flex gap-2 mt-6">
-        {step > 0 && (
-          <Button variant="secondary" onClick={() => setStep((s) => s - 1)} className="flex-1">Back</Button>
-        )}
-        {step < WIZARD_STEPS.length - 1 ? (
-          <Button variant="primary" onClick={() => setStep((s) => s + 1)} disabled={!canNext()} className="flex-1">
-            Next
-          </Button>
-        ) : (
-          <Button variant="violet" onClick={handleSave} disabled={saving || !canNext()} className="flex-1">
-            {saving ? 'Saving…' : 'Add device'}
-          </Button>
-        )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>Back</button>}
+        {step < WIZARD_STEPS.length - 1
+          ? <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>Next</button>
+          : <button onClick={handleSave} disabled={saving || !canNext()} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : 'Add device'}</button>
+        }
       </div>
     </div>
   )
@@ -371,11 +341,9 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
         />
       ))}
 
-      <div className="flex gap-2 mt-2">
-        <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
-        <Button variant="violet" onClick={handleRun} disabled={running} className="flex-1">
-          {running ? 'Running…' : 'Run'}
-        </Button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+        <button onClick={handleRun} disabled={running} className="z-btn-primary" style={{ flex: 1 }}>{running ? 'Running…' : 'Run'}</button>
       </div>
     </div>
   )
@@ -386,68 +354,45 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
 function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, triggering }) {
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className={cn(
-            'w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0',
-            device.enabled ? 'bg-violet-50 dark:bg-violet-900/20' : 'bg-zinc-100 dark:bg-zinc-800 opacity-50'
-          )}>
-            {device.icon}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-zinc-900 dark:text-zinc-100 truncate">{device.name}</p>
-            <p className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">{device.capability}</p>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <Badge variant="violet" className="text-[10px]">{device.category}</Badge>
-              {device.room && <Badge className="text-[10px]">📍 {device.room}</Badge>}
-              {device.last_triggered && (
-                <span className="text-[10px] text-zinc-400">Last run: {device.last_triggered}</span>
-              )}
-            </div>
-            {Object.keys(device.default_params || {}).length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {Object.entries(device.default_params).slice(0, 3).map(([k, v]) => (
-                  <span key={k} className="text-[10px] text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md truncate max-w-[120px]">
-                    {k}: {String(v)}
-                  </span>
-                ))}
-              </div>
+      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, background: device.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)', opacity: device.enabled ? 1 : 0.55 }}>
+          {device.icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+            {device.category && (
+              <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{device.category}</span>
             )}
+            {device.room && <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>📍 {device.room}</span>}
+            {device.last_triggered && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>last run {device.last_triggered}</span>}
           </div>
-
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <Toggle checked={device.enabled} onCheckedChange={() => onToggle(device)} />
-            <div className="flex gap-1">
-              <button
-                onClick={() => onTrigger(device)}
-                disabled={triggering === device.id}
-                className={cn(
-                  'p-1.5 rounded-lg transition-colors',
-                  triggering === device.id
-                    ? 'text-zinc-300 dark:text-zinc-600 cursor-not-allowed'
-                    : 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
-                )}
-                title="Run now"
-              >
-                <Play size={13} />
-              </button>
-              <button
-                onClick={() => onEdit(device)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              >
-                <Edit2 size={13} />
-              </button>
-              <button
-                onClick={() => onDelete(device)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              >
-                <Trash2 size={13} />
-              </button>
+          {Object.keys(device.default_params || {}).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+              {Object.entries(device.default_params).slice(0, 3).map(([k, v]) => (
+                <span key={k} style={{ fontSize: 9.5, color: 'var(--ink-faint)', background: 'var(--bg-2)', padding: '2px 7px', borderRadius: 5, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130, whiteSpace: 'nowrap' }}>
+                  {k}: {String(v)}
+                </span>
+              ))}
             </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <Toggle checked={device.enabled} onCheckedChange={() => onToggle(device)} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            {[
+              { onClick: () => onTrigger(device), color: triggering === device.id ? 'var(--ink-faint)' : 'var(--ok)', disabled: triggering === device.id, title: 'Run now', path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
+              { onClick: () => onEdit(device), color: 'var(--ink-faint)', title: 'Edit', path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
+              { onClick: () => onDelete(device), color: 'var(--accent)', title: 'Delete', path: <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/> },
+            ].map(({ onClick, color, disabled, title, path }) => (
+              <button key={title} onClick={onClick} disabled={disabled} title={title} style={{ background: 'none', border: 'none', cursor: disabled ? 'default' : 'pointer', color, padding: 4, opacity: disabled ? 0.4 : 1 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
+              </button>
+            ))}
           </div>
         </div>
-      </Card>
+      </div>
     </motion.div>
   )
 }
@@ -492,11 +437,9 @@ function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
         <Toggle checked={enabled} onCheckedChange={setEnabled} />
         <span className="text-sm text-zinc-700 dark:text-zinc-300">Enabled</span>
       </label>
-      <div className="flex gap-2 mt-2">
-        <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
-        <Button variant="violet" onClick={handleSave} disabled={saving || !name.trim()} className="flex-1">
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+        <button onClick={handleSave} disabled={saving || !name.trim()} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
   )
@@ -611,65 +554,56 @@ export default function VirtualDevices() {
   }, {})
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6">
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Capabilities</h1>
-          <p className="text-sm text-zinc-400 dark:text-zinc-600 mt-0.5">
-            {devices.filter((d) => d.enabled).length} active · {devices.length} total
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Software-only devices</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Capabilities</h1>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+            {devices.filter(d => d.enabled).length} active · {devices.length} total
           </p>
         </div>
-        <Button onClick={() => setShowAdd(true)} size="sm">
-          <Plus size={14} /> Add capability
-        </Button>
+        <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
+          <Plus size={13} /> Add capability
+        </button>
       </div>
 
       {/* Category filter */}
       {devices.length > 0 && (
-        <div className="flex gap-2 flex-wrap mb-4">
-          <button
-            onClick={() => setFilterCat('all')}
-            className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
-              filterCat === 'all' ? 'bg-violet-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-            )}
-          >
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 18 }}>
+          <button onClick={() => setFilterCat('all')} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>
             All ({devices.length})
           </button>
-          {categories.filter((c) => catCounts[c.id] > 0).map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setFilterCat(cat.id)}
-              className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                filterCat === cat.id ? 'bg-violet-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              )}
-            >
+          {categories.filter(c => catCounts[c.id] > 0).map(cat => (
+            <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === cat.id ? 'var(--ink)' : 'var(--surface)', color: filterCat === cat.id ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === cat.id ? 'none' : '0.5px solid var(--line)' }}>
               {cat.icon} {cat.label} ({catCounts[cat.id]})
             </button>
           ))}
         </div>
       )}
 
+      {/* Loading skeleton */}
       {loading && (
-        <div className="flex flex-col gap-3">
-          {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[1,2,3].map(i => <div key={i} style={{ height: 72, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
+      {/* Empty state */}
       {!loading && devices.length === 0 && (
-        <div className="text-center py-20 text-zinc-400 dark:text-zinc-600">
-          <Cpu size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium">No capabilities configured yet</p>
-          <p className="text-xs mt-1 mb-4">Add YouTube, Spotify, weather, email readers, and more</p>
-          <Button variant="secondary" size="sm" onClick={() => setShowAdd(true)}>
-            <Plus size={14} /> Add first capability
-          </Button>
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No capabilities configured yet</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Add YouTube, Spotify, weather, email readers, and more</p>
+          <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Plus size={13} /> Add first capability
+          </button>
         </div>
       )}
 
       <AnimatePresence mode="popLayout">
-        <div className="flex flex-col gap-3">
-          {filtered.map((device) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {filtered.map(device => (
             <VirtualDeviceCard
               key={device.id}
               device={device}

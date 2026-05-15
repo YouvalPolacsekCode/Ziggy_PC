@@ -54,20 +54,26 @@ async def process_intent(req: IntentRequest):
     result = await handle_intent(intent_data)
     reply = render_result(result)
 
+    top_intent = intent_data.get("intent")
+    broadcast_intent = top_intent
+    if top_intent == "__multi__":
+        sub = (intent_data.get("intents") or [{}])[0]
+        broadcast_intent = f"__multi__({sub.get('intent', '?')}+)"
+
     await manager.broadcast({
         "type": "ziggy_response",
         "input": req.text,
         "reply": reply,
         "source": req.source,
         "ok": result.get("ok", True),
-        "intent": intent_data.get("intent"),
+        "intent": broadcast_intent,
         "params": intent_data.get("params", {}),
     })
 
     return {
         "reply": reply,
         "ok": result.get("ok", True),
-        "intent": intent_data.get("intent"),
+        "intent": broadcast_intent,
         "params": intent_data.get("params", {}),
         "data": result.get("data", {}),
     }
@@ -87,12 +93,11 @@ async def process_chat(req: ChatRequest):
     parsed = quick_parse(req.text, chat_history=req.chat_history)
     parsed["source"] = req.source
 
-    if parsed.get("intent") not in _GPT_FALLBACK_INTENTS:
-        # Recognized actionable or data intent — execute it directly.
+    top_intent = parsed.get("intent")
+    # __multi__ is always actionable — never fall through to GPT
+    if top_intent not in _GPT_FALLBACK_INTENTS or top_intent == "__multi__":
         result = await handle_intent(parsed)
     else:
-        # Nothing matched, or a web-search type query — let GPT handle it
-        # with session history and autonomous web search.
         result = await handle_intent({
             "intent": "chat_with_gpt",
             "params": {"text": req.text, "chat_history": req.chat_history},
@@ -101,13 +106,19 @@ async def process_chat(req: ChatRequest):
 
     reply = render_result(result)
 
+    # For multi-intent, surface the first sub-intent name for logging
+    broadcast_intent = top_intent
+    if top_intent == "__multi__":
+        sub = (parsed.get("intents") or [{}])[0]
+        broadcast_intent = f"__multi__({sub.get('intent', '?')}+)"
+
     await manager.broadcast({
         "type": "ziggy_response",
         "input": req.text,
         "reply": reply,
         "source": req.source,
         "ok": result.get("ok", True),
-        "intent": parsed.get("intent"),
+        "intent": broadcast_intent,
     })
 
     return {"reply": reply, "ok": result.get("ok", True), "data": result.get("data", {})}

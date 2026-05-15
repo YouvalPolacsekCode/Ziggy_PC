@@ -234,6 +234,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    allowed_ids = settings.get("telegram", {}).get("allowed_users", [])
+    if allowed_ids and (not query.from_user or query.from_user.id not in allowed_ids):
+        return
     data = query.data
 
     try:
@@ -275,10 +278,13 @@ def start_telegram_bot():
 
         await app.bot.delete_webhook(drop_pending_updates=True)
 
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("menu", send_menu))
-        app.add_handler(CommandHandler("debug", toggle_debug))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        allowed_ids = settings.get("telegram", {}).get("allowed_users", [])
+        user_filter = filters.User(user_ids=allowed_ids) if allowed_ids else filters.ALL
+
+        app.add_handler(CommandHandler("start", start, filters=user_filter))
+        app.add_handler(CommandHandler("menu", send_menu, filters=user_filter))
+        app.add_handler(CommandHandler("debug", toggle_debug, filters=user_filter))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, handle_message))
         app.add_handler(CallbackQueryHandler(button_callback))
 
         await app.initialize()

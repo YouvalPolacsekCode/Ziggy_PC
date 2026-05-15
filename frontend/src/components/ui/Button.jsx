@@ -1,31 +1,35 @@
-import { cn } from '../../lib/utils'
-
+// Button — maps old variants to the new Ziggy token system
 const variants = {
-  primary: 'bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100',
-  secondary: 'bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700',
-  ghost: 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800',
-  danger: 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40',
-  violet: 'bg-violet-600 text-white hover:bg-violet-700',
+  primary:   { background: 'var(--ink)',     color: 'var(--bg)',      border: 'none' },
+  secondary: { background: 'var(--surface-2)', color: 'var(--ink-2)', border: '0.5px solid var(--line)' },
+  ghost:     { background: 'transparent',    color: 'var(--ink-mute)', border: 'none' },
+  danger:    { background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--line)' },
+  violet:    { background: 'var(--accent)',  color: '#fff',           border: 'none' },
 }
 
 const sizes = {
-  sm: 'h-8 px-3 text-xs rounded-lg gap-1.5',
-  md: 'h-9 px-4 text-sm rounded-xl gap-2',
-  lg: 'h-11 px-6 text-sm rounded-xl gap-2',
-  icon: 'h-9 w-9 rounded-xl',
+  sm:   { height: 32, padding: '0 12px', fontSize: 12, borderRadius: 8,  gap: 6 },
+  md:   { height: 36, padding: '0 14px', fontSize: 13, borderRadius: 10, gap: 7 },
+  lg:   { height: 44, padding: '0 18px', fontSize: 14, borderRadius: 11, gap: 8 },
+  icon: { height: 36, width: 36,  padding: 0, fontSize: 13, borderRadius: 10 },
 }
 
-export function Button({ variant = 'primary', size = 'md', className, children, ...props }) {
+export function Button({ variant = 'primary', size = 'md', className, children, style, ...props }) {
+  const vs = variants[variant] || variants.primary
+  const ss = sizes[size]  || sizes.md
   return (
     <button
-      className={cn(
-        'inline-flex items-center justify-center font-medium transition-colors duration-150',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
-        variants[variant],
-        sizes[size],
-        className
-      )}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit', fontWeight: 500, cursor: 'pointer',
+        transition: 'opacity 0.12s',
+        gap: ss.gap,
+        ...vs, ...ss,
+        ...style,
+      }}
+      onMouseEnter={e => { if (!props.disabled) e.currentTarget.style.opacity = '0.82' }}
+      onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+      className={className}
       {...props}
     >
       {children}

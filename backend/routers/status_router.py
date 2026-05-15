@@ -3,8 +3,9 @@ from __future__ import annotations
 import threading
 from typing import List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from .auth_deps import get_current_user
 
 from backend.ws_manager import manager
 from core.logger_module import log_info
@@ -42,7 +43,7 @@ async def get_memory():
 # ---------------------------------------------------------------------------
 
 @router.get("/api/settings/general")
-async def get_general_settings():
+async def get_general_settings(_: dict = Depends(get_current_user)):
     return {
         "language": settings.get("language", "en"),
         "timezone": settings.get("system", {}).get("timezone", "UTC"),
@@ -55,7 +56,7 @@ class GeneralPatch(BaseModel):
 
 
 @router.patch("/api/settings/general")
-async def patch_general_settings(patch: GeneralPatch):
+async def patch_general_settings(patch: GeneralPatch, _: dict = Depends(get_current_user)):
     data = patch.model_dump(exclude_none=True)
     if "language" in data:
         settings["language"] = data["language"]
@@ -71,7 +72,7 @@ async def patch_general_settings(patch: GeneralPatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/api/settings/voice")
-async def get_voice_settings():
+async def get_voice_settings(_: dict = Depends(get_current_user)):
     return settings.get("voice", {})
 
 
@@ -85,7 +86,7 @@ class VoicePatch(BaseModel):
 
 
 @router.patch("/api/settings/voice")
-async def patch_voice_settings(patch: VoicePatch):
+async def patch_voice_settings(patch: VoicePatch, _: dict = Depends(get_current_user)):
     voice = settings.setdefault("voice", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         voice[field] = val
@@ -98,7 +99,7 @@ async def patch_voice_settings(patch: VoicePatch):
 # ---------------------------------------------------------------------------
 
 @router.get("/api/settings/anomaly")
-async def get_anomaly_settings():
+async def get_anomaly_settings(_: dict = Depends(get_current_user)):
     return settings.get("anomaly_engine", {})
 
 
@@ -109,7 +110,7 @@ class AnomalyPatch(BaseModel):
 
 
 @router.patch("/api/settings/anomaly")
-async def patch_anomaly_settings(patch: AnomalyPatch):
+async def patch_anomaly_settings(patch: AnomalyPatch, _: dict = Depends(get_current_user)):
     anomaly = settings.setdefault("anomaly_engine", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         anomaly[field] = val
@@ -118,11 +119,33 @@ async def patch_anomaly_settings(patch: AnomalyPatch):
 
 
 # ---------------------------------------------------------------------------
+# Feature flags — Super Admin only
+# ---------------------------------------------------------------------------
+
+@router.get("/api/settings/features")
+async def get_features():
+    return settings.get("features", {})
+
+
+class FeaturesPatch(BaseModel):
+    scenes: Optional[bool] = None
+
+
+@router.patch("/api/settings/features")
+async def patch_features(patch: FeaturesPatch, _: dict = Depends(get_current_user)):
+    feats = settings.setdefault("features", {})
+    for field, val in patch.model_dump(exclude_none=True).items():
+        feats[field] = val
+    save_settings(settings)
+    return {"ok": True, "features": feats}
+
+
+# ---------------------------------------------------------------------------
 # Sensor alert rules
 # ---------------------------------------------------------------------------
 
 @router.get("/api/settings/alerts")
-async def get_alert_settings():
+async def get_alert_settings(_: dict = Depends(get_current_user)):
     return settings.get("sensor_alerts", {})
 
 
@@ -140,7 +163,7 @@ class AlertsPatch(BaseModel):
 
 
 @router.patch("/api/settings/alerts")
-async def patch_alert_settings(patch: AlertsPatch):
+async def patch_alert_settings(patch: AlertsPatch, _: dict = Depends(get_current_user)):
     alerts = settings.setdefault("sensor_alerts", {})
     data = patch.model_dump(exclude_none=True)
     for field, val in data.items():

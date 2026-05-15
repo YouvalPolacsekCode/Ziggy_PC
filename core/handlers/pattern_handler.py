@@ -93,8 +93,36 @@ async def handle_explain_suggestion(params: dict, *, source: str = "unknown") ->
         return err(f"Suggestion '{sug_id}' not found.")
 
     pct = int(sug["confidence"] * 100)
-    lines = [
-        f"Pattern type: {sug['pattern_type']}",
+    es = sug.get("evidence_summary")
+
+    _PATTERN_LABELS = {
+        "time_based": "Time pattern",
+        "sequence": "Sequence / routine",
+        "group": "Group",
+    }
+    lines = [f"Pattern type: {_PATTERN_LABELS.get(sug['pattern_type'], sug['pattern_type'])}"]
+
+    if es:
+        n = es.get("occurrences", "?")
+        weeks = es.get("unique_weeks", "?")
+        last = es.get("last_seen", "")
+        last_part = f" — last seen {last}" if last else ""
+        lines.append(f"Observed {n} time(s) across {weeks} week(s){last_part}")
+
+        if es.get("time_window"):
+            lines.append(
+                f"Time window: {es['time_window']}  (avg {es.get('avg_time', '')})"
+            )
+
+        days = es.get("active_day_names", [])
+        if days:
+            lines.append(f"Active days: {', '.join(days)}")
+
+        reversal_rate = es.get("reversal_rate", 0)
+        if reversal_rate > 0:
+            lines.append(f"Reversal rate: {int(reversal_rate * 100)}%  (fraction immediately undone)")
+
+    lines += [
         f"Reasoning: {sug['reasoning']}",
         f"Confidence: {pct}%",
         f"Trigger: {sug['trigger']}",

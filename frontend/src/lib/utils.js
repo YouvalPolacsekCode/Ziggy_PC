@@ -1,5 +1,6 @@
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { domainIcon as _registryDomainIcon, DOMAIN_REGISTRY } from './domainRegistry'
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
@@ -29,57 +30,9 @@ export function slugToTitle(slug) {
   return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-const SENSOR_CLASS_ICONS = {
-  temperature: '🌡️',
-  humidity: '💧',
-  pressure: '🔵',
-  illuminance: '☀️',
-  motion: '🚶',
-  door: '🚪',
-  window: '🪟',
-  smoke: '🚨',
-  moisture: '💦',
-  gas: '⚠️',
-  battery: '🔋',
-  power: '⚡',
-  energy: '⚡',
-  voltage: '🔌',
-  current: '🔌',
-  co2: '🌫️',
-  co: '🌫️',
-  pm25: '🌫️',
-  pm10: '🌫️',
-  sound: '🔊',
-  vibration: '📳',
-  connectivity: '📶',
-  occupancy: '🏠',
-  plug: '🔌',
-  lock: '🔒',
-  opening: '🚪',
-  presence: '🏠',
-  timestamp: '🕐',
-}
-
-export function domainIcon(domain, deviceClass) {
-  if (deviceClass && (domain === 'sensor' || domain === 'binary_sensor')) {
-    return SENSOR_CLASS_ICONS[deviceClass] || '📊'
-  }
-  const map = {
-    light: '💡',
-    switch: '🔌',
-    climate: '🌡️',
-    cover: '🪟',
-    media_player: '📺',
-    sensor: '📊',
-    binary_sensor: '🔍',
-    lock: '🔒',
-    camera: '📷',
-    fan: '💨',
-    vacuum: '🤖',
-    input_boolean: '🔘',
-  }
-  return map[domain] || '⚙️'
-}
+// domainIcon — now sourced from domainRegistry.js so adding a new domain
+// just requires updating that one file.
+export { _registryDomainIcon as domainIcon }
 
 // Returns a human-friendly state label + optional secondary line
 export function formatEntityState(entity) {
@@ -170,6 +123,13 @@ export function formatEntityState(entity) {
 
   if (state === 'on') return { primary: 'On', secondary: null }
   if (state === 'off') return { primary: 'Off', secondary: null }
+
+  // For any domain in the registry: look up a human label for the state.
+  const meta = DOMAIN_REGISTRY[domain]
+  if (meta?.stateLabels?.[state]) {
+    return { primary: meta.stateLabels[state], secondary: null }
+  }
+
   return { primary: state.replace(/_/g, ' '), secondary: null }
 }
 

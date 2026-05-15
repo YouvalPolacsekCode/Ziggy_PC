@@ -1,7 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X } from 'lucide-react'
-import { cn } from '../../lib/utils'
 
 export function Modal({ open, onClose, title, children, className }) {
   return (
@@ -11,44 +9,57 @@ export function Modal({ open, onClose, title, children, className }) {
           <Dialog.Portal forceMount>
             <Dialog.Overlay asChild>
               <motion.div
-                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                style={{
+                  position: 'fixed', inset: 0, zIndex: 40,
+                  background: 'rgba(0,0,0,0.35)',
+                  backdropFilter: 'blur(8px)',
+                }}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
               />
             </Dialog.Overlay>
 
             <Dialog.Content asChild>
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
                 <motion.div
-                  className={cn(
-                    'w-full max-w-lg max-h-[90vh] flex flex-col',
-                    'bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl',
-                    'border border-zinc-100 dark:border-zinc-800',
-                    className
-                  )}
-                  initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                  style={{
+                    width: '100%', maxWidth: 520, maxHeight: '90vh',
+                    display: 'flex', flexDirection: 'column',
+                    background: 'var(--surface)',
+                    border: '0.5px solid var(--line)',
+                    borderRadius: 18,
+                    boxShadow: '0 8px 40px rgba(0,0,0,0.20)',
+                  }}
+                  initial={{ opacity: 0, scale: 0.97, y: 6 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  exit={{ opacity: 0, scale: 0.97, y: 6 }}
                   transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  {/* Fixed header */}
-                  <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+                  {/* Header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '18px 20px 14px', borderBottom: '0.5px solid var(--line)',
+                    flexShrink: 0,
+                  }}>
                     {title && (
-                      <Dialog.Title className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                      <Dialog.Title style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--ink)', margin: 0 }}>
                         {title}
                       </Dialog.Title>
                     )}
                     <button
                       onClick={onClose}
-                      className="ml-auto p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                      style={{
+                        marginLeft: 'auto', padding: 6, borderRadius: 8,
+                        background: 'transparent', border: 'none', cursor: 'pointer',
+                        color: 'var(--ink-faint)', display: 'flex', alignItems: 'center',
+                      }}
                     >
-                      <X size={16} />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                     </button>
                   </div>
-                  {/* Scrollable body — overflow-visible so dropdowns escape */}
-                  <div className="px-6 pb-6 overflow-y-auto overflow-x-visible scrollbar-thin">
+
+                  {/* Body */}
+                  <div className="scrollbar-thin" style={{ padding: '18px 20px 20px', overflowY: 'auto', overflowX: 'visible' }}>
                     {children}
                   </div>
                 </motion.div>

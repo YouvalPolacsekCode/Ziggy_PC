@@ -204,21 +204,35 @@ async def rooms_summary():
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not fetch HA areas: {e}")
 
+    # Build a lookup: entity_id → area_id for entity-scoped anomaly bucketing (ANOM-06)
+    entity_to_area: dict[str, str] = {}
+    for area in areas:
+        for eid in area.get("entities", []):
+            entity_to_area[eid] = area["id"]
+
+    # Collect entity-level anomalies (keys contain a "." — they are entity_ids)
+    entity_anomalies: dict[str, list] = {}
+    for key, items in active_anomalies.items():
+        if "." in key:   # entity_id form e.g. "switch.iron"
+            area_id = entity_to_area.get(key)
+            if area_id:
+                entity_anomalies.setdefault(area_id, []).extend(items)
+
     result = []
     for area in areas:
         s = _build_summary(area, state_cache)
-        anomalies = active_anomalies.get(area["id"], [])
-        # Include entity list so the frontend can show device-type icons
+        # Merge area-scoped and entity-scoped anomalies for this room
+        anomalies = active_anomalies.get(area["id"], []) + entity_anomalies.get(area["id"], [])
         devices = [
             {"entity_id": eid, "state": state_cache.get(eid, {}).get("state", "unknown")}
             for eid in area.get("entities", [])
         ]
         result.append({
-            "id": area["id"],
-            "name": _prettify(area["name"]),
+            "id":       area["id"],
+            "name":     _prettify(area["name"]),
             "raw_name": area["name"],
             **s,
-            "devices": devices,
+            "devices":   devices,
             "anomalies": anomalies,
         })
     return {"rooms": result}
@@ -250,6 +264,26 @@ async def get_active_anomalies():
     except ImportError:
         active_anomalies = {}
     return {"anomalies": active_anomalies}
+
+
+@router.get("/api/map/anomalies/history")
+async def get_anomaly_history(limit: int = 50):
+    """Return the most recent anomaly history entries from SQLite."""
+    import aiosqlite
+    try:
+        await _init_db()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT rule_id, room_id, severity, confidence, message, fired_at, cleared_at, action_taken "
+                "FROM anomaly_history ORDER BY fired_at DESC LIMIT ?",
+                (limit,),
+            ) as cur:
+                rows = await cur.fetchall()
+                return {"history": [dict(r) for r in rows]}
+    except Exception as e:
+        log_error(f"[MapRouter] History read failed: {e}")
+        return {"history": []}
 
 
 class SnoozeBody(BaseModel):

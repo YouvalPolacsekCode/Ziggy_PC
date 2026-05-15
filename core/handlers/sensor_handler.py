@@ -1,6 +1,7 @@
 from __future__ import annotations
 from core.intent_utils import ok, err, wrap, normalize_room
 from services.home_automation import get_sensor_state, get_global_sensor, get_all_temperatures, get_all_states
+from services.presence_store import load_persons as _load_presence, home_person_names as _presence_home_names
 
 _ACTIVE_DOMAINS = {"light", "switch", "media_player", "fan", "climate", "cover", "lock", "vacuum"}
 
@@ -51,19 +52,26 @@ async def handle_get_sun_times(params: dict, *, source: str = "unknown") -> dict
 
 
 def _check_person_by_name(name: str) -> dict | None:
-    """Find a person.* entity whose friendly_name or entity_id matches name. Returns ok/err dict or None if not found."""
+    """Find a person by name in Ziggy presence registry, then HA person.* entities."""
     name_lower = name.lower().replace(" ", "").replace("'", "")
-    all_states = get_all_states()
-    for entity in all_states:
+
+    # Check Ziggy-native registry first
+    for p in _load_presence():
+        if name_lower in p["name"].lower().replace(" ", "").replace("'", ""):
+            home = p.get("state") == "home"
+            return ok(f"{p['name']} is {'home' if home else 'away'}.")
+
+    # Fall back to HA person.* entities
+    for entity in get_all_states():
         entity_id: str = entity.get("entity_id", "")
         if not entity_id.startswith("person."):
             continue
         friendly = entity.get("attributes", {}).get("friendly_name", "").lower().replace(" ", "")
         slug = entity_id.split(".", 1)[1].lower().replace("_", "")
         if name_lower in slug or name_lower in friendly:
-            state = entity.get("state", "unknown")
-            home = state.lower() == "home"
+            home = entity.get("state", "").lower() == "home"
             return ok(f"{name.capitalize()} is {'home' if home else 'away'}.")
+
     return None
 
 
@@ -95,7 +103,15 @@ async def handle_is_someone_home(params: dict, *, source: str = "unknown") -> di
             return ok(f"{room.replace('_', ' ').title()} is {'occupied' if occupied else 'empty'}.")
         return err(f"No motion sensor configured for {room}.")
 
-    # No name/room — check all person.* entities
+    # No name/room — check Ziggy presence registry first, HA person.* as fallback
+    ziggy_persons = _load_presence()
+    if ziggy_persons:
+        home_names = _presence_home_names()
+        if home_names:
+            return ok(f"Home: {', '.join(home_names)}.")
+        return ok("Nobody is home.")
+
+    # Fall back to HA person.* entities
     all_states = get_all_states()
     persons = [e for e in all_states if e.get("entity_id", "").startswith("person.")]
     if not persons:

@@ -15,6 +15,13 @@ async function request(method, path, body) {
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
   const res = await fetch(`${BASE}${path}`, opts)
+  if (res.status === 401) {
+    // Stale token — clear session and reload to login page
+    localStorage.removeItem('ziggy_token')
+    localStorage.removeItem('ziggy_role')
+    window.location.reload()
+    return
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || `HTTP ${res.status}`)
@@ -47,6 +54,7 @@ export const getEntities = (domain) =>
   get(domain ? `/ha/entities?domain=${domain}` : '/ha/entities')
 export const getEntityProtocols = () => get('/ha/entity-protocols')
 export const getEntityState = (entityId) => get(`/ha/state/${entityId}`)
+export const getEntityDetails = (entityId) => get(`/ha/entity/${encodeURIComponent(entityId)}/details`)
 export const getDeviceMap = () => get('/devices')
 export const getZiggyDevices = () => get('/devices')
 export const saveDevice = (data) => post('/devices', data)
@@ -109,6 +117,11 @@ export const getConfigFlows = (protocol) =>
 // Scenes — HA scenes
 export const getScenes = () => get('/ha/scenes')
 export const activateScene = (entityId) => post('/ha/scenes/activate', { entity_id: entityId })
+export const createScene = (name, snapshotEntities) => post('/ha/scenes', { name, snapshot_entities: snapshotEntities })
+export const deleteScene = (entityId) => del(`/ha/scenes/${encodeURIComponent(entityId)}`)
+
+// Activity log
+export const getActivity = (limit = 20) => get(`/activity?limit=${limit}`)
 
 // Settings
 export const getStatus = () => get('/status')
@@ -122,8 +135,14 @@ export const getAnomalySettings = () => get('/settings/anomaly')
 export const patchAnomalySettings = (data) => patch('/settings/anomaly', data)
 
 // Auth management
-export const getAuthStatus = () => get('/auth/status')
-export const changePassword = (data) => post('/auth/change-password', data)
+export const getAuthStatus    = ()           => get('/auth/status')
+export const changePassword   = (data)       => post('/auth/change-password', data)
+
+// User management (super_admin only)
+export const getUsers         = ()           => get('/auth/users')
+export const createUser       = (data)       => post('/auth/users', data)
+export const updateUser       = (username, data) => request('PATCH', `/auth/users/${encodeURIComponent(username)}`, data)
+export const deleteUser       = (username)   => del(`/auth/users/${encodeURIComponent(username)}`)
 
 // Admin settings
 export const getHaSettings = () => get('/settings/ha')
@@ -145,8 +164,18 @@ export const patchPatternLearningSettings = (data) => patch('/settings/pattern-l
 export const getRoomAliases = () => get('/settings/room-aliases')
 export const patchRoomAliases = (data) => patch('/settings/room-aliases', data)
 
+// System health — HA connectivity, offline devices, battery warnings
+export const getHealth  = () => get('/health')
+export const reloadZigbee = () => post('/health/reload-zigbee')
+
 // Memory
 export const getMemory = () => get('/memory')
+
+// Presence — Ziggy-native person tracking
+export const getPresencePersons  = ()           => get('/presence/persons')
+export const createPresencePerson = (name)      => post('/presence/persons', { name })
+export const deletePresencePerson = (id)        => del(`/presence/persons/${id}`)
+export const getPresenceZone      = ()           => get('/presence/zone')
 
 // Direct HA service call — use only for advanced controls (brightness, climate, media)
 export const callHaService = (domain, service, data) =>
@@ -185,6 +214,8 @@ export const irLearn = (deviceId, commandName) =>
   post('/ir/learn', { device_id: deviceId, command_name: commandName })
 export const irSend = (deviceId, command) =>
   post('/ir/send', { device_id: deviceId, command })
+export const irSendChannel = (deviceId, channel) =>
+  post(`/ir/devices/${deviceId}/channel`, { channel })
 
 // Quick Asks
 export const getQuickAsks = () => get('/quick-asks')
@@ -207,7 +238,14 @@ export const getMapRoomsSummary = () => get('/map/rooms/summary')
 export const getMapCanvas = () => get('/map/canvas')
 export const putMapCanvasPosition = (roomId, position) => request('PUT', `/map/canvas/${encodeURIComponent(roomId)}`, position)
 export const getActiveAnomalies = () => get('/map/anomalies/active')
+export const getAnomalyHistory  = (limit = 50) => get(`/map/anomalies/history?limit=${limit}`)
 export const getMapRender = () => get('/map/render')
 export const triggerMapRender = (rooms) => post('/map/render/generate', { rooms })
 export const snoozeMapAnomaly = (roomId, ruleId, durationMinutes = 60) =>
   post(`/map/anomalies/snooze/${encodeURIComponent(roomId)}/${encodeURIComponent(ruleId)}`, { duration_minutes: durationMinutes })
+
+// Cameras
+export const getCameras = () => get('/cameras')
+export const getCameraMotionEvents = (hours = 24) => get(`/cameras/motion?hours=${hours}`)
+export const cameraSnapshotUrl = (entityId) => `/api/cameras/${encodeURIComponent(entityId)}/snapshot`
+export const cameraStreamUrl   = (entityId) => `/api/cameras/${encodeURIComponent(entityId)}/stream`

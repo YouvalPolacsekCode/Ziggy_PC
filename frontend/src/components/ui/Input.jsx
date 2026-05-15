@@ -1,55 +1,53 @@
-import { cn } from '../../lib/utils'
+const fieldStyle = {
+  width: '100%', boxSizing: 'border-box',
+  background: 'var(--surface)', border: '0.5px solid var(--line)',
+  borderRadius: 10, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13,
+  outline: 'none', transition: 'border-color 0.12s',
+}
 
-export function Input({ className, label, error, ...props }) {
+const labelStyle = {
+  display: 'block', fontSize: 12, fontWeight: 500,
+  color: 'var(--ink-2)', marginBottom: 5,
+}
+
+export function Input({ className, label, error, style, ...props }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      {label && (
-        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          {label}
-        </label>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {label && <label style={labelStyle}>{label}</label>}
       <input
-        className={cn(
-          'h-10 rounded-xl px-3 text-sm',
-          'bg-zinc-50 dark:bg-zinc-800',
-          'border border-zinc-200 dark:border-zinc-700',
-          'text-zinc-900 dark:text-zinc-100',
-          'placeholder:text-zinc-400 dark:placeholder:text-zinc-600',
-          'transition-colors duration-150',
-          'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
-          error && 'border-red-400 focus:ring-red-400',
-          className
-        )}
+        className={className}
+        style={{
+          ...fieldStyle,
+          height: 40, padding: '0 12px',
+          border: `0.5px solid ${error ? 'var(--accent)' : 'var(--line)'}`,
+          ...style,
+        }}
+        onFocus={e => e.currentTarget.style.borderColor = 'var(--ink-mute)'}
+        onBlur={e  => e.currentTarget.style.borderColor = error ? 'var(--accent)' : 'var(--line)'}
         {...props}
       />
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2 }}>{error}</p>}
     </div>
   )
 }
 
-export function Textarea({ className, label, error, ...props }) {
+export function Textarea({ className, label, error, style, ...props }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      {label && (
-        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          {label}
-        </label>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {label && <label style={labelStyle}>{label}</label>}
       <textarea
-        className={cn(
-          'rounded-xl px-3 py-2.5 text-sm resize-none',
-          'bg-zinc-50 dark:bg-zinc-800',
-          'border border-zinc-200 dark:border-zinc-700',
-          'text-zinc-900 dark:text-zinc-100',
-          'placeholder:text-zinc-400 dark:placeholder:text-zinc-600',
-          'transition-colors duration-150',
-          'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
-          error && 'border-red-400 focus:ring-red-400',
-          className
-        )}
+        className={className}
+        style={{
+          ...fieldStyle,
+          padding: '10px 12px', resize: 'none',
+          border: `0.5px solid ${error ? 'var(--accent)' : 'var(--line)'}`,
+          ...style,
+        }}
+        onFocus={e => e.currentTarget.style.borderColor = 'var(--ink-mute)'}
+        onBlur={e  => e.currentTarget.style.borderColor = error ? 'var(--accent)' : 'var(--line)'}
         {...props}
       />
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2 }}>{error}</p>}
     </div>
   )
 }

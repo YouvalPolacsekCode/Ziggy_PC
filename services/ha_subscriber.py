@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import websockets
@@ -44,8 +45,21 @@ state_cache: dict[str, dict] = {}
 # Active anomalies per room.  { room_id: [ { rule_id, severity, message, since } ] }
 active_anomalies: dict[str, list] = {}
 
+# Public connection health flag.  True once HA auth + subscription succeeds.
+# Becomes False when the connection drops.  Read by /api/health.
+ha_connected: bool = False
+
 _BACKOFF_BASE = 2
 _BACKOFF_MAX = 60
+
+
+def _parse_ha_ts(ts_str: str) -> float:
+    """Convert HA ISO timestamp to Unix float.  Returns current time on failure."""
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc).timestamp()
+    except Exception:
+        return time.time()
 
 
 def _full_state_refresh() -> bool:
@@ -55,12 +69,28 @@ def _full_state_refresh() -> bool:
         resp.raise_for_status()
         for entity in resp.json():
             eid = entity.get("entity_id")
-            if eid:
-                state_cache[eid] = {
-                    "state": entity.get("state", "unknown"),
-                    "attributes": entity.get("attributes", {}),
-                    "last_changed": entity.get("last_changed", ""),
-                }
+            if not eid:
+                continue
+            state_cache[eid] = {
+                "state":        entity.get("state", "unknown"),
+                "attributes":   entity.get("attributes", {}),
+                "last_changed": entity.get("last_changed", ""),
+            }
+            # Seed anomaly engine on/off timestamps from HA's last_changed so
+            # ANOM-03 (door open) and ANOM-06 (device runtime) work after restart.
+            state       = entity.get("state", "unknown")
+            last_changed = entity.get("last_changed", "")
+            if last_changed:
+                ts = _parse_ha_ts(last_changed)
+                try:
+                    from services import anomaly_engine as _ae
+                    if state == "on":
+                        _ae._last_on.setdefault(eid, ts)
+                    elif state == "off":
+                        _ae._last_off.setdefault(eid, ts)
+                except Exception:
+                    pass
+
         log_info(f"[HASubscriber] State refresh: {len(state_cache)} entities loaded")
         return True
     except Exception as e:
@@ -118,9 +148,15 @@ async def _process_event(event: dict) -> None:
     # Restore last intentional settings when a device regains power.
     # Trigger: unavailable/unknown → on (physical switch restored / brief outage).
     # A normal software turn-on goes off→on and is excluded.
+    # The set of restore-eligible domains is driven by domain_registry (restore_on_reconnect=True).
     if new_s == "on" and prev_s in ("unavailable", "unknown"):
         domain = entity_id.split(".")[0]
-        if domain in ("light", "climate", "fan"):
+        try:
+            from services.domain_registry import restore_domains as _restore_domains
+            _eligible = _restore_domains()
+        except Exception:
+            _eligible = frozenset({"light", "climate", "fan"})
+        if domain in _eligible:
             asyncio.create_task(_restore_entity_state(entity_id))
 
     # Broadcast to frontend via the shared ws_manager
@@ -145,6 +181,7 @@ async def _process_event(event: dict) -> None:
 
 async def _run_once() -> None:
     """One connection attempt: connect, auth, subscribe, refresh, process events."""
+    global ha_connected
     async with websockets.connect(WS_URL, ping_interval=30, ping_timeout=10) as ws:
         # Auth handshake
         await ws.recv()  # auth_required
@@ -160,6 +197,7 @@ async def _run_once() -> None:
             raise RuntimeError(f"HA subscribe failed: {sub_resp}")
 
         log_info("[HASubscriber] Connected and subscribed. Loading state snapshot…")
+        ha_connected = True
 
         # Full state refresh before processing any buffered events
         loop = asyncio.get_event_loop()
@@ -179,18 +217,22 @@ async def _run_once() -> None:
 
 async def run_subscriber() -> None:
     """Reconnect loop with exponential backoff. Runs indefinitely."""
+    global ha_connected
     attempt = 0
     while True:
+        ha_connected = False
         try:
             attempt += 1
             log_info(f"[HASubscriber] Connecting (attempt {attempt})…")
             await _run_once()
         except Exception as e:
+            ha_connected = False
             backoff = min(_BACKOFF_BASE ** min(attempt, 6), _BACKOFF_MAX)
             log_error(f"[HASubscriber] Connection lost: {e}. Retry in {backoff}s")
             await asyncio.sleep(backoff)
         else:
             # Clean disconnect — reset backoff
+            ha_connected = False
             attempt = 0
             log_info("[HASubscriber] Connection closed cleanly. Reconnecting…")
             await asyncio.sleep(2)

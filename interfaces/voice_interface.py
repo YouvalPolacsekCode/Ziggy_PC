@@ -56,6 +56,7 @@ recognizer.dynamic_energy_threshold = False  # OFF — dynamic mode drifts too h
 recognizer.pause_threshold = 1.0            # wait 1s of silence before cutting off
 
 _whisper_base = None
+_whisper_hebrew = None
 
 def _get_whisper() -> WhisperModel:
     """Local base model — used for language detection and English transcription."""
@@ -65,8 +66,39 @@ def _get_whisper() -> WhisperModel:
     return _whisper_base
 
 
+def _get_whisper_hebrew() -> WhisperModel | None:
+    """Load the Hebrew-specific Whisper model (ivrit-ai). Returns None if unavailable."""
+    global _whisper_hebrew
+    if _whisper_hebrew is not None:
+        return _whisper_hebrew
+    try:
+        t0 = time.time()
+        _whisper_hebrew = WhisperModel(HEBREW_MODEL_ID, compute_type="int8")
+        print(f"[TIMING] hebrew-model-load: {time.time() - t0:.2f}s ({HEBREW_MODEL_ID})")
+        return _whisper_hebrew
+    except Exception as e:
+        print(f"[STT] Hebrew model load failed ({e}) — will fall back to API")
+        return None
+
+
+def _transcribe_local_hebrew(audio_path: str) -> tuple[str, str]:
+    """Transcribe Hebrew audio using the local ivrit-ai model. No API cost."""
+    t0 = time.time()
+    model = _get_whisper_hebrew()
+    if model is None:
+        return _transcribe_api(audio_path)
+    try:
+        segments_iter, _ = model.transcribe(audio_path, beam_size=5, language="he")
+        text = " ".join(s.text for s in segments_iter).strip()
+        print(f"[TIMING] hebrew-local-stt: {time.time() - t0:.2f}s")
+        return text, "he"
+    except Exception as e:
+        print(f"[STT] Local Hebrew model failed ({e}) — falling back to API")
+        return _transcribe_api(audio_path)
+
+
 def _transcribe_api(audio_path: str) -> tuple[str, str]:
-    """Transcribe Hebrew audio via OpenAI Whisper API. Fast, accurate, no local GPU needed."""
+    """Fallback: transcribe Hebrew audio via OpenAI Whisper API."""
     t0 = time.time()
     try:
         from integrations.openai_client import get_client
@@ -101,22 +133,54 @@ except ImportError:
     def fix_hebrew_direction(text: str) -> str:
         return text or ""
 
+_TRANSLATE_SYSTEM = "Translate the following smart home response to Hebrew. Return only the translation, nothing else."
+
 def _translate(text: str) -> str:
-    """Translate smart home response text to Hebrew via gpt-4o-mini."""
+    """Translate a smart home response to Hebrew.
+
+    Tries the local Ollama model first (zero cost). Falls back to gpt-4o-mini
+    if Ollama is unavailable or returns non-Hebrew output.
+    If the text is already Hebrew, returns it unchanged.
+    """
+    if is_hebrew(text):
+        return text
+
     t0 = time.time()
+    messages = [
+        {"role": "system", "content": _TRANSLATE_SYSTEM},
+        {"role": "user", "content": text},
+    ]
+
+    # --- Ollama path (local, free) ---
+    try:
+        from integrations.ollama_client import get_client as ollama_client, is_available, default_model
+        if is_available():
+            model = default_model()
+            resp = ollama_client().chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=150,
+                timeout=5,
+            )
+            result = (resp.choices[0].message.content or "").strip()
+            if is_hebrew(result):
+                print(f"[TIMING] translate-ollama ({model}): {time.time() - t0:.2f}s")
+                return result
+            print(f"[Voice] Ollama translation missing Hebrew chars — falling back to GPT")
+    except Exception as e:
+        print(f"[Voice] Ollama translation failed ({e}) — falling back to GPT")
+
+    # --- GPT fallback ---
     try:
         from integrations.openai_client import get_client
         resp = get_client().chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Translate the following smart home response to Hebrew. Return only the translation, nothing else."},
-                {"role": "user", "content": text},
-            ],
+            messages=messages,
             max_tokens=150,
             timeout=4,
         )
         result = resp.choices[0].message.content.strip()
-        print(f"[TIMING] translate: {time.time() - t0:.2f}s")
+        print(f"[TIMING] translate-gpt: {time.time() - t0:.2f}s")
         return result
     except Exception as e:
         print(f"[TIMING] translate: {time.time() - t0:.2f}s (FAILED: {e})")
@@ -129,7 +193,8 @@ def transcribe(audio_path: str):
     """
     Two-path STT:
       English → local base Whisper (~1s)
-      Hebrew  → local base detects language, OpenAI Whisper API transcribes (~1-2s)
+      Hebrew  → local base detects language, ivrit-ai model transcribes locally (~1-2s)
+                fallback to OpenAI Whisper API if ivrit-ai model is unavailable
     """
     t0 = time.time()
     model = _get_whisper()
@@ -153,8 +218,8 @@ def transcribe(audio_path: str):
         return "", "en"
 
     if detected_lang == "he":
-        print("[STT] Hebrew detected — routing to OpenAI Whisper API")
-        return _transcribe_api(audio_path)
+        print("[STT] Hebrew detected — routing to local ivrit-ai model")
+        return _transcribe_local_hebrew(audio_path)
 
     text = " ".join(s.text for s in segments).strip()
     print(f"[STT] lang={detected_lang!r}, segments={len(segments)}")

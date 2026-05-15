@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.ws_manager import manager
@@ -25,8 +25,13 @@ from backend.routers.suggestion_router import router as suggestion_router
 from backend.routers.quick_ask_router import router as quick_ask_router
 from backend.routers.status_router import router as status_router
 from backend.routers.auth_router import router as auth_router
+from backend.routers.auth_deps import get_current_user
 from backend.routers.map_router import router as map_router
 from backend.routers.admin_router import router as admin_router
+from backend.routers.activity_router import router as activity_router
+from backend.routers.health_router import router as health_router
+from backend.routers.presence_router import router as presence_router
+from backend.routers.camera_router import router as camera_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -63,37 +68,67 @@ app.add_middleware(
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    log_info(f"[API] WebSocket connected. Total: {manager.count}")
+    import json as _json
+    client_id = await manager.connect(websocket)
+    log_info(f"[API] WebSocket connected. client_id={client_id} total={manager.count}")
     try:
         while True:
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
+            try:
+                msg = _json.loads(raw)
+            except Exception:
+                continue
+
+            msg_type = msg.get("type")
+
+            if msg_type == "display_hello":
+                # Browser display tab announces itself with its name/room
+                from services.display_registry import registry
+                registry.register(
+                    ws_id=client_id,
+                    name=msg.get("name", "unknown display"),
+                    room=msg.get("room", ""),
+                    aliases=msg.get("aliases", []),
+                )
+                log_info(f"[WS] display registered: '{msg.get('name')}' room='{msg.get('room')}'")
+
+            elif msg_type == "display_heartbeat":
+                from services.display_registry import registry
+                registry.heartbeat(client_id)
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        log_info(f"[API] WebSocket disconnected. Total: {manager.count}")
+        log_info(f"[API] WebSocket disconnected. client_id={client_id} total={manager.count}")
 
 
 # ---------------------------------------------------------------------------
 # Include routers
 # ---------------------------------------------------------------------------
 
-app.include_router(intent_router)
-app.include_router(device_router)
-app.include_router(ha_router)
-app.include_router(pairing_router)
-app.include_router(task_router)
-app.include_router(automation_router)
-app.include_router(routine_router)
-app.include_router(event_router)
-app.include_router(capability_router)
-app.include_router(virtual_device_router)
-app.include_router(ir_router)
-app.include_router(suggestion_router)
-app.include_router(quick_ask_router)
-app.include_router(status_router)
+# auth_router is intentionally unprotected — contains login, setup, status
 app.include_router(auth_router)
-app.include_router(map_router)
-app.include_router(admin_router)
+
+_auth = [Depends(get_current_user)]
+app.include_router(intent_router,        dependencies=_auth)
+app.include_router(device_router,        dependencies=_auth)
+app.include_router(ha_router,            dependencies=_auth)
+app.include_router(pairing_router,       dependencies=_auth)
+app.include_router(task_router,          dependencies=_auth)
+app.include_router(automation_router,    dependencies=_auth)
+app.include_router(routine_router,       dependencies=_auth)
+app.include_router(event_router,         dependencies=_auth)
+app.include_router(capability_router,    dependencies=_auth)
+app.include_router(virtual_device_router, dependencies=_auth)
+app.include_router(ir_router,            dependencies=_auth)
+app.include_router(suggestion_router,    dependencies=_auth)
+app.include_router(quick_ask_router,     dependencies=_auth)
+app.include_router(status_router,        dependencies=_auth)
+app.include_router(map_router,           dependencies=_auth)
+app.include_router(admin_router,         dependencies=_auth)
+app.include_router(activity_router,      dependencies=_auth)
+app.include_router(health_router,        dependencies=_auth)
+app.include_router(presence_router,      dependencies=_auth)
+app.include_router(camera_router,        dependencies=_auth)
 
 
 # ---------------------------------------------------------------------------

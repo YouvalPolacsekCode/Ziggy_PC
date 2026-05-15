@@ -1,16 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   SkipBack, SkipForward, Play, Pause, Volume2, VolumeX,
   ArrowUp, ArrowDown, Lock, LockOpen, Home, Square, Minus, Plus,
-  Shuffle, Repeat, ChevronDown,
+  Shuffle, Repeat, ChevronDown, X, Tv2,
 } from 'lucide-react'
 import { Slider } from './Slider'
 import { cn } from '../../lib/utils'
+import { DOMAIN_REGISTRY, TOGGLEABLE_DOMAINS as _REGISTRY_TOGGLEABLE } from '../../lib/domainRegistry'
 
-// Domains that show the toggle switch in the card/row header
-export const TOGGLEABLE_DOMAINS = new Set([
-  'light', 'switch', 'fan', 'input_boolean', 'media_player',
-])
+// Re-export TOGGLEABLE_DOMAINS derived from registry (keeps external imports working).
+export const TOGGLEABLE_DOMAINS = _REGISTRY_TOGGLEABLE
 
 // Media players report activity via multiple states, not just 'on'
 const MEDIA_ACTIVE = new Set(['on', 'playing', 'paused', 'idle'])
@@ -755,8 +755,167 @@ function VacuumControls({ entity, onService }) {
   )
 }
 
-// ─── IR Remote Panel — for merged Wi-Fi + IR device cards ────────────────────
+// ─── Generic Controls — auto-rendered for any domain in the registry ─────────
+//
+// Shows only the commands the specific device instance actually supports:
+//   - Buttons are gated by supported_features bitmask (featureBit in registry)
+//   - Position slider shown only when positionFeatureBit is set in features
+//   - Chip rows rendered from attribute lists (chips[] in registry)
+//
+// Specialized components (LightControls, ClimateControls…) still handle
+// complex domains. GenericControls handles everything else with zero per-device code.
+function GenericControls({ entity, onService }) {
+  const meta = DOMAIN_REGISTRY[entity.domain]
+  const [confirming, setConfirming] = useState(null)
+
+  if (!meta || !meta.actions || Object.keys(meta.actions).length === 0) return null
+
+  const features = entity.supported_features ?? entity.ha_attributes?.supported_features ?? 0
+
+  // States that make a button redundant (don't show "Open" when already open, etc.)
+  const _SKIP_WHEN = {
+    turn_on:         ['on'],
+    turn_off:        ['off'],
+    open_valve:      ['open', 'opening'],
+    close_valve:     ['closed', 'closing'],
+    stop_valve:      [],   // always useful while opening/closing
+    lock:            ['locked', 'locking'],
+    unlock:          ['unlocked', 'unlocking'],
+    open:            ['unlocked'],           // latch open — only when locked
+    open_cover:      ['open', 'opening'],
+    close_cover:     ['closed', 'closing'],
+    start:           ['cleaning'],
+    start_mowing:    ['mowing'],
+    dock:            ['docked'],
+    return_to_base:  ['docked'],
+    alarm_disarm:    ['disarmed'],
+  }
+
+  const visibleActions = Object.entries(meta.actions).filter(([key, action]) => {
+    // Gate by feature bit
+    if (action.featureBit && !(features & action.featureBit)) return false
+    // Skip redundant buttons given the current state
+    const skip = _SKIP_WHEN[key]
+    return !skip || !skip.includes(entity.state)
+  })
+
+  // Position slider — only when device reports the SET_POSITION feature
+  const positionBit = meta.positionFeatureBit ?? 0
+  const hasPosition = positionBit > 0 && (features & positionBit) && entity.current_position != null
+  const positionService = entity.domain === 'valve' ? 'set_valve_position' : 'set_cover_position'
+
+  // Chip rows — only render a row when the attribute list is non-empty
+  const chipRows = (meta.chips ?? []).filter((cd) => {
+    const opts = entity[cd.attr] ?? entity.ha_attributes?.[cd.attr]
+    return Array.isArray(opts) && opts.length > 0
+  })
+
+  if (visibleActions.length === 0 && !hasPosition && chipRows.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+
+      {/* Action buttons */}
+      {visibleActions.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {visibleActions.map(([key, action]) => {
+            const needsConfirm = action.confirm || meta.safetyLevel === 'double_confirm'
+
+            if (needsConfirm && confirming === key) {
+              return (
+                <div key={key} className="flex gap-1.5 w-full">
+                  <button
+                    onClick={() => { onService(action.service, {}); setConfirming(null) }}
+                    className="flex-1 py-1.5 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600 transition-colors"
+                  >
+                    Confirm {action.label}
+                  </button>
+                  <button
+                    onClick={() => setConfirming(null)}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )
+            }
+
+            const isCurrentAction = (
+              (key === 'open_valve'  && entity.state === 'open')    ||
+              (key === 'close_valve' && entity.state === 'closed')  ||
+              (key === 'lock'        && entity.state === 'locked')  ||
+              (key === 'unlock'      && entity.state === 'unlocked')
+            )
+
+            return (
+              <button
+                key={key}
+                onClick={() => needsConfirm ? setConfirming(key) : onService(action.service, {})}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  isCurrentAction
+                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 cursor-default'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                )}
+              >
+                {action.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Position slider — gated by SET_POSITION feature bit */}
+      {hasPosition && (
+        <div>
+          <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
+            <span>Position</span>
+            <span className="tabular-nums">{entity.current_position}%</span>
+          </div>
+          <Slider
+            value={entity.current_position}
+            onValueCommit={(v) => onService(positionService, { position: v })}
+            min={0} max={100}
+          />
+        </div>
+      )}
+
+      {/* Attribute-driven chip rows (modes, speeds, presets…) */}
+      {chipRows.map((cd) => {
+        const opts = entity[cd.attr] ?? entity.ha_attributes?.[cd.attr] ?? []
+        const current = entity[cd.currentAttr] ?? entity.ha_attributes?.[cd.currentAttr]
+        return (
+          <div key={cd.attr}>
+            {cd.label && (
+              <span className="text-[10px] text-zinc-400 mr-1">{cd.label}</span>
+            )}
+            <div className="flex gap-1 flex-wrap mt-0.5">
+              {opts.map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => onService(cd.service, { [cd.param]: opt })}
+                  className={cn(
+                    'px-2 py-0.5 rounded-lg text-[10px] font-medium capitalize transition-colors',
+                    current === opt
+                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                  )}
+                >
+                  {String(opt).replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── IR Remote Drawer ─────────────────────────────────────────────────────────
+// Full remote layout in a bottom-sheet drawer.
 // onCommand(irDeviceId, commandName)
+// onChannel(irDeviceId, channelNumber)
 
 const REMOTE_DISPLAY = {
   power:        { label: '⏻',      title: 'Power' },
@@ -788,66 +947,288 @@ const REMOTE_DISPLAY = {
   fan_auto:     { label: 'Fan ⟲',  title: 'Fan Auto' },
   swing_on:     { label: 'Swing ✓',title: 'Swing On' },
   swing_off:    { label: 'Swing ✗',title: 'Swing Off' },
+  digit_0:      { label: '0',       title: '0' },
+  digit_1:      { label: '1',       title: '1' },
+  digit_2:      { label: '2',       title: '2' },
+  digit_3:      { label: '3',       title: '3' },
+  digit_4:      { label: '4',       title: '4' },
+  digit_5:      { label: '5',       title: '5' },
+  digit_6:      { label: '6',       title: '6' },
+  digit_7:      { label: '7',       title: '7' },
+  digit_8:      { label: '8',       title: '8' },
+  digit_9:      { label: '9',       title: '9' },
+  digit_ok:     { label: 'OK',      title: 'Enter' },
 }
 
-// Priority order within the IR remote panel
-const REMOTE_ORDER = [
-  'power',
-  'nav_up','nav_left','nav_ok','nav_right','nav_down','back','home','menu',
-  'volume_up','volume_down','mute','channel_up','channel_down',
-  'hdmi_1','hdmi_2','hdmi_3','hdmi_4',
-  'mode_cool','mode_heat','mode_fan','mode_auto','mode_dry',
-  'fan_low','fan_medium','fan_high','fan_auto','swing_on','swing_off',
-]
+// Remote layout zones — each zone only renders if ≥1 command in it is known
+const REMOTE_GROUPS = {
+  top_bar:  ['power', 'mute', 'volume_up', 'volume_down', 'channel_up', 'channel_down'],
+  nav:      ['nav_up', 'nav_left', 'nav_ok', 'nav_right', 'nav_down', 'back', 'home', 'menu'],
+  numpad:   ['digit_1','digit_2','digit_3','digit_4','digit_5','digit_6',
+             'digit_7','digit_8','digit_9','digit_0','digit_ok'],
+  sources:  ['hdmi_1','hdmi_2','hdmi_3','hdmi_4'],
+  ac_modes: ['mode_cool','mode_heat','mode_fan','mode_auto','mode_dry',
+             'fan_low','fan_medium','fan_high','fan_auto','swing_on','swing_off'],
+}
 
-export function IRRemotePanel({ irDevice, onCommand, defaultExpanded = false }) {
-  const [expanded, setExpanded] = useState(defaultExpanded)
-  if (!irDevice) return null
+const BTN_BASE = 'flex items-center justify-center rounded-xl text-sm font-medium transition-colors select-none'
+const BTN_ACTIVE = 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-95'
+const BTN_DISABLED = 'bg-zinc-50 dark:bg-zinc-900 text-zinc-300 dark:text-zinc-700 cursor-not-allowed'
 
-  const learned = new Set(irDevice.learned_commands || [])
-  const cmds = irDevice.commands || {}
-  const canDo = (cmd) => cmd in cmds && learned.has(cmd)
-
-  // Ordered known commands, then any remaining learned commands not in the display table
-  const knownOrdered = REMOTE_ORDER.filter(canDo)
-  const allLearned = learned
-  const extra = [...allLearned].filter((c) => !REMOTE_ORDER.includes(c) && canDo(c)).sort()
-  const allCmds = [...knownOrdered, ...extra]
-
-  if (allCmds.length === 0) return null
+function RemoteBtn({ cmd, learned, cmds, onPress, size = 'md' }) {
+  const disp = REMOTE_DISPLAY[cmd]
+  const exists = cmd in cmds
+  const isLearned = learned.has(cmd)
+  const active = exists && isLearned
+  const sz = size === 'lg'
+    ? 'w-14 h-12 text-base'
+    : size === 'sm'
+    ? 'w-10 h-9 text-xs'
+    : 'w-12 h-10 text-sm'
 
   return (
-    <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-1 text-[10px] font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
-      >
-        <ChevronDown size={10} className={cn('transition-transform duration-150', expanded && 'rotate-180')} />
-        IR Remote · {allLearned.size} cmd{allLearned.size !== 1 ? 's' : ''}
-      </button>
+    <button
+      title={active ? (disp?.title || cmd) : `${disp?.title || cmd} — not learned yet`}
+      disabled={!active}
+      onClick={active ? () => onPress(cmd) : undefined}
+      className={cn(BTN_BASE, sz, active ? BTN_ACTIVE : BTN_DISABLED)}
+    >
+      {disp?.label || cmd.replace(/_/g, ' ')}
+    </button>
+  )
+}
 
-      {expanded && (
-        <div className="flex gap-1.5 flex-wrap mt-2">
-          {allCmds.map((cmd) => {
-            const disp = REMOTE_DISPLAY[cmd]
-            return (
-              <button
-                key={cmd}
-                title={disp?.title || cmd}
-                onClick={() => onCommand(irDevice.id, cmd)}
-                className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-[10px] font-medium leading-none"
-              >
-                {disp?.label || cmd.replace(/_/g, ' ')}
-              </button>
-            )
-          })}
+function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
+  const learned = new Set(irDevice.learned_commands || [])
+  const cmds    = irDevice.commands || {}
+  const canDo   = (cmd) => cmd in cmds && learned.has(cmd)
+  const has     = (group) => REMOTE_GROUPS[group].some(canDo)
+
+  const [ch, setCh] = useState('')
+  const inputRef = useRef(null)
+
+  const allDigitsLearned = ['digit_0','digit_1','digit_2','digit_3','digit_4',
+    'digit_5','digit_6','digit_7','digit_8','digit_9','digit_ok'].every(canDo)
+
+  const handleChannel = () => {
+    const n = parseInt(ch, 10)
+    if (!isNaN(n) && n >= 0 && n <= 9999) {
+      onChannel(irDevice.id, n)
+      setCh('')
+    }
+  }
+
+  // Extra learned commands not covered by any group
+  const allGrouped = new Set(Object.values(REMOTE_GROUPS).flat())
+  const extras = [...learned].filter((c) => !allGrouped.has(c) && canDo(c)).sort()
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto overscroll-contain pb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-5 pb-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <Tv2 size={16} className="text-violet-500" />
+          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{irDevice.name}</span>
+          <span className="text-[10px] text-zinc-400 ml-0.5">{learned.size} cmds</span>
         </div>
-      )}
+        <button
+          onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-4 px-5">
+
+        {/* Top bar — power, mute, CH+/-, vol (shown if not all covered by WiFi) */}
+        {has('top_bar') && (
+          <div className="flex gap-2 flex-wrap">
+            {REMOTE_GROUPS.top_bar.map((cmd) => (cmd in cmds) && (
+              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
+                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
+            ))}
+          </div>
+        )}
+
+        {/* D-pad + Numpad side by side */}
+        {(has('nav') || has('numpad')) && (
+          <div className="flex gap-4 items-start justify-center">
+
+            {/* D-pad */}
+            {has('nav') && (
+              <div className="flex flex-col items-center gap-1.5 shrink-0">
+                <RemoteBtn cmd="nav_up" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
+                <div className="flex gap-1.5">
+                  <RemoteBtn cmd="nav_left"  learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
+                  <RemoteBtn cmd="nav_ok"    learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} size="lg" />
+                  <RemoteBtn cmd="nav_right" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
+                </div>
+                <RemoteBtn cmd="nav_down" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
+                <div className="flex gap-1.5 mt-1">
+                  {['back','home','menu'].filter((c) => c in cmds).map((cmd) => (
+                    <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
+                      onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Numpad */}
+            {has('numpad') && (
+              <div className="flex flex-col gap-1.5 shrink-0">
+                {[['digit_1','digit_2','digit_3'],['digit_4','digit_5','digit_6'],
+                  ['digit_7','digit_8','digit_9']].map((row, i) => (
+                  <div key={i} className="flex gap-1.5">
+                    {row.map((cmd) => (
+                      <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
+                        onPress={(c) => onCommand(irDevice.id, c)} />
+                    ))}
+                  </div>
+                ))}
+                <div className="flex gap-1.5">
+                  <div className="w-12" /> {/* spacer */}
+                  <RemoteBtn cmd="digit_0"  learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
+                  <RemoteBtn cmd="digit_ok" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
+                </div>
+                {!allDigitsLearned && (
+                  <p className="text-[9px] text-zinc-400 text-center mt-0.5">Learn all digits to enable channel entry</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sources */}
+        {has('sources') && (
+          <div className="flex gap-2 flex-wrap">
+            {REMOTE_GROUPS.sources.filter((c) => c in cmds).map((cmd) => (
+              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
+                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
+            ))}
+          </div>
+        )}
+
+        {/* AC modes */}
+        {has('ac_modes') && (
+          <div className="flex gap-1.5 flex-wrap">
+            {REMOTE_GROUPS.ac_modes.filter((c) => c in cmds).map((cmd) => (
+              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
+                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
+            ))}
+          </div>
+        )}
+
+        {/* Extra learned commands not in any group */}
+        {extras.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            {extras.map((cmd) => (
+              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
+                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
+            ))}
+          </div>
+        )}
+
+        {/* Channel entry — only when all digits learned */}
+        {allDigitsLearned && (
+          <div className="flex items-center gap-2 mt-1 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <span className="text-xs text-zinc-400 shrink-0">Ch</span>
+            <input
+              ref={inputRef}
+              type="number"
+              min={0}
+              max={9999}
+              value={ch}
+              onChange={(e) => setCh(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+              onKeyDown={(e) => e.key === 'Enter' && handleChannel()}
+              placeholder="e.g. 12"
+              className="flex-1 h-9 px-3 rounded-xl text-sm border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <button
+              disabled={!ch || isNaN(parseInt(ch, 10))}
+              onClick={handleChannel}
+              className="px-4 h-9 rounded-xl bg-violet-500 text-white text-sm font-medium hover:bg-violet-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              Go
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
+// IRRemoteButton — trigger row that opens the full remote drawer.
+// Replaces the old IRRemotePanel. onCommand(id, cmd), onChannel(id, channel).
+export function IRRemoteButton({ irDevice, onCommand, onChannel }) {
+  const [open, setOpen] = useState(false)
+  if (!irDevice) return null
+
+  const learned = new Set(irDevice.learned_commands || [])
+  if (learned.size === 0) return null
+
+  return (
+    <>
+      <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400">
+          <Tv2 size={11} className="text-violet-400" />
+          IR Remote · {learned.size} cmd{learned.size !== 1 ? 's' : ''}
+        </span>
+        <button
+          onClick={() => setOpen(true)}
+          className="text-[10px] font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+        >
+          Open →
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setOpen(false)}
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            />
+            {/* Drawer */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl max-h-[85vh] overflow-hidden"
+            >
+              {/* Drag handle */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+              </div>
+              <IRRemoteDrawer
+                irDevice={irDevice}
+                onCommand={onCommand}
+                onChannel={onChannel}
+                onClose={() => setOpen(false)}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
+//
+// Specialized components are used for complex domains that need rich UI
+// (sliders, color pickers, media controls, etc.).
+// All other domains registered in domainRegistry.js fall through to
+// GenericControls which auto-renders buttons from the action definitions.
+//
+// To support a brand-new domain: add it to domainRegistry.js (and the Python
+// registry).  No changes here required unless you want a specialized UI.
 export function DeviceControls({ entity, onService }) {
   switch (entity.domain) {
     case 'light':        return <LightControls        entity={entity} onService={onService} />
@@ -857,6 +1238,6 @@ export function DeviceControls({ entity, onService }) {
     case 'fan':          return <FanControls          entity={entity} onService={onService} />
     case 'lock':         return <LockControls         entity={entity} onService={onService} />
     case 'vacuum':       return <VacuumControls       entity={entity} onService={onService} />
-    default:             return null
+    default:             return <GenericControls      entity={entity} onService={onService} />
   }
 }

@@ -29,6 +29,8 @@ from core.handlers import (
     event_handler,
     pattern_handler,
     automation_handler,
+    device_handler,
+    anomaly_handler,
 )
 
 _ALL_HANDLERS: dict = {}
@@ -51,15 +53,38 @@ for _mod in [
     event_handler,
     pattern_handler,
     automation_handler,
+    device_handler,
+    anomaly_handler,
 ]:
     _ALL_HANDLERS.update(_mod.HANDLERS)
 
 
 async def handle_intent(intent_result: dict, **kwargs) -> dict:
     intent = intent_result.get("intent")
-    params = intent_result.get("params", {})
     source = intent_result.get("source") or kwargs.get("source", "unknown")
 
+    # Multi-intent envelope — dispatch each sub-intent sequentially and combine
+    if intent == "__multi__":
+        sub_intents = intent_result.get("intents") or []
+        results = []
+        any_ok = False
+        for sub in sub_intents:
+            r = await handle_intent(sub, **kwargs)
+            results.append(r)
+            if r.get("ok"):
+                any_ok = True
+        messages = [r.get("message", "").rstrip(".") for r in results if r.get("message")]
+        if not messages:
+            return {"ok": any_ok, "message": "Done."}
+        if len(messages) == 1:
+            combined = messages[0] + "."
+        elif len(messages) == 2:
+            combined = f"{messages[0]} and {messages[1]}."
+        else:
+            combined = ", ".join(messages[:-1]) + f", and {messages[-1]}."
+        return {"ok": any_ok, "message": combined}
+
+    params = intent_result.get("params", {})
     log_info(f"[Intent Handler] intent={intent} source={source} params={params}")
 
     try:

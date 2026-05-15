@@ -1,41 +1,48 @@
+// Curated Unsplash room photos.
+// Every photo is a clean interior/exterior shot — no people prominently featured.
+// To swap a photo: change the Unsplash photo ID (the part after "photo-").
 export const ROOM_PHOTOS = {
-  living_room:  'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&q=80',
-  bedroom:      'https://images.unsplash.com/photo-1540518614846-7eded433c457?w=400&q=80',
-  kitchen:      'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&q=80',
-  bathroom:     'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=400&q=80',
-  office:       'https://images.unsplash.com/photo-1497366216548-37526070297c?w=400&q=80',
-  garage:       'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80',
-  hallway:      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=80',
-  garden:       'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&q=80',
-  dining_room:  'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400&q=80',
-  kids_room:    'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&q=80',
-  laundry:      'https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=400&q=80',
-  balcony:      'https://images.unsplash.com/photo-1567684014761-b65e2e3b0ac4?w=400&q=80',
-  gym:          'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&q=80',
-  basement:     'https://images.unsplash.com/photo-1604754742629-3e5728249d73?w=400&q=80',
-  nursery:      'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=400&q=80',
-  attic:        'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80',
+  living_room:     'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&q=80', // green sofa
+  bedroom:         'https://images.unsplash.com/photo-1540518614846-7eded433c457?w=400&q=80', // warm toned bedroom
+  master_bedroom:  'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=400&q=80', // minimal master
+  kitchen:         'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=400&q=80', // marble island kitchen
+  bathroom:        'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=400&q=80', // bright modern bathroom
+  office:          'https://images.unsplash.com/photo-1497366216548-37526070297c?w=400&q=80', // home office
+  dining_room:     'https://images.unsplash.com/photo-1604578762246-41134e37f9cc?w=400&q=80', // plant-filled dining area
+  kids_room:       'https://images.unsplash.com/photo-1616046229478-9901c5536a45?w=400&q=80', // children's bedroom
+  nursery:         'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=400&q=80', // nursery
+  hallway:         'https://images.unsplash.com/photo-1600210492493-0946911123ea?w=400&q=80', // bright interior hallway
+  entrance:        'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400&q=80', // house front entrance
+  balcony:         'https://images.unsplash.com/photo-1567684014761-b65e2e3b0ac4?w=400&q=80', // balcony with plants
+  garden:          'https://images.unsplash.com/photo-1558904541-efa843a96f01?w=400&q=80', // garden/backyard
+  garage:          'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80', // garage
+  laundry:         'https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=400&q=80', // laundry room
+  gym:             'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&q=80', // home gym
+  basement:        'https://images.unsplash.com/photo-1540574163026-643ea20ade25?w=400&q=80', // finished basement
+  attic:           'https://images.unsplash.com/photo-1600585154526-990dced4db0d?w=400&q=80', // attic with skylight
 }
 
-export const DEFAULT_PHOTO = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&q=80'
+export const DEFAULT_PHOTO = ROOM_PHOTOS.living_room
 
 export const PHOTO_OPTIONS = [
-  { key: 'living_room', label: 'Living Room' },
-  { key: 'bedroom',     label: 'Bedroom' },
-  { key: 'kitchen',     label: 'Kitchen' },
-  { key: 'bathroom',    label: 'Bathroom' },
-  { key: 'office',      label: 'Office' },
-  { key: 'dining_room', label: 'Dining' },
-  { key: 'kids_room',   label: "Kids Room" },
-  { key: 'nursery',     label: 'Nursery' },
-  { key: 'garage',      label: 'Garage' },
-  { key: 'hallway',     label: 'Hallway' },
-  { key: 'garden',      label: 'Garden' },
-  { key: 'balcony',     label: 'Balcony' },
-  { key: 'laundry',     label: 'Laundry' },
-  { key: 'gym',         label: 'Gym' },
-  { key: 'basement',    label: 'Basement' },
-  { key: 'attic',       label: 'Attic' },
+  { key: 'living_room',    label: 'Living Room' },
+  { key: 'bedroom',        label: 'Bedroom' },
+  { key: 'master_bedroom', label: 'Master Bedroom' },
+  { key: 'kitchen',        label: 'Kitchen' },
+  { key: 'bathroom',       label: 'Bathroom' },
+  { key: 'office',         label: 'Office' },
+  { key: 'dining_room',    label: 'Dining Room' },
+  { key: 'kids_room',      label: 'Kids Room' },
+  { key: 'nursery',        label: 'Nursery' },
+  { key: 'hallway',        label: 'Hallway' },
+  { key: 'entrance',       label: 'Entrance' },
+  { key: 'balcony',        label: 'Balcony' },
+  { key: 'garden',         label: 'Garden' },
+  { key: 'garage',         label: 'Garage' },
+  { key: 'laundry',        label: 'Laundry' },
+  { key: 'gym',            label: 'Gym' },
+  { key: 'basement',       label: 'Basement' },
+  { key: 'attic',          label: 'Attic' },
 ]
 
 const CUSTOM_KEY = 'ziggy_room_custom_photos'
@@ -64,7 +71,6 @@ export function removeCustomPhoto(roomId) {
 }
 
 // Resize + compress a File to a JPEG data URL (max 800px, 0.82 quality).
-// Keeps storage footprint small enough for localStorage.
 export function resizeImageToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const img = new Image()

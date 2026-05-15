@@ -1,18 +1,19 @@
 import { useEffect, useState, useRef, forwardRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil } from 'lucide-react'
+import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
-import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemotePanel, isEntityOn } from '../components/ui/DeviceControls'
+import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend } from '../lib/api'
+import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms } from '../lib/api'
 import { cn } from '../lib/utils'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
 
@@ -82,7 +83,8 @@ function IREditModal({ device, onClose, onSaved }) {
   const [rooms, setRooms] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [commands, setCommands] = useState(Object.keys(device.commands || {}))
+  // Store as [logicalName, haCommandName] pairs to preserve custom HA command mappings
+  const [commands, setCommands] = useState(Object.entries(device.commands || {}))
   const [newCmd, setNewCmd] = useState('')
   const learned = new Set(device.learned_commands || [])
 
@@ -95,7 +97,7 @@ function IREditModal({ device, onClose, onSaved }) {
     setError(null)
     try {
       const commandMap = {}
-      commands.forEach((c) => { commandMap[c] = c })
+      commands.forEach(([k, v]) => { commandMap[k] = v })
       await patchIrDevice(device.id, {
         name: form.name.trim(),
         device_type: form.device_type,
@@ -113,7 +115,7 @@ function IREditModal({ device, onClose, onSaved }) {
 
   const addCmd = () => {
     const c = newCmd.trim().toLowerCase().replace(/\s+/g, '_')
-    if (c && !commands.includes(c)) { setCommands([...commands, c]); setNewCmd('') }
+    if (c && !commands.some(([k]) => k === c)) { setCommands([...commands, [c, c]]); setNewCmd('') }
   }
 
   return (
@@ -176,13 +178,13 @@ function IREditModal({ device, onClose, onSaved }) {
                 Green = learned in HA. Click <strong className="text-zinc-600 dark:text-zinc-300">Learn</strong> to (re)teach, <strong className="text-zinc-600 dark:text-zinc-300">Test</strong> to fire it.
               </p>
               <div className="space-y-0.5 mb-3">
-                {commands.map((cmd) => (
+                {commands.map(([cmd]) => (
                   <CommandEditRow
                     key={cmd}
                     cmd={cmd}
                     learned={learned.has(cmd)}
                     deviceId={device.id}
-                    onRemove={() => setCommands(commands.filter((c) => c !== cmd))}
+                    onRemove={() => setCommands(commands.filter(([k]) => k !== cmd))}
                   />
                 ))}
                 {commands.length === 0 && <p className="text-xs text-zinc-400 py-2">No commands yet.</p>}
@@ -386,65 +388,51 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   )
 }
 
-const DOMAIN_FILTER = [
-  { id: 'all', label: 'All' },
+// Status-based filter chips — always visible regardless of device inventory.
+const _STATUS_FILTERS = [
+  { id: 'all',        label: 'All' },
   { id: 'unassigned', label: '📦 Unassigned' },
-  { id: 'active', label: '🟢 Active' },
-  { id: 'connected', label: '🔗 Connected' },
-  { id: 'light', label: 'Lights' },
-  { id: 'switch', label: 'Switches' },
-  { id: 'climate', label: 'Climate' },
-  { id: 'media_player', label: 'Media' },
-  { id: 'sensor', label: 'Sensors' },
+  { id: 'noroom',     label: '🏠 No Room' },
+  { id: 'active',     label: '🟢 Active' },
+  { id: 'connected',  label: '🔗 Connected' },
+  { id: 'ir',         label: '📡 IR Remotes' },
 ]
 
-// Connectivity groups — order determines display order
-// Domain → display group (first match wins). IR devices map naturally here because
-// their domain is already mapped: tv/soundbar/projector → media_player, ac → climate, etc.
-const DOMAIN_GROUPS = [
-  { id: 'lights',   label: 'Lights',   domains: ['light'] },
-  { id: 'climate',  label: 'Climate',  domains: ['climate', 'fan', 'humidifier'] },
-  { id: 'media',    label: 'Media',    domains: ['media_player'] },
-  { id: 'switches', label: 'Switches', domains: ['switch', 'input_boolean'] },
-  { id: 'sensors',  label: 'Sensors',  domains: ['sensor', 'binary_sensor'] },
-  { id: 'security', label: 'Security', domains: ['lock', 'cover', 'alarm_control_panel', 'camera'] },
-  { id: 'other',    label: 'Other',    domains: [] },
-]
-
-function domainGroup(entity) {
-  for (const g of DOMAIN_GROUPS) {
-    if (g.domains.includes(entity.domain)) return g.id
+// Build domain-group chips from the live entity list — only include groups that have
+// at least one entity present. Called inside the component so it reacts to store updates.
+function buildGroupFilters(entities, irEntities) {
+  const occupiedGroups = new Set()
+  for (const e of entities) {
+    const g = domainGroup(e)
+    if (g && g !== 'other') occupiedGroups.add(g)
   }
-  return 'other'
+  if (irEntities?.length) occupiedGroups.add('ir')
+  return DOMAIN_GROUPS
+    .filter((g) => g.id !== 'other' && occupiedGroups.has(g.id))
+    .map((g) => ({ id: g.id, label: g.label, isGroup: true }))
 }
+
+// DOMAIN_GROUPS and domainGroup are now imported from domainRegistry.js.
+// Adding a new HA domain there automatically updates grouping here.
+// (DOMAIN_GROUPS and domainGroup imported at top of file)
 
 // ── Collapsible group header ───────────────────────────────────────────────────
 function CollapsibleGroup({ label, count, open, onToggle, children, action }) {
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-2 flex-1 min-w-0"
-        >
-          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{label}</span>
-          {count != null && <span className="text-xs text-zinc-400 dark:text-zinc-600">{count}</span>}
-          <ChevronDown
-            size={15}
-            className={cn('text-zinc-400 transition-transform duration-200 ml-auto mr-1', open ? 'rotate-180' : '')}
-          />
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.01em' }}>{label}</span>
+          {count != null && <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{count}</span>}
+          <span style={{ marginLeft: 'auto', color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
         </button>
-        {action && <div className="shrink-0 ml-2">{action}</div>}
+        {action && <div style={{ flexShrink: 0 }}>{action}</div>}
       </div>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            style={{ overflow: 'hidden' }}
-          >
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
             {children}
           </motion.div>
         )}
@@ -468,34 +456,34 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
   return (
     <div ref={ref} className="relative mt-3">
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
-        className={cn(
-          'w-full flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors',
-          'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300',
-          'hover:bg-violet-100 dark:hover:bg-violet-900/40'
-        )}
+        onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '6px 10px', borderRadius: 8, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', background: `color-mix(in srgb, var(--info) 10%, var(--surface))`, color: 'var(--info)', border: `0.5px solid color-mix(in srgb, var(--info) 30%, var(--line))`, fontFamily: 'inherit' }}
       >
         <span>Assign to room</span>
-        <ChevronDown size={11} className={cn('transition-transform', open && 'rotate-180')} />
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.12s' }}><path d="M6 9l6 6 6-6"/></svg>
       </button>
 
       <AnimatePresence>
         {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.12 }}
-            className="absolute bottom-full left-0 right-0 mb-1 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+          <motion.div initial={{ opacity: 0, y: -4, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.97 }} transition={{ duration: 0.12 }}
+            style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4, zIndex: 50, background: 'var(--surface)', borderRadius: 11, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', border: '0.5px solid var(--line)', overflow: 'hidden' }}
           >
-            <div className="py-1 max-h-48 overflow-y-auto">
-              {rooms.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => { onAssign(entityId, r.id); setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            <div style={{ padding: '4px 0', maxHeight: 192, overflowY: 'auto' }}>
+              <button onClick={() => { onAssign(entityId, null); setOpen(false) }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '0.5px solid var(--line)', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--ink-faint)', fontFamily: 'inherit' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <Home size={11} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+                No room
+              </button>
+              {rooms.map(r => (
+                <button key={r.id} onClick={() => { onAssign(entityId, r.id); setOpen(false) }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--ink-2)', fontFamily: 'inherit' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
-                  <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0" />
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--info)', flexShrink: 0 }} />
                   {r.name}
                 </button>
               ))}
@@ -508,7 +496,7 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
 }
 
 // ── Per-card "…" context menu ─────────────────────────────────────────────────
-function DeviceMenu({ entity, rooms, onHide, onAssign, extraItems = [] }) {
+function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extraItems = [] }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: undefined, right: 0 })
   const btnRef = useRef(null)
@@ -614,10 +602,16 @@ function DeviceMenu({ entity, rooms, onHide, onAssign, extraItems = [] }) {
               ))}
               <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1">
                 <button
-                  onClick={() => { onHide(entity.entity_id); setOpen(false) }}
+                  onClick={() => {
+                    isHidden ? onUnhide(entity.entity_id) : onHide(entity.entity_id)
+                    setOpen(false)
+                  }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                 >
-                  <EyeOff size={12} /> Hide device
+                  {isHidden
+                    ? <><Eye size={12} /> Show device</>
+                    : <><EyeOff size={12} /> Hide device</>
+                  }
                 </button>
                 {extraItems.map((item, i) => (
                   <button key={i} onClick={() => { item.onClick(); setOpen(false) }}
@@ -815,11 +809,12 @@ const IR_STATE_OPTIONS_MAP = {
 }
 
 const DeviceCard = forwardRef(function DeviceCard({
-  entity, rooms, onToggle, onService, onHide, onAssign,
-  onIrCommand, onIrStateChange, onEditIr, onDeleteIr,
+  entity, rooms, onToggle, onService, onHide, onUnhide, onAssign,
+  onIrCommand, onIrChannel, onIrStateChange, onEditIr, onDeleteIr,
   onLinkIr, onUnlinkIr,
   isHidden, showAssign, ziggyStatus,
 }, ref) {
+  const navigate = useNavigate()
   const isIr = entity._ir === true
   const irDevice = entity._irDevice
   const linkedIr = entity._linkedIr || null  // IR device linked to this HA entity
@@ -865,6 +860,16 @@ const DeviceCard = forwardRef(function DeviceCard({
             )}
           </div>
           <div className="flex items-center gap-1">
+            {/* Navigate to full device detail page */}
+            {!isIr && (
+              <button
+                onClick={() => navigate(`/devices/${encodeURIComponent(entity.entity_id)}`)}
+                className="p-1 rounded-lg text-zinc-300 dark:text-zinc-700 hover:text-zinc-500 dark:hover:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                title="Device details"
+              >
+                <ChevronRight size={14} />
+              </button>
+            )}
             {isToggleable && (
               <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />
             )}
@@ -884,6 +889,8 @@ const DeviceCard = forwardRef(function DeviceCard({
                 entity={entity}
                 rooms={rooms}
                 onHide={onHide}
+                onUnhide={onUnhide}
+                isHidden={isHidden}
                 onAssign={onAssign}
                 extraItems={[
                   { label: 'Edit IR remote', icon: <Pencil size={12} />, onClick: () => onEditIr(linkedIr) },
@@ -891,7 +898,7 @@ const DeviceCard = forwardRef(function DeviceCard({
                 ]}
               />
             ) : (
-              <DeviceMenu entity={entity} rooms={rooms} onHide={onHide} onAssign={onAssign} />
+              <DeviceMenu entity={entity} rooms={rooms} onHide={onHide} onUnhide={onUnhide} isHidden={isHidden} onAssign={onAssign} />
             )}
           </div>
         </div>
@@ -963,10 +970,10 @@ const DeviceCard = forwardRef(function DeviceCard({
         {/* ── Controls ── */}
         {!isHidden && (
           isIr ? (
-            // Standalone IR card: quick controls only
-            <IRQuickControls device={irDevice} onCommand={onIrCommand} />
+            // Standalone IR card: full remote drawer trigger
+            <IRRemoteButton irDevice={irDevice} onCommand={onIrCommand} onChannel={onIrChannel} />
           ) : linkedIr ? (
-            // Merged card: HA controls + IR Power-On + IR Remote panel
+            // Merged card: HA controls + IR Power-On + IR Remote drawer trigger
             <>
               {/* Power On via IR — shown prominently when device is off/unavailable */}
               {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
@@ -979,8 +986,8 @@ const DeviceCard = forwardRef(function DeviceCard({
               )}
               {/* Standard HA controls (play/pause, volume, sources, climate modes, etc.) */}
               <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-              {/* IR Remote panel — all learned IR commands */}
-              <IRRemotePanel irDevice={linkedIr} onCommand={onIrCommand} />
+              {/* IR Remote drawer trigger */}
+              <IRRemoteButton irDevice={linkedIr} onCommand={onIrCommand} onChannel={onIrChannel} />
             </>
           ) : (
             // Regular HA entity
@@ -998,7 +1005,7 @@ const DeviceCard = forwardRef(function DeviceCard({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Devices() {
-  const { entities, rooms, deviceStatusMap, loading, fetchAll, hiddenEntities, showHidden, hideEntity, toggleShowHidden, getUnassigned, ziggyRooms, unclaimedDevices, updateIrAssumedState } = useDeviceStore()
+  const { entities, rooms, deviceStatusMap, loading, fetchAll, hiddenEntities, showHidden, hideEntity, unhideEntity, toggleShowHidden, getUnassigned, getNoRoom, ziggyRooms, unclaimedDevices, updateIrAssumedState, getActiveCount, getTotalControllable } = useDeviceStore()
   const { addToast } = useUIStore()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
@@ -1024,16 +1031,35 @@ export default function Devices() {
     entities: haAreaMap[zr.id]?.entities || [],
   }))
   const unassigned = getUnassigned()
+  const noRoomEntities = getNoRoom()
+
+  // Dynamic filter chips — only groups that have at least one entity present.
+  const irEntities = entities.filter(e => e._ir)
+  const groupFilters = buildGroupFilters(entities, irEntities)
+  const DOMAIN_FILTER = [..._STATUS_FILTERS, ...groupFilters]
+
+  // If the current filter is a group that no longer has any devices, reset to 'all'.
+  useEffect(() => {
+    if (domain !== 'all' && !DOMAIN_FILTER.some(f => f.id === domain)) {
+      setDomain('all')
+    }
+  }, [entities.length])
 
   const filtered = (() => {
     if (domain === 'unassigned') return unassigned
+    if (domain === 'noroom') return noRoomEntities
     return entities.filter((e) => {
       const isHidden = hiddenEntities.has(e.entity_id)
       if (isHidden && !showHidden) return false
       let matchDomain = true
       if (domain === 'active') matchDomain = isEntityOn(e)
       else if (domain === 'connected') matchDomain = e.state !== 'unavailable' && e.state !== 'unknown'
-      else if (domain !== 'all') matchDomain = e.domain === domain
+      else if (domain === 'ir') matchDomain = e._ir === true || Boolean(e._linkedIr)
+      else if (domain !== 'all') {
+        // Check if it's a group ID (e.g. 'security', 'climate') or a direct domain name
+        const isGroupFilter = groupFilters.some((f) => f.id === domain)
+        matchDomain = isGroupFilter ? domainGroup(e) === domain : e.domain === domain
+      }
       const matchSearch = !search ||
         (e.display_name || e.friendly_name || '').toLowerCase().includes(search.toLowerCase()) ||
         e.entity_id.toLowerCase().includes(search.toLowerCase())
@@ -1132,7 +1158,14 @@ export default function Devices() {
     } catch { addToast('IR command failed', 'error') }
   }
 
-  const activeCount = entities.filter((e) => isEntityOn(e)).length
+  const handleIrChannel = async (deviceId, channel) => {
+    try {
+      await irSendChannel(deviceId, channel)
+      addToast(`Channel ${channel}`, 'success')
+    } catch { addToast('Channel change failed', 'error') }
+  }
+
+  const activeCount = getActiveCount()
   const hiddenCount = hiddenEntities.size
 
   // Devices in DeviceRegistry with status needing attention (lost/unconfigured) — not visible in HA entity list
@@ -1147,92 +1180,96 @@ export default function Devices() {
     return !NON_DEVICE_DOMAINS.has(domain)
   })
 
+  // ── By-room grouping (primary view) ──────────────────────────────────────────
+  const [viewMode, setViewMode] = useState('room') // 'room' | 'type'
+
+  const deviceCardProps = (entity, assign = false) => ({
+    entity,
+    rooms: roomsForPicker,
+    onToggle: handleToggle,
+    onService: handleService,
+    onHide: hideEntity,
+    onUnhide: unhideEntity,
+    onAssign: handleAssign,
+    onIrCommand: handleIrCommand,
+    onIrChannel: handleIrChannel,
+    onIrStateChange: handleIrStateChange,
+    onEditIr: setEditingIrDevice,
+    onDeleteIr: handleDeleteIr,
+    onLinkIr: setLinkingIrDevice,
+    onUnlinkIr: handleUnlinkIr,
+    isHidden: hiddenEntities.has(entity.entity_id),
+    showAssign: assign,
+    ziggyStatus: deviceStatusMap[entity.entity_id],
+  })
+
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6">
+    <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Devices</h1>
-          <p className="text-sm text-zinc-400 dark:text-zinc-600 mt-0.5">
-            {activeCount} active · {entities.length} total
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Home Assistant entities</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Devices</h1>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+            {activeCount} of {getTotalControllable()} active · {entities.length} total
             {hiddenCount > 0 && ` · ${hiddenCount} hidden`}
-            {unassigned.length > 0 && (
-              <span className="ml-1 text-amber-500 font-medium">· {unassigned.length} unassigned</span>
-            )}
+            {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {unassigned.length} unassigned</span>}
+            {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginLeft: 4 }}>· {noRoomEntities.length} no room</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setShowPairing(true)}>
-            <Plus size={13} /> Pair device
-          </Button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           {hiddenCount > 0 && (
-            <button
-              onClick={toggleShowHidden}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                showHidden
-                  ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              )}
-            >
+            <button onClick={toggleShowHidden} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+              background: showHidden ? 'var(--ink)' : 'var(--surface)',
+              color: showHidden ? 'var(--bg)' : 'var(--ink-mute)',
+              border: showHidden ? 'none' : '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
+            }}>
               {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
               {showHidden ? 'Showing hidden' : 'Show hidden'}
             </button>
           )}
+          <button onClick={() => setShowPairing(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <Plus size={13} /> Pair device
+          </button>
         </div>
       </div>
 
       {/* Unassigned banner */}
-      {unassigned.length > 0 && domain !== 'unassigned' && (
-        <motion.button
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
+      {unassigned.length > 0 && domain !== 'unassigned' && domain !== 'noroom' && (
+        <motion.button initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           onClick={() => setDomain('unassigned')}
-          className="w-full mb-4 flex items-center justify-between px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-left transition-colors hover:bg-amber-100 dark:hover:bg-amber-900/30"
+          style={{
+            width: '100%', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 14px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+            background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))',
+          }}
         >
           <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-              {unassigned.length} device{unassigned.length !== 1 ? 's' : ''} not assigned to any room
-            </p>
-            <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-              Tap to review and assign them
-            </p>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{unassigned.length} device{unassigned.length !== 1 ? 's' : ''} not assigned to any room</p>
+            <p style={{ fontSize: 11, color: 'var(--warn)', marginTop: 2 }}>Tap to review and assign them</p>
           </div>
-          <span className="text-amber-500 text-xs font-medium">Review →</span>
+          <span style={{ fontSize: 12, color: 'var(--warn)', fontWeight: 500 }}>Review ›</span>
         </motion.button>
       )}
 
-      {/* Needs attention — lost / unconfigured devices */}
+      {/* Attention banner */}
       {attentionDevices.length > 0 && domain !== 'attention' && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 overflow-hidden"
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          style={{ marginBottom: 14, borderRadius: 11, background: `color-mix(in srgb, var(--accent) 8%, var(--surface))`, border: '0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))', overflow: 'hidden' }}
         >
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                {attentionDevices.length} device{attentionDevices.length !== 1 ? 's' : ''} need attention
-              </p>
-              <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">
-                Lost from hub or missing HA entity configuration
-              </p>
-            </div>
+          <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--line)' }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{attentionDevices.length} device{attentionDevices.length !== 1 ? 's' : ''} need attention</p>
+            <p style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2 }}>Lost from hub or missing HA entity configuration</p>
           </div>
-          <div className="border-t border-red-200 dark:border-red-800 divide-y divide-red-100 dark:divide-red-900">
+          <div>
             {attentionDevices.map((d, i) => (
-              <div key={d.entity_id || i} className="flex items-center gap-3 px-4 py-2.5">
-                <span className={cn(
-                  'w-2 h-2 rounded-full shrink-0',
-                  d.status === 'lost' ? 'bg-red-400' : 'bg-zinc-300 dark:bg-zinc-600'
-                )} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                    {d.display_name || d.entity_id || d.device_type}
-                  </p>
-                  <p className="text-xs text-zinc-400 truncate">
-                    {d.roomName ? `${d.roomName} · ` : ''}{STATUS_LABEL[d.status] || d.status}
-                  </p>
+              <div key={d.entity_id || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '0.5px solid var(--line)' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.status === 'lost' ? 'var(--accent)' : 'var(--line-2)', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.display_name || d.entity_id || d.device_type}</p>
+                  <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{d.roomName ? `${d.roomName} · ` : ''}{STATUS_LABEL[d.status] || d.status}</p>
                 </div>
               </div>
             ))}
@@ -1240,147 +1277,168 @@ export default function Devices() {
         </motion.div>
       )}
 
-      {/* Search (hidden in unassigned view) */}
+      {/* Search */}
       {domain !== 'unassigned' && (
-        <div className="relative mb-4">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search devices…"
-            className={cn(
-              'w-full h-10 pl-9 pr-4 rounded-xl text-sm',
-              'bg-zinc-100 dark:bg-zinc-800',
-              'text-zinc-900 dark:text-zinc-100',
-              'placeholder:text-zinc-400 dark:placeholder:text-zinc-600',
-              'border-0 focus:outline-none focus:ring-2 focus:ring-violet-500/50'
-            )}
-          />
+        <div style={{ position: 'relative', marginBottom: 14 }}>
+          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search devices…" className="z-input" style={{ paddingLeft: 34 }} />
         </div>
       )}
 
-      {/* Domain filter */}
-      <div className="flex gap-2 overflow-x-auto pb-1 mb-5 scrollbar-thin">
-        {DOMAIN_FILTER.map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setDomain(f.id)}
-            className={cn(
-              'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
-              domain === f.id
-                ? f.id === 'unassigned'
-                  ? 'bg-amber-500 text-white'
-                  : 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                : f.id === 'unassigned' && unassigned.length > 0
-                  ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-            )}
-          >
+      {/* View mode + filter chips */}
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 20 }} className="scrollbar-thin">
+        {/* View mode toggle */}
+        {[{ id: 'room', label: 'By room' }, { id: 'type', label: 'By type' }].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+            padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit',
+            background: viewMode === v.id ? 'var(--ink)' : 'var(--surface)',
+            color: viewMode === v.id ? 'var(--bg)' : 'var(--ink-mute)',
+            border: viewMode === v.id ? 'none' : '0.5px solid var(--line)',
+          }}>{v.label}</button>
+        ))}
+        <div style={{ width: 1, background: 'var(--line)', flexShrink: 0, margin: '0 2px' }} />
+        {DOMAIN_FILTER.map(f => (
+          <button key={f.id} onClick={() => { setDomain(f.id); if (f.id !== 'all') setViewMode('type') }} style={{
+            padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit',
+            background: domain === f.id && viewMode === 'type'
+              ? (f.id === 'unassigned' ? 'var(--warn)' : 'var(--ink)')
+              : f.id === 'unassigned' && unassigned.length > 0
+              ? `color-mix(in srgb, var(--warn) 8%, var(--surface))`
+              : 'var(--surface)',
+            color: domain === f.id && viewMode === 'type'
+              ? (f.id === 'unassigned' ? '#fff' : 'var(--bg)')
+              : f.id === 'unassigned' && unassigned.length > 0 ? 'var(--warn)' : 'var(--ink-mute)',
+            border: (domain === f.id && viewMode === 'type') ? 'none' : f.id === 'unassigned' && unassigned.length > 0 ? `0.5px solid color-mix(in srgb, var(--warn) 40%, var(--line))` : '0.5px solid var(--line)',
+          }}>
             {f.label}
             {f.id === 'unassigned' && unassigned.length > 0 && (
-              <span className="ml-1 bg-amber-500 text-white text-[9px] rounded-full px-1.5 py-0.5">
-                {unassigned.length}
-              </span>
+              <span style={{ marginLeft: 4, background: 'var(--warn)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{unassigned.length}</span>
+            )}
+            {f.id === 'noroom' && noRoomEntities.length > 0 && (
+              <span style={{ marginLeft: 4, background: 'var(--ink-faint)', color: 'var(--bg)', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{noRoomEntities.length}</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Unassigned section header */}
+      {/* Unassigned section info */}
       {domain === 'unassigned' && (
-        <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-          <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-            Devices not assigned to any room
-          </p>
-          <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-            These are in your HA setup but haven't been placed in a room yet. Use "Assign to room" on each card.
-          </p>
+        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))` }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>Devices not assigned to any room</p>
+          <p style={{ fontSize: 11, color: 'var(--warn)' }}>Use "Assign to room" on each card to organize them.</p>
+        </div>
+      )}
+      {domain === 'noroom' && (
+        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>Devices with no room</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>These devices are intentionally left without a room. Use the ··· menu to assign one.</p>
         </div>
       )}
 
+      {/* Loading skeleton */}
       {loading && (
-        <div className="grid grid-cols-2 gap-3 items-start">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-28 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[1,2,3,4,5,6].map(i => <div key={i} style={{ height: 60, borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
+      {/* Empty state */}
       {!loading && filtered.length === 0 && (
-        <div className="text-center py-16 text-zinc-400 dark:text-zinc-600">
-          <p className="text-4xl mb-3">{domain === 'unassigned' ? '✅' : '🔌'}</p>
-          <p className="text-sm">
-            {domain === 'unassigned' ? 'All devices are assigned to rooms' : 'No devices found'}
+        <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--ink-faint)' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>
+            {domain === 'unassigned' ? 'All devices are assigned to rooms' : domain === 'noroom' ? 'No devices without a room' : 'No devices found'}
           </p>
         </div>
       )}
 
-      {/* Grouped view — always used except for the 'unassigned' special case */}
-      {!loading && domain !== 'unassigned' && filtered.length > 0 && (() => {
-        const groups = DOMAIN_GROUPS.map((g) => ({
-          ...g,
-          items: filtered.filter((e) => domainGroup(e) === g.id),
-        })).filter((g) => g.items.length > 0)
-        return groups.map((g) => (
-          <CollapsibleGroup
-            key={g.id}
-            label={g.label}
-            count={g.items.length}
-            open={!collapsedGroups.has(g.id)}
-            onToggle={() => toggleGroup(g.id)}
-          >
-            <div className="grid grid-cols-2 gap-3 items-start">
+      {/* ── By-room view (default) ── */}
+      {!loading && viewMode === 'room' && domain === 'all' && filtered.length > 0 && (() => {
+        const entitySet = new Set(filtered.map(e => e.entity_id))
+        // Resolve a room device entry to its enriched entity object.
+        // HA entities have `d.entity_id`; standalone IR devices in rooms only
+        // have `d.ir_device_id` (entity_id is null) — we map these to `ir.<id>`.
+        const resolveDevice = (d) => {
+          if (d.entity_id) return entities.find(e => e.entity_id === d.entity_id)
+          if (d.ir_device_id) return entities.find(e => e.entity_id === `ir.${d.ir_device_id}`)
+          return null
+        }
+        const roomGroups = ziggyRooms.map(room => ({
+          room,
+          items: (room.devices || [])
+            .map(resolveDevice)
+            .filter(e => e && entitySet.has(e.entity_id)),
+        })).filter(g => g.items.length > 0)
+        // Use the same unassigned set as the filter chip so counts are consistent.
+        // unassigned = getUnassigned() = non-IR entities in DEVICE_DOMAINS not in any HA area.
+        const unroomedItems = unassigned.filter(e => entitySet.has(e.entity_id))
+
+        const noRoomItems = noRoomEntities.filter(e => entitySet.has(e.entity_id))
+
+        return (
+          <>
+            {roomGroups.map(({ room, items }) => (
+              <CollapsibleGroup key={room.id} label={room.name} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                  <AnimatePresence mode="popLayout">
+                    {items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
+                  </AnimatePresence>
+                </div>
+              </CollapsibleGroup>
+            ))}
+            {noRoomItems.length > 0 && (
+              <CollapsibleGroup label="No Room" count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onToggle={() => toggleGroup('__noroom__')}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                  <AnimatePresence mode="popLayout">
+                    {noRoomItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
+                  </AnimatePresence>
+                </div>
+              </CollapsibleGroup>
+            )}
+            {unroomedItems.length > 0 && (
+              <CollapsibleGroup label="Unassigned" count={unroomedItems.length} open={!collapsedGroups.has('__unassigned__')} onToggle={() => toggleGroup('__unassigned__')}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                  <AnimatePresence mode="popLayout">
+                    {unroomedItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity, true)} />)}
+                  </AnimatePresence>
+                </div>
+              </CollapsibleGroup>
+            )}
+          </>
+        )
+      })()}
+
+      {/* ── By-type view ── */}
+      {!loading && (viewMode === 'type' || domain !== 'all') && domain !== 'unassigned' && domain !== 'noroom' && filtered.length > 0 && (() => {
+        const groups = DOMAIN_GROUPS.map(g => ({
+          ...g, items: filtered.filter(e => domainGroup(e) === g.id),
+        })).filter(g => g.items.length > 0)
+        return groups.map(g => (
+          <CollapsibleGroup key={g.id} label={g.label} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
               <AnimatePresence mode="popLayout">
-                {g.items.map((entity) => (
-                  <DeviceCard
-                    key={entity.entity_id}
-                    entity={entity}
-                    rooms={roomsForPicker}
-                    onToggle={handleToggle}
-                    onService={handleService}
-                    onHide={hideEntity}
-                    onAssign={handleAssign}
-                    onIrCommand={handleIrCommand}
-                    onIrStateChange={handleIrStateChange}
-                    onEditIr={setEditingIrDevice}
-                    onDeleteIr={handleDeleteIr}
-                    onLinkIr={setLinkingIrDevice}
-                    onUnlinkIr={handleUnlinkIr}
-                    isHidden={hiddenEntities.has(entity.entity_id)}
-                    showAssign={false}
-                    ziggyStatus={deviceStatusMap[entity.entity_id]}
-                  />
-                ))}
+                {g.items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
               </AnimatePresence>
             </div>
           </CollapsibleGroup>
         ))
       })()}
 
-      {/* Flat grid — unassigned only (needs "Assign to room" button per card) */}
+      {/* Unassigned flat view */}
       {!loading && domain === 'unassigned' && filtered.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 items-start">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
           <AnimatePresence mode="popLayout">
-            {filtered.map((entity) => (
-              <DeviceCard
-                key={entity.entity_id}
-                entity={entity}
-                rooms={roomsForPicker}
-                onToggle={handleToggle}
-                onService={handleService}
-                onHide={hideEntity}
-                onAssign={handleAssign}
-                onIrCommand={handleIrCommand}
-                onIrStateChange={handleIrStateChange}
-                onEditIr={setEditingIrDevice}
-                onDeleteIr={handleDeleteIr}
-                onLinkIr={setLinkingIrDevice}
-                onUnlinkIr={handleUnlinkIr}
-                isHidden={hiddenEntities.has(entity.entity_id)}
-                showAssign={true}
-                ziggyStatus={deviceStatusMap[entity.entity_id]}
-              />
-            ))}
+            {filtered.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity, true)} />)}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* No Room flat view */}
+      {!loading && domain === 'noroom' && filtered.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+          <AnimatePresence mode="popLayout">
+            {filtered.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
           </AnimatePresence>
         </div>
       )}

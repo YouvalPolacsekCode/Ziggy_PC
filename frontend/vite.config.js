@@ -22,6 +22,9 @@ export default defineConfig({
         theme_color: '#18181b',
         background_color: '#18181b',
         display: 'standalone',
+        // display_override lets browsers that support it use window-controls-overlay
+        // (edge-to-edge) while falling back to standalone on older versions.
+        display_override: ['window-controls-overlay', 'standalone'],
         orientation: 'portrait',
         start_url: '/',
         icons: [

@@ -39,7 +39,7 @@ CANDIDATES_FILE = Path("user_files/pattern_candidates.json")
 
 # Minimum evidence required before confidence is even calculated
 _MIN_OCCURRENCES = 5
-_MIN_UNIQUE_WEEKS = 2
+_MIN_UNIQUE_WEEKS = 3
 _MIN_UNIQUE_DAYS = 3
 _MAX_STALENESS_DAYS = 21          # pattern must have been seen within this window
 _MAX_REVERSAL_RATE = 0.40         # if >40% of actions were immediately reversed, skip
@@ -60,6 +60,7 @@ class QualifiedCandidate(NamedTuple):
     scores: dict
     details: dict           # type-specific fields (avg time, sequence pair, etc.)
     user_message: str
+    evidence_summary: dict  # frozen, human-readable evidence snapshot for display
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +347,7 @@ def _qualify(candidates: dict) -> list[QualifiedCandidate]:
             scores=scores,
             details=details,
             user_message=_draft_message(cand, details),
+            evidence_summary=_build_evidence_summary(cand),
         ))
 
     qualified.sort(key=lambda c: c.confidence, reverse=True)
@@ -470,6 +472,58 @@ def mark_candidate_suppressed(key: str) -> None:
     if key in candidates:
         candidates[key]["status"] = "suppressed"
         _save_candidates(candidates)
+
+
+# ---------------------------------------------------------------------------
+# Evidence summary builder
+# ---------------------------------------------------------------------------
+
+_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _build_evidence_summary(cand: dict) -> dict:
+    """
+    Compile a frozen, human-readable evidence snapshot from a candidate dict.
+    Called after _compute_scores() so cand["scores"] is already populated.
+    """
+    ev = cand.get("evidence", {})
+    scores = cand.get("scores", {})
+
+    occ = ev.get("occurrences", 0)
+    reversal_count = ev.get("reversal_count", 0)
+    occurrence_dates = ev.get("occurrence_dates", [])
+    times = ev.get("times_of_day_minutes", [])
+    last_seen_str = ev.get("last_seen", "")
+
+    weekday_set: set[int] = set()
+    for d_str in occurrence_dates:
+        try:
+            weekday_set.add(datetime.strptime(d_str, "%Y-%m-%d").weekday())
+        except ValueError:
+            pass
+
+    summary: dict = {
+        "occurrences": occ,
+        "unique_weeks": ev.get("unique_weeks", 0),
+        "last_seen": last_seen_str[:10] if last_seen_str else "",
+        "reversal_rate": round(reversal_count / max(occ, 1), 2),
+        "active_day_names": [_DAY_NAMES[i] for i in sorted(weekday_set)],
+        "scores": {
+            k: scores.get(k)
+            for k in ("frequency", "consistency", "recency", "temporal_precision")
+        },
+    }
+
+    if times:
+        min_t = min(times)
+        max_t = max(times)
+        avg_t = int(sum(times) / len(times))
+        summary["time_window"] = (
+            f"{min_t // 60:02d}:{min_t % 60:02d}-{max_t // 60:02d}:{max_t % 60:02d}"
+        )
+        summary["avg_time"] = f"{avg_t // 60:02d}:{avg_t % 60:02d}"
+
+    return summary
 
 
 # ---------------------------------------------------------------------------

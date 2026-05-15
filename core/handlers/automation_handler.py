@@ -5,17 +5,64 @@ from services.home_automation import resolve_entity
 from services.ha_automations import save_automation, list_automations, delete_automation, toggle_automation
 
 
+# Maps Ziggy-friendly aliases and raw HA domains → HA domain used for entity resolution.
+# Built once at import time from the domain registry + legacy aliases.
+def _build_device_type_map() -> dict[str, str]:
+    mapping: dict[str, str] = {
+        # Ziggy legacy aliases — kept for backward compatibility
+        "ac":           "climate",
+        "tv":           "media_player",
+        "thermostat":   "climate",
+        "blinds":       "cover",
+        "curtains":     "cover",
+        "garage":       "cover",
+        "shutter":      "cover",
+        "shutoff":      "valve",
+        "water":        "valve",
+        "alarm":        "alarm_control_panel",
+        "robot":        "vacuum",
+        "mower":        "lawn_mower",
+    }
+    # Auto-add every controllable domain from the registry (domain maps to itself)
+    try:
+        from services.domain_registry import controllable_domains
+        for d in controllable_domains():
+            mapping.setdefault(d, d)
+    except Exception:
+        pass
+    return mapping
+
+
+_DEVICE_TYPE_MAP: dict[str, str] = _build_device_type_map()
+
+
 def _resolve_action_entity(params: dict) -> tuple[str | None, str]:
     room = (params.get("action_room") or "").replace(" ", "_").lower()
-    device_type = (params.get("action_device_type") or "light").lower()
-    entity_id = params.get("action_entity_id") or resolve_entity(room, device_type)
+    raw_type = (params.get("action_device_type") or "light").lower().strip()
 
-    # TV alias: if "tv" wasn't found directly, try "media_player" (same hardware,
-    # different key in the device registry depending on how it was registered).
-    if not entity_id and device_type == "tv":
+    # Resolve alias → HA domain
+    ha_domain = _DEVICE_TYPE_MAP.get(raw_type, raw_type)
+    entity_id = params.get("action_entity_id") or resolve_entity(room, ha_domain)
+
+    # "tv" fallback: try media_player if not found under the "tv" alias
+    if not entity_id and raw_type == "tv":
         entity_id = resolve_entity(room, "media_player")
 
     return entity_id, room
+
+
+def _service_for_domain(domain: str, requested_service: str) -> str:
+    """
+    Return the full HA service call string for an automation action.
+
+    Universal services (turn_on, turn_off, toggle) route through homeassistant.*
+    so they work across all domains.  Domain-specific services (open_valve,
+    close_valve, lock, unlock, start, dock, …) use domain.service directly.
+    """
+    _UNIVERSAL = {"turn_on", "turn_off", "toggle"}
+    if requested_service in _UNIVERSAL:
+        return f"homeassistant.{requested_service}"
+    return f"{domain}.{requested_service}"
 
 
 def _resolve_trigger_entity(raw: str) -> str:
@@ -76,12 +123,14 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
             trigger["offset"] = params["trigger_offset"]
 
     service_action = params.get("action_service", "turn_on")
+    # Determine the HA domain of the resolved entity so we can call domain-specific services
+    entity_domain = entity_id.split(".")[0] if entity_id and "." in entity_id else "homeassistant"
+    full_service = _service_for_domain(entity_domain, service_action)
     automation_data = {
         "name": params.get("name") or f"Ziggy: {service_action} {room.replace('_', ' ')}",
         "description": params.get("description", "Created by Ziggy"),
         "trigger": trigger,
-        "actions": [{"type": "call_service", "entity_id": entity_id,
-                     "service": f"homeassistant.{service_action}"}],
+        "actions": [{"type": "call_service", "entity_id": entity_id, "service": full_service}],
     }
 
     result = save_automation(automation_data)
@@ -223,15 +272,12 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         # from the current action's entity domain so we don't accidentally switch
         # from AC to light just because action_device_type was omitted.
         if not action_dtype and existing_entity and "." in existing_entity:
+            # Inherit the device type from the current action's entity domain.
+            # Use the reverse of _DEVICE_TYPE_MAP: prefer the Ziggy-friendly alias
+            # so GPT keeps speaking the same language, but fall back to the raw domain.
             domain = existing_entity.split(".")[0]
-            _domain_map = {
-                "light": "light",
-                "climate": "ac",
-                "media_player": "tv",
-                "switch": "switch",
-                "fan": "fan",
-            }
-            action_dtype = _domain_map.get(domain, domain)
+            _reverse_alias = {v: k for k, v in _DEVICE_TYPE_MAP.items() if k != v}
+            action_dtype = _reverse_alias.get(domain, domain)
 
         if action_room or action_dtype:
             entity_id, _ = _resolve_action_entity({
@@ -244,7 +290,8 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         if not entity_id:
             return err(f"Couldn't find a {action_dtype or 'device'} in {action_room or 'that room'}.")
         service = action_svc or (existing_entity and existing_action.get("service", "homeassistant.turn_on").split(".")[-1]) or "turn_on"
-        actions = [{"type": "call_service", "entity_id": entity_id, "service": f"homeassistant.{service}"}]
+        update_domain = entity_id.split(".")[0] if entity_id and "." in entity_id else "homeassistant"
+        actions = [{"type": "call_service", "entity_id": entity_id, "service": _service_for_domain(update_domain, service)}]
 
     # ── Room assignment merge ─────────────────────────────────────────────────
     from services.local_automation_actions import get_automation_meta, save_automation_meta

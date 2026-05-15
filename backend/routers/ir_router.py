@@ -9,7 +9,7 @@ from services.ir_manager import (
     list_ir_devices, get_ir_device, create_ir_device,
     update_ir_device, delete_ir_device,
     list_ir_blasters, send_ir_command, start_learning,
-    mark_command_learned,
+    mark_command_learned, send_channel,
 )
 
 router = APIRouter()
@@ -116,6 +116,23 @@ async def remove_ir_device(device_id: str):
     if not delete_ir_device(device_id):
         raise HTTPException(status_code=404, detail="IR device not found")
     return {"ok": True}
+
+
+class IrChannelBody(BaseModel):
+    channel: int
+
+
+@router.post("/api/ir/devices/{device_id}/channel")
+async def ir_channel(device_id: str, body: IrChannelBody):
+    if not (0 <= body.channel <= 9999):
+        raise HTTPException(status_code=400, detail="Channel out of range (0–9999)")
+    device = get_ir_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found")
+    result = await send_channel(device_id, body.channel)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("message", "Channel send failed"))
+    return result
 
 
 @router.post("/api/ir/learn")
