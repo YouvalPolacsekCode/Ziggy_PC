@@ -13,7 +13,7 @@ from services.file_manager import (
 async def handle_save_note(params: dict, *, source: str = "unknown") -> dict:
     content = (params.get("content") or params.get("text") or "").strip()
     if not content:
-        return err("What should I save in the note?")
+        return ok("What should I save in the note?")
     title = params.get("title")
     result = create_note(content, title=title)
     return ok(f"Note saved. ({result})")
@@ -27,7 +27,7 @@ async def handle_read_notes(params: dict, *, source: str = "unknown") -> dict:
 async def handle_search_notes(params: dict, *, source: str = "unknown") -> dict:
     query = (params.get("query") or params.get("keyword") or "").strip()
     if not query:
-        return err("What should I search for in your notes?")
+        return ok("What should I search for in your notes?")
     matches = search_notes(query)
     if not matches:
         return ok(f"No notes found matching '{query}'.")
@@ -39,16 +39,16 @@ async def handle_append_to_note(params: dict, *, source: str = "unknown") -> dic
     filename = (params.get("filename") or params.get("title") or "").strip()
     content = (params.get("content") or params.get("text") or "").strip()
     if not filename:
-        return err("Which note should I append to?")
+        return ok("Which note should I append to?")
     if not content:
-        return err("What should I append?")
+        return ok("What should I append?")
     return ok(append_to_note(filename, content))
 
 
 async def handle_delete_note(params: dict, *, source: str = "unknown") -> dict:
     query = (params.get("filename") or params.get("title") or params.get("query") or "").strip()
     if not query:
-        return err("Which note should I delete?")
+        return ok("Which note should I delete?")
     return ok(delete_note(query))
 
 
@@ -56,9 +56,9 @@ async def handle_save_file(params: dict, *, source: str = "unknown") -> dict:
     filename = (params.get("filename") or "").strip()
     content = (params.get("content") or "").strip()
     if not filename:
-        return err("Please specify a filename.")
+        return ok("What filename should I use?")
     if not content:
-        return err("Please specify the file content.")
+        return ok("What should I put in the file?")
     # Route to structured format handlers based on extension
     if filename.endswith(".json"):
         try:
@@ -72,14 +72,14 @@ async def handle_save_file(params: dict, *, source: str = "unknown") -> dict:
 async def handle_read_file(params: dict, *, source: str = "unknown") -> dict:
     filename = (params.get("filename") or "").strip()
     if not filename:
-        return err("Please specify a filename.")
+        return ok("Which file should I read?")
     return ok(read_file(filename))
 
 
 async def handle_delete_file(params: dict, *, source: str = "unknown") -> dict:
     filename = (params.get("filename") or "").strip()
     if not filename:
-        return err("Which file should I delete?")
+        return ok("Which file should I delete?")
     return ok(delete_file(filename))
 
 
@@ -93,7 +93,7 @@ async def handle_list_files(params: dict, *, source: str = "unknown") -> dict:
 async def handle_countdown(params: dict, *, source: str = "unknown") -> dict:
     target = (params.get("date") or params.get("event") or "").strip()
     if not target:
-        return err("Please specify a date or event to count down to.")
+        return ok("What date or event should I count down to?")
     parsed = dateparser.parse(target, settings={"PREFER_DATES_FROM": "future"})
     if not parsed:
         return err(f"I couldn't understand the date: '{target}'.")

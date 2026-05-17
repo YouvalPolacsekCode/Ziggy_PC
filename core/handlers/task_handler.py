@@ -6,7 +6,9 @@ from services.home_automation import add_todo_item, get_todo_items
 
 
 async def handle_add_task(params: dict, *, source: str = "unknown") -> dict:
-    task_text = params.get("task", "Unnamed task")
+    task_text = (params.get("task") or "").strip()
+    if not task_text:
+        return ok("What task would you like to add?")
     reminder = params.get("reminder")
     due = params.get("due")
     priority = params.get("priority")
@@ -55,14 +57,14 @@ async def handle_remove_last_task(params: dict, *, source: str = "unknown") -> d
 async def handle_mark_task_done(params: dict, *, source: str = "unknown") -> dict:
     task_ref = params.get("task") or params.get("task_name") or params.get("index")
     if not task_ref:
-        return err("Please specify a task name or index to mark as done.")
+        return ok("Which task should I mark as done?")
     return wrap(mark_done(task_ref))
 
 
 async def handle_postpone_task(params: dict, *, source: str = "unknown") -> dict:
     task_name = params.get("task") or params.get("task_name") or ""
     if not task_name:
-        return err("Which task should I postpone?")
+        return ok("Which task should I postpone?")
     days = int(params.get("days", 1))
     return wrap(postpone_task(task_name, days))
 
@@ -74,7 +76,7 @@ async def handle_task_summary(params: dict, *, source: str = "unknown") -> dict:
 async def handle_add_shopping_list_item(params: dict, *, source: str = "unknown") -> dict:
     item = (params.get("item") or "").strip()
     if not item:
-        return err("Please specify what to add to the shopping list.")
+        return ok("What should I add to the shopping list?")
     return wrap(add_todo_item(item))
 
 
