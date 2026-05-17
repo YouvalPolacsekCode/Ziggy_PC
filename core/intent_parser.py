@@ -82,6 +82,8 @@ _ACTION_VOCAB_EN = re.compile(
 _ACTION_VOCAB_HE = re.compile(
     r"(הדלק|כבה|פתח|סגור|הגדל|הקטן|הפעל|עצור|"
     r"תדליק|תכבה|תפתח|תסגור|תגדיל|תקטין|"
+    r"כוון|תכוון|הגדר|תגדיר|הנמך|תנמיך|הגבה|תגביה|"
+    r"החשך|הבהר|שנה|"
     r"הוסף|צור|מחק|הסר|שלח|הצג|בדוק|קרא)"
 )
 
@@ -97,6 +99,13 @@ _ROOMS_HE_SORTED = sorted(
     reverse=True,
 )
 
+# Hebrew device type word → English equivalent, sorted longest-match first
+_DEVICES_HE_SORTED = sorted(
+    settings.get("device_aliases_he", {}).items(),
+    key=lambda kv: len(kv[0]),
+    reverse=True,
+)
+
 
 def _normalize_hebrew_rooms(text: str) -> str:
     """Replace Hebrew room names with English display names before sending to GPT."""
@@ -107,6 +116,14 @@ def _normalize_hebrew_rooms(text: str) -> str:
                 en_slug,
             )
             text = text.replace(he_name, en_display)
+    return text
+
+
+def _normalize_hebrew_devices(text: str) -> str:
+    """Replace Hebrew device type words (אור, מזגן, …) with English equivalents before GPT."""
+    for he_word, en_word in _DEVICES_HE_SORTED:
+        if he_word in text:
+            text = text.replace(he_word, en_word)
     return text
 
 
@@ -150,6 +167,7 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
 def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
     raw_text = text  # keep original for the confidence gate check
     text = _normalize_hebrew_rooms(text)
+    text = _normalize_hebrew_devices(text)
     try:
         # Append live IR device list so GPT knows which devices exist and picks
         # the right intent (ir_send_command vs control_tv / control_ac).
@@ -194,7 +212,7 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
         messages.append({"role": "user", "content": text})
 
         import time as _time
-        from core.debug_bus import bus as _dbus, VERBOSE, TRACE
+        from core.debug_bus import bus as _dbus, BASIC, VERBOSE, TRACE
         _dbus.emit("intent", VERBOSE, "gpt_parse_start", input=text,
                    history_turns=len(chat_history) if chat_history else 0)
         t0 = _time.perf_counter()
@@ -229,7 +247,15 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
                 # raw input has no recognizable action vocabulary (e.g. "make the sky
                 # lights jealous", "do the thing from yesterday", Hebrew nonsense),
                 # downgrade to unrecognized_command so no action is taken.
-                if (parsed["intent"] in _MUTATION_INTENTS
+                #
+                # IMPORTANT: skip the gate when chat_history is non-empty. In a
+                # multi-turn conversation the user may reply with just a parameter
+                # value ("Office", "bedroom", "22 degrees") — that has no action
+                # vocabulary but is a valid follow-up that GPT resolved correctly
+                # from context. Blocking it here breaks the clarification flow.
+                has_history = bool(chat_history)
+                if (not has_history
+                        and parsed["intent"] in _MUTATION_INTENTS
                         and not _has_action_vocab(raw_text)):
                     _dbus.emit("intent", BASIC, "confidence_gate_blocked",
                                input=raw_text,
@@ -240,11 +266,14 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
                             "params": {"text": raw_text}, "source": "confidence_gate"}
                 return parsed
 
-            # Multiple tool calls — filter out any that lack action vocabulary,
-            # but only if ALL of them are mutating (preserve mixed read+write batches).
+            # Multiple tool calls — filter out any that lack action vocabulary.
+            # Skip the gate when there is chat history (same reason as above).
+            has_history = bool(chat_history)
             filtered = [
                 i for i in intents
-                if i["intent"] not in _MUTATION_INTENTS or _has_action_vocab(raw_text)
+                if has_history
+                or i["intent"] not in _MUTATION_INTENTS
+                or _has_action_vocab(raw_text)
             ]
             if not filtered:
                 _dbus.emit("intent", BASIC, "confidence_gate_blocked",

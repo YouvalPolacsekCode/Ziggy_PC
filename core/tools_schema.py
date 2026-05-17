@@ -106,11 +106,11 @@ TOOLS = [
     # ---- Lights ----
     {"type": "function", "function": {
         "name": "toggle_light",
-        "description": "Turn a light on or off in a room",
+        "description": "Turn a light on or off in a room. Call this even if the room is not specified — the handler will ask which room.",
         "parameters": {"type": "object", "properties": {
-            "room":    {"type": "string", "description": f"Room name. Options: {_ROOMS}"},
+            "room":    {"type": "string", "description": f"Room name. Options: {_ROOMS}. Leave empty if the user didn't specify."},
             "turn_on": {"type": "boolean", "description": "true = on, false = off"},
-        }, "required": ["room", "turn_on"]},
+        }, "required": ["turn_on"]},
     }},
     {"type": "function", "function": {
         "name": "set_light_color",
@@ -1037,9 +1037,30 @@ SYSTEM_PROMPT = (
     "Apply the same confidence gate to Hebrew input — do NOT call tools for Hebrew nonsense or gibberish. "
     "ALWAYS call the correct tool regardless of input language when intent is clear. "
     "Respond in the same language the user used. "
+
     "Hebrew action verbs: תדליק/הדלק = turn on, תכבה/כבה = turn off, "
     "הגדל/תגדיל = increase/brighten, הקטן/תקטין = decrease/dim, "
-    "מה הטמפרטורה = get_temperature, מה הלחות = get_humidity, "
+    "הגדר/תגדיר = set, כוון/תכוון = adjust, "
+    "פתח/תפתח = open, סגור/תסגור = close, "
+    "הוסף = add, מחק = delete, עצור = stop, הפעל = activate. "
+
+    "Hebrew device types: אור/תאורה = light, מזגן/מיזוג = AC, "
+    "טלוויזיה = TV, מאוורר = fan, "
+    "תריסים/תריס = blinds/cover, מנעול = lock, חיישן = sensor. "
+
+    "Hebrew queries: מה הטמפרטורה = get_temperature, מה הלחות = get_humidity, "
+    "מה הסטטוס / מה מצב הבית = ziggy_status, מי בבית = is_someone_home, "
+    "מה השעה = get_time, מה התאריך = get_date, "
     "כבה הכל = turn_off_all_lights, לילה טוב = turn_off_everything. "
-    "Hebrew room names are pre-normalized to English display names before this prompt arrives."
+
+    "Mixed Hebrew-English commands are valid — treat English device names or entity IDs as-is "
+    "and interpret the Hebrew part for action and room context. "
+    "Example: 'תדליק את office light' → toggle_light(room=office, turn_on=true). "
+    "Example: 'Ziggy תכבה את האור במטבח' → toggle_light(room=kitchen, turn_on=false). "
+    "Example: 'המזגן בסלון על 24 מעלות' → set_ac_temperature(room=living_room, temperature=24). "
+    "Example: 'תוסיף task למחר ב-10:30' → add_task with due time 10:30 tomorrow. "
+    "Example: 'החיישן binary_sensor.office_motion לא מגיב' → treat as a status question about that entity. "
+
+    "Hebrew room names are pre-normalized to English display names before this prompt arrives. "
+    "Hebrew device type words may also be pre-normalized to English equivalents."
 )

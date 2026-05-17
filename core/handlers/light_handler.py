@@ -17,7 +17,8 @@ _COLOR_MAP = {
 async def handle_toggle_light(params: dict, *, source: str = "unknown") -> dict:
     room = normalize_room(params)
     if room == "unknown":
-        return err("Missing room name.")
+        action_word = "turn on" if params.get("turn_on", True) else "turn off"
+        return ok(f"Which room's light should I {action_word}?")
     entity_id = params.get("entity_id") or resolve_entity(room, "light")
     if not entity_id:
         return err(f"No light configured for {room.replace('_', ' ')}.")
