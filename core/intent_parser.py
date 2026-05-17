@@ -18,6 +18,49 @@ _FAST_PATTERNS = [
 
 _TRIGGER_PREFIX = "ziggy do"
 
+# ---------------------------------------------------------------------------
+# Post-parse confidence gate
+# ---------------------------------------------------------------------------
+
+# Intents that change state (mutating). Read-only/query intents are always safe.
+_MUTATION_INTENTS = frozenset({
+    "toggle_light", "set_light_color", "adjust_light_brightness",
+    "toggle_all_lights_in_room", "turn_off_all_lights", "turn_off_everything",
+    "control_ac", "set_ac_temperature",
+    "control_tv", "set_tv_source", "play_media",
+    "ir_send_command", "ir_set_ac_temperature", "ir_play_sequence", "ir_send_channel",
+    "control_device",
+    "create_automation", "update_automation", "delete_automation", "toggle_automation",
+    "assign_automation_to_room",
+    "create_routine", "update_routine", "delete_routine",
+    "add_task", "remove_task", "remove_all_tasks",
+    "save_note", "append_to_note", "delete_note",
+    "save_file", "delete_file",
+    "send_email", "send_telegram_message",
+})
+
+# Device-action vocabulary that signals a genuine command.
+# "make", "keep", "have", etc. are intentionally excluded — too ambiguous.
+_ACTION_VOCAB_EN = re.compile(
+    r"\b(turn\s+on|turn\s+off|switch\s+on|switch\s+off|put\s+on|"
+    r"set|dim|brighten|lower|raise|increase|decrease|adjust|"
+    r"lock|unlock|open|close|start|stop|pause|play|"
+    r"enable|disable|add|create|remove|delete|restart|reboot|"
+    r"send|list|show|get|check|read|run|execute|"
+    r"\bon\b|\boff\b)\b",
+    re.IGNORECASE,
+)
+_ACTION_VOCAB_HE = re.compile(
+    r"(הדלק|כבה|פתח|סגור|הגדל|הקטן|הפעל|עצור|"
+    r"תדליק|תכבה|תפתח|תסגור|תגדיל|תקטין|"
+    r"הוסף|צור|מחק|הסר|שלח|הצג|בדוק|קרא)"
+)
+
+
+def _has_action_vocab(text: str) -> bool:
+    """Return True if the text contains recognizable device-action vocabulary."""
+    return bool(_ACTION_VOCAB_EN.search(text) or _ACTION_VOCAB_HE.search(text))
+
 # Hebrew room name → English canonical slug, sorted longest-match first
 _ROOMS_HE_SORTED = sorted(
     settings.get("room_aliases_he", {}).items(),
@@ -63,6 +106,7 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
 
 
 def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
+    raw_text = text  # keep original for the confidence gate check
     text = _normalize_hebrew_rooms(text)
     try:
         # Append live IR device list so GPT knows which devices exist and picks
@@ -138,10 +182,38 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
                        multi=(len(intents) > 1))
 
             if len(intents) == 1:
-                return intents[0]
+                parsed = intents[0]
+                # Confidence gate: if GPT routed to a state-mutating intent but the
+                # raw input has no recognizable action vocabulary (e.g. "make the sky
+                # lights jealous", "do the thing from yesterday", Hebrew nonsense),
+                # downgrade to unrecognized_command so no action is taken.
+                if (parsed["intent"] in _MUTATION_INTENTS
+                        and not _has_action_vocab(raw_text)):
+                    _dbus.emit("intent", BASIC, "confidence_gate_blocked",
+                               input=raw_text,
+                               blocked_intent=parsed["intent"],
+                               result="downgraded_to_unrecognized",
+                               reason="no action vocabulary detected in raw input")
+                    return {"intent": "unrecognized_command",
+                            "params": {"text": raw_text}, "source": "confidence_gate"}
+                return parsed
 
-            # Multiple tool calls — return a multi-intent envelope
-            return {"intent": "__multi__", "intents": intents, "params": {}, "source": "tools"}
+            # Multiple tool calls — filter out any that lack action vocabulary,
+            # but only if ALL of them are mutating (preserve mixed read+write batches).
+            filtered = [
+                i for i in intents
+                if i["intent"] not in _MUTATION_INTENTS or _has_action_vocab(raw_text)
+            ]
+            if not filtered:
+                _dbus.emit("intent", BASIC, "confidence_gate_blocked",
+                           input=raw_text, blocked_count=len(intents),
+                           result="downgraded_to_unrecognized",
+                           reason="no action vocabulary in multi-intent")
+                return {"intent": "unrecognized_command",
+                        "params": {"text": raw_text}, "source": "confidence_gate"}
+            if len(filtered) == 1:
+                return filtered[0]
+            return {"intent": "__multi__", "intents": filtered, "params": {}, "source": "tools"}
 
         _dbus.emit("intent", VERBOSE, "gpt_no_tool_matched",
                    input=text, duration_ms=duration_ms,
