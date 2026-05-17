@@ -30,8 +30,9 @@ function VoiceWave({ active, size = 22 }) {
 
 // ── Message bubble (Chat-A) ───────────────────────────────────────────────────
 function Message({ msg }) {
-  const isUser = msg.role === 'user'
-  const rtl    = isHebrew(msg.text)
+  const isUser  = msg.role === 'user'
+  const isError = !isUser && msg.ok === false
+  const rtl     = isHebrew(msg.text)
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -58,12 +59,14 @@ function Message({ msg }) {
           borderEndEndRadius:    isUser ? 4 : 18,
           background:  isUser ? 'var(--ink)'    : 'var(--surface)',
           color:       isUser ? 'var(--bg)'     : 'var(--ink)',
-          border:      isUser ? 'none'           : '0.5px solid var(--line)',
+          border:      isError
+            ? '0.5px solid color-mix(in srgb, #e05050 60%, var(--line))'
+            : isUser ? 'none' : '0.5px solid var(--line)',
           fontSize: 14.5, lineHeight: 1.45,
           textAlign: rtl ? 'right' : 'left',
         }}
       >
-        <p style={{ margin: 0 }}>{msg.text}</p>
+        <p style={{ margin: 0, color: isError ? '#c94040' : undefined }}>{msg.text}</p>
         <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: rtl ? 'left' : 'right' }}>
           {formatTime(msg.ts)}
         </p>
@@ -173,11 +176,14 @@ export default function AIChat() {
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendChat(t, historyForApi)
-      addMessage('assistant', res.reply || '…')
+      addMessage('assistant', res.reply || '…', res.ok !== false)
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
-    } catch {
-      addMessage('assistant', 'Something went wrong. Please try again.')
+    } catch (e) {
+      const msg = e?.message && !e.message.startsWith('HTTP')
+        ? e.message
+        : 'Something went wrong. Please try again.'
+      addMessage('assistant', msg, false)
       setOrbState('idle')
     } finally { setThinking(false) }
   }
@@ -187,11 +193,14 @@ export default function AIChat() {
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendDirectIntent(qa.intent, qa.params)
-      addMessage('assistant', res.reply || '…')
+      addMessage('assistant', res.reply || '…', res.ok !== false)
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
-    } catch {
-      addMessage('assistant', 'Something went wrong. Please try again.')
+    } catch (e) {
+      const msg = e?.message && !e.message.startsWith('HTTP')
+        ? e.message
+        : 'Something went wrong. Please try again.'
+      addMessage('assistant', msg, false)
       setOrbState('idle')
     } finally { setThinking(false) }
   }
@@ -209,9 +218,9 @@ export default function AIChat() {
           setThinking(true); setOrbState('thinking')
           const res = await sendVoice(blob)
           if (res.transcription) addMessage('user', res.transcription)
-          if (res.reply) { addMessage('assistant', res.reply); setOrbState('speaking'); setTimeout(() => setOrbState('idle'), 2500) }
+          if (res.reply) { addMessage('assistant', res.reply, res.ok !== false); setOrbState('speaking'); setTimeout(() => setOrbState('idle'), 2500) }
           else setOrbState('idle')
-        } catch { addToast('Voice processing failed', 'error'); setOrbState('idle') }
+        } catch (e) { addToast(e?.message || 'Voice processing failed', 'error'); setOrbState('idle') }
         finally { setThinking(false) }
       }
       mr.start(); setRecording(true); setOrbState('listening')
