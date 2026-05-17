@@ -77,10 +77,18 @@ def _resolve_trigger_entity(raw: str) -> str:
 
 
 async def handle_create_automation(params: dict, *, source: str = "unknown") -> dict:
+    # Guard: both room and device type must be present before we attempt entity resolution.
+    # Without them the handler would silently hallucinate a device (e.g. defaulting to
+    # "light in bathroom" for "create a morning routine").
+    if not params.get("action_room") and not params.get("action_entity_id"):
+        return ok(
+            "Which room and device should this automation control, and when should it trigger? "
+            "Example: 'turn on the living room light every day at 7 am'."
+        )
+
     entity_id, room = _resolve_action_entity(params)
     if not entity_id:
         device_type = params.get("action_device_type", "light")
-        # Give a helpful message that names the device, not just the room
         return err(f"No {device_type} found for {room.replace('_', ' ')}. "
                    f"Check that a {device_type} is configured in the device registry for this room.")
 
