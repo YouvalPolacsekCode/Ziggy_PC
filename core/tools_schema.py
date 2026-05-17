@@ -308,11 +308,11 @@ TOOLS = [
     # ---- Files & Notes ----
     {"type": "function", "function": {
         "name": "save_note",
-        "description": "Save a quick note or memo",
+        "description": "Save a quick note or memo. Call this even when the user hasn't given the content yet — the handler will ask for it.",
         "parameters": {"type": "object", "properties": {
-            "content": {"type": "string", "description": "The note content to save"},
+            "content": {"type": "string", "description": "The note content to save (leave empty if the user didn't specify)"},
             "title":   {"type": "string", "description": "Optional title for the note"},
-        }, "required": ["content"]},
+        }, "required": []},
     }},
     {"type": "function", "function": {
         "name": "read_notes",
@@ -384,14 +384,14 @@ TOOLS = [
     # ---- Tasks ----
     {"type": "function", "function": {
         "name": "add_task",
-        "description": "Create a new task, to-do item, or reminder",
+        "description": "Create a new task, to-do item, or reminder. Call this even when the task name is missing — the handler will ask for it.",
         "parameters": {"type": "object", "properties": {
-            "task":     {"type": "string"},
+            "task":     {"type": "string", "description": "The task description (leave empty if the user didn't specify)"},
             "due":      {"type": "string", "description": "Due date/time in natural language or ISO format"},
             "priority": {"type": "string", "enum": ["high", "medium", "low"]},
             "reminder": {"type": "string", "description": "When to send a reminder"},
             "repeat":   {"type": "string", "description": "Repeat frequency e.g. daily, weekly"},
-        }, "required": ["task"]},
+        }, "required": []},
     }},
     {"type": "function", "function": {
         "name": "list_tasks",
