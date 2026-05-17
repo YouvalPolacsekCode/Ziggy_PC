@@ -926,24 +926,88 @@ TOOLS = [
             "device_hint": {"type": "string"},
         }, "required": ["meal_name"]},
     }},
+
+    # ---- Debug mode ----
+    {"type": "function", "function": {
+        "name": "debug_mode",
+        "description": (
+            "Control Ziggy's debug mode or query recent debug info. "
+            "Use when the user wants to: enable/disable debug, set debug level, "
+            "check what scope to debug, see why something failed, see recent decisions, "
+            "show debug logs, or explain the last action."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["enable", "disable", "set_level", "show_failures", "show_recent", "explain_last", "status"],
+                "description": (
+                    "enable=turn on verbose debug, disable=turn off, "
+                    "set_level=set a specific level (basic/verbose/trace), "
+                    "show_failures=list recent failed actions, "
+                    "show_recent=show last N debug events, "
+                    "explain_last=explain the most recent action result, "
+                    "status=show current debug config"
+                ),
+            },
+            "level": {
+                "type": "string",
+                "enum": ["off", "basic", "verbose", "trace"],
+                "description": "Debug level to set (only used with set_level action)",
+            },
+            "scope": {
+                "type": "string",
+                "description": "Optional scope filter: intent, ha, ir, automation, sensor, presence",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "How many events to show (default 10)",
+            },
+        }, "required": ["action"]},
+    }},
 ]
 
 SYSTEM_PROMPT = (
     "You are Ziggy, a smart home assistant. "
     "The user is giving a voice or text command. "
-    "ALWAYS prefer to use a tool to handle the request — call the most appropriate tool rather than responding conversationally. "
-    "Only skip tool calls when the user is explicitly having casual small-talk or explicitly asking for general information with no actionable command. "
-    "For ANY request involving home control, scheduling, automation, tasks, reminders, files, system, or media — ALWAYS call a tool. "
+
+    # ── Confidence gate (most important rule) ──────────────────────────────────
+    "CONFIDENCE GATE: Only call a tool when you are CLEARLY confident the user "
+    "intends that specific action. A request must be unambiguous and actionable "
+    "to warrant a tool call. "
+    "DO NOT call any tool if: the input is nonsense, random characters, poetic, "
+    "metaphorical, humorous, impossible, or clearly not a real home-automation command. "
+    "DO NOT guess or hallucinate — if a required parameter (room, device, time, task name) "
+    "is completely absent and cannot be inferred from conversation context, do NOT call the tool. "
+    "When in doubt, skip tool calls and let the input fall through as unrecognized. "
+
+    # ── Clear-command routing ──────────────────────────────────────────────────
+    "When the user's intent IS clear, prefer using a tool over a conversational reply. "
+    "For clear home-control, scheduling, automation, tasks, reminders, files, system, "
+    "or media commands — call the most appropriate tool. "
+
+    # ── Multi-device rule ──────────────────────────────────────────────────────
     "MULTI-DEVICE RULE: When a command targets multiple individual devices (e.g. 'turn on all lights', "
     "'turn them back on' after a bulk off, 'turn on office and bedroom lights'), issue ONE tool call per device "
     "using the specific per-room tool (e.g. toggle_light). Do NOT invent a new combined tool. "
     "Use the known rooms list and conversation context to determine which devices to include. "
-    "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule', 'create a routine', 'create an automation' — ALWAYS use create_automation. "
-    "For ANY change to an existing automation or routine (rename, change time, change device, change room, reassign, update description) — ALWAYS use update_automation. "
-    "In create_automation, set action_device_type='tv' for TV/television targets, 'media_player' for any media device, 'light' for lights, 'ac' for air conditioning, 'switch' for wall switches. "
-    "In create_automation, use trigger_type='numeric_state' (not 'state') for threshold conditions like 'temperature above 24' or 'humidity below 60', and fill trigger_above/trigger_below accordingly. "
+
+    # ── Automation / routine routing ───────────────────────────────────────────
+    "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule', "
+    "'create a routine', 'create an automation' — use create_automation ONLY if a room AND "
+    "device type can be clearly identified from the request or conversation context. "
+    "If the user says 'create an automation' or 'create a routine' with no device/room details, "
+    "do NOT call create_automation — fall through as unrecognized so the user is prompted for details. "
+    "For ANY change to an existing automation or routine (rename, change time, change device, "
+    "change room, reassign, update description) — ALWAYS use update_automation. "
+    "In create_automation, set action_device_type='tv' for TV/television targets, 'media_player' "
+    "for any media device, 'light' for lights, 'ac' for air conditioning, 'switch' for wall switches. "
+    "In create_automation, use trigger_type='numeric_state' (not 'state') for threshold conditions "
+    "like 'temperature above 24' or 'humidity below 60', and fill trigger_above/trigger_below accordingly. "
+
     "Never instruct the user to use external apps or Home Assistant UI — use Ziggy's own tools to fulfill requests directly. "
     f"Known rooms: {_ROOMS}. "
+
+    # ── IR routing rules ───────────────────────────────────────────────────────
     "IR routing rules: "
     "use ir_send_command / ir_set_ac_temperature for devices without a HA entity (IR blaster only). "
     "use ir_send_channel for 'channel N' commands on IR TVs. "
@@ -953,8 +1017,11 @@ SYSTEM_PROMPT = (
     "use control_tv / set_tv_source for smart TVs with a HA media_player entity. "
     "use control_device for any device type not covered above: valve, lock, cover, alarm, vacuum, lawn_mower, humidifier, water_heater. "
     "Only use chat_with_gpt if no other tool applies and the input is pure casual conversation."
+
+    # ── Hebrew support ─────────────────────────────────────────────────────────
     "\n\nHebrew support: The user may speak Hebrew or mix Hebrew with English. "
-    "ALWAYS call the correct tool regardless of input language. "
+    "Apply the same confidence gate to Hebrew input — do NOT call tools for Hebrew nonsense or gibberish. "
+    "ALWAYS call the correct tool regardless of input language when intent is clear. "
     "Respond in the same language the user used. "
     "Hebrew action verbs: תדליק/הדלק = turn on, תכבה/כבה = turn off, "
     "הגדל/תגדיל = increase/brighten, הקטן/תקטין = decrease/dim, "
