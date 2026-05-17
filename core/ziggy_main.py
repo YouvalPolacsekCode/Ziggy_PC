@@ -16,10 +16,10 @@ from core.settings_loader import settings
 from core.shared_flags import shutdown_event
 from core.logger_module import log_info
 from interfaces.voice_interface import start_voice_interface
-from interfaces.telegram_interface import start_telegram_bot, send_reminder_message
 from interfaces.dashboard import start_dashboard
 from services.mqtt_client import start_mqtt
 from services.task_manager import start_reminder_thread
+from services.push_notify import push_notify_sync
 from backend.server import start_api_server
 
 os.environ["FFPLAY_PATH"] = settings.get("audio", {}).get("ffplay_path", "ffplay")
@@ -62,12 +62,6 @@ def main():
             daemon=True,
         ))
 
-    threads.append(threading.Thread(
-        target=thread_wrapper("Telegram", start_telegram_bot),
-        name="Telegram",
-        daemon=True,
-    ))
-
     if settings.get("debug", {}).get("enable_dashboard", False):
         threads.append(threading.Thread(
             target=thread_wrapper("Dashboard", start_dashboard),
@@ -83,15 +77,16 @@ def main():
         ))
 
     threads.append(threading.Thread(
-        target=thread_wrapper("Reminder", lambda: start_reminder_thread(send_reminder_message)),
+        target=thread_wrapper("Reminder", start_reminder_thread),
         name="Reminder",
         daemon=True,
     ))
 
     if settings.get("sensor_alerts", {}).get("enabled", True):
         from services.sensor_alerts import start_sensor_alerts
+        _sensor_notify = lambda msg: push_notify_sync("Sensor Alert", msg, "/", "sensor_alert")
         threads.append(threading.Thread(
-            target=thread_wrapper("SensorAlerts", lambda: start_sensor_alerts(send_reminder_message)),
+            target=thread_wrapper("SensorAlerts", lambda: start_sensor_alerts(_sensor_notify)),
             name="SensorAlerts",
             daemon=True,
         ))
@@ -108,11 +103,12 @@ def main():
     if _pl.get("enabled", True):
         from services.suggestion_engine import start_pattern_scheduler
         from core.shared_flags import shutdown_event as _shutdown_event
+        _suggestion_notify = lambda title, body, url="/suggestions": push_notify_sync(title, body, url, "suggestion")
         threads.append(threading.Thread(
             target=thread_wrapper(
                 "PatternEngine",
                 lambda: start_pattern_scheduler(
-                    notify_fn=send_reminder_message,
+                    notify_fn=_suggestion_notify,
                     shutdown=_shutdown_event,
                 ),
             ),

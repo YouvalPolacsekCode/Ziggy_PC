@@ -17,6 +17,17 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
 
+function _fmtAgo(isoOrDateStr) {
+  if (!isoOrDateStr) return ''
+  const d = new Date(isoOrDateStr.replace(' ', 'T'))
+  const diffMs = Date.now() - d.getTime()
+  const diffMin = Math.round(diffMs / 60000)
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffMin < 1440) return `${Math.round(diffMin / 60)}h ago`
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
 const IR_TYPE_ICONS = {
   tv:        Tv2,
   ac:        Thermometer,
@@ -832,6 +843,10 @@ const DeviceCard = forwardRef(function DeviceCard({
   const [showStatePicker, setShowStatePicker] = useState(false)
   const irStateOptions = IR_STATE_OPTIONS_MAP[irDevice?.type] || IR_STATE_OPTIONS_MAP.default
   const assumedState = irDevice?.assumed_state && irDevice.assumed_state !== 'unknown' ? irDevice.assumed_state : null
+  // State confidence: confirmed (has HA entity link), estimated (we sent a command), unknown (no info)
+  const irConfidence = irDevice?.ha_entity_id ? 'confirmed'
+    : (assumedState != null) ? 'estimated'
+    : 'unknown'
 
   return (
     <motion.div
@@ -925,7 +940,7 @@ const DeviceCard = forwardRef(function DeviceCard({
               )}
             >
               <span>{assumedState ?? 'unknown'}</span>
-              <span className="text-[9px] opacity-60 ml-0.5">assumed ▾</span>
+              <span className="text-[9px] opacity-60 ml-0.5">{irConfidence} ▾</span>
             </button>
             <AnimatePresence>
               {showStatePicker && (
@@ -965,6 +980,11 @@ const DeviceCard = forwardRef(function DeviceCard({
         )}
         {!isIr && stateSecondary && !isHidden && (
           <p className="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">{stateSecondary}</p>
+        )}
+        {isIr && irDevice?.last_command_sent_at && (
+          <p className="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5 truncate">
+            Last: {irDevice.last_command_sent?.replace(/_/g, ' ')} · {_fmtAgo(irDevice.last_command_sent_at)}
+          </p>
         )}
 
         {/* ── Controls ── */}

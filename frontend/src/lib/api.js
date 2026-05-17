@@ -16,10 +16,11 @@ async function request(method, path, body) {
   if (body !== undefined) opts.body = JSON.stringify(body)
   const res = await fetch(`${BASE}${path}`, opts)
   if (res.status === 401) {
-    // Stale token — clear session and reload to login page
     localStorage.removeItem('ziggy_token')
     localStorage.removeItem('ziggy_role')
-    window.location.reload()
+    // Fire event instead of reloading — App.jsx listens and shows LoginPage
+    // without a page reload, which prevents the WS reconnect storm.
+    window.dispatchEvent(new Event('ziggy:unauthorized'))
     return
   }
   if (!res.ok) {
@@ -32,7 +33,7 @@ async function request(method, path, body) {
 const get = (path) => request('GET', path)
 const post = (path, body) => request('POST', path, body)
 const patch = (path, body) => request('PATCH', path, body)
-const del = (path) => request('DELETE', path)
+const del = (path, body) => request('DELETE', path, body)
 
 // Intent / Voice
 export const sendIntent = (text, source = 'web') => post('/intent', { text, source })
@@ -87,6 +88,8 @@ export const updateTask = (id, data) => patch(`/tasks/${id}`, data)
 export const deleteTask = (id) => del(`/tasks/${id}`)
 
 // Automations — backed by HA
+export const getAutomationTemplates  = () => get('/automations/templates')
+export const getSuggestedTemplates   = () => get('/automations/templates/suggested')
 export const getAutomations = () => get('/automations')
 export const getAutomation = (id) => get(`/automations/${id}`)
 export const createAutomation = (data) => post('/automations', data)
@@ -144,11 +147,67 @@ export const createUser       = (data)       => post('/auth/users', data)
 export const updateUser       = (username, data) => request('PATCH', `/auth/users/${encodeURIComponent(username)}`, data)
 export const deleteUser       = (username)   => del(`/auth/users/${encodeURIComponent(username)}`)
 
+// Invite flow (super_admin for create/list/revoke; public for get/accept)
+export const createInvite     = (data)       => post('/auth/invites', data)
+export const listInvites      = ()           => get('/auth/invites')
+export const revokeInvite     = (token)      => del(`/auth/invites/${token}`)
+// Public — called from the AcceptInvite page (no Bearer token sent)
+export const getInvite        = (token)      => fetch(`/api/auth/invite/${token}`).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Not found'))))
+export const acceptInvite     = (token, data) => fetch(`/api/auth/invite/${token}/accept`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Failed'))))
+
+// Relay API — these call the relay service (configured via RELAY_URL setting)
+// relay_url is stored in settings and prepended by the relay helper below
+function relayUrl() {
+  return window.__RELAY_URL__ || localStorage.getItem('ziggy_relay_url') || ''
+}
+function relayToken() {
+  return localStorage.getItem('ziggy_relay_token') || getToken()
+}
+async function relayRequest(method, path, body) {
+  const base = relayUrl()
+  if (!base) throw new Error('Relay not configured')
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${relayToken()}` },
+  }
+  if (body !== undefined) opts.body = JSON.stringify(body)
+  const res = await fetch(`${base}${path}`, opts)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+export const relayLogin       = (data)       => fetch(`${relayUrl()}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json())
+export const relayListHomes   = ()           => relayRequest('GET', '/api/homes/')
+export const relayGetHome     = (id)         => relayRequest('GET', `/api/homes/${id}`)
+export const relayHealthHome  = (id)         => relayRequest('GET', `/api/homes/${id}/health`)
+export const relayProvision   = (data)       => relayRequest('POST', '/api/provision/home', data)
+export const relayDeprovision = (id)         => relayRequest('DELETE', `/api/provision/home/${id}`)
+export const relayProvStatus  = (id)         => relayRequest('GET', `/api/provision/home/${id}/status`)
+export const relayListInvites = ()           => relayRequest('GET', '/api/invites/')
+export const relayCreateInvite= (data)       => relayRequest('POST', '/api/invites/', data)
+export const relayRevokeInvite= (token)      => relayRequest('DELETE', `/api/invites/${token}`)
+export const relayGetInvite   = (token)      => fetch(`${relayUrl()}/api/invites/${token}/info`).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Not found'))))
+export const relayRegister    = (token, data) => fetch(`${relayUrl()}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, invite_token: token }) }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Failed'))))
+
+export function setRelayUrl(url) { localStorage.setItem('ziggy_relay_url', url) }
+export function setRelayToken(token) { localStorage.setItem('ziggy_relay_token', token) }
+export function getRelayUrl() { return relayUrl() }
+export function isRelayConfigured() { return !!relayUrl() }
+
 // Admin settings
 export const getHaSettings = () => get('/settings/ha')
 export const patchHaSettings = (data) => patch('/settings/ha', data)
-export const getTelegramSettings = () => get('/settings/telegram')
-export const patchTelegramSettings = (data) => patch('/settings/telegram', data)
+// Web push
+export const getPushVapidKey       = ()       => get('/push/vapid-public-key')
+export const subscribePush         = (sub)    => post('/push/subscribe', sub)
+export const unsubscribePush       = (ep)     => del('/push/subscribe', { endpoint: ep })
+export const testPushNotification  = ()       => post('/push/test', {})
+export const getPushPreferences    = ()       => get('/push/preferences')
+export const patchPushPreferences  = (data)   => patch('/push/preferences', data)
+export const getPushDevices        = ()       => get('/push/devices')
+export const revokePushDevice      = (ep)     => del('/push/subscribe', { endpoint: ep })
 export const getIntegrationsSettings = () => get('/settings/integrations')
 export const patchIntegrationsSettings = (data) => patch('/settings/integrations', data)
 export const getMqttSettings = () => get('/settings/mqtt')
@@ -164,18 +223,53 @@ export const patchPatternLearningSettings = (data) => patch('/settings/pattern-l
 export const getRoomAliases = () => get('/settings/room-aliases')
 export const patchRoomAliases = (data) => patch('/settings/room-aliases', data)
 
+// Email (SMTP)
+export const getEmailSettings  = ()     => get('/settings/email')
+export const patchEmailSettings = (data) => patch('/settings/email', data)
+export const testEmail          = ()     => post('/settings/email/test')
+
 // System health — HA connectivity, offline devices, battery warnings
 export const getHealth  = () => get('/health')
 export const reloadZigbee = () => post('/health/reload-zigbee')
+
+// Debug mode
+export const getDebugConfig   = ()       => get('/debug/config')
+export const setDebugConfig   = (data)   => post('/debug/config', data)
+export const getDebugEvents   = (params) => {
+  const qs = Object.entries(params || {})
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&')
+  return get(`/debug/events${qs ? '?' + qs : ''}`)
+}
+export const clearDebugEvents  = ()       => request('DELETE', '/debug/events')
+export const exportDebugReport = ()       => get('/debug/export')
+export const getDebugStatus    = ()       => get('/debug/status')
+export const simulateIntent    = (data)   => post('/debug/simulate', data)
+export const getRequestTrace   = (reqId)  => get(`/debug/request/${encodeURIComponent(reqId)}`)
 
 // Memory
 export const getMemory = () => get('/memory')
 
 // Presence — Ziggy-native person tracking
-export const getPresencePersons  = ()           => get('/presence/persons')
-export const createPresencePerson = (name)      => post('/presence/persons', { name })
-export const deletePresencePerson = (id)        => del(`/presence/persons/${id}`)
-export const getPresenceZone      = ()           => get('/presence/zone')
+export const getPresencePersons       = ()             => get('/presence/persons')
+export const createPresencePerson     = (name)         => post('/presence/persons', { name })
+export const deletePresencePerson     = (id)           => del(`/presence/persons/${id}`)
+export const overridePresenceState    = (id, state)    => patch(`/presence/persons/${id}/state`, { state })
+export const getPresenceZone          = ()             => get('/presence/zone')
+export const savePresenceZone         = (data)         => patch('/presence/zone', data)
+export const getMyPresencePerson      = ()             => get('/presence/my-person')
+
+// Sensor alert conditions
+export const getSensorAlertsSettings  = ()     => get('/settings/sensor-alerts')
+export const patchSensorAlertsSettings= (data) => patch('/settings/sensor-alerts', data)
+
+// Push categories (dynamic)
+export const getPushCategories = () => get('/push/categories')
+
+// Anomaly rules
+export const getAnomalyRules   = ()     => get('/settings/anomaly-rules')
+export const patchAnomalyRules = (data) => patch('/settings/anomaly-rules', data)
 
 // Direct HA service call — use only for advanced controls (brightness, climate, media)
 export const callHaService = (domain, service, data) =>
@@ -204,6 +298,8 @@ export const deleteEvent = (name) => del(`/events/${encodeURIComponent(name)}`)
 
 // IR Blaster / IR Devices
 export const getIrBlasters = () => get('/ir/blasters').then((r) => r.blasters ?? r)
+// Scan local network for Broadlink devices (takes ~6s)
+export const discoverIrBlasters = () => get('/ir/discover').then((r) => r.devices ?? r)
 export const getIrDevices = (room) =>
   get(room ? `/ir/devices?room=${encodeURIComponent(room)}` : '/ir/devices').then((r) => r.devices ?? r)
 export const getIrDevice = (id) => get(`/ir/devices/${id}`)
@@ -216,6 +312,7 @@ export const irSend = (deviceId, command) =>
   post('/ir/send', { device_id: deviceId, command })
 export const irSendChannel = (deviceId, channel) =>
   post(`/ir/devices/${deviceId}/channel`, { channel })
+export const getIrListenerStatus = () => get('/ir/listener/status')
 
 // Quick Asks
 export const getQuickAsks = () => get('/quick-asks')

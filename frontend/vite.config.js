@@ -14,6 +14,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Disable VitePWA's own SW injection — we manage our own sw.js which
+      // handles push notifications. VitePWA's auto-generated SW would conflict.
+      injectRegister: false,
+      selfDestroying: false,
       includeAssets: ['icons/*.png', 'icons/*.svg'],
       manifest: {
         name: 'Ziggy',
@@ -67,8 +71,9 @@ export default defineConfig({
     port: 3000,
     allowedHosts: true,
     proxy: {
-      '/api': 'http://localhost:8001',
-      '/ws': { target: 'ws://localhost:8001', ws: true },
+      '/api':      'http://localhost:8001',
+      '/presence': 'http://localhost:8001',
+      '/ws':       { target: 'ws://localhost:8001', ws: true },
     },
   },
 })

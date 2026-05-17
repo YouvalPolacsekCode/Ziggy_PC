@@ -55,7 +55,8 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
     # Fast-path patterns never need history — they match exact phrases
     for pattern, intent in _FAST_PATTERNS:
         if pattern.search(lower):
-            print(f"[Intent Parser] ⚡ Fast path: {intent}")
+            from core.debug_bus import bus, VERBOSE
+            bus.emit("intent", VERBOSE, "fast_path_match", intent=intent, input=text)
             return {"intent": intent, "params": {}, "source": "fast"}
 
     return _parse_with_tools(text, chat_history=chat_history)
@@ -106,6 +107,12 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
             messages.extend(chat_history[-10:])
         messages.append({"role": "user", "content": text})
 
+        import time as _time
+        from core.debug_bus import bus as _dbus, VERBOSE, TRACE
+        _dbus.emit("intent", VERBOSE, "gpt_parse_start", input=text,
+                   history_turns=len(chat_history) if chat_history else 0)
+        t0 = _time.perf_counter()
+
         response = get_client().chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
@@ -113,6 +120,7 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
             tool_choice="auto",
             parallel_tool_calls=True,
         )
+        duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
 
         msg = response.choices[0].message
 
@@ -123,7 +131,11 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
                 intent = call.function.name
                 params = json.loads(call.function.arguments)
                 intents.append({"intent": intent, "params": params, "source": "tools"})
-                print(f"[Intent Parser] ✅ Tool: {intent} | params: {params}")
+
+            _dbus.emit("intent", VERBOSE, "gpt_parse_result",
+                       input=text, duration_ms=duration_ms,
+                       intents=[i["intent"] for i in intents],
+                       multi=(len(intents) > 1))
 
             if len(intents) == 1:
                 return intents[0]
@@ -131,9 +143,15 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
             # Multiple tool calls — return a multi-intent envelope
             return {"intent": "__multi__", "intents": intents, "params": {}, "source": "tools"}
 
-        print("[Intent Parser] ❓ No tool matched — unrecognized command")
+        _dbus.emit("intent", VERBOSE, "gpt_no_tool_matched",
+                   input=text, duration_ms=duration_ms,
+                   suggestion="Check that the user's request maps to a known intent in tools_schema.py.")
         return {"intent": "unrecognized_command", "params": {"text": text}, "source": "tools"}
 
     except Exception as e:
-        print(f"[Intent Parser] ⚠️ Error: {e}")
+        from core.debug_bus import bus as _dbus, BASIC
+        _dbus.emit("intent", BASIC, "gpt_parse_error",
+                   input=text, error=str(e), error_type=type(e).__name__,
+                   result="exception",
+                   suggestion="Check OpenAI API key and network connectivity.")
         return {"intent": "unrecognized_command", "params": {"text": text}, "source": "error"}

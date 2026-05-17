@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield, RefreshCw, Server, Bot, Key, Wifi, Sliders, Bug,
-  Brain, BookMarked, Plus, Trash2, AlertTriangle, Check, Users,
+  Brain, BookMarked, Plus, Trash2, AlertTriangle, Check, Users, MapPin, Copy, Mail,
 } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
@@ -14,15 +14,21 @@ import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
 import {
   getHaSettings, patchHaSettings,
-  getTelegramSettings, patchTelegramSettings,
   getIntegrationsSettings, patchIntegrationsSettings,
+  testPushNotification, getPushPreferences, patchPushPreferences, getPushDevices, revokePushDevice,
+  getEmailSettings, patchEmailSettings, testEmail,
   getMqttSettings, patchMqttSettings,
   getFeaturesSettings, patchFeaturesSettings,
   getDebugSettings, patchDebugSettings,
   getOllamaSettings, patchOllamaSettings,
   getPatternLearningSettings, patchPatternLearningSettings,
   getRoomAliases, patchRoomAliases,
-  getUsers, createUser, updateUser, deleteUser,
+  getUsers, updateUser, deleteUser,
+  createInvite, listInvites, revokeInvite,
+  getPresencePersons, createPresencePerson, deletePresencePerson,
+  getPresenceZone, savePresenceZone,
+  patchSensorAlertsSettings,
+  getPushCategories,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
@@ -113,6 +119,534 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
   )
 }
 
+// ─── Presence section ─────────────────────────────────────────────────────────
+
+const STALE_HOME_MS  = 8 * 60 * 60 * 1000  // 8 h — matches backend asymmetric staleness
+const STALE_AWAY_MS  = 30 * 60 * 1000       // 30 min
+
+function timeAgo(iso) {
+  if (!iso) return 'never'
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000)
+  if (diff < 60)    return `${diff}s ago`
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+function _isStale(p) {
+  if (!p.last_seen) return true
+  const age = Date.now() - new Date(p.last_seen)
+  return p.state === 'home' ? age > STALE_HOME_MS : age > STALE_AWAY_MS
+}
+
+function presenceStateColor(p) {
+  if (_isStale(p) || p.effective_state === 'unknown') return 'var(--ink-faint)'
+  if (p.effective_state === 'home') return 'var(--ok)'
+  if (p.effective_state === 'not_home') return 'var(--warn)'
+  return 'var(--ink-faint)'
+}
+
+function presenceStateLabel(p) {
+  if (_isStale(p)) return p.last_seen ? 'stale' : 'unknown'
+  if (p.effective_state === 'home') return 'home'
+  if (p.effective_state === 'not_home') return 'away'
+  return 'unknown'
+}
+
+function PresenceSection() {
+  const { addToast } = useUIStore()
+  const [persons,   setPersons]  = useState([])
+  const [loading,   setLoading]  = useState(true)
+  const [newName,   setNewName]  = useState('')
+  const [adding,    setAdding]   = useState(false)
+  const [copiedId,  setCopiedId] = useState(null)
+  const [zone,      setZone]     = useState(null)
+  const [zoneEdit,  setZoneEdit] = useState(false)
+  const [zoneDraft, setZoneDraft] = useState({ lat: '', lon: '', radius_m: 200 })
+  const [zoneSaving, setZoneSaving] = useState(false)
+  const [locating,  setLocating] = useState(false)
+
+  const load = async () => {
+    try {
+      const [p, z] = await Promise.all([getPresencePersons(), getPresenceZone()])
+      setPersons(p.persons ?? [])
+      setZone(z)
+      if (z?.lat != null) setZoneDraft({ lat: z.lat, lon: z.lon, radius_m: z.radius ?? 200 })
+    } catch {}
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleAdd = async () => {
+    const name = newName.trim()
+    if (!name) return
+    setAdding(true)
+    try {
+      await createPresencePerson(name)
+      setNewName('')
+      await load()
+      addToast(`${name} added`, 'success')
+    } catch (e) { addToast(e.message || 'Failed to add person', 'error') }
+    finally { setAdding(false) }
+  }
+
+  const handleDelete = async (p) => {
+    if (!window.confirm(`Remove ${p.name} from presence tracking?`)) return
+    try {
+      await deletePresencePerson(p.id)
+      await load()
+      addToast(`${p.name} removed`, 'success')
+    } catch (e) { addToast(e.message || 'Failed', 'error') }
+  }
+
+  const copyInvite = (p) => {
+    const url = `${window.location.origin}/presence/join/${p.token}`
+    navigator.clipboard.writeText(url).catch(() => {})
+    setCopiedId(p.id)
+    setTimeout(() => setCopiedId(null), 2000)
+    addToast('Invite link copied', 'success')
+  }
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) { addToast('Geolocation not available', 'error'); return }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setZoneDraft(d => ({ ...d, lat: parseFloat(pos.coords.latitude.toFixed(6)), lon: parseFloat(pos.coords.longitude.toFixed(6)) }))
+        setLocating(false)
+        setZoneEdit(true)
+      },
+      () => { addToast('Could not get location', 'error'); setLocating(false) },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  const saveZone = async () => {
+    setZoneSaving(true)
+    try {
+      await savePresenceZone({ lat: parseFloat(zoneDraft.lat), lon: parseFloat(zoneDraft.lon), radius_m: parseFloat(zoneDraft.radius_m) || 200 })
+      await load()
+      setZoneEdit(false)
+      addToast('Home zone saved', 'success')
+    } catch (e) { addToast(e.message || 'Failed to save', 'error') }
+    finally { setZoneSaving(false) }
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 64 }}>
+        <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* ── Home zone card ── */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Home zone</p>
+            <p style={{ fontSize: 11, color: zone?.configured ? 'var(--ok)' : 'var(--warn)', marginTop: 1 }}>
+              {zone?.configured
+                ? `${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)} · ${zone.radius}m radius`
+                : zone?.lat != null
+                  ? `Using HA location (${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)}) — save to Ziggy to confirm`
+                  : 'Not configured — set your home location'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button
+              onClick={useMyLocation}
+              disabled={locating}
+              className="z-btn-secondary"
+              style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}
+            >
+              {locating ? '…' : 'Use my location'}
+            </button>
+            {!zoneEdit && (
+              <button onClick={() => setZoneEdit(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
+                Edit
+              </button>
+            )}
+          </div>
+        </div>
+        {zoneEdit && (
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Latitude</p>
+                <input value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="32.0853" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Longitude</p>
+                <input value={zoneDraft.lon} onChange={e => setZoneDraft(d => ({ ...d, lon: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="34.7818" />
+              </div>
+              <div style={{ width: 90 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Radius (m)</p>
+                <input type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={saveZone} disabled={zoneSaving || !zoneDraft.lat || !zoneDraft.lon} className="z-btn-primary" style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12 }}>
+                {zoneSaving ? '…' : 'Save zone'}
+              </button>
+              <button onClick={() => setZoneEdit(false)} className="z-btn-secondary" style={{ height: 32, padding: '0 10px', borderRadius: 8, fontSize: 12 }}>
+                Cancel
+              </button>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+              Tip: click "Use my location" while at home to auto-fill coordinates. 200m radius works well for most homes.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── People card ── */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+      {persons.length === 0 ? (
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '20px 16px', textAlign: 'center' }}>
+          No persons configured. Add a person to start tracking presence.
+        </p>
+      ) : (
+        persons.map((p, i) => (
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', borderBottom: i < persons.length - 1 ? '0.5px solid var(--line)' : 'none', flexWrap: 'wrap' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: presenceStateColor(p), flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 60 }}>{p.name}</span>
+            <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>{presenceStateLabel(p)}</span>
+            <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{timeAgo(p.last_seen)}</span>
+            <button
+              onClick={() => copyInvite(p)}
+              title="Copy invite link"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedId === p.id ? 'var(--ok)' : 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}
+            >
+              {copiedId === p.id ? <Check size={13} /> : <Copy size={13} />}
+            </button>
+            <button
+              onClick={() => handleDelete(p)}
+              title="Remove person"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))
+      )}
+
+      {/* Add row */}
+      <div style={{ padding: '12px 16px', display: 'flex', gap: 6, borderTop: persons.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+        <input
+          placeholder="Name (e.g. Youval)"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          className="z-input"
+          style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={adding || !newName.trim()}
+          className="z-btn-primary"
+          style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12 }}
+        >
+          {adding ? '…' : 'Add'}
+        </button>
+      </div>
+
+      <p style={{ fontSize: 10, color: 'var(--ink-faint)', padding: '0 16px 12px', lineHeight: 1.6 }}>
+        Add each household member, then copy their invite link and open it on their phone.
+        Pin the page to the home screen for continuous background tracking.
+      </p>
+      </div>
+
+    </div>
+  )
+}
+
+// ─── Push notification preference center ─────────────────────────────────────
+
+
+function parseBrowser(ua) {
+  if (!ua) return 'Unknown browser'
+  if (ua.includes('Edg/'))    return 'Edge'
+  if (ua.includes('Chrome/')) return 'Chrome'
+  if (ua.includes('Firefox/'))return 'Firefox'
+  if (ua.includes('Safari/') && !ua.includes('Chrome')) return 'Safari'
+  return 'Browser'
+}
+
+function parseOS(ua) {
+  if (!ua) return ''
+  if (ua.includes('Windows')) return 'Windows'
+  if (ua.includes('Mac OS'))  return 'macOS'
+  if (ua.includes('iPhone'))  return 'iPhone'
+  if (ua.includes('iPad'))    return 'iPad'
+  if (ua.includes('Android')) return 'Android'
+  if (ua.includes('Linux'))   return 'Linux'
+  return ''
+}
+
+function PushPreferenceCenter() {
+  const { addToast } = useUIStore()
+  const [categories, setCategories] = useState([])  // from /api/push/categories
+  const [quietHours, setQuietHours] = useState({ enabled: false, start: '23:00', end: '07:00' })
+  const [devices,    setDevices]    = useState([])
+  const [currentEp,  setCurrentEp]  = useState(null)
+  const [loadingCats, setLoadingCats] = useState(true)
+
+  const load = async () => {
+    getPushCategories()
+      .then(r => { setCategories(r.categories ?? []); setLoadingCats(false) })
+      .catch(() => setLoadingCats(false))
+    getPushPreferences()
+      .then(p => { if (p?.preferences?.quiet_hours) setQuietHours(p.preferences.quiet_hours) })
+      .catch(() => {})
+    getPushDevices()
+      .then(d => setDevices(d.devices ?? []))
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    load()
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then(reg => reg.pushManager.getSubscription())
+        .then(sub => { if (sub) setCurrentEp(sub.endpoint) })
+        .catch(() => {})
+    }
+  }, [])
+
+  const toggleCategory = async (catId) => {
+    const cat = categories.find(c => c.id === catId)
+    if (!cat) return
+    const next = !cat.enabled
+    setCategories(cs => cs.map(c => c.id === catId ? { ...c, enabled: next } : c))
+    try { await patchPushPreferences({ categories: { [catId]: next } }) }
+    catch { addToast('Failed to save', 'error') }
+  }
+
+  const saveQuietHours = async (qh) => {
+    try {
+      await patchPushPreferences({ quiet_hours: qh })
+      setQuietHours(qh)
+    } catch { addToast('Failed to save', 'error') }
+  }
+
+  const updateSensorCondition = async (catId, entityId, condPatch) => {
+    // Update local categories state
+    setCategories(cs => cs.map(c => {
+      if (c.id !== catId) return c
+      const prev = c.conditions || {}
+      const merged = Object.fromEntries(
+        Object.entries({ ...prev, ...condPatch }).filter(([, v]) => v != null)
+      )
+      return { ...c, conditions: merged }
+    }))
+    // Persist via sensor-alerts patch
+    const cat = categories.find(c => c.id === catId)
+    if (!cat) return
+    const prev = cat.conditions || {}
+    const merged = Object.fromEntries(
+      Object.entries({ ...prev, ...condPatch }).filter(([, v]) => v != null)
+    )
+    try {
+      const allSensors = categories
+        .filter(c => c.type === 'sensor')
+        .map(c => ({
+          entity_id:  c.entity_id,
+          label:      c.label,
+          conditions: c.id === catId ? merged : (c.conditions || {}),
+        }))
+      await patchSensorAlertsSettings({ sensors: allSensors.map(s => s) })
+    } catch { addToast('Failed to save', 'error') }
+  }
+
+  const handleRevoke = async (ep) => {
+    try {
+      await revokePushDevice(ep)
+      setDevices(d => d.filter(x => x.endpoint !== ep))
+      addToast('Device removed', 'success')
+    } catch { addToast('Failed to remove', 'error') }
+  }
+
+  const systemCats  = categories.filter(c => c.type === 'system')
+  const sensorCats  = categories.filter(c => c.type === 'sensor')
+  const qh          = quietHours
+
+  const SEV_PRESENCE_OPTS = [
+    { value: 'always', label: 'Always' },
+    { value: 'home',   label: 'When home' },
+    { value: 'away',   label: 'When away' },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* Browser status + test */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>This browser</p>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
+              {'Notification' in window
+                ? Notification.permission === 'granted' ? 'Subscribed — will receive notifications'
+                : Notification.permission === 'denied'  ? 'Blocked — enable in browser settings'
+                : 'Permission not yet granted'
+                : 'Push not supported in this browser'}
+            </p>
+          </div>
+          <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: Notification.permission === 'granted' ? 'var(--ok)' : 'var(--ink-faint)' }}>
+            {'Notification' in window ? Notification.permission : 'unsupported'}
+          </span>
+        </div>
+        <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Send a test to verify this device is working.</p>
+          <button
+            onClick={async () => { try { await testPushNotification(); addToast('Test sent', 'success') } catch { addToast('Not subscribed on this device', 'error') } }}
+            className="z-btn-secondary"
+            style={{ padding: '5px 11px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+          >Send test</button>
+        </div>
+      </div>
+
+      {/* Quiet hours */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: qh.enabled ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Quiet hours</p>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>Suppress non-critical notifications. Also defines "night" for anomaly detection.</p>
+          </div>
+          <button className="z-toggle" aria-checked={qh.enabled} onClick={() => saveQuietHours({ ...qh, enabled: !qh.enabled })} />
+        </div>
+        {qh.enabled && (
+          <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0 }}>From</p>
+            <input type="time" value={qh.start} onChange={e => saveQuietHours({ ...qh, start: e.target.value })} className="z-input" style={{ width: 100, height: 32, padding: '0 8px', fontSize: 12 }} />
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0 }}>to</p>
+            <input type="time" value={qh.end}   onChange={e => saveQuietHours({ ...qh, end:   e.target.value })} className="z-input" style={{ width: 100, height: 32, padding: '0 8px', fontSize: 12 }} />
+          </div>
+        )}
+      </div>
+
+      {/* System category toggles */}
+      {!loadingCats && systemCats.length > 0 && (
+        <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+          <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
+            <p className="z-eyebrow">What reaches your phone</p>
+          </div>
+          {systemCats.map((cat, i) => (
+            <div key={cat.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: i < systemCats.length - 1 ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {cat.label}
+                  {cat.bypass_quiet_hours && <span style={{ fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>always</span>}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{cat.description}</p>
+              </div>
+              <button className="z-toggle" aria-checked={!!cat.enabled} onClick={() => toggleCategory(cat.id)} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Sensor categories — each with presence + time conditions */}
+      {!loadingCats && sensorCats.length > 0 && (
+        <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+          <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
+            <p className="z-eyebrow">Sensor alerts</p>
+          </div>
+          {sensorCats.map((cat, i) => {
+            const cond        = cat.conditions || {}
+            const presence    = cond.presence || 'always'
+            const timeEnabled = !!(cond.time_start && cond.time_end)
+            return (
+              <div key={cat.id} style={{ padding: '12px 16px', borderBottom: i < sensorCats.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: cond ? 10 : 0 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{cat.label}</p>
+                    <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>{cat.entity_id}</p>
+                  </div>
+                  <button className="z-toggle" aria-checked={!!cat.enabled} onClick={() => toggleCategory(cat.id)} />
+                </div>
+                {cat.enabled && (
+                  <>
+                    {/* Presence */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <p style={{ fontSize: 11, color: 'var(--ink-mute)', width: 68, flexShrink: 0 }}>Alert when</p>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {SEV_PRESENCE_OPTS.map(opt => (
+                          <button key={opt.value} onClick={() => updateSensorCondition(cat.id, cat.entity_id, { presence: opt.value })}
+                            style={{ fontSize: 11, padding: '3px 9px', borderRadius: 7, fontFamily: 'inherit',
+                              border: `0.5px solid ${presence === opt.value ? 'var(--accent)' : 'var(--line)'}`,
+                              background: presence === opt.value ? 'color-mix(in srgb, var(--accent) 15%, var(--surface))' : 'transparent',
+                              color: presence === opt.value ? 'var(--accent)' : 'var(--ink-mute)', cursor: 'pointer' }}
+                          >{opt.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Time window */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <p style={{ fontSize: 11, color: 'var(--ink-mute)', width: 68, flexShrink: 0 }}>Time</p>
+                      <button className="z-toggle" aria-checked={timeEnabled}
+                        onClick={() => updateSensorCondition(cat.id, cat.entity_id,
+                          timeEnabled ? { time_start: null, time_end: null } : { time_start: '22:00', time_end: '06:00' }
+                        )} />
+                      {timeEnabled && (
+                        <>
+                          <input type="time" value={cond.time_start || '22:00'} onChange={e => updateSensorCondition(cat.id, cat.entity_id, { time_start: e.target.value })} className="z-input" style={{ width: 90, height: 28, padding: '0 8px', fontSize: 12 }} />
+                          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>to</p>
+                          <input type="time" value={cond.time_end || '06:00'} onChange={e => updateSensorCondition(cat.id, cat.entity_id, { time_end: e.target.value })} className="z-input" style={{ width: 90, height: 28, padding: '0 8px', fontSize: 12 }} />
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Subscribed devices */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ padding: '8px 16px 6px', borderBottom: devices.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <p className="z-eyebrow">Subscribed devices</p>
+        </div>
+        {devices.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '14px 16px' }}>No devices subscribed yet.</p>
+        ) : (
+          devices.map((d, i) => {
+            const browser = parseBrowser(d.user_agent)
+            const os      = parseOS(d.user_agent)
+            const isCurrent = d.endpoint === currentEp
+            const ago = d.subscribed_at
+              ? (() => { const diff = Math.floor((Date.now() - new Date(d.subscribed_at)) / 86400000); return diff === 0 ? 'today' : diff === 1 ? 'yesterday' : `${diff}d ago` })()
+              : ''
+            return (
+              <div key={d.endpoint} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < devices.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {browser}{os ? ` · ${os}` : ''}
+                    {isCurrent && <span style={{ fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>this device</span>}
+                  </p>
+                  {ago && <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>subscribed {ago}</p>}
+                </div>
+                <button onClick={() => handleRevoke(d.endpoint)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title="Revoke">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+    </div>
+  )
+}
+
 // ─── Main component (embeddable in Settings tabs) ────────────────────────────
 
 const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', user: 'User', guest: 'Guest' }
@@ -123,12 +657,11 @@ export default function AdminSettings() {
   const { role: myRole } = useAuthStore()
   const isSuperAdmin = myRole === 'super_admin'
 
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   // Section state
   const [ha, setHa] = useState({ url: '', token_masked: '', token_configured: false })
-  const [telegram, setTelegram] = useState({ enabled: false, token_masked: '', token_configured: false, allowed_users: [], default_chat_id: null })
   const [integrations, setIntegrations] = useState({})
   const [mqtt, setMqtt] = useState({ host: '', port: 1883, username: '', password: '', password_configured: false })
   const [features, setFeatures] = useState({})
@@ -136,11 +669,15 @@ export default function AdminSettings() {
   const [ollama, setOllama] = useState({ base_url: '', model: '', timeout: 30 })
   const [patternLearning, setPatternLearning] = useState({})
   const [aliases, setAliases] = useState({ en: {}, he: {} })
+  const [email,   setEmail]   = useState({ enabled: false, host: '', port: 587, username: '', password_configured: false, password_masked: '', from_address: '', from_name: 'Ziggy' })
 
-  // Users state (super_admin only)
-  const [users, setUsers] = useState([])
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' })
-  const [usersSaving, setUsersSaving] = useState(false)
+  // Users + invites state (super_admin only)
+  const [users,         setUsers]         = useState([])
+  const [invites,       setInvites]       = useState([])
+  const [inviteEmail,   setInviteEmail]   = useState('')
+  const [inviteRole,    setInviteRole]    = useState('user')
+  const [inviteLink,    setInviteLink]    = useState(null)
+  const [inviteSaving,  setInviteSaving]  = useState(false)
 
   // Per-section saving
   const [saving, setSaving] = useState({})
@@ -150,53 +687,49 @@ export default function AdminSettings() {
   const [newAlias, setNewAlias] = useState({ alias: '', room: '' })
   const [aliasFilter, setAliasFilter] = useState('')
 
-  const loadAll = async () => {
-    try {
-      const [h, tg, integ, mq, feat, dbg, ol, pl, al] = await Promise.all([
-        getHaSettings(),
-        getTelegramSettings(),
-        getIntegrationsSettings(),
-        getMqttSettings(),
-        getFeaturesSettings(),
-        getDebugSettings(),
-        getOllamaSettings(),
-        getPatternLearningSettings(),
-        getRoomAliases(),
-      ])
-      setHa(h)
-      setTelegram({ ...tg, allowed_users: tg.allowed_users || [] })
-      setIntegrations(integ)
-      setMqtt({ ...mq, password: '' })
-      setFeatures(feat)
-      setDebug(dbg)
-      setOllama(ol)
-      setPatternLearning({ enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30, min_occurrences: 5, max_pending_suggestions: 3, time_window_minutes: 45, sequence_gap_minutes: 5, ...pl })
-      setAliases({ en: al?.en || {}, he: al?.he || {} })
-    } catch {}
+  const loadAll = () => {
+    // All calls fire in parallel — no sequential awaits, no page-level loading gate.
+    // Each setter is called independently as its response arrives.
+    getHaSettings().then(setHa).catch(() => {})
+    getIntegrationsSettings().then(setIntegrations).catch(() => {})
+    getMqttSettings().then(mq => setMqtt({ ...mq, password: '' })).catch(() => {})
+    getFeaturesSettings().then(setFeatures).catch(() => {})
+    getDebugSettings().then(setDebug).catch(() => {})
+    getOllamaSettings().then(setOllama).catch(() => {})
+    getPatternLearningSettings().then(pl => setPatternLearning({
+      enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30,
+      min_occurrences: 5, max_pending_suggestions: 3, time_window_minutes: 45,
+      sequence_gap_minutes: 5, ...pl
+    })).catch(() => {})
+    getRoomAliases().then(al => setAliases({ en: al?.en || {}, he: al?.he || {} })).catch(() => {})
     if (isSuperAdmin) {
-      try { setUsers(await getUsers()) } catch {}
+      getEmailSettings().then(setEmail).catch(() => {})
+      getUsers().then(setUsers).catch(() => {})
+      listInvites().then(r => setInvites(r.filter(i => i.status === 'pending'))).catch(() => {})
     }
   }
 
-  useEffect(() => { loadAll().finally(() => setLoading(false)) }, [])
+  useEffect(() => { loadAll() }, [])
 
-  const handleRefresh = async () => {
+  const handleRefresh = () => {
     setRefreshing(true)
-    await loadAll()
-    setRefreshing(false)
+    loadAll()
+    setTimeout(() => setRefreshing(false), 1000)
   }
 
   // User management handlers
-  const handleCreateUser = async () => {
-    if (!newUser.username.trim() || !newUser.password.trim()) return
-    setUsersSaving(true)
+  const handleCreateInvite = async () => {
+    setInviteSaving(true)
+    setInviteLink(null)
     try {
-      await createUser(newUser)
-      setUsers(await getUsers())
-      setNewUser({ username: '', password: '', role: 'user' })
-      addToast(`User "${newUser.username}" created`, 'success')
-    } catch (e) { addToast(e.message || 'Failed to create user', 'error') }
-    finally { setUsersSaving(false) }
+      const res = await createInvite({ type: 'user', email: inviteEmail.trim() || undefined, role: inviteRole, public_url: window.location.origin })
+      const url = `${window.location.origin}${res.invite_url}`
+      setInviteLink(url)
+      navigator.clipboard.writeText(url).catch(() => {})
+      addToast('Invite link copied to clipboard', 'success')
+      setInvites(prev => [...prev, { ...res, status: 'pending' }])
+    } catch (e) { addToast(e.message || 'Failed to create invite', 'error') }
+    finally { setInviteSaving(false) }
   }
 
   const handleUpdateRole = async (username, role) => {
@@ -208,12 +741,20 @@ export default function AdminSettings() {
   }
 
   const handleDeleteUser = async (username) => {
-    if (!window.confirm(`Delete user "${username}"?`)) return
+    if (!window.confirm(`Remove "${username}" from this home?`)) return
     try {
       await deleteUser(username)
       setUsers((prev) => prev.filter((u) => u.username !== username))
-      addToast(`User "${username}" deleted`, 'success')
+      addToast(`User removed`, 'success')
     } catch (e) { addToast(e.message || 'Failed to delete user', 'error') }
+  }
+
+  const handleRevokeInvite = async (token) => {
+    try {
+      await revokeInvite(token)
+      setInvites(prev => prev.filter(i => i.token !== token))
+      addToast('Invite revoked', 'success')
+    } catch (e) { addToast(e.message || 'Failed', 'error') }
   }
 
   // Generic section save helper
@@ -225,13 +766,6 @@ export default function AdminSettings() {
     } catch { addToast('Failed to save', 'error') }
     finally { setSav(key, false) }
   }
-
-  // Telegram: allowed users
-  const addAllowedUser = () => {
-    const id = parseInt(window.prompt('Enter Telegram user ID:'), 10)
-    if (!isNaN(id)) setTelegram((s) => ({ ...s, allowed_users: [...s.allowed_users, id] }))
-  }
-  const removeAllowedUser = (id) => setTelegram((s) => ({ ...s, allowed_users: s.allowed_users.filter((u) => u !== id) }))
 
   // Room aliases
   const addAlias = () => {
@@ -251,7 +785,6 @@ export default function AdminSettings() {
   const FEATURE_LABELS = {
     smart_home: { label: 'Smart home', subtitle: 'Device control & HA integration' },
     voice: { label: 'Voice assistant', subtitle: 'Microphone, wake word & TTS' },
-    telegram: { label: 'Telegram bot', subtitle: 'Remote control via Telegram' },
     task_tracking: { label: 'Task tracking', subtitle: 'Tasks & reminders' },
     file_management: { label: 'File management', subtitle: 'Create & manage local files' },
     home_map: { label: 'Home Map', subtitle: 'Interactive floor plan in Rooms tab (experimental)' },
@@ -259,14 +792,6 @@ export default function AdminSettings() {
     ifttt: { label: 'IFTTT', subtitle: 'Webhook triggers' },
     local_storage: { label: 'Local storage', subtitle: 'SQLite / local DB' },
     zigbee_support: { label: 'Zigbee support', subtitle: 'ZHA device pairing' },
-  }
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 160 }}>
-        <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-      </div>
-    )
   }
 
   return (
@@ -282,9 +807,10 @@ export default function AdminSettings() {
       {/* ── Users (super_admin only) ────────────────────────────────────────── */}
       {isSuperAdmin && (
         <div style={{ marginBottom: 22 }}>
-          <SectionTitle icon={Users}>Users</SectionTitle>
+          <SectionTitle icon={Users}>Users & Access</SectionTitle>
           <Card>
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {/* Active users */}
               {users.map((u) => (
                 <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
@@ -297,59 +823,82 @@ export default function AdminSettings() {
                       <option key={val} value={val}>{label}</option>
                     ))}
                   </select>
-                  <button
-                    onClick={() => handleDeleteUser(u.username)}
-                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}
-                    title="Delete user"
-                  >
+                  <button onClick={() => handleDeleteUser(u.username)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title="Remove user">
                     <Trash2 size={13} />
                   </button>
                 </div>
               ))}
 
-              {/* Add new user */}
-              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>Add user</p>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    placeholder="Username"
-                    value={newUser.username}
-                    onChange={(e) => setNewUser((s) => ({ ...s, username: e.target.value }))}
-                    className="z-input"
-                    style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
-                  />
-                  <input
-                    type="password"
-                    placeholder="Password"
-                    value={newUser.password}
-                    onChange={(e) => setNewUser((s) => ({ ...s, password: e.target.value }))}
-                    className="z-input"
-                    style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
-                  />
-                  <select
-                    value={newUser.role}
-                    onChange={(e) => setNewUser((s) => ({ ...s, role: e.target.value }))}
-                    style={{ height: 34, padding: '0 6px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12, cursor: 'pointer' }}
-                  >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                    <option value="guest">Guest</option>
-                    <option value="super_admin">Super Admin</option>
-                  </select>
-                  <button
-                    onClick={handleCreateUser}
-                    disabled={usersSaving || !newUser.username.trim() || !newUser.password.trim()}
-                    className="z-btn-primary"
-                    style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap' }}
-                  >
-                    {usersSaving ? '…' : 'Add'}
+              {/* Pending invites */}
+              {invites.length > 0 && invites.map((inv) => (
+                <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', opacity: 0.75 }}>
+                  <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+                    {inv.email || '(open invite)'} · {ROLE_LABELS[inv.role] || inv.role}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>pending</span>
+                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(()=>{}); addToast('Link copied', 'success') }} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, cursor: 'pointer', padding: '4px 6px', color: 'var(--ink-faint)', display: 'flex' }} title="Copy invite link">
+                    <Copy size={11} />
+                  </button>
+                  <button onClick={() => handleRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title="Revoke">
+                    <Trash2 size={12} />
                   </button>
                 </div>
+              ))}
+
+              {/* Invite new user */}
+              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>Invite user</p>
+                {inviteLink ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Share this link — expires in 72h, single use.</p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ flex: 1, background: 'var(--bg-2)', borderRadius: 9, padding: '0 10px', height: 34, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                        <span style={{ fontSize: 11, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
+                      </div>
+                      <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(()=>{}); addToast('Copied!', 'success') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Copy size={12} /> Copy
+                      </button>
+                      <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12 }}>New</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="email"
+                      placeholder="Email (optional)"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      className="z-input"
+                      style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
+                    />
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value)}
+                      style={{ height: 34, padding: '0 6px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12, cursor: 'pointer' }}
+                    >
+                      {Object.entries(ROLE_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                    </select>
+                    <button
+                      onClick={handleCreateInvite}
+                      disabled={inviteSaving}
+                      className="z-btn-primary"
+                      style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
+                    >
+                      {inviteSaving ? '…' : <><Plus size={12} /> Invite</>}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </Card>
         </div>
       )}
+
+      {/* ── Presence tracking ───────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 22 }}>
+        <SectionTitle icon={MapPin}>Presence tracking</SectionTitle>
+        <PresenceSection />
+      </div>
 
       {/* ── Home Assistant ───────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
@@ -379,96 +928,10 @@ export default function AdminSettings() {
         </Card>
       </div>
 
-      {/* ── Telegram ────────────────────────────────────────────────────────── */}
+      {/* ── Notifications ──────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Bot} restart>Telegram</SectionTitle>
-        <Card>
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {/* Enabled */}
-            <SettingRow label="Telegram bot" subtitle="Remote control via Telegram">
-              <Toggle
-                checked={!!telegram.enabled}
-                onCheckedChange={(v) => {
-                  const updated = { ...telegram, enabled: v }
-                  setTelegram(updated)
-                  patchTelegramSettings({ enabled: v }).catch(() => {})
-                }}
-              />
-            </SettingRow>
-
-            {/* Bot token */}
-            <SecretField
-              label="Bot token"
-              masked={telegram.token_masked}
-              configured={telegram.token_configured}
-              placeholder="8763855823:AAF9…"
-              onSave={(v) => patchTelegramSettings({ token: v })}
-              onRefresh={() => getTelegramSettings().then(setTelegram)}
-            />
-
-            {/* Default chat ID */}
-            <div className="px-4 py-3">
-              <p className="text-xs text-zinc-500 mb-1.5">Default chat ID</p>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={telegram.default_chat_id ?? ''}
-                  onChange={(e) => setTelegram((s) => ({ ...s, default_chat_id: parseInt(e.target.value) || null }))}
-                  placeholder="316341835"
-                  className={cn(
-                    'flex-1 h-9 rounded-xl px-3 text-sm',
-                    'bg-zinc-50 dark:bg-zinc-800',
-                    'border border-zinc-200 dark:border-zinc-700',
-                    'text-zinc-900 dark:text-zinc-100',
-                    'placeholder:text-zinc-400',
-                    'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
-                  )}
-                />
-                <Button
-                  size="sm"
-                  onClick={() => save('tg-chat', patchTelegramSettings, { default_chat_id: telegram.default_chat_id })}
-                  disabled={saving['tg-chat']}
-                >
-                  {saving['tg-chat'] ? '…' : 'Save'}
-                </Button>
-              </div>
-            </div>
-
-            {/* Allowed users */}
-            <div className="px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-zinc-500">Allowed user IDs</p>
-                <Button size="sm" variant="ghost" onClick={addAllowedUser} className="gap-1">
-                  <Plus size={11} /> Add
-                </Button>
-              </div>
-              {telegram.allowed_users.length === 0 ? (
-                <p className="text-xs text-zinc-400">No users configured</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {telegram.allowed_users.map((uid) => (
-                    <div key={uid} className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-2.5 py-1">
-                      <span className="text-xs font-mono text-zinc-700 dark:text-zinc-300">{uid}</span>
-                      <button onClick={() => removeAllowedUser(uid)} className="text-zinc-400 hover:text-red-500 transition-colors">
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {telegram.allowed_users.length > 0 && (
-                <Button
-                  size="sm"
-                  className="mt-3 w-full"
-                  onClick={() => save('tg-users', patchTelegramSettings, { allowed_users: telegram.allowed_users })}
-                  disabled={saving['tg-users']}
-                >
-                  {saving['tg-users'] ? 'Saving…' : 'Save allowed users'}
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
+        <SectionTitle icon={Bot}>Notifications</SectionTitle>
+        <PushPreferenceCenter />
       </div>
 
       {/* ── API Keys ────────────────────────────────────────────────────────── */}
@@ -506,6 +969,74 @@ export default function AdminSettings() {
           </div>
         </Card>
       </div>
+
+      {/* ── Email (SMTP) ────────────────────────────────────────────────────── */}
+      {isSuperAdmin && (
+        <div style={{ marginBottom: 22 }}>
+          <SectionTitle icon={Mail}>Email (SMTP)</SectionTitle>
+          <Card>
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <SettingRow label="Enable email sending" subtitle="Required for invite emails">
+                <Toggle
+                  checked={!!email.enabled}
+                  onCheckedChange={(v) => {
+                    setEmail(s => ({ ...s, enabled: v }))
+                    patchEmailSettings({ enabled: v }).catch(() => {})
+                  }}
+                />
+              </SettingRow>
+              {email.enabled && (
+                <>
+                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ flex: 2 }}>
+                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>SMTP host</p>
+                        <input value={email.host} onChange={e => setEmail(s => ({ ...s, host: e.target.value }))} placeholder="smtp.gmail.com" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Port</p>
+                        <input type="number" value={email.port} onChange={e => setEmail(s => ({ ...s, port: parseInt(e.target.value) || 587 }))} className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Username (your email)</p>
+                      <input type="email" value={email.username} onChange={e => setEmail(s => ({ ...s, username: e.target.value }))} placeholder="you@gmail.com" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>From name</p>
+                      <input value={email.from_name} onChange={e => setEmail(s => ({ ...s, from_name: e.target.value }))} placeholder="Ziggy" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                    </div>
+                    <Button variant="primary" onClick={() => save('email-smtp', patchEmailSettings, { host: email.host, port: email.port, username: email.username, from_name: email.from_name, from_address: email.username })} disabled={saving['email-smtp']} className="w-full">
+                      {saving['email-smtp'] ? 'Saving…' : 'Save SMTP settings'}
+                    </Button>
+                  </div>
+                  <SecretField
+                    label="App password"
+                    subtitle="Gmail: Settings → Security → App passwords"
+                    masked={email.password_masked}
+                    configured={email.password_configured}
+                    placeholder="Gmail app password…"
+                    onSave={(v) => patchEmailSettings({ password: v })}
+                    onRefresh={() => getEmailSettings().then(setEmail)}
+                  />
+                  <div style={{ padding: '12px 16px' }}>
+                    <Button
+                      variant="secondary"
+                      onClick={async () => {
+                        try { await testEmail(); addToast('Test email sent — check your inbox', 'success') }
+                        catch (e) { addToast(e.message || 'Test failed', 'error') }
+                      }}
+                      className="w-full"
+                    >
+                      Send test email to yourself
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* ── MQTT ────────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>

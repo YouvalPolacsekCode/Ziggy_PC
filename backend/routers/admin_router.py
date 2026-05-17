@@ -47,39 +47,6 @@ async def patch_ha_settings(patch: HaPatch, _: dict = Depends(require_role("supe
 
 
 # ---------------------------------------------------------------------------
-# Telegram
-# ---------------------------------------------------------------------------
-
-@router.get("/telegram")
-async def get_telegram_settings(_: dict = Depends(require_role("super_admin"))):
-    tg = settings.get("telegram", {})
-    token = tg.get("token", "")
-    return {
-        "enabled": tg.get("enabled", False),
-        "token_masked": _mask(token),
-        "token_configured": bool(token),
-        "allowed_users": tg.get("allowed_users", []),
-        "default_chat_id": tg.get("default_chat_id"),
-    }
-
-
-class TelegramPatch(BaseModel):
-    enabled: Optional[bool] = None
-    token: Optional[str] = None
-    allowed_users: Optional[List[int]] = None
-    default_chat_id: Optional[int] = None
-
-
-@router.patch("/telegram")
-async def patch_telegram_settings(patch: TelegramPatch, _: dict = Depends(require_role("super_admin"))):
-    tg = settings.setdefault("telegram", {})
-    for field, val in patch.model_dump(exclude_none=True).items():
-        tg[field] = val
-    save_settings(settings)
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
 # API keys (OpenAI, SerpAPI, IFTTT)
 # ---------------------------------------------------------------------------
 
@@ -164,7 +131,6 @@ _FEATURE_DEFAULTS: dict[str, bool] = {
     "local_storage":  True,
     "smart_home":     True,
     "task_tracking":  True,
-    "telegram":       True,
     "voice":          True,
     "zigbee_support": True,
 }
@@ -198,15 +164,23 @@ async def get_debug(_: dict = Depends(require_role("super_admin"))):
 
 
 class DebugPatch(BaseModel):
-    verbose: Optional[bool] = None
-    verbose_logging: Optional[bool] = None
+    verbose:         Optional[bool]       = None
+    verbose_logging: Optional[bool]       = None
+    level:           Optional[str]        = None   # "off"|"basic"|"verbose"|"trace"
+    scopes:          Optional[List[str]]  = None   # [] = all scopes
 
 
 @router.patch("/debug")
 async def patch_debug(patch: DebugPatch, _: dict = Depends(require_role("super_admin"))):
+    from core.debug_bus import bus as _bus, _LEVEL_VALUES
     debug = settings.setdefault("debug", {})
     for field, val in patch.model_dump(exclude_none=True).items():
         debug[field] = val
+    # Apply to live debug bus immediately
+    if patch.level is not None and patch.level in _LEVEL_VALUES:
+        _bus.set_level(patch.level)
+    if patch.scopes is not None:
+        _bus.set_scopes(patch.scopes)
     save_settings(settings)
     return {"ok": True, "debug": debug}
 
@@ -287,5 +261,150 @@ async def patch_room_aliases(patch: RoomAliasesPatch, _: dict = Depends(require_
         settings["room_aliases"] = patch.en
     if patch.he is not None:
         settings["room_aliases_he"] = patch.he
+    save_settings(settings)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Email (SMTP)
+# ---------------------------------------------------------------------------
+
+@router.get("/email")
+async def get_email_settings(_: dict = Depends(require_role("super_admin"))):
+    em = settings.get("email", {})
+    pw = em.get("password", "")
+    return {
+        "enabled":       em.get("enabled", False),
+        "host":          em.get("host", ""),
+        "port":          em.get("port", 587),
+        "username":      em.get("username", ""),
+        "password_configured": bool(pw),
+        "password_masked":     _mask(pw),
+        "from_address":  em.get("from_address", ""),
+        "from_name":     em.get("from_name", "Ziggy"),
+    }
+
+
+class EmailPatch(BaseModel):
+    enabled:      Optional[bool] = None
+    host:         Optional[str]  = None
+    port:         Optional[int]  = None
+    username:     Optional[str]  = None
+    password:     Optional[str]  = None
+    from_address: Optional[str]  = None
+    from_name:    Optional[str]  = None
+
+
+@router.patch("/email")
+async def patch_email_settings(patch: EmailPatch, _: dict = Depends(require_role("super_admin"))):
+    em = settings.setdefault("email", {})
+    for field, val in patch.model_dump(exclude_none=True).items():
+        em[field] = val
+    save_settings(settings)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Sensor alerts
+# ---------------------------------------------------------------------------
+
+@router.get("/sensor-alerts")
+async def get_sensor_alerts(_: dict = Depends(require_role("admin"))):
+    return settings.get("sensor_alerts", {
+        "enabled": True, "cooldown_minutes": 10, "poll_interval_s": 20, "sensors": [],
+    })
+
+
+class SensorAlertsPatch(BaseModel):
+    enabled:          Optional[bool]       = None
+    cooldown_minutes: Optional[int]        = None
+    sensors:          Optional[List[dict]] = None
+
+
+@router.patch("/sensor-alerts")
+async def patch_sensor_alerts(patch: SensorAlertsPatch, _: dict = Depends(require_role("admin"))):
+    sa = settings.setdefault("sensor_alerts", {})
+    for field, val in patch.model_dump(exclude_none=True).items():
+        sa[field] = val
+    save_settings(settings)
+    return {"ok": True}
+
+
+@router.post("/email/test")
+async def test_email(current: dict = Depends(require_role("super_admin"))):
+    """Send a test email to the currently logged-in super_admin."""
+    from services.email_sender import is_configured, send
+    if not is_configured():
+        from fastapi import HTTPException
+        raise HTTPException(400, "Email is not configured.")
+    ok, err = send(
+        to=current["username"],
+        subject="Ziggy email test",
+        html="<p>Your Ziggy email is working correctly.</p>",
+        text="Your Ziggy email is working correctly.",
+    )
+    return {"ok": ok, "error": err}
+
+
+# ---------------------------------------------------------------------------
+# Anomaly rules
+# ---------------------------------------------------------------------------
+
+_RULE_META = [
+    {"id": "ANOM-01", "label": "Away + lights on",          "description": "Persons away ≥5 min + lights on with no recent motion",     "severity": "warning",  "config": None},
+    {"id": "ANOM-02", "label": "Climate + empty room",       "description": "AC/heat running while room has been empty for a while",     "severity": "warning",  "config": {"key": "anom02_empty_minutes",    "label": "Minutes empty before alert", "default": 30,  "unit": "min"}},
+    {"id": "ANOM-03", "label": "Door/window open",           "description": "A door or window left open too long",                       "severity": "warning",  "config": {"key": "anom03_door_open_minutes","label": "Minutes open before alert",  "default": 60,  "unit": "min"}},
+    {"id": "ANOM-04", "label": "Motion at night",            "description": "Motion detected during quiet hours",                        "severity": "warning",  "config": None},
+    {"id": "ANOM-05", "label": "No motion 24 h",             "description": "No motion anywhere for 24 h while someone is home",         "severity": "warning",  "config": None},
+    {"id": "ANOM-06", "label": "Device left on",             "description": "Switch, light or plug left on too long",                    "severity": "warning",  "config": {"key": "anom06_runtime_hours",    "label": "Hours on before alert",      "default": 4,   "unit": "h"}},
+    {"id": "ANOM-07", "label": "Automation device offline",  "description": "A device used in an automation went offline/unavailable",   "severity": "critical", "config": None},
+    {"id": "ANOM-08", "label": "Low battery",                "description": "A device's battery is below threshold",                     "severity": "info",     "config": None},
+    {"id": "ANOM-09", "label": "Multiple devices offline",   "description": "Multiple devices offline — possible coordinator failure",   "severity": "critical", "config": None},
+]
+
+
+@router.get("/anomaly-rules")
+async def get_anomaly_rules(_: dict = Depends(require_role("admin"))):
+    ae = settings.get("anomaly_engine", {})
+    disabled = ae.get("disabled_rules", [])
+    rules = []
+    for meta in _RULE_META:
+        rule = dict(meta)
+        rule["enabled"] = meta["id"] not in disabled
+        if meta["config"]:
+            key = meta["config"]["key"]
+            rule["config"] = {**meta["config"], "value": ae.get(key, meta["config"]["default"])}
+        rules.append(rule)
+    return {"rules": rules, "engine_enabled": ae.get("enabled", True)}
+
+
+class AnomalyRulesPatch(BaseModel):
+    engine_enabled: Optional[bool]       = None
+    rules:          Optional[List[dict]] = None  # [{id, enabled, config_value?}]
+
+
+@router.patch("/anomaly-rules")
+async def patch_anomaly_rules(body: AnomalyRulesPatch, _: dict = Depends(require_role("admin"))):
+    ae = settings.setdefault("anomaly_engine", {})
+
+    if body.engine_enabled is not None:
+        ae["enabled"] = body.engine_enabled
+
+    if body.rules:
+        disabled = set(ae.get("disabled_rules", []))
+        for r in body.rules:
+            rid = r.get("id")
+            if not rid:
+                continue
+            if r.get("enabled", True):
+                disabled.discard(rid)
+            else:
+                disabled.add(rid)
+            # Update threshold value if provided
+            meta = next((m for m in _RULE_META if m["id"] == rid), None)
+            if meta and meta["config"] and "config_value" in r:
+                ae[meta["config"]["key"]] = r["config_value"]
+        ae["disabled_rules"] = sorted(disabled)
+
     save_settings(settings)
     return {"ok": True}

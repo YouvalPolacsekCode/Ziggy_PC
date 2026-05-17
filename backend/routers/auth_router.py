@@ -101,6 +101,10 @@ async def auth_status(request: Request):
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip()
     user = find_user_by_token(token)
+    # If a token was supplied but doesn't match any user, tell the frontend to
+    # clear its session — avoids the "authenticated but role=null" stuck state.
+    if token and not user and configured:
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
     return {
         "configured": configured,
         "username": user.get("username") if user else (users[0].get("username") if users else None),
@@ -148,7 +152,14 @@ async def login(body: LoginBody):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     token = secrets.token_hex(32)
-    user["session_token"] = token
+    # Keep a list of active session tokens so multiple devices stay logged in.
+    # Cap at 20 to prevent unbounded growth; drop the oldest when full.
+    tokens = user.get("session_tokens", [])
+    if user.get("session_token") and user["session_token"] not in tokens:
+        tokens.append(user["session_token"])  # migrate legacy single token
+    tokens.append(token)
+    user["session_tokens"] = tokens[-20:]
+    user["session_token"] = token  # most recent, kept for backward compat
     _save_users(users)
     role = user.get("role", "user")
     log_info(f"[Auth] Login: {body.username} ({role})")
@@ -188,7 +199,10 @@ async def logout(request: Request):
     user = find_user_by_token(token)
     if user:
         users = _get_users()
-        user["session_token"] = secrets.token_hex(32)
+        # Remove only this device's token — other sessions stay valid
+        user["session_tokens"] = [t for t in user.get("session_tokens", []) if t != token]
+        if user.get("session_token") == token:
+            user["session_token"] = user["session_tokens"][-1] if user["session_tokens"] else secrets.token_hex(32)
         _save_users(users)
     return {"ok": True}
 

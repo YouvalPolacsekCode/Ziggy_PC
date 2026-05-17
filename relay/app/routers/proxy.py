@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+"""
+Request proxy — forwards authenticated requests to the right home hub.
+
+Flow:
+  Browser → relay /proxy/{home_id}/api/... + JWT
+  Relay validates JWT, checks home_id matches user's home
+  Relay forwards to hub's tunnel_url with X-Relay-Secret + user context headers
+  Returns hub's response verbatim
+"""
+
+import httpx
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
+
+from ..auth import current_user
+from ..database import get_db
+
+router = APIRouter(prefix="/proxy")
+
+PROXY_TIMEOUT = 30
+
+
+@router.api_route("/{home_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def proxy(home_id: str, path: str, request: Request):
+    user = current_user(request)
+
+    # Users can only proxy to their own home; relay_admin can proxy to any
+    if user.get("role") != "relay_admin" and user.get("home_id") != home_id:
+        raise HTTPException(403, "Access denied to this home.")
+
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT tunnel_url, relay_secret, status FROM homes WHERE id=?", (home_id,)
+        )
+        if not rows:
+            raise HTTPException(404, "Home not found.")
+        home = dict(rows[0])
+
+    if not home["tunnel_url"]:
+        raise HTTPException(503, "Home hub not yet connected.")
+    if home["status"] == "suspended":
+        raise HTTPException(403, "Home is suspended.")
+
+    # Build target URL
+    target = f"{home['tunnel_url']}/{path}"
+    if request.query_params:
+        target += f"?{request.url.query}"
+
+    # Forward headers, injecting relay context
+    headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("host", "authorization", "content-length")
+    }
+    headers["X-Relay-Secret"] = home["relay_secret"]
+    headers["X-Relay-User"]   = user.get("email", "")
+    headers["X-Relay-Role"]   = user.get("role", "user")
+    headers["X-Relay-Home"]   = home_id
+
+    body = await request.body()
+
+    try:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
+            resp = await client.request(
+                method  = request.method,
+                url     = target,
+                headers = headers,
+                content = body,
+            )
+        return Response(
+            content     = resp.content,
+            status_code = resp.status_code,
+            headers     = dict(resp.headers),
+        )
+    except httpx.ConnectError:
+        raise HTTPException(503, "Cannot reach home hub. Tunnel may be down.")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Home hub timed out.")
+    except Exception as e:
+        raise HTTPException(502, f"Proxy error: {e}")

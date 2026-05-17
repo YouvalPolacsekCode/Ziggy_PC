@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sun, Moon, User, Lock, LogOut, Mic, MicOff, RefreshCw,
-  Bell, BellOff, Plus, Trash2, Wifi, Shield, Users,
+  Plus, Trash2, Wifi, Shield, Users,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
@@ -18,8 +18,6 @@ import { useAuthStore } from '../stores/authStore'
 import {
   getStatus,
   getVoiceSettings, patchVoiceSettings,
-  getAlertSettings, patchAlertSettings,
-  getAnomalySettings, patchAnomalySettings,
   getGeneralSettings, patchGeneralSettings,
   getAuthStatus, changePassword,
   getUsers, createUser, updateUser, deleteUser,
@@ -83,46 +81,6 @@ function MetricBar({ label, value }) {
         />
       </div>
     </div>
-  )
-}
-
-// ─── Add Alert Rule Modal ─────────────────────────────────────────────────────
-
-function AddAlertModal({ open, onClose, onAdd }) {
-  const [form, setForm] = useState({ entity_id: '', label: '', message: '', trigger_state: 'on' })
-  const [err, setErr] = useState('')
-
-  const handleSubmit = () => {
-    if (!form.entity_id) { setErr('Select an entity'); return }
-    if (!form.label.trim()) { setErr('Enter a label'); return }
-    if (!form.message.trim()) { setErr('Enter an alert message'); return }
-    onAdd({ ...form })
-    setForm({ entity_id: '', label: '', message: '', trigger_state: 'on' })
-    setErr(''); onClose()
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Add Alert Rule">
-      <div className="flex flex-col gap-4">
-        <EntitySelect label="Sensor / Entity" value={form.entity_id} onChange={(v) => setForm((s) => ({ ...s, entity_id: v }))} placeholder="Pick a sensor…" />
-        <Input label="Label" placeholder="Front door" value={form.label} onChange={(e) => setForm((s) => ({ ...s, label: e.target.value }))} />
-        <Input label="Alert message" placeholder="Front door opened" value={form.message} onChange={(e) => setForm((s) => ({ ...s, message: e.target.value }))} />
-        <Select
-          label="Trigger when state is"
-          value={form.trigger_state}
-          onChange={(e) => setForm((s) => ({ ...s, trigger_state: e.target.value }))}
-          options={[
-            { value: 'on',  label: 'On  (active / open / detected)' },
-            { value: 'off', label: 'Off  (inactive / closed)' },
-          ]}
-        />
-        {err && <p className="text-xs text-red-500">{err}</p>}
-        <div className="flex gap-3 pt-1">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" className="flex-1" onClick={handleSubmit}>Add rule</Button>
-        </div>
-      </div>
-    </Modal>
   )
 }
 
@@ -347,7 +305,7 @@ export default function Settings() {
   const { theme, toggleTheme, addToast } = useUIStore()
   const { logout, role, setRole } = useAuthStore()
 
-  const [loading, setLoading]     = useState(true)
+  const [loading, setLoading]     = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('general')
 
@@ -359,13 +317,6 @@ export default function Settings() {
 
   const [voice, setVoice]       = useState({})
   const [savingVoice, setSavingVoice] = useState(false)
-
-  const [anomaly, setAnomaly]   = useState({ enabled: true, quiet_hour_start: 23, quiet_hour_end: 7 })
-  const [savingAnomaly, setSavingAnomaly] = useState(false)
-
-  const [alerts, setAlerts]     = useState({ enabled: true, cooldown_minutes: 10, sensors: [] })
-  const [savingAlerts, setSavingAlerts] = useState(false)
-  const [showAddAlert, setShowAddAlert] = useState(false)
 
   const [showChangePw, setShowChangePw] = useState(false)
   const [pwForm, setPwForm]   = useState({ username: '', password: '', confirm: '' })
@@ -381,29 +332,23 @@ export default function Settings() {
     ...(isSuperAdmin ? [{ id: 'users', label: 'Users',  icon: Users  }] : []),
   ]
 
-  const loadAll = async () => {
-    try {
-      const [s, v, al, an, g, auth] = await Promise.all([
-        getStatus(), getVoiceSettings(), getAlertSettings(),
-        getAnomalySettings(), getGeneralSettings(), getAuthStatus(),
-      ])
-      setStatus(s)
-      setVoice(v || {})
-      setAlerts({ enabled: true, cooldown_minutes: 10, ...al, sensors: al?.sensors || [] })
-      setAnomaly({ enabled: true, quiet_hour_start: 23, quiet_hour_end: 7, ...an })
-      setGeneral({ language: 'en', timezone: 'UTC', ...g })
+  const loadAll = () => {
+    getStatus().then(setStatus).catch(() => {})
+    getVoiceSettings().then(v => setVoice(v || {})).catch(() => {})
+    getGeneralSettings().then(g => setGeneral({ language: 'en', timezone: 'UTC', ...g })).catch(() => {})
+    getAuthStatus().then(auth => {
       setUsername(auth?.username || '')
-      setPwForm((f) => ({ ...f, username: auth?.username || '' }))
+      setPwForm(f => ({ ...f, username: auth?.username || '' }))
       if (auth?.role) setRole(auth.role)
-    } catch {}
+    }).catch(() => {})
   }
 
-  useEffect(() => { loadAll().finally(() => setLoading(false)) }, [])
+  useEffect(() => { loadAll() }, [])
 
-  const handleRefresh = async () => {
+  const handleRefresh = () => {
     setRefreshing(true)
-    await loadAll()
-    setRefreshing(false)
+    loadAll()
+    setTimeout(() => setRefreshing(false), 1000)
   }
 
   const saveGeneral = async () => {
@@ -418,20 +363,6 @@ export default function Settings() {
     try { await patchVoiceSettings(voice); addToast('Voice settings saved', 'success') }
     catch { addToast('Failed to save', 'error') }
     finally { setSavingVoice(false) }
-  }
-
-  const saveAnomaly = async () => {
-    setSavingAnomaly(true)
-    try { await patchAnomalySettings(anomaly); addToast('Saved', 'success') }
-    catch { addToast('Failed to save', 'error') }
-    finally { setSavingAnomaly(false) }
-  }
-
-  const saveAlerts = async () => {
-    setSavingAlerts(true)
-    try { await patchAlertSettings(alerts); addToast('Alert rules saved', 'success') }
-    catch { addToast('Failed to save', 'error') }
-    finally { setSavingAlerts(false) }
   }
 
   const handleChangePassword = async () => {
@@ -450,14 +381,6 @@ export default function Settings() {
   }
 
   const sys = status?.system
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240 }}>
-        <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-      </div>
-    )
-  }
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
@@ -640,94 +563,6 @@ export default function Settings() {
             </Card>
           </div>
 
-          {/* Alerts */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Alerts</SectionTitle>
-
-            <Card style={{ marginBottom: 10 }}>
-              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {anomaly.enabled ? <Bell size={17} className="text-amber-500" /> : <BellOff size={17} className="text-zinc-400" />}
-                    <div>
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Anomaly detection</p>
-                      <p className="text-xs text-zinc-400">Lights on when away, doors left open…</p>
-                    </div>
-                  </div>
-                  <Toggle checked={!!anomaly.enabled} onCheckedChange={(v) => setAnomaly((s) => ({ ...s, enabled: v }))} />
-                </div>
-
-                <AnimatePresence>
-                  {anomaly.enabled && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
-                      <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                        <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-3">Quiet hours</p>
-                        <div className="flex items-end gap-3">
-                          <div className="flex-1 flex flex-col gap-1.5">
-                            <label className="text-xs text-zinc-500">From</label>
-                            <input type="number" min={0} max={23} value={anomaly.quiet_hour_start ?? 23} onChange={(e) => setAnomaly((s) => ({ ...s, quiet_hour_start: Number(e.target.value) }))} className="z-input" style={{ textAlign: 'center' }} />
-                          </div>
-                          <span className="text-zinc-400 pb-2.5">→</span>
-                          <div className="flex-1 flex flex-col gap-1.5">
-                            <label className="text-xs text-zinc-500">To</label>
-                            <input type="number" min={0} max={23} value={anomaly.quiet_hour_end ?? 7} onChange={(e) => setAnomaly((s) => ({ ...s, quiet_hour_end: Number(e.target.value) }))} className="z-input" style={{ textAlign: 'center' }} />
-                          </div>
-                        </div>
-                        <p className="text-xs text-zinc-400 mt-2">Motion alerts suppressed during these hours</p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <button onClick={saveAnomaly} disabled={savingAnomaly} className="z-btn-primary" style={{ width: '100%' }}>
-                  {savingAnomaly ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Alert rules</p>
-                  <p className="text-xs text-zinc-400">Notify when a sensor triggers</p>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowAddAlert(true)} className="gap-1.5">
-                  <Plus size={13} /> Add
-                </Button>
-              </div>
-
-              {alerts.sensors.length === 0 ? (
-                <div className="px-4 py-6 text-center text-xs text-zinc-400">No alert rules yet</div>
-              ) : (
-                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {alerts.sensors.map((rule, idx) => (
-                    <div key={idx} className="flex items-center gap-3 px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{rule.label}</p>
-                        <p className="text-xs text-zinc-400 truncate">{rule.entity_id}</p>
-                      </div>
-                      <Badge variant="default" className="text-[10px] shrink-0">→ {rule.trigger_state}</Badge>
-                      <button
-                        onClick={() => setAlerts((s) => ({ ...s, sensors: s.sensors.filter((_, i) => i !== idx) }))}
-                        className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors shrink-0"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {alerts.sensors.length > 0 && (
-                <div style={{ padding: '6px 14px 14px' }}>
-                  <button onClick={saveAlerts} disabled={savingAlerts} className="z-btn-primary" style={{ width: '100%' }}>
-                    {savingAlerts ? 'Saving…' : 'Save alert rules'}
-                  </button>
-                </div>
-              )}
-            </Card>
-          </div>
-
           {/* System metrics */}
           {sys && (
             <div style={{ marginBottom: 22 }}>
@@ -751,11 +586,6 @@ export default function Settings() {
             </div>
           )}
 
-          <AddAlertModal
-            open={showAddAlert}
-            onClose={() => setShowAddAlert(false)}
-            onAdd={(rule) => setAlerts((s) => ({ ...s, sensors: [...s.sensors, rule] }))}
-          />
         </>
       )}
 

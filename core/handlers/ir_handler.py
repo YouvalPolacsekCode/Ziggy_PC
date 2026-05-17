@@ -257,6 +257,10 @@ async def handle_ir_learn_command(params: dict, *, source: str = "unknown") -> d
     """
     Trigger Broadlink learning mode for a specific device + command.
     Used from the setup wizard (via API) and optionally from voice/Telegram.
+
+    Rule: if the device has blaster_host set, always go direct via python-broadlink
+    so the raw code is captured and stored for physical remote matching.
+    Never route through HA in that case — HA's storage is not readable by Ziggy.
     """
     device_id = (params.get("device_id") or "").strip()
     command_name = (params.get("command_name") or "").strip()
@@ -268,7 +272,29 @@ async def handle_ir_learn_command(params: dict, *, source: str = "unknown") -> d
     if not device:
         return err(f"Device '{device_id}' not found.")
 
-    # Resolve logical command → HA command string
+    blaster_host = (device.get("blaster_host") or "").strip()
+
+    if blaster_host:
+        # Direct path — captures raw code bytes for signal matching
+        try:
+            from services.ir_listener import learn_command_direct
+            import base64
+            raw_bytes = await learn_command_direct(blaster_host, timeout=20)
+            if raw_bytes is None:
+                return err("No IR signal received within 20 seconds. Point the remote at the blaster and try again.")
+            raw_b64 = base64.b64encode(raw_bytes).decode()
+            mark_command_learned(device_id, command_name, raw_code_b64=raw_b64)
+            return ok(
+                f"Learned '{command_name}' on {device['name']}. "
+                "Physical remote detection is active for this button."
+            )
+        except ImportError:
+            return err("broadlink package not installed — run: pip install broadlink")
+        except Exception as e:
+            log_error(f"[IRHandler] learn_command_direct failed: {e}")
+            return err(f"Learning failed: {e}")
+
+    # Legacy path — HA remote.learn_command (no raw code stored)
     command_map: dict = device.get("commands") or {}
     ha_command = command_map.get(command_name, command_name)
 

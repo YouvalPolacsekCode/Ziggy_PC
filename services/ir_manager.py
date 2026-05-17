@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Optional
 
 from core.logger_module import log_info, log_error
+from core.debug_bus import bus as _debug_bus, BASIC, VERBOSE
 from services.home_automation import call_service, get_all_states, get_state
 
 IR_DEVICES_FILE = "user_files/ir_devices.json"
@@ -89,6 +90,7 @@ def create_ir_device(
     sequences: Optional[dict[str, list[dict]]] = None,
     ac_config: Optional[dict] = None,
     ha_entity_id: Optional[str] = None,
+    blaster_host: Optional[str] = None,
 ) -> dict:
     room_norm = (room or name).lower().replace(" ", "_")
     ha_device_namespace = f"{room_norm}_{device_type.lower()}"
@@ -108,12 +110,33 @@ def create_ir_device(
         "commands": commands if commands is not None else _default_commands(device_type),
         "sequences": sequences if sequences is not None else _default_sequences(device_type),
         "learned_commands": [],
+        # Raw IR hex codes per command — populated when a receiver captures them.
+        # Used for signal matching (Phase 2: ESPHome IR receiver).
+        "ir_codes": {},
         "ac_config": ac_config or (_default_ac_config() if device_type.lower() == "ac" else None),
         # Assumed state — updated optimistically on every command sent
         "assumed_state": "unknown",
         "assumed_state_at": None,
+        # Last command Ziggy sent — for diagnostics and UI
+        "last_command_sent": None,
+        "last_command_sent_at": None,
         # AC memory — last known settings
         "ac_memory": {"mode": None, "temp": None, "fan": None} if device_type.lower() == "ac" else None,
+        # Direct IP of the Broadlink device on the local network.
+        # When set, Ziggy talks to the blaster via python-broadlink directly
+        # instead of routing through HA's remote.* integration. This enables:
+        #   - Continuous IR receive (physical remote detection)
+        #   - Raw code storage for signal matching
+        # Falls back to HA remote.send_command if not set or if ir_codes missing.
+        "blaster_host": blaster_host or None,
+        # IR capability flags — derived from blaster_host presence.
+        # can_receive_ir becomes True once blaster_host is set and listener starts.
+        "ir_capabilities": {
+            "can_send_ir":       True,
+            "can_learn_ir":      True,
+            "can_receive_ir":    bool(blaster_host),
+            "supports_feedback": bool(blaster_host),
+        },
         "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     devices = _load()
@@ -129,6 +152,8 @@ def update_ir_device(device_id: str, updates: dict) -> Optional[dict]:
         "name", "room", "brand", "model", "type", "enabled", "aliases",
         "commands", "sequences", "ac_config", "learned_commands",
         "assumed_state", "assumed_state_at", "ac_memory", "ha_entity_id",
+        "ir_codes", "ir_capabilities", "blaster_host",
+        "last_command_sent", "last_command_sent_at",
     }
     # normalise device_type → type (frontend uses device_type, storage uses type)
     if "device_type" in updates:
@@ -153,7 +178,8 @@ def delete_ir_device(device_id: str) -> bool:
     return True
 
 
-def mark_command_learned(device_id: str, command_name: str) -> bool:
+def mark_command_learned(device_id: str, command_name: str, raw_code_b64: Optional[str] = None) -> bool:
+    """Mark a command as learned. If raw_code_b64 is provided, store it for direct send/matching."""
     devices = _load()
     for d in devices:
         if d["id"] == device_id:
@@ -161,6 +187,16 @@ def mark_command_learned(device_id: str, command_name: str) -> bool:
             if command_name not in learned:
                 learned.append(command_name)
                 d["learned_commands"] = learned
+            if raw_code_b64:
+                codes: dict = d.get("ir_codes") or {}
+                codes[command_name] = raw_code_b64
+                d["ir_codes"] = codes
+                # Update capability flags now that we have a raw code
+                caps = d.get("ir_capabilities") or {}
+                if d.get("blaster_host"):
+                    caps["can_receive_ir"] = True
+                    caps["supports_feedback"] = True
+                d["ir_capabilities"] = caps
             _save(devices)
             return True
     return False
@@ -196,16 +232,43 @@ def get_device_state(device: dict) -> str:
     Return the best-known state for an IR device.
     Priority: HA entity state (if linked) > assumed_state > "unknown".
     """
+    state, _ = get_device_state_with_confidence(device)
+    return state
+
+
+def get_device_state_with_confidence(device: dict) -> tuple[str, str]:
+    """
+    Return (state, confidence) for an IR device.
+
+    confidence values:
+      "confirmed"  — live HA entity state
+      "estimated"  — Ziggy sent a command and assumed state updated
+      "unknown"    — no state information available
+    """
     ha_eid = device.get("ha_entity_id")
     if ha_eid:
         result = get_state(ha_eid)
         if result.get("ok"):
             raw = result["data"].get("state", "unknown")
             if raw in ("on", "playing", "idle", "paused"):
-                return "on"
+                return "on", "confirmed"
             if raw in ("off", "unavailable"):
-                return "off"
-    return device.get("assumed_state", "unknown")
+                return "off", "confirmed"
+
+    assumed = device.get("assumed_state", "unknown")
+    if assumed in ("on", "off"):
+        return assumed, "estimated"
+    return "unknown", "unknown"
+
+
+def _record_last_command(device_id: str, command: str) -> None:
+    devices = _load()
+    for d in devices:
+        if d["id"] == device_id:
+            d["last_command_sent"] = command
+            d["last_command_sent_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+    _save(devices)
 
 
 def _set_assumed_state(device_id: str, state: str) -> None:
@@ -257,17 +320,57 @@ def resolve_ir_device(
 # ---------------------------------------------------------------------------
 
 def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> dict:
-    """Send one logical command via HA remote.send_command and update assumed state."""
+    """
+    Send one logical command and update assumed state.
+
+    Send path priority:
+      1. Direct via python-broadlink (if blaster_host set AND ir_codes has raw code)
+      2. HA remote.send_command (existing path, requires command in learned_commands)
+    """
     device = get_ir_device(device_id)
     if not device:
+        _debug_bus.emit("ir", BASIC, "ir_device_not_found",
+                        device_id=device_id, command=logical_command,
+                        result="error",
+                        suggestion=f"Device '{device_id}' not in IR device list. Check IR Devices settings.")
         return {"ok": False, "message": f"IR device '{device_id}' not found."}
 
+    # Path 1: direct send via python-broadlink (supports continuous receive)
+    blaster_host = (device.get("blaster_host") or "").strip()
+    ir_codes: dict = device.get("ir_codes") or {}
+    raw_code_b64 = ir_codes.get(logical_command)
+
+    _debug_bus.emit("ir", VERBOSE, "ir_command_dispatch",
+                    device_id=device_id, device_name=device.get("name"),
+                    command=logical_command, repeats=repeats,
+                    path="direct" if (blaster_host and raw_code_b64) else "ha")
+
+    if blaster_host and raw_code_b64:
+        result = _direct_send(blaster_host, raw_code_b64, repeats)
+        if result.get("ok"):
+            _after_command(device_id, device, logical_command)
+            _debug_bus.emit("ir", BASIC, "ir_command_sent",
+                            device_id=device_id, command=logical_command,
+                            path="direct", result="ok")
+        else:
+            _debug_bus.emit("ir", BASIC, "ir_command_failed",
+                            device_id=device_id, command=logical_command,
+                            path="direct", result="error",
+                            message=result.get("message"),
+                            suggestion="Check blaster_host connectivity and raw IR code validity.")
+        return result
+
+    # Path 2: HA remote.send_command (original flow)
     command_map: dict = device.get("commands") or {}
     learned: list = device.get("learned_commands") or []
 
     ha_command = command_map.get(logical_command)
     if not ha_command:
         available = ", ".join(learned) if learned else "none yet"
+        _debug_bus.emit("ir", BASIC, "ir_command_not_configured",
+                        device_id=device_id, command=logical_command,
+                        available_commands=learned, result="error",
+                        suggestion=f"Learn '{logical_command}' via the IR Wizard first.")
         return {
             "ok": False,
             "message": (
@@ -277,6 +380,10 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
         }
 
     if logical_command not in learned:
+        _debug_bus.emit("ir", BASIC, "ir_command_not_learned",
+                        device_id=device_id, command=logical_command,
+                        result="error",
+                        suggestion=f"Press Learn in the IR Wizard for '{logical_command}', then point the remote at the blaster.")
         return {
             "ok": False,
             "message": (
@@ -294,6 +401,15 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
 
     if result.get("ok"):
         _after_command(device_id, device, logical_command)
+        _debug_bus.emit("ir", BASIC, "ir_command_sent",
+                        device_id=device_id, command=logical_command,
+                        path="ha", result="ok")
+    else:
+        _debug_bus.emit("ir", BASIC, "ir_command_failed",
+                        device_id=device_id, command=logical_command,
+                        path="ha", result="error",
+                        message=result.get("message"),
+                        suggestion="Check HA remote entity and Broadlink blaster connectivity.")
 
     return result
 
@@ -312,12 +428,40 @@ def _ha_send(blaster_entity: str, device_namespace: str, ha_command: str, repeat
     return result
 
 
+def _direct_send(host: str, code_b64: str, repeats: int = 1) -> dict:
+    """Send raw IR code directly via python-broadlink (synchronous, runs in caller's thread)."""
+    import base64
+    try:
+        import broadlink as _bl
+        raw = base64.b64decode(code_b64)
+        dev = _bl.hello(host)
+        dev.auth()
+        for _ in range(max(1, repeats)):
+            dev.send_data(raw)
+        log_info(f"[IR] Direct send to {host}")
+        return {"ok": True}
+    except Exception as e:
+        log_error(f"[IR] Direct send to {host} failed: {e}")
+        return {"ok": False, "message": f"Direct IR send failed: {e}"}
+
+
 def _after_command(device_id: str, device: dict, logical_command: str) -> None:
-    """Update assumed state and AC memory after a successful command."""
+    """Update assumed state, AC memory, and last-sent tracking after a successful command."""
     dtype = device.get("type", "")
     current = device.get("assumed_state", "unknown")
 
-    if logical_command == "power":
+    # Always record what was sent and when, regardless of command type
+    _record_last_command(device_id, logical_command)
+
+    if logical_command == "power_on":
+        # Explicit on — AC remotes send different codes for on vs off
+        _set_assumed_state(device_id, "on")
+
+    elif logical_command == "power_off":
+        # Explicit off
+        _set_assumed_state(device_id, "off")
+
+    elif logical_command == "power":
         # Toggle: on→off, off→on, unknown→on (optimistic)
         new_state = "off" if current == "on" else "on"
         _set_assumed_state(device_id, new_state)

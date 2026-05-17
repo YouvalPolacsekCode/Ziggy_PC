@@ -1,0 +1,441 @@
+"""
+Continuous IR receive service — no new hardware required.
+
+Uses the python-broadlink library to access the IR receiver that is already
+built into the Broadlink RM4/RM3/RM Pro hardware. Home Assistant uses this
+same hardware for sending but never activates its receiver after the learn
+wizard. This service keeps the receiver listening permanently.
+
+How it works:
+  - One asyncio task per unique blaster_host in ir_devices.json
+  - Each task loops: enter_learning → poll check_data → on receipt → match
+  - On match: updates device assumed_state + broadcasts to frontend
+  - TX and RX are independent circuits on the RM4, so HA can still send
+    commands via remote.send_command while the receiver is active
+  - Pauses during wizard learn sessions so there's no race for the receiver
+
+Coordination with HA:
+  - Sending: HA calls remote.send_command (unchanged). The RM4 executes the
+    send from its TX LED; this does not interrupt the RX learning mode.
+  - Learning in wizard: caller must call pause_for_learn() / resume_after_learn()
+    to temporarily yield the receiver to HA's remote.learn_command flow,
+    OR use learn_command_direct() which bypasses HA entirely.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import time
+from typing import Callable, Optional
+
+from core.logger_module import log_info, log_error
+
+# Per-host pause events — set = paused (wizard is using the receiver)
+_pause_events: dict[str, asyncio.Event] = {}
+# Per-host task handles (for cancellation)
+_tasks: dict[str, asyncio.Task] = {}
+
+# Discovery lock — prevents concurrent subnet scans (each spawns 32 threads)
+_discovery_lock: Optional[asyncio.Lock] = None
+_discovery_cache: Optional[tuple[list, float]] = None
+_DISCOVERY_CACHE_TTL = 60  # seconds — reuse results within 1 minute
+
+# How long the RM4 stays in learn mode before timing out (seconds).
+# We re-enter before this so the window is always open.
+_LEARN_WINDOW = 28
+_POLL_INTERVAL = 0.35  # seconds between check_data() polls
+
+
+def _all_ir_devices_by_host() -> dict[str, list[dict]]:
+    """Group enabled IR devices by their blaster_host (direct IP)."""
+    try:
+        from services.ir_manager import list_ir_devices
+        result: dict[str, list[dict]] = {}
+        for d in list_ir_devices(enabled_only=True):
+            host = (d.get("blaster_host") or "").strip()
+            if host:
+                result.setdefault(host, []).append(d)
+        return result
+    except Exception as e:
+        log_error(f"[IRListener] Failed to load IR devices: {e}")
+        return {}
+
+
+def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str]]:
+    """
+    Scan all ir_devices.json entries for a code matching received_bytes.
+    Returns (device_id, logical_command) on match, None otherwise.
+    """
+    try:
+        from services.ir_manager import list_ir_devices
+        received_b64 = base64.b64encode(received_bytes).decode()
+        devices = list_ir_devices(enabled_only=True)
+        total_codes = sum(len(d.get("ir_codes") or {}) for d in devices)
+
+        for device in devices:
+            ir_codes: dict = device.get("ir_codes") or {}
+            for logical_cmd, stored_b64 in ir_codes.items():
+                if stored_b64 == received_b64:
+                    return device["id"], logical_cmd
+
+        # Log once per receive so the user can diagnose missing codes
+        device_summary = ", ".join(
+            f"{d.get('name','?')}({len(d.get('ir_codes') or {})} codes)"
+            for d in devices
+        ) or "none"
+        log_info(
+            f"[IRListener] No match: {total_codes} stored codes across "
+            f"{len(devices)} device(s): {device_summary}"
+        )
+        return None
+    except Exception as e:
+        log_error(f"[IRListener] Code match scan failed: {e}")
+        return None
+
+
+async def _on_code_received(received_bytes: bytes) -> None:
+    """Called when the listener captures a code. Matches and updates state."""
+    match = _find_code_match(received_bytes)
+    if not match:
+        # Unknown code — broadcast for the UI's "unknown remote activity" flow
+        log_info("[IRListener] Unknown IR code received (no device match)")
+        try:
+            from backend.ws_manager import manager
+            await manager.broadcast({
+                "type": "ir_unknown_signal",
+                "code_b64": base64.b64encode(received_bytes).decode(),
+            })
+        except Exception:
+            pass
+        return
+
+    device_id, logical_cmd = match
+    log_info(f"[IRListener] Physical remote: device={device_id} command={logical_cmd}")
+
+    # Re-use the same post-command logic as Ziggy's own sends
+    try:
+        from services.ir_manager import get_ir_device
+        from services.ir_manager import _after_command  # type: ignore[attr-defined]
+        device = get_ir_device(device_id)
+        if device:
+            _after_command(device_id, device, logical_cmd)
+
+        # Reload to get the state _after_command just wrote
+        updated = get_ir_device(device_id)
+        new_state = updated.get("assumed_state", "unknown") if updated else "unknown"
+
+        # Broadcast so the frontend updates the device card immediately — no refresh needed
+        from backend.ws_manager import manager
+        await manager.broadcast({
+            "type": "ir_command_detected",
+            "device_id": device_id,
+            "command": logical_cmd,
+            "new_assumed_state": new_state,
+            "source": "physical_remote",
+        })
+    except Exception as e:
+        log_error(f"[IRListener] State update after detection failed: {e}")
+
+
+async def _listen_loop(host: str) -> None:
+    """
+    Continuous learn-receive loop for one Broadlink device host.
+    Runs until task is cancelled.
+    """
+    import broadlink
+    loop = asyncio.get_event_loop()
+
+    pause_event = _pause_events.setdefault(host, asyncio.Event())
+    dev: Optional[object] = None
+
+    def _connect() -> Optional[object]:
+        try:
+            d = broadlink.hello(host)
+            d.auth()
+            return d
+        except Exception as e:
+            log_error(f"[IRListener] Cannot connect to Broadlink at {host}: {e}")
+            return None
+
+    def _enter_learning(d) -> bool:
+        try:
+            d.enter_learning()
+            return True
+        except Exception as e:
+            log_error(f"[IRListener] enter_learning failed on {host}: {e}")
+            return False
+
+    def _check_data(d) -> Optional[bytes]:
+        try:
+            return d.check_data()
+        except Exception:
+            return None
+
+    log_info(f"[IRListener] Starting listener for {host}")
+
+    while True:
+        # Reconnect if needed
+        if dev is None:
+            dev = await loop.run_in_executor(None, _connect)
+            if dev is None:
+                await asyncio.sleep(10)
+                continue
+
+        # Respect pause (wizard is using the receiver)
+        if pause_event.is_set():
+            await asyncio.sleep(0.5)
+            continue
+
+        # Enter learning mode
+        ok = await loop.run_in_executor(None, _enter_learning, dev)
+        if not ok:
+            dev = None  # force reconnect
+            await asyncio.sleep(5)
+            continue
+
+        window_start = time.monotonic()
+
+        while True:
+            # Paused mid-window? Yield immediately; wizard will re-enter its own learn.
+            if pause_event.is_set():
+                break
+
+            elapsed = time.monotonic() - window_start
+            if elapsed >= _LEARN_WINDOW:
+                break  # timeout — outer loop re-enters learning immediately
+
+            data = await loop.run_in_executor(None, _check_data, dev)
+            if data:
+                await _on_code_received(bytes(data))
+                break  # break inner loop to re-enter learning for the next signal
+
+            await asyncio.sleep(_POLL_INTERVAL)
+
+
+async def start_listener() -> None:
+    """
+    Discover all configured blaster_hosts and launch a listen loop for each.
+    Called once at server startup. Safe to call if no hosts configured (no-op).
+    """
+    by_host = _all_ir_devices_by_host()
+    if not by_host:
+        log_info("[IRListener] No blaster_host configured — IR receive not active. "
+                 "Set blaster_host on an IR device to enable physical remote detection.")
+        return
+
+    for host in by_host:
+        if host not in _tasks or _tasks[host].done():
+            task = asyncio.create_task(_listen_loop(host), name=f"ir_listener_{host}")
+            _tasks[host] = task
+            log_info(f"[IRListener] Listener task started for host={host}")
+
+
+def restart_listener_for_host(host: str) -> None:
+    """
+    Cancel and restart the listener for a specific host.
+    Call when a device's blaster_host is added or changed.
+    """
+    if host in _tasks and not _tasks[host].done():
+        _tasks[host].cancel()
+
+    async def _restart():
+        await asyncio.sleep(0.5)
+        if host:
+            task = asyncio.create_task(_listen_loop(host), name=f"ir_listener_{host}")
+            _tasks[host] = task
+            log_info(f"[IRListener] Listener restarted for host={host}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(_restart())
+    except RuntimeError:
+        pass
+
+
+def pause_for_learn(host: str) -> None:
+    """Pause the listener on host so the wizard can use the receiver."""
+    ev = _pause_events.setdefault(host, asyncio.Event())
+    ev.set()
+    log_info(f"[IRListener] Paused for learn on {host}")
+
+
+def resume_after_learn(host: str) -> None:
+    """Resume the listener on host after the wizard is done."""
+    ev = _pause_events.get(host)
+    if ev:
+        ev.clear()
+    log_info(f"[IRListener] Resumed after learn on {host}")
+
+
+async def learn_command_direct(host: str, timeout: int = 20) -> Optional[bytes]:
+    """
+    Put the Broadlink at `host` in learning mode and wait for a code.
+    Pauses the background listener for the duration.
+    Returns raw bytes of the captured code, or None on timeout.
+
+    This replaces HA's remote.learn_command for devices with blaster_host set.
+    The raw bytes are stored in ir_devices.json under ir_codes, enabling
+    both direct sending and receive matching.
+    """
+    import broadlink
+    loop = asyncio.get_event_loop()
+
+    pause_for_learn(host)
+    try:
+        def _connect_and_learn():
+            d = broadlink.hello(host)
+            d.auth()
+            d.enter_learning()
+            return d
+
+        dev = await loop.run_in_executor(None, _connect_and_learn)
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            def _check(d):
+                try:
+                    return d.check_data()
+                except Exception:
+                    return None
+
+            data = await loop.run_in_executor(None, _check, dev)
+            if data:
+                return bytes(data)
+            await asyncio.sleep(0.35)
+
+        return None
+    except Exception as e:
+        log_error(f"[IRListener] learn_command_direct failed on {host}: {e}")
+        return None
+    finally:
+        resume_after_learn(host)
+
+
+async def discover_broadlink_devices(timeout: int = 8) -> list[dict]:
+    """
+    Find Broadlink devices on the local network.
+
+    Phase 1 — UDP broadcast (~3s, works on most networks)
+    Phase 2 — Subnet scan (targets each /24 IP directly, for when broadcast
+               is blocked by Windows Firewall or router)
+
+    Results are cached for 60 seconds. Concurrent calls wait for the
+    first call's result rather than launching duplicate scans.
+    """
+    global _discovery_lock, _discovery_cache
+
+    # Lazy-init the lock (must be created inside an event loop)
+    if _discovery_lock is None:
+        _discovery_lock = asyncio.Lock()
+
+    # Return cached result if fresh
+    if _discovery_cache is not None:
+        cached_result, cached_at = _discovery_cache
+        if time.monotonic() - cached_at < _DISCOVERY_CACHE_TTL:
+            return cached_result
+
+    # If a scan is already running, wait for it to finish then return its cache
+    if _discovery_lock.locked():
+        async with _discovery_lock:
+            if _discovery_cache is not None:
+                return _discovery_cache[0]
+            return []
+
+    async with _discovery_lock:
+        # Re-check cache after acquiring lock (another coroutine may have filled it)
+        if _discovery_cache is not None:
+            cached_result, cached_at = _discovery_cache
+            if time.monotonic() - cached_at < _DISCOVERY_CACHE_TTL:
+                return cached_result
+
+        import broadlink
+        import socket
+        import ipaddress
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+
+        def _device_info(dev) -> dict:
+            dev_type = getattr(dev, "TYPE", None) or str(getattr(dev, "devtype", ""))
+            host = dev.host[0] if isinstance(dev.host, tuple) else dev.host
+            return {
+                "host": host,
+                "mac": ":".join(f"{b:02x}" for b in dev.mac),
+                "type": dev_type,
+                "name": getattr(dev, "name", "").strip() or f"Broadlink {dev_type}",
+            }
+
+        def _try_hello(ip: str) -> dict | None:
+            try:
+                dev = broadlink.hello(ip, timeout=1)
+                dev.auth()
+                return _device_info(dev)
+            except Exception:
+                return None
+
+        def _scan() -> list[dict]:
+            found: list[dict] = []
+            seen: set[str] = set()
+
+            # Phase 1: UDP broadcast
+            try:
+                for dev in broadlink.discover(timeout=3):
+                    try:
+                        dev.auth()
+                        info = _device_info(dev)
+                        if info["host"] not in seen:
+                            found.append(info)
+                            seen.add(info["host"])
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            if found:
+                return found
+
+            # Phase 2: Subnet scan
+            log_info("[IRListener] Broadcast found nothing — scanning subnet directly")
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(("8.8.8.8", 80))
+                    local_ip = s.getsockname()[0]
+                network = ipaddress.IPv4Network(f"{local_ip}/24", strict=False)
+                candidates = [str(h) for h in network.hosts() if str(h) != local_ip]
+            except Exception as e:
+                log_error(f"[IRListener] Subnet detection failed: {e}")
+                return found
+
+            # 32 workers: ~4s for 254 IPs at 1s timeout, manageable thread count
+            with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
+                for result in pool.map(_try_hello, candidates):
+                    if result and result["host"] not in seen:
+                        found.append(result)
+                        seen.add(result["host"])
+
+            return found
+
+        result = await loop.run_in_executor(None, _scan)
+        _discovery_cache = (result, time.monotonic())
+        return result
+
+
+async def send_ir_direct(host: str, code_b64: str) -> bool:
+    """
+    Send a raw IR code directly via python-broadlink (no HA intermediation).
+    Returns True on success.
+    """
+    import broadlink
+    loop = asyncio.get_event_loop()
+
+    def _send():
+        try:
+            raw = base64.b64decode(code_b64)
+            dev = broadlink.hello(host)
+            dev.auth()
+            dev.send_data(raw)
+            return True
+        except Exception as e:
+            log_error(f"[IRListener] send_ir_direct to {host} failed: {e}")
+            return False
+
+    return await loop.run_in_executor(None, _send)

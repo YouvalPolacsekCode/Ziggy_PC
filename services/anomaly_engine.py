@@ -43,7 +43,7 @@ import pytz
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from services.ha_areas import get_areas
-from services.presence_store import all_away as _ziggy_all_away, home_person_names as _ziggy_home_names, load_persons as _ziggy_load_persons
+from services.presence_store import all_away as _ziggy_all_away, home_person_names as _ziggy_home_names, load_persons as _ziggy_load_persons, effective_state as _ziggy_effective_state
 
 # ── SQLite (shared DB with map_router) ───────────────────────────────────────
 _DB = Path("user_files/home_map.db")
@@ -260,17 +260,25 @@ def _local_hour() -> int:
     return datetime.now(_tz()).hour
 
 
-def _quiet_hours() -> tuple[int, int]:
-    cfg = _cfg()
-    return cfg.get("quiet_hour_start", 23), cfg.get("quiet_hour_end", 7)
-
-
 def _in_quiet_hours() -> bool:
-    start, end = _quiet_hours()
-    h = _local_hour()
-    if start > end:        # spans midnight e.g. 23–07
-        return h >= start or h < end
-    return start <= h < end
+    """Use push-preferences quiet hours as the single quiet-hours definition."""
+    try:
+        from services.push_preferences import get_prefs
+        users = settings.get("users", [])
+        if not users:
+            return False
+        prefs = get_prefs(users[0]["username"])
+        qh = prefs.get("quiet_hours", {})
+        if not qh.get("enabled"):
+            return False
+        sh, sm = map(int, qh.get("start", "23:00").split(":"))
+        eh, em = map(int, qh.get("end",   "07:00").split(":"))
+        h = _local_hour()
+        if sh > eh:          # spans midnight
+            return h >= sh or h < eh
+        return sh <= h < eh
+    except Exception:
+        return False
 
 
 # ── Snooze / cooldown ─────────────────────────────────────────────────────────
@@ -328,11 +336,12 @@ def _push_anomaly(active: dict, room_id: str, rule: AnomalyRule,
         return
 
     try:
-        from interfaces.telegram_interface import send_reminder_message
+        from services.push_notify import push_notify_sync
+        category = "anomaly_critical" if rule.severity == "critical" else "anomaly_warning"
         icon = "🚨" if rule.severity == "critical" else "⚠️"
-        send_reminder_message(f"{icon} {result.message}")
+        push_notify_sync(f"{icon} Ziggy Alert", result.message, "/anomalies", category)
     except Exception as e:
-        log_error(f"[AnomalyEngine] Telegram push failed: {e}")
+        log_error(f"[AnomalyEngine] Push notification failed: {e}")
 
     try:
         from backend.ws_manager import manager
@@ -373,12 +382,12 @@ def _lights_on(cache: dict) -> list[str]:
 
 
 def _all_persons_away(cache: dict) -> bool:
-    ha_persons   = [v for eid, v in cache.items() if eid.startswith("person.")]
+    ha_persons    = [v for eid, v in cache.items() if eid.startswith("person.")]
     ziggy_persons = _ziggy_load_persons()
     if not ha_persons and not ziggy_persons:
         return False
-    ha_away     = all(v["state"] != "home" for v in ha_persons)
-    ziggy_away  = all(p.get("state") != "home" for p in ziggy_persons)
+    ha_away    = all(v["state"] != "home" for v in ha_persons)
+    ziggy_away = all(_ziggy_effective_state(p) != "home" for p in ziggy_persons)
     return ha_away and ziggy_away
 
 
@@ -438,7 +447,7 @@ def _build_context(cache: dict) -> HomeContext:
     ha_persons   = {eid: v for eid, v in cache.items() if eid.startswith("person.")}
     ziggy_persons = _ziggy_load_persons()
     ha_home      = [eid.split(".")[1] for eid, v in ha_persons.items() if v["state"] == "home"]
-    ziggy_home   = [p["name"] for p in ziggy_persons if p.get("state") == "home"]
+    ziggy_home   = [p["name"] for p in ziggy_persons if _ziggy_effective_state(p) == "home"]
     occupants    = list({*ha_home, *ziggy_home})
     has_presence = bool(ha_persons) or bool(ziggy_persons)
     mode: Literal["away", "night", "home"] = (
@@ -739,9 +748,8 @@ def _rule_anom09(ec: EvalContext) -> AnomalyResult | None:
     window_min = _BULK_OFFLINE_WINDOW // 60
     return AnomalyResult(
         message=(
-            f"{count} devices went offline within {window_min} minutes. "
-            "This may indicate a Zigbee coordinator issue or a network problem. "
-            "Check your Zigbee dongle and the ZHA/Zigbee2MQTT integration in Home Assistant."
+            f"{count} devices went offline at the same time. "
+            "They may be unreachable — try reconnecting from the Home screen."
         ),
         confidence=min(0.75 + (count - _BULK_OFFLINE_THRESHOLD) * 0.05, 0.95),
         action_available=True,
@@ -816,7 +824,12 @@ async def evaluate(changed_entity: str, cache: dict, active: dict) -> None:
             )
             _clear_anomaly(active, _stale_room, "ANOM-10")
 
+    disabled = settings.get("anomaly_engine", {}).get("disabled_rules", [])
+
     for rule in _RULES:
+        if rule.rule_id in disabled:
+            continue
+
         if rule.scope == "home":
             ec = EvalContext(cache=cache, ctx=ctx, cfg=cfg, now=now, area_map=area_map)
             _dispatch(rule, ec, active, "home")

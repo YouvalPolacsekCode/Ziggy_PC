@@ -9,7 +9,7 @@ import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { CONTROLLABLE_DOMAINS } from '../lib/domainRegistry'
-import { getVirtualDevices, getCapabilities, getAllRooms, getEntityState } from '../lib/api'
+import { getVirtualDevices, getCapabilities, getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -27,9 +27,15 @@ function formatRelativeTime(iso) {
 const TRIGGER_TYPES = [
   { value: 'time',    label: 'Time' },
   { value: 'state',   label: 'Device State' },
+  { value: 'zone',    label: 'Zone Entry / Exit' },
   { value: 'sunrise', label: 'Sunrise' },
   { value: 'sunset',  label: 'Sunset' },
   { value: 'webhook', label: 'Webhook' },
+]
+
+const TRACKER_TRIGGER_STATES = [
+  { value: 'home',     label: 'Arrives home' },
+  { value: 'not_home', label: 'Leaves / goes away' },
 ]
 
 const ACTION_TYPES = [
@@ -49,7 +55,8 @@ const SEND_INTENT_TEMPLATES = [
   { group: 'General', items: ['Turn off everything', 'Good night', 'Good morning'] },
 ]
 
-const SENSOR_DOMAINS = new Set(['sensor', 'binary_sensor'])
+const SENSOR_DOMAINS  = new Set(['sensor', 'binary_sensor'])
+const TRACKER_DOMAINS = new Set(['person', 'device_tracker'])
 
 const BINARY_SENSOR_TRIGGER_STATES = {
   door:        [{ value: 'on', label: 'Opens' },            { value: 'off', label: 'Closes' }],
@@ -88,7 +95,17 @@ function triggerSummary(trigger) {
   if (!trigger?.type) return 'No trigger set'
   switch (trigger.type) {
     case 'time':    return trigger.time ? `Every day at ${trigger.time}` : 'Time trigger (no time set)'
-    case 'state':   return `When ${trigger.entity_id || 'device'} turns ${trigger.state || 'on/off'}`
+    case 'state': {
+      let s = `When ${trigger.entity_id || 'device'} becomes ${trigger.state || 'on/off'}`
+      if (trigger.for_minutes) s += ` for ${trigger.for_minutes} min`
+      return s
+    }
+    case 'zone': {
+      const who  = trigger.entity_id || 'person'
+      const zone = (trigger.zone || 'zone.home').replace('zone.', '')
+      const evt  = trigger.event === 'leave' ? 'leaves' : 'enters'
+      return `When ${who} ${evt} ${zone}`
+    }
     case 'sunrise': return trigger.offset ? `Sunrise ${trigger.offset}` : 'At sunrise'
     case 'sunset':  return trigger.offset ? `Sunset ${trigger.offset}` : 'At sunset'
     case 'webhook': return `Webhook: ${trigger.webhook_id || '(no id)'}`
@@ -109,6 +126,12 @@ function actionSummary(action) {
 }
 
 function conditionSummary(c) {
+  if (c.type === 'time') {
+    const parts = []
+    if (c.after)  parts.push(`after ${c.after}`)
+    if (c.before) parts.push(`before ${c.before}`)
+    return parts.length ? `Time window: ${parts.join(' and ')}` : 'Time window'
+  }
   if (!c.entity_id) return 'Incomplete condition'
   const name = c.entity_id.split('.')[1]?.replace(/_/g, ' ') || c.entity_id
   switch (c.operator) {
@@ -299,28 +322,138 @@ function StepIndicator({ current }) {
   )
 }
 
+// ── ZoneTriggerEditor ─────────────────────────────────────────────────────────
+function ZoneTriggerEditor({ trigger, onChange }) {
+  const [zones, setZones] = useState([])
+  useEffect(() => {
+    getEntities('zone').then(r => {
+      const list = (r.entities || r || []).filter(e => e.entity_id?.startsWith('zone.') && e.entity_id !== 'zone.home' ? true : true)
+      setZones(list)
+    }).catch(() => {})
+  }, [])
+
+  const zoneOptions = [
+    { value: 'zone.home', label: 'Home zone (arrived)' },
+    ...zones.filter(z => z.entity_id !== 'zone.home').map(z => ({
+      value: z.entity_id,
+      label: (z.attributes?.friendly_name || z.entity_id.replace('zone.', '')).replace(/_/g, ' '),
+    })),
+  ]
+
+  const eventOptions = [
+    { value: 'enter', label: 'Enters zone' },
+    { value: 'leave', label: 'Leaves zone' },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <EntitySelect
+        label="Person or device to track"
+        value={trigger.entity_id || ''}
+        onChange={v => onChange({ ...trigger, entity_id: v })}
+        allowedDomains={TRACKER_DOMAINS}
+        placeholder="Select person or device tracker…"
+      />
+      <Select
+        label="Zone"
+        options={zoneOptions}
+        value={trigger.zone || 'zone.home'}
+        onChange={e => onChange({ ...trigger, zone: e.target.value })}
+      />
+      {!trigger.zone || trigger.zone === 'zone.home' ? null : null}
+      <Select
+        label="When"
+        options={eventOptions}
+        value={trigger.event || 'enter'}
+        onChange={e => onChange({ ...trigger, event: e.target.value })}
+      />
+
+      {/* Tip: approaching home */}
+      <div style={{
+        padding: '10px 12px', borderRadius: 10,
+        background: `color-mix(in srgb, var(--info) 6%, var(--surface))`,
+        border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
+      }}>
+        <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--info)', marginBottom: 4 }}>
+          Triggering BEFORE you arrive
+        </p>
+        <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+          The Home zone fires when you physically reach home. For a head-start (e.g. turn on AC while still 5 minutes away), create a second zone in Home Assistant with a larger radius — for example a "Near Home" zone at 2–3 km. Then select that zone here instead.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── TriggerEditor ─────────────────────────────────────────────────────────────
 function TriggerEditor({ trigger, onChange }) {
   const { entities } = useDeviceStore()
-  const effectiveType  = trigger.type || 'time'
-  const triggerEntity  = trigger.entity_id ? entities.find(e => e.entity_id === trigger.entity_id) : null
-  const triggerDomain  = trigger.entity_id?.split('.')?.[0] || null
-  const stateOptions   = triggerDomain === 'binary_sensor' && triggerEntity?.device_class
-    ? (BINARY_SENSOR_TRIGGER_STATES[triggerEntity.device_class] || DEFAULT_BINARY_TRIGGER)
-    : DEFAULT_BINARY_TRIGGER
+  const effectiveType = trigger.type || 'time'
+  const triggerDomain = trigger.entity_id?.split('.')?.[0] || null
+  const triggerEntity = trigger.entity_id ? entities.find(e => e.entity_id === trigger.entity_id) : null
+  const isTracker     = triggerDomain === 'person' || triggerDomain === 'device_tracker'
+  const stateOptions  = isTracker
+    ? TRACKER_TRIGGER_STATES
+    : (triggerDomain === 'binary_sensor' && triggerEntity?.device_class)
+      ? (BINARY_SENSOR_TRIGGER_STATES[triggerEntity.device_class] || DEFAULT_BINARY_TRIGGER)
+      : DEFAULT_BINARY_TRIGGER
+
+  const handleTypeChange = e => {
+    const next = e.target.value
+    // Reset to clean defaults when switching type
+    if (next === 'zone')    onChange({ type: 'zone',    entity_id: '', zone: 'zone.home', event: 'enter' })
+    else if (next === 'state')   onChange({ type: 'state',   entity_id: '', state: 'on' })
+    else if (next === 'time')    onChange({ type: 'time',    time: '' })
+    else if (next === 'webhook') onChange({ type: 'webhook', webhook_id: '' })
+    else                         onChange({ ...trigger, type: next })
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Select label="Trigger type" options={TRIGGER_TYPES} value={effectiveType} onChange={e => onChange({ ...trigger, type: e.target.value })} />
-      {effectiveType === 'time' && <Input label="Time (HH:MM)" type="time" value={trigger.time || ''} onChange={e => onChange({ ...trigger, type: 'time', time: e.target.value })} />}
+      <Select label="Trigger type" options={TRIGGER_TYPES} value={effectiveType} onChange={handleTypeChange} />
+
+      {effectiveType === 'time' && (
+        <Input label="Time (HH:MM)" type="time" value={trigger.time || ''} onChange={e => onChange({ ...trigger, type: 'time', time: e.target.value })} />
+      )}
+
       {effectiveType === 'state' && (
         <>
-          <EntitySelect label="Entity" value={trigger.entity_id || ''} onChange={v => onChange({ ...trigger, entity_id: v, state: 'on' })} />
-          <Select label="New state" options={stateOptions} value={trigger.state || 'on'} onChange={e => onChange({ ...trigger, state: e.target.value })} />
+          <EntitySelect
+            label="Entity"
+            value={trigger.entity_id || ''}
+            onChange={v => {
+              const dom = v?.split('.')?.[0]
+              const isT = dom === 'person' || dom === 'device_tracker'
+              onChange({ ...trigger, entity_id: v, state: isT ? 'home' : 'on', for_minutes: undefined })
+            }}
+          />
+          <Select
+            label={isTracker ? 'When' : 'New state'}
+            options={stateOptions}
+            value={trigger.state || (isTracker ? 'home' : 'on')}
+            onChange={e => onChange({ ...trigger, state: e.target.value })}
+          />
+          <Input
+            label="Must stay in this state for (minutes, optional)"
+            type="number"
+            placeholder="e.g. 30 — leave empty to trigger instantly"
+            value={trigger.for_minutes || ''}
+            onChange={e => {
+              const v = e.target.value
+              onChange({ ...trigger, for_minutes: v ? parseInt(v) : undefined })
+            }}
+          />
         </>
       )}
+
+      {effectiveType === 'zone' && (
+        <ZoneTriggerEditor trigger={trigger} onChange={onChange} />
+      )}
+
       {(effectiveType === 'sunrise' || effectiveType === 'sunset') && (
         <Input label="Offset (e.g. +00:30 or -00:15)" placeholder="+00:00" value={trigger.offset || ''} onChange={e => onChange({ ...trigger, offset: e.target.value })} />
       )}
+
       {effectiveType === 'webhook' && (
         <Input label="Webhook ID" placeholder="my_webhook_id" value={trigger.webhook_id || ''} onChange={e => onChange({ ...trigger, webhook_id: e.target.value })} />
       )}
@@ -328,23 +461,34 @@ function TriggerEditor({ trigger, onChange }) {
   )
 }
 
+const CONDITION_TYPES = [
+  { value: 'entity', label: 'Entity state' },
+  { value: 'time',   label: 'Time window' },
+]
+
 // ── ConditionRow ──────────────────────────────────────────────────────────────
 function ConditionRow({ condition, onChange, onRemove }) {
   const { entities } = useDeviceStore()
+  const condType    = condition.type || 'entity'
   const domain      = condition.entity_id?.split('.')?.[0] || null
   const entity      = condition.entity_id ? entities.find(e => e.entity_id === condition.entity_id) : null
   const deviceClass = entity?.device_class || null
   const isNumeric   = domain === 'sensor'
   const isBinary    = domain === 'binary_sensor'
-  const stateOptions   = isBinary
+  const isTracker   = domain === 'person' || domain === 'device_tracker'
+  const stateOptions   = isTracker
+    ? [{ value: 'home', label: 'Is home' }, { value: 'not_home', label: 'Is away' }]
+    : isBinary
     ? (BINARY_SENSOR_CONDITION_STATES[deviceClass] || DEFAULT_BINARY_CONDITION)
     : []
   const operatorOptions = isNumeric
     ? [{ value: 'above', label: 'Is above' }, { value: 'below', label: 'Is below' }]
+    : isTracker
+    ? [{ value: 'is', label: 'Is' }]
     : [{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is not' }]
   const unitHint = entity?.unit_of_measurement || ''
 
-  return (
+  const sharedWrapper = (children) => (
     <div style={{
       border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`,
       borderRadius: 11, padding: 12,
@@ -352,20 +496,61 @@ function ConditionRow({ condition, onChange, onRemove }) {
       display: 'flex', flexDirection: 'column', gap: 10,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <p className="z-eyebrow">If…</p>
+        <p className="z-eyebrow">Only if…</p>
         <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
         </button>
       </div>
+      <Select
+        label="Condition type"
+        options={CONDITION_TYPES}
+        value={condType}
+        onChange={e => {
+          const next = e.target.value
+          if (next === 'time') onChange({ type: 'time', after: '21:00', before: '07:00' })
+          else onChange({ type: 'entity', entity_id: '', operator: 'is', value: 'on' })
+        }}
+      />
+      {children}
+    </div>
+  )
+
+  // ── Time window ───────────────────────────────────────────────────────────
+  if (condType === 'time') {
+    return sharedWrapper(
+      <>
+        <Input
+          label="After (HH:MM)"
+          type="time"
+          value={condition.after || ''}
+          onChange={e => onChange({ ...condition, after: e.target.value })}
+        />
+        <Input
+          label="Before (HH:MM)"
+          type="time"
+          value={condition.before || ''}
+          onChange={e => onChange({ ...condition, before: e.target.value })}
+        />
+        <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+          Overnight ranges work — e.g. after 21:00, before 07:00
+        </p>
+      </>
+    )
+  }
+
+  // ── Entity state ──────────────────────────────────────────────────────────
+  return sharedWrapper(
+    <>
       <EntitySelect
-        label="Sensor"
+        label="Entity"
         value={condition.entity_id || ''}
         onChange={v => {
           const dom = v?.split('.')?.[0]
-          onChange({ ...condition, entity_id: v, operator: dom === 'sensor' ? 'above' : 'is', value: dom === 'sensor' ? '' : 'on' })
+          const isT = dom === 'person' || dom === 'device_tracker'
+          const isN = dom === 'sensor'
+          onChange({ ...condition, type: 'entity', entity_id: v, operator: isN ? 'above' : 'is', value: isT ? 'home' : (isN ? '' : 'on') })
         }}
-        placeholder="Select a sensor…"
-        allowedDomains={SENSOR_DOMAINS}
+        placeholder="Select entity…"
       />
       {condition.entity_id && (
         <>
@@ -382,16 +567,16 @@ function ConditionRow({ condition, onChange, onRemove }) {
               value={condition.value ?? ''}
               onChange={e => onChange({ ...condition, value: e.target.value })}
             />
-          ) : isBinary ? (
+          ) : (isTracker || isBinary) ? (
             <Select
               options={stateOptions}
-              value={condition.value || 'on'}
+              value={condition.value || (isTracker ? 'home' : 'on')}
               onChange={e => onChange({ ...condition, value: e.target.value })}
             />
           ) : null}
         </>
       )}
-    </div>
+    </>
   )
 }
 
@@ -643,7 +828,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
                 />
               ))}
               <button
-                onClick={() => setConditions(cs => [...cs, { entity_id: '', operator: 'is', value: 'on', _key: crypto.randomUUID() }])}
+                onClick={() => setConditions(cs => [...cs, { type: 'entity', entity_id: '', operator: 'is', value: 'on', _key: crypto.randomUUID() }])}
                 className="z-btn-secondary"
                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
@@ -823,17 +1008,264 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
   )
 }
 
+// ── TemplateCard ──────────────────────────────────────────────────────────────
+const TIER_STYLE = {
+  ready:       { border: 'color-mix(in srgb, var(--ok)   30%, var(--line))', bg: 'color-mix(in srgb, var(--ok)   4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--ok)   14%, transparent)', badgeColor: 'var(--ok)',      badgeText: 'READY' },
+  partial:     { border: 'color-mix(in srgb, var(--warn) 40%, var(--line))', bg: 'color-mix(in srgb, var(--warn) 4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--warn) 14%, transparent)', badgeColor: 'var(--warn)',    badgeText: 'INCOMPLETE' },
+  unavailable: { border: 'var(--line)',                                       bg: 'var(--surface)',                                      badgeBg: 'var(--bg-2)',                                       badgeColor: 'var(--ink-faint)', badgeText: 'NOT AVAILABLE' },
+}
+
+function TemplateCard({ template, onConfigure }) {
+  const tier        = template.tier || (template.can_run ? 'ready' : 'unavailable')
+  const ts          = TIER_STYLE[tier] || TIER_STYLE.unavailable
+  const matched     = template.matched_labels || []
+  const missReq     = template.missing_req_labels || []
+  const missOpt     = template.missing_opt_labels || []
+  const canConfigure = tier === 'ready' || tier === 'partial'
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div style={{
+      padding: '14px 16px', borderRadius: 12,
+      background: ts.bg, border: `0.5px solid ${ts.border}`,
+      display: 'flex', alignItems: 'flex-start', gap: 12,
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: `color-mix(in srgb, ${ts.badgeColor} 10%, var(--surface))`,
+        fontSize: 18,
+      }}>
+        {template.icon}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Name row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }}>{template.name}</p>
+          <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 700, fontFamily: '"IBM Plex Mono", monospace', background: ts.badgeBg, color: ts.badgeColor }}>
+            {ts.badgeText}
+          </span>
+          {template.already_exists && (
+            <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, var(--ok) 14%, transparent)`, color: 'var(--ok)' }}>
+              ACTIVE
+            </span>
+          )}
+        </div>
+
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8, lineHeight: 1.4 }}>{template.description}</p>
+
+        {/* Device chips */}
+        <button
+          onClick={() => setExpanded(v => !v)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', marginBottom: expanded ? 8 : 0 }}
+        >
+          <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
+          {tier === 'ready'
+            ? `${matched.length} device${matched.length !== 1 ? 's' : ''} ready`
+            : tier === 'partial'
+            ? `${matched.length} of ${matched.length + missReq.length} required devices found`
+            : `${missReq.length} device${missReq.length !== 1 ? 's' : ''} needed`
+          }
+        </button>
+
+        <AnimatePresence>
+          {expanded && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }} style={{ overflow: 'hidden', marginBottom: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 4 }}>
+                {matched.map(m => (
+                  <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: 'var(--ok)', fontSize: 11, flexShrink: 0 }}>✓</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{m.label}</span>
+                    {m.entity && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.entity}</span>}
+                  </div>
+                ))}
+                {missReq.map(m => (
+                  <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: 'var(--warn)', fontSize: 11, flexShrink: 0 }}>✗</span>
+                    <span style={{ fontSize: 11, color: 'var(--warn)' }}>{m.label}</span>
+                    <span style={{ fontSize: 10, color: 'var(--warn)', fontFamily: '"IBM Plex Mono", monospace', opacity: 0.7 }}>required</span>
+                  </div>
+                ))}
+                {missOpt.map(m => (
+                  <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: 'var(--ink-faint)', fontSize: 11, flexShrink: 0 }}>○</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{m.label}</span>
+                    <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>optional</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div style={{ flexShrink: 0 }}>
+        <button
+          onClick={() => onConfigure(template)}
+          disabled={!canConfigure}
+          className={tier === 'ready' ? 'z-btn-primary' : 'z-btn-secondary'}
+          style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, whiteSpace: 'nowrap', opacity: canConfigure ? 1 : 0.35 }}
+        >
+          {tier === 'ready' ? 'Configure' : tier === 'partial' ? 'Configure' : 'Add devices'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── LibraryModal ──────────────────────────────────────────────────────────────
+function LibraryModal({ open, onClose, onConfigure }) {
+  const [templates, setTemplates] = useState([])
+  const [loading,   setLoading]   = useState(false)
+  const [search,    setSearch]    = useState('')
+  const [category,  setCategory]  = useState('all')
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    getAutomationTemplates()
+      .then(r => setTemplates(r.templates || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [open])
+
+  const categories = ['all', ...Array.from(new Set(templates.map(t => t.category)))]
+  const filtered = templates.filter(t =>
+    (category === 'all' || t.category === category) &&
+    (search === '' || t.name.toLowerCase().includes(search.toLowerCase()) || t.description.toLowerCase().includes(search.toLowerCase()))
+  )
+  const ready       = filtered.filter(t => t.tier === 'ready')
+  const partial     = filtered.filter(t => t.tier === 'partial')
+  const unavailable = filtered.filter(t => t.tier === 'unavailable')
+
+  if (!open) return null
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      padding: '0 0 0 0',
+    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <motion.div
+        initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
+        transition={{ type: 'spring', damping: 24, stiffness: 260 }}
+        style={{
+          width: '100%', maxWidth: 720,
+          maxHeight: '85vh', borderRadius: '18px 18px 0 0',
+          background: 'var(--bg)', display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: '18px 20px 12px', borderBottom: '0.5px solid var(--line)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <p className="z-eyebrow" style={{ marginBottom: 2 }}>Curated automations</p>
+              <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>Automation Library</h2>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--ink-mute)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <input
+            type="text"
+            placeholder="Search templates…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              width: '100%', height: 36, padding: '0 12px', borderRadius: 9,
+              background: 'var(--surface)', border: '0.5px solid var(--line)',
+              color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
+            {categories.map(cat => (
+              <button key={cat} onClick={() => setCategory(cat)} style={{
+                padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
+                background: category === cat ? 'var(--ink)' : 'var(--surface)',
+                color: category === cat ? 'var(--bg)' : 'var(--ink-mute)',
+                border: category === cat ? 'none' : '0.5px solid var(--line)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 24px' }}>
+          {loading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.5 }} />)}
+            </div>
+          )}
+          {!loading && (
+            <>
+              {ready.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <p className="z-eyebrow" style={{ marginBottom: 10, color: 'var(--ok)' }}>Ready to configure ({ready.length})</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {ready.map(t => <TemplateCard key={t.id} template={t} onConfigure={tmpl => { onConfigure(tmpl); onClose() }} />)}
+                  </div>
+                </div>
+              )}
+              {partial.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <p className="z-eyebrow" style={{ marginBottom: 6, color: 'var(--warn)' }}>Add devices to unlock ({partial.length})</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 10, lineHeight: 1.4 }}>
+                    You have some required devices. Add the missing ones, then reload to see these move to Ready.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {partial.map(t => <TemplateCard key={t.id} template={t} onConfigure={tmpl => { onConfigure(tmpl); onClose() }} />)}
+                  </div>
+                </div>
+              )}
+              {unavailable.length > 0 && (
+                <div>
+                  <p className="z-eyebrow" style={{ marginBottom: 10, color: 'var(--ink-faint)' }}>Not available ({unavailable.length})</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {unavailable.map(t => <TemplateCard key={t.id} template={t} onConfigure={tmpl => { onConfigure(tmpl); onClose() }} />)}
+                  </div>
+                </div>
+              )}
+              {filtered.length === 0 && (
+                <p style={{ textAlign: 'center', padding: '32px 0', fontSize: 13, color: 'var(--ink-faint)' }}>No templates match your search.</p>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
   const { automations, loading, fetchAutomations, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
   const { addToast } = useUIStore()
   const { ziggyRooms } = useDeviceStore()
-  const [showWizard, setShowWizard] = useState(false)
-  const [editTarget, setEditTarget] = useState(null)
-  const [viewTarget, setViewTarget] = useState(null)
+  const [showWizard,        setShowWizard]        = useState(false)
+  const [editTarget,        setEditTarget]         = useState(null)
+  const [viewTarget,        setViewTarget]         = useState(null)
+  const [suggestedTemplates, setSuggestedTemplates] = useState([])
+  const [showLibrary,       setShowLibrary]        = useState(false)
+  const [suggestionsOpen,   setSuggestionsOpen]    = useState(true)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
-  useEffect(() => { fetchAutomations() }, [])
+
+  useEffect(() => {
+    fetchAutomations()
+    getSuggestedTemplates()
+      .then(r => setSuggestedTemplates(r.suggested || []))
+      .catch(() => {})
+  }, [])
+
+  const handleConfigureTemplate = (template) => {
+    if (!template.wizard_prefill) return
+    setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
+    setShowWizard(true)
+  }
 
   const handleSave = async (data) => {
     try { await addAutomation({ ...data, id: editTarget?.id }); addToast(editTarget ? 'Automation updated' : 'Automation saved', 'success'); await fetchAutomations() }
@@ -865,11 +1297,63 @@ export default function Automations() {
             {enabled} enabled · {automations.length} total
           </p>
         </div>
-        <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          New
-        </button>
+        <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+          <button onClick={() => setShowLibrary(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Library
+          </button>
+          <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Custom
+          </button>
+        </div>
       </div>
+
+      {/* ── Recommended by Ziggy ─────────────────────────────────────────── */}
+      {suggestedTemplates.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <button
+            onClick={() => setSuggestionsOpen(v => !v)}
+            style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', marginBottom: suggestionsOpen ? 10 : 0 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <p className="z-eyebrow">Recommended by Ziggy</p>
+                {suggestedTemplates.filter(t => t.tier === 'ready' && !t.already_exists).length > 0 && (
+                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, var(--ok) 14%, transparent)`, color: 'var(--ok)' }}>
+                    {suggestedTemplates.filter(t => t.tier === 'ready' && !t.already_exists).length} ready
+                  </span>
+                )}
+                {suggestedTemplates.filter(t => t.tier === 'partial').length > 0 && (
+                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, var(--warn) 14%, transparent)`, color: 'var(--warn)' }}>
+                    {suggestedTemplates.filter(t => t.tier === 'partial').length} incomplete
+                  </span>
+                )}
+              </div>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: suggestionsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </button>
+          <AnimatePresence>
+            {suggestionsOpen && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {suggestedTemplates.slice(0, 5).map(t => (
+                    <TemplateCard key={t.id} template={t} onConfigure={handleConfigureTemplate} />
+                  ))}
+                  {suggestedTemplates.length > 5 && (
+                    <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
+                      +{suggestedTemplates.length - 5} more in Library →
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* ── My Automations ───────────────────────────────────────────────── */}
+      {automations.length > 0 && <p className="z-eyebrow" style={{ marginBottom: 10 }}>My Automations</p>}
 
       {loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -894,7 +1378,16 @@ export default function Automations() {
         </div>
       </AnimatePresence>
 
-      <Modal open={showWizard} onClose={handleClose} title={editTarget ? `Edit: ${editTarget.name}` : 'New Automation'}>
+      <LibraryModal
+        open={showLibrary}
+        onClose={() => setShowLibrary(false)}
+        onConfigure={handleConfigureTemplate}
+      />
+
+      <Modal open={showWizard} onClose={handleClose} title={
+        editTarget?._isTemplate ? `Configure: ${editTarget.name}` :
+        editTarget ? `Edit: ${editTarget.name}` : 'New Custom Automation'
+      }>
         <AutomationWizard key={editTarget?.id || '__new__'} initial={editTarget} onSave={handleSave} onClose={handleClose} />
       </Modal>
 

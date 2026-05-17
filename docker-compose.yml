@@ -1,0 +1,43 @@
+# docker-compose.yml — full local development stack
+# Runs Ziggy backend + Home Assistant + Mosquitto together.
+# For production cloud homes, see docker/home-template/docker-compose.yml
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./docker/ha-config:/config
+    depends_on: [mosquitto]
+
+  ziggy:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - HOME_ID=${HOME_ID:-home-ziggy-dev}
+      - RELAY_URL=${RELAY_URL:-}
+      - RELAY_SECRET=${RELAY_SECRET:-}
+    volumes:
+      - ./config:/app/config
+      - ./user_files:/app/user_files
+    depends_on: [mosquitto, homeassistant]
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

@@ -1,0 +1,30 @@
+# relay/docker-compose.yml — run relay locally for development
+# Usage: docker compose up -d
+
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - relay_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock  # needed for provisioning
+    environment:
+      - PORT=8080
+      - DATABASE_URL=/data/relay.db
+      - HOMES_DIR=/data/homes
+      - RELAY_JWT_SECRET=${RELAY_JWT_SECRET:-changeme_set_in_env}
+      - RELAY_ADMIN_EMAIL=${RELAY_ADMIN_EMAIL:-admin@relay.local}
+      - RELAY_ADMIN_PASSWORD=${RELAY_ADMIN_PASSWORD:-changeme}
+      - RELAY_PUBLIC_URL=${RELAY_PUBLIC_URL:-http://localhost:8080}
+      - CF_API_TOKEN=${CF_API_TOKEN:-}
+      - CF_ACCOUNT_ID=${CF_ACCOUNT_ID:-}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM_NAME=Ziggy
+
+volumes:
+  relay_data:

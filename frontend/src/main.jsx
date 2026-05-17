@@ -3,17 +3,15 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 
-// In dev mode, unregister any service worker from previous production builds.
-// Production builds (via Cloudflare tunnel) register a SW that persists in the
-// browser and intercepts requests, serving stale cached JS. Unregistering it
-// in dev forces the browser to fetch fresh assets directly from the Vite server.
-if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+// In dev mode on localhost, unregister any stale SWs from production builds
+// so they don't serve cached JS over the Vite dev server.
+// IMPORTANT: do NOT reload after unregistering — App.jsx registers /sw.js for
+// push notifications (on HTTPS), and if we reload, App.jsx registers again,
+// main.jsx finds it again, reloads again → infinite reload loop on the phone.
+// Simply unregistering is enough: the SW is deactivated for future navigations.
+if (import.meta.env.DEV && 'serviceWorker' in navigator && window.location.hostname === 'localhost') {
   navigator.serviceWorker.getRegistrations().then((regs) => {
-    if (regs.length > 0) {
-      regs.forEach((r) => r.unregister())
-      // Reload once to fetch fresh assets without the old SW intercepting
-      window.location.reload()
-    }
+    regs.forEach((r) => r.unregister())
   })
 }
 

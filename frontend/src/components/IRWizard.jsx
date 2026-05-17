@@ -1,21 +1,21 @@
 /**
  * IRWizard — multi-step setup wizard for IR blaster virtual devices.
  *
- * Step 1: Pick a blaster (lists remote.* entities from HA)
+ * Step 1: Find blaster by IP (auto-scan + manual entry)
  * Step 2: Device details (name, type, room, brand)
- * Step 3: Learn commands (per-command rows with Learn + countdown + Test)
+ * Step 3: Learn commands — direct python-broadlink (captures raw code for receive matching)
  * Step 4: Done
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radio, ChevronLeft, ChevronRight, Check, Loader2,
-  Zap, Thermometer, Wind, Volume2, MonitorPlay, Plus, Trash2,
+  Zap, Thermometer, Wind, Volume2, MonitorPlay, Plus, Trash2, Wifi,
 } from 'lucide-react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
-import { getIrBlasters, createIrDevice, irLearn, irSend, getRooms } from '../lib/api'
+import { discoverIrBlasters, createIrDevice, irLearn, irSend, getRooms } from '../lib/api'
 import { cn } from '../lib/utils'
 
 const DEVICE_TYPES = [
@@ -61,49 +61,110 @@ function StepIndicator({ step, total }) {
 // ---------------------------------------------------------------------------
 
 function StepSelectBlaster({ selected, onSelect }) {
-  const [blasters, setBlasters] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [discovered, setDiscovered]   = useState([])
+  const [discovering, setDiscovering] = useState(false)
+  const [manualIp, setManualIp]       = useState('')
+  const [manualError, setManualError] = useState('')
 
-  useEffect(() => {
-    getIrBlasters()
-      .then(setBlasters)
-      .catch(() => setError('Could not load IR blasters from Home Assistant.'))
-      .finally(() => setLoading(false))
-  }, [])
+  const runDiscover = () => {
+    setDiscovering(true)
+    discoverIrBlasters()
+      .then(setDiscovered)
+      .catch(() => {})
+      .finally(() => setDiscovering(false))
+  }
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-12 text-zinc-400">
-      <Loader2 className="w-5 h-5 animate-spin mr-2" />
-      Loading blasters…
-    </div>
-  )
+  useEffect(() => { runDiscover() }, [])
 
-  if (error) return <p className="text-red-500 text-sm py-4">{error}</p>
+  const selectDirect = (host, label) =>
+    onSelect({ blaster_host: host, entity_id: null, label: label || host })
 
-  if (!blasters.length) return (
-    <p className="text-zinc-500 text-sm py-4">
-      No IR blasters found. Add a Broadlink device to Home Assistant first.
-    </p>
-  )
+  const handleManualIp = () => {
+    const ip = manualIp.trim()
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+      setManualError('Enter a valid IP address, e.g. 192.168.1.45')
+      return
+    }
+    setManualError('')
+    selectDirect(ip, `Broadlink at ${ip}`)
+  }
 
   return (
-    <div className="space-y-2">
-      {blasters.map((b) => (
-        <button
-          key={b.entity_id}
-          onClick={() => onSelect(b)}
-          className={cn(
-            'w-full text-left p-3 rounded-xl border transition-all',
-            selected?.entity_id === b.entity_id
-              ? 'border-violet-500 bg-violet-500/10'
-              : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700',
-          )}
-        >
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{b.friendly_name || b.entity_id}</p>
-          <p className="text-xs text-zinc-400 mt-0.5">{b.entity_id}</p>
-        </button>
-      ))}
+    <div className="space-y-4">
+
+      {/* Auto-discover results */}
+      {discovering ? (
+        <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Scanning network…
+        </div>
+      ) : discovered.length > 0 ? (
+        <div className="space-y-2">
+          {discovered.map((d) => {
+            const isSelected = selected?.blaster_host === d.host
+            return (
+              <button
+                key={d.host}
+                onClick={() => selectDirect(d.host, d.name || d.type)}
+                className={cn(
+                  'w-full text-left p-3 rounded-xl border transition-all',
+                  isSelected
+                    ? 'border-violet-500 bg-violet-500/10'
+                    : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700',
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{d.name || d.type}</p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 font-medium">IR receive</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">{d.host}</p>
+              </button>
+            )
+          })}
+          <button onClick={runDiscover} className="text-xs text-zinc-400 hover:text-zinc-500">Scan again</button>
+        </div>
+      ) : null}
+
+      {/* Manual IP — always visible, primary path when discovery fails */}
+      <div>
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
+          {discovered.length > 0 ? 'Or enter IP manually' : 'Enter your Broadlink IP address'}
+        </p>
+        <p className="text-[11px] text-zinc-400 mb-2">
+          Find it in your router's device list, or in HA → Settings → Integrations → Broadlink → Configure.
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={manualIp}
+            onChange={(e) => { setManualIp(e.target.value); setManualError('') }}
+            onKeyDown={(e) => e.key === 'Enter' && handleManualIp()}
+            placeholder="192.168.1.x"
+            className={cn(
+              'flex-1 h-9 px-3 rounded-xl text-sm border font-mono',
+              'bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100',
+              manualError
+                ? 'border-red-400'
+                : selected?.blaster_host === manualIp.trim() && manualIp.trim()
+                ? 'border-violet-500'
+                : 'border-zinc-200 dark:border-zinc-700',
+              'focus:outline-none focus:ring-2 focus:ring-violet-500/40',
+            )}
+          />
+          <button
+            onClick={handleManualIp}
+            disabled={!manualIp.trim()}
+            className="px-3 h-9 rounded-xl text-xs font-medium bg-violet-500 text-white disabled:opacity-40 hover:bg-violet-600 transition-colors"
+          >
+            Use this IP
+          </button>
+        </div>
+        {manualError && <p className="text-xs text-red-400 mt-1">{manualError}</p>}
+        {selected?.blaster_host && !selected?.entity_id && (
+          <p className="text-xs text-violet-500 mt-1.5">
+            Selected: {selected.blaster_host} — IR receive enabled
+          </p>
+        )}
+      </div>
+
     </div>
   )
 }
@@ -339,6 +400,12 @@ function StepDone({ deviceName }) {
         You can now control it with voice commands or from the Devices page.
         Add more commands any time by editing the device.
       </p>
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-200 dark:border-violet-800">
+        <Wifi className="w-4 h-4 text-violet-500 shrink-0" />
+        <p className="text-xs text-violet-700 dark:text-violet-300">
+          Physical remote detection is active. Ziggy will update device state when someone uses the original remote.
+        </p>
+      </div>
     </div>
   )
 }
@@ -388,7 +455,8 @@ export default function IRWizard({ onClose, onCreated }) {
           device_type: details.device_type,
           room: details.room.trim() || null,
           brand: details.brand.trim() || null,
-          blaster_entity_id: blaster.entity_id,
+          blaster_entity_id: `direct_${blaster.blaster_host}`,
+          blaster_host: blaster.blaster_host,
           ha_device_namespace: deviceNamespace,
           commands: commandMap,
         }

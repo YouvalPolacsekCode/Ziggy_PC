@@ -15,6 +15,7 @@ from typing import Callable, Dict, Any
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from services.home_automation import get_state
+from services.presence_store import any_home
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -26,6 +27,40 @@ _DEFAULT_COOLDOWN = 10   # minutes before re-alerting same sensor
 
 def _cfg() -> Dict[str, Any]:
     return settings.get(_CFG_KEY, {})
+
+
+def _check_conditions(conditions: Dict[str, Any]) -> bool:
+    """Return True if all conditions for this sensor allow the alert to fire."""
+    if not conditions:
+        return True
+
+    # Presence condition
+    presence = conditions.get("presence", "always")
+    if presence == "home" and not any_home():
+        return False
+    if presence == "away" and any_home():
+        return False
+
+    # Time window — both time_start and time_end must be set
+    time_start = conditions.get("time_start")
+    time_end   = conditions.get("time_end")
+    if time_start and time_end:
+        try:
+            now     = datetime.now()
+            current = now.hour * 60 + now.minute
+            sh, sm  = map(int, time_start.split(":"))
+            eh, em  = map(int, time_end.split(":"))
+            start_m, end_m = sh * 60 + sm, eh * 60 + em
+            if start_m <= end_m:
+                in_window = start_m <= current < end_m
+            else:                                      # overnight (e.g. 22:00 → 06:00)
+                in_window = current >= start_m or current < end_m
+            if not in_window:
+                return False
+        except Exception:
+            pass
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +134,10 @@ def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
                 if state != trigger or prev == trigger:
                     continue
 
+                # Conditions check (presence, time window) — skipped silently, no cooldown used
+                if not _check_conditions(sensor.get("conditions", {})):
+                    continue
+
                 # Cooldown check
                 now = datetime.now()
                 last = last_alert.get(entity_id)
@@ -108,9 +147,16 @@ def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
                 last_alert[entity_id] = now
                 log_info(f"[SensorAlerts] Alert: {label} → {state}")
                 try:
-                    notify_fn(f"🔔 {message}")
+                    from services.push_notify import push_notify_sync
+                    push_notify_sync(f"🔔 {label}", message, "/anomalies", f"sensor:{entity_id}")
                 except Exception as e:
-                    log_error(f"[SensorAlerts] notify_fn failed: {e}")
+                    log_error(f"[SensorAlerts] Push failed: {e}")
+                # Legacy notify_fn kept for any non-push callers
+                if notify_fn is not None:
+                    try:
+                        notify_fn(f"🔔 {message}")
+                    except Exception as e:
+                        log_error(f"[SensorAlerts] notify_fn failed: {e}")
 
         except Exception as e:
             log_error(f"[SensorAlerts] Poll error: {e}")

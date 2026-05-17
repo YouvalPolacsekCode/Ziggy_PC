@@ -38,19 +38,30 @@ def needs_ha(data: dict) -> bool:
       (call_service steps are now executed natively by execute_ziggy_actions)
     """
     trigger_type = data.get("trigger", {}).get("type", "")
-    return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook")
+    return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook", "zone")
 
 
 # ── Ziggy → HA ────────────────────────────────────────────────────────────────
 
 def _condition_to_ha(c: dict) -> Optional[dict]:
+    # ── Time-window condition ──────────────────────────────────────────────
+    if c.get("type") == "time":
+        result: dict = {"condition": "time"}
+        after  = (c.get("after")  or "").strip()
+        before = (c.get("before") or "").strip()
+        if after:
+            result["after"]  = after  + ":00" if len(after)  == 5 else after
+        if before:
+            result["before"] = before + ":00" if len(before) == 5 else before
+        return result if (after or before) else None
+
+    # ── Entity-state / numeric-state condition ─────────────────────────────
     entity_id = c.get("entity_id", "")
     if not entity_id:
         return None
     operator = c.get("operator", "is")
     value    = c.get("value", "on")
     if operator in ("is", "is_not"):
-        # is_not: flip on↔off (works for all binary_sensor values)
         state_val = ("off" if value == "on" else "on") if operator == "is_not" else str(value)
         return {"condition": "state", "entity_id": entity_id, "state": state_val}
     if operator == "above":
@@ -71,7 +82,13 @@ def _trigger_to_ha(t: dict) -> list:
     if kind == "time":
         return [{"platform": "time", "at": f"{t.get('time', '08:00')}:00"}]
     if kind == "state":
-        return [{"platform": "state", "entity_id": t.get("entity_id", ""), "to": t.get("state", "on")}]
+        cfg: dict = {"platform": "state", "entity_id": t.get("entity_id", ""), "to": t.get("state", "on")}
+        for_mins = t.get("for_minutes")
+        if for_mins:
+            mins = int(for_mins)
+            h, m = divmod(mins, 60)
+            cfg["for"] = f"{h:02d}:{m:02d}:00"
+        return [cfg]
     if kind == "numeric_state":
         cfg: dict = {"platform": "numeric_state", "entity_id": t.get("entity_id", "")}
         if t.get("above") is not None:
@@ -86,6 +103,13 @@ def _trigger_to_ha(t: dict) -> list:
         return [cfg]
     if kind == "webhook":
         return [{"platform": "webhook", "webhook_id": t.get("webhook_id", "ziggy_webhook"), "allowed_methods": ["POST"]}]
+    if kind == "zone":
+        return [{
+            "platform": "zone",
+            "entity_id": t.get("entity_id", ""),
+            "zone":      t.get("zone", "zone.home"),
+            "event":     t.get("event", "enter"),
+        }]
     return []
 
 
@@ -142,6 +166,8 @@ def _ha_trigger_to_ziggy(ha_triggers: list) -> dict:
         return {"type": t.get("event", "sunrise"), "offset": t.get("offset", "")}
     if platform == "webhook":
         return {"type": "webhook", "webhook_id": t.get("webhook_id", "")}
+    if platform == "zone":
+        return {"type": "zone", "entity_id": t.get("entity_id", ""), "zone": t.get("zone", "zone.home"), "event": t.get("event", "enter")}
     return {}
 
 

@@ -13,6 +13,10 @@ def find_user_by_token(token: str) -> dict | None:
     if not token:
         return None
     for user in settings.get("users", []):
+        # Check multi-session list first, fall back to legacy single token
+        for stored in user.get("session_tokens", []):
+            if stored and hmac.compare_digest(token, stored):
+                return user
         stored = user.get("session_token", "")
         if stored and hmac.compare_digest(token, stored):
             return user
@@ -20,6 +24,11 @@ def find_user_by_token(token: str) -> dict | None:
 
 
 async def get_current_user(request: Request) -> dict:
+    # Relay-authenticated request — trust injected user from middleware
+    relay_user = getattr(request.state, "relay_user", None)
+    if relay_user:
+        return relay_user
+
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip()
     user = find_user_by_token(token)

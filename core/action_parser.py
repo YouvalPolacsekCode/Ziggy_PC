@@ -7,8 +7,11 @@ add the intent name → function mapping to its HANDLERS dict. No changes needed
 """
 from __future__ import annotations
 
+import time
+
 from core.intent_utils import err
 from core.logger_module import log_info, log_error
+from core.debug_bus import bus, BASIC, VERBOSE, TRACE
 
 from core.handlers import (
     light_handler,
@@ -62,13 +65,19 @@ for _mod in [
 async def handle_intent(intent_result: dict, **kwargs) -> dict:
     intent = intent_result.get("intent")
     source = intent_result.get("source") or kwargs.get("source", "unknown")
+    request_id = intent_result.get("request_id") or kwargs.get("request_id")
+    dry_run = intent_result.get("dry_run", False)
 
     # Multi-intent envelope — dispatch each sub-intent sequentially and combine
     if intent == "__multi__":
         sub_intents = intent_result.get("intents") or []
+        bus.emit("intent", BASIC, "multi_intent_start",
+                 request_id=request_id, count=len(sub_intents), source=source)
         results = []
         any_ok = False
         for sub in sub_intents:
+            sub["request_id"] = request_id
+            sub["dry_run"] = dry_run
             r = await handle_intent(sub, **kwargs)
             results.append(r)
             if r.get("ok"):
@@ -87,16 +96,76 @@ async def handle_intent(intent_result: dict, **kwargs) -> dict:
     params = intent_result.get("params", {})
     log_info(f"[Intent Handler] intent={intent} source={source} params={params}")
 
+    handler = _ALL_HANDLERS.get(intent)
+
+    bus.emit("intent", BASIC, "intent_received",
+             request_id=request_id,
+             input=intent_result.get("_raw_input"),
+             intent=intent,
+             source=source,
+             handler=handler.__module__ if handler else None,
+             dry_run=dry_run)
+
+    bus.emit("intent", VERBOSE, "intent_params",
+             request_id=request_id,
+             intent=intent,
+             params=params)
+
+    if dry_run:
+        bus.emit("intent", BASIC, "dry_run_skipped",
+                 request_id=request_id,
+                 intent=intent,
+                 params=params,
+                 result="skipped",
+                 message="Dry-run: intent parsed but not executed.")
+        return {"ok": True, "dry_run": True, "intent": intent, "params": params,
+                "message": f"[Dry-run] Would execute: {intent} with params {params}"}
+
+    t0 = time.perf_counter()
     try:
-        handler = _ALL_HANDLERS.get(intent)
         if handler:
             result = await handler(params, source=source)
+            duration_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+            outcome = "ok" if result.get("ok") else "error"
+            bus.emit("intent", BASIC, "intent_result",
+                     request_id=request_id,
+                     intent=intent,
+                     result=outcome,
+                     duration_ms=duration_ms,
+                     message=result.get("message"),
+                     ok=result.get("ok", False))
+
+            bus.emit("intent", VERBOSE, "intent_result_detail",
+                     request_id=request_id,
+                     intent=intent,
+                     result=outcome,
+                     duration_ms=duration_ms,
+                     response=result,
+                     params=params)
+
             _log_event_safe(intent, params, result, source)
             return result
+
         log_info(f"[Intent Handler] Unrecognized intent: {intent}")
+        bus.emit("intent", BASIC, "intent_unrecognized",
+                 request_id=request_id,
+                 intent=intent,
+                 result="unrecognized",
+                 message="No handler registered for this intent.",
+                 suggestion="Check that the intent name matches a registered handler.")
         return err("I'm not sure how to help with that yet.")
+
     except Exception as e:
+        duration_ms = round((time.perf_counter() - t0) * 1000, 1)
         log_error(f"[Intent Handler] Exception handling '{intent}': {e}")
+        bus.emit("intent", BASIC, "intent_exception",
+                 request_id=request_id,
+                 intent=intent,
+                 result="exception",
+                 duration_ms=duration_ms,
+                 error=str(e),
+                 error_type=type(e).__name__)
         return err("Something went wrong while handling your request.", details=str(e))
 
 

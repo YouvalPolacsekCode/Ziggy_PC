@@ -108,15 +108,25 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
              store, then automation_id if neither is available.
     """
     import asyncio
+    import uuid as _uuid
     from core.logger_module import log_info, log_error
     from core.action_parser import handle_intent
+    from core.debug_bus import bus as _bus, BASIC, VERBOSE
+
+    request_id = f"auto_{_uuid.uuid4().hex[:8]}"
 
     if automation_id in _running_automations:
         log_info(f"[Executor] {automation_id} already running — duplicate trigger ignored")
+        _bus.emit("automation", BASIC, "automation_duplicate_trigger",
+                  request_id=request_id, automation_id=automation_id, label=label,
+                  result="skipped", message="Already running — duplicate trigger ignored.")
         return []
 
     _running_automations.add(automation_id)
     steps = get_ziggy_actions(automation_id)
+    _bus.emit("automation", BASIC, "automation_started",
+              request_id=request_id, automation_id=automation_id,
+              label=label, steps_count=len(steps))
     results: list[dict] = []
     prev_kind: str | None = None
 
@@ -125,7 +135,27 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
         conditions = get_automation_meta(automation_id).get("conditions") or []
         if conditions:
             from services.home_automation import get_state as _get_state
+            from datetime import datetime as _dt
             for cond in conditions:
+                # ── Time-window condition ──────────────────────────────────
+                if cond.get("type") == "time":
+                    now_hm = _dt.now().strftime("%H:%M")
+                    after  = (cond.get("after")  or "00:00")[:5]
+                    before = (cond.get("before") or "23:59")[:5]
+                    # overnight window: e.g. 21:00–07:00
+                    if after > before:
+                        passed = now_hm >= after or now_hm < before
+                    else:
+                        passed = after <= now_hm < before
+                    if not passed:
+                        log_info(
+                            f"[Executor] {automation_id} time condition not met: "
+                            f"{now_hm} not in {after}–{before} — skipped"
+                        )
+                        return []
+                    continue
+
+                # ── Entity-state condition ─────────────────────────────────
                 entity_id = cond.get("entity_id", "")
                 if not entity_id:
                     continue
@@ -162,6 +192,10 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
             kind = step.get("type", "")
             try:
                 log_info(f"[Executor] {automation_id} step {i+1}/{len(steps)}: {kind}")
+                _bus.emit("automation", VERBOSE, "automation_step",
+                          request_id=request_id, automation_id=automation_id,
+                          step_index=i + 1, steps_total=len(steps),
+                          step_type=kind, step_data={k: v for k, v in step.items() if k != "type"})
 
                 # ── HA service call executed directly by Ziggy ───────────────────
                 if kind == "call_service":
@@ -217,10 +251,11 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
 
                 # ── Notification ─────────────────────────────────────────────────
                 elif kind == "notify":
-                    msg = step.get("message", "")
+                    msg   = step.get("message", "")
+                    title = step.get("title", "Ziggy")
                     try:
-                        from interfaces.telegram_interface import send_message as tg_send
-                        await tg_send(msg)
+                        from services.push_notify import push_notify
+                        await push_notify(title, msg, "/", "automation")
                         result = {"ok": True, "message": "Notification sent"}
                     except Exception as e:
                         result = {"ok": False, "message": f"Notify failed: {e}"}
@@ -279,15 +314,33 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
 
             except asyncio.CancelledError:
                 log_error(f"[Executor] {automation_id} step {i+1} cancelled (server shutdown?)")
+                _bus.emit("automation", BASIC, "automation_step_cancelled",
+                          request_id=request_id, automation_id=automation_id,
+                          step_index=i + 1, step_type=kind, result="cancelled")
                 raise
             except Exception as exc:
                 log_error(f"[Executor] {automation_id} step {i+1} ({kind}) error: {exc}")
                 result = {"ok": False, "message": str(exc)}
+                _bus.emit("automation", BASIC, "automation_step_error",
+                          request_id=request_id, automation_id=automation_id,
+                          step_index=i + 1, step_type=kind,
+                          error=str(exc), error_type=type(exc).__name__,
+                          result="exception")
 
             results.append(result)
             prev_kind = kind
+            _bus.emit("automation", VERBOSE, "automation_step_done",
+                      request_id=request_id, automation_id=automation_id,
+                      step_index=i + 1, step_type=kind,
+                      result="ok" if result.get("ok") else "error",
+                      message=result.get("message"))
 
+        failed = [r for r in results if not r.get("ok")]
         log_info(f"[Executor] {automation_id} complete — {len(results)} steps")
+        _bus.emit("automation", BASIC, "automation_complete",
+                  request_id=request_id, automation_id=automation_id,
+                  label=label, steps_total=len(results), steps_failed=len(failed),
+                  result="ok" if not failed else "partial_failure")
 
         # Push result to all connected frontend clients so the UI can show a toast.
         try:
@@ -295,7 +348,6 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
             if not label:
                 meta = _load_meta().get(automation_id, {})
                 label = meta.get("name") or automation_id
-            failed = [r for r in results if not r.get("ok")]
             await manager.broadcast({
                 "type": "execution_result",
                 "label": label,

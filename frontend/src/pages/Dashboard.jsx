@@ -189,6 +189,9 @@ export default function Dashboard() {
   const [health,            setHealth]            = useState(null)
   const [reloading,         setReloading]         = useState(false)
   const [reloadMsg,         setReloadMsg]         = useState(null)
+  const [coordDismissedAt,  setCoordDismissedAt]  = useState(() => {
+    try { return parseInt(localStorage.getItem('coordWarnDismissed') || '0', 10) } catch { return 0 }
+  })
   const [presencePersons,   setPresencePersons]   = useState([])
   const { cameras, motionEvents, fetchCameras, fetchMotionHistory } = useCameraStore()
   // Snapshot refresh key per camera — increment to bust the browser cache
@@ -264,7 +267,7 @@ export default function Dashboard() {
     : 'Home is calm'
 
   const homePersons = presencePersons
-    .filter(p => p.state === 'home')
+    .filter(p => (p.effective_state ?? p.state) === 'home')
     .map(p => ({ name: p.name }))
 
   // Active rooms first
@@ -345,27 +348,38 @@ export default function Dashboard() {
           <span style={{ color: 'var(--ink-mute)' }}>Device control and automations will not work until the connection is restored.</span>
         </div>
       )}
-      {coordWarning && (
+      {coordWarning && coordDismissedAt !== health?.offline_count && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #ef4444 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, #ef4444 30%, transparent)', fontSize: 12, color: 'var(--ink)', flexWrap: 'wrap' }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
           <span style={{ fontWeight: 600 }}>
             {health.offline_count} devices offline.
           </span>
           <span style={{ color: 'var(--ink-mute)', flex: 1 }}>
-            This may indicate a coordinator or network issue.
+            Some devices may be unreachable.
           </span>
           {reloadMsg
-            ? <span style={{ fontSize: 11, color: reloadMsg.ok ? 'var(--ok)' : 'var(--accent)', fontFamily: '"IBM Plex Mono", monospace' }}>{reloadMsg.text}</span>
+            ? <span style={{ fontSize: 11, color: reloadMsg.ok ? 'var(--ok)' : 'var(--accent)', fontFamily: '"IBM Plex Mono", monospace' }}>{reloadMsg.ok ? reloadMsg.text : 'Could not reconnect. Try from Home Assistant.'}</span>
             : (
               <button
                 onClick={handleReloadZigbee}
                 disabled={reloading}
                 style={{ padding: '4px 10px', borderRadius: 7, background: '#ef4444', color: '#fff', border: 'none', cursor: reloading ? 'default' : 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', opacity: reloading ? 0.6 : 1, flexShrink: 0 }}
               >
-                {reloading ? 'Reloading…' : `Reload${health.coordinator_title ? ` ${health.coordinator_title}` : ' Zigbee'}`}
+                {reloading ? 'Reconnecting…' : 'Reconnect'}
               </button>
             )
           }
+          <button
+            onClick={() => {
+              const n = health.offline_count
+              try { localStorage.setItem('coordWarnDismissed', String(n)) } catch {}
+              setCoordDismissedAt(n)
+            }}
+            style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+            title="Dismiss"
+          >
+            ×
+          </button>
         </div>
       )}
       {!haOffline && !coordWarning && health?.offline_with_deps?.length > 0 && (

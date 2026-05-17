@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { Sun, Moon, Wifi, WifiOff } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useSuggestionStore } from '../../stores/suggestionStore'
+import { useAuthStore } from '../../stores/authStore'
 
 // Icons as minimal SVG paths — matching the design's stroke-based icon set
 function ZIcon({ name, size = 16 }) {
@@ -23,6 +24,7 @@ function ZIcon({ name, size = 16 }) {
     case 'cog':     return <svg {...props}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1c.5.5 1.3.6 1.8.3.6-.2 1-.8 1-1.5V3a2 2 0 0 1 4 0v.1c0 .7.4 1.3 1 1.5.5.3 1.3.2 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8c.2.6.8 1 1.5 1H21a2 2 0 0 1 0 4h-.1c-.7 0-1.3.4-1.5 1z"/></svg>
     case 'shield':  return <svg {...props}><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/></svg>
     case 'boxes':   return <svg {...props}><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42zM7 16.5l-4.74-2.85M7 16.5l5-3M7 16.5v5.17M12 13.5l4.74-2.85M12 13.5l-5-3M12 13.5v5.17M16.97 12.92A2 2 0 0 1 18 14.63v3.24a2 2 0 0 1-.97 1.71l-3 1.8a2 2 0 0 1-2.06 0L8 19v-5.5l5-3 3.97 2.42zM21 6.5l-4.74-2.85M21 6.5l-5 3M21 6.5v5.17M12 7.5l4.74-2.85M12 7.5l-5 3M12 7.5V2.33M7.03 6.92A2 2 0 0 0 6 8.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L16 13V7.5l-5-3-3.97 2.42z"/></svg>
+    case 'debug':   return <svg {...props}><path d="M9 9H5a2 2 0 0 0-2 2v1M9 9V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4M9 9h6m0 0h4a2 2 0 0 1 2 2v1M15 9V5M3 12v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5M8 17v1M12 17v1M16 17v1"/></svg>
     case 'bell':    return <svg {...props}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
     case 'camera':  return <svg {...props}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
     default: return null
@@ -48,6 +50,7 @@ const NAV_ITEMS = [
   { to: '/tasks',           icon: 'tasks',   label: 'Tasks' },
   { to: '/memory',          icon: 'brain',   label: 'Memory' },
   { to: '/settings',        icon: 'cog',     label: 'Settings' },
+  { to: '/debug',           icon: 'debug',   label: 'Debug', adminOnly: true },
 ]
 
 function NavItem({ to, icon, label, badge }) {
@@ -80,12 +83,15 @@ function NavItem({ to, icon, label, badge }) {
 export function Sidebar({ connected, features }) {
   const { theme, toggleTheme } = useUIStore()
   const { fetch: fetchSuggestions, pendingCount } = useSuggestionStore()
+  const { role } = useAuthStore()
+  const isSuperAdmin = role === 'super_admin'
 
   useEffect(() => { fetchSuggestions() }, [])
 
   const badges = { suggestions: pendingCount() }
   const visibleNav = NAV_ITEMS.filter(item => {
     if (item?.to === '/scenes' && !features?.scenes) return false
+    if (item?.adminOnly && !isSuperAdmin) return false
     return true
   })
 
@@ -139,26 +145,41 @@ export function Sidebar({ connected, features }) {
       </nav>
 
       {/* Footer */}
-      <div style={{
-        paddingTop: 12, borderTop: '0.5px solid var(--line)',
-        display: 'flex', alignItems: 'center', gap: 6,
-      }}>
-        <button
-          onClick={toggleTheme}
-          style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: 'var(--ink-faint)', padding: '4px', borderRadius: 6,
-            display: 'flex', alignItems: 'center',
-          }}
-          title="Toggle theme"
-        >
-          {theme === 'dark'
-            ? <Sun size={14} />
-            : <Moon size={14} />}
-        </button>
-        <span style={{ marginLeft: 'auto', color: connected ? 'var(--ok)' : 'var(--accent)' }}>
-          {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
-        </span>
+      <div style={{ paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
+        {isSuperAdmin && (
+          <NavLink
+            to="/cloud-admin"
+            style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 8px', borderRadius: 8, marginBottom: 6,
+              fontSize: 11, fontWeight: 600,
+              color: isActive ? 'var(--accent)' : 'var(--ink-faint)',
+              background: isActive ? 'var(--accent)10' : 'transparent',
+              textDecoration: 'none',
+            })}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/>
+            </svg>
+            Cloud Admin
+          </NavLink>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={toggleTheme}
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--ink-faint)', padding: '4px', borderRadius: 6,
+              display: 'flex', alignItems: 'center',
+            }}
+            title="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+          <span style={{ marginLeft: 'auto', color: connected ? 'var(--ok)' : 'var(--accent)' }}>
+            {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
+          </span>
+        </div>
       </div>
     </aside>
   )

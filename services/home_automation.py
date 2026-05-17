@@ -9,6 +9,7 @@ import requests
 
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
+from core.debug_bus import bus, BASIC, VERBOSE, TRACE
 
 DEFAULT_TIMEOUT: int = 10
 
@@ -41,37 +42,75 @@ def _ha_endpoint(path: str) -> str:
 # ---------------------------------------------------------------------------
 
 def call_service(domain: str, service: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    import time as _time
     endpoint = _ha_endpoint(f"/api/services/{domain}/{service}")
+    bus.emit("ha", VERBOSE, "ha_service_call",
+             domain=domain, service=service, payload=data, endpoint=endpoint)
+    t0 = _time.perf_counter()
     try:
         resp = requests.post(endpoint, headers=_headers(), json=data, timeout=DEFAULT_TIMEOUT)
+        duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
         if resp.status_code == 200:
             try:
                 payload = resp.json()
             except Exception:
                 payload = None
             log_info(f"[HA] {domain}.{service} OK | data={data}")
+            bus.emit("ha", BASIC, "ha_service_ok",
+                     domain=domain, service=service, duration_ms=duration_ms,
+                     result="ok")
             return {"ok": True, "message": "service call ok", "data": payload}
         log_error(f"[HA] {domain}.{service} failed: {resp.status_code} - {resp.text}")
+        bus.emit("ha", BASIC, "ha_service_error",
+                 domain=domain, service=service, duration_ms=duration_ms,
+                 status_code=resp.status_code, body=resp.text[:200],
+                 result="error",
+                 suggestion=f"Check HA logs for {domain}.{service} errors.")
         return {"ok": False, "message": f"HA {domain}.{service} error {resp.status_code}: {resp.text}"}
     except Exception as e:
+        duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
         log_error(f"[HA] Exception in call_service({domain}.{service}): {e}")
+        bus.emit("ha", BASIC, "ha_service_exception",
+                 domain=domain, service=service, duration_ms=duration_ms,
+                 error=str(e), error_type=type(e).__name__,
+                 result="exception",
+                 suggestion="Check HA connectivity and token validity.")
         return {"ok": False, "message": f"HA service exception: {e}"}
 
 
+_missing_entities: set[str] = set()  # suppress repeated 404 log noise
+
+
 def get_state(entity_id: str) -> Dict[str, Any]:
+    import time as _time
     endpoint = _ha_endpoint(f"/api/states/{entity_id}")
+    bus.emit("ha", TRACE, "ha_state_query", entity_id=entity_id)
+    t0 = _time.perf_counter()
     try:
         resp = requests.get(endpoint, headers=_headers(), timeout=DEFAULT_TIMEOUT)
+        duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
         if resp.status_code == 200:
             js = resp.json()
             data = {"state": js.get("state"), "attributes": js.get("attributes", {})}
+            _missing_entities.discard(entity_id)
             log_info(f"[HA] State {entity_id}: {data['state']}")
+            bus.emit("ha", VERBOSE, "ha_state_ok",
+                     entity_id=entity_id, state=data["state"], duration_ms=duration_ms,
+                     result="ok")
             return {"ok": True, "message": "ok", "data": data}
         if resp.status_code == 404:
-            # Entity not found — log as info not error (sensors can be temporarily unavailable)
-            log_info(f"[HA] Entity not found: {entity_id}")
+            if entity_id not in _missing_entities:
+                log_info(f"[HA] Entity not found: {entity_id}")
+                _missing_entities.add(entity_id)
+            bus.emit("ha", BASIC, "ha_entity_not_found",
+                     entity_id=entity_id, duration_ms=duration_ms,
+                     result="not_found",
+                     suggestion=f"Entity '{entity_id}' not found in HA. Check entity ID in device settings.")
         else:
             log_error(f"[HA] Failed to fetch state of {entity_id}: {resp.status_code} - {resp.text}")
+            bus.emit("ha", BASIC, "ha_state_error",
+                     entity_id=entity_id, status_code=resp.status_code,
+                     duration_ms=duration_ms, result="error")
         return {"ok": False, "message": f"HA state error {resp.status_code}: {resp.text}"}
     except Exception as e:
         log_error(f"[HA] Exception in get_state({entity_id}): {e}")

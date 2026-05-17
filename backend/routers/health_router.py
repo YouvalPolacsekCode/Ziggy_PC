@@ -2,7 +2,7 @@
 /api/health — structured system health snapshot.
 
 GET  /api/health          — live health state (cheap, reads in-memory cache only)
-POST /api/health/reload-zigbee — reload the ZHA integration via HA services
+POST /api/health/reload-zigbee — reload the Zigbee coordinator integration via HA services
 
 GET response fields:
   ha_connected          bool   — HA WebSocket is authenticated and live
@@ -10,8 +10,8 @@ GET response fields:
   offline_with_deps     list   — devices that are offline AND used by enabled automations
   battery_warnings      list   — devices / sensors reporting battery < threshold
   coordinator_warning   bool   — ≥3 physical devices offline simultaneously
-  coordinator_title     str    — friendly name of the ZHA integration ("Zigbee Home Automation")
-  coordinator_entry_id  str    — ZHA config entry id (used by reload endpoint)
+  coordinator_title     str    — friendly name of the coordinator integration
+  coordinator_entry_id  str    — config entry id used by the reload endpoint (empty = not found)
 """
 from __future__ import annotations
 
@@ -21,32 +21,54 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-# Cached ZHA entry — populated on first health request that detects coordinator_warning.
-# Ziggy supports exactly one coordinator per home so a single entry_id is sufficient.
-_zha_entry_cache: dict | None = None  # {"entry_id": str, "title": str} | None
-_zha_cache_checked: bool = False
+# Supported Zigbee coordinator integration domains, in preference order.
+# ZHA is the native HA integration; deCONZ covers ConBee/RaspBee; zigbee2mqtt
+# covers the official Zigbee2MQTT HA integration.
+_COORDINATOR_DOMAINS = ("zha", "deconz", "zigbee2mqtt")
+
+# Cached coordinator entry — populated on first health request that detects coordinator_warning.
+_coordinator_entry_cache: dict | None = None  # {"entry_id": str, "title": str} | None
+_coordinator_cache_checked: bool = False
 
 
-async def _discover_zha_entry() -> dict | None:
-    """Return the ZHA config entry dict from HA, or None. Cached after first successful lookup."""
-    global _zha_entry_cache, _zha_cache_checked
-    if _zha_cache_checked:
-        return _zha_entry_cache
+async def _discover_coordinator_entry() -> dict | None:
+    """Return the first recognised Zigbee coordinator config entry from HA, or None.
+
+    Detects the coordinator by scanning the HA entity registry for entities
+    whose platform matches a known Zigbee integration.  This works on all HA
+    versions because config/entity_registry/list is a stable WS command.
+    """
+    global _coordinator_entry_cache, _coordinator_cache_checked
+    if _coordinator_cache_checked:
+        return _coordinator_entry_cache
     try:
         from services.ha_areas import _ws
-        res, = await _ws({"type": "config_entries/list"})
-        entries = res.get("result") or []
-        for entry in entries:
-            if entry.get("domain") == "zha":
-                _zha_entry_cache = {
-                    "entry_id": entry["entry_id"],
-                    "title":    entry.get("title", "Zigbee Home Automation"),
-                }
-                break
-    except Exception:
-        pass
-    _zha_cache_checked = True
-    return _zha_entry_cache
+        from core.logger_module import log_info, log_error
+        res, = await _ws({"type": "config/entity_registry/list"})
+        entities = res.get("result") or []
+        domain_rank = {d: i for i, d in enumerate(_COORDINATOR_DOMAINS)}
+        # Find the best-ranked platform among all registered entities
+        best_rank = len(_COORDINATOR_DOMAINS)
+        best_entry_id = None
+        best_platform = None
+        for e in entities:
+            platform = e.get("platform") or ""
+            if platform in domain_rank and domain_rank[platform] < best_rank:
+                best_rank = domain_rank[platform]
+                best_entry_id = e.get("config_entry_id")
+                best_platform = platform
+        if best_entry_id and best_platform:
+            title = {"zha": "Zigbee Home Automation", "deconz": "deCONZ", "zigbee2mqtt": "Zigbee2MQTT"}.get(best_platform, best_platform.upper())
+            _coordinator_entry_cache = {"entry_id": best_entry_id, "title": title}
+            log_info(f"[Health] coordinator found via entity registry: {_coordinator_entry_cache}")
+        else:
+            platforms = sorted({e.get("platform") for e in entities if e.get("platform")})
+            log_error(f"[Health] no Zigbee coordinator found — platforms in entity registry: {platforms}")
+    except Exception as e:
+        from core.logger_module import log_error
+        log_error(f"[Health] _discover_coordinator_entry failed: {e}")
+    _coordinator_cache_checked = True
+    return _coordinator_entry_cache
 
 # Use entity_filter as the single source of truth for what counts as a "real" device.
 # This ensures offline_count matches exactly the entities visible on the Devices page,
@@ -131,14 +153,14 @@ async def get_health():
 
     coordinator_warning = len(offline_all) >= 3
 
-    # Discover ZHA entry when coordinator warning is active (lazy, cached after first hit)
+    # Discover coordinator entry when warning is active (lazy, cached after first hit)
     coordinator_entry_id = ""
     coordinator_title    = ""
     if coordinator_warning:
-        zha = await _discover_zha_entry()
-        if zha:
-            coordinator_entry_id = zha["entry_id"]
-            coordinator_title    = zha["title"]
+        coord = await _discover_coordinator_entry()
+        if coord:
+            coordinator_entry_id = coord["entry_id"]
+            coordinator_title    = coord["title"]
 
     return {
         "ha_connected":         ha_connected,
@@ -154,30 +176,56 @@ async def get_health():
 
 @router.post("/api/health/reload-zigbee")
 async def reload_zigbee():
-    """Reload the single ZHA integration via HA's homeassistant.reload_config_entry service.
+    """Reload the Zigbee coordinator integration via HA's homeassistant.reload_config_entry service.
 
-    Discovers the ZHA entry_id dynamically — no hardcoding needed.
+    Supports ZHA, deCONZ, and Zigbee2MQTT. Discovers the entry_id dynamically.
     Safe to call: HA reloads the integration gracefully without device data loss.
     """
-    global _zha_cache_checked  # allow retry on explicit reload request
+    global _coordinator_cache_checked  # allow retry on explicit reload request
 
     # Always re-discover on an explicit reload request (clears cache so fresh lookup happens)
-    _zha_cache_checked = False
-    zha = await _discover_zha_entry()
+    _coordinator_cache_checked = False
+    coord = await _discover_coordinator_entry()
 
-    if not zha:
-        return {"ok": False, "error": "No ZHA integration found in Home Assistant. Is ZHA installed and configured?"}
+    if not coord:
+        return {
+            "ok": False,
+            "error": (
+                "No Zigbee coordinator integration found in Home Assistant. "
+                "Devices may be offline or not paired — check Home Assistant."
+            ),
+        }
 
-    entry_id = zha["entry_id"]
-    title    = zha["title"]
+    entry_id = coord["entry_id"]
+    title    = coord["title"]
 
     try:
         from services.home_automation import call_service
         result = call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
         if result.get("ok"):
             from core.logger_module import log_info
-            log_info(f"[Health] ZHA reload triggered for entry '{entry_id}' ({title})")
-            return {"ok": True, "message": f"Reloading '{title}'. Zigbee devices will reconnect shortly."}
+            log_info(f"[Health] Coordinator reload triggered for entry '{entry_id}' ({title})")
+            return {"ok": True, "message": "Reconnecting devices. This may take a moment."}
         return {"ok": False, "error": result.get("message", "HA returned an error during reload.")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/health/debug-coordinator")
+async def debug_coordinator():
+    """Return Zigbee coordinator discovery result for diagnostics."""
+    global _coordinator_cache_checked
+    _coordinator_cache_checked = False  # force fresh lookup
+    coord = await _discover_coordinator_entry()
+    # Also return which platforms exist in entity registry
+    try:
+        from services.ha_areas import _ws
+        res, = await _ws({"type": "config/entity_registry/list"})
+        entities = res.get("result") or []
+        platforms = sorted({e.get("platform") for e in entities if e.get("platform")})
+    except Exception:
+        platforms = []
+    return {
+        "coordinator_found": coord,
+        "all_entity_platforms": platforms,
+    }

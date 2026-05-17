@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAuthStore } from '../../stores/authStore'
 
 function ZIcon({ name, size = 20 }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }
@@ -21,6 +22,7 @@ function ZIcon({ name, size = 20 }) {
     case 'camera':return <svg {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
     case 'cog':   return <svg {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1c.5.5 1.3.6 1.8.3.6-.2 1-.8 1-1.5V3a2 2 0 0 1 4 0v.1c0 .7.4 1.3 1 1.5.5.3 1.3.2 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8c.2.6.8 1 1.5 1H21a2 2 0 0 1 0 4h-.1c-.7 0-1.3.4-1.5 1z"/></svg>
     case 'shield':return <svg {...p}><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/></svg>
+    case 'debug': return <svg {...p}><path d="M9 9H5a2 2 0 0 0-2 2v1M9 9V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4M9 9h6m0 0h4a2 2 0 0 1 2 2v1M15 9V5M3 12v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5M8 17v1M12 17v1M16 17v1"/></svg>
     case 'boxes': return <svg {...p}><path d="M12 3l-8 4.5v9L12 21l8-4.5v-9L12 3zM12 3v18M4 7.5l8 4.5 8-4.5"/></svg>
     default: return null
   }
@@ -78,8 +80,15 @@ export function BottomNav({ connected, features }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [showMore, setShowMore] = useState(false)
+  const { role } = useAuthStore()
   const ziggyActive = location.pathname.startsWith('/chat')
-  const visibleMore = MORE_NAV.filter(item => !(item.to === '/scenes' && !features?.scenes))
+  const visibleMore = [
+    ...MORE_NAV.filter(item => !(item.to === '/scenes' && !features?.scenes)),
+    ...(role === 'super_admin' ? [
+      { to: '/cloud-admin', icon: 'shield', label: 'Cloud Admin' },
+      { to: '/debug',       icon: 'debug',  label: 'Debug' },
+    ] : []),
+  ]
   const isMoreActive = visibleMore.some(n => location.pathname.startsWith(n.to))
 
   return (

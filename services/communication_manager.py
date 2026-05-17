@@ -9,10 +9,6 @@ from typing import Any, Dict, List, Optional
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings
 
-try:
-    from interfaces.telegram_interface import send_direct_message as _tg_send
-except Exception:
-    _tg_send = None
 
 CONTACTS: Dict[str, Any] = settings.get("contacts", {})
 
@@ -166,23 +162,14 @@ def send_email_to_contact(name: str, subject: str, body: str) -> Dict[str, Any]:
         return {"ok": False, "message": f"Failed to send email: {e}", "data": {}}
 
 
-def quick_message(contact_name: str, text: str, channel: str = "telegram") -> Dict[str, Any]:
+def quick_message(contact_name: str, text: str, channel: str = "email") -> Dict[str, Any]:
     c = _contact_resolve(contact_name)
-    if channel == "telegram":
-        if not _tg_send:
-            return {"ok": False, "message": "Telegram interface not loaded.", "data": {}}
-        handle = c.get("telegram")
-        if not handle:
-            return {"ok": False, "message": f"Contact '{contact_name}' has no Telegram handle.", "data": {}}
-        try:
-            _tg_send(handle, text)
-            return {"ok": True, "message": f"Sent Telegram to {handle}.", "data": {}}
-        except Exception as e:
-            log_error(f"[comm.quick_message] {e}")
-            return {"ok": False, "message": f"Telegram send failed: {e}", "data": {}}
+    if channel == "email":
+        subject = "Message from Ziggy"
+        return send_email_to_contact(contact_name, subject, text)
     elif channel == "whatsapp":
         return _msg_send_whatsapp(c, text)
-    return {"ok": False, "message": f"Unsupported channel '{channel}'.", "data": {}}
+    return {"ok": False, "message": f"Unsupported channel '{channel}'. Use 'email' or 'whatsapp'.", "data": {}}
 
 
 def broadcast_announcement(text: str, rooms_or_all: str | List[str] = "all") -> Dict[str, Any]:
@@ -230,12 +217,11 @@ def _msg_send_whatsapp(contact: Dict[str, Any], text: str) -> Dict[str, Any]:
     # WhatsApp Cloud API requires a verified Meta Business Account with approved
     # message templates for initiating conversations. Without one, free-form messages
     # to most contacts will be rejected by the API (error 131030 / 131026).
-    # Recommend Telegram as the default quick-message channel instead.
     phone = contact.get("whatsapp")
     if not phone:
         return {
             "ok": False,
-            "message": "Contact has no WhatsApp number. Use Telegram instead (say: 'send [name] a Telegram message').",
+            "message": "Contact has no WhatsApp number.",
             "data": {},
         }
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
@@ -243,10 +229,7 @@ def _msg_send_whatsapp(contact: Dict[str, Any], text: str) -> Dict[str, Any]:
     if not (phone_id and token):
         return {
             "ok": False,
-            "message": (
-                "WhatsApp requires a Meta Business Account — not configured. "
-                "Use Telegram instead (say: 'send [name] a Telegram message')."
-            ),
+            "message": "WhatsApp requires a Meta Business Account — not configured.",
             "data": {},
         }
     import requests as req

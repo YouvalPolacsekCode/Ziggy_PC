@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUIStore } from '../stores/uiStore'
-import { getActiveAnomalies, getAnomalyHistory, snoozeMapAnomaly } from '../lib/api'
+import { getActiveAnomalies, getAnomalyHistory, snoozeMapAnomaly, getAnomalyRules, patchAnomalyRules } from '../lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -298,6 +298,9 @@ export default function Anomalies() {
   const [loading, setLoading] = useState(true)
   const [histLoading, setHistLoading] = useState(false)
 
+  const [rules, setRules] = useState(null)
+  const [engineEnabled, setEngineEnabled] = useState(true)
+
   const loadActive = useCallback(async () => {
     try {
       const r = await getActiveAnomalies()
@@ -321,6 +324,14 @@ export default function Anomalies() {
     }
   }, [])
 
+  const loadRules = useCallback(async () => {
+    try {
+      const r = await getAnomalyRules()
+      setRules(r.rules ?? [])
+      setEngineEnabled(r.engine_enabled ?? true)
+    } catch {}
+  }, [])
+
   useEffect(() => {
     loadActive()
   }, [])
@@ -328,6 +339,18 @@ export default function Anomalies() {
   useEffect(() => {
     if (tab === 'history') loadHistory()
   }, [tab])
+
+  useEffect(() => {
+    if (tab === 'rules') loadRules()
+  }, [tab])
+
+  const patchRule = async (id, patch) => {
+    const next = rules.map(r => r.id === id ? { ...r, ...patch } : r)
+    setRules(next)
+    try {
+      await patchAnomalyRules({ rules: [{ id, ...patch }] })
+    } catch { addToast('Failed to save', 'error') }
+  }
 
   // Flatten active anomalies to a list with roomId attached, sorted by severity
   const activeList = Object.entries(active)
@@ -346,6 +369,7 @@ export default function Anomalies() {
   const tabs = [
     { id: 'active',  label: 'Active',  count: activeList.length },
     { id: 'history', label: 'History', count: null },
+    { id: 'rules',   label: 'Rules',   count: null },
   ]
 
   return (
@@ -493,6 +517,88 @@ export default function Anomalies() {
                   isLast={i === history.length - 1}
                 />
               ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Rules tab ── */}
+      {tab === 'rules' && (
+        <>
+          {rules === null && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+              <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+            </div>
+          )}
+
+          {rules !== null && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Overall engine toggle */}
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Anomaly detection</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>Master switch for all anomaly rules</p>
+                </div>
+                <button
+                  className="z-toggle"
+                  aria-checked={engineEnabled}
+                  onClick={async () => {
+                    const next = !engineEnabled
+                    setEngineEnabled(next)
+                    try { await patchAnomalyRules({ engine_enabled: next }) }
+                    catch { addToast('Failed to save', 'error') }
+                  }}
+                />
+              </div>
+
+              {/* Rule cards */}
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+                {rules.map((rule, i) => {
+                  const sevColor = SEV_COLOR[rule.severity] || SEV_COLOR.warning
+                  return (
+                    <div key={rule.id} style={{ padding: '12px 16px', borderBottom: i < rules.length - 1 ? '0.5px solid var(--line)' : 'none', opacity: engineEnabled ? 1 : 0.5 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: rule.config ? 10 : 0 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: sevColor, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {rule.label}
+                            <span style={{
+                              fontSize: 9, fontFamily: '"IBM Plex Mono", monospace',
+                              color: sevColor,
+                              background: `color-mix(in srgb, ${sevColor} 12%, var(--surface))`,
+                              padding: '1px 5px', borderRadius: 4,
+                            }}>{rule.severity}</span>
+                          </p>
+                          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{rule.description}</p>
+                        </div>
+                        <button
+                          className="z-toggle"
+                          aria-checked={!!rule.enabled}
+                          disabled={!engineEnabled}
+                          onClick={() => patchRule(rule.id, { enabled: !rule.enabled })}
+                        />
+                      </div>
+                      {rule.config && rule.enabled && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 17 }}>
+                          <p style={{ fontSize: 11, color: 'var(--ink-mute)', flex: 1 }}>{rule.config.label}</p>
+                          <input
+                            type="number"
+                            min={1}
+                            value={rule.config.value ?? rule.config.default}
+                            onChange={e => {
+                              const val = parseInt(e.target.value)
+                              if (!isNaN(val)) patchRule(rule.id, { config_value: val })
+                            }}
+                            className="z-input"
+                            style={{ width: 70, height: 28, padding: '0 8px', fontSize: 12, textAlign: 'center' }}
+                          />
+                          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{rule.config.unit}</p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
         </>

@@ -1,32 +1,47 @@
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import json
 import math
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from backend.routers.auth_deps import require_role
+from backend.routers.auth_deps import get_current_user, require_role
 from services.home_automation import get_state
+from core.logger_module import log_info, log_error
+from core.settings_loader import settings, save_settings
 
 router = APIRouter()
 
 _REGISTRY = Path(__file__).resolve().parents[2] / "user_files" / "persons.json"
 
+# Asymmetric staleness: home state persists 8 h (phone backgrounded ≠ person left),
+# not-home state expires in 30 min (they may have returned without opening the app).
+_STALE_HOME_HOURS   = 8
+_STALE_AWAY_MINUTES = 30
+
 
 # ── persistence ───────────────────────────────────────────────────────────────
 
+def _ensure_registry() -> None:
+    """Create persons.json with an empty list if it doesn't exist."""
+    if not _REGISTRY.exists():
+        _REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+        _REGISTRY.write_text("[]", encoding="utf-8")
+
+
 def _load() -> list[dict]:
+    _ensure_registry()
     try:
         return json.loads(_REGISTRY.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
     except Exception:
         return []
 
@@ -36,20 +51,71 @@ def _save(persons: list[dict]) -> None:
     _REGISTRY.write_text(json.dumps(persons, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-# ── home zone (reads from HA zone.home) ───────────────────────────────────────
+# ── home zone ────────────────────────────────────────────────────────────────
 
 def _home_zone() -> tuple[float, float, float] | None:
-    """Return (lat, lon, radius_m) from HA zone.home, or None if unavailable."""
+    """Return (lat, lon, radius_m) for the home zone.
+
+    Priority:
+      1. Ziggy settings (home_zone key) — user configured directly in Ziggy
+      2. HA zone.home entity
+      3. HA /api/config (lat/lon from HA onboarding, 200 m radius)
+      4. None — nothing configured anywhere
+    """
+    # 1. Ziggy-native home zone (set by the user in Ziggy admin settings)
+    hz = settings.get("home_zone", {})
+    lat    = hz.get("lat")
+    lon    = hz.get("lon")
+    radius = hz.get("radius_m", 200)
+    if lat is not None and lon is not None:
+        return float(lat), float(lon), float(radius)
+
+    # 2. HA zone.home entity
     r = get_state("zone.home")
-    if not r.get("ok"):
-        return None
-    attrs = r.get("data", {}).get("attributes", {})
-    lat    = attrs.get("latitude")
-    lon    = attrs.get("longitude")
-    radius = attrs.get("radius", 100)
-    if lat is None or lon is None:
-        return None
-    return float(lat), float(lon), float(radius)
+    if r.get("ok"):
+        attrs  = r.get("data", {}).get("attributes", {})
+        ha_lat = attrs.get("latitude")
+        ha_lon = attrs.get("longitude")
+        ha_rad = max(attrs.get("radius", 200), 200)
+        if ha_lat is not None and ha_lon is not None:
+            return float(ha_lat), float(ha_lon), float(ha_rad)
+
+    # 3. HA core config
+    try:
+        from services.home_automation import _ha_url, _headers
+        import requests as _req
+        resp = _req.get(f"{_ha_url()}/api/config", headers=_headers(), timeout=5)
+        if resp.ok:
+            cfg    = resp.json()
+            ha_lat = cfg.get("latitude")
+            ha_lon = cfg.get("longitude")
+            if ha_lat is not None and ha_lon is not None:
+                log_info(f"[Presence] Using HA core config location ({ha_lat}, {ha_lon}) — set your home zone in Ziggy settings to stop this message")
+                return float(ha_lat), float(ha_lon), 200.0
+    except Exception as exc:
+        log_error(f"[Presence] Could not read HA config: {exc}")
+
+    return None
+
+
+def _extract_client_ip(request: Request) -> str:
+    """Real client IP — prefers X-Forwarded-For, then X-Real-IP, then socket peer."""
+    xff = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if xff:
+        return xff
+    xri = request.headers.get("X-Real-IP", "").strip()
+    if xri:
+        return xri
+    return request.client.host if request.client else ""
+
+
+def _is_local_ip(ip: str) -> bool:
+    """True if ip is RFC-1918 / loopback — phone is on the home LAN."""
+    try:
+        addr = ipaddress.ip_address(ip)
+        return addr.is_private or addr.is_loopback
+    except Exception:
+        return False
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -71,6 +137,72 @@ def _compute_state(lat: float, lon: float) -> str:
     return "home" if dist <= radius else "not_home"
 
 
+def _effective_state(person: dict) -> str:
+    """Degrade to 'unknown' if the ping is too stale for its state.
+
+    Home state lasts 8 h — the phone being backgrounded overnight shouldn't look
+    like the person left. Away state expires in 30 min — they may have come back
+    without opening the app.
+    """
+    last_seen = person.get("last_seen")
+    if last_seen is None:
+        return "unknown"
+    try:
+        ts    = datetime.fromisoformat(last_seen)
+        age   = datetime.now(timezone.utc) - ts
+        state = person.get("state", "unknown")
+        if state == "home":
+            if age > timedelta(hours=_STALE_HOME_HOURS):
+                return "unknown"
+        else:
+            if age > timedelta(minutes=_STALE_AWAY_MINUTES):
+                return "unknown"
+    except Exception:
+        return "unknown"
+    return person.get("state", "unknown")
+
+
+# ── state-transition event ────────────────────────────────────────────────────
+
+async def _fire_transition(name: str, prev_state: str | None, new_state: str) -> None:
+    """Called when a person's effective presence state changes.
+    Fires matching person_arrives / person_leaves automations.
+    Skips 'unknown' as a destination — unknown is a fallback, not an action trigger.
+    """
+    log_info(f"[Presence] {name}: {prev_state} → {new_state}")
+
+    # Push notification to all users
+    try:
+        from services.push_notify import push_notify
+        verb = "arrived home" if new_state == "home" else "left home"
+        await push_notify(f"{name} {verb}", "", "/", "presence")
+    except Exception as exc:
+        log_error(f"[Presence] Push notify failed: {exc}")
+
+    trigger_type = "person_arrives" if new_state == "home" else "person_leaves"
+
+    try:
+        from core.automation_file import list_automations
+        from services.local_automation_actions import execute_ziggy_actions
+
+        for auto in list_automations():
+            if not auto.get("enabled", True):
+                continue
+            t = auto.get("trigger", {})
+            if t.get("type") != trigger_type:
+                continue
+            person_filter = t.get("person", "*")
+            if person_filter != "*" and person_filter.lower() != name.lower():
+                continue
+            log_info(f"[Presence] Firing automation '{auto.get('name', auto['id'])}' for {trigger_type}")
+            try:
+                await execute_ziggy_actions(auto["id"])
+            except Exception as exc:
+                log_error(f"[Presence] Automation {auto['id']} failed: {exc}")
+    except Exception as exc:
+        log_error(f"[Presence] Transition handler error: {exc}")
+
+
 # ── models ────────────────────────────────────────────────────────────────────
 
 class PersonCreate(BaseModel):
@@ -84,11 +216,49 @@ class PingBody(BaseModel):
     accuracy: Optional[float] = None
 
 
-# ── admin endpoints ───────────────────────────────────────────────────────────
+def _find_my_person(username: str) -> dict | None:
+    """Return the person record linked to this user account.
+
+    Priority:
+      1. Explicit linked_user field set on the person record
+      2. Person's name appears somewhere in the username/email
+         (e.g. "Youval" matches "youvalpolacsek@gmail.com")
+    """
+    if not username:
+        return None
+    persons = _load()
+    uname_lower = username.lower()
+    for p in persons:
+        if p.get("linked_user", "").lower() == uname_lower:
+            return p
+    for p in persons:
+        if p["name"].lower() in uname_lower:
+            return p
+    return None
+
+
+# ── admin endpoints (require authenticated user) ───────────────────────────────
+
+@router.get("/api/presence/my-person")
+async def get_my_person(user=Depends(get_current_user)):
+    """Return the presence person linked to the authenticated user."""
+    person = _find_my_person(user.get("username", ""))
+    if person is None:
+        raise HTTPException(status_code=404, detail="No presence person linked to your account.")
+    return {"person": person}
+
 
 @router.get("/api/presence/persons")
-async def list_persons():
-    return {"persons": _load()}
+async def list_persons(_user=Depends(get_current_user)):
+    persons = _load()
+    # Attach effective_state to each person for the frontend
+    result = []
+    for p in persons:
+        row = dict(p)
+        row["effective_state"] = _effective_state(p)
+        # Strip token from list response for non-admin display; admin gets it via create
+        result.append(row)
+    return {"persons": result}
 
 
 @router.post("/api/presence/persons")
@@ -124,28 +294,92 @@ async def delete_person(person_id: str, _=Depends(require_role("admin"))):
     return {"ok": True}
 
 
+class StateOverride(BaseModel):
+    state: str  # "home" | "not_home" | "unknown"
+
+
+@router.patch("/api/presence/persons/{person_id}/state")
+async def override_state(person_id: str, body: StateOverride, _=Depends(require_role("admin"))):
+    """Manually force a person's presence state, bypassing GPS."""
+    if body.state not in ("home", "not_home", "unknown"):
+        raise HTTPException(status_code=400, detail="state must be 'home', 'not_home', or 'unknown'.")
+    persons = _load()
+    person  = next((p for p in persons if p["id"] == person_id), None)
+    if person is None:
+        raise HTTPException(status_code=404, detail="Person not found.")
+
+    prev_effective = _effective_state(person)
+    person["state"]     = body.state
+    person["last_seen"] = datetime.now(timezone.utc).isoformat()
+    _save(persons)
+
+    new_effective = body.state
+    if prev_effective != new_effective and new_effective != "unknown":
+        import asyncio
+        asyncio.create_task(_fire_transition(person["name"], prev_effective, new_effective))
+
+    return {"ok": True, "state": body.state}
+
+
 @router.get("/api/presence/zone")
-async def get_zone():
+async def get_zone(_user=Depends(get_current_user)):
     zone = _home_zone()
+    configured = settings.get("home_zone", {}).get("lat") is not None
     if zone is None:
-        raise HTTPException(status_code=503, detail="Home zone unavailable — check HA zone.home.")
+        return {"lat": None, "lon": None, "radius": None, "configured": False}
     lat, lon, radius = zone
-    return {"lat": lat, "lon": lon, "radius": radius}
+    return {"lat": lat, "lon": lon, "radius": radius, "configured": configured}
 
 
-# ── phone ping (no auth — secured by per-person token) ───────────────────────
+class ZonePatch(BaseModel):
+    lat:      float
+    lon:      float
+    radius_m: Optional[float] = 200.0
+
+
+@router.patch("/api/presence/zone")
+async def save_zone(body: ZonePatch, _=Depends(require_role("admin"))):
+    """Save the home zone directly in Ziggy settings."""
+    settings["home_zone"] = {
+        "lat":      round(body.lat, 6),
+        "lon":      round(body.lon, 6),
+        "radius_m": max(body.radius_m or 200.0, 50.0),
+    }
+    save_settings(settings)
+    log_info(f"[Presence] Home zone saved: {settings['home_zone']}")
+    return {"ok": True, **settings["home_zone"]}
+
+
+# ── phone ping (no JWT — secured by per-person token) ────────────────────────
 
 @router.post("/api/presence/ping")
-async def ping(body: PingBody):
+async def ping(body: PingBody, request: Request):
     persons = _load()
     person  = next((p for p in persons if p["token"] == body.token), None)
     if person is None:
         raise HTTPException(status_code=401, detail="Invalid token.")
-    person["state"]     = _compute_state(body.lat, body.lon)
+
+    prev_effective = _effective_state(person)
+
+    # WiFi detection: if the ping arrives from a private LAN IP the phone is on
+    # the home network — treat as home regardless of GPS accuracy.
+    # (Only works when accessing Ziggy directly on LAN, not through a relay.)
+    client_ip = _extract_client_ip(request)
+    if _is_local_ip(client_ip):
+        new_state = "home"
+    else:
+        new_state = _compute_state(body.lat, body.lon)
+
+    person["state"]     = new_state
     person["last_seen"] = datetime.now(timezone.utc).isoformat()
     person["last_lat"]  = body.lat
     person["last_lon"]  = body.lon
     _save(persons)
+
+    # Fire transition event if the effective state changed
+    if prev_effective != new_state and new_state != "unknown":
+        asyncio.create_task(_fire_transition(person["name"], prev_effective, new_state))
+
     return {"state": person["state"]}
 
 
@@ -153,7 +387,6 @@ async def ping(body: PingBody):
 
 @router.get("/presence/manifest.json")
 async def pwa_manifest(token: str = Query(default="")):
-    # start_url includes the token so "Add to Home Screen" reopens the right person's page
     start_url = f"/presence/join/{token}" if token else "/presence/join/"
     return JSONResponse({
         "name": "Ziggy Presence",
@@ -170,7 +403,7 @@ async def pwa_manifest(token: str = Query(default="")):
     })
 
 
-# ── PWA invite page (no auth — public, secured by token in URL) ───────────────
+# ── PWA invite page (no JWT — public, secured by token in URL) ────────────────
 
 @router.get("/presence/join/{token}", response_class=HTMLResponse)
 async def pwa_join(token: str):
@@ -180,7 +413,6 @@ async def pwa_join(token: str):
         return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=404)
 
     name = person["name"]
-    # Inline the token so the JS doesn't need a second round-trip
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -253,10 +485,9 @@ async def pwa_join(token: str):
     const PING_URL = "/api/presence/ping";
     const STORAGE_KEY = "ziggy_presence_token";
 
-    // Persist so "Add to Home Screen" → start_url still works even if manifest
-    // start_url token ever changes. On bare /presence/join/ visits, redirect to
-    // the stored token URL if we have one.
     localStorage.setItem(STORAGE_KEY, TOKEN);
+
+    let _lastPos = null;
 
     function isIOS() {{
       return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
@@ -286,7 +517,7 @@ async def pwa_join(token: str):
           setStatus("warn", "Location received");
         }}
       }} catch(e) {{
-        setStatus("err", "Can’t reach Ziggy — check Wi-Fi");
+        setStatus("err", "Can't reach Ziggy — check Wi-Fi");
       }}
     }}
 
@@ -301,6 +532,7 @@ async def pwa_join(token: str):
 
       navigator.geolocation.watchPosition(
         (pos) => {{
+          _lastPos = pos;
           btn.style.display = "none";
           if (isIOS()) document.getElementById("ios-hint").style.display = "block";
           sendPing(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
@@ -314,9 +546,23 @@ async def pwa_join(token: str):
             setStatus("err", "Location error: " + err.message);
           }}
         }},
-        {{ enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }}
+        {{ enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }}
       );
     }}
+
+    // Keep-alive: re-ping every 2 min with last known position.
+    // watchPosition only fires when position changes; this prevents the 30-min
+    // staleness window from expiring when the phone stays still.
+    setInterval(() => {{
+      if (_lastPos) sendPing(_lastPos.coords.latitude, _lastPos.coords.longitude, _lastPos.coords.accuracy);
+    }}, 2 * 60 * 1000);
+
+    // Re-ping immediately when the PWA comes back to the foreground.
+    document.addEventListener("visibilitychange", () => {{
+      if (document.visibilityState === "visible" && _lastPos) {{
+        sendPing(_lastPos.coords.latitude, _lastPos.coords.longitude, _lastPos.coords.accuracy);
+      }}
+    }});
 
     // Auto-start if permission was already granted
     navigator.permissions?.query({{ name: "geolocation" }}).then(p => {{

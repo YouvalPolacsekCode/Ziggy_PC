@@ -44,6 +44,112 @@ async def get_automations():
     return {"automations": ha_list_automations()}
 
 
+def _cap_snapshot(all_states, ir_devices=None):
+    """Build cap_map once and reuse across both template endpoints."""
+    from services.capability_matcher import detect_capabilities
+    from services.home_automation import get_all_states as _get
+    return detect_capabilities(all_states, ir_devices or [])
+
+
+def _enrich_template(tmpl, cap_map, existing_names=None):
+    """Return the serialisable template dict with all computed fields."""
+    from services.automation_templates import (
+        build_prefill, can_run as tmpl_can_run,
+        get_matched_caps, get_missing_required, get_missing_optional, friendly_cap,
+    )
+
+    runnable   = tmpl_can_run(tmpl, cap_map)
+    matched    = get_matched_caps(tmpl, cap_map)
+    miss_req   = get_missing_required(tmpl, cap_map)
+    miss_opt   = get_missing_optional(tmpl, cap_map)
+    prefill    = build_prefill(tmpl, cap_map) if runnable else None
+
+    # Friendly labels split into what you have vs. what's missing
+    matched_labels = [
+        {"cap": c, "label": friendly_cap(tmpl, c), "entity": (cap_map.get(c) or [None])[0]}
+        for c in matched
+    ]
+    missing_req_labels = [{"cap": c, "label": friendly_cap(tmpl, c)} for c in miss_req]
+    missing_opt_labels = [{"cap": c, "label": friendly_cap(tmpl, c)} for c in miss_opt]
+
+    already_exists = False
+    if existing_names is not None:
+        already_exists = tmpl["name"].lower() in existing_names
+
+    # Readiness tier: ready | partial | unavailable
+    relevant = tmpl.get("relevant_capabilities", [])
+    if runnable:
+        tier = "ready"
+    elif matched:
+        tier = "partial"
+    elif not relevant:
+        tier = "ready"          # no requirements (device_offline_alert)
+    else:
+        tier = "unavailable"
+
+    return {
+        **tmpl,
+        "can_run":             runnable,
+        "tier":                tier,
+        "wizard_prefill":      prefill,
+        "matched_labels":      matched_labels,
+        "missing_req_labels":  missing_req_labels,
+        "missing_opt_labels":  missing_opt_labels,
+        "already_exists":      already_exists,
+    }
+
+
+@router.get("/api/automations/templates")
+async def get_automation_templates():
+    """Return the full curated template library with runability flags."""
+    from services.automation_templates import TEMPLATES
+    from services.home_automation import get_all_states
+
+    all_states = get_all_states()
+    ir_devices: list = []
+    try:
+        from services.ir_manager import list_ir_devices
+        ir_devices = list_ir_devices()
+    except Exception:
+        pass
+    cap_map = _cap_snapshot(all_states, ir_devices)
+
+    return {"templates": [_enrich_template(t, cap_map) for t in TEMPLATES]}
+
+
+@router.get("/api/automations/templates/suggested")
+async def get_suggested_templates():
+    """Return templates that match the user's installed devices, with pre-filled wizard data."""
+    from services.automation_templates import TEMPLATES, matches_suggestion
+    from services.home_automation import get_all_states
+
+    all_states = get_all_states()
+    ir_devices: list = []
+    try:
+        from services.ir_manager import list_ir_devices
+        ir_devices = list_ir_devices()
+    except Exception:
+        pass
+    cap_map = _cap_snapshot(all_states, ir_devices)
+
+    existing_names: set = set()
+    try:
+        existing_names = {(a.get("name") or "").lower() for a in ha_list_automations()}
+    except Exception:
+        pass
+
+    suggested = [
+        _enrich_template(t, cap_map, existing_names)
+        for t in TEMPLATES
+        if matches_suggestion(t, cap_map)
+    ]
+    # Sort: ready first, then partial, then unavailable
+    order = {"ready": 0, "partial": 1, "unavailable": 2}
+    suggested.sort(key=lambda t: order.get(t["tier"], 3))
+
+    return {"suggested": suggested}
+
+
 @router.get("/api/automations/{automation_id}")
 async def get_automation_by_id(automation_id: str):
     a = get_automation_for_ui(automation_id)

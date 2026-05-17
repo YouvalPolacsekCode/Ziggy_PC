@@ -407,6 +407,7 @@ def _notify_pending(notify_fn) -> None:
     lines.append("\nSay 'accept <id>', 'reject <id>', or 'snooze <id>'.")
 
     try:
-        notify_fn("\n".join(lines))
+        body = "\n".join(lines[1:])  # everything after the header
+        notify_fn("Ziggy Suggestions", body, "/suggestions")
     except Exception as e:
         log_error(f"[SuggestionEngine] Notification failed: {e}")

@@ -7,14 +7,12 @@ from datetime import datetime, timedelta
 from threading import Thread
 
 import dateparser
-from telegram.helpers import escape_markdown
 
 TASK_FILE = "user_files/tasks.json"
 REMINDER_CHECK_INTERVAL = 60
 DEFAULT_PRIORITY = "medium"
 DEFAULT_DUE_DAYS = 2
 
-reminder_callback = None
 
 
 def load_tasks() -> list:
@@ -97,7 +95,7 @@ def list_tasks(formatted: bool = False):
     save_tasks(tasks)
     result = "📝 Your Tasks:\n\n" + "\n\n────────────\n\n".join(lines)
     if formatted:
-        return escape_markdown(result, version=2)
+        return result
     return lines
 
 
@@ -197,9 +195,7 @@ def remove_task(task_name: str) -> str:
     return f"🗑️ Task removed: {task_name}"
 
 
-def start_reminder_thread(telegram_callback):
-    global reminder_callback
-    reminder_callback = telegram_callback
+def start_reminder_thread():
     thread = Thread(target=check_reminders, daemon=True, name="Reminder")
     thread.start()
 
@@ -207,7 +203,6 @@ def start_reminder_thread(telegram_callback):
 def check_reminders():
     while True:
         now_dt = datetime.now()
-        now_str = now_dt.strftime("%Y-%m-%d %H:%M")
         tasks = load_tasks()
         updated = False
 
@@ -223,11 +218,12 @@ def check_reminders():
 
             if reminder_dt <= now_dt:
                 late = now_dt > reminder_dt
-                msg = f"🔔 Reminder: {t['task']} (Due: {t['due']})"
-                if late:
-                    msg += " [Late]"
-                if reminder_callback:
-                    reminder_callback(msg)
+                body = f"Due: {t.get('due', 'no due date')}" + (" [Late]" if late else "")
+                try:
+                    from services.push_notify import push_notify_sync
+                    push_notify_sync(f"Reminder: {t['task']}", body, "/tasks", "task_reminder")
+                except Exception:
+                    pass
                 t["reminded"] = True
                 updated = True
 

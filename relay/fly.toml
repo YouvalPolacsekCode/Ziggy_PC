@@ -1,0 +1,46 @@
+# fly.toml app configuration file generated for ziggy-relay on 2026-05-15T15:23:03+03:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'ziggy-relay'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  DATABASE_URL = '/data/relay.db'
+  HOMES_DIR = '/data/homes'
+  PORT = '8080'
+
+[[mounts]]
+  source = 'relay_data'
+  destination = '/data'
+
+[[services]]
+  protocol = 'tcp'
+  internal_port = 8080
+
+  [[services.ports]]
+    port = 80
+    handlers = ['http']
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ['tls', 'http']
+
+  [services.concurrency]
+    hard_limit = 200
+    soft_limit = 100
+
+  [[services.tcp_checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '5s'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512

@@ -17,18 +17,22 @@ _REQUIRED_KEYS = [
 
 
 def _validate(data: dict) -> None:
+    # In cloud mode (HOME_TYPE=cloud or CLOUD_MODE=true), HA and OpenAI are
+    # configured by the home owner after provisioning — not at boot time.
+    if os.getenv("CLOUD_MODE", "").lower() in ("1", "true", "yes") or \
+       data.get("home", {}).get("type") == "cloud":
+        return
+
     missing = []
     for section, key in _REQUIRED_KEYS:
         if not (data.get(section) or {}).get(key):
             missing.append(f"{section}.{key}")
     if missing:
         print(
-            f"\n[Ziggy] FATAL: Missing required config keys: {', '.join(missing)}\n"
-            f"Set them in {_config_path()} or via environment variables "
-            f"(HA_URL, HA_TOKEN, OPENAI_API_KEY).\n",
+            f"\n[Ziggy] WARNING: Missing config keys: {', '.join(missing)}. "
+            f"HA-dependent features will be unavailable until configured in Settings.\n",
             file=sys.stderr,
         )
-        sys.exit(1)
 
 
 def _config_path() -> str:
@@ -45,12 +49,16 @@ def load_settings() -> dict:
         with open(path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f) or {}
     except FileNotFoundError:
-        print(
-            f"\n[Ziggy] FATAL: Config file not found: {path}\n"
-            f"Create {_HOME_CONFIG} or set ZIGGY_CONFIG_PATH.\n",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        cloud = os.getenv("CLOUD_MODE", "").lower() in ("1", "true", "yes")
+        if cloud:
+            data = {}  # first boot: env vars supply all config; file created on first save
+        else:
+            print(
+                f"\n[Ziggy] FATAL: Config file not found: {path}\n"
+                f"Create {_HOME_CONFIG} or set ZIGGY_CONFIG_PATH.\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     # Environment variables override YAML values so secrets stay out of source control.
     ha = data.setdefault("home_assistant", {})
@@ -85,6 +93,23 @@ def load_settings() -> dict:
     serp = data.setdefault("serpapi", {})
     if os.getenv("SERPAPI_API_KEY"):
         serp["api_key"] = os.getenv("SERPAPI_API_KEY")
+
+    # Cloud home identity — set when provisioned via relay
+    home = data.setdefault("home", {})
+    if os.getenv("HOME_ID"):
+        home["id"] = os.getenv("HOME_ID")
+    if os.getenv("HOME_NAME"):
+        home["name"] = os.getenv("HOME_NAME")
+    if os.getenv("HOME_TYPE"):
+        home["type"] = os.getenv("HOME_TYPE")
+
+    relay = data.setdefault("relay", {})
+    if os.getenv("RELAY_URL"):
+        relay["url"] = os.getenv("RELAY_URL")
+    if os.getenv("RELAY_SECRET"):
+        relay["secret"] = os.getenv("RELAY_SECRET")
+    if os.getenv("TUNNEL_URL"):
+        relay["tunnel_url"] = os.getenv("TUNNEL_URL")
 
     _validate(data)
     return data
