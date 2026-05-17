@@ -18,6 +18,35 @@ _FAST_PATTERNS = [
 
 _TRIGGER_PREFIX = "ziggy do"
 
+# Fast-path patterns for features that will never be supported — return a
+# friendly "not available" response without calling GPT at all.
+# Vague multi-action phrases that look like commands but lack specific
+# device/room intent — should ask for clarification rather than guess.
+_VAGUE_MULTI_ACTION_PATTERNS = re.compile(
+    r"\b(make\s+(the\s+house|everything|it\s+all)\s+(comfortable|cozy|nice|perfect|warm|cool)|"
+    r"fix\s+(the\s+house|everything|the\s+place)|"
+    r"set\s+(the\s+mood|the\s+scene|the\s+vibe)|"
+    r"do\s+(the\s+thing|something|that\s+thing)(\s+from\s+(yesterday|before|earlier|last\s+time))?|"
+    r"make\s+it\s+(perfect|nice|better|cozy))\b",
+    re.IGNORECASE,
+)
+
+# Fast-path patterns for features that will never be supported — return a
+# friendly "not available" response without calling GPT at all.
+_UNSUPPORTED_PATTERNS = re.compile(
+    r"\b(movie\s+mode|cinema\s+mode|party\s+mode|sleep\s+mode\s+tv|"
+    r"open\s+youtube|play\s+youtube|launch\s+youtube|"
+    r"open\s+netflix|launch\s+netflix|"
+    r"open\s+spotify|launch\s+spotify|"
+    r"order\s+(pizza|food|groceries|uber|taxi)|"
+    r"call\s+an?\s+(uber|taxi|cab)|"
+    r"send\s+(whatsapp|imessage|sms\s+to)|"
+    r"control\s+my\s+(car|gate|garage\s+door\s+remote)|"
+    r"set\s+(alarm\s+clock|my\s+alarm)|"
+    r"wake\s+me\s+up\s+at)\b",
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # Post-parse confidence gate
 # ---------------------------------------------------------------------------
@@ -101,6 +130,19 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
             from core.debug_bus import bus, VERBOSE
             bus.emit("intent", VERBOSE, "fast_path_match", intent=intent, input=text)
             return {"intent": intent, "params": {}, "source": "fast"}
+
+    # Vague multi-action fast path — phrases like "make the house comfortable" or
+    # "fix the living room" are too ambiguous to execute; ask for clarification.
+    if _VAGUE_MULTI_ACTION_PATTERNS.search(lower):
+        from core.debug_bus import bus, VERBOSE
+        bus.emit("intent", VERBOSE, "vague_multi_action_fast_path", input=text)
+        return {"intent": "unrecognized_command", "params": {"text": text}, "source": "fast"}
+
+    # Unsupported-feature fast path — bypass GPT entirely for known-unavailable features.
+    if _UNSUPPORTED_PATTERNS.search(lower):
+        from core.debug_bus import bus, VERBOSE
+        bus.emit("intent", VERBOSE, "unsupported_feature_fast_path", input=text)
+        return {"intent": "unsupported_feature", "params": {"text": text}, "source": "fast"}
 
     return _parse_with_tools(text, chat_history=chat_history)
 

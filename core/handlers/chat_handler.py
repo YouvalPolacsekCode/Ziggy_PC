@@ -66,6 +66,15 @@ async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict
         f"You are Ziggy, the smart home assistant. The user's name is {user_name} (Hebrew: יובל). "
         "Always use this exact spelling when addressing them by name in Hebrew. "
         "Use the user's memory and tasks to answer contextually.\n\n"
+        "IMPORTANT: If the user's message looks like an incomplete smart home command or "
+        "automation request — such as 'create a routine', 'add a task', 'create a note', "
+        "'create an automation', 'set a reminder' — ask ONE specific clarifying question "
+        "to get the missing details. Do NOT just greet them. Examples:\n"
+        "  - 'create a routine' → 'Which room and device, and when should it trigger?'\n"
+        "  - 'add a task' → 'What task would you like to add?'\n"
+        "  - 'create a note' → 'What should I save in the note?'\n"
+        "  - 'set a reminder' → 'What should I remind you about, and when?'\n"
+        "For genuine conversation or questions, answer naturally.\n\n"
         f"User memory:\n{json.dumps(memory_context)}\n\n"
         f"Task list:\n{json.dumps(task_context)}"
     )
@@ -139,7 +148,19 @@ async def handle_unrecognized_command(params: dict, *, source: str = "unknown") 
     return ok(get_response_for("command_fallback", text))
 
 
+async def handle_unsupported_feature(params: dict, *, source: str = "unknown") -> dict:
+    text = (params.get("text") or "").strip()
+    is_hebrew = any('א' <= c <= 'ת' for c in text)
+    if is_hebrew:
+        return ok("הפונקציה הזו עדיין לא נתמכת. נסה: 'הדלק את האור בסלון', 'הוסף משימה', או 'מה הטמפרטורה בחדר שינה'.")
+    return ok(
+        "That feature isn't available yet. "
+        "Try: 'turn on the living room light', 'add a task', or 'what's the temperature in the bedroom'."
+    )
+
+
 HANDLERS = {
     "chat_with_gpt": handle_chat_with_gpt,
     "unrecognized_command": handle_unrecognized_command,
+    "unsupported_feature": handle_unsupported_feature,
 }

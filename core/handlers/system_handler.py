@@ -73,6 +73,122 @@ async def handle_ziggy_chat(params: dict, *, source: str = "unknown") -> dict:
     return ok("Did you know octopuses have three hearts and blue blood?")
 
 
+async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
+    from core.debug_bus import bus, _LEVEL_NAMES, _LEVEL_VALUES
+    from core.settings_loader import settings, save_settings
+
+    action = params.get("action", "status")
+    level  = params.get("level")
+    scope  = params.get("scope", "")
+    limit  = int(params.get("limit") or 10)
+
+    if action == "enable":
+        new_level = level or "verbose"
+        bus.set_level(new_level)
+        settings.setdefault("debug", {})["level"] = new_level
+        save_settings(settings)
+        return ok(f"Debug mode enabled at level **{new_level}**. Open /debug to see live events.")
+
+    if action == "disable":
+        bus.set_level("off")
+        settings.setdefault("debug", {})["level"] = "off"
+        save_settings(settings)
+        return ok("Debug mode disabled.")
+
+    if action == "set_level":
+        if not level or level not in _LEVEL_VALUES:
+            return ok("Valid levels: off, basic, verbose, trace. Example: 'set debug to verbose'.")
+        bus.set_level(level)
+        settings.setdefault("debug", {})["level"] = level
+        save_settings(settings)
+        return ok(f"Debug level set to **{level}**.")
+
+    if action == "status":
+        cfg = bus.get_config()
+        lvl = cfg["level"]
+        scopes = cfg["scopes"] or ["all"]
+        buffered = cfg["buffered"]
+        return ok(
+            f"Debug is **{lvl}**. Scopes: {', '.join(scopes)}. "
+            f"{buffered} events buffered. Open **/debug** to explore."
+        )
+
+    if action == "show_failures":
+        events = bus.get_events(limit=limit, scope=scope or None, result="error")
+        if not events:
+            events = bus.get_events(limit=limit, scope=scope or None, result="exception")
+        if not events:
+            return ok("No failed actions in the debug buffer. Make sure debug is enabled (try 'enable debug').")
+        lines = []
+        for ev in reversed(events[-limit:]):
+            d = ev.get("data", {})
+            ts = ev["ts"][11:19]
+            msg = d.get("message") or d.get("error") or ev["step"]
+            suggestion = d.get("suggestion", "")
+            lines.append(f"• [{ts}] **{ev['scope']}** › {ev['step']}: {msg}")
+            if suggestion:
+                lines.append(f"  → {suggestion}")
+        return ok("**Recent failures:**\n" + "\n".join(lines))
+
+    if action == "show_recent":
+        events = bus.get_events(limit=limit, scope=scope or None)
+        if not events:
+            return ok("No events in debug buffer. Enable debug first: 'enable debug mode'.")
+        lines = []
+        for ev in events[-limit:]:
+            d = ev.get("data", {})
+            ts = ev["ts"][11:19]
+            result = d.get("result", "")
+            flag = "✓" if result == "ok" else ("✗" if result in ("error", "exception") else "·")
+            lines.append(f"{flag} [{ts}] [{ev['scope']}] {ev['step']}")
+        return ok(f"**Last {len(lines)} debug events:**\n" + "\n".join(lines))
+
+    if action == "explain_last":
+        # Find the most recent intent_result event
+        all_events = bus.get_events(limit=200)
+        result_events = [
+            e for e in reversed(all_events)
+            if e["scope"] == "intent" and e["step"] in ("intent_result", "intent_exception", "intent_unrecognized")
+        ]
+        if not result_events:
+            return ok("No recent intent results in debug buffer. Enable debug and send a command first.")
+
+        ev = result_events[0]
+        d = ev.get("data", {})
+        req_id = ev.get("request_id")
+        intent = d.get("intent", "unknown")
+        result = d.get("result", "unknown")
+        msg = d.get("message", "")
+        duration = d.get("duration_ms")
+
+        # Gather all events for the same request
+        chain = [e for e in all_events if e.get("request_id") == req_id] if req_id else [ev]
+        steps = [e["step"] for e in chain]
+
+        explanation = [f"**Last action:** {intent}"]
+        explanation.append(f"**Result:** {result}" + (f" ({duration}ms)" if duration else ""))
+        if msg:
+            explanation.append(f"**Message:** {msg}")
+        if d.get("suggestion"):
+            explanation.append(f"**Suggestion:** {d['suggestion']}")
+        explanation.append(f"**Pipeline:** {' → '.join(steps)}")
+        if req_id:
+            explanation.append(f"**Request ID:** `{req_id}` (filter in /debug for full trace)")
+
+        return ok("\n".join(explanation))
+
+    return ok(f"Unknown debug action: {action}")
+
+
+async def handle_list_rooms(params: dict, *, source: str = "unknown") -> dict:
+    from core.settings_loader import settings
+    rooms = sorted(settings.get("room_aliases", {}).keys())
+    if not rooms:
+        return ok("No rooms configured yet. Add rooms in Settings.")
+    lines = ", ".join(r.title() for r in rooms)
+    return ok(f"Your configured rooms: {lines}.")
+
+
 HANDLERS = {
     "get_time": handle_get_time,
     "get_date": handle_get_date,
@@ -89,4 +205,6 @@ HANDLERS = {
     "ziggy_identity": handle_ziggy_identity,
     "ziggy_help": handle_ziggy_help,
     "ziggy_chat": handle_ziggy_chat,
+    "debug_mode": handle_debug_mode,
+    "list_rooms": handle_list_rooms,
 }

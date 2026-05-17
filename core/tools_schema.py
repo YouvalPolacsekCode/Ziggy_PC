@@ -395,7 +395,12 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "list_tasks",
-        "description": "Show all current tasks and reminders",
+        "description": (
+            "Show all current tasks and to-do items. "
+            "Use ONLY when the user explicitly asks to SEE, SHOW, or LIST their tasks. "
+            "Do NOT use for 'remind me' — that is add_task. "
+            "Do NOT use for 'what do I have to do' if it sounds like they want to create something."
+        ),
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
@@ -575,6 +580,15 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "ziggy_help",
         "description": "Ask what Ziggy can do or what commands are available",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "list_rooms",
+        "description": (
+            "List all configured rooms in the home. Use when the user asks: "
+            "'what rooms do I have', 'which rooms are configured', 'what rooms are there', "
+            "'show me my rooms', 'list rooms'."
+        ),
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {

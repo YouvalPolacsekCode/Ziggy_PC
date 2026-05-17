@@ -132,7 +132,13 @@ def build_context_hint() -> str:
 
     ctx = get_context()
     if not ctx or not ctx.get("room"):
-        return ""
+        # No prior device context — tell GPT not to guess when pronouns are used.
+        return (
+            "\n\nConversation context: none. "
+            "If the user uses pronouns ('it', 'that', 'the light', 'the device') or a generic "
+            "device name without specifying a room, do NOT guess a room — fall through as "
+            "unrecognized so the user is prompted to clarify which room and device they mean."
+        )
     room_name = ctx["room"].replace("_", " ")
     dtype = ctx.get("device_type") or "device"
     entity = ctx.get("entity_id") or ""
