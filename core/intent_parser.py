@@ -14,6 +14,11 @@ _FAST_PATTERNS = [
     (re.compile(r"מה התאריך|איזה תאריך"), "get_date"),
     (re.compile(r"\b(what day|which day|day of the week|what weekday)\b"), "get_day_of_week"),
     (re.compile(r"איזה יום|מה היום"), "get_day_of_week"),
+    # Good-night fast paths — these have no action vocab so they'd be blocked by the
+    # confidence gate; bypass GPT entirely and map straight to turn_off_everything.
+    (re.compile(r"^(good\s*night|goodnight|night\s+mode|לילה\s+טוב|לילה-טוב)$", re.IGNORECASE), "turn_off_everything"),
+    # Going-to-sleep phrases that imply shutting everything down
+    (re.compile(r"^(going\s+to\s+sleep|i'?m\s+going\s+to\s+sleep|off\s+to\s+bed|ללכת\s+לישון|הולך\s+לישון|הולכת\s+לישון)$", re.IGNORECASE), "turn_off_everything"),
 ]
 
 _TRIGGER_PREFIX = "ziggy do"
