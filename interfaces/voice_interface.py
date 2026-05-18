@@ -1,6 +1,7 @@
 # interfaces/voice_interface.py
 
 import os
+import re
 import tempfile
 import uuid
 import time
@@ -57,12 +58,15 @@ recognizer.pause_threshold = 1.0            # wait 1s of silence before cutting 
 
 _whisper_base = None
 _whisper_hebrew = None
+_whisper_lock = __import__("threading").Lock()
 
 def _get_whisper() -> WhisperModel:
     """Local base model — used for language detection and English transcription."""
     global _whisper_base
     if _whisper_base is None:
-        _whisper_base = WhisperModel("base", compute_type="int8")
+        with _whisper_lock:
+            if _whisper_base is None:
+                _whisper_base = WhisperModel("base", compute_type="int8")
     return _whisper_base
 
 
@@ -71,15 +75,37 @@ def _get_whisper_hebrew() -> WhisperModel | None:
     global _whisper_hebrew
     if _whisper_hebrew is not None:
         return _whisper_hebrew
-    try:
-        t0 = time.time()
-        _whisper_hebrew = WhisperModel(HEBREW_MODEL_ID, compute_type="int8")
-        print(f"[TIMING] hebrew-model-load: {time.time() - t0:.2f}s ({HEBREW_MODEL_ID})")
-        return _whisper_hebrew
-    except Exception as e:
-        print(f"[STT] Hebrew model load failed ({e}) — will fall back to API")
-        return None
+    with _whisper_lock:
+        if _whisper_hebrew is not None:
+            return _whisper_hebrew
+        try:
+            t0 = time.time()
+            _whisper_hebrew = WhisperModel(HEBREW_MODEL_ID, compute_type="int8")
+            print(f"[TIMING] hebrew-model-load: {time.time() - t0:.2f}s ({HEBREW_MODEL_ID})")
+            return _whisper_hebrew
+        except Exception as e:
+            print(f"[STT] Hebrew model load failed ({e}) — will fall back to API")
+            return None
 
+
+def _prewarm_models() -> None:
+    """Load both Whisper models at startup so the first voice request is instant."""
+    try:
+        _get_whisper()
+        _get_whisper_hebrew()
+        print("[Voice] Whisper models pre-warmed and ready.")
+    except Exception as e:
+        print(f"[Voice] Pre-warm partial failure: {e}")
+
+# Kick off pre-warming immediately — daemon thread so it doesn't block shutdown.
+__import__("threading").Thread(target=_prewarm_models, daemon=True, name="WhisperPrewarm").start()
+
+
+_HE_INITIAL_PROMPT = (
+    "זיגי, הדלק, כבה, מזגן, תאורה, אור, סלון, משרד, מטבח, חדר שינה, "
+    "תריסים, מאוורר, טמפרטורה, לחות, מצב הבית, לילה טוב, "
+    "הגדר, כוון, הוסף משימה, תזכורת"
+)
 
 def _transcribe_local_hebrew(audio_path: str) -> tuple[str, str]:
     """Transcribe Hebrew audio using the local ivrit-ai model. No API cost."""
@@ -88,7 +114,16 @@ def _transcribe_local_hebrew(audio_path: str) -> tuple[str, str]:
     if model is None:
         return _transcribe_api(audio_path)
     try:
-        segments_iter, _ = model.transcribe(audio_path, beam_size=5, language="he")
+        segments_iter, _ = model.transcribe(
+            audio_path,
+            beam_size=1,           # was 5 — beam_size=1 is ~5x faster, fine for short commands
+            temperature=0,         # greedy decoding, no sampling overhead
+            language="he",
+            initial_prompt=_HE_INITIAL_PROMPT,
+            vad_filter=True,       # skip silence at start/end — reduces effective audio length
+            condition_on_previous_text=False,  # no inter-segment dependency overhead
+            without_timestamps=True,
+        )
         text = " ".join(s.text for s in segments_iter).strip()
         print(f"[TIMING] hebrew-local-stt: {time.time() - t0:.2f}s")
         return text, "he"
@@ -115,11 +150,21 @@ def _transcribe_api(audio_path: str) -> tuple[str, str]:
         print(f"[STT] OpenAI API failed ({e}) — returning empty")
         return "", "he"
 
-# ===== Piper TTS =====
+# ===== TTS engine config =====
 _REPO_ROOT = Path(__file__).parent.parent
-_PIPER_EXE = shutil.which("piper") or shutil.which("piper.exe")
-_PIPER_VOICE = _REPO_ROOT / "piper_voices" / "en_US-libritts_r-medium.onnx"
+TTS_ENGINE       = VOICE_CFG.get("tts_engine", "piper").lower()
+
+# ── Piper ──────────────────────────────────────────────────────────────────
+_PIPER_EXE      = shutil.which("piper") or shutil.which("piper.exe")
+_PIPER_VOICE    = _REPO_ROOT / "piper_voices" / "en_US-libritts_r-medium.onnx"
 _PIPER_VOICE_HE = _REPO_ROOT / "piper_voices" / "he_IL-sivri-medium.onnx"
+
+# ── Azure Cognitive Services Neural TTS ────────────────────────────────────
+_AZURE_CFG      = VOICE_CFG.get("azure") or {}
+_AZURE_KEY      = _AZURE_CFG.get("speech_key") or os.environ.get("AZURE_SPEECH_KEY", "")
+_AZURE_REGION   = _AZURE_CFG.get("speech_region", "eastus")
+_AZURE_VOICE_HE = _AZURE_CFG.get("voice_he", "he-IL-HilaNeural")
+_AZURE_VOICE_EN = _AZURE_CFG.get("voice_en", "en-US-JennyNeural")
 
 # ===== Hebrew helpers =====
 def is_hebrew(text: str) -> bool:
@@ -133,17 +178,286 @@ except ImportError:
     def fix_hebrew_direction(text: str) -> str:
         return text or ""
 
+# ===== Instant Hebrew replies =============================================
+# Pre-translated responses for the 15 most common action patterns.
+# Zero latency, zero API cost, grammatically correct Israeli Hebrew.
+# _translate() tries this first; falls through to Ollama/GPT for unknowns.
+
+# Build reverse map: English slug → preferred Hebrew room name (longest wins)
+_EN_SLUG_TO_HE: dict[str, str] = {}
+for _he_r, _slug_r in settings.get("room_aliases_he", {}).items():
+    if len(_he_r) > len(_EN_SLUG_TO_HE.get(_slug_r, "")):
+        _EN_SLUG_TO_HE[_slug_r] = _he_r
+
+def _room_to_he(display: str) -> str:
+    """Convert English room display name from a handler response to Hebrew."""
+    slug = display.strip().lower().replace(" ", "_")
+    return _EN_SLUG_TO_HE.get(slug, display)
+
+# Regex patterns for handler response strings (all anchored to full message)
+# ── Lights ────────────────────────────────────────────────────────────────────
+_P_LIGHT_ON     = re.compile(r"^Turning on (.+?) light\.$")
+_P_LIGHT_OFF    = re.compile(r"^Turning off (.+?) light\.$")
+_P_LIGHT_COLOR  = re.compile(r"^(.+?) [Ll]ight color set to (.+?)\.$")
+_P_LIGHT_DIM    = re.compile(r"^(.+?) [Ll]ight brightness set to (\d+)%\.$")
+_P_ALL_LIGHTS   = re.compile(r"^All lights turned off \(\d+ lights?\)\.$")
+_P_ROOM_LIGHTS  = re.compile(r"^Turned (?:on|off) all lights in (.+?) \(\d+ lights?\)\.$")
+_P_ALREADY_OFF  = re.compile(r"^All lights are already off\.$")
+# ── AC ───────────────────────────────────────────────────────────────────────
+_P_AC_ON        = re.compile(r"^Turning on (.+?) AC\.$")
+_P_AC_OFF       = re.compile(r"^Turning off (.+?) AC\.$")
+_P_AC_TEMP      = re.compile(r"^Setting (.+?) AC to (\d+)°C\.$")
+# ── TV ───────────────────────────────────────────────────────────────────────
+_P_TV_ON        = re.compile(r"^Turning on the TV\.$")
+_P_TV_OFF       = re.compile(r"^Turning off the TV\.$")
+_P_TV_SOURCE    = re.compile(r"^Switching TV to (.+?)\.$")
+# ── Notes / files ─────────────────────────────────────────────────────────────
+_P_NOTE_SAVED   = re.compile(r"^Note saved\.")
+_P_NOTE_ASK     = re.compile(r"^What should I save in the note\?$")
+_P_NOTE_APPEND  = re.compile(r"^Which note should I append to\?$")
+_P_NOTE_WHAT    = re.compile(r"^What should I append\?$")
+_P_NOTE_SEARCH  = re.compile(r"^What should I search for in your notes\?$")
+_P_NOTE_NONE    = re.compile(r"^No notes found matching '(.+?)'\.$")
+# ── Sensors ───────────────────────────────────────────────────────────────────
+_P_SENSOR_VAL   = re.compile(r"^The (\w+) in (.+?) is ([\d.]+)\s*(.*)\.$")
+_P_SENSOR_NA    = re.compile(r"^The (\w+) in (.+?) is currently unavailable\.$")
+# ── Everything off ────────────────────────────────────────────────────────────
+_P_ALL_OFF      = re.compile(r"^Everything off\.")
+# ── Clarifications ────────────────────────────────────────────────────────────
+_P_WHICH_ROOM   = re.compile(r"Which room'?s?\b")
+_P_WHICH_DEVICE = re.compile(r"Which device\b", re.IGNORECASE)
+_P_WHICH_TASK   = re.compile(r"Which task\b", re.IGNORECASE)
+# ── Automations ───────────────────────────────────────────────────────────────
+_P_AUTO_CREATED = re.compile(r"^Done! '(.+)' has been set up\.$")
+_P_AUTO_UPDATED = re.compile(r"^Done! '(.+)' has been updated\.$")
+_P_AUTO_ASSIGNED= re.compile(r"^Done! '(.+)' is now assigned to (.+)\.$")
+_P_AUTO_DELETED = re.compile(r"^Automation '(.+)' deleted\.$")
+_P_AUTO_ENABLED = re.compile(r"^Automation '(.+)' (enabled|disabled)\.$")
+_P_AUTO_NONE    = re.compile(r"^No automations found\.$")
+_P_AUTO_MISSING = re.compile(r"^Which room and device should this automation control")
+_P_AUTO_LIST    = re.compile(r"^You have (\d+) automations?:\n")
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+_P_TASK_ADDED   = re.compile(r"^Task added: (.+?) \(due: (.+?), priority: (.+?)\)$")
+_P_TASK_NONE    = re.compile(r"^(?:📭 )?No tasks yet\.$")
+_P_TASK_ASK     = re.compile(r"^What task would you like to add\?$")
+_P_TASK_MARK_ASK= re.compile(r"^Which task should I mark as done\?$")
+_P_TASK_DONE    = re.compile(r"^Task '(.+)' marked as done\.$")
+_P_TASK_REMOVED = re.compile(r"^Task '(.+)' removed\.$")
+# ── Generic device control (device_handler) ───────────────────────────────────
+_P_DEVICE_ACT   = re.compile(r"^(Open|Close|Lock|Unlock|Turn on|Turn off|Start|Stop|Dock|Pause|Resume|Arm|Disarm): (.+)\.$")
+_DEVICE_VERB_HE = {
+    "Open": "פותח", "Close": "סוגר", "Lock": "נועל", "Unlock": "פותח",
+    "Turn on": "מפעיל", "Turn off": "מכבה",
+    "Start": "מפעיל", "Stop": "עוצר",
+    "Dock": "מחזיר לעריסה", "Pause": "מפסיק", "Resume": "ממשיך",
+    "Arm": "מאבטח", "Disarm": "מבטל אבטחה",
+}
+# ── Ziggy identity ────────────────────────────────────────────────────────────
+_P_ZIGGY_ID     = re.compile(r"^I'm Ziggy, built by")
+_P_ZIGGY_STATUS = re.compile(r"^I'm Ziggy, your home assistant\.")
+
+_COLOR_HE = {
+    "red": "אדום", "green": "ירוק", "blue": "כחול", "yellow": "צהוב",
+    "white": "לבן", "orange": "כתום", "purple": "סגול", "pink": "ורוד",
+    "warm white": "לבן חם", "cool white": "לבן קר",
+}
+_SENSOR_HE = {"temperature": "טמפרטורה", "humidity": "לחות"}
+
+
+_PRIORITY_HE = {"high": "גבוהה", "medium": "בינונית", "low": "נמוכה"}
+
+
+def _he_instant_reply(text: str) -> str | None:
+    """Return a pre-translated Hebrew string for common handler responses.
+    Returns None if no pattern matches — caller falls through to API translation.
+    """
+    # ── Lights ───────────────────────────────────────────────────────────────
+    m = _P_LIGHT_ON.match(text)
+    if m:
+        return f"מדליק את האור ב{_room_to_he(m.group(1))}."
+
+    m = _P_LIGHT_OFF.match(text)
+    if m:
+        return f"מכבה את האור ב{_room_to_he(m.group(1))}."
+
+    m = _P_LIGHT_COLOR.match(text)
+    if m:
+        color_he = _COLOR_HE.get(m.group(2).lower(), m.group(2))
+        return f"צבע האור ב{_room_to_he(m.group(1).lower())} הוגדר ל{color_he}."
+
+    m = _P_LIGHT_DIM.match(text)
+    if m:
+        return f"עוצמת האור ב{_room_to_he(m.group(1).lower())} הוגדרה ל-{m.group(2)}%."
+
+    if _P_ALL_LIGHTS.match(text) or _P_ALREADY_OFF.match(text):
+        return "כל האורות כבויים."
+
+    m = _P_ROOM_LIGHTS.match(text)
+    if m:
+        return f"כל האורות ב{_room_to_he(m.group(1))} כבויים."
+
+    # ── AC ───────────────────────────────────────────────────────────────────
+    m = _P_AC_ON.match(text)
+    if m:
+        return f"מפעיל את המזגן ב{_room_to_he(m.group(1))}."
+
+    m = _P_AC_OFF.match(text)
+    if m:
+        return f"מכבה את המזגן ב{_room_to_he(m.group(1))}."
+
+    m = _P_AC_TEMP.match(text)
+    if m:
+        return f"מגדיר את המזגן ב{_room_to_he(m.group(1))} ל-{m.group(2)} מעלות."
+
+    # ── Everything off ────────────────────────────────────────────────────────
+    if _P_ALL_OFF.match(text):
+        return "הכל כבוי. לילה טוב!"
+
+    # ── Sensors ───────────────────────────────────────────────────────────────
+    m = _P_SENSOR_VAL.match(text)
+    if m:
+        sensor_he = _SENSOR_HE.get(m.group(1), m.group(1))
+        room_he   = _room_to_he(m.group(2))
+        val, unit = m.group(3), m.group(4)
+        return f"ה{sensor_he} ב{room_he} עומדת על {val}{' ' + unit if unit else ''}."
+
+    m = _P_SENSOR_NA.match(text)
+    if m:
+        sensor_he = _SENSOR_HE.get(m.group(1), m.group(1))
+        return f"ה{sensor_he} ב{_room_to_he(m.group(2))} אינה זמינה כרגע."
+
+    # ── Automations ───────────────────────────────────────────────────────────
+    m = _P_AUTO_CREATED.match(text)
+    if m:
+        return f"בוצע! האוטומציה '{m.group(1)}' נוצרה."
+
+    m = _P_AUTO_UPDATED.match(text)
+    if m:
+        return f"בוצע! האוטומציה '{m.group(1)}' עודכנה."
+
+    m = _P_AUTO_ASSIGNED.match(text)
+    if m:
+        return f"בוצע! '{m.group(1)}' שויכה ל{_room_to_he(m.group(2))}."
+
+    m = _P_AUTO_DELETED.match(text)
+    if m:
+        return f"האוטומציה '{m.group(1)}' נמחקה."
+
+    m = _P_AUTO_ENABLED.match(text)
+    if m:
+        state_he = "הופעלה" if m.group(2) == "enabled" else "כובתה"
+        return f"האוטומציה '{m.group(1)}' {state_he}."
+
+    if _P_AUTO_NONE.match(text):
+        return "לא נמצאו אוטומציות."
+
+    if _P_AUTO_MISSING.match(text):
+        return "באיזה חדר ואיזה מכשיר האוטומציה תשלוט? ומתי היא תופעל?"
+
+    m = _P_AUTO_LIST.match(text)
+    if m:
+        # Pass through to translation — the automation names may be Hebrew or mixed
+        return None
+
+    # ── Tasks ─────────────────────────────────────────────────────────────────
+    if _P_TASK_ASK.match(text):
+        return "מה המשימה שתרצה להוסיף?"
+
+    if _P_TASK_MARK_ASK.match(text):
+        return "איזו משימה לסמן כבוצעה?"
+
+    if _P_TASK_NONE.match(text):
+        return "אין משימות כרגע."
+
+    m = _P_TASK_ADDED.match(text)
+    if m:
+        task_name = m.group(1)
+        due       = m.group(2)
+        priority_he = _PRIORITY_HE.get(m.group(3).strip(), m.group(3))
+        return f"המשימה '{task_name}' נוספה. עד: {due}, עדיפות: {priority_he}."
+
+    m = _P_TASK_DONE.match(text)
+    if m:
+        return f"המשימה '{m.group(1)}' סומנה כבוצעה."
+
+    m = _P_TASK_REMOVED.match(text)
+    if m:
+        return f"המשימה '{m.group(1)}' נמחקה."
+
+    # ── Clarifications (catch-all) ────────────────────────────────────────────
+    if _P_WHICH_ROOM.search(text):
+        return "איזה חדר?"
+
+    if _P_WHICH_DEVICE.search(text):
+        return "איזה מכשיר?"
+
+    if _P_WHICH_TASK.search(text):
+        return "איזו משימה?"
+
+    # ── Generic device control ────────────────────────────────────────────────
+    m = _P_DEVICE_ACT.match(text)
+    if m:
+        verb_he = _DEVICE_VERB_HE.get(m.group(1), m.group(1))
+        return f"{verb_he} את {m.group(2)}."
+
+    # ── TV ───────────────────────────────────────────────────────────────────
+    if _P_TV_ON.match(text):
+        return "מדליק את הטלוויזיה."
+
+    if _P_TV_OFF.match(text):
+        return "מכבה את הטלוויזיה."
+
+    m = _P_TV_SOURCE.match(text)
+    if m:
+        return f"עובר למקור {m.group(1)} בטלוויזיה."
+
+    # ── Notes / files ─────────────────────────────────────────────────────────
+    if _P_NOTE_SAVED.match(text):
+        return "הפתק נשמר."
+
+    if _P_NOTE_ASK.match(text):
+        return "מה לשמור בפתק?"
+
+    if _P_NOTE_APPEND.match(text):
+        return "לאיזה פתק להוסיף?"
+
+    if _P_NOTE_WHAT.match(text):
+        return "מה להוסיף?"
+
+    if _P_NOTE_SEARCH.match(text):
+        return "מה לחפש בפתקים?"
+
+    m = _P_NOTE_NONE.match(text)
+    if m:
+        return f"לא נמצאו פתקים עם '{m.group(1)}'."
+
+    # ── Ziggy identity ────────────────────────────────────────────────────────
+    if _P_ZIGGY_ID.match(text):
+        return "אני זיגי, נבנה על ידי יובל כדי להפוך את הבית לחכם יותר."
+
+    if _P_ZIGGY_STATUS.match(text):
+        return "אני זיגי, העוזר הביתי שלך. עובד ומוכן לפקודות!"
+
+    return None
+
+
 _TRANSLATE_SYSTEM = "Translate the following smart home response to Hebrew. Return only the translation, nothing else."
 
 def _translate(text: str) -> str:
     """Translate a smart home response to Hebrew.
 
-    Tries the local Ollama model first (zero cost). Falls back to gpt-4o-mini
-    if Ollama is unavailable or returns non-Hebrew output.
+    Step 1: instant pre-translated reply (zero latency, zero cost).
+    Step 2: Ollama local model (free, ~1s).
+    Step 3: GPT-4o-mini fallback (~2s, small cost).
     If the text is already Hebrew, returns it unchanged.
     """
     if is_hebrew(text):
         return text
+
+    instant = _he_instant_reply(text)
+    if instant:
+        print(f"[Voice] Hebrew instant reply matched — no API call needed")
+        return instant
 
     t0 = time.time()
     messages = [
@@ -163,10 +477,13 @@ def _translate(text: str) -> str:
                 timeout=5,
             )
             result = (resp.choices[0].message.content or "").strip()
-            if is_hebrew(result):
+            # Require the response to be majority Hebrew, not just contain a stray character.
+            he_chars = sum(1 for c in result if '֐' <= c <= 'ת')
+            word_chars = sum(1 for c in result if c.isalpha())
+            if he_chars > 0 and word_chars > 0 and he_chars / word_chars >= 0.5:
                 print(f"[TIMING] translate-ollama ({model}): {time.time() - t0:.2f}s")
                 return result
-            print(f"[Voice] Ollama translation missing Hebrew chars — falling back to GPT")
+            print(f"[Voice] Ollama translation quality low (he={he_chars}/{word_chars}) — falling back to GPT")
     except Exception as e:
         print(f"[Voice] Ollama translation failed ({e}) — falling back to GPT")
 
@@ -200,9 +517,18 @@ def transcribe(audio_path: str):
     model = _get_whisper()
     print(f"[TIMING] whisper model ready: {time.time() - t0:.2f}s")
 
-    # Local base pass: language detection + English transcription
+    # Local base pass: language detection + English transcription.
+    # beam_size=1 + temperature=0 (greedy) + vad_filter cuts 3-5s → ~0.5-1s for typical commands.
     t1 = time.time()
-    segments_iter, info = model.transcribe(audio_path, beam_size=5, language=None)
+    segments_iter, info = model.transcribe(
+        audio_path,
+        beam_size=1,
+        temperature=0,
+        language=None,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        without_timestamps=True,
+    )
     segments = list(segments_iter)
     detected_lang = (info.language or "en").lower()
     print(f"[TIMING] whisper detect: {time.time() - t1:.2f}s, detected={detected_lang!r}")
@@ -245,6 +571,56 @@ def _calibrate_mic():
 _tts_guard_until = 0.0
 _GTTS_LANG_MAP = {"he": "iw"}  # gTTS uses "iw" for Hebrew, not "he"
 
+
+def _speak_azure(text: str, lang: str = "en") -> bool:
+    """Speak using Azure Cognitive Services Neural TTS (REST API, no SDK needed).
+
+    Requires AZURE_SPEECH_KEY in settings.yaml voice.azure.speech_key or env var.
+    Returns True if audio played successfully.
+    """
+    if not _AZURE_KEY:
+        return False
+    import html
+    import requests as _req
+
+    voice    = _AZURE_VOICE_HE if lang == "he" else _AZURE_VOICE_EN
+    xml_lang = "he-IL" if lang == "he" else "en-US"
+    safe     = html.escape(text)
+    ssml = (
+        f"<speak version='1.0' xml:lang='{xml_lang}' "
+        f"xmlns='http://www.w3.org/2001/10/synthesis'>"
+        f"<voice name='{voice}'>{safe}</voice></speak>"
+    )
+    url     = f"https://{_AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1"
+    headers = {
+        "Ocp-Apim-Subscription-Key": _AZURE_KEY,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "riff-24khz-16bit-mono-pcm",
+    }
+    out_path = None
+    try:
+        t0   = time.time()
+        resp = _req.post(url, headers=headers, data=ssml.encode("utf-8"), timeout=10)
+        if resp.status_code != 200:
+            print(f"[Voice] Azure TTS HTTP {resp.status_code}: {resp.text[:200]}")
+            return False
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+            fp.write(resp.content)
+            out_path = fp.name
+        print(f"[TIMING] azure-tts: {time.time() - t0:.2f}s")
+        playsound.playsound(out_path)
+        return True
+    except Exception as e:
+        print(f"[Voice] Azure TTS error: {e}")
+        return False
+    finally:
+        if out_path:
+            try:
+                os.unlink(out_path)
+            except Exception:
+                pass
+
+
 def _speak_piper(text: str, lang: str = "en") -> bool:
     """Speak using local Piper TTS. Returns True if successful."""
     voice = _PIPER_VOICE_HE if lang == "he" and _PIPER_VOICE_HE.exists() else _PIPER_VOICE
@@ -272,16 +648,55 @@ def _speak_piper(text: str, lang: str = "en") -> bool:
             except Exception:
                 pass
 
+import re as _re
+_ENTITY_ID_RE = _re.compile(
+    r"\b[a-z_]+\.[a-z0-9_]{3,}\b",  # matches HA entity IDs like binary_sensor.office_motion
+    _re.ASCII,
+)
+
+def _clean_for_tts(text: str, lang: str) -> str:
+    """Strip or simplify content that sounds bad when spoken aloud.
+
+    For Hebrew TTS specifically: HA entity IDs like binary_sensor.office_motion
+    will be mispronounced badly. Replace them with a brief placeholder.
+    For English TTS the same entity IDs are at least pronounceable, so skip it.
+    """
+    if lang != "he":
+        return text
+    # Replace entity IDs with "the sensor" / "the device" in Hebrew
+    def _replace_entity(m: _re.Match) -> str:
+        eid = m.group(0)
+        if eid.startswith("binary_sensor.") or eid.startswith("sensor."):
+            return "החיישן"
+        if eid.startswith("light."):
+            return "האור"
+        if eid.startswith("climate."):
+            return "המזגן"
+        if eid.startswith("media_player."):
+            return "הטלוויזיה"
+        if eid.startswith("switch."):
+            return "המתג"
+        return "המכשיר"
+    return _ENTITY_ID_RE.sub(_replace_entity, text)
+
+
 def speak(text: str, lang: str = "en"):
     global _tts_guard_until
     try:
+        text = _clean_for_tts(text, lang)
         if is_verbose():
             print(f"[Voice] Speaking ({lang}): {text}")
         est_sec = max(1.0, len(text.split()) / 2.3 + 0.6)
         _tts_guard_until = time.time() + est_sec
 
+        # Azure Neural TTS — best quality, requires API key
+        if TTS_ENGINE == "azure" and _speak_azure(text, lang=lang):
+            if is_verbose():
+                print("[Voice] Azure TTS used.")
+            return
+
         # Piper — local, no internet; Hebrew voice used if available
-        if _speak_piper(text, lang=lang):
+        if TTS_ENGINE != "azure" and _speak_piper(text, lang=lang):
             if is_verbose():
                 print("[Voice] Piper TTS used.")
             return
