@@ -7,6 +7,11 @@ import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
 import { formatTime, isHebrew } from '../lib/utils'
 
+// Detect Web Speech API support at module level — evaluated once, not per render.
+const SR = (typeof window !== 'undefined')
+  ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
+  : null
+
 // ── Voice wave ────────────────────────────────────────────────────────────────
 function VoiceWave({ active, size = 22 }) {
   return (
@@ -126,11 +131,6 @@ export default function AIChat() {
   const sentPrefillRef = useRef(false)
   const containerRef   = useRef(null)
   const recognitionRef = useRef(null)   // Web Speech API instance
-
-  // Detect Web Speech API support once at mount — no re-render needed.
-  const SR = typeof window !== 'undefined'
-    ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
-    : null
 
   useEffect(() => { fetchQuickAsks() }, [])
 
