@@ -860,19 +860,19 @@ const DeviceCard = forwardRef(function DeviceCard({
       <Card className={cn('p-4 transition-all duration-200', isActive && !isHidden && 'shadow-card-hover')}>
         {/* ── Card header ── */}
         <div className="flex items-start justify-between mb-3">
-          <div className={cn(
-            'w-10 h-10 rounded-xl flex items-center justify-center text-xl relative',
-            isActive ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
-          )}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, fontSize: 21,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+            background: isActive ? 'var(--ink)' : 'var(--surface-2)',
+            color: isActive ? 'var(--bg)' : 'var(--ink)',
+          }}>
             {domainIcon(entity.domain, entity.device_class)}
-            {isIr && (
-              <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none tracking-tight">IR</span>
-            )}
-            {linkedIr && (
-              <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none tracking-tight">IR</span>
+            {(isIr || linkedIr) && (
+              <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'var(--accent)', color: '#fff', fontSize: 6, fontWeight: 700, padding: '1px 4px', borderRadius: 3, lineHeight: 1.2 }}>IR</span>
             )}
             {!isIr && !linkedIr && ziggyStatus && STATUS_DOT[ziggyStatus] && (
-              <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900', STATUS_DOT[ziggyStatus])} />
+              <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2', STATUS_DOT[ziggyStatus])} style={{ borderColor: 'var(--surface)' }} />
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -1231,7 +1231,7 @@ export default function Devices() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Home Assistant entities</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Devices</h1>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Devices</h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
             {activeCount} of {getTotalControllable()} active · {entities.length} total
             {hiddenCount > 0 && ` · ${hiddenCount} hidden`}

@@ -567,6 +567,13 @@ function MediaPlayerControls({ entity, onService }) {
 }
 
 // ─── Cover ────────────────────────────────────────────────────────────────────
+const ctrlBtn = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+  padding: '6px 10px', borderRadius: 9, fontSize: 11, fontWeight: 500,
+  background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+  color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit',
+}
+
 function CoverControls({ entity, onService }) {
   const position = entity.current_position
   const [localPos, setLocalPos] = useState(position ?? 0)
@@ -574,39 +581,23 @@ function CoverControls({ entity, onService }) {
   useEffect(() => { if (position != null) setLocalPos(position) }, [position])
 
   return (
-    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-      <div className="flex items-stretch gap-1.5">
-        <button
-          onClick={() => onService('open_cover', {})}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-        >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => onService('open_cover', {})} style={{ ...ctrlBtn, flex: 1 }}>
           <ArrowUp size={11} /> Open
         </button>
-        <button
-          onClick={() => onService('stop_cover', {})}
-          className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm leading-none"
-        >
-          ■
-        </button>
-        <button
-          onClick={() => onService('close_cover', {})}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-        >
+        <button onClick={() => onService('stop_cover', {})} style={{ ...ctrlBtn, padding: '6px 14px' }}>■</button>
+        <button onClick={() => onService('close_cover', {})} style={{ ...ctrlBtn, flex: 1 }}>
           <ArrowDown size={11} /> Close
         </button>
       </div>
       {position != null && (
         <div>
-          <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginBottom: 6 }}>
             <span>Position</span>
-            <span className="tabular-nums">{localPos}%</span>
+            <span className="z-mono">{localPos}%</span>
           </div>
-          <Slider
-            value={localPos}
-            onValueChange={setLocalPos}
-            onValueCommit={(v) => onService('set_cover_position', { position: v })}
-            min={0} max={100}
-          />
+          <Slider value={localPos} onValueChange={setLocalPos} onValueCommit={(v) => onService('set_cover_position', { position: v })} min={0} max={100} />
         </div>
       )}
     </div>
@@ -626,31 +617,26 @@ function FanControls({ entity, onService }) {
   if (!isOn) return null
 
   return (
-    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       <div>
-        <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginBottom: 6 }}>
           <span>Speed</span>
-          <span className="tabular-nums">{pct}%</span>
+          <span className="z-mono">{pct}%</span>
         </div>
-        <Slider
-          value={pct}
-          onValueChange={setPct}
-          onValueCommit={(v) => onService('set_percentage', { percentage: v })}
-          min={0} max={100}
-        />
+        <Slider value={pct} onValueChange={setPct} onValueCommit={(v) => onService('set_percentage', { percentage: v })} min={0} max={100} />
       </div>
       {presetModes.length > 0 && (
-        <div className="flex gap-1 flex-wrap">
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
           {presetModes.map((mode) => (
             <button
               key={mode}
               onClick={() => onService('set_preset_mode', { preset_mode: mode })}
-              className={cn(
-                'px-2 py-0.5 rounded-lg text-[10px] font-medium capitalize transition-colors',
-                presetMode === mode
-                  ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
-              )}
+              style={{
+                padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
+                background: presetMode === mode ? 'var(--ink)' : 'var(--surface-2)',
+                color: presetMode === mode ? 'var(--bg)' : 'var(--ink-mute)',
+                border: presetMode === mode ? 'none' : '0.5px solid var(--line)',
+              }}
             >
               {mode}
             </button>
@@ -668,27 +654,27 @@ function LockControls({ entity, onService }) {
   const isPending = entity.state === 'locking' || entity.state === 'unlocking'
 
   return (
-    <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {isPending ? (
-        <div className="text-center text-xs text-zinc-400 py-1.5 capitalize">{entity.state}…</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', padding: '6px 0', textTransform: 'capitalize' }}>{entity.state}…</div>
       ) : !isLocked ? (
         <button
           onClick={() => onService('lock', {})}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--ok) 12%, var(--surface))`, color: 'var(--ok)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}
         >
           <Lock size={12} /> Lock
         </button>
       ) : confirming ? (
-        <div className="flex gap-1.5">
+        <div style={{ display: 'flex', gap: 6 }}>
           <button
             onClick={() => { onService('unlock', {}); setConfirming(false) }}
-            className="flex-1 py-1.5 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600 transition-colors"
+            style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: 'var(--err)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
           >
             Confirm unlock
           </button>
           <button
             onClick={() => setConfirming(false)}
-            className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-xs hover:bg-zinc-200 transition-colors"
+            style={{ padding: '7px 12px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
           >
             ✕
           </button>
@@ -696,7 +682,7 @@ function LockControls({ entity, onService }) {
       ) : (
         <button
           onClick={() => setConfirming(true)}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--err) 10%, var(--surface))`, color: 'var(--err)', border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))' }}
         >
           <LockOpen size={12} /> Unlock
         </button>
@@ -713,41 +699,34 @@ function VacuumControls({ entity, onService }) {
   const isDocked   = state === 'docked'
   const isIdle     = state === 'idle'
 
+  const vacBtn = (bg, color, border) => ({
+    ...ctrlBtn,
+    background: bg, color, border: border || '0.5px solid var(--line)',
+  })
+
   return (
-    <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {!isCleaning ? (
-        <button
-          onClick={() => onService('start', {})}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-400 text-xs font-medium hover:bg-violet-100 transition-colors"
-        >
+        <button onClick={() => onService('start', {})} style={vacBtn(`color-mix(in srgb, var(--accent) 10%, var(--surface))`, 'var(--accent)', `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`)}>
           <Play size={11} /> Start
         </button>
       ) : (
-        <button
-          onClick={() => onService('pause', {})}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-medium hover:bg-amber-100 transition-colors"
-        >
+        <button onClick={() => onService('pause', {})} style={vacBtn(`color-mix(in srgb, var(--warn) 10%, var(--surface))`, 'var(--warn)', `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`)}>
           <Pause size={11} /> Pause
         </button>
       )}
       {(isCleaning || isPaused || isIdle) && (
-        <button
-          onClick={() => onService('return_to_base', {})}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-xs font-medium hover:bg-zinc-200 transition-colors"
-        >
+        <button onClick={() => onService('return_to_base', {})} style={ctrlBtn}>
           <Home size={11} /> Dock
         </button>
       )}
       {(isCleaning || isPaused) && (
-        <button
-          onClick={() => onService('stop', {})}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors"
-        >
+        <button onClick={() => onService('stop', {})} style={vacBtn(`color-mix(in srgb, var(--err) 8%, var(--surface))`, 'var(--err)', `0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))`)}>
           <Square size={11} /> Stop
         </button>
       )}
       {isDocked && (
-        <span className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', fontSize: 11, color: 'var(--ok)', fontWeight: 500 }}>
           <Home size={11} /> Docked
         </span>
       )}

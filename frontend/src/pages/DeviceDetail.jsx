@@ -20,13 +20,13 @@ import { cn } from '../lib/utils'
 
 function BatteryBar({ level, unit = '%' }) {
   if (level == null) return null
-  const color = level > 60 ? 'bg-emerald-400' : level > 20 ? 'bg-amber-400' : 'bg-red-400'
+  const barColor = level > 60 ? 'var(--ok)' : level > 20 ? 'var(--warn)' : 'var(--err)'
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${level}%` }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="z-slider-track" style={{ flex: 1 }}>
+        <div className="z-slider-fill" style={{ width: `${level}%`, background: barColor }} />
       </div>
-      <span className="text-xs font-medium tabular-nums text-zinc-600 dark:text-zinc-400 w-10 text-right">
+      <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)', width: 36, textAlign: 'right' }}>
         {level}{unit}
       </span>
     </div>
@@ -35,25 +35,23 @@ function BatteryBar({ level, unit = '%' }) {
 
 function SignalBars({ lqi, rssi }) {
   if (lqi == null && rssi == null) return null
-  // LQI: 0-255 (Zigbee). RSSI: negative dBm, closer to 0 = stronger.
   const strength = lqi != null
     ? Math.round((lqi / 255) * 100)
     : rssi != null ? Math.max(0, Math.min(100, Math.round((rssi + 100) * 2))) : null
   if (strength == null) return null
-  const bars = Math.ceil(strength / 25)   // 1–4 bars
+  const bars = Math.ceil(strength / 25)
   return (
-    <div className="flex items-end gap-0.5 h-4">
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 16 }}>
       {[1, 2, 3, 4].map(b => (
         <div
           key={b}
-          style={{ height: `${b * 25}%` }}
-          className={cn(
-            'w-1.5 rounded-sm',
-            b <= bars ? 'bg-emerald-400' : 'bg-zinc-200 dark:bg-zinc-700',
-          )}
+          style={{
+            height: `${b * 25}%`, width: 5, borderRadius: 2,
+            background: b <= bars ? 'var(--ok)' : 'var(--line-2)',
+          }}
         />
       ))}
-      <span className="ml-1 text-[10px] text-zinc-400 leading-none">
+      <span className="z-mono" style={{ marginLeft: 4, fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1 }}>
         {lqi != null ? `LQI ${lqi}` : `${rssi} dBm`}
       </span>
     </div>
@@ -63,9 +61,10 @@ function SignalBars({ lqi, rssi }) {
 function DiagRow({ label, value, children }) {
   if (value == null && !children) return null
   return (
-    <div className="flex items-center justify-between gap-3 py-2 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0">
-      <span className="text-xs text-zinc-400 shrink-0">{label}</span>
-      {children ?? <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 text-right">{value}</span>}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}
+      className="last:border-0">
+      <span style={{ fontSize: 11, color: 'var(--ink-faint)', flexShrink: 0 }}>{label}</span>
+      {children ?? <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink)', textAlign: 'right', wordBreak: 'break-all' }}>{value}</span>}
     </div>
   )
 }
@@ -95,12 +94,13 @@ function RenameModal({ open, currentName, onClose, onSave }) {
         onKeyDown={e => e.key === 'Enter' && name.trim() && onSave(name.trim())}
         autoFocus
       />
-      <div className="flex gap-2 mt-4">
-        <button onClick={onClose} className="flex-1 py-2 rounded-xl text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
         <button
           onClick={() => name.trim() && onSave(name.trim())}
           disabled={!name.trim() || name.trim() === currentName}
-          className="flex-1 py-2 rounded-xl text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 disabled:opacity-40 transition-opacity"
+          className="z-btn-primary"
+          style={{ flex: 1, opacity: (!name.trim() || name.trim() === currentName) ? 0.4 : 1 }}
         >
           Save
         </button>
