@@ -489,48 +489,26 @@ def _translate(text: str) -> str:
             print(f"[Voice] Multi-part instant reply — {len(parts)} parts matched, no API call")
             return " ".join(translated)
 
+    # Instant reply and multi-part split already cover the 95%+ case above.
+    # For the rare unmatched reply, call GPT directly with a tight timeout.
+    # Ollama is intentionally skipped — it times out frequently (adding 5s+
+    # of dead weight) and its quality is inconsistent.
     t0 = time.time()
-    messages = [
-        {"role": "system", "content": _TRANSLATE_SYSTEM},
-        {"role": "user", "content": text},
-    ]
-
-    # --- Ollama path (local, free) ---
-    try:
-        from integrations.ollama_client import get_client as ollama_client, is_available, default_model
-        if is_available():
-            model = default_model()
-            resp = ollama_client().chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=150,
-                timeout=5,
-            )
-            result = (resp.choices[0].message.content or "").strip()
-            # Require the response to be majority Hebrew, not just contain a stray character.
-            he_chars = sum(1 for c in result if '֐' <= c <= 'ת')
-            word_chars = sum(1 for c in result if c.isalpha())
-            if he_chars > 0 and word_chars > 0 and he_chars / word_chars >= 0.5:
-                print(f"[TIMING] translate-ollama ({model}): {time.time() - t0:.2f}s")
-                return result
-            print(f"[Voice] Ollama translation quality low (he={he_chars}/{word_chars}) — falling back to GPT")
-    except Exception as e:
-        print(f"[Voice] Ollama translation failed ({e}) — falling back to GPT")
-
-    # --- GPT fallback ---
     try:
         from integrations.openai_client import get_client
         resp = get_client().chat.completions.create(
             model="gpt-4o-mini",
-            messages=messages,
+            messages=[
+                {"role": "system", "content": _TRANSLATE_SYSTEM},
+                {"role": "user", "content": text},
+            ],
             max_tokens=150,
-            timeout=4,
+            timeout=3,
         )
-        result = resp.choices[0].message.content.strip()
+        result = (resp.choices[0].message.content or "").strip()
         print(f"[TIMING] translate-gpt: {time.time() - t0:.2f}s")
         return result
     except Exception as e:
-        print(f"[TIMING] translate: {time.time() - t0:.2f}s (FAILED: {e})")
         print(f"[Voice] Translation skipped ({e}) — returning English")
         return text
 
