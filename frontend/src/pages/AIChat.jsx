@@ -125,6 +125,12 @@ export default function AIChat() {
   const inputRef       = useRef(null)
   const sentPrefillRef = useRef(false)
   const containerRef   = useRef(null)
+  const recognitionRef = useRef(null)   // Web Speech API instance
+
+  // Detect Web Speech API support once at mount — no re-render needed.
+  const SR = typeof window !== 'undefined'
+    ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
+    : null
 
   useEffect(() => { fetchQuickAsks() }, [])
 
@@ -220,7 +226,55 @@ export default function AIChat() {
     } finally { setThinking(false) }
   }
 
-  const startRecording = async () => {
+  // ── Web Speech fast path (Chrome/Edge — returns text in ~0.3-0.5s, no upload) ──
+  const _startSpeechRecognition = () => {
+    const rec = new SR()
+    // he-IL handles both Hebrew and mixed Hebrew/English commands well.
+    // Falls back to English when Hebrew isn't detected.
+    rec.lang = 'he-IL'
+    rec.continuous = false
+    rec.interimResults = false
+    recognitionRef.current = rec
+
+    rec.onresult = (event) => {
+      const transcript = (event.results[0][0].transcript || '').trim()
+      if (!transcript) { setRecording(false); setOrbState('idle'); return }
+      // Route through the text chat pipeline — faster and avoids audio upload.
+      const historyForApi = messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
+      addMessage('user', transcript)
+      setThinking(true); setOrbState('thinking')
+      sendChat(transcript, historyForApi)
+        .then((res) => {
+          addMessage('assistant', res.reply || '…', res.ok !== false)
+          setOrbState('speaking'); setTimeout(() => setOrbState('idle'), 2500)
+        })
+        .catch((e) => {
+          const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : 'Something went wrong.'
+          addMessage('assistant', msg, false); setOrbState('idle')
+        })
+        .finally(() => { setThinking(false) })
+    }
+
+    rec.onerror = (event) => {
+      recognitionRef.current = null
+      if (event.error === 'no-speech') { setRecording(false); setOrbState('idle'); return }
+      // Any other error (not-allowed, audio-capture, network) → fall back to MediaRecorder.
+      console.warn('[Voice] Web Speech error:', event.error, '— falling back to upload')
+      _startMediaRecorder()
+    }
+
+    rec.onend = () => {
+      recognitionRef.current = null
+      // onresult may not have fired (empty speech) — reset state if still listening.
+      setRecording((prev) => { if (prev) setOrbState('idle'); return false })
+    }
+
+    rec.start()
+    setRecording(true); setOrbState('listening')
+  }
+
+  // ── MediaRecorder fallback (all browsers — uploads audio to Whisper API ~1-4s) ──
+  const _startMediaRecorder = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mr = new MediaRecorder(stream)
@@ -242,7 +296,19 @@ export default function AIChat() {
     } catch { addToast('Microphone access denied', 'error') }
   }
 
-  const stopRecording = () => { mediaRef.current?.stop(); setRecording(false); setOrbState('thinking') }
+  const startRecording = async () => {
+    if (SR) _startSpeechRecognition()
+    else await _startMediaRecorder()
+  }
+
+  const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop() // triggers rec.onresult then rec.onend
+    } else {
+      mediaRef.current?.stop()
+    }
+    setRecording(false); setOrbState('thinking')
+  }
 
   const handleMicPointerDown = (e) => {
     e.preventDefault()
