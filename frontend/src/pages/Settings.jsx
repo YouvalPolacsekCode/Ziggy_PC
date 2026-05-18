@@ -1,28 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Sun, Moon, User, Lock, LogOut, Mic, MicOff, RefreshCw,
-  Plus, Trash2, Wifi, Shield, Users,
+  Sun, Moon, User, Lock, LogOut, RefreshCw,
+  Plus, Trash2, Wifi, Shield, Users, MapPin,
+  Radio, Cloud, Activity, Check, Copy, Zap,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
-import { Slider } from '../components/ui/Slider'
 import { Button } from '../components/ui/Button'
-import { Badge } from '../components/ui/Badge'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { Modal } from '../components/ui/Modal'
-import { EntitySelect } from '../components/ui/EntitySelect'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
 import {
-  getStatus,
-  getVoiceSettings, patchVoiceSettings,
+  getHealth, getHaDevices, getActivity, zhaPermit,
   getGeneralSettings, patchGeneralSettings,
   getAuthStatus, changePassword,
-  getUsers, createUser, updateUser, deleteUser,
+  getUsers, updateUser, deleteUser,
+  createInvite, listInvites, revokeInvite,
+  getPresencePersons, createPresencePerson, deletePresencePerson,
+  getPresenceZone, savePresenceZone,
 } from '../lib/api'
 import AdminSettings from './AdminSettings'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const TIMEZONES = [
   'UTC', 'Asia/Jerusalem', 'Europe/London', 'Europe/Paris',
@@ -33,18 +36,61 @@ const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'he', label: 'עברית (Hebrew)' },
 ]
-
 const ROLE_LABELS = {
-  super_admin: { label: 'Super Admin', color: 'var(--warn)' },
-  admin:       { label: 'Admin',       color: 'var(--accent)' },
-  user:        { label: 'User',        color: 'var(--ok)' },
+  super_admin: { label: 'Super Admin', color: 'var(--accent)' },
+  admin:       { label: 'Admin',       color: '#8b5cf6'       },
+  user:        { label: 'User',        color: 'var(--ok)'     },
   guest:       { label: 'Guest',       color: 'var(--ink-faint)' },
+}
+const ROLE_ORDER_FE = { guest: 0, user: 1, admin: 2, super_admin: 3 }
+
+function hasRole(userRole, minRole) {
+  return (ROLE_ORDER_FE[userRole] ?? 0) >= (ROLE_ORDER_FE[minRole] ?? 999)
+}
+
+// ─── Presence helpers ─────────────────────────────────────────────────────────
+
+const STALE_HOME_MS = 8 * 60 * 60 * 1000
+const STALE_AWAY_MS = 30 * 60 * 1000
+
+function timeAgo(iso) {
+  if (!iso) return 'never'
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000)
+  if (diff < 60)    return `${diff}s ago`
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+function _isStale(p) {
+  if (!p.last_seen) return true
+  const age = Date.now() - new Date(p.last_seen)
+  return p.state === 'home' ? age > STALE_HOME_MS : age > STALE_AWAY_MS
+}
+
+function presenceStateColor(p) {
+  if (_isStale(p) || p.effective_state === 'unknown') return 'var(--ink-faint)'
+  if (p.effective_state === 'home') return 'var(--ok)'
+  if (p.effective_state === 'not_home') return 'var(--warn)'
+  return 'var(--ink-faint)'
+}
+
+function presenceStateLabel(p) {
+  if (_isStale(p)) return p.last_seen ? 'stale' : 'unknown'
+  if (p.effective_state === 'home') return 'home'
+  if (p.effective_state === 'not_home') return 'away'
+  return 'unknown'
 }
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
-function SectionTitle({ children }) {
-  return <p className="z-eyebrow" style={{ marginBottom: 10, paddingLeft: 2 }}>{children}</p>
+function SectionTitle({ icon: Icon, children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, paddingLeft: 2 }}>
+      {Icon && <Icon size={12} style={{ color: 'var(--ink-faint)' }} />}
+      <p className="z-eyebrow">{children}</p>
+    </div>
+  )
 }
 
 function SettingRow({ icon: Icon, label, subtitle, children }) {
@@ -62,217 +108,559 @@ function SettingRow({ icon: Icon, label, subtitle, children }) {
   )
 }
 
-const METRIC_COLORS = { CPU: 'var(--info)', RAM: 'var(--accent)', Disk: 'var(--ok)' }
+// ─── System Status Card ───────────────────────────────────────────────────────
 
-function MetricBar({ label, value }) {
-  const tint = METRIC_COLORS[label] || 'var(--info)'
+function StatusRow({ icon: Icon, label, value, valueColor }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{label}</span>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)', fontFamily: '"IBM Plex Mono", monospace' }}>{value}%</span>
-      </div>
-      <div style={{ height: 4, background: 'var(--bg-2)', borderRadius: 999, overflow: 'hidden' }}>
-        <motion.div
-          style={{ height: '100%', borderRadius: 999, background: tint }}
-          initial={{ width: 0 }}
-          animate={{ width: `${value}%` }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
-        />
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+      <Icon size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', color: valueColor || 'var(--ink-2)' }}>
+        {value}
+      </span>
     </div>
   )
 }
 
-// ─── Add User Modal ───────────────────────────────────────────────────────────
+function SystemStatusCard() {
+  const [loaded, setLoaded] = useState(false)
+  const [health, setHealth] = useState(null)
+  const [deviceCount, setDeviceCount] = useState(null)
+  const [lastEventTs, setLastEventTs] = useState(null)
 
-function AddUserModal({ open, onClose, onAdd }) {
-  const [form, setForm] = useState({ username: '', password: '', role: 'user' })
-  const [err, setErr] = useState('')
-  const [saving, setSaving] = useState(false)
-  const { addToast } = useUIStore()
+  useEffect(() => {
+    Promise.allSettled([
+      getHealth(),
+      getHaDevices(),
+      getActivity(1),
+    ]).then(([healthRes, devicesRes, activityRes]) => {
+      if (healthRes.status === 'fulfilled') setHealth(healthRes.value)
+      if (devicesRes.status === 'fulfilled') setDeviceCount((devicesRes.value?.devices ?? []).length)
+      if (activityRes.status === 'fulfilled') {
+        const items = activityRes.value?.activity ?? []
+        setLastEventTs(items[0]?.ts ?? null)
+      }
+      setLoaded(true)
+    })
+  }, [])
 
-  const handleSubmit = async () => {
-    if (!form.username.trim()) { setErr('Username required'); return }
-    if (form.password.length < 4) { setErr('Password must be at least 4 characters'); return }
-    setSaving(true)
-    try {
-      const user = await createUser({ username: form.username.trim(), password: form.password, role: form.role })
-      addToast(`User '${user.username}' created`, 'success')
-      onAdd(user)
-      setForm({ username: '', password: '', role: 'user' })
-      setErr(''); onClose()
-    } catch (e) {
-      setErr(e.message || 'Failed to create user')
-    } finally { setSaving(false) }
+  if (!loaded) {
+    return (
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 64 }}>
+          <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      </Card>
+    )
   }
 
+  const bridgeOk     = health?.ha_connected ?? false
+  const offlineCount = health?.offline_count ?? 0
+  const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', fontSize: 12 }
+
   return (
-    <Modal open={open} onClose={onClose} title="Add User">
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Username" placeholder="jane"
-          value={form.username}
-          onChange={(e) => { setForm((s) => ({ ...s, username: e.target.value })); setErr('') }}
-        />
-        <Input
-          label="Password" type="password" placeholder="••••••••"
-          value={form.password}
-          onChange={(e) => { setForm((s) => ({ ...s, password: e.target.value })); setErr('') }}
-        />
-        <Select
-          label="Role"
-          value={form.role}
-          onChange={(e) => setForm((s) => ({ ...s, role: e.target.value }))}
-          options={[
-            { value: 'user',        label: 'User — device control, tasks, automations' },
-            { value: 'admin',       label: 'Admin — plus feature flags & room aliases' },
-            { value: 'super_admin', label: 'Super Admin — full system access' },
-            { value: 'guest',       label: 'Guest — read-only' },
-          ]}
-        />
-        {err && <p className="text-xs text-red-500">{err}</p>}
-        <div className="flex gap-3 pt-1">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" className="flex-1" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Creating…' : 'Create user'}
-          </Button>
+    <Card>
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <StatusRow icon={Cloud}    label="Ziggy"      value="Online"                                            valueColor="var(--ok)" />
+        <StatusRow icon={Wifi}     label="Bridge"     value={bridgeOk ? 'Connected' : 'Offline'}                valueColor={bridgeOk ? 'var(--ok)' : 'var(--accent)'} />
+
+        {/* Zigbee row — device count and offline count are separate links */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+          <Radio size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>Zigbee</span>
+          {deviceCount !== null ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Link to="/devices" style={{ ...linkStyle, color: 'var(--ink-2)' }}>
+                {deviceCount} device{deviceCount !== 1 ? 's' : ''}
+              </Link>
+              {offlineCount > 0 && (
+                <>
+                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>·</span>
+                  <Link to="/devices?filter=offline" style={{ ...linkStyle, color: 'var(--warn)' }}>
+                    {offlineCount} offline
+                  </Link>
+                </>
+              )}
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>Unavailable</span>
+          )}
         </div>
+
+        <StatusRow icon={Activity} label="Last event" value={lastEventTs ? timeAgo(lastEventTs) : 'No events'} valueColor="var(--ink-mute)" />
       </div>
-    </Modal>
+    </Card>
   )
 }
 
-// ─── Users panel (super_admin only) ──────────────────────────────────────────
+// ─── Zigbee Bridge Section ────────────────────────────────────────────────────
 
-function UsersPanel({ currentUsername }) {
+function ZigbeeBridgeSection({ isAdmin }) {
   const { addToast } = useUIStore()
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showAdd, setShowAdd] = useState(false)
-  const [deleting, setDeleting] = useState(null)
-  const [updatingRole, setUpdatingRole] = useState(null)
+  const [health, setHealth]           = useState(null)
+  const [deviceCount, setDeviceCount] = useState(null)
+  const [pairing, setPairing]         = useState(false)
+  const [pairingActive, setPairingActive] = useState(false)
+  const [countdown, setCountdown]     = useState(0)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    Promise.allSettled([getHealth(), getHaDevices()]).then(([h, d]) => {
+      if (h.status === 'fulfilled') setHealth(h.value)
+      if (d.status === 'fulfilled') setDeviceCount((d.value?.devices ?? []).length)
+    })
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [])
+
+  const handlePermitJoin = async () => {
+    setPairing(true)
+    try {
+      await zhaPermit(60)
+      setPairingActive(true)
+      setCountdown(60)
+      timerRef.current = setInterval(() => {
+        setCountdown(c => {
+          if (c <= 1) { clearInterval(timerRef.current); setPairingActive(false); return 0 }
+          return c - 1
+        })
+      }, 1000)
+      addToast('Pairing mode active — press the button on your device', 'success')
+    } catch (e) {
+      addToast(e.message || 'Failed to start pairing', 'error')
+    } finally {
+      setPairing(false)
+    }
+  }
+
+  const connected        = health?.ha_connected ?? false
+  const coordinatorName  = health?.coordinator_title || (connected ? 'ZHA / Coordinator' : null)
+
+  return (
+    <Card>
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+
+        {/* Coordinator status */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <Wifi size={16} style={{ color: connected ? 'var(--ok)' : 'var(--ink-faint)', flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Coordinator</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
+                {coordinatorName ?? 'Not detected'}
+              </p>
+            </div>
+          </div>
+          <span style={{
+            fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600,
+            padding: '2px 8px', borderRadius: 6, flexShrink: 0,
+            color:      connected ? 'var(--ok)' : 'var(--ink-faint)',
+            background: connected ? 'color-mix(in srgb, var(--ok) 12%, var(--surface))' : 'var(--bg-2)',
+          }}>
+            {connected ? 'paired' : 'offline'}
+          </span>
+        </div>
+
+        {/* Device count */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Radio size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Devices on network</p>
+          </div>
+          {deviceCount !== null ? (
+            <Link to="/devices" style={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-2)', textDecoration: 'none', fontWeight: 600 }}>
+              {deviceCount}
+            </Link>
+          ) : (
+            <span style={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-faint)' }}>—</span>
+          )}
+        </div>
+
+        {/* Pairing mode — admin+ only */}
+        {isAdmin && (
+          <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <Zap size={16} style={{ color: pairingActive ? 'var(--accent)' : 'var(--ink-faint)', flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Pairing mode</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pairingActive
+                    ? `Open for ${countdown}s — press the button on your device`
+                    : 'Allow new devices to join the network'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handlePermitJoin}
+              disabled={pairing || pairingActive || !connected}
+              className={pairingActive ? 'z-btn-primary' : 'z-btn-secondary'}
+              style={{ padding: '5px 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {pairing ? '…' : pairingActive ? `${countdown}s` : 'Add device'}
+            </button>
+          </div>
+        )}
+
+      </div>
+    </Card>
+  )
+}
+
+// ─── Presence Section ─────────────────────────────────────────────────────────
+
+function PresenceSection() {
+  const { addToast } = useUIStore()
+  const [persons,    setPersons]   = useState([])
+  const [loading,    setLoading]   = useState(true)
+  const [newName,    setNewName]   = useState('')
+  const [adding,     setAdding]    = useState(false)
+  const [copiedId,   setCopiedId]  = useState(null)
+  const [zone,       setZone]      = useState(null)
+  const [zoneEdit,   setZoneEdit]  = useState(false)
+  const [zoneDraft,  setZoneDraft] = useState({ lat: '', lon: '', radius_m: 200 })
+  const [zoneSaving, setZoneSaving] = useState(false)
+  const [locating,   setLocating]  = useState(false)
 
   const load = async () => {
-    try { setUsers(await getUsers()) } catch {}
+    try {
+      const [p, z] = await Promise.all([getPresencePersons(), getPresenceZone()])
+      setPersons(p.persons ?? [])
+      setZone(z)
+      if (z?.lat != null) setZoneDraft({ lat: z.lat, lon: z.lon, radius_m: z.radius ?? 200 })
+    } catch {}
+    finally { setLoading(false) }
   }
 
-  useEffect(() => { load().finally(() => setLoading(false)) }, [])
+  useEffect(() => { load() }, [])
 
-  const handleDelete = async (username) => {
-    if (!window.confirm(`Delete user '${username}'? This cannot be undone.`)) return
-    setDeleting(username)
+  const handleAdd = async () => {
+    const name = newName.trim()
+    if (!name) return
+    setAdding(true)
     try {
-      await deleteUser(username)
-      setUsers((u) => u.filter((x) => x.username !== username))
-      addToast(`User '${username}' deleted`, 'success')
-    } catch (e) { addToast(e.message || 'Failed to delete', 'error') }
-    finally { setDeleting(null) }
+      await createPresencePerson(name)
+      setNewName('')
+      await load()
+      addToast(`${name} added`, 'success')
+    } catch (e) { addToast(e.message || 'Failed to add person', 'error') }
+    finally { setAdding(false) }
   }
 
-  const handleRoleChange = async (username, role) => {
-    setUpdatingRole(username)
+  const handleDelete = async (p) => {
+    if (!window.confirm(`Remove ${p.name} from presence tracking?`)) return
     try {
-      await updateUser(username, { role })
-      setUsers((u) => u.map((x) => x.username === username ? { ...x, role } : x))
-      addToast('Role updated', 'success')
-    } catch (e) { addToast(e.message || 'Failed to update role', 'error') }
-    finally { setUpdatingRole(null) }
+      await deletePresencePerson(p.id)
+      await load()
+      addToast(`${p.name} removed`, 'success')
+    } catch (e) { addToast(e.message || 'Failed', 'error') }
+  }
+
+  const copyInvite = (p) => {
+    const url = `${window.location.origin}/presence/join/${p.token}`
+    navigator.clipboard.writeText(url).catch(() => {})
+    setCopiedId(p.id)
+    setTimeout(() => setCopiedId(null), 2000)
+    addToast('Invite link copied', 'success')
+  }
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) { addToast('Geolocation not available', 'error'); return }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setZoneDraft(d => ({ ...d, lat: parseFloat(pos.coords.latitude.toFixed(6)), lon: parseFloat(pos.coords.longitude.toFixed(6)) }))
+        setLocating(false)
+        setZoneEdit(true)
+      },
+      () => { addToast('Could not get location', 'error'); setLocating(false) },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  const saveZone = async () => {
+    setZoneSaving(true)
+    try {
+      await savePresenceZone({ lat: parseFloat(zoneDraft.lat), lon: parseFloat(zoneDraft.lon), radius_m: parseFloat(zoneDraft.radius_m) || 200 })
+      await load()
+      setZoneEdit(false)
+      addToast('Home zone saved', 'success')
+    } catch (e) { addToast(e.message || 'Failed to save', 'error') }
+    finally { setZoneSaving(false) }
   }
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 64 }}>
         <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
   }
 
   return (
-    <div>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingLeft: 2 }}>
-          <p className="z-eyebrow">Users</p>
-          <Button size="sm" variant="ghost" onClick={() => setShowAdd(true)} className="gap-1">
-            <Plus size={12} /> Add user
-          </Button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* Home zone card */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Home zone</p>
+            <p style={{ fontSize: 11, color: zone?.configured ? 'var(--ok)' : 'var(--warn)', marginTop: 1 }}>
+              {zone?.configured
+                ? `${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)} · ${zone.radius}m radius`
+                : zone?.lat != null
+                  ? `Using HA location (${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)}) — save to confirm`
+                  : 'Not configured — set your home location'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button onClick={useMyLocation} disabled={locating} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
+              {locating ? '…' : 'Use my location'}
+            </button>
+            {!zoneEdit && (
+              <button onClick={() => setZoneEdit(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
+                Edit
+              </button>
+            )}
+          </div>
         </div>
-        <Card>
-          {users.length === 0 ? (
-            <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--ink-faint)', padding: '24px 0' }}>No users found</p>
-          ) : (
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {users.map((u) => {
-                const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.user
-                const isSelf = u.username.toLowerCase() === currentUsername?.toLowerCase()
-                return (
-                  <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
-                    <div style={{ flexShrink: 0, width: 32, height: 32, borderRadius: '50%', background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <User size={14} style={{ color: 'var(--ink-faint)' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{u.username}</p>
-                        {isSelf && (
-                          <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600 }}>
-                            YOU
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {isSelf ? (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: roleInfo.color, fontFamily: '"IBM Plex Mono", monospace' }}>
-                        {roleInfo.label}
-                      </span>
-                    ) : (
-                      <select
-                        value={u.role}
-                        disabled={updatingRole === u.username}
-                        onChange={(e) => handleRoleChange(u.username, e.target.value)}
-                        style={{
-                          fontSize: 11, fontWeight: 600, color: roleInfo.color,
-                          background: 'var(--bg-2)', border: '0.5px solid var(--line)',
-                          borderRadius: 7, padding: '4px 8px', cursor: 'pointer',
-                          fontFamily: '"IBM Plex Mono", monospace',
-                        }}
-                      >
-                        {Object.entries(ROLE_LABELS).map(([val, { label }]) => (
-                          <option key={val} value={val}>{label}</option>
-                        ))}
-                      </select>
-                    )}
-
-                    {!isSelf && (
-                      <button
-                        onClick={() => handleDelete(u.username)}
-                        disabled={deleting === u.username}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, flexShrink: 0 }}
-                        className="hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+        {zoneEdit && (
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Latitude</p>
+                <input value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="32.0853" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Longitude</p>
+                <input value={zoneDraft.lon} onChange={e => setZoneDraft(d => ({ ...d, lon: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="34.7818" />
+              </div>
+              <div style={{ width: 90 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Radius (m)</p>
+                <input type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} />
+              </div>
             </div>
-          )}
-        </Card>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={saveZone} disabled={zoneSaving || !zoneDraft.lat || !zoneDraft.lon} className="z-btn-primary" style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12 }}>
+                {zoneSaving ? '…' : 'Save zone'}
+              </button>
+              <button onClick={() => setZoneEdit(false)} className="z-btn-secondary" style={{ height: 32, padding: '0 10px', borderRadius: 8, fontSize: 12 }}>
+                Cancel
+              </button>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+              Tip: click "Use my location" while at home to auto-fill. 200m radius works well for most homes.
+            </p>
+          </div>
+        )}
       </div>
 
-      <AddUserModal open={showAdd} onClose={() => setShowAdd(false)} onAdd={(u) => setUsers((prev) => [...prev, u])} />
+      {/* People card */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        {persons.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '20px 16px', textAlign: 'center' }}>
+            No persons configured. Add a person to start tracking presence.
+          </p>
+        ) : (
+          persons.map((p, i) => (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', borderBottom: i < persons.length - 1 ? '0.5px solid var(--line)' : 'none', flexWrap: 'wrap' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: presenceStateColor(p), flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 60 }}>{p.name}</span>
+              <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>{presenceStateLabel(p)}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{timeAgo(p.last_seen)}</span>
+              <button onClick={() => copyInvite(p)} title="Copy invite link" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedId === p.id ? 'var(--ok)' : 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
+                {copiedId === p.id ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+              <button onClick={() => handleDelete(p)} title="Remove person" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))
+        )}
+        <div style={{ padding: '12px 16px', display: 'flex', gap: 6, borderTop: persons.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <input
+            placeholder="Name (e.g. Youval)"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            className="z-input"
+            style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }}
+          />
+          <button onClick={handleAdd} disabled={adding || !newName.trim()} className="z-btn-primary" style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12 }}>
+            {adding ? '…' : 'Add'}
+          </button>
+        </div>
+        <p style={{ fontSize: 10, color: 'var(--ink-faint)', padding: '0 16px 12px', lineHeight: 1.6 }}>
+          Add each household member, then copy their invite link and open it on their phone.
+        </p>
+      </div>
+
     </div>
   )
 }
 
-// ─── Tab bar ─────────────────────────────────────────────────────────────────
+// ─── Users & Access Section ───────────────────────────────────────────────────
 
-const ROLE_ORDER_FE = { guest: 0, user: 1, admin: 2, super_admin: 3 }
+function UsersAndAccessSection({ currentUsername }) {
+  const { addToast } = useUIStore()
+  const [users,        setUsers]        = useState([])
+  const [invites,      setInvites]      = useState([])
+  const [inviteEmail,  setInviteEmail]  = useState('')
+  const [inviteRole,   setInviteRole]   = useState('user')
+  const [inviteLink,   setInviteLink]   = useState(null)
+  const [inviteSaving, setInviteSaving] = useState(false)
 
-function hasRole(userRole, minRole) {
-  return (ROLE_ORDER_FE[userRole] ?? 0) >= (ROLE_ORDER_FE[minRole] ?? 999)
+  const load = async () => {
+    try { setUsers(await getUsers()) } catch {}
+    try { setInvites((await listInvites()).filter(i => i.status === 'pending')) } catch {}
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleUpdateRole = async (username, role) => {
+    try {
+      await updateUser(username, { role })
+      setUsers(u => u.map(x => x.username === username ? { ...x, role } : x))
+      addToast('Role updated', 'success')
+    } catch (e) { addToast(e.message || 'Failed to update role', 'error') }
+  }
+
+  const handleDeleteUser = async (username) => {
+    if (!window.confirm(`Remove "${username}" from this home?`)) return
+    try {
+      await deleteUser(username)
+      setUsers(u => u.filter(x => x.username !== username))
+      addToast('User removed', 'success')
+    } catch (e) { addToast(e.message || 'Failed', 'error') }
+  }
+
+  const handleCreateInvite = async () => {
+    setInviteSaving(true)
+    setInviteLink(null)
+    try {
+      const res = await createInvite({ type: 'user', email: inviteEmail.trim() || undefined, role: inviteRole, public_url: window.location.origin })
+      const url = `${window.location.origin}${res.invite_url}`
+      setInviteLink(url)
+      navigator.clipboard.writeText(url).catch(() => {})
+      addToast('Invite link copied', 'success')
+      setInvites(prev => [...prev, { ...res, status: 'pending' }])
+    } catch (e) { addToast(e.message || 'Failed to create invite', 'error') }
+    finally { setInviteSaving(false) }
+  }
+
+  const handleRevokeInvite = async (token) => {
+    try {
+      await revokeInvite(token)
+      setInvites(prev => prev.filter(i => i.token !== token))
+      addToast('Invite revoked', 'success')
+    } catch (e) { addToast(e.message || 'Failed', 'error') }
+  }
+
+  const ROLE_OPT_LABELS = { super_admin: 'Super Admin', admin: 'Admin', user: 'User', guest: 'Guest' }
+
+  return (
+    <Card>
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+
+        {/* Active users */}
+        {users.map(u => {
+          const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.user
+          const isSelf = u.username.toLowerCase() === currentUsername?.toLowerCase()
+          return (
+            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {u.username}
+                {isSelf && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600 }}>YOU</span>}
+              </span>
+              {isSelf ? (
+                <span style={{ fontSize: 11, fontWeight: 600, color: roleInfo.color, fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {roleInfo.label}
+                </span>
+              ) : (
+                <select
+                  value={u.role}
+                  onChange={e => handleUpdateRole(u.username, e.target.value)}
+                  style={{ fontSize: 11, padding: '3px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: roleInfo.color, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {Object.entries(ROLE_OPT_LABELS).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              )}
+              {!isSelf && (
+                <button onClick={() => handleDeleteUser(u.username)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title="Remove">
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Pending invites */}
+        {invites.map(inv => (
+          <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', opacity: 0.75 }}>
+            <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+              {inv.email || '(open invite)'} · {ROLE_OPT_LABELS[inv.role] || inv.role}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>pending</span>
+            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(() => {}); addToast('Link copied', 'success') }} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, cursor: 'pointer', padding: '4px 6px', color: 'var(--ink-faint)', display: 'flex' }}>
+              <Copy size={11} />
+            </button>
+            <button onClick={() => handleRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
+              <Trash2 size={12} />
+            </button>
+          </div>
+        ))}
+
+        {/* Invite new user */}
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>Invite user</p>
+          {inviteLink ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Share this link — expires in 72h, single use.</p>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ flex: 1, background: 'var(--bg-2)', borderRadius: 9, padding: '0 10px', height: 34, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                  <span style={{ fontSize: 11, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
+                </div>
+                <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast('Copied!', 'success') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Copy size={12} /> Copy
+                </button>
+                <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12 }}>New</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="email"
+                placeholder="Email (optional)"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                className="z-input"
+                style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
+              />
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value)}
+                style={{ height: 34, padding: '0 6px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12, cursor: 'pointer' }}
+              >
+                {Object.entries(ROLE_OPT_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+              </select>
+              <button
+                onClick={handleCreateInvite}
+                disabled={inviteSaving}
+                className="z-btn-primary"
+                style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                {inviteSaving ? '…' : <><Plus size={12} /> Invite</>}
+              </button>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </Card>
+  )
 }
+
+// ─── Tab bar ──────────────────────────────────────────────────────────────────
 
 function TabBar({ tabs, active, onChange }) {
   return (
@@ -305,36 +693,25 @@ export default function Settings() {
   const { theme, toggleTheme, addToast } = useUIStore()
   const { logout, role, setRole } = useAuthStore()
 
-  const [loading, setLoading]     = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [activeTab, setActiveTab] = useState('general')
-
-  const [status, setStatus]   = useState(null)
-  const [username, setUsername] = useState('')
-
-  const [general, setGeneral]   = useState({ language: 'en', timezone: 'UTC' })
+  const [activeTab,    setActiveTab]    = useState('general')
+  const [refreshing,   setRefreshing]   = useState(false)
+  const [username,     setUsername]     = useState('')
+  const [general,      setGeneral]      = useState({ language: 'en', timezone: 'UTC' })
   const [savingGeneral, setSavingGeneral] = useState(false)
-
-  const [voice, setVoice]       = useState({})
-  const [savingVoice, setSavingVoice] = useState(false)
-
   const [showChangePw, setShowChangePw] = useState(false)
-  const [pwForm, setPwForm]   = useState({ username: '', password: '', confirm: '' })
-  const [pwError, setPwError] = useState('')
-  const [savingPw, setSavingPw] = useState(false)
+  const [pwForm,       setPwForm]       = useState({ username: '', password: '', confirm: '' })
+  const [pwError,      setPwError]      = useState('')
+  const [savingPw,     setSavingPw]     = useState(false)
 
   const isAdmin      = hasRole(role, 'admin')
   const isSuperAdmin = hasRole(role, 'super_admin')
 
   const TABS = [
     { id: 'general', label: 'General' },
-    ...(isAdmin      ? [{ id: 'admin', label: 'Admin',  icon: Shield }] : []),
-    ...(isSuperAdmin ? [{ id: 'users', label: 'Users',  icon: Users  }] : []),
+    ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
   ]
 
   const loadAll = () => {
-    getStatus().then(setStatus).catch(() => {})
-    getVoiceSettings().then(v => setVoice(v || {})).catch(() => {})
     getGeneralSettings().then(g => setGeneral({ language: 'en', timezone: 'UTC', ...g })).catch(() => {})
     getAuthStatus().then(auth => {
       setUsername(auth?.username || '')
@@ -358,13 +735,6 @@ export default function Settings() {
     finally { setSavingGeneral(false) }
   }
 
-  const saveVoice = async () => {
-    setSavingVoice(true)
-    try { await patchVoiceSettings(voice); addToast('Voice settings saved', 'success') }
-    catch { addToast('Failed to save', 'error') }
-    finally { setSavingVoice(false) }
-  }
-
   const handleChangePassword = async () => {
     if (!pwForm.username.trim()) { setPwError('Username is required'); return }
     if (pwForm.password.length < 4) { setPwError('At least 4 characters required'); return }
@@ -374,13 +744,11 @@ export default function Settings() {
       await changePassword({ username: pwForm.username, password: pwForm.password })
       addToast('Password updated', 'success')
       setShowChangePw(false)
-      setPwForm((f) => ({ ...f, password: '', confirm: '' }))
+      setPwForm(f => ({ ...f, password: '', confirm: '' }))
       setPwError('')
     } catch (e) { setPwError(e.message || 'Failed to update password') }
     finally { setSavingPw(false) }
   }
-
-  const sys = status?.system
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
@@ -398,10 +766,9 @@ export default function Settings() {
         )}
       </div>
 
-      {/* Tabs — only shown when admin/super_admin tabs are available */}
       {TABS.length > 1 && <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />}
 
-      {/* ── General tab ─────────────────────────────────────────────────────── */}
+      {/* ── General tab ───────────────────────────────────────────────────────── */}
       {activeTab === 'general' && (
         <>
           {/* Appearance */}
@@ -419,8 +786,8 @@ export default function Settings() {
             <SectionTitle>Language & Region</SectionTitle>
             <Card>
               <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <Select label="Language" value={general.language} onChange={(e) => setGeneral((s) => ({ ...s, language: e.target.value }))} options={LANGUAGES} />
-                <Select label="Timezone" value={general.timezone} onChange={(e) => setGeneral((s) => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map((tz) => ({ value: tz, label: tz }))} />
+                <Select label="Language" value={general.language} onChange={e => setGeneral(s => ({ ...s, language: e.target.value }))} options={LANGUAGES} />
+                <Select label="Timezone" value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
                 <button onClick={saveGeneral} disabled={savingGeneral} className="z-btn-primary" style={{ width: '100%' }}>
                   {savingGeneral ? 'Saving…' : 'Save'}
                 </button>
@@ -436,19 +803,11 @@ export default function Settings() {
                 <SettingRow icon={User} label="Signed in" subtitle={username || 'Local account'}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {role && (
-                      <span style={{
-                        fontSize: 9.5, padding: '2px 7px', borderRadius: 999,
-                        background: 'var(--bg-2)', color: ROLE_LABELS[role]?.color || 'var(--ink-faint)',
-                        fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase',
-                      }}>
+                      <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: ROLE_LABELS[role]?.color || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
                         {ROLE_LABELS[role]?.label || role}
                       </span>
                     )}
-                    <span style={{
-                      fontSize: 9.5, padding: '2px 7px', borderRadius: 999,
-                      background: 'var(--bg-2)', color: 'var(--ink-faint)',
-                      fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase',
-                    }}>Local</span>
+                    <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>Local</span>
                   </div>
                 </SettingRow>
 
@@ -491,109 +850,37 @@ export default function Settings() {
             </Card>
           </div>
 
-          {/* Voice */}
+          {/* System Status */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Voice</SectionTitle>
-            <Card>
-              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Mic size={16} style={{ color: voice.enabled !== false ? 'var(--accent)' : 'var(--ink-faint)' }} />
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Voice assistant</p>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>Microphone & text-to-speech</p>
-                    </div>
-                  </div>
-                  <Toggle checked={voice.enabled !== false} onCheckedChange={(v) => setVoice((s) => ({ ...s, enabled: v }))} />
-                </div>
-
-                <AnimatePresence>
-                  {voice.enabled !== false && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden' }}>
-                      <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                        <div className="flex items-center gap-3">
-                          {voice.wakeword_enabled ? <Mic size={17} className="text-violet-400" /> : <MicOff size={17} className="text-zinc-400" />}
-                          <div>
-                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Wake word</p>
-                            <p className="text-xs text-zinc-400">{voice.wakeword_model || 'hey_mycroft'}</p>
-                          </div>
-                        </div>
-                        <Toggle checked={!!voice.wakeword_enabled} onCheckedChange={(v) => setVoice((s) => ({ ...s, wakeword_enabled: v }))} />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm text-zinc-700 dark:text-zinc-300">Detection sensitivity</p>
-                          <span className="text-xs font-semibold text-zinc-500">{(voice.wakeword_threshold || 0.65).toFixed(2)}</span>
-                        </div>
-                        <Slider value={(voice.wakeword_threshold || 0.65) * 100} onValueChange={(v) => setVoice((s) => ({ ...s, wakeword_threshold: v / 100 }))} min={30} max={95} />
-                        <div className="flex justify-between mt-1">
-                          <span className="text-[10px] text-zinc-400">Sensitive</span>
-                          <span className="text-[10px] text-zinc-400">Strict</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm text-zinc-700 dark:text-zinc-300">Listen timeout</p>
-                          <span className="text-xs font-semibold text-zinc-500">{voice.active_timeout_s || 90}s</span>
-                        </div>
-                        <Slider value={voice.active_timeout_s || 90} onValueChange={(v) => setVoice((s) => ({ ...s, active_timeout_s: v }))} min={10} max={120} />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm text-zinc-700 dark:text-zinc-300">Speech speed</p>
-                          <span className="text-xs font-semibold text-zinc-500">{(voice.speed || 1.0).toFixed(1)}×</span>
-                        </div>
-                        <Slider value={(voice.speed || 1.0) * 100} onValueChange={(v) => setVoice((s) => ({ ...s, speed: parseFloat((v / 100).toFixed(2)) }))} min={70} max={150} />
-                        <div className="flex justify-between mt-1">
-                          <span className="text-[10px] text-zinc-400">Slower</span>
-                          <span className="text-[10px] text-zinc-400">Faster</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <button onClick={saveVoice} disabled={savingVoice} className="z-btn-primary" style={{ width: '100%' }}>
-                  {savingVoice ? 'Saving…' : 'Save voice settings'}
-                </button>
-              </div>
-            </Card>
+            <SectionTitle icon={Activity}>System Status</SectionTitle>
+            <SystemStatusCard />
           </div>
 
-          {/* System metrics */}
-          {sys && (
+          {/* Presence tracking */}
+          <div style={{ marginBottom: 22 }}>
+            <SectionTitle icon={MapPin}>Presence tracking</SectionTitle>
+            <PresenceSection />
+          </div>
+
+          {/* Zigbee Bridge */}
+          <div style={{ marginBottom: 22 }}>
+            <SectionTitle icon={Radio}>Zigbee Bridge</SectionTitle>
+            <ZigbeeBridgeSection isAdmin={isAdmin} />
+          </div>
+
+          {/* Users & Access — super_admin only */}
+          {isSuperAdmin && (
             <div style={{ marginBottom: 22 }}>
-              <SectionTitle>System</SectionTitle>
-              <Card>
-                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <MetricBar label="CPU"  value={Math.round(sys.cpu_percent  || 0)} />
-                  <MetricBar label="RAM"  value={Math.round(sys.ram_percent  || 0)} />
-                  <MetricBar label="Disk" value={Math.round(sys.disk_percent || 0)} />
-                  <div className="flex items-center gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                    <Wifi size={15} className="text-zinc-400" />
-                    <span className="text-xs text-zinc-500">
-                      {status.ws_clients || 0} WebSocket client{status.ws_clients !== 1 ? 's' : ''} connected
-                    </span>
-                    <Badge variant={status.ok ? 'success' : 'danger'} className="ml-auto text-[10px]">
-                      {status.ok ? 'HA connected' : 'HA offline'}
-                    </Badge>
-                  </div>
-                </div>
-              </Card>
+              <SectionTitle icon={Users}>Users & Access</SectionTitle>
+              <UsersAndAccessSection currentUsername={username} />
             </div>
           )}
 
         </>
       )}
 
-      {/* ── Admin tab ───────────────────────────────────────────────────────── */}
+      {/* ── Admin tab ──────────────────────────────────────────────────────────── */}
       {activeTab === 'admin' && isAdmin && <AdminSettings />}
-
-      {/* ── Users tab ───────────────────────────────────────────────────────── */}
-      {activeTab === 'users' && isSuperAdmin && <UsersPanel currentUsername={username} />}
 
     </div>
   )

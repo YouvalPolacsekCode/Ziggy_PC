@@ -40,6 +40,7 @@ class PageErrorBoundary extends Component {
 export function AppShell({ connected }) {
   const location = useLocation()
   const [features, setFeatures] = useState({ scenes: false })
+  const isChatRoute = location.pathname.startsWith('/chat')
 
   useEffect(() => {
     getFeaturesSettings().then(setFeatures).catch(() => {})
@@ -49,8 +50,10 @@ export function AppShell({ connected }) {
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <Sidebar connected={connected} features={features} />
 
+      {/* On the chat route, overflow must be hidden so the browser cannot auto-scroll
+          main to reveal the focused input — that scroll is what makes the header jump off-screen. */}
       <main
-        className="flex-1 min-w-0 overflow-y-auto scrollbar-thin pb-nav"
+        className={`flex-1 min-w-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto scrollbar-thin pb-nav'}`}
         style={{ background: 'var(--bg)' }}
       >
         <AnimatePresence mode="wait" initial={false}>

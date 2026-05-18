@@ -32,6 +32,7 @@ _SKIP_INTENTS = {
     "list_suggestions", "accept_suggestion", "reject_suggestion",
     "snooze_suggestion", "explain_suggestion",
     "ping_test",
+    "debug_mode",
 }
 
 # Intents that read state — log them but mark automatable=false so the detector skips them

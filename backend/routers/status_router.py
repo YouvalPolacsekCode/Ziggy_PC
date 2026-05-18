@@ -11,7 +11,7 @@ from backend.ws_manager import manager
 from core.logger_module import log_info
 from core.memory import list_memory
 from core.settings_loader import save_settings, settings
-from services.system_tools import get_system_status
+from services.system_tools import get_system_status, get_system_metrics
 
 router = APIRouter()
 
@@ -21,7 +21,7 @@ async def status():
     return {
         "ok": True,
         "threads": [t.name for t in threading.enumerate()],
-        "system": get_system_status(),
+        "system": get_system_metrics(),
         "ws_clients": manager.count,
         "config": {
             "voice_enabled": settings.get("features", {}).get("voice", True),

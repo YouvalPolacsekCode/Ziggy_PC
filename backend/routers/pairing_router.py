@@ -20,6 +20,7 @@ from services.ha_pairing import (
     WIFI_INTEGRATIONS,
 )
 from services.home_automation import call_service, get_all_states
+from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 
 router = APIRouter()
 
@@ -144,17 +145,27 @@ class DeviceRename(BaseModel):
 
 @router.post("/api/ha/zha/permit")
 async def zha_permit(body: ZhaPermitBody):
+    _dbus.emit("ha", BASIC, "pairing_permit_join_started",
+               duration_s=body.duration,
+               message=f"Zigbee permit join opened for {body.duration}s")
     result = await start_permit_join(body.duration)
     if not result.get("ok"):
+        _dbus.emit("ha", BASIC, "pairing_permit_join_failed",
+                   error=result.get("error"), result="error",
+                   suggestion="Check ZHA integration is enabled in Home Assistant.")
         raise HTTPException(status_code=502, detail=result.get("error", "ZHA error"))
     # Refresh registry shortly after the permit window closes so new devices appear immediately.
     _schedule_registry_refresh(delay_s=body.duration + 5)
+    _dbus.emit("ha", BASIC, "pairing_permit_join_ok",
+               duration_s=body.duration, result="ok",
+               message=f"Permit join active. Pair your device within {body.duration}s.")
     return result
 
 
 @router.get("/api/ha/devices")
 async def ha_devices():
     devices = await zha_get_devices()
+    _dbus.emit("ha", VERBOSE, "pairing_devices_listed", count=len(devices))
     return {"devices": devices}
 
 

@@ -140,3 +140,22 @@ export function greetingByTime() {
   if (h < 21) return 'Good evening'
   return 'Good night'
 }
+
+// Hebrew U+0590–U+05FF: letters, vowel points, cantillation marks
+const HEBREW_RE = /[֐-׿]/
+
+/**
+ * Returns true if the string contains Hebrew characters.
+ * Use for message bubbles, task names, automation descriptions, etc.
+ */
+export function isHebrew(text) {
+  return HEBREW_RE.test(text || '')
+}
+
+/**
+ * Returns 'rtl' if the string is Hebrew, otherwise 'ltr'.
+ * Use as: dir={textDir(msg.text)}
+ */
+export function textDir(text) {
+  return isHebrew(text) ? 'rtl' : 'ltr'
+}

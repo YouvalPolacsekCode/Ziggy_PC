@@ -50,7 +50,6 @@ const NAV_ITEMS = [
   { to: '/tasks',           icon: 'tasks',   label: 'Tasks' },
   { to: '/memory',          icon: 'brain',   label: 'Memory' },
   { to: '/settings',        icon: 'cog',     label: 'Settings' },
-  { to: '/debug',           icon: 'debug',   label: 'Debug', adminOnly: true },
 ]
 
 function NavItem({ to, icon, label, badge }) {
@@ -91,7 +90,6 @@ export function Sidebar({ connected, features }) {
   const badges = { suggestions: pendingCount() }
   const visibleNav = NAV_ITEMS.filter(item => {
     if (item?.to === '/scenes' && !features?.scenes) return false
-    if (item?.adminOnly && !isSuperAdmin) return false
     return true
   })
 
@@ -148,7 +146,7 @@ export function Sidebar({ connected, features }) {
       <div style={{ paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
         {isSuperAdmin && (
           <NavLink
-            to="/cloud-admin"
+            to="/ops"
             style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '6px 8px', borderRadius: 8, marginBottom: 6,
@@ -159,9 +157,9 @@ export function Sidebar({ connected, features }) {
             })}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/>
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1c.5.5 1.3.6 1.8.3.6-.2 1-.8 1-1.5V3a2 2 0 0 1 4 0v.1c0 .7.4 1.3 1 1.5.5.3 1.3.2 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8c.2.6.8 1 1.5 1H21a2 2 0 0 1 0 4h-.1c-.7 0-1.3.4-1.5 1z"/>
             </svg>
-            Cloud Admin
+            Admin Console
           </NavLink>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

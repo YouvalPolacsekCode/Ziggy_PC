@@ -85,8 +85,7 @@ export function BottomNav({ connected, features }) {
   const visibleMore = [
     ...MORE_NAV.filter(item => !(item.to === '/scenes' && !features?.scenes)),
     ...(role === 'super_admin' ? [
-      { to: '/cloud-admin', icon: 'shield', label: 'Cloud Admin' },
-      { to: '/debug',       icon: 'debug',  label: 'Debug' },
+      { to: '/ops', icon: 'cog', label: 'Admin' },
     ] : []),
   ]
   const isMoreActive = visibleMore.some(n => location.pathname.startsWith(n.to))

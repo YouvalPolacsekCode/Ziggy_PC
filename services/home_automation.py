@@ -29,6 +29,11 @@ def _room_aliases() -> Dict[str, str]:
     return settings.get("room_aliases", {})
 
 
+def _resolve_room(room_key: str) -> str:
+    from services.room_alias_bank import resolve_room
+    return resolve_room(room_key, settings.get("room_aliases", {}))
+
+
 def _device_map() -> Dict[str, Dict[str, str]]:
     return settings.get("device_map", {})
 
@@ -142,7 +147,7 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
       3. None — callers should surface a clear "not configured" message
     """
     room_key = (room or "").lower().replace("_", " ").strip()
-    normalized_room = _room_aliases().get(room_key, room_key)
+    normalized_room = _resolve_room(room_key)
     normalized_type = (sensor_type or "").lower()
 
     # --- Path 1: DeviceRegistry ---
@@ -182,7 +187,7 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
 def get_all_light_entities_in_room(room: str) -> List[str]:
     """Return all light entity_ids mapped to a room (any key containing 'light')."""
     room_key = (room or "").lower().replace("_", " ").strip()
-    normalized_room = _room_aliases().get(room_key, room_key)
+    normalized_room = _resolve_room(room_key)
     room_devices = _device_map().get(normalized_room, {})
     return [v for k, v in room_devices.items() if "light" in k.lower() and v]
 

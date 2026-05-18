@@ -1,21 +1,24 @@
 import logging
 import os
-from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
-log_file = os.path.join(LOG_DIR, f"ziggy_{datetime.now().strftime('%Y%m%d')}.log")
 
-logging.basicConfig(
-    filename=log_file,
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+# Rotate daily, keep 7 days of log files
+_file_handler = TimedRotatingFileHandler(
+    filename=os.path.join(LOG_DIR, "ziggy.log"),
+    when="midnight",
+    interval=1,
+    backupCount=7,
+    encoding="utf-8",
 )
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
-# Console handler — only WARNING+ to keep stdout quiet in production
-_console = logging.StreamHandler()
-_console.setLevel(logging.WARNING)
-logging.getLogger().addHandler(_console)
+_root = logging.getLogger()
+_root.setLevel(logging.DEBUG)
+_root.addHandler(_file_handler)
 
 
 def log_info(message: str) -> None:

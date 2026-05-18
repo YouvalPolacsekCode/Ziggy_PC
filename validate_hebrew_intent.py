@@ -60,8 +60,10 @@ BILINGUAL_SYSTEM_PROMPT = (
 # ── Hebrew room normalizer (mirrors Step 3 of the design doc) ─────────────────
 from core.settings_loader import settings
 
+from services.room_alias_bank import ROOM_ALIAS_BANK, ROOM_ALIAS_BANK_HE
+
 _ROOMS_HE_SORTED = sorted(
-    settings.get("room_aliases_he", {}).items(),
+    {**ROOM_ALIAS_BANK_HE, **settings.get("room_aliases_he", {})}.items(),
     key=lambda kv: len(kv[0]),
     reverse=True,
 )
@@ -69,10 +71,10 @@ _ROOMS_HE_SORTED = sorted(
 def _normalize_hebrew_rooms(text: str) -> str:
     for he_name, en_slug in _ROOMS_HE_SORTED:
         if he_name in text:
-            en_display = next(
-                (k for k, v in settings.get("room_aliases", {}).items() if v == en_slug),
-                en_slug,
-            )
+            personal = settings.get("room_aliases", {})
+            en_display = next((k for k, v in personal.items() if v == en_slug), None)
+            if en_display is None:
+                en_display = next((k for k, v in ROOM_ALIAS_BANK.items() if v == en_slug), en_slug)
             text = text.replace(he_name, en_display)
     return text
 

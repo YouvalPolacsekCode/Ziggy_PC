@@ -404,6 +404,7 @@ const _STATUS_FILTERS = [
   { id: 'all',        label: 'All' },
   { id: 'unassigned', label: '📦 Unassigned' },
   { id: 'noroom',     label: '🏠 No Room' },
+  { id: 'offline',    label: '🔴 Offline' },
   { id: 'active',     label: '🟢 Active' },
   { id: 'connected',  label: '🔗 Connected' },
   { id: 'ir',         label: '📡 IR Remotes' },
@@ -1073,6 +1074,7 @@ export default function Devices() {
       if (isHidden && !showHidden) return false
       let matchDomain = true
       if (domain === 'active') matchDomain = isEntityOn(e)
+      else if (domain === 'offline') matchDomain = e.state === 'unavailable' || e.state === 'unknown'
       else if (domain === 'connected') matchDomain = e.state !== 'unavailable' && e.state !== 'unknown'
       else if (domain === 'ir') matchDomain = e._ir === true || Boolean(e._linkedIr)
       else if (domain !== 'all') {

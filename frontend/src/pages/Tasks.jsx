@@ -5,7 +5,7 @@ import { Input, Textarea } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { useTaskStore } from '../stores/taskStore'
 import { useUIStore } from '../stores/uiStore'
-import { formatDate } from '../lib/utils'
+import { formatDate, isHebrew } from '../lib/utils'
 
 const PRIORITY_COLOR = { high: 'var(--accent)', medium: 'var(--warn)', low: 'var(--line-2)' }
 
@@ -30,13 +30,15 @@ function ZIcon({ name, size = 14 }) {
 
 // ── Sub-item row ──────────────────────────────────────────────────────────────
 function SubItem({ item, onToggle }) {
+  const rtl = isHebrew(item.text)
   return (
     <button
       onClick={onToggle}
+      dir={rtl ? 'rtl' : 'ltr'}
       style={{
         display: 'flex', alignItems: 'center', gap: 8,
         width: '100%', padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer',
-        textAlign: 'left',
+        textAlign: 'start',
       }}
     >
       <span style={{ color: item.done ? 'var(--ok)' : 'var(--line-2)', flexShrink: 0 }}>
@@ -88,12 +90,15 @@ function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
         </button>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            fontSize: 14, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
-            color: isDone ? 'var(--ink-faint)' : 'var(--ink)',
-            lineHeight: 1.3,
-            textDecoration: isDone ? 'line-through' : 'none',
-          }}>
+          <p
+            dir={isHebrew(task.task || task.title) ? 'rtl' : 'ltr'}
+            style={{
+              fontSize: 14, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
+              color: isDone ? 'var(--ink-faint)' : 'var(--ink)',
+              lineHeight: 1.3,
+              textDecoration: isDone ? 'line-through' : 'none',
+            }}
+          >
             {task.task || task.title}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
@@ -152,9 +157,14 @@ function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
             exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
             style={{ overflow: 'hidden' }}
           >
-            <div style={{ paddingLeft: 32, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ paddingInlineStart: 32, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
               {task.description && (
-                <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>{task.description}</p>
+                <p
+                  dir={isHebrew(task.description) ? 'rtl' : 'ltr'}
+                  style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}
+                >
+                  {task.description}
+                </p>
               )}
               {items.map((item, idx) => (
                 <SubItem key={idx} item={item} onToggle={() => {
@@ -183,8 +193,8 @@ function TaskForm({ values, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Input label="Task" placeholder="What needs to be done?" value={taskText} onChange={e => onChange({ taskText: e.target.value })} autoFocus onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
-      <Textarea label="Description (optional)" placeholder="Add details or notes…" value={description} onChange={e => onChange({ description: e.target.value })} rows={2} />
+      <Input label="Task" placeholder="What needs to be done?" value={taskText} onChange={e => onChange({ taskText: e.target.value })} dir="auto" autoFocus onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
+      <Textarea label="Description (optional)" placeholder="Add details or notes…" value={description} onChange={e => onChange({ description: e.target.value })} dir="auto" rows={2} />
       <Input label="Due date (optional)" type="datetime-local" value={due} onChange={e => onChange({ due: e.target.value })} />
       <Select label="Priority" value={priority} onChange={e => onChange({ priority: e.target.value })} options={[{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }]} />
 
@@ -196,6 +206,7 @@ function TaskForm({ values, onChange }) {
             onChange={e => onChange({ itemInput: e.target.value })}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
             placeholder="Add an item…"
+            dir="auto"
             className="z-input"
             style={{ height: 36, padding: '0 12px', fontSize: 13 }}
           />
@@ -208,7 +219,7 @@ function TaskForm({ values, onChange }) {
                 <button onClick={() => toggleItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: item.done ? 'var(--ok)' : 'var(--line-2)', padding: 0, flexShrink: 0 }}>
                   <ZIcon name={item.done ? 'check-c' : 'square'} size={14} />
                 </button>
-                <span style={{ flex: 1, fontSize: 12, color: item.done ? 'var(--ink-faint)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
+                <span dir={isHebrew(item.text) ? 'rtl' : 'ltr'} style={{ flex: 1, fontSize: 12, color: item.done ? 'var(--ink-faint)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
                 <button onClick={() => removeItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 0 }}>
                   <ZIcon name="x" size={13} />
                 </button>

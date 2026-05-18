@@ -87,7 +87,7 @@ async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
         bus.set_level(new_level)
         settings.setdefault("debug", {})["level"] = new_level
         save_settings(settings)
-        return ok(f"Debug mode enabled at level **{new_level}**. Open /debug to see live events.")
+        return ok(f"Debug mode enabled at level **{new_level}**. Open /ops/debug to see live events.")
 
     if action == "disable":
         bus.set_level("off")
@@ -110,7 +110,7 @@ async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
         buffered = cfg["buffered"]
         return ok(
             f"Debug is **{lvl}**. Scopes: {', '.join(scopes)}. "
-            f"{buffered} events buffered. Open **/debug** to explore."
+            f"{buffered} events buffered. Open **/ops/debug** to explore."
         )
 
     if action == "show_failures":
@@ -182,11 +182,12 @@ async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
 
 async def handle_list_rooms(params: dict, *, source: str = "unknown") -> dict:
     from core.settings_loader import settings
-    rooms = sorted(settings.get("room_aliases", {}).keys())
-    if not rooms:
-        return ok("No rooms configured yet. Add rooms in Settings.")
-    lines = ", ".join(r.title() for r in rooms)
-    return ok(f"Your configured rooms: {lines}.")
+    from services.room_alias_bank import ROOM_ALIAS_BANK
+    personal = settings.get("room_aliases", {})
+    # Show canonical slugs: unique values from personal aliases + bank
+    slugs = sorted({*ROOM_ALIAS_BANK.values(), *personal.values()})
+    lines = ", ".join(s.replace("_", " ").title() for s in slugs)
+    return ok(f"I know these rooms: {lines}.")
 
 
 HANDLERS = {

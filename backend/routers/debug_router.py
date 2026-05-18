@@ -59,6 +59,15 @@ async def set_debug_config(body: DebugConfigBody, _: dict = Depends(require_role
             raise HTTPException(400, f"Unknown scopes: {sorted(invalid)}. Valid: {sorted(_VALID_SCOPES)}")
         bus.set_scopes(body.scopes)
 
+    # Persist to settings.yaml so debug config survives server restarts
+    from core.settings_loader import settings, save_settings
+    debug = settings.setdefault("debug", {})
+    if body.level is not None:
+        debug["level"] = body.level
+    if body.scopes is not None:
+        debug["scopes"] = body.scopes
+    save_settings(settings)
+
     return {"ok": True, **bus.get_config()}
 
 
@@ -220,4 +229,43 @@ async def get_debug_status(_: dict = Depends(require_role("super_admin"))):
     return {
         "config":        bus.get_config(),
         "recent_events": bus.get_events(limit=5),
+    }
+
+
+@router.post("/self-test")
+async def debug_self_test(_: dict = Depends(require_role("super_admin"))):
+    """
+    Emit a test event and return a full diagnostic snapshot.
+    Tells you: whether the bus is active, whether the WS callback is wired,
+    and whether the event made it into the buffer.
+    """
+    ws_callback_wired = bus._ws_callback is not None
+    loop_stored = bus._loop is not None
+    was_active = bus.is_active("general", BASIC)
+
+    # Force the bus on for this test regardless of current level
+    prev_level = bus._level
+    bus.set_level("basic")
+
+    test_event = bus.emit(
+        "general", BASIC, "debug_self_test",
+        message="Self-test triggered from /api/debug/self-test",
+        result="ok",
+    )
+
+    bus.set_level(prev_level)
+
+    return {
+        "config":             bus.get_config(),
+        "ws_callback_wired":  ws_callback_wired,
+        "event_loop_stored":  loop_stored,
+        "was_active_before":  was_active,
+        "test_event_emitted": test_event is not None,
+        "test_event":         test_event,
+        "buffer_size":        len(bus.get_events(limit=500)),
+        "diagnosis": (
+            "OK — bus is wired and events are flowing"
+            if ws_callback_wired and test_event
+            else "PROBLEM — see ws_callback_wired and test_event_emitted fields"
+        ),
     }

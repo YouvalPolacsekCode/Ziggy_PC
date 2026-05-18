@@ -5,7 +5,7 @@ import { useUIStore } from '../stores/uiStore'
 import {
   getDebugConfig, setDebugConfig, getDebugEvents,
   clearDebugEvents, exportDebugReport, getDebugStatus,
-  simulateIntent, getRequestTrace,
+  simulateIntent, getRequestTrace, debugSelfTest,
 } from '../lib/api'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ function ResultDot({ result }) {
   )
 }
 
-function EventRow({ event, onSelect, selected }) {
+function EventRow({ event, onSelect, selected, onFilterReqId }) {
   const data = event.data || {}
   const result = data.result
   const isSelected = selected?.id === event.id
@@ -132,6 +132,19 @@ function EventRow({ event, onSelect, selected }) {
         {event.step}
         {data.intent && <span style={{ color: 'var(--ink-mute)', marginLeft: 6 }}>{data.intent}</span>}
         {data.message && <span style={{ color: 'var(--ink-faint)', marginLeft: 6 }}>{truncate(data.message, 60)}</span>}
+        {event.request_id && (
+          <span
+            onClick={e => { e.stopPropagation(); onFilterReqId(event.request_id) }}
+            title={`Filter to ${event.request_id}`}
+            style={{
+              marginLeft: 8, fontSize: 9, color: 'var(--ink-faint)',
+              fontFamily: '"IBM Plex Mono", monospace',
+              cursor: 'pointer', textDecoration: 'underline dotted',
+            }}
+          >
+            {event.request_id.slice(0, 12)}
+          </span>
+        )}
       </span>
       {result && <ResultDot result={result} />}
     </div>
@@ -311,6 +324,7 @@ export default function DebugPage() {
   const [liveEvents, setLiveEvents] = useState([])
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [showSimulate, setShowSimulate] = useState(false)
+  const [selfTestResult, setSelfTestResult] = useState(null)
   const [filterScope, setFilterScope] = useState('')
   const [filterLevel, setFilterLevel] = useState('')
   const [filterResult, setFilterResult] = useState('')
@@ -439,7 +453,7 @@ export default function DebugPage() {
   const isActive = config && config.level !== 'off'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{
         padding: '12px 16px', borderBottom: '0.5px solid var(--line)',
@@ -467,6 +481,19 @@ export default function DebugPage() {
         </div>
 
         <button
+          onClick={async () => {
+            try {
+              const r = await debugSelfTest()
+              setSelfTestResult(r)
+            } catch (e) {
+              setSelfTestResult({ error: e.message })
+            }
+          }}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
+        >
+          Self-Test
+        </button>
+        <button
           onClick={() => setShowSimulate(true)}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
         >
@@ -485,6 +512,40 @@ export default function DebugPage() {
           Clear
         </button>
       </div>
+
+      {selfTestResult && (
+        <div style={{
+          padding: '10px 16px', flexShrink: 0,
+          background: selfTestResult.error || !selfTestResult.ws_callback_wired
+            ? '#ef444418' : '#10b98118',
+          borderBottom: '0.5px solid var(--line)',
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: selfTestResult.error ? '#ef4444' : (selfTestResult.ws_callback_wired ? '#10b981' : '#ef4444') }}>
+              {selfTestResult.error
+                ? `Error: ${selfTestResult.error}`
+                : selfTestResult.diagnosis}
+            </p>
+            {selfTestResult.ws_callback_wired === false && (
+              <p style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>
+                WS callback not wired — server was not restarted after code changes. Restart ziggy_main.py.
+              </p>
+            )}
+            {selfTestResult.ws_callback_wired && !selfTestResult.was_active_before && (
+              <p style={{ fontSize: 11, color: '#e0a020', marginTop: 4 }}>
+                Bus is wired but debug level was off when you hit Self-Test. Set level and click Apply first.
+              </p>
+            )}
+            {selfTestResult.ws_callback_wired && (
+              <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+                buffer={selfTestResult.buffer_size} · ws={selfTestResult.ws_callback_wired ? 'wired' : 'NOT wired'} · loop={selfTestResult.event_loop_stored ? 'stored' : 'missing'} · level={selfTestResult.config?.level}
+              </p>
+            )}
+          </div>
+          <button onClick={() => setSelfTestResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, flexShrink: 0 }}>×</button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left sidebar — config + filters */}
@@ -629,6 +690,23 @@ export default function DebugPage() {
           </div>
 
           <div ref={listRef} style={{ flex: 1, overflow: 'auto' }}>
+            {filterReqId && (
+              <div style={{
+                padding: '6px 12px', background: '#3b82f611',
+                borderBottom: '0.5px solid var(--line)',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ fontSize: 11, color: '#3b82f6', fontFamily: '"IBM Plex Mono", monospace', flex: 1 }}>
+                  Tracing: {filterReqId}
+                </span>
+                <button
+                  onClick={() => setFilterReqId('')}
+                  style={{ fontSize: 10, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  × clear
+                </button>
+              </div>
+            )}
             {filtered.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center' }}>
                 <p style={{ color: 'var(--ink-faint)', fontSize: 13 }}>
@@ -642,6 +720,7 @@ export default function DebugPage() {
                   event={ev}
                   selected={selectedEvent}
                   onSelect={setSelectedEvent}
+                  onFilterReqId={setFilterReqId}
                 />
               ))
             )}

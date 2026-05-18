@@ -19,6 +19,7 @@ import asyncio
 from datetime import datetime
 
 from core.logger_module import log_error, log_info
+from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 
 _started = False
 _tick: int = 0   # increments once per minute
@@ -80,10 +81,15 @@ async def _fire_presence_automation(trigger_type: str, name: str) -> None:
             if person_filter != "*" and person_filter.lower() != name.lower():
                 continue
             log_info(f"[Scheduler] Firing '{auto.get('name', auto['id'])}' for {trigger_type} ({name})")
+            _dbus.emit("presence", BASIC, "presence_automation_fired",
+                       automation_id=auto["id"], name=auto.get("name", auto["id"]),
+                       trigger_type=trigger_type, person=name)
             try:
                 await execute_ziggy_actions(auto["id"])
             except Exception as exc:
                 log_error(f"[Scheduler] Automation {auto['id']} failed: {exc}")
+                _dbus.emit("presence", BASIC, "presence_automation_failed",
+                           automation_id=auto["id"], error=str(exc), result="exception")
     except Exception as exc:
         log_error(f"[Scheduler] _fire_presence_automation error: {exc}")
 
@@ -116,11 +122,18 @@ async def run_scheduler() -> None:
                     continue
 
                 auto_id = automation["id"]
-                log_info(f"[Scheduler] Firing automation '{automation.get('name', auto_id)}'")
+                auto_name = automation.get("name", auto_id)
+                log_info(f"[Scheduler] Firing automation '{auto_name}'")
+                _dbus.emit("scheduler", BASIC, "scheduled_automation_fired",
+                           automation_id=auto_id, name=auto_name,
+                           trigger_time=current_time)
                 try:
                     await execute_ziggy_actions(auto_id)
                 except Exception as exc:
                     log_error(f"[Scheduler] Execution failed for {auto_id}: {exc}")
+                    _dbus.emit("scheduler", BASIC, "scheduled_automation_failed",
+                               automation_id=auto_id, name=auto_name,
+                               error=str(exc), result="exception")
 
         except Exception as exc:
             log_error(f"[Scheduler] Tick error: {exc}")

@@ -3,8 +3,9 @@ OpenAI function-calling tool definitions for the Ziggy intent parser.
 Extracted here so intent_parser.py stays focused on call logic only.
 """
 from core.settings_loader import settings
+from services.room_alias_bank import all_known_room_names
 
-_ROOMS = ", ".join(sorted(settings.get("room_aliases", {}).keys()))
+_ROOMS = ", ".join(all_known_room_names(settings.get("room_aliases", {})))
 
 
 def _automation_device_types() -> str:

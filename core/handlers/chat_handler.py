@@ -44,6 +44,10 @@ def _format_search_snippets(result: dict) -> str:
 
 # ── Chat handler ───────────────────────────────────────────────────────────────
 
+def _is_hebrew(text: str) -> bool:
+    return any('֐' <= c <= 'ת' for c in text or "")
+
+
 async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict:
     text = str(params.get("text") or params.get("message") or params or "").strip()
 
@@ -62,9 +66,24 @@ async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict
         chat_history = get_chat_history()
 
     user_name = memory_context.get("user_name", "Youval")
+    input_is_hebrew = _is_hebrew(text)
+
+    # Check recent history too — if the conversation has been in Hebrew, stay Hebrew.
+    if not input_is_hebrew and session_history:
+        recent = session_history[-4:] if len(session_history) >= 4 else session_history
+        input_is_hebrew = any(_is_hebrew(m.get("content", "")) for m in recent if m.get("role") == "user")
+
+    lang_rule = (
+        "ALWAYS respond in Hebrew (עברית). Keep responses concise and natural. "
+        "Device names, room names, and entity IDs can stay in English but all explanatory text must be Hebrew. "
+    ) if input_is_hebrew else (
+        "Respond in English. Keep responses concise and natural. "
+    )
+
     system_prompt = (
         f"You are Ziggy, the smart home assistant. The user's name is {user_name} (Hebrew: יובל). "
         "Always use this exact spelling when addressing them by name in Hebrew. "
+        f"{lang_rule}"
         "Use the user's memory and tasks to answer contextually.\n\n"
         "IMPORTANT: If the user's message looks like an incomplete smart home command or "
         "automation request — such as 'create a routine', 'add a task', 'create a note', "

@@ -14,6 +14,7 @@ from typing import Callable, Dict, Any
 
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
+from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 from services.home_automation import get_state
 from services.presence_store import any_home
 
@@ -146,11 +147,17 @@ def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
 
                 last_alert[entity_id] = now
                 log_info(f"[SensorAlerts] Alert: {label} → {state}")
+                _dbus.emit("sensor", BASIC, "sensor_alert_fired",
+                           entity_id=entity_id, label=label,
+                           state=state, trigger=trigger, message=message,
+                           result="ok")
                 try:
                     from services.push_notify import push_notify_sync
                     push_notify_sync(f"🔔 {label}", message, "/anomalies", f"sensor:{entity_id}")
                 except Exception as e:
                     log_error(f"[SensorAlerts] Push failed: {e}")
+                    _dbus.emit("sensor", BASIC, "sensor_alert_push_failed",
+                               entity_id=entity_id, error=str(e), result="error")
                 # Legacy notify_fn kept for any non-push callers
                 if notify_fn is not None:
                     try:

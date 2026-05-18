@@ -62,6 +62,19 @@ def get_system_status():
     except Exception as e:
         return f"Failed to get system status: {e}"
 
+
+def get_system_metrics() -> dict:
+    """Return structured host metrics for the Settings page UI."""
+    try:
+        disk_path = 'C:\\' if platform.system().lower() == 'windows' else '/'
+        return {
+            "cpu_percent": psutil.cpu_percent(interval=0.5),
+            "ram_percent": psutil.virtual_memory().percent,
+            "disk_percent": psutil.disk_usage(disk_path).percent,
+        }
+    except Exception:
+        return {"cpu_percent": None, "ram_percent": None, "disk_percent": None}
+
 def get_ip_address():
     try:
         hostname = socket.gethostname()

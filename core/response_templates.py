@@ -35,6 +35,50 @@ _RESPONSES: dict[str, dict[str, str]] = {
         "en": "Cancelled.",
         "he": "בוטל.",
     },
+    "not_supported": {
+        "en": "That's not something I can do right now.",
+        "he": "זה משהו שאני לא יכול לעשות כרגע.",
+    },
+    "command_not_understood": {
+        "en": "I didn't understand that command. Try saying it differently.",
+        "he": "לא הבנתי את הפקודה. נסה לנסח אחרת.",
+    },
+    "task_added": {
+        "en": "Got it, task added.",
+        "he": "קיבלתי, המשימה נוספה.",
+    },
+    "reminder_set": {
+        "en": "Reminder set.",
+        "he": "תזכורת נקבעה.",
+    },
+    "good_night": {
+        "en": "Good night. Turning everything off.",
+        "he": "לילה טוב. מכבה הכל.",
+    },
+    "lights_on": {
+        "en": "Lights on.",
+        "he": "האור דולק.",
+    },
+    "lights_off": {
+        "en": "Lights off.",
+        "he": "האור כבוי.",
+    },
+    "no_device_found": {
+        "en": "I couldn't find that device.",
+        "he": "לא מצאתי את המכשיר.",
+    },
+    "connection_error": {
+        "en": "Couldn't reach Home Assistant right now.",
+        "he": "לא הצלחתי להתחבר ל-Home Assistant כרגע.",
+    },
+    "temperature_query": {
+        "en": "Let me check the temperature.",
+        "he": "רגע, בודק את הטמפרטורה.",
+    },
+    "home_status": {
+        "en": "Here's what's happening at home:",
+        "he": "הנה מה שקורה בבית:",
+    },
 }
 
 

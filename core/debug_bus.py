@@ -99,6 +99,7 @@ class DebugBus:
         self._all_scopes: bool = True
         self._buffer: deque[dict] = deque(maxlen=buffer_size)
         self._ws_callback: Optional[Callable] = None  # set by server.py at startup
+        self._loop = None                             # event loop reference for thread-safe push
 
     # ── Configuration ────────────────────────────────────────────────────────
 
@@ -159,17 +160,28 @@ class DebugBus:
         """Push event to all WebSocket clients via the registered callback."""
         if self._ws_callback is None:
             return
+        payload = {"type": "debug_event", **event}
         try:
-            # The callback is an async broadcast — schedule it on the event loop.
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self._ws_callback({"type": "debug_event", **event}))
+            # Try get_running_loop first — works when called from within asyncio context
+            # (e.g., from an async route handler calling a sync service function).
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._ws_callback(payload))
+        except RuntimeError:
+            # No running loop in this thread — we're in a background thread
+            # (sensor alerts, MQTT, scheduler).  Use the stored loop reference.
+            if self._loop is not None:
+                asyncio.run_coroutine_threadsafe(self._ws_callback(payload), self._loop)
         except Exception:
             pass
 
     def register_ws_callback(self, callback: Callable) -> None:
         """Called once at server startup to wire in the WebSocket broadcast function."""
         self._ws_callback = callback
+        # Store the running loop so background threads can push events thread-safely.
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
 
     # ── Buffer access ────────────────────────────────────────────────────────
 

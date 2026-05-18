@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import Dashboard from './pages/Dashboard'
 import { RoomsList, RoomDetail } from './pages/Rooms'
@@ -18,6 +18,9 @@ import Anomalies from './pages/Anomalies'
 import QuickAsks from './pages/QuickAsks'
 import Cameras from './pages/Cameras'
 import AdminSettings from './pages/AdminSettings'
+import AdminConsole from './pages/AdminConsole'
+import CloudAdmin from './pages/CloudAdmin'
+import DebugPage from './pages/DebugPage'
 import { useUIStore } from './stores/uiStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
@@ -26,9 +29,53 @@ import { useAuthStore } from './stores/authStore'
 import { useCameraStore } from './stores/cameraStore'
 import LoginPage from './pages/LoginPage'
 import AcceptInvite from './pages/AcceptInvite'
-import CloudAdmin from './pages/CloudAdmin'
-import DebugPage from './pages/DebugPage'
 import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson } from './lib/api'
+
+// ─── Ops route guard + breadcrumb layout ─────────────────────────────────────
+
+function ProtectedOpsRoute() {
+  const { role } = useAuthStore()
+  if (role !== 'super_admin') return <Navigate to="/" replace />
+  return <Outlet />
+}
+
+function OpsPageWrapper({ title }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  useEffect(() => {
+    document.title = `Ziggy Admin · ${title}`
+    return () => { document.title = 'Ziggy' }
+  }, [title])
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
+      <div style={{
+        height: 38, padding: '0 16px', flexShrink: 0,
+        background: 'var(--bg-2)', borderBottom: '0.5px solid var(--line)',
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <button
+          onClick={() => navigate('/ops')}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 4,
+            fontSize: 11, color: 'var(--ink-faint)', fontWeight: 500,
+            padding: '2px 6px', borderRadius: 5,
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+          Admin Console
+        </button>
+        <span style={{ color: 'var(--line)' }}>/</span>
+        <span style={{ fontSize: 11, color: 'var(--ink)', fontWeight: 600 }}>{title}</span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        <Outlet />
+      </div>
+    </div>
+  )
+}
 
 // Captured at module load time — before any renders.
 // 'reload' = F5/Ctrl+R (stay on current URL), 'navigate' = cold start (redirect to /).
@@ -117,6 +164,7 @@ function AppRoutes() {
 
   return (
     <Routes>
+      {/* ── Main consumer app ── */}
       <Route element={<AppShell connected={connected} />}>
         <Route index element={<Dashboard />} />
         <Route path="rooms" element={<RoomsList />} />
@@ -136,9 +184,22 @@ function AppRoutes() {
         <Route path="quick-asks" element={<QuickAsks />} />
         <Route path="cameras" element={<Cameras />} />
         <Route path="admin" element={<AdminSettings />} />
-        <Route path="cloud-admin" element={<CloudAdmin />} />
-        <Route path="debug" element={<DebugPage />} />
       </Route>
+
+      {/* ── Admin / Ops console — no AppShell, role-protected ── */}
+      <Route path="ops" element={<ProtectedOpsRoute />}>
+        <Route index element={<AdminConsole />} />
+        <Route element={<OpsPageWrapper title="Debug Console" />}>
+          <Route path="debug" element={<DebugPage />} />
+        </Route>
+        <Route element={<OpsPageWrapper title="Cloud Administration" />}>
+          <Route path="cloud" element={<CloudAdmin />} />
+        </Route>
+      </Route>
+
+      {/* ── Legacy redirects (old bookmarks) ── */}
+      <Route path="debug" element={<Navigate to="/ops/debug" replace />} />
+      <Route path="cloud-admin" element={<Navigate to="/ops/cloud" replace />} />
     </Routes>
   )
 }

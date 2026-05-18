@@ -2,6 +2,7 @@ import paho.mqtt.client as mqtt
 import os
 import yaml
 from core.logger_module import log_info
+from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 
 # Load MQTT settings from YAML config
 with open("config/settings.yaml", "r", encoding="utf-8") as f:
@@ -20,18 +21,24 @@ def on_connect(client, userdata, flags, rc):
         log_info("[MQTT] Connected successfully")
         client.subscribe("ziggy/in")
         log_info("[MQTT] Subscribed to ziggy/in")
+        _dbus.emit("ws", BASIC, "mqtt_connected",
+                   broker=MQTT_BROKER, port=MQTT_PORT, result="ok")
     else:
         log_info(f"[MQTT] Failed to connect, return code {rc}")
+        _dbus.emit("ws", BASIC, "mqtt_connect_failed",
+                   broker=MQTT_BROKER, return_code=rc, result="error",
+                   suggestion=f"Check MQTT broker at {MQTT_BROKER}:{MQTT_PORT} and credentials.")
 
 def on_message(client, userdata, msg):
     message = msg.payload.decode()
     log_info(f"[MQTT] Received on {msg.topic}: {message}")
-    # Optional debug file logging
-    with open("logs/mqtt_debug.log", "a", encoding="utf-8") as f:
-        f.write(f"{msg.topic}: {message}\n")
+    _dbus.emit("ws", VERBOSE, "mqtt_message_received",
+               topic=msg.topic, payload=message[:200])
 
 def on_disconnect(client, userdata, rc):
     log_info("[MQTT] Disconnected, trying to reconnect...")
+    _dbus.emit("ws", BASIC, "mqtt_disconnected",
+               return_code=rc, result="disconnected" if rc == 0 else "error")
 
 # Setup and run
 def start_mqtt():

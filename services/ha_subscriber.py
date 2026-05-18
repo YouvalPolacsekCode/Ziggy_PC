@@ -31,6 +31,7 @@ import requests
 
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
+from core.debug_bus import bus as _dbus, BASIC, VERBOSE, TRACE
 
 HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
 HA_TOKEN: str = settings["home_assistant"]["token"]
@@ -145,6 +146,10 @@ async def _process_event(event: dict) -> None:
         "last_changed": new_state.get("last_changed", ""),
     }
 
+    # TRACE-level: emit every HA state change (very noisy — only in trace mode)
+    _dbus.emit("ha", TRACE, "ha_state_changed",
+               entity_id=entity_id, prev_state=prev_s, new_state=new_s)
+
     # Restore last intentional settings when a device regains power.
     # Trigger: unavailable/unknown → on (physical switch restored / brief outage).
     # A normal software turn-on goes off→on and is excluded.
@@ -198,12 +203,16 @@ async def _run_once() -> None:
 
         log_info("[HASubscriber] Connected and subscribed. Loading state snapshot…")
         ha_connected = True
+        _dbus.emit("ha", BASIC, "ha_subscriber_connected",
+                   url=WS_URL, result="ok")
 
         # Full state refresh before processing any buffered events
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _refresh_with_retry)
 
         log_info("[HASubscriber] State snapshot loaded. Processing live events.")
+        _dbus.emit("ha", VERBOSE, "ha_state_snapshot_loaded",
+                   entity_count=len(state_cache))
 
         # Main event loop
         async for raw in ws:
@@ -229,6 +238,10 @@ async def run_subscriber() -> None:
             ha_connected = False
             backoff = min(_BACKOFF_BASE ** min(attempt, 6), _BACKOFF_MAX)
             log_error(f"[HASubscriber] Connection lost: {e}. Retry in {backoff}s")
+            _dbus.emit("ha", BASIC, "ha_subscriber_disconnected",
+                       error=str(e), retry_in_s=backoff, attempt=attempt,
+                       result="error",
+                       suggestion="Check HA is running and token is valid.")
             await asyncio.sleep(backoff)
         else:
             # Clean disconnect — reset backoff
