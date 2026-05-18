@@ -26,46 +26,56 @@ import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
 const roomDomainGroup = domainGroup
 
-function RoomRow({ room, onClick, onDelete, onEditPhoto }) {
+function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   const [hovered, setHovered] = useState(false)
   const photo = getRoomPhoto(room)
+  const hasActive = room.activeCount > 0
+  const hasMotion = false // motion derived from entityMap in parent — show ok dot if active
+
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      style={{ position: 'relative' }}
+      style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', cursor: 'pointer', height: 156 }}
     >
       <button onClick={onClick} style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-        padding: '10px 12px', borderRadius: 12,
-        background: 'var(--surface)', border: '0.5px solid var(--line)',
-        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-        transition: 'border-color 0.12s',
-        borderColor: hovered ? 'var(--line-2)' : 'var(--line)',
+        width: '100%', height: '100%', padding: 0, border: 'none',
+        cursor: 'pointer', display: 'block', position: 'relative',
       }}>
-        <div style={{ width: 52, height: 52, borderRadius: 9, overflow: 'hidden', flexShrink: 0, background: 'var(--surface-2)' }}>
-          <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-            {room.entityCount} device{room.entityCount !== 1 ? 's' : ''}
-            {room.activeCount  > 0 && <span style={{ color: 'var(--ok)',    marginLeft: 6 }}>{room.activeCount} on</span>}
-            {room.offlineCount > 0 && <span style={{ color: '#ef4444',      marginLeft: 6 }}>{room.offlineCount} offline</span>}
+        {/* Full-bleed photo */}
+        <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {/* Gradient */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.55) 100%)' }} />
+
+        {/* Status dot — top right */}
+        <span style={{
+          position: 'absolute', top: 10, right: 10,
+          width: 8, height: 8, borderRadius: '50%',
+          background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.4)',
+          boxShadow: hasActive ? '0 0 0 3px rgba(108,191,140,0.35)' : 'none',
+        }} />
+
+        {/* Name + count — bottom */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
+          <p className="z-mono" style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
+            {room.entityCount} · {hasActive ? `${room.activeCount} on` : 'idle'}
+            {room.offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 4 }}>· {room.offlineCount} off</span>}
           </p>
         </div>
-        <ChevronRight size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
       </button>
+
+      {/* Hover actions */}
       {hovered && (onEditPhoto || onDelete) && (
-        <div style={{ position: 'absolute', right: 40, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: 4, zIndex: 1 }}>
+        <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 1 }}>
           {onEditPhoto && (
-            <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title="Edit room" style={{ padding: '5px 6px', borderRadius: 7, background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink-2)', display: 'flex' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title="Edit room" style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex' }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           )}
           {onDelete && (
-            <button onClick={e => { e.stopPropagation(); onDelete(room) }} title="Delete room" style={{ padding: '5px 6px', borderRadius: 7, background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--accent)', display: 'flex' }}>
-              <Trash2 size={12} />
+            <button onClick={e => { e.stopPropagation(); onDelete(room) }} title="Delete room" style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fca5a5', display: 'flex' }}>
+              <Trash2 size={11} />
             </button>
           )}
         </div>
@@ -85,38 +95,12 @@ export function RoomsList() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [editPhotoRoom, setEditPhotoRoom] = useState(null)
   const [editPhotoKey, setEditPhotoKey] = useState('living_room')
-  const [editCustomPhoto, setEditCustomPhoto] = useState(null) // data URL of uploaded photo
+  const [editCustomPhoto, setEditCustomPhoto] = useState(null)
   const [editRoomName, setEditRoomName] = useState('')
   const [editSaving, setEditSaving] = useState(false)
-  const [view, setView] = useState('rooms')     // 'rooms' | 'map'
-  const [mapMode, setMapMode] = useState('view') // 'view' | 'build'
-  const [mapRooms, setMapRooms] = useState([])
-  const [mapLoading, setMapLoading] = useState(false)
-  const [mapEnabled, setMapEnabled] = useState(false)
+  const [search, setSearch] = useState('')
 
   useEffect(() => { fetchAll() }, [])
-
-  const checkMapFlag = () => {
-    getFeaturesSettings()
-      .then(f => setMapEnabled(!!f.home_map))
-      .catch(() => {})
-  }
-
-  useEffect(() => {
-    checkMapFlag()
-    // Re-check whenever the tab regains focus (e.g. user toggled flag in Admin then came back)
-    window.addEventListener('focus', checkMapFlag)
-    return () => window.removeEventListener('focus', checkMapFlag)
-  }, [])
-
-  useEffect(() => {
-    if (view !== 'map') { setMapMode('view'); return }
-    setMapLoading(true)
-    getMapRoomsSummary()
-      .then(d => setMapRooms(d.rooms ?? []))
-      .catch(() => {})
-      .finally(() => setMapLoading(false))
-  }, [view])
 
   // Enrich ziggyRooms with display counts for RoomRow
   const rooms = ziggyRooms.map((r) => ({
@@ -207,63 +191,41 @@ export function RoomsList() {
     }
   }
 
+  const filteredRooms = rooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
+
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Your home</p>
-          <motion.h1 initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-            style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>
-            Rooms
-          </motion.h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Rooms</h1>
+          <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
             {rooms.length} room{rooms.length !== 1 ? 's' : ''}
             {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {unassigned.length} unassigned</span>}
-            {noRoomDevices.length > 0 && <span style={{ color: 'var(--ink-faint)', marginLeft: 4 }}>· {noRoomDevices.length} no room</span>}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {mapEnabled && (
-            <div style={{ display: 'flex', gap: 3, background: 'var(--bg-2)', borderRadius: 11, padding: 3 }}>
-              {[{ id: 'rooms', icon: 'list', label: 'Rooms' }, { id: 'map', icon: 'map', label: 'Map' }].map(v => (
-                <button key={v.id} onClick={() => setView(v.id)} style={{
-                  padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                  background: view === v.id ? 'var(--surface)' : 'transparent',
-                  color: view === v.id ? 'var(--ink)' : 'var(--ink-mute)',
-                  border: 'none', fontFamily: 'inherit',
-                }}>{v.label}</button>
-              ))}
-            </div>
-          )}
-          {view === 'rooms' && (
-            <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-              <Plus size={13} /> Add room
-            </button>
-          )}
-          {mapEnabled && view === 'map' && (
-            <button onClick={() => setMapMode(m => m === 'view' ? 'build' : 'view')} className="z-btn-secondary" style={{ padding: '7px 12px', borderRadius: 9, fontSize: 12, fontFamily: 'inherit' }}>
-              {mapMode === 'view' ? 'Edit Layout' : 'Done'}
-            </button>
-          )}
-        </div>
+        <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
+          <Plus size={13} /> Add room
+        </button>
       </div>
 
-      {/* Map canvas */}
-      {mapEnabled && view === 'map' && (
-        <div style={{ marginBottom: 16 }}>
-          {mapLoading ? (
-            <div style={{ height: 420, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />
-          ) : (
-            <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 192, color: 'var(--ink-faint)', fontSize: 13 }}>Loading map…</div>}>
-              <HomeMapCanvas rooms={mapRooms} viewOnly={mapMode === 'view'} />
-            </Suspense>
-          )}
-        </div>
-      )}
+      {/* Search bar */}
+      <div style={{ position: 'relative', marginBottom: 16 }}>
+        <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search rooms…"
+          style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 36, height: 40, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
+          onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+          onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }}
+        />
+      </div>
 
       {/* Empty state */}
-      {view === 'rooms' && !loading && rooms.length === 0 && unassigned.length === 0 && (
+      {!loading && rooms.length === 0 && unassigned.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No rooms yet</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Add a room to start organizing devices</p>
@@ -273,51 +235,50 @@ export function RoomsList() {
         </div>
       )}
 
-      {/* Room list */}
-      {view === 'rooms' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {loading && [1, 2, 3, 4].map(i => (
-            <div key={i} style={{ height: 72, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />
-          ))}
-          {!loading && rooms.map(room => (
-            <RoomRow
-              key={room.id}
-              room={room}
-              onClick={() => navigate(`/rooms/${room.id}`)}
-              onDelete={r => setConfirmDelete(r)}
-              onEditPhoto={handleEditPhoto}
-            />
-          ))}
-          {!loading && unassigned.length > 0 && (
+      {/* Room photo-tile grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+        {loading && [1, 2, 3, 4].map(i => (
+          <div key={i} style={{ height: 156, borderRadius: 16, background: 'var(--surface-2)', opacity: 0.6 }} />
+        ))}
+        {!loading && filteredRooms.map(room => (
+          <RoomTile
+            key={room.id}
+            room={room}
+            onClick={() => navigate(`/rooms/${room.id}`)}
+            onDelete={r => setConfirmDelete(r)}
+            onEditPhoto={handleEditPhoto}
+          />
+        ))}
+      </div>
+
+      {/* Unassigned / no-room chips */}
+      {!loading && (unassigned.length > 0 || noRoomDevices.length > 0) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+          {unassigned.length > 0 && (
             <Link to="/devices?filter=unassigned" style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 12px', borderRadius: 12, textDecoration: 'none',
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+              borderRadius: 14, textDecoration: 'none',
               border: `1.5px dashed color-mix(in srgb, var(--warn) 50%, var(--line))`,
               background: `color-mix(in srgb, var(--warn) 6%, var(--surface))`,
             }}>
-              <div style={{ width: 52, height: 52, borderRadius: 9, background: `color-mix(in srgb, var(--warn) 15%, var(--surface))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
-                📦
-              </div>
+              <span style={{ fontSize: 20 }}>📦</span>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--warn)', marginBottom: 2 }}>{unassigned.length} unassigned device{unassigned.length !== 1 ? 's' : ''}</p>
-                <p style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>Tap to assign to rooms</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)', marginBottom: 2 }}>{unassigned.length} unassigned device{unassigned.length !== 1 ? 's' : ''}</p>
+                <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>Tap to assign to rooms</p>
               </div>
               <ChevronRight size={14} style={{ color: 'var(--warn)', flexShrink: 0 }} />
             </Link>
           )}
-          {!loading && noRoomDevices.length > 0 && (
+          {noRoomDevices.length > 0 && (
             <Link to="/devices?filter=noroom" style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 12px', borderRadius: 12, textDecoration: 'none',
-              border: '0.5px solid var(--line)',
-              background: 'var(--surface)',
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+              borderRadius: 14, textDecoration: 'none',
+              border: '0.5px solid var(--line)', background: 'var(--surface)',
             }}>
-              <div style={{ width: 52, height: 52, borderRadius: 9, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
-                🏠
-              </div>
+              <span style={{ fontSize: 20 }}>🏠</span>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length} device{noRoomDevices.length !== 1 ? 's' : ''} — no room</p>
-                <p style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>Intentionally left without a room</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length} device{noRoomDevices.length !== 1 ? 's' : ''} — no room</p>
+                <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>Intentionally left without a room</p>
               </div>
               <ChevronRight size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
             </Link>
@@ -770,23 +731,29 @@ export function RoomDetail() {
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
-      {/* Hero photo */}
-      <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
-        <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
+      {/* Hero photo — 220px, rounded bottom */}
+      <div style={{ position: 'relative', height: 220, overflow: 'hidden', borderRadius: '0 0 22px 22px' }}>
+        <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.2) 0%, transparent 35%, rgba(0,0,0,0.6) 100%)' }} />
+
+        {/* Back button */}
         <button onClick={() => navigate('/rooms')} style={{
-          position: 'absolute', top: 16, left: 16, padding: 8, borderRadius: 10,
-          background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(8px)', color: '#fff', border: 'none', cursor: 'pointer',
+          position: 'absolute', top: 16, left: 16,
+          width: 34, height: 34, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)',
+          border: '0.5px solid rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer',
         }}>
-          <ArrowLeft size={18} />
+          <ArrowLeft size={16} />
         </button>
+
+        {/* Title bottom */}
         <div style={{ position: 'absolute', bottom: 16, left: 20 }}>
-          <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', margin: 0 }}>{room.name}</h1>
-          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>
+          <h1 style={{ color: '#fff', fontSize: 24, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{room.name}</h1>
+          <p className="z-mono" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 3 }}>
             {entityCount} device{entityCount !== 1 ? 's' : ''}
-            {activeCount  > 0 && <span style={{ color: 'rgba(255,255,255,0.9)',  marginLeft: 6 }}>· {activeCount} active</span>}
-            {offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.95)', marginLeft: 6 }}>· {offlineCount} offline</span>}
-            {vDevices.length > 0 && ` · ${vDevices.length} capability${vDevices.length !== 1 ? 's' : ''}`}
+            {activeCount  > 0 && <span style={{ color: 'rgba(255,255,255,0.95)', marginLeft: 6 }}>· {activeCount} active</span>}
+            {offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 6 }}>· {offlineCount} offline</span>}
+            {vDevices.length > 0 && <span style={{ marginLeft: 6 }}>· {vDevices.length} capability{vDevices.length !== 1 ? 's' : ''}</span>}
           </p>
         </div>
       </div>
