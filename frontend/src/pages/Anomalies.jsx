@@ -29,8 +29,8 @@ function humanRoom(roomId) {
   return roomId.replace(/_/g, ' ')
 }
 
-const SEV_COLOR = { critical: '#ef4444', warning: '#f97316', info: '#6366f1' }
-const SEV_BG    = { critical: 'color-mix(in srgb, #ef4444 10%, var(--surface))', warning: 'color-mix(in srgb, #f97316 10%, var(--surface))', info: 'var(--surface)' }
+const SEV_COLOR = { critical: 'var(--err)', warning: 'var(--warn)', info: 'var(--info)' }
+const SEV_BG    = { critical: 'color-mix(in srgb, var(--err) 10%, var(--surface))', warning: 'color-mix(in srgb, var(--warn) 10%, var(--surface))', info: 'var(--surface)' }
 const RULE_LABELS = {
   'ANOM-01': 'Away + lights on',
   'ANOM-02': 'Climate + empty room',
@@ -379,9 +379,7 @@ export default function Anomalies() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Smart home monitoring</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0, lineHeight: 1 }}>
-            Alerts
-          </h1>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Alerts</h1>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 6, lineHeight: 1.5, maxWidth: 400 }}>
             Active anomalies detected by Ziggy, with history and snooze controls.
           </p>
@@ -404,8 +402,8 @@ export default function Anomalies() {
       {/* Stats strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
         {[
-          { label: 'Critical',    value: criticalCount, tint: '#ef4444' },
-          { label: 'Warnings',    value: warningCount,  tint: '#f97316' },
+          { label: 'Critical',    value: criticalCount, tint: 'var(--err)' },
+          { label: 'Warnings',    value: warningCount,  tint: 'var(--warn)' },
           { label: 'Today',       value: todayCount,    tint: 'var(--ink-mute)' },
         ].map(({ label, value, tint }) => (
           <div key={label} style={{ padding: '10px 12px', borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center' }}>

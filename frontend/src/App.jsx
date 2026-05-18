@@ -180,11 +180,11 @@ function AppRoutes() {
         <Route path="memory" element={<Memory />} />
         <Route path="settings" element={<Settings />} />
         <Route path="virtual-devices" element={<VirtualDevices />} />
+        <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
-        <Route path="anomalies" element={<Anomalies />} />
+        <Route path="anomalies" element={<Navigate to="/alerts" replace />} />
         <Route path="quick-asks" element={<QuickAsks />} />
         <Route path="cameras" element={<Cameras />} />
-        <Route path="ha-update" element={<HAUpdate />} />
         <Route path="admin" element={<AdminSettings />} />
       </Route>
 
@@ -197,7 +197,13 @@ function AppRoutes() {
         <Route element={<OpsPageWrapper title="Cloud Administration" />}>
           <Route path="cloud" element={<CloudAdmin />} />
         </Route>
+        <Route element={<OpsPageWrapper title="HA Update Checker" />}>
+          <Route path="ha-update" element={<HAUpdate />} />
+        </Route>
       </Route>
+
+      {/* ── Legacy redirect from old bookmark ── */}
+      <Route path="ha-update" element={<Navigate to="/ops/ha-update" replace />} />
 
       {/* ── Legacy redirects (old bookmarks) ── */}
       <Route path="debug" element={<Navigate to="/ops/debug" replace />} />
