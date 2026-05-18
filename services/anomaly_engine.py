@@ -745,6 +745,16 @@ def _rule_anom09(ec: EvalContext) -> AnomalyResult | None:
     if count < _BULK_OFFLINE_THRESHOLD:
         return None
 
+    # Suppress when HA just reconnected — devices going unavailable during a
+    # HA WebSocket drop is expected and does not indicate real device failure.
+    try:
+        import time as _t
+        from services.ha_subscriber import ha_last_reconnect
+        if _t.monotonic() - ha_last_reconnect < _BULK_OFFLINE_WINDOW:
+            return None
+    except Exception:
+        pass
+
     window_min = _BULK_OFFLINE_WINDOW // 60
     return AnomalyResult(
         message=(

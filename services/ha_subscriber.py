@@ -49,6 +49,9 @@ active_anomalies: dict[str, list] = {}
 # Public connection health flag.  True once HA auth + subscription succeeds.
 # Becomes False when the connection drops.  Read by /api/health.
 ha_connected: bool = False
+# Timestamp of the most recent successful reconnect — used by anomaly engine
+# to suppress false device-offline alerts caused by HA hiccups.
+ha_last_reconnect: float = 0.0
 
 _BACKOFF_BASE = 2
 _BACKOFF_MAX = 60
@@ -201,8 +204,10 @@ async def _run_once() -> None:
         if not sub_resp.get("success"):
             raise RuntimeError(f"HA subscribe failed: {sub_resp}")
 
+        import time as _time_mod
         log_info("[HASubscriber] Connected and subscribed. Loading state snapshot…")
         ha_connected = True
+        ha_last_reconnect = _time_mod.monotonic()
         _dbus.emit("ha", BASIC, "ha_subscriber_connected",
                    url=WS_URL, result="ok")
 

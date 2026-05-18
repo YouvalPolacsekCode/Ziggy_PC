@@ -19,6 +19,11 @@ from services.home_automation import get_state
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings, save_settings
 
+# Debounce presence transitions — if a person flips back within this window
+# (e.g. home→away→home on HA reconnect) the first transition is cancelled.
+_PRESENCE_DEBOUNCE_S = 5.0
+_pending_transitions: dict[str, asyncio.Task] = {}
+
 router = APIRouter()
 
 _REGISTRY = Path(__file__).resolve().parents[2] / "user_files" / "persons.json"
@@ -315,8 +320,18 @@ async def override_state(person_id: str, body: StateOverride, _=Depends(require_
 
     new_effective = body.state
     if prev_effective != new_effective and new_effective != "unknown":
-        import asyncio
-        asyncio.create_task(_fire_transition(person["name"], prev_effective, new_effective))
+        name_key = person["name"]
+        # Cancel any pending transition for this person (debounce rapid flip).
+        if name_key in _pending_transitions and not _pending_transitions[name_key].done():
+            _pending_transitions[name_key].cancel()
+
+        async def _debounced(n: str, prev: str | None, nxt: str) -> None:
+            await asyncio.sleep(_PRESENCE_DEBOUNCE_S)
+            await _fire_transition(n, prev, nxt)
+
+        _pending_transitions[name_key] = asyncio.create_task(
+            _debounced(name_key, prev_effective, new_effective)
+        )
 
     return {"ok": True, "state": body.state}
 

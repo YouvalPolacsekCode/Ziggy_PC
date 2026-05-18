@@ -173,13 +173,31 @@ async def _listen_loop(host: str) -> None:
 
     log_info(f"[IRListener] Starting listener for {host}")
 
+    _fail_count = 0          # consecutive connection failures
+    _retry_delay = 10        # starts at 10s, caps at 300s
+    _MAX_RETRY = 300
+    _SUPPRESS_AFTER = 3      # stop logging errors after this many consecutive failures
+
     while True:
         # Reconnect if needed
         if dev is None:
             dev = await loop.run_in_executor(None, _connect)
             if dev is None:
-                await asyncio.sleep(10)
+                _fail_count += 1
+                # Only log the first N failures; after that, stay silent until recovered.
+                if _fail_count == _SUPPRESS_AFTER:
+                    log_error(f"[IRListener] {host} unreachable after {_fail_count} attempts — suppressing further errors until reconnected.")
+                elif _fail_count > _SUPPRESS_AFTER:
+                    pass  # silent
+                # Exponential backoff: 10 → 20 → 40 → … → 300s
+                _retry_delay = min(_retry_delay * 2, _MAX_RETRY)
+                await asyncio.sleep(_retry_delay)
                 continue
+            # Reconnected — reset backoff and log recovery if we were suppressed
+            if _fail_count >= _SUPPRESS_AFTER:
+                log_info(f"[IRListener] {host} reconnected after {_fail_count} failed attempts.")
+            _fail_count = 0
+            _retry_delay = 10
 
         # Respect pause (wizard is using the receiver)
         if pause_event.is_set():
