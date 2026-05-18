@@ -443,12 +443,20 @@ def _he_instant_reply(text: str) -> str | None:
 
 _TRANSLATE_SYSTEM = "Translate the following smart home response to Hebrew. Return only the translation, nothing else."
 
+# Splits multi-intent combined replies back into individual action strings.
+# handle_intent joins multiple results as "A and B." or "A, B, and C."
+_MULTI_SPLIT = re.compile(r',?\s+and\s+|\.\s+')
+
+
 def _translate(text: str) -> str:
     """Translate a smart home response to Hebrew.
 
-    Step 1: instant pre-translated reply (zero latency, zero cost).
-    Step 2: Ollama local model (free, ~1s).
-    Step 3: GPT-4o-mini fallback (~2s, small cost).
+    Step 1a: instant pre-translated reply for single actions (zero latency).
+    Step 1b: split multi-action reply and run each part through instant table —
+             handles "Turning on bedroom light and Turning off office light."
+             without any API call.
+    Step 2:  Ollama local model (free, ~1s).
+    Step 3:  GPT-4o-mini fallback (~2s, small cost).
     If the text is already Hebrew, returns it unchanged.
     """
     if is_hebrew(text):
@@ -456,8 +464,25 @@ def _translate(text: str) -> str:
 
     instant = _he_instant_reply(text)
     if instant:
-        print(f"[Voice] Hebrew instant reply matched — no API call needed")
+        print("[Voice] Hebrew instant reply matched — no API call needed")
         return instant
+
+    # Try splitting combined multi-intent reply and translating each part.
+    # "Turning on X and Turning off Y." → ["Turning on X.", "Turning off Y."]
+    parts = [p.strip() for p in _MULTI_SPLIT.split(text) if p.strip()]
+    if len(parts) > 1:
+        translated = []
+        for part in parts:
+            probe = part if part.endswith('.') else part + '.'
+            t = _he_instant_reply(probe)
+            if t:
+                translated.append(t)
+            else:
+                translated = []
+                break
+        if translated:
+            print(f"[Voice] Multi-part instant reply — {len(parts)} parts matched, no API call")
+            return " ".join(translated)
 
     t0 = time.time()
     messages = [
