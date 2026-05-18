@@ -89,13 +89,18 @@ def _get_whisper_hebrew() -> WhisperModel | None:
 
 
 def _prewarm_models() -> None:
-    """Load both Whisper models at startup so the first voice request is instant."""
+    """Load the base Whisper model at startup.
+
+    The Hebrew ivrit-ai model (30s+ on CPU) is NOT pre-warmed here — web voice
+    uses the OpenAI API instead, so the local Hebrew model is only needed as a
+    fallback when the API is completely unavailable. Loading it eagerly would
+    block 30s of background CPU for something rarely used.
+    """
     try:
         _get_whisper()
-        _get_whisper_hebrew()
-        print("[Voice] Whisper models pre-warmed and ready.")
+        print("[Voice] Whisper base model pre-warmed.")
     except Exception as e:
-        print(f"[Voice] Pre-warm partial failure: {e}")
+        print(f"[Voice] Pre-warm failed: {e}")
 
 # Kick off pre-warming immediately — daemon thread so it doesn't block shutdown.
 __import__("threading").Thread(target=_prewarm_models, daemon=True, name="WhisperPrewarm").start()
@@ -536,16 +541,28 @@ _NO_SPEECH_THRESHOLD = 0.80
 _SUPPORTED_LANGS = frozenset({"en", "he"})
 
 
+_MIN_AUDIO_BYTES = 1_000  # anything smaller is an empty/corrupt recording
+
+
 def transcribe_web(audio_path: str) -> tuple[str, str]:
     """Fast STT for web push-to-talk via OpenAI Whisper API.
 
-    Replaces the slow two-pass local inference for web voice requests:
-      - Local large model on CPU: 5s detect + 30s Hebrew = 35s
-      - OpenAI API (whisper-1): ~1-2s for any language, handles Hebrew natively
-
-    Language is inferred from character set so no extra API call is needed.
-    Falls back to local transcribe() if the API is unavailable.
+    - OpenAI API (whisper-1): ~1-2s for Hebrew and English with smart home prompt
+    - prompt=_HE_INITIAL_PROMPT primes Whisper with home-automation vocabulary so
+      it correctly transcribes 'כבה את האור' instead of 'חבא את האור'
+    - Falls back to local transcribe() only on non-400 errors (network, auth, etc.)
+      A 400 means the file itself is bad — local will fail the same way, so we skip.
     """
+    # Guard: a very short or corrupt recording produces a tiny file that the API
+    # rejects with HTTP 400. Bail early instead of paying for a failed call.
+    try:
+        file_size = os.path.getsize(audio_path)
+    except OSError:
+        file_size = 0
+    if file_size < _MIN_AUDIO_BYTES:
+        print(f"[STT] Audio too small ({file_size}B) — discarded")
+        return "", "en"
+
     try:
         from integrations.openai_client import get_client
         t0 = time.time()
@@ -553,8 +570,10 @@ def transcribe_web(audio_path: str) -> tuple[str, str]:
             result = get_client().audio.transcriptions.create(
                 model="whisper-1",
                 file=f,
-                # No language hint — let the API auto-detect Hebrew vs English.
-                # Whisper-1 handles both accurately without a local detection pass.
+                # Vocabulary hint — dramatically improves accuracy for Hebrew
+                # smart home commands (כבה/הדלק/מזגן/etc.) and prevents Whisper
+                # from mishearing them as similar-sounding nonsense words.
+                prompt=_HE_INITIAL_PROMPT,
             )
         text = (result.text or "").strip()
         # Determine language from character content — no extra model call needed.
@@ -563,6 +582,11 @@ def transcribe_web(audio_path: str) -> tuple[str, str]:
         print(f"[TIMING] whisper-api: {time.time() - t0:.2f}s, detected={lang!r}")
         return text, lang
     except Exception as e:
+        err_str = str(e)
+        # 400 = bad audio file — local model will fail the same way, don't retry.
+        if "400" in err_str or "could not be decoded" in err_str or "not supported" in err_str:
+            print(f"[STT] Whisper API rejected audio (bad format/too short) — discarded")
+            return "", "en"
         print(f"[STT] Whisper API failed ({e}) — falling back to local transcribe()")
         return transcribe(audio_path)
 
