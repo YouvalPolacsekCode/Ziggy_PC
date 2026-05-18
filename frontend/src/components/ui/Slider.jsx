@@ -1,6 +1,6 @@
 import * as RadixSlider from '@radix-ui/react-slider'
 
-export function Slider({ value, onValueChange, onValueCommit, min = 0, max = 100, step = 1 }) {
+export function Slider({ value, onValueChange, onValueCommit, min = 0, max = 100, step = 1, disabled }) {
   return (
     <RadixSlider.Root
       style={{ position: 'relative', display: 'flex', alignItems: 'center', userSelect: 'none', touchAction: 'none', width: '100%', height: 20 }}
@@ -10,17 +10,19 @@ export function Slider({ value, onValueChange, onValueCommit, min = 0, max = 100
       min={min}
       max={max}
       step={step}
+      disabled={disabled}
     >
-      <RadixSlider.Track style={{ background: 'var(--line-2)', position: 'relative', flexGrow: 1, borderRadius: 999, height: 4 }}>
-        <RadixSlider.Range style={{ position: 'absolute', background: 'var(--ink)', borderRadius: 999, height: '100%' }} />
+      <RadixSlider.Track className="z-slider-track" style={{ flexGrow: 1 }}>
+        <RadixSlider.Range className="z-slider-fill" />
       </RadixSlider.Track>
       <RadixSlider.Thumb
         style={{
-          display: 'block', width: 16, height: 16,
-          background: '#fff', borderRadius: '50%',
+          display: 'block', width: 18, height: 18,
+          background: 'var(--surface)', borderRadius: '50%',
           border: '0.5px solid var(--line-2)',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+          boxShadow: 'var(--shadow-md)',
           cursor: 'pointer', outline: 'none',
+          flexShrink: 0,
         }}
       />
     </RadixSlider.Root>

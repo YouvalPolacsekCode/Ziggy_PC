@@ -1,10 +1,9 @@
-import { useState, useEffect, Component } from 'react'
+import { Component } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { ToastContainer } from '../ui/Toast'
-import { getFeaturesSettings } from '../../lib/api'
 
 class PageErrorBoundary extends Component {
   constructor(props) {
@@ -39,28 +38,32 @@ class PageErrorBoundary extends Component {
 
 export function AppShell({ connected }) {
   const location = useLocation()
-  const [features, setFeatures] = useState({ scenes: false })
   const isChatRoute = location.pathname.startsWith('/chat')
-
-  useEffect(() => {
-    getFeaturesSettings().then(setFeatures).catch(() => {})
-  }, [])
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-      <Sidebar connected={connected} features={features} />
+      <Sidebar connected={connected} />
 
-      {/* On the chat route, overflow must be hidden so the browser cannot auto-scroll
-          main to reveal the focused input — that scroll is what makes the header jump off-screen. */}
       <main
         className={`flex-1 min-w-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto scrollbar-thin pb-nav'}`}
         style={{ background: 'var(--bg)' }}
       >
+        {/* Disconnected banner */}
+        {connected === false && (
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 10,
+            background: 'var(--err)', color: '#fff',
+            fontSize: 12, fontWeight: 500, textAlign: 'center', padding: '4px 0',
+          }}>
+            Offline — reconnecting…
+          </div>
+        )}
+
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location.pathname}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: { duration: 0.15 } }}
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0, transition: { duration: 0.15 } }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
             style={{ minHeight: '100%' }}
           >
@@ -71,7 +74,7 @@ export function AppShell({ connected }) {
         </AnimatePresence>
       </main>
 
-      <BottomNav connected={connected} features={features} />
+      <BottomNav connected={connected} />
       <ToastContainer />
     </div>
   )

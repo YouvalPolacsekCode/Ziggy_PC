@@ -21,6 +21,7 @@ import AdminSettings from './pages/AdminSettings'
 import AdminConsole from './pages/AdminConsole'
 import CloudAdmin from './pages/CloudAdmin'
 import DebugPage from './pages/DebugPage'
+import HAUpdate from './pages/HAUpdate'
 import { useUIStore } from './stores/uiStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
@@ -183,6 +184,7 @@ function AppRoutes() {
         <Route path="anomalies" element={<Anomalies />} />
         <Route path="quick-asks" element={<QuickAsks />} />
         <Route path="cameras" element={<Cameras />} />
+        <Route path="ha-update" element={<HAUpdate />} />
         <Route path="admin" element={<AdminSettings />} />
       </Route>
 
@@ -209,12 +211,7 @@ export default function App() {
   const { authenticated, setRole, logout } = useAuthStore()
 
   useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
+    document.documentElement.setAttribute('data-palette', theme === 'dark' ? 'dark' : 'light')
   }, [theme])
 
   // Refresh role on every app load (soft — never auto-logout)
