@@ -93,11 +93,13 @@ def _has_action_vocab(text: str) -> bool:
     return bool(_ACTION_VOCAB_EN.search(text) or _ACTION_VOCAB_HE.search(text))
 
 # Hebrew room name → English canonical slug, sorted longest-match first
-_ROOMS_HE_SORTED = sorted(
-    settings.get("room_aliases_he", {}).items(),
-    key=lambda kv: len(kv[0]),
-    reverse=True,
-)
+# Merges personal he aliases (settings) + built-in bank, personal takes priority
+def _build_rooms_he() -> list[tuple[str, str]]:
+    from services.room_alias_bank import ROOM_ALIAS_BANK_HE
+    merged = {**ROOM_ALIAS_BANK_HE, **settings.get("room_aliases_he", {})}
+    return sorted(merged.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+_ROOMS_HE_SORTED = _build_rooms_he()
 
 # Hebrew device type word → English equivalent, sorted longest-match first
 _DEVICES_HE_SORTED = sorted(
@@ -109,12 +111,14 @@ _DEVICES_HE_SORTED = sorted(
 
 def _normalize_hebrew_rooms(text: str) -> str:
     """Replace Hebrew room names with English display names before sending to GPT."""
+    from services.room_alias_bank import ROOM_ALIAS_BANK
     for he_name, en_slug in _ROOMS_HE_SORTED:
         if he_name in text:
-            en_display = next(
-                (k for k, v in settings.get("room_aliases", {}).items() if v == en_slug),
-                en_slug,
-            )
+            # Look up a human-readable key for this slug: personal alias first, then bank
+            personal = settings.get("room_aliases", {})
+            en_display = next((k for k, v in personal.items() if v == en_slug), None)
+            if en_display is None:
+                en_display = next((k for k, v in ROOM_ALIAS_BANK.items() if v == en_slug), en_slug)
             text = text.replace(he_name, en_display)
     return text
 
@@ -254,9 +258,15 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
                 # vocabulary but is a valid follow-up that GPT resolved correctly
                 # from context. Blocking it here breaks the clarification flow.
                 has_history = bool(chat_history)
+                # Check both raw text (gibberish guard) AND normalized text
+                # (Hebrew normalization converts תייצר→create, אוטומציה→automation
+                # before GPT sees it, but raw_text still has the Hebrew originals).
+                # A command like 'תייצר אוטומציה שמדליקה...' passes after normalization
+                # because 'text' contains 'create' and 'automation' in English.
                 if (not has_history
                         and parsed["intent"] in _MUTATION_INTENTS
-                        and not _has_action_vocab(raw_text)):
+                        and not _has_action_vocab(raw_text)
+                        and not _has_action_vocab(text)):
                     _dbus.emit("intent", BASIC, "confidence_gate_blocked",
                                input=raw_text,
                                blocked_intent=parsed["intent"],

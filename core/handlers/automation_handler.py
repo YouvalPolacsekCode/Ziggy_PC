@@ -134,8 +134,24 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
     # Determine the HA domain of the resolved entity so we can call domain-specific services
     entity_domain = entity_id.split(".")[0] if entity_id and "." in entity_id else "homeassistant"
     full_service = _service_for_domain(entity_domain, service_action)
+
+    # Build a human-readable default name when GPT didn't supply one.
+    # "turn_on office light at 14:00" → "Office light on at 14:00"
+    if not params.get("name"):
+        verb = "on" if service_action == "turn_on" else "off" if service_action == "turn_off" else service_action
+        device = (params.get("action_device_type") or "device").replace("_", " ")
+        room_display = room.replace("_", " ").title()
+        if trigger_type == "time":
+            default_name = f"{room_display} {device} {verb} at {params.get('trigger_time', '?')}"
+        elif trigger_type in ("sunrise", "sunset"):
+            default_name = f"{room_display} {device} {verb} at {trigger_type}"
+        else:
+            default_name = f"{room_display} {device} {verb}"
+    else:
+        default_name = params["name"]
+
     automation_data = {
-        "name": params.get("name") or f"Ziggy: {service_action} {room.replace('_', ' ')}",
+        "name": default_name,
         "description": params.get("description", "Created by Ziggy"),
         "trigger": trigger,
         "actions": [{"type": "call_service", "entity_id": entity_id, "service": full_service}],
