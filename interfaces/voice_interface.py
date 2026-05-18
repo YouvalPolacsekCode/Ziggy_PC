@@ -506,12 +506,50 @@ def _translate(text: str) -> str:
 
 _NO_SPEECH_THRESHOLD = 0.80
 
+# Languages this system supports. Anything else detected locally is treated as Hebrew
+# (base Whisper sometimes confuses Hebrew with Arabic — both share similar phonetics).
+_SUPPORTED_LANGS = frozenset({"en", "he"})
+
+
+def transcribe_web(audio_path: str) -> tuple[str, str]:
+    """Fast STT for web push-to-talk via OpenAI Whisper API.
+
+    Replaces the slow two-pass local inference for web voice requests:
+      - Local large model on CPU: 5s detect + 30s Hebrew = 35s
+      - OpenAI API (whisper-1): ~1-2s for any language, handles Hebrew natively
+
+    Language is inferred from character set so no extra API call is needed.
+    Falls back to local transcribe() if the API is unavailable.
+    """
+    try:
+        from integrations.openai_client import get_client
+        t0 = time.time()
+        with open(audio_path, "rb") as f:
+            result = get_client().audio.transcriptions.create(
+                model="whisper-1",
+                file=f,
+                # No language hint — let the API auto-detect Hebrew vs English.
+                # Whisper-1 handles both accurately without a local detection pass.
+            )
+        text = (result.text or "").strip()
+        # Determine language from character content — no extra model call needed.
+        he_chars = sum(1 for c in text if '֐' <= c <= 'ת')
+        lang = "he" if he_chars > max(1, len(text) * 0.1) else "en"
+        print(f"[TIMING] whisper-api: {time.time() - t0:.2f}s, detected={lang!r}")
+        return text, lang
+    except Exception as e:
+        print(f"[STT] Whisper API failed ({e}) — falling back to local transcribe()")
+        return transcribe(audio_path)
+
+
 def transcribe(audio_path: str):
     """
-    Two-path STT:
+    Two-path local STT for standalone mic-based voice interface:
       English → local base Whisper (~1s)
-      Hebrew  → local base detects language, ivrit-ai model transcribes locally (~1-2s)
+      Hebrew  → local base detects language, ivrit-ai model transcribes locally
                 fallback to OpenAI Whisper API if ivrit-ai model is unavailable
+
+    For web push-to-talk use transcribe_web() instead — it's 10-20x faster.
     """
     t0 = time.time()
     model = _get_whisper()
@@ -530,7 +568,15 @@ def transcribe(audio_path: str):
         without_timestamps=True,
     )
     segments = list(segments_iter)
-    detected_lang = (info.language or "en").lower()
+    raw_lang = (info.language or "en").lower()
+
+    # Clamp to supported languages: base Whisper sometimes misidentifies Hebrew
+    # as Arabic because they share similar phonetics. Anything that isn't English
+    # is treated as Hebrew — this user only speaks the two.
+    detected_lang = raw_lang if raw_lang in _SUPPORTED_LANGS else "he"
+    if raw_lang != detected_lang:
+        print(f"[STT] Language clamped: {raw_lang!r} → {detected_lang!r} (only he/en supported)")
+
     print(f"[TIMING] whisper detect: {time.time() - t1:.2f}s, detected={detected_lang!r}")
 
     # Silence check

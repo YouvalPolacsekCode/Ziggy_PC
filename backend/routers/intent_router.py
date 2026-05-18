@@ -137,6 +137,18 @@ async def process_chat(req: ChatRequest):
 
     reply = render_result(result)
 
+    # Translate action responses to Hebrew when the user typed in Hebrew.
+    # chat_with_gpt already responds in Hebrew natively; this covers command
+    # intents (toggle_light, control_ac, etc.) and multi-intent combinations
+    # whose handlers return English strings.
+    if top_intent not in _GPT_FALLBACK_INTENTS:
+        from interfaces.voice_interface import _translate, is_hebrew as _is_hebrew
+        if _is_hebrew(req.text) and reply and not _is_hebrew(reply):
+            try:
+                reply = _translate(reply)
+            except Exception:
+                pass
+
     broadcast_intent = top_intent
     if top_intent == "__multi__":
         sub = (parsed.get("intents") or [{}])[0]
@@ -174,8 +186,8 @@ async def process_voice(file: UploadFile = File(...)):
                  request_id=request_id,
                  content_type=file.content_type)
 
-        from interfaces.voice_interface import _translate, transcribe
-        transcription, lang = transcribe(tmp_path)
+        from interfaces.voice_interface import _translate, transcribe_web
+        transcription, lang = transcribe_web(tmp_path)
 
         bus.emit("voice", VERBOSE, "voice_transcribed",
                  request_id=request_id,
