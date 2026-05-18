@@ -150,18 +150,32 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
     else:
         default_name = params["name"]
 
+    # Build conditions list from params (supports multi-condition automations).
+    # Each condition: {"entity_id": "...", "operator": "is|is_not|above|below", "value": "..."}
+    raw_conditions = params.get("conditions") or []
+    conditions = []
+    for c in raw_conditions:
+        if isinstance(c, dict) and c.get("entity_id"):
+            conditions.append({
+                "entity_id": c["entity_id"],
+                "operator":  c.get("operator", "is"),
+                "value":     str(c.get("value", "on")),
+            })
+
     automation_data = {
         "name": default_name,
         "description": params.get("description", "Created by Ziggy"),
         "trigger": trigger,
+        "conditions": conditions,
         "actions": [{"type": "call_service", "entity_id": entity_id, "service": full_service}],
     }
 
     result = save_automation(automation_data)
     if result.get("ok"):
         name = automation_data["name"]
-        log_info(f"[Automation] Created '{name}' id={result.get('id')} source={result.get('source')}")
-        return ok(f"Done! '{name}' has been set up.")
+        cond_note = f" (with {len(conditions)} condition{'s' if len(conditions) != 1 else ''})" if conditions else ""
+        log_info(f"[Automation] Created '{name}'{cond_note} id={result.get('id')} source={result.get('source')}")
+        return ok(f"Done! '{name}' has been set up{cond_note}.")
     return err(f"Failed to create automation: {result.get('error', 'unknown error')}")
 
 

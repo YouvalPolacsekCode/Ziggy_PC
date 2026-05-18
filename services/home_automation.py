@@ -386,7 +386,9 @@ def get_sensor_state(room: str, sensor_type: str) -> Dict[str, Any]:
         if value in ("unavailable", "unknown", None):
             friendly = f"The {sensor_type_l} in {room_label} is currently unavailable."
         else:
-            unit_str = f" {unit}" if unit else ""
+            # Use non-breaking space before unit so "25.36 °C" never wraps
+            # across lines on narrow mobile screens.
+            unit_str = f" {unit}" if unit else ""
             friendly = f"The {sensor_type_l} in {room_label} is {value}{unit_str}."
         return {"ok": True, "message": friendly, "data": {"room": room, "entity_id": entity_id, "value": value, "unit": unit, "attributes": attrs}}
     except Exception as e:

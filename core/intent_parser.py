@@ -19,6 +19,8 @@ _FAST_PATTERNS = [
     (re.compile(r"^(good\s*night|goodnight|night\s+mode|לילה\s+טוב|לילה-טוב)$", re.IGNORECASE), "turn_off_everything"),
     # Going-to-sleep phrases that imply shutting everything down
     (re.compile(r"^(going\s+to\s+sleep|i'?m\s+going\s+to\s+sleep|off\s+to\s+bed|ללכת\s+לישון|הולך\s+לישון|הולכת\s+לישון)$", re.IGNORECASE), "turn_off_everything"),
+    # "remind me" fast path → add_task (handler will ask "What and when?")
+    (re.compile(r"^(remind\s+me|set\s+a?\s*reminder|תזכיר\s+לי|תזכורת)$", re.IGNORECASE), "add_task"),
 ]
 
 _TRIGGER_PREFIX = "ziggy do"
@@ -33,6 +35,18 @@ _VAGUE_MULTI_ACTION_PATTERNS = re.compile(
     r"set\s+(the\s+mood|the\s+scene|the\s+vibe)|"
     r"do\s+(the\s+thing|something|that\s+thing)(\s+from\s+(yesterday|before|earlier|last\s+time))?|"
     r"make\s+it\s+(perfect|nice|better|cozy))\b",
+    re.IGNORECASE,
+)
+
+# Vague automation/routine creation — no device/room/time details.
+# Bypasses GPT so it doesn't loop back to a generic greeting; instead falls
+# to unrecognized_command → GPT chat → asks one specific clarifying question.
+_VAGUE_AUTOMATION_PATTERN = re.compile(
+    r"^(create\s+(an?\s+)?(automation|routine|schedule)|"
+    r"set\s+up\s+(an?\s+)?(automation|routine)|"
+    r"new\s+(automation|routine)|"
+    r"תייצר\s+אוטומציה\s+חדשה|צור\s+אוטומציה\s+חדשה|"
+    r"תיצור\s+שגרה|צור\s+שגרה)$",
     re.IGNORECASE,
 )
 
@@ -106,12 +120,45 @@ def _build_rooms_he() -> list[tuple[str, str]]:
 
 _ROOMS_HE_SORTED = _build_rooms_he()
 
-# Hebrew device type word → English equivalent, sorted longest-match first
-_DEVICES_HE_SORTED = sorted(
-    settings.get("device_aliases_he", {}).items(),
-    key=lambda kv: len(kv[0]),
-    reverse=True,
-)
+# Built-in Hebrew device/action vocabulary — hardcoded so a YAML linter
+# sorting settings.yaml can never accidentally drop these entries.
+# Settings device_aliases_he adds user-customisable entries on top.
+_BUILTIN_DEVICE_ALIASES_HE: dict[str, str] = {
+    # Device nouns
+    "האור": "the light", "אור": "light", "התאורה": "the lights", "תאורה": "lights",
+    "המזגן": "the AC", "מזגן": "AC", "המיזוג": "the AC", "מיזוג": "AC",
+    "הטלוויזיה": "the TV", "טלוויזיה": "TV",
+    "המאוורר": "the fan", "מאוורר": "fan",
+    "המנעול": "the lock", "מנעול": "lock",
+    "התריס": "the blind", "תריס": "blind",
+    "התריסים": "the blinds", "תריסים": "blinds",
+    "הרמקול": "the speaker", "רמקול": "speaker",
+    # Automation / scheduling nouns
+    "אוטומציה": "automation", "אוטומציות": "automations",
+    "שגרה": "routine", "שגרות": "routines",
+    "תזמון": "schedule",
+    # Create/schedule action verbs (future + imperative forms)
+    "תייצר": "create", "ייצר": "create", "תיצור": "create",
+    "צור": "create", "תיצר": "create",
+    # Time expressions for scheduling
+    "כל יום": "every day", "בכל יום": "every day",
+    "כל בוקר": "every morning", "כל ערב": "every evening",
+    "בשעה": "at", "בצהריים": "PM", "בערב": "PM", "בבוקר": "AM",
+    # Hebrew relative clause verb forms (appear in automation creation:
+    # "אוטומציה שמדליקה את האור" = "automation that turns on the light")
+    "שמדליקה": "that turns on", "שמדליק": "that turns on",
+    "שמכבה": "that turns off",
+    "שמפעיל": "that activates", "שמפעילה": "that activates",
+    "שסוגר": "that closes", "שפותח": "that opens",
+}
+
+# Hebrew device type word → English equivalent, sorted longest-match first.
+# Merges built-in vocab (above) + user settings, settings take priority.
+def _build_devices_he() -> list[tuple[str, str]]:
+    merged = {**_BUILTIN_DEVICE_ALIASES_HE, **settings.get("device_aliases_he", {})}
+    return sorted(merged.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+_DEVICES_HE_SORTED = _build_devices_he()
 
 
 def _normalize_hebrew_rooms(text: str) -> str:
@@ -162,6 +209,13 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
     if _VAGUE_MULTI_ACTION_PATTERNS.search(lower):
         from core.debug_bus import bus, VERBOSE
         bus.emit("intent", VERBOSE, "vague_multi_action_fast_path", input=text)
+        return {"intent": "unrecognized_command", "params": {"text": text}, "source": "fast"}
+
+    # Vague automation/routine creation with no details — route to GPT chat which
+    # will ask "Which room, device, and time?" per the chat handler system prompt.
+    if _VAGUE_AUTOMATION_PATTERN.match(lower.strip()):
+        from core.debug_bus import bus, VERBOSE
+        bus.emit("intent", VERBOSE, "vague_automation_fast_path", input=text)
         return {"intent": "unrecognized_command", "params": {"text": text}, "source": "fast"}
 
     # Unsupported-feature fast path — bypass GPT entirely for known-unavailable features.

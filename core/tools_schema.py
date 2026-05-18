@@ -842,9 +842,28 @@ TOOLS = [
             "trigger_offset":    {"type": "string", "description": "Offset for sunrise/sunset, e.g. '+00:30:00'"},
             "action_room":       {"type": "string", "description": f"Room to act on. Options: {_ROOMS}"},
             "action_device_type":{"type": "string", "description": f"Device type to act on: {_automation_device_types()}"},
+            "action_entity_id":  {"type": "string", "description": "Specific HA entity ID for the action (use this instead of action_room when you know the exact entity, e.g. light.gledopto_gl_b_004p)"},
             "action_service":    {"type": "string",
                                   "description": f"HA service to call. Common: turn_on, turn_off. Device-specific: {_automation_all_services()}"},
-        }, "required": ["trigger_type", "action_room", "action_device_type", "action_service"]},
+            "conditions":        {
+                "type": "array",
+                "description": (
+                    "Optional list of conditions that ALL must be true before the action runs. "
+                    "Use for 'only if X is on', 'only when door is open', 'only when temp below 24'. "
+                    "Each condition: {\"entity_id\": \"light.office_light\", \"operator\": \"is\", \"value\": \"on\"} "
+                    "Operators: 'is' (state equals), 'is_not', 'above' (numeric), 'below' (numeric)."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "entity_id": {"type": "string"},
+                        "operator":  {"type": "string", "enum": ["is", "is_not", "above", "below"]},
+                        "value":     {"type": "string"},
+                    },
+                    "required": ["entity_id", "operator", "value"],
+                },
+            },
+        }, "required": ["trigger_type"]},
     }},
     {"type": "function", "function": {
         "name": "list_active_devices",
