@@ -177,7 +177,12 @@ async def handle_list_automations(params: dict, *, source: str = "unknown") -> d
 async def handle_delete_automation(params: dict, *, source: str = "unknown") -> dict:
     auto_id = params.get("automation_id") or params.get("id", "")
     if not auto_id:
-        return err("Please specify the automation ID to delete.")
+        autos = list_automations()
+        if not autos:
+            return ok("You have no automations to delete.")
+        names = ", ".join(f"'{a['name']}'" for a in autos[:5])
+        more = f" (and {len(autos) - 5} more)" if len(autos) > 5 else ""
+        return ok(f"Which automation should I delete? Your automations: {names}{more}.")
     ok_ = delete_automation(auto_id)
     return ok(f"Automation '{auto_id}' deleted.") if ok_ else err(f"Could not delete automation '{auto_id}'.")
 
@@ -186,7 +191,12 @@ async def handle_toggle_automation(params: dict, *, source: str = "unknown") -> 
     auto_id = params.get("automation_id") or params.get("id", "")
     enable = params.get("enable", True)
     if not auto_id:
-        return err("Please specify the automation ID.")
+        autos = list_automations()
+        if not autos:
+            return ok("You have no automations to enable or disable.")
+        names = ", ".join(f"'{a['name']}'" for a in autos[:5])
+        action = "enable" if enable else "disable"
+        return ok(f"Which automation should I {action}? Your automations: {names}.")
     ok_ = toggle_automation(auto_id, enable)
     state = "enabled" if enable else "disabled"
     return ok(f"Automation '{auto_id}' {state}.") if ok_ else err(f"Could not toggle automation '{auto_id}'.")

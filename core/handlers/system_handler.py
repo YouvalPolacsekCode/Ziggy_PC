@@ -182,12 +182,19 @@ async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
 
 async def handle_list_rooms(params: dict, *, source: str = "unknown") -> dict:
     from core.settings_loader import settings
-    from services.room_alias_bank import ROOM_ALIAS_BANK
-    personal = settings.get("room_aliases", {})
-    # Show canonical slugs: unique values from personal aliases + bank
-    slugs = sorted({*ROOM_ALIAS_BANK.values(), *personal.values()})
-    lines = ", ".join(s.replace("_", " ").title() for s in slugs)
-    return ok(f"I know these rooms: {lines}.")
+    rooms = []
+    # 1. Rooms with actual devices in the device_map — most relevant
+    device_map = settings.get("device_map", {})
+    if device_map:
+        rooms = sorted(r.replace("_", " ").title() for r in device_map.keys())
+    # 2. Fall back to personal room_aliases display names if device_map is empty
+    if not rooms:
+        personal = settings.get("room_aliases", {})
+        # Keys are the display names (Living Room, Bedroom, etc.)
+        rooms = sorted(set(personal.keys()))
+    if not rooms:
+        return ok("No rooms configured yet. Add rooms in Settings.")
+    return ok(f"Your rooms: {', '.join(rooms)}.")
 
 
 HANDLERS = {

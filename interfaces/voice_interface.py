@@ -190,14 +190,27 @@ except ImportError:
 
 # Build reverse map: English slug → preferred Hebrew room name (longest wins)
 _EN_SLUG_TO_HE: dict[str, str] = {}
+# Build from personal room_aliases_he (settings) — personal takes priority
 for _he_r, _slug_r in settings.get("room_aliases_he", {}).items():
     if len(_he_r) > len(_EN_SLUG_TO_HE.get(_slug_r, "")):
         _EN_SLUG_TO_HE[_slug_r] = _he_r
+# Also build from room_aliases keys (display names → slugs → Hebrew)
+# This catches rooms like "Living Room" whose slug "living_room" has a HE alias
+_room_aliases = settings.get("room_aliases", {})
+for _display, _slug in _room_aliases.items():
+    if _slug in _EN_SLUG_TO_HE:
+        # Also map "living room" (lower, no underscore) → Hebrew
+        _EN_SLUG_TO_HE[_display.lower()] = _EN_SLUG_TO_HE[_slug]
+        _EN_SLUG_TO_HE[_display.lower().replace(" ", "_")] = _EN_SLUG_TO_HE[_slug]
+
 
 def _room_to_he(display: str) -> str:
     """Convert English room display name from a handler response to Hebrew."""
     slug = display.strip().lower().replace(" ", "_")
-    return _EN_SLUG_TO_HE.get(slug, display)
+    # Try slug first, then lowercase display, then original display
+    return (_EN_SLUG_TO_HE.get(slug)
+            or _EN_SLUG_TO_HE.get(display.strip().lower())
+            or display)
 
 # Regex patterns for handler response strings (all anchored to full message)
 # ── Lights ────────────────────────────────────────────────────────────────────

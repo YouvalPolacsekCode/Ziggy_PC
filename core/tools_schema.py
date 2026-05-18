@@ -858,18 +858,18 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "delete_automation",
-        "description": "Delete an automation by ID",
+        "description": "Delete an automation. Call this even when the ID is not specified — the handler will ask which one.",
         "parameters": {"type": "object", "properties": {
-            "automation_id": {"type": "string", "description": "The automation ID to delete"},
-        }, "required": ["automation_id"]},
+            "automation_id": {"type": "string", "description": "The automation ID to delete (leave empty if not specified)"},
+        }, "required": []},
     }},
     {"type": "function", "function": {
         "name": "toggle_automation",
-        "description": "Enable or disable an automation",
+        "description": "Enable or disable an automation. Call this even when the ID is not specified — the handler will ask which one.",
         "parameters": {"type": "object", "properties": {
-            "automation_id": {"type": "string", "description": "The automation ID"},
+            "automation_id": {"type": "string", "description": "The automation ID (leave empty if not specified)"},
             "enable":         {"type": "boolean", "description": "true to enable, false to disable"},
-        }, "required": ["automation_id", "enable"]},
+        }, "required": ["enable"]},
     }},
     {"type": "function", "function": {
         "name": "update_automation",
