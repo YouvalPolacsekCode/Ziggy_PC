@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../components/ui/Modal'
 import { Input, Textarea } from '../components/ui/Input'
@@ -55,7 +55,7 @@ function SubItem({ item, onToggle }) {
 }
 
 // ── Task row ──────────────────────────────────────────────────────────────────
-function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
+const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }, ref) {
   const [expanded, setExpanded] = useState(false)
   const isDone  = task.done || task.completed
   const items   = task.items || []
@@ -66,6 +66,7 @@ function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -16 }}
       style={{
@@ -178,7 +179,7 @@ function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }) {
       </AnimatePresence>
     </motion.div>
   )
-}
+})
 
 // ── Task form (shared by add + edit) ─────────────────────────────────────────
 function TaskForm({ values, onChange }) {
