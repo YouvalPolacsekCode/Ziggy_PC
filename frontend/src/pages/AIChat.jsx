@@ -5,10 +5,7 @@ import { sendChat, sendVoice, sendDirectIntent } from '../lib/api'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
-import { formatTime } from '../lib/utils'
-
-const HEBREW_RE = /[֐-׿]/
-const isHebrew  = (text) => HEBREW_RE.test(text)
+import { formatTime, isHebrew } from '../lib/utils'
 
 // ── Voice wave ────────────────────────────────────────────────────────────────
 function VoiceWave({ active, size = 22 }) {
@@ -117,32 +114,50 @@ export default function AIChat() {
   const { messages, addMessage, clearMessages }   = useChatStore()
   const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
 
-  const [input,         setInput]         = useState('')
-  const [orbState,      setOrbState]      = useState('idle')
-  const [thinking,      setThinking]      = useState(false)
-  const [recording,     setRecording]     = useState(false)
-  const [keyboardInset, setKeyboardInset] = useState(0)
+  const [input,     setInput]     = useState('')
+  const [orbState,  setOrbState]  = useState('idle')
+  const [thinking,  setThinking]  = useState(false)
+  const [recording, setRecording] = useState(false)
 
-  const mediaRef          = useRef(null)
-  const chunksRef         = useRef([])
-  const scrollRef         = useRef(null)
-  const inputRef          = useRef(null)
-  const sentPrefillRef    = useRef(false)
+  const mediaRef       = useRef(null)
+  const chunksRef      = useRef([])
+  const scrollRef      = useRef(null)
+  const inputRef       = useRef(null)
+  const sentPrefillRef = useRef(false)
+  const containerRef   = useRef(null)
 
   useEffect(() => { fetchQuickAsks() }, [])
 
-  // iOS keyboard awareness via visualViewport API.
-  // When the soft keyboard slides up it reduces visualViewport.height without
-  // changing window.innerHeight, so we compute the gap and push the composer up.
+  // Pin the chat container to an exact pixel height at all times.
+  // Relying on calc(100dvh - 4rem) alone can leave the composer floating when dvh
+  // updates asynchronously (e.g. after keyboard closes on Android) or is slightly
+  // wrong. JS always wins and guarantees the container fills exactly the visible area
+  // minus the bottom nav. On iOS, vv.height shrinks when the keyboard opens while
+  // window.innerHeight stays fixed — that's how we detect "keyboard open" and stop
+  // subtracting nav height (the nav is hidden behind the keyboard in that state).
   useEffect(() => {
-    const vv = window.visualViewport
-    if (!vv) return
-    const onResize = () => {
-      const inset = window.innerHeight - vv.height - vv.offsetTop
-      setKeyboardInset(Math.max(0, inset))
+    const setSize = () => {
+      if (!containerRef.current) return
+      const vv = window.visualViewport
+      const viewH = vv ? vv.height : window.innerHeight
+      const isMobile = window.innerWidth < 768
+      const keyboardOpen = vv ? vv.height < window.innerHeight * 0.8 : false
+      const navH = isMobile && !keyboardOpen ? 64 : 0
+      containerRef.current.style.height = `${viewH - navH}px`
     }
-    vv.addEventListener('resize', onResize)
-    return () => vv.removeEventListener('resize', onResize)
+    setSize()
+    window.addEventListener('resize', setSize)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setSize)
+      window.visualViewport.addEventListener('scroll', setSize)
+    }
+    return () => {
+      window.removeEventListener('resize', setSize)
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', setSize)
+        window.visualViewport.removeEventListener('scroll', setSize)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -228,7 +243,13 @@ export default function AIChat() {
   }
 
   const stopRecording = () => { mediaRef.current?.stop(); setRecording(false); setOrbState('thinking') }
-  const handleMicClick = () => { if (recording) stopRecording(); else if (orbState === 'idle') startRecording() }
+
+  const handleMicPointerDown = (e) => {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId) // keep tracking even if finger slides off
+    if (orbState === 'idle') startRecording()
+  }
+  const handleMicPointerUp = () => { if (recording) stopRecording() }
 
   const hasMessages = messages.length > 0
   const listening   = orbState === 'listening'
@@ -236,19 +257,21 @@ export default function AIChat() {
   const busy        = orbState === 'thinking' || speaking
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column',
-      height: 'calc(100dvh - 4rem)',
-      background: 'var(--bg)',
-      overflow: 'hidden',
-    }}
-    className="md:h-screen"
+    <div
+      ref={containerRef}
+      style={{
+        display: 'flex', flexDirection: 'column',
+        height: 'calc(100dvh - 4rem)',
+        background: 'var(--bg)',
+        overflow: 'hidden',
+      }}
     >
       {/* ── Header bar ── */}
       <div style={{
         padding: '14px 20px 10px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: '0.5px solid var(--line)',
+        flexShrink: 0,
       }}>
         <div>
           <p className="z-eyebrow">Ziggy AI</p>
@@ -295,16 +318,18 @@ export default function AIChat() {
             {/* Mic + wave */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
               <button
-                onClick={handleMicClick}
+                onPointerDown={handleMicPointerDown}
+                onPointerUp={handleMicPointerUp}
                 style={{
                   width: 72, height: 72, borderRadius: '50%',
                   background: listening ? 'color-mix(in srgb, var(--accent) 15%, var(--surface))' : 'var(--ink)',
                   color: listening ? 'var(--accent)' : 'var(--bg)',
                   border: listening ? '1.5px solid var(--accent)' : 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer',
+                  cursor: 'pointer', touchAction: 'none',
                   boxShadow: listening ? '0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent)' : '0 6px 20px -6px rgba(0,0,0,0.3)',
                   transition: 'all 0.2s',
+                  userSelect: 'none',
                 }}
               >
                 {listening
@@ -313,7 +338,7 @@ export default function AIChat() {
                 }
               </button>
               <p style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center' }}>
-                {listening ? 'Tap to stop' : 'Tap to speak, or type below'}
+                {listening ? 'Release to send' : 'Hold to speak, or type below'}
               </p>
             </div>
 
@@ -346,7 +371,7 @@ export default function AIChat() {
       {hasMessages && (
         <div
           className="scrollbar-thin"
-          style={{ flex: 1, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}
         >
           {messages.map(msg => <Message key={msg.id} msg={msg} />)}
           {thinking && <ThinkingBubble />}
@@ -356,10 +381,10 @@ export default function AIChat() {
 
       {/* ── Composer ── */}
       <div style={{
-        padding: `10px 16px ${keyboardInset > 0 ? keyboardInset + 10 : 14}px`,
+        padding: '10px 16px 14px',
         borderTop: '0.5px solid var(--line)',
         display: 'flex', alignItems: 'center', gap: 8,
-        transition: 'padding-bottom 0.1s ease',
+        flexShrink: 0,
       }}>
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', gap: 8,
@@ -384,7 +409,9 @@ export default function AIChat() {
 
         {/* Send / mic */}
         <motion.button
-          onClick={input.trim() ? () => handleSend() : handleMicClick}
+          onClick={input.trim() ? () => handleSend() : undefined}
+          onPointerDown={!input.trim() ? handleMicPointerDown : undefined}
+          onPointerUp={!input.trim() ? handleMicPointerUp : undefined}
           whileTap={{ scale: 0.9 }}
           style={{
             width: 44, height: 44, borderRadius: '50%',
@@ -393,6 +420,7 @@ export default function AIChat() {
             border: input.trim() || listening ? 'none' : '0.5px solid var(--line)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', flexShrink: 0,
+            touchAction: 'none', userSelect: 'none',
           }}
         >
           {input.trim() ? (

@@ -45,7 +45,12 @@ export const sendChat = (text, chatHistory = [], source = 'web') =>
 export async function sendVoice(blob) {
   const fd = new FormData()
   fd.append('file', blob, 'recording.webm')
-  const res = await fetch(`${BASE}/voice`, { method: 'POST', body: fd })
+  const token = getToken()
+  const res = await fetch(`${BASE}/voice`, {
+    method: 'POST',
+    body: fd,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -247,6 +252,7 @@ export const exportDebugReport = ()       => get('/debug/export')
 export const getDebugStatus    = ()       => get('/debug/status')
 export const simulateIntent    = (data)   => post('/debug/simulate', data)
 export const getRequestTrace   = (reqId)  => get(`/debug/request/${encodeURIComponent(reqId)}`)
+export const debugSelfTest     = ()       => post('/debug/self-test')
 
 // Memory
 export const getMemory = () => get('/memory')
