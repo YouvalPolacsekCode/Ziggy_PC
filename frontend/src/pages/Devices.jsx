@@ -856,6 +856,9 @@ const DeviceCard = forwardRef(function DeviceCard({
   const isActive = !isOff
   const showStatusBadge = !isIr && !linkedIr && ziggyStatus && ziggyStatus !== 'connected' && STATUS_LABEL[ziggyStatus]
 
+  // Controls collapsed by default — expand on demand
+  const [controlsExpanded, setControlsExpanded] = useState(false)
+
   // IR assumed-state picker (standalone IR cards only)
   const [showStatePicker, setShowStatePicker] = useState(false)
   const irStateOptions = IR_STATE_OPTIONS_MAP[irDevice?.type] || IR_STATE_OPTIONS_MAP.default
@@ -1004,32 +1007,48 @@ const DeviceCard = forwardRef(function DeviceCard({
           </p>
         )}
 
-        {/* ── Controls ── */}
+        {/* ── Controls — collapsible ── */}
         {!isHidden && (
-          isIr ? (
-            // Standalone IR card: full remote drawer trigger
-            <IRRemoteButton irDevice={irDevice} onCommand={onIrCommand} onChannel={onIrChannel} />
-          ) : linkedIr ? (
-            // Merged card: HA controls + IR Power-On + IR Remote drawer trigger
-            <>
-              {/* Power On via IR — shown prominently when device is off/unavailable */}
-              {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
-                <button
-                  onClick={() => onIrCommand(linkedIr.id, 'power')}
-                  className="w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-xl bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 text-xs font-semibold hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors border border-violet-200 dark:border-violet-800/50"
-                >
-                  ⏻ Turn On via IR
-                </button>
-              )}
-              {/* Standard HA controls (play/pause, volume, sources, climate modes, etc.) */}
-              <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-              {/* IR Remote drawer trigger */}
-              <IRRemoteButton irDevice={linkedIr} onCommand={onIrCommand} onChannel={onIrChannel} />
-            </>
-          ) : (
-            // Regular HA entity
-            <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-          )
+          <>
+            {/* Collapse/expand toggle bar */}
+            <button
+              onClick={() => setControlsExpanded(v => !v)}
+              style={{
+                width: '100%', marginTop: 10, padding: '6px 0',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--ink-faint)', fontSize: 11, fontFamily: 'inherit', fontWeight: 500,
+                borderTop: '0.5px solid var(--line)', borderRadius: 0,
+              }}
+            >
+              {controlsExpanded ? 'Hide controls' : 'Show controls'}
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </button>
+
+            {controlsExpanded && (
+              isIr ? (
+                <IRRemoteButton irDevice={irDevice} onCommand={onIrCommand} onChannel={onIrChannel} />
+              ) : linkedIr ? (
+                <>
+                  {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
+                    <button
+                      onClick={() => onIrCommand(linkedIr.id, 'power')}
+                      style={{ width: '100%', marginTop: 8, padding: '8px 0', borderRadius: 10, background: 'color-mix(in srgb, var(--accent) 10%, var(--surface))', color: 'var(--accent)', border: '0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      ⏻ Turn On via IR
+                    </button>
+                  )}
+                  <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
+                  <IRRemoteButton irDevice={linkedIr} onCommand={onIrCommand} onChannel={onIrChannel} />
+                </>
+              ) : (
+                <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
+              )
+            )}
+          </>
         )}
 
         {showAssign && !isIr && (

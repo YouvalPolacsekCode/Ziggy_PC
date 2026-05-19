@@ -618,8 +618,9 @@ function RoomZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
 }
 
 // ── Domain-specific group renderers ──────────────────────────────────────────
-function LightsGroup({ devices, onToggle, eyebrow }) {
+function LightsGroup({ devices, onToggle, onService, eyebrow }) {
   const onCount = devices.filter(d => isEntityOn(d)).length
+  const [expandedId, setExpandedId] = useState(null)
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -631,26 +632,80 @@ function LightsGroup({ devices, onToggle, eyebrow }) {
           const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Light'
           const bri = entity.ha_attributes?.brightness ? Math.round(entity.ha_attributes.brightness / 2.55) + '%' : null
           const val = on ? (bri || 'on') : 'off'
+          const isExpanded = expandedId === entity.entity_id
           return (
-            <button
-              key={entity.entity_id || i}
-              onClick={() => onToggle(entity.entity_id, !on)}
-              style={{
-                padding: 12, borderRadius: 14, aspectRatio: '1',
-                background: on ? 'var(--ink)' : 'var(--surface)',
-                color: on ? 'var(--bg)' : 'var(--ink-2)',
-                border: '0.5px solid var(--line)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.15s',
-              }}
-            >
-              <RoomZIcon name="light" size={20} stroke={1.6} color={on ? 'var(--gold)' : 'var(--ink-faint)'} />
-              <div style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</div>
-              <div className="z-mono" style={{ fontSize: 10, opacity: 0.75 }}>{val}</div>
-            </button>
+            <div key={entity.entity_id || i} style={{ display: 'flex', flexDirection: 'column', borderRadius: 14, border: '0.5px solid var(--line)', overflow: 'hidden', background: on ? 'var(--ink)' : 'var(--surface)' }}>
+              <button
+                onClick={() => onToggle(entity.entity_id, !on)}
+                style={{
+                  padding: 12, aspectRatio: '1',
+                  color: on ? 'var(--bg)' : 'var(--ink-2)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.15s',
+                  background: 'none', border: 'none',
+                }}
+              >
+                <RoomZIcon name="light" size={20} stroke={1.6} color={on ? 'var(--gold)' : 'var(--ink-faint)'} />
+                <div style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</div>
+                <div className="z-mono" style={{ fontSize: 10, opacity: 0.75 }}>{val}</div>
+              </button>
+              {/* Expand button for full light controls */}
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : entity.entity_id)}
+                style={{
+                  borderTop: `0.5px solid ${on ? 'rgba(255,255,255,0.12)' : 'var(--line)'}`,
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: on ? 'rgba(255,255,255,0.5)' : 'var(--ink-faint)',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </button>
+              {isExpanded && (
+                <div style={{ padding: '12px', borderTop: `0.5px solid ${on ? 'rgba(255,255,255,0.12)' : 'var(--line)'}`, background: 'var(--surface)' }}>
+                  <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} onToggle={(v) => onToggle(entity.entity_id, v)} />
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ── Expandable device card — shows full DeviceControls when expanded ──────────
+function ExpandableCard({ entity, header, onService, onToggle }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div style={{ borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
+      {/* Row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+        <div style={{ flex: 1 }}>{header}</div>
+        <button
+          onClick={() => setExpanded(v => !v)}
+          style={{
+            width: 44, height: '100%', minHeight: 60, flexShrink: 0, background: 'none', border: 'none',
+            borderLeft: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink-faint)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          title={expanded ? 'Collapse controls' : 'Show controls'}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+        </button>
+      </div>
+      {/* Full controls */}
+      {expanded && (
+        <div style={{ padding: '0 16px 20px', borderTop: '0.5px solid var(--line)' }}>
+          <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} onToggle={onToggle ? (v) => onToggle(entity.entity_id, v) : undefined} />
+        </div>
+      )}
     </div>
   )
 }
@@ -667,8 +722,9 @@ function ClimateRowCard({ entity, onService }) {
     setLocalTemp(next)
     onService(entity, 'set_temperature', { temperature: next })
   }
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+
+  const header = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14 }}>
       <div style={{ width: 42, height: 42, borderRadius: 12, background: 'color-mix(in srgb, var(--info) 12%, var(--surface-2))', color: 'var(--info)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <RoomZIcon name="climate" size={18} />
       </div>
@@ -691,6 +747,7 @@ function ClimateRowCard({ entity, onService }) {
       )}
     </div>
   )
+  return <ExpandableCard entity={entity} header={header} onService={onService} />
 }
 
 function MediaRowCard({ entity, onService }) {
@@ -700,8 +757,8 @@ function MediaRowCard({ entity, onService }) {
   const source = entity.ha_attributes?.source || entity.ha_attributes?.app_name
   const isPlaying = entity.ha_state === 'playing'
   const sub = title ? `${title}${artist ? ' · ' + artist : ''}` : (source || entity.ha_state)
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+  const header = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14 }}>
       <div style={{ width: 42, height: 42, borderRadius: 12, background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <RoomZIcon name="media" size={18} />
       </div>
@@ -710,13 +767,14 @@ function MediaRowCard({ entity, onService }) {
         <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
       </div>
       <button
-        onClick={() => onService(entity, isPlaying ? 'media_pause' : 'media_play', {})}
+        onClick={e => { e.stopPropagation(); onService(entity, isPlaying ? 'media_pause' : 'media_play', {}) }}
         style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--ink)', color: 'var(--bg)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
       >
         {isPlaying ? <Pause size={14} fill="var(--bg)" stroke="none" /> : <Play size={14} fill="var(--bg)" stroke="none" />}
       </button>
     </div>
   )
+  return <ExpandableCard entity={entity} header={header} onService={onService} />
 }
 
 function TVRowCard({ entity }) {
@@ -773,25 +831,42 @@ function SensorsStrip({ devices }) {
 }
 
 function StandardDeviceRow({ entity, onToggle, onService }) {
+  const [expanded, setExpanded] = useState(false)
   const isOn = isEntityOn(entity)
   const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Device'
   const state = entity.ha_state || entity.state || '—'
   const isToggleable = TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
+  const hasFullControls = ['light', 'climate', 'media_player', 'cover', 'fan', 'lock', 'vacuum'].includes(entity.domain)
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderBottom: '0.5px solid var(--line)' }} className="last:border-b-0">
-      <div style={{
-        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-        background: isOn ? 'var(--ink)' : 'var(--surface-2)',
-        color: isOn ? 'var(--bg)' : 'var(--ink-2)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
-      }}>
-        {domainIcon(entity.domain, entity.device_class)}
+    <div style={{ borderBottom: '0.5px solid var(--line)' }} className="last:border-b-0">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px' }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          background: isOn ? 'var(--ink)' : 'var(--surface-2)',
+          color: isOn ? 'var(--bg)' : 'var(--ink-2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+        }}>
+          {domainIcon(entity.domain, entity.device_class)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+          <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1 }}>{state}</div>
+        </div>
+        {isToggleable && <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />}
+        {hasFullControls && (
+          <button onClick={() => setExpanded(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: '4px 2px', marginLeft: 4 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+        )}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1 }}>{state}</div>
-      </div>
-      {isToggleable && <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />}
+      {expanded && hasFullControls && (
+        <div style={{ padding: '0 14px 16px', borderTop: '0.5px solid var(--line)' }}>
+          <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} onToggle={(v) => onToggle(entity.entity_id, v)} />
+        </div>
+      )}
     </div>
   )
 }
@@ -803,7 +878,7 @@ function renderDomainSection(group, devices, handlers) {
   if (group.id === 'lights') {
     const lights = visibleDevices.filter(e => e.domain === 'light')
     if (!lights.length) return null
-    return <LightsGroup devices={lights} onToggle={onToggle} eyebrow={group.label} />
+    return <LightsGroup devices={lights} onToggle={onToggle} onService={onService} eyebrow={group.label} />
   }
 
   if (group.id === 'climate') {

@@ -30,11 +30,58 @@ function VoiceWave({ active, size = 22 }) {
   )
 }
 
+// ── Pattern detected card ─────────────────────────────────────────────────────
+function PatternCard({ msg, onSaveRoutine }) {
+  const [saved, setSaved] = useState(false)
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+      style={{ maxWidth: '92%', alignSelf: 'flex-start' }}
+    >
+      <div style={{
+        padding: 14, borderRadius: 14,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
+          <span className="z-mono" style={{ fontSize: 10, color: 'var(--accent)', letterSpacing: '0.12em', fontWeight: 600 }}>PATTERN DETECTED</span>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 10, lineHeight: 1.45 }}>
+          {msg.text} Save as a routine called <strong>"{msg.patternLabel}"</strong>?
+        </div>
+        {!saved ? (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setSaved(true)}
+              style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Save routine
+            </button>
+            <button
+              style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Not now
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ok)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+            Routine saved!
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 // ── Message bubble (Chat-A) ───────────────────────────────────────────────────
 function Message({ msg }) {
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
   const rtl     = isHebrew(msg.text)
+
+  // Pattern card
+  if (msg.isPattern) return <PatternCard msg={msg} />
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -204,7 +251,21 @@ export default function AIChat() {
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendChat(t, historyForApi)
-      addMessage('assistant', res.reply || '…', res.ok !== false)
+      // Build action chip labels from the response
+      const actions = res.actions?.map(a => {
+        if (typeof a === 'string') return a
+        if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
+        if (a.label) return a.label
+        return String(a)
+      }) || []
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      // Pattern suggestion card
+      if (res.pattern_suggestion) {
+        addMessage('pattern', res.pattern_suggestion.message || 'Pattern detected', true, {
+          patternLabel: res.pattern_suggestion.suggested_name || 'Routine',
+          isPattern: true,
+        })
+      }
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
     } catch (e) {
@@ -221,7 +282,8 @@ export default function AIChat() {
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendDirectIntent(qa.intent, qa.params)
-      addMessage('assistant', res.reply || '…', res.ok !== false)
+      const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
     } catch (e) {
