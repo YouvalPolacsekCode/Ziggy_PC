@@ -491,7 +491,7 @@ export default function IRWizard({ onClose, onCreated }) {
   ]
 
   return (
-    <Modal open onClose={onClose} title={titles[step - 1]}>
+    <Modal open fullScreen onClose={onClose} title={titles[step - 1]}>
       <StepIndicator step={step} total={TOTAL_STEPS} />
 
       <AnimatePresence mode="wait">

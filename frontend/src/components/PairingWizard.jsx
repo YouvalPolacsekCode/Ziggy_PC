@@ -410,7 +410,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
   const pairDuration = protocol === 'zwave' ? ZWAVE_DURATION : ZIGBEE_DURATION
 
   return (
-    <Modal open={open} onClose={onClose} title="Pair new device">
+    <Modal open={open} fullScreen onClose={onClose} title="Pair new device">
       {['idle', 'pairing', 'found'].includes(step) && <StepDots current={step} />}
 
       <AnimatePresence mode="wait">

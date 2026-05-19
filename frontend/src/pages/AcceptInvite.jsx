@@ -83,34 +83,28 @@ export default function AcceptInvite() {
     <div style={{
       minHeight: '100dvh',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--bg, #f8f8f8)',
+      background: 'var(--bg)',
       padding: 24,
     }}>
       <div style={{
         width: '100%', maxWidth: 400,
-        background: 'var(--surface, #fff)',
-        border: '0.5px solid var(--line, #e5e5e5)',
+        background: 'var(--surface)',
+        border: '0.5px solid var(--line)',
         borderRadius: 20,
         overflow: 'hidden',
-        boxShadow: '0 8px 40px rgba(0,0,0,0.08)',
+        boxShadow: 'var(--shadow-lg)',
       }}>
         {/* Header */}
         <div style={{ padding: '28px 28px 0', textAlign: 'center' }}>
-          <p style={{
-            fontFamily: "'Heebo', sans-serif", fontWeight: 700,
-            fontSize: 22, letterSpacing: '-0.02em', color: 'var(--ink, #111)',
-            marginBottom: 4,
-          }}>
-            Ziggy<span style={{ color: 'var(--accent, #7c3aed)' }}>.</span>
+          <p style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.025em', color: 'var(--ink)', marginBottom: 4 }}>
+            ziggy<span style={{ color: 'var(--accent)' }}>.</span>
           </p>
-          <p style={{ fontSize: 13, color: 'var(--ink-faint, #888)', marginBottom: 24 }}>
-            Smart home intelligence
-          </p>
+          <p className="z-eyebrow" style={{ marginBottom: 24 }}>Smart home intelligence</p>
         </div>
 
         <div style={{ padding: '0 28px 28px' }}>
           {loading && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-faint, #888)', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-faint)', fontSize: 13 }}>
               Validating invite…
             </div>
           )}
@@ -118,10 +112,10 @@ export default function AcceptInvite() {
           {!loading && error && !invite && (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <p style={{ fontSize: 28, marginBottom: 12 }}>🔗</p>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink, #111)', marginBottom: 8 }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                 Invite unavailable
               </p>
-              <p style={{ fontSize: 12, color: 'var(--ink-faint, #888)', lineHeight: 1.5 }}>{error}</p>
+              <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>{error}</p>
             </div>
           )}
 
@@ -130,10 +124,10 @@ export default function AcceptInvite() {
               {invite?.type === 'home' ? (
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>🏠</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink, #111)', marginBottom: 8 }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                     Account created!
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint, #888)', lineHeight: 1.6 }}>
+                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
                     Your new Ziggy home is being set up.
                     <br />You'll receive an email when it's ready to use.
                   </p>
@@ -141,17 +135,17 @@ export default function AcceptInvite() {
               ) : homeUrl ? (
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink, #111)', marginBottom: 8 }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                     Welcome to {invite?.home_name || 'Ziggy'}!
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint, #888)', marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 16 }}>
                     Your account is ready. Open your home to log in.
                   </p>
                   <a
                     href={homeUrl}
                     style={{
                       display: 'inline-block',
-                      background: 'var(--accent, #7c3aed)', color: '#fff',
+                      background: 'var(--accent)', color: '#fff',
                       padding: '10px 20px', borderRadius: 10,
                       fontSize: 13, fontWeight: 600, textDecoration: 'none',
                     }}
@@ -162,10 +156,10 @@ export default function AcceptInvite() {
               ) : (
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink, #111)', marginBottom: 8 }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                     {relayBase ? 'Account created!' : `Welcome to ${invite?.home_name || 'Ziggy'}!`}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint, #888)', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
                     {relayBase
                       ? 'Your home admin will share your home\'s access URL with you.'
                       : 'Taking you to the dashboard…'}
@@ -179,19 +173,19 @@ export default function AcceptInvite() {
             <form onSubmit={handleSubmit}>
               {/* Invite context */}
               <div style={{
-                background: 'var(--bg-2, #f5f5f5)', borderRadius: 12,
+                background: 'var(--bg-2)', borderRadius: 12,
                 padding: '14px 16px', marginBottom: 20,
               }}>
-                <p style={{ fontSize: 12, color: 'var(--ink-faint, #888)', marginBottom: 4 }}>
-                  You've been invited by <strong style={{ color: 'var(--ink, #111)' }}>{invite.invited_by}</strong>
+                <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 4 }}>
+                  You've been invited by <strong style={{ color: 'var(--ink)' }}>{invite.invited_by}</strong>
                 </p>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink, #111)' }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
                   {invite.type === 'home'
                     ? `Set up ${invite.home_name || 'your new home'}`
                     : invite.home_name}
                   <span style={{
                     marginLeft: 8, fontSize: 10, fontWeight: 600,
-                    background: 'var(--accent, #7c3aed)', color: '#fff',
+                    background: 'var(--accent)', color: '#fff',
                     padding: '2px 8px', borderRadius: 999,
                   }}>
                     {invite.type === 'home' ? 'New home' : (ROLE_LABEL[invite.role] || invite.role)}
@@ -202,7 +196,7 @@ export default function AcceptInvite() {
               {/* Fields */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint, #888)', marginBottom: 4 }}>Email</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Email</p>
                   <input
                     type="email"
                     value={email}
@@ -215,7 +209,7 @@ export default function AcceptInvite() {
                   />
                 </div>
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint, #888)', marginBottom: 4 }}>Password</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Password</p>
                   <input
                     type="password"
                     value={password}
@@ -227,7 +221,7 @@ export default function AcceptInvite() {
                   />
                 </div>
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint, #888)', marginBottom: 4 }}>Confirm password</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Confirm password</p>
                   <input
                     type="password"
                     value={confirm}
@@ -241,7 +235,7 @@ export default function AcceptInvite() {
               </div>
 
               {error && (
-                <p style={{ fontSize: 12, color: 'var(--error, #e53e3e)', marginBottom: 14, lineHeight: 1.4 }}>
+                <p style={{ fontSize: 12, color: 'var(--err)', marginBottom: 14, lineHeight: 1.4 }}>
                   {error}
                 </p>
               )}
@@ -251,7 +245,7 @@ export default function AcceptInvite() {
                 disabled={saving}
                 style={{
                   width: '100%', height: 42,
-                  background: 'var(--accent, #7c3aed)', color: '#fff',
+                  background: 'var(--accent)', color: '#fff',
                   border: 'none', borderRadius: 11,
                   fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
                   opacity: saving ? 0.7 : 1,
