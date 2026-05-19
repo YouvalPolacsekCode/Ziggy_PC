@@ -136,12 +136,12 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
 // ── Rooms carousel — fixed snap-slot, inner photo grows for active tile ───────
 // Outer slot size is constant → snap points never shift → no jump.
 // Inner photo width + height animate independently.
-const SLOT_W      = 190   // outer snap-slot (constant)
-const SLOT_H      = 158   // outer slot height (constant)
-const ACTIVE_W    = 190   // inner width when active — fills slot
-const ACTIVE_H    = 152   // inner height when active
-const INACTIVE_W  = 128   // inner width when inactive — narrower
-const INACTIVE_H  = 116   // inner height when inactive — shorter
+const SLOT_W      = 204   // outer snap-slot (constant)
+const SLOT_H      = 170   // outer slot height (constant)
+const ACTIVE_W    = 204   // inner width when active — fills slot
+const ACTIVE_H    = 164   // inner height when active
+const INACTIVE_W  = 122   // inner width when inactive — narrower
+const INACTIVE_H  = 112   // inner height when inactive — shorter
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const navigate  = useNavigate()
@@ -176,7 +176,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
         <div
           ref={scrollRef}
           style={{
-            display: 'flex', gap: 4,
+            display: 'flex', gap: 2,
             overflowX: 'auto',
             paddingLeft: 20, paddingRight: 20, paddingTop: 4, paddingBottom: 4,
             scrollSnapType: 'x mandatory',
