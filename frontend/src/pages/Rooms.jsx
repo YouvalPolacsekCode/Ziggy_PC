@@ -618,13 +618,19 @@ function RoomZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
 }
 
 // ── Domain-specific group renderers ──────────────────────────────────────────
-function LightsGroup({ devices, onToggle, onService, eyebrow }) {
+function LightsGroup({ devices, onToggle, eyebrow }) {
+  const navigate = useNavigate()
   const onCount = devices.filter(d => isEntityOn(d)).length
-  const [expandedId, setExpandedId] = useState(null)
+  const avgBri = (() => {
+    const lit = devices.filter(d => isEntityOn(d) && d.ha_attributes?.brightness)
+    if (!lit.length) return null
+    return Math.round(lit.reduce((s, d) => s + d.ha_attributes.brightness / 2.55, 0) / lit.length)
+  })()
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
         <p className="z-eyebrow">{eyebrow} · {onCount} of {devices.length} on</p>
+        {avgBri != null && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{avgBri}% avg</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(devices.length, 3)}, 1fr)`, gap: 8 }}>
         {devices.map((entity, i) => {
@@ -632,16 +638,16 @@ function LightsGroup({ devices, onToggle, onService, eyebrow }) {
           const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Light'
           const bri = entity.ha_attributes?.brightness ? Math.round(entity.ha_attributes.brightness / 2.55) + '%' : null
           const val = on ? (bri || 'on') : 'off'
-          const isExpanded = expandedId === entity.entity_id
           return (
             <div key={entity.entity_id || i} style={{ display: 'flex', flexDirection: 'column', borderRadius: 14, border: '0.5px solid var(--line)', overflow: 'hidden', background: on ? 'var(--ink)' : 'var(--surface)' }}>
+              {/* Tap tile = toggle */}
               <button
                 onClick={() => onToggle(entity.entity_id, !on)}
                 style={{
-                  padding: 12, height: 110,
+                  flex: 1, padding: 12, minHeight: 110,
                   color: on ? 'var(--bg)' : 'var(--ink-2)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                  cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.15s',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  cursor: 'pointer', fontFamily: 'inherit', transition: 'opacity 0.12s',
                   background: 'none', border: 'none',
                 }}
               >
@@ -649,25 +655,21 @@ function LightsGroup({ devices, onToggle, onService, eyebrow }) {
                 <div style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</div>
                 <div className="z-mono" style={{ fontSize: 10, opacity: 0.75 }}>{val}</div>
               </button>
-              {/* Expand button for full light controls */}
-              <button
-                onClick={() => setExpandedId(isExpanded ? null : entity.entity_id)}
-                style={{
-                  borderTop: `0.5px solid ${on ? 'rgba(255,255,255,0.12)' : 'var(--line)'}`,
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: on ? 'rgba(255,255,255,0.5)' : 'var(--ink-faint)',
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
-              </button>
-              {isExpanded && (
-                <div style={{ padding: '12px', borderTop: `0.5px solid ${on ? 'rgba(255,255,255,0.12)' : 'var(--line)'}`, background: 'var(--surface)' }}>
-                  <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} onToggle={(v) => onToggle(entity.entity_id, v)} />
-                </div>
+              {/* Chevron → full controls page */}
+              {entity.entity_id && (
+                <button
+                  onClick={() => navigate(`/devices/${encodeURIComponent(entity.entity_id)}`)}
+                  style={{
+                    borderTop: `0.5px solid ${on ? 'rgba(255,255,255,0.12)' : 'var(--line)'}`,
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: on ? 'rgba(255,255,255,0.45)' : 'var(--ink-faint)',
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                </button>
               )}
             </div>
           )
@@ -878,7 +880,7 @@ function renderDomainSection(group, devices, handlers) {
   if (group.id === 'lights') {
     const lights = visibleDevices.filter(e => e.domain === 'light')
     if (!lights.length) return null
-    return <LightsGroup devices={lights} onToggle={onToggle} onService={onService} eyebrow={group.label} />
+    return <LightsGroup devices={lights} onToggle={onToggle} eyebrow={group.label} />
   }
 
   if (group.id === 'climate') {
@@ -971,6 +973,8 @@ export function RoomDetail() {
   const entityCount  = roomDevices.length
   const activeCount  = roomDevices.filter((d) => isEntityOn(d)).length
   const offlineCount = roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length
+  const tempSensor   = roomDevices.find(d => d.domain === 'sensor' && d.device_class === 'temperature' && !['unavailable','unknown'].includes(d.state))
+  const humSensor    = roomDevices.find(d => d.domain === 'sensor' && d.device_class === 'humidity' && !['unavailable','unknown'].includes(d.state))
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -1071,27 +1075,45 @@ export function RoomDetail() {
       {/* Hero photo — 220px, rounded bottom */}
       <div style={{ position: 'relative', height: 220, overflow: 'hidden', borderRadius: '0 0 22px 22px' }}>
         <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.2) 0%, transparent 35%, rgba(0,0,0,0.6) 100%)' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.12) 35%, rgba(0,0,0,0.72) 100%)' }} />
 
-        {/* Back button */}
-        <button onClick={() => navigate('/rooms')} style={{
-          position: 'absolute', top: 16, left: 16,
-          width: 34, height: 34, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)',
-          border: '0.5px solid rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer',
-        }}>
-          <ArrowLeft size={16} />
-        </button>
+        {/* Back + more buttons */}
+        <div style={{ position: 'absolute', top: 12, left: 16, right: 16, display: 'flex', justifyContent: 'space-between' }}>
+          <button onClick={() => navigate('/rooms')} style={{
+            width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)',
+            border: 'none', color: '#fff', cursor: 'pointer',
+          }}>
+            <ArrowLeft size={16} />
+          </button>
+          <button style={{
+            width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)',
+            border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, letterSpacing: 1,
+          }}>···</button>
+        </div>
 
         {/* Title bottom */}
-        <div style={{ position: 'absolute', bottom: 16, left: 20 }}>
-          <h1 style={{ color: '#fff', fontSize: 24, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{room.name}</h1>
-          <p className="z-mono" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 3 }}>
-            {entityCount} device{entityCount !== 1 ? 's' : ''}
-            {activeCount  > 0 && <span style={{ color: 'rgba(255,255,255,0.95)', marginLeft: 6 }}>· {activeCount} active</span>}
-            {offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 6 }}>· {offlineCount} offline</span>}
-            {vDevices.length > 0 && <span style={{ marginLeft: 6 }}>· {vDevices.length} capability{vDevices.length !== 1 ? 's' : ''}</span>}
-          </p>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, color: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{room.name}</h1>
+            {(tempSensor || humSensor) && (
+              <span className="z-mono" style={{ fontSize: 11, opacity: 0.85 }}>
+                {tempSensor && `${parseFloat(tempSensor.state).toFixed(1)}°`}
+                {tempSensor && humSensor && ' · '}
+                {humSensor && `${parseFloat(humSensor.state).toFixed(0)}%`}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, opacity: 0.85 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+              {activeCount} device{activeCount !== 1 ? 's' : ''} on
+            </span>
+            <span>·</span>
+            <span>{entityCount} total</span>
+            {offlineCount > 0 && <><span>·</span><span style={{ color: 'rgba(252,165,165,0.9)' }}>{offlineCount} offline</span></>}
+          </div>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useTaskStore } from '../stores/taskStore'
@@ -133,69 +133,115 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
   )
 }
 
-// ── Rooms carousel — first room is wide hero, rest are compact tiles ──────────
+// ── Rooms carousel — center-snap with scale on active tile ───────────────────
+const CAROUSEL_TILE_W = 162
+const CAROUSEL_TILE_H = 132
+const CAROUSEL_SCALE  = 1.14
+
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
+  const scrollRef = useRef(null)
+  const tileRefs  = useRef([])
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const handle = () => {
+      const cx = el.getBoundingClientRect().left + el.clientWidth / 2
+      let best = 0, minD = Infinity
+      tileRefs.current.forEach((tile, i) => {
+        if (!tile) return
+        const r = tile.getBoundingClientRect()
+        const d = Math.abs(r.left + r.width / 2 - cx)
+        if (d < minD) { minD = d; best = i }
+      })
+      setActiveIdx(best)
+    }
+    el.addEventListener('scroll', handle, { passive: true })
+    return () => el.removeEventListener('scroll', handle)
+  }, [sortedRooms.length])
+
   if (!sortedRooms.length) return null
+
+  const SCALE_PAD = Math.round(CAROUSEL_TILE_H * (CAROUSEL_SCALE - 1) / 2) + 4
 
   return (
     <div>
       <p className="z-eyebrow" style={{ marginBottom: 8 }}>Rooms</p>
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginLeft: -20, marginRight: -20, paddingLeft: 20, paddingRight: 20 }} className="scrollbar-thin">
-        {sortedRooms.map((summary, idx) => {
-          const room = ziggyRooms.find(r => r.id === summary.id)
-          if (!room) return null
-          const photo = getRoomPhoto(room)
-          const isHero = idx === 0
-          return (
-            <div
-              key={room.id}
-              onClick={() => navigate(`/rooms/${room.id}`)}
-              style={{
-                position: 'relative', flexShrink: 0,
-                width: isHero ? 220 : 156,
-                height: isHero ? 180 : 130,
-                borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
-              }}
-            >
-              <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.08) 0%, transparent 35%, rgba(0,0,0,0.6) 100%)' }} />
+      {/* outer clips horizontal overflow, inner scrolls */}
+      <div style={{ overflow: 'hidden', marginLeft: -20, marginRight: -20 }}>
+        <div
+          ref={scrollRef}
+          style={{
+            display: 'flex', gap: 10,
+            overflowX: 'auto', overflowY: 'visible',
+            paddingLeft: 20, paddingRight: 20,
+            paddingTop: SCALE_PAD, paddingBottom: SCALE_PAD,
+            scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
+          }}
+          className="scrollbar-thin"
+        >
+          {sortedRooms.map((summary, idx) => {
+            const room = ziggyRooms.find(r => r.id === summary.id)
+            if (!room) return null
+            const photo = getRoomPhoto(room)
+            const isActive = idx === activeIdx
+            return (
+              <div
+                key={room.id}
+                ref={el => { tileRefs.current[idx] = el }}
+                onClick={() => navigate(`/rooms/${room.id}`)}
+                style={{
+                  position: 'relative', flexShrink: 0,
+                  width: CAROUSEL_TILE_W, height: CAROUSEL_TILE_H,
+                  borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
+                  scrollSnapAlign: 'center',
+                  transform: isActive ? `scale(${CAROUSEL_SCALE})` : 'scale(1)',
+                  transition: 'transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1)',
+                  transformOrigin: 'center center',
+                }}
+              >
+                <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.65) 100%)' }} />
 
-              {/* Active dot */}
-              <span style={{
-                position: 'absolute', top: 10, right: 10,
-                width: 7, height: 7, borderRadius: '50%',
-                background: summary.activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.35)',
-                boxShadow: summary.activeCount > 0 ? '0 0 0 2.5px rgba(108,191,140,0.35)' : 'none',
-              }} />
+                {/* Active glow dot */}
+                <span style={{
+                  position: 'absolute', top: 10, right: 10,
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: summary.activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.35)',
+                  boxShadow: summary.activeCount > 0 ? '0 0 0 2.5px rgba(108,191,140,0.35)' : 'none',
+                }} />
 
-              {/* Sensor readout — hero only */}
-              {isHero && (summary.tempSensor || summary.humSensor) && (
-                <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 5 }}>
-                  {summary.tempSensor && (
-                    <span style={{ fontSize: 11, fontWeight: 500, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(6px)', padding: '2px 7px', borderRadius: 999 }}>
-                      {parseFloat(summary.tempSensor.state).toFixed(1)}°
-                    </span>
-                  )}
-                  {summary.humSensor && (
-                    <span style={{ fontSize: 11, fontWeight: 500, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(6px)', padding: '2px 7px', borderRadius: 999 }}>
-                      {parseFloat(summary.humSensor.state).toFixed(0)}%
-                    </span>
-                  )}
+                {/* Sensor chip — active tile only */}
+                {isActive && (summary.tempSensor || summary.humSensor) && (
+                  <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 4 }}>
+                    {summary.tempSensor && (
+                      <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(6px)', padding: '2px 6px', borderRadius: 999 }}>
+                        {parseFloat(summary.tempSensor.state).toFixed(1)}°
+                      </span>
+                    )}
+                    {summary.humSensor && (
+                      <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(6px)', padding: '2px 6px', borderRadius: 999 }}>
+                        {parseFloat(summary.humSensor.state).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Name + status */}
+                <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{room.name}</p>
+                  <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
+                    {summary.activeCount > 0 ? `${summary.activeCount} active` : 'idle'}
+                    {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
+                  </p>
                 </div>
-              )}
-
-              {/* Name + status */}
-              <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
-                <p style={{ fontSize: isHero ? 13 : 12, fontWeight: 600, color: '#fff', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{room.name}</p>
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
-                  {summary.activeCount > 0 ? `${summary.activeCount} active` : 'idle'}
-                  {isHero && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
-                </p>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )
