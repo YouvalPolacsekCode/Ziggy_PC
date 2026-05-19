@@ -638,7 +638,7 @@ function LightsGroup({ devices, onToggle, onService, eyebrow }) {
               <button
                 onClick={() => onToggle(entity.entity_id, !on)}
                 style={{
-                  padding: 12, aspectRatio: '1',
+                  padding: 12, height: 110,
                   color: on ? 'var(--bg)' : 'var(--ink-2)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
                   cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.15s',
