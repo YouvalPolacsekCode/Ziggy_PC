@@ -133,13 +133,15 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
   )
 }
 
-// ── Rooms carousel — fixed snap-slot width, inner photo expands for active ────
-// All outer slots are SLOT_W (snap points never shift = no jump).
-// The inner photo div is wider for active, narrower for inactive.
-const SLOT_W      = 210   // outer snap-slot width, constant for all tiles
-const ACTIVE_W    = 210   // active inner width fills the slot
-const INACTIVE_W  = 144   // inactive inner width — narrower peek
-const TILE_H      = 142   // height never changes
+// ── Rooms carousel — fixed snap-slot, inner photo grows for active tile ───────
+// Outer slot size is constant → snap points never shift → no jump.
+// Inner photo width + height animate independently.
+const SLOT_W      = 190   // outer snap-slot (constant)
+const SLOT_H      = 158   // outer slot height (constant)
+const ACTIVE_W    = 190   // inner width when active — fills slot
+const ACTIVE_H    = 152   // inner height when active
+const INACTIVE_W  = 128   // inner width when inactive — narrower
+const INACTIVE_H  = 116   // inner height when inactive — shorter
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const navigate  = useNavigate()
@@ -174,7 +176,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
         <div
           ref={scrollRef}
           style={{
-            display: 'flex', gap: 8,
+            display: 'flex', gap: 4,
             overflowX: 'auto',
             paddingLeft: 20, paddingRight: 20, paddingTop: 4, paddingBottom: 4,
             scrollSnapType: 'x mandatory',
@@ -187,23 +189,23 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
             if (!room) return null
             const photo = getRoomPhoto(room)
             const isActive = idx === activeIdx
-            const innerW = isActive ? ACTIVE_W : INACTIVE_W
             return (
-              // Outer slot — fixed width, snap target
+              // Outer slot — fixed size, snap target (never changes)
               <div
                 key={room.id}
                 ref={el => { slotRefs.current[idx] = el }}
-                style={{ width: SLOT_W, height: TILE_H, flexShrink: 0, scrollSnapAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ width: SLOT_W, height: SLOT_H, flexShrink: 0, scrollSnapAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                {/* Inner photo tile — width animates, height stays */}
+                {/* Inner photo tile — both width and height animate */}
                 <div
                   onClick={() => navigate(`/rooms/${room.id}`)}
                   style={{
                     position: 'relative',
-                    width: innerW, height: TILE_H,
-                    borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
+                    width: isActive ? ACTIVE_W : INACTIVE_W,
+                    height: isActive ? ACTIVE_H : INACTIVE_H,
+                    borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
                     opacity: isActive ? 1 : 0.55,
-                    transition: 'width 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.32s ease',
+                    transition: 'width 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), height 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.32s ease',
                   }}
                 >
                   <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
