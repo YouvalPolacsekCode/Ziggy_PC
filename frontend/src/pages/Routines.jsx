@@ -227,7 +227,7 @@ function StepIndicator({ current }) {
 }
 
 // ── RoutineWizard ─────────────────────────────────────────────────────────────
-function RoutineWizard({ initial, onSave, onClose }) {
+export function RoutineWizard({ initial, onSave, onClose }) {
   const [wizardStep,     setWizardStep]    = useState(0)
   const [name,           setName]          = useState(initial?.name || '')
   const [description,    setDescription]   = useState(initial?.description || '')

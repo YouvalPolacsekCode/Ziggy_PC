@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ziggy redesign · Handover kit</title>
+<link rel="stylesheet" href="handover.css" />
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ─── Hero ──────────────────────────────────────────────────────── -->
+  <header class="hero">
+    <div class="meta">
+      <span class="stamp">Handover kit · v1</span>
+      <span class="dot">·</span>
+      <span class="mono" style="font-size:11px; color:var(--ink-faint); letter-spacing:.08em;">FROM&nbsp;DESIGN&nbsp;→&nbsp;ENG&nbsp;/&nbsp;NEXT&nbsp;DESIGNER</span>
+    </div>
+
+    <h1>
+      The redesign is a&nbsp;<span class="accent">starting line</span>,<br />
+      not a finished spec.
+    </h1>
+
+    <p class="lede">
+      The new Ziggy direction is excellent — the IA is brutal, the visual system holds up in both
+      palettes, RTL parity works, the dial-first control vocabulary is opinionated and consistent.
+      <strong style="color:var(--ink)">Keep it.</strong> But before anyone ships it, the rest of the iceberg has to be drawn.
+      Ziggy today has 21 routes, 13+ modals, 7 wizards, 8 device-domain controllers, two admin
+      consoles, and roughly 15 settings sub-sections — and the current artboards cover a fraction of it.
+    </p>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="k">User-facing pages</div>
+        <div class="v">21<span class="unit">→ 8</span></div>
+        <div class="s">Pruned per the IA agreement. 13 routes get killed, merged, or deferred.</div>
+      </div>
+      <div class="stat">
+        <div class="k">Modals &amp; sheets</div>
+        <div class="v">13<span class="unit">+</span></div>
+        <div class="s">Renames, deletes, confirms, IR drawer, live camera. Two are designed.</div>
+      </div>
+      <div class="stat">
+        <div class="k">Multi-step wizards</div>
+        <div class="v">7</div>
+        <div class="s">Pairing, IR, Automation, Routine, Virtual Device, Trigger, Invite. Zero designed.</div>
+      </div>
+      <div class="stat">
+        <div class="k">Redesign coverage</div>
+        <div class="v">~18<span class="unit">%</span></div>
+        <div class="s">Every primary screen exists in concept. Wizards, edge states, admin do not.</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── Central thesis ─────────────────────────────────────────────── -->
+  <div class="callout">
+    <div class="label">The non-negotiable</div>
+    <h3>I want to see and have any and every capability I currently have.</h3>
+    <p>
+      Beyond what was formally agreed in the IA pruning discussion (<strong>Scenes killed,
+      HomeMap deferred, QuickAsks/Memory absorbed into Settings, Anomalies absorbed into Alerts,
+      Routines &amp; Suggestions absorbed into Automations, Cameras absorbed into Rooms + Alerts</strong>),
+      <strong>nothing</strong> in the current app may be missing when the redesign ships.
+    </p>
+    <p>
+      That includes every modal, every wizard step, every settings toggle, every per-domain
+      device controller, the entire admin console, role-gated views, error states, empty states,
+      loading skeletons, and Hebrew/RTL parity for all of it. If it exists today, it has to exist
+      tomorrow — redrawn in the new system, but functionally <strong>at parity or better</strong>.
+    </p>
+  </div>
+
+  <!-- ─── ToC ────────────────────────────────────────────────────────── -->
+  <nav class="toc">
+    <a href="#pruning">
+      <span class="num">01</span>
+      <div class="title">The pruning contract</div>
+      <div class="desc">What is allowed to disappear, exactly. Nothing else.</div>
+    </a>
+    <a href="#routes">
+      <span class="num">02</span>
+      <div class="title">Coverage matrix</div>
+      <div class="desc">Every route in the current app and what's still missing.</div>
+    </a>
+    <a href="#modals">
+      <span class="num">03</span>
+      <div class="title">Modals &amp; wizards</div>
+      <div class="desc">13 dialogs and 7 multi-step flows that need redesigning.</div>
+    </a>
+    <a href="#controls">
+      <span class="num">04</span>
+      <div class="title">Device controls</div>
+      <div class="desc">Eight HA domains plus IR. Each needs its own controller surface.</div>
+    </a>
+    <a href="#settings">
+      <span class="num">05</span>
+      <div class="title">Settings &amp; admin</div>
+      <div class="desc">~15 sub-sections across user, admin, and super-admin views.</div>
+    </a>
+    <a href="#cross">
+      <span class="num">06</span>
+      <div class="title">Cross-cutting</div>
+      <div class="desc">States, theming, push, presence, RTL, role-gating, PWA.</div>
+    </a>
+    <a href="#done">
+      <span class="num">07</span>
+      <div class="title">Definition of done</div>
+      <div class="desc">The checklist that has to be true before this ships.</div>
+    </a>
+    <a href="#questions">
+      <span class="num">08</span>
+      <div class="title">Open questions</div>
+      <div class="desc">Things I need a call on before the next round.</div>
+    </a>
+    <a href="#assets">
+      <span class="num">09</span>
+      <div class="title">What's in this kit</div>
+      <div class="desc">Files, tokens, components — where to pick up the work.</div>
+    </a>
+  </nav>
+
+  <!-- ═════════ 01 · Pruning contract ═════════════════════════════════ -->
+  <section id="pruning">
+    <div class="head">
+      <span class="num">01</span>
+      <h2>The pruning contract</h2>
+      <span class="sub">The only things allowed to disappear from the current app. Anything not listed here must survive the redesign.</span>
+    </div>
+
+    <p class="intro">
+      These 13 changes are what was agreed in the IA discussion. They are the <em>only</em> deletions
+      or absorptions sanctioned for this project. Treat this as a binding ledger — if a future
+      reviewer asks &ldquo;where did X go?&rdquo;, the answer has to be on this list, or X has to come back.
+    </p>
+
+    <div class="ledger">
+      <div class="row">
+        <div class="verdict"><span class="tag kill">Killed</span></div>
+        <div class="what">Scenes<span class="path">/scenes  ·  pages/Scenes.jsx  ·  CreateSceneModal</span></div>
+        <div class="why">Removed entirely. Automations + favorited routines do this job. The "Quick routines" carousel on the Dashboard is the replacement surface.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag defer">Deferred</span></div>
+        <div class="what">Home Map<span class="path">/  (feature-flagged)  ·  HomeMap.jsx + HomeMapBuilder.jsx + HomeMapCanvas.jsx</span></div>
+        <div class="why">Out of scope for this round. The feature flag stays in admin settings; the surface is not in the redesign yet. Confirm we're not shipping it before the rename of "Rooms" goes live.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Routines<span class="path">/routines  →  /automations (tab: "Active")</span></div>
+        <div class="why">Becomes a section/tab inside the new Automations page. RoutineWizard logic survives — re-skinned as the new automation creation flow.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Suggestions<span class="path">/suggestions  →  /automations (tab: "Suggested")</span></div>
+        <div class="why">Pending / accepted / snoozed / dismissed tabs collapse into one filterable list inside Automations.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Anomalies<span class="path">/anomalies  →  /alerts (Active / History / Rules tabs)</span></div>
+        <div class="why">Becomes the new unified Alerts inbox. All three internal tabs (Active, History, Rules) must survive as filters or sub-views — they're not redundant.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Cameras<span class="path">/cameras  →  Rooms (live tile) + Alerts (motion events)</span></div>
+        <div class="why">No standalone "Security" page. Live MJPEG stream modal stays — invoked from a room's camera tile. Motion event log feeds Alerts.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Quick Asks<span class="path">/quick-asks  →  Settings panel + Dashboard widget</span></div>
+        <div class="why">CRUD lives behind Settings &rsaquo; Quick Asks. The Dashboard "quick_ask" widget surfaces the user's pinned asks.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Memory<span class="path">/memory  →  Settings panel</span></div>
+        <div class="why">CRUD lives inside Settings. No top-level route.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Tasks → secondary nav<span class="path">/tasks  (still its own page, just not in bottom bar)</span></div>
+        <div class="why">Tasks page survives 1:1 — Add modal, Edit modal, AI suggestions, family list. It just isn't a primary tab. Reachable from Dashboard widget + sidebar/overflow.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Virtual Devices → Admin<span class="path">/virtual-devices  →  Settings &rsaquo; Admin &rsaquo; Capabilities</span></div>
+        <div class="why">Power user / dev tool. Stays behind the admin gate.  AddVirtualDeviceWizard + TriggerModal + edit modal all need to exist.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag merge">Merged</span></div>
+        <div class="what">Admin Settings → tab<span class="path">/admin  →  Settings (tab: "Admin", role-gated)</span></div>
+        <div class="why">Already structurally true. The redesign needs to preserve every section: Notifications, API Keys, SMTP, MQTT, Feature Flags, Developer Tools, Ollama, Pattern Learning.</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag defer">Stays as-is</span></div>
+        <div class="what">/ops console (Debug, Cloud Admin)<span class="path">AdminConsole.jsx  ·  DebugPage.jsx  ·  CloudAdmin.jsx</span></div>
+        <div class="why">Super-admin only. Not part of the redesign visually, but the route, role gate, and breadcrumb chrome must survive. Confirm scope: re-skin or leave?</div>
+      </div>
+      <div class="row">
+        <div class="verdict"><span class="tag defer">Stays as-is</span></div>
+        <div class="what">Auth surfaces<span class="path">/login  ·  /invite/:token  ·  Change password drawer</span></div>
+        <div class="why">Must be redrawn in the new system — they're user-facing on day one. Not yet in the artboards.</div>
+      </div>
+    </div>
+
+    <div class="warn-block">
+      <div class="label">If it's not on this list, it stays</div>
+      <p>Floating voice orb, Bottom Nav, Sidebar (desktop), AppShell chrome, every device-domain controller, every modal listed in §03, every settings sub-section in §05, the IR remote drawer, the live camera modal, the toast system, the system-status card, presence pinging, push notifications, the WebSocket live updates &mdash; all <strong>must</strong> be in the redesigned app.</p>
+    </div>
+  </section>
+
+  <!-- ═════════ 02 · Coverage matrix ══════════════════════════════════ -->
+  <section id="routes">
+    <div class="head">
+      <span class="num">02</span>
+      <h2>Coverage matrix · every route</h2>
+      <span class="sub">Side-by-side: what exists today, what the redesign has drawn, what is still owed.</span>
+    </div>
+
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th style="width:22%">Today's route</th>
+          <th style="width:38%">What it actually does</th>
+          <th style="width:14%">Redesign status</th>
+          <th style="width:26%">What's owed next</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="route">Dashboard<span class="path">/  ·  Dashboard.jsx</span></td>
+          <td class="what">Greeting · hero card · favorite routines carousel · quick controls grid · 6 widgets (alerts, presence, active_rooms, security, activity, quick_ask), reorderable.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">Phone hero drawn. Owed: <strong>widget grid in reorder mode</strong>, presence widget, security widget, all empty / first-run states, desktop dashboard variant.</td>
+        </tr>
+        <tr>
+          <td class="route">Rooms list<span class="path">/rooms  ·  Rooms.jsx</span></td>
+          <td class="what">Photo-tile grid · search · per-room status (active devices, motion). Add-room modal, delete-room modal, edit-room (photo) modal.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">List drawn. Owed: <strong>Add Room, Edit Room (photo picker + custom upload), Delete Room confirm</strong> modals. Map view tab placeholder if HomeMap stays deferred.</td>
+        </tr>
+        <tr>
+          <td class="route">Room detail<span class="path">/rooms/:id  ·  Rooms.jsx</span></td>
+          <td class="what">Hero photo · "Everything off" · grouped sections: Lights, Climate, Media, TV, Sensors. Inline AssignDevice modal.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">Hero + lights + climate + media drawn. Owed: <strong>cover/blind, fan, lock, vacuum</strong> sections, "Assign device to room" modal, room-with-no-devices empty state.</td>
+        </tr>
+        <tr>
+          <td class="route">Devices list<span class="path">/devices  ·  Devices.jsx</span></td>
+          <td class="what">All devices grouped by room. Pair-new-device CTA. IR card variants (standalone vs merged with Wi-Fi device). Link IR modal. IR Edit modal.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">List drawn. Owed: <strong>PairingWizard, IRWizard, IREditModal, LinkIrModal, IRRemoteDrawer</strong> — all multi-step, all critical. See §03.</td>
+        </tr>
+        <tr>
+          <td class="route">Device detail<span class="path">/devices/:entityId  ·  DeviceDetail.jsx</span></td>
+          <td class="what">Per-entity page. Hosts a domain-specific controller (8 controllers). Rename, room reassign, history graphs, notes.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Page shell, rename modal, history strip, "this device controls this room" backlink. The 8 controllers themselves &mdash; see §04.</td>
+        </tr>
+        <tr>
+          <td class="route">Automations<span class="path">/automations  ·  Automations.jsx</span></td>
+          <td class="what">Active / Suggested tabs (after merging Routines + Suggestions). Library modal of templates. Two big wizards: full Automation, simpler Routine.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">List drawn. Owed: <strong>AutomationWizard (full)</strong>, <strong>RoutineWizard (3-step)</strong>, <strong>AutomationViewModal</strong>, <strong>LibraryModal</strong>, empty/first-run, suggestion card states (pending/accepted/snoozed/rejected).</td>
+        </tr>
+        <tr>
+          <td class="route">AI Chat<span class="path">/chat  ·  AIChat.jsx</span></td>
+          <td class="what">Conversational control. Compound commands. Live voice orb. Token-streaming responses. Replaces floating orb.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">Chat surface drawn. Owed: <strong>voice listening / processing / responding states</strong>, error states, "compound command" preview, "show me what you'll do" confirm flow.</td>
+        </tr>
+        <tr>
+          <td class="route">Tasks<span class="path">/tasks  ·  Tasks.jsx</span></td>
+          <td class="what">Family task list. Add task modal. Edit task modal. AI-suggested tasks. Assignee, due date, recurring, completed history.</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">List drawn. Owed: <strong>AddTaskModal, EditTaskModal</strong>, recurring rule editor, assignee picker, AI suggestion row treatment.</td>
+        </tr>
+        <tr>
+          <td class="route">Alerts (new)<span class="path">/alerts  ·  absorbs Anomalies</span></td>
+          <td class="what">Unified inbox. <strong>Three internal tabs survive:</strong> Active (live anomalies) · History · Rules (severity, dedupe).</td>
+          <td class="status"><span class="tag partial">Partial</span></td>
+          <td class="next">Active drawn. Owed: <strong>History view</strong>, <strong>Rules editor</strong>, severity filters, "snooze for 1h / mute device", offline-device sub-rail.</td>
+        </tr>
+        <tr>
+          <td class="route">Settings<span class="path">/settings  ·  Settings.jsx</span></td>
+          <td class="what">Tab 1 General: Appearance, Language &amp; Region, Account (change pw drawer), System Status, Presence tracking, Zigbee Bridge, Users &amp; Access (super-admin). Tab 2 Admin: see §05.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Settings page does not exist in the redesign yet. Owed: <strong>every section in §05</strong>, the change-password expand/collapse, Quick Asks panel, Memory panel.</td>
+        </tr>
+        <tr>
+          <td class="route">Memory<span class="path">/memory  →  Settings panel</span></td>
+          <td class="what">CRUD over personal/family memory entries. Profile-grouped. Add / Edit modals. Search + filter.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Panel within Settings. Owed: list, profile grouping, search, Add modal, Edit modal, empty state.</td>
+        </tr>
+        <tr>
+          <td class="route">Quick Asks<span class="path">/quick-asks  →  Settings panel + Dashboard widget</span></td>
+          <td class="what">CRUD over pinned natural-language shortcuts. Create modal. Edit modal. Dashboard widget renders them as taps.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Settings panel CRUD, dashboard widget tile design, Create &amp; Edit modals.</td>
+        </tr>
+        <tr>
+          <td class="route">Virtual Devices<span class="path">/virtual-devices  →  Settings &rsaquo; Admin &rsaquo; Capabilities</span></td>
+          <td class="what">Power-user capability creator. <strong>AddVirtualDeviceWizard</strong> (Capability / Configure / Assign). <strong>TriggerModal</strong> (runtime params prompt). Edit modal.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Whole sub-surface needs designing. 3-step wizard + edit + runtime trigger prompt.</td>
+        </tr>
+        <tr>
+          <td class="route">Cameras → Rooms + Alerts<span class="path">/cameras  ·  Cameras.jsx  ·  LiveModal</span></td>
+          <td class="what">Camera grid + live MJPEG stream modal. Motion event log.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Owed: <strong>per-room camera tile in Room detail</strong>, <strong>full-screen Live stream modal</strong>, snapshot view, motion-event timeline inside Alerts.</td>
+        </tr>
+        <tr>
+          <td class="route">Routines → Automations<span class="path">/routines  ·  Routines.jsx  ·  RoutineWizard</span></td>
+          <td class="what">3-step wizard: Name · Steps · Review. Simpler than Automations &mdash; chained capability calls without trigger / condition complexity.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">RoutineWizard needs to live inside the new Automations creation flow as the "simple" path.</td>
+        </tr>
+        <tr>
+          <td class="route">Scenes<span class="path">/scenes  ·  Scenes.jsx  ·  CreateSceneModal</span></td>
+          <td class="what">Snapshot of current device states, replayable. Create + delete confirms.</td>
+          <td class="status"><span class="tag kill">Killed</span></td>
+          <td class="next">Confirmed removed. The "Quick routines" carousel on Dashboard is the replacement entry point.</td>
+        </tr>
+        <tr>
+          <td class="route">Suggestions → Automations<span class="path">/suggestions  ·  Suggestions.jsx</span></td>
+          <td class="what">AI-proposed automations with Pending / History tabs and Accept · Snooze · Reject controls.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Becomes the "Suggested" tab inside Automations. All four states (pending/accepted/snoozed/rejected) need card treatments.</td>
+        </tr>
+        <tr>
+          <td class="route">HomeMap<span class="path">/  (feature-flagged)</span></td>
+          <td class="what">Interactive floor plan. Builder mode. Canvas view.</td>
+          <td class="status"><span class="tag defer">Deferred</span></td>
+          <td class="next">Out of scope this round &mdash; <strong>but confirm</strong>. The flag still exists in admin settings; do we hide the toggle or leave it for super-admin to enable a half-built screen?</td>
+        </tr>
+        <tr>
+          <td class="route">Login<span class="path">/login  ·  LoginPage.jsx</span></td>
+          <td class="what">Local username/password. Public route.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Needs redesigning in the warm-light + premium-dark system. First impression of the brand.</td>
+        </tr>
+        <tr>
+          <td class="route">Accept invite<span class="path">/invite/:token  ·  AcceptInvite.jsx</span></td>
+          <td class="what">Public invite redemption. Sets password. Bypasses auth wall.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Owed: invite page, expired/used-token error, success transition into the app.</td>
+        </tr>
+        <tr>
+          <td class="route">Admin Console<span class="path">/ops  ·  AdminConsole.jsx</span></td>
+          <td class="what">Super-admin landing. Two tool cards: Debug Console, Cloud Administration. Breadcrumb chrome.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Confirm scope. Re-skin in new tokens, or leave as developer surface untouched?</td>
+        </tr>
+        <tr>
+          <td class="route">Cloud Admin<span class="path">/ops/cloud  ·  CloudAdmin.jsx  ·  InviteModal</span></td>
+          <td class="what">Manages users, roles, invites (with configurable expiry), relay connection, cloud home provisioning, deprovisioning.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">If in scope: full re-skin. Invite modal alone has two modes (user invite / new home).</td>
+        </tr>
+        <tr>
+          <td class="route">Debug Console<span class="path">/ops/debug  ·  DebugPage.jsx</span></td>
+          <td class="what">Live event feed, scope/level filters, correlation IDs, dry-run simulator, full debug report export.</td>
+          <td class="status"><span class="tag todo">Missing</span></td>
+          <td class="next">Same question &mdash; in scope or out?</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═════════ 03 · Modals & wizards ═════════════════════════════════ -->
+  <section id="modals">
+    <div class="head">
+      <span class="num">03</span>
+      <h2>Modals, drawers &amp; wizards</h2>
+      <span class="sub">Twenty discrete dialog surfaces in the current app. Each one needs an explicit design in the new system.</span>
+    </div>
+
+    <p class="intro">
+      A redesign that has no answer for &ldquo;what happens when the user taps Add Room&rdquo; isn't a finished
+      redesign. Every dialog below already exists, already does real work, and already has its own
+      empty / loading / error states. Decide for each one: <em>do we keep its current pattern, redraw
+      it in the new system, or rethink the interaction entirely?</em> &mdash; but the function has to land somewhere.
+    </p>
+
+    <h3>Multi-step wizards <span class="tag todo">All missing</span></h3>
+    <div class="cards">
+      <div class="card">
+        <div class="icon">PW</div>
+        <div class="body">
+          <div class="title">Pairing Wizard</div>
+          <div class="meta">Pair a new device. Branches by category &mdash; Wi-Fi, Zigbee (ZHA), IR (hands off to IRWizard). <span class="file">PairingWizard.jsx</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">IR</div>
+        <div class="body">
+          <div class="title">IR Wizard</div>
+          <div class="meta">Multi-step IR blaster setup &mdash; brand, codeset capture, button mapping, room assignment. <span class="file">IRWizard.jsx (550+ LOC)</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">AW</div>
+        <div class="body">
+          <div class="title">Automation Wizard</div>
+          <div class="meta">Trigger (6 types) · Conditions (entity / time-window) · Actions (6 types). <span class="file">Automations.jsx</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">RW</div>
+        <div class="body">
+          <div class="title">Routine Wizard</div>
+          <div class="meta">Three steps: Name · Steps · Review. The simple path inside Automations. <span class="file">Routines.jsx</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">VD</div>
+        <div class="body">
+          <div class="title">Virtual Device Wizard</div>
+          <div class="meta">Capability · Configure (params, schema-driven) · Assign to room. <span class="file">VirtualDevices.jsx</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">TM</div>
+        <div class="body">
+          <div class="title">Trigger Modal (runtime params)</div>
+          <div class="meta">When a capability needs input at trigger-time, this prompt collects it. Schema-driven form. <span class="file">VirtualDevices.jsx</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon">IM</div>
+        <div class="body">
+          <div class="title">Invite Modal (2 modes)</div>
+          <div class="meta">User invite into a home · or provision a new cloud home. Both with configurable expiry. <span class="file">CloudAdmin.jsx</span></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Simple modals &amp; sheets <span class="tag todo">All missing</span></h3>
+    <div class="cards">
+      <div class="card"><div class="icon">+R</div><div class="body"><div class="title">Add Room</div><div class="meta">Name + photo (preset or custom upload). <span class="file">Rooms.jsx</span></div></div></div>
+      <div class="card"><div class="icon">✎R</div><div class="body"><div class="title">Edit Room</div><div class="meta">Rename, swap photo, replace with custom upload. <span class="file">Rooms.jsx</span></div></div></div>
+      <div class="card"><div class="icon">⊘R</div><div class="body"><div class="title">Delete Room (confirm)</div><div class="meta">Destructive. Lists devices that will be unassigned. <span class="file">Rooms.jsx</span></div></div></div>
+      <div class="card"><div class="icon">→R</div><div class="body"><div class="title">Assign device to room</div><div class="meta">Picker, multi-select. <span class="file">Rooms.jsx</span></div></div></div>
+      <div class="card"><div class="icon">+T</div><div class="body"><div class="title">Add Task</div><div class="meta">Title, assignee, due, recurring. <span class="file">Tasks.jsx</span></div></div></div>
+      <div class="card"><div class="icon">✎T</div><div class="body"><div class="title">Edit Task</div><div class="meta">Same fields + completion toggle. <span class="file">Tasks.jsx</span></div></div></div>
+      <div class="card"><div class="icon">+M</div><div class="body"><div class="title">Add Memory</div><div class="meta">Profile, key, value, tags. <span class="file">Memory.jsx</span></div></div></div>
+      <div class="card"><div class="icon">✎M</div><div class="body"><div class="title">Edit Memory</div><div class="meta">Same fields + delete. <span class="file">Memory.jsx</span></div></div></div>
+      <div class="card"><div class="icon">+Q</div><div class="body"><div class="title">New Quick Ask</div><div class="meta">Label + phrase + icon. <span class="file">QuickAsks.jsx</span></div></div></div>
+      <div class="card"><div class="icon">✎Q</div><div class="body"><div class="title">Edit Quick Ask</div><div class="meta">Same fields. <span class="file">QuickAsks.jsx</span></div></div></div>
+      <div class="card"><div class="icon">✎D</div><div class="body"><div class="title">Rename Device</div><div class="meta">Inline form modal on DeviceDetail. <span class="file">DeviceDetail.jsx</span></div></div></div>
+      <div class="card"><div class="icon">↔IR</div><div class="body"><div class="title">Link IR to Wi-Fi device</div><div class="meta">Marries an IR blaster to a sibling HA entity. <span class="file">Devices.jsx</span></div></div></div>
+      <div class="card"><div class="icon">✎IR</div><div class="body"><div class="title">IR Edit</div><div class="meta">Rebrand, remap buttons, swap codeset. <span class="file">Devices.jsx</span></div></div></div>
+      <div class="card"><div class="icon">📺</div><div class="body"><div class="title">IR Remote Drawer</div><div class="meta">Full-screen bottom sheet. TV / AC / fan layouts. Channels, volume, power, source. <span class="file">DeviceControls.jsx</span></div></div></div>
+      <div class="card"><div class="icon">📷</div><div class="body"><div class="title">Live Camera Modal</div><div class="meta">MJPEG stream, fullscreen, snapshot. Disconnects on close. <span class="file">Cameras.jsx</span></div></div></div>
+      <div class="card"><div class="icon">⏏</div><div class="body"><div class="title">Automation View Modal</div><div class="meta">Read-only summary of trigger/conditions/actions. <span class="file">Automations.jsx</span></div></div></div>
+      <div class="card"><div class="icon">📚</div><div class="body"><div class="title">Library Modal</div><div class="meta">Browseable automation templates. Each prefills the wizard. <span class="file">Automations.jsx</span></div></div></div>
+      <div class="card"><div class="icon">⊘</div><div class="body"><div class="title">Delete confirms (generic)</div><div class="meta">Room, automation, scene, task, memory, quick ask, virtual device. Pattern needs to be one component.</div></div></div>
+      <div class="card"><div class="icon">🔑</div><div class="body"><div class="title">Change password (inline drawer)</div><div class="meta">Username + new pw + confirm + error. Inline expand inside Settings &rsaquo; Account. <span class="file">Settings.jsx</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ═════════ 04 · Device controls ══════════════════════════════════ -->
+  <section id="controls">
+    <div class="head">
+      <span class="num">04</span>
+      <h2>Device controls · per HA domain</h2>
+      <span class="sub">Eight domain controllers plus the IR remote vocabulary. The redesign has drawn three.</span>
+    </div>
+
+    <p class="intro">
+      <span class="mono" style="font-size:12px;">DeviceControls.jsx</span> dispatches on entity domain.
+      The redesign nails Light, Climate, and the TV-style IR remote &mdash; but Cover, Fan, Lock, Vacuum,
+      Media Player, and the generic Switch/Sensor/Script/Scene/Button fallback are all still
+      unpainted. Each is at parity with vendor apps today and needs to stay there.
+    </p>
+
+    <div class="cards">
+      <div class="card"><div class="icon">💡</div><div class="body"><div class="title">Light <span class="tag done" style="margin-left:6px;">Drawn</span></div><div class="meta">Brightness slider · color picker · color-temp (warm/cool) · favorite colors.</div></div></div>
+      <div class="card"><div class="icon">❄</div><div class="body"><div class="title">Climate <span class="tag done" style="margin-left:6px;">Drawn</span></div><div class="meta">Mode (heat/cool/auto/dry/fan) · setpoint dial · fan speed · swing · humidity target.</div></div></div>
+      <div class="card"><div class="icon">📺</div><div class="body"><div class="title">IR Remote drawer <span class="tag done" style="margin-left:6px;">Drawn</span></div><div class="meta">Power · channel up/down · volume · digit pad · source · navigation pad. Brand-specific layouts.</div></div></div>
+      <div class="card"><div class="icon">▶</div><div class="body"><div class="title">Media Player <span class="tag todo" style="margin-left:6px;">Missing</span></div><div class="meta">Play / pause / next / prev · volume · mute · source select · shuffle · repeat · queue. Spotify-/Sonos-shaped today.</div></div></div>
+      <div class="card"><div class="icon">⇕</div><div class="body"><div class="title">Cover <span class="tag todo" style="margin-left:6px;">Missing</span></div><div class="meta">Open / Close / Stop · position 0-100 · tilt for blinds.</div></div></div>
+      <div class="card"><div class="icon">⊚</div><div class="body"><div class="title">Fan <span class="tag todo" style="margin-left:6px;">Missing</span></div><div class="meta">Speed (off / low / med / high / preset) · oscillate · direction.</div></div></div>
+      <div class="card"><div class="icon">🔒</div><div class="body"><div class="title">Lock <span class="tag todo" style="margin-left:6px;">Missing</span></div><div class="meta">Lock / unlock · who-last-used history · keypad code management (if HA supports).</div></div></div>
+      <div class="card"><div class="icon">🤖</div><div class="body"><div class="title">Vacuum <span class="tag todo" style="margin-left:6px;">Missing</span></div><div class="meta">Start / pause / dock / spot · battery · current room · clean history.</div></div></div>
+      <div class="card"><div class="icon">⚙</div><div class="body"><div class="title">Generic fallback <span class="tag todo" style="margin-left:6px;">Missing</span></div><div class="meta">Switch (on/off), binary sensor (read-only), sensor (value + unit + graph), script (run), automation (toggle), button (press), scene (activate).</div></div></div>
+    </div>
+  </section>
+
+  <!-- ═════════ 05 · Settings & admin ═════════════════════════════════ -->
+  <section id="settings">
+    <div class="head">
+      <span class="num">05</span>
+      <h2>Settings &amp; admin · the long tail</h2>
+      <span class="sub">~15 distinct sub-sections across user, admin, and super-admin views. Each has its own form, validation, error states, and "restart required" semantics.</span>
+    </div>
+
+    <h3>User-facing (Settings &rsaquo; General)</h3>
+    <ul class="flat-list">
+      <li><span class="k">Appearance</span><span class="v">Light / dark toggle. Drives <code>data-palette</code> on the root.</span></li>
+      <li><span class="k">Language &amp; Region</span><span class="v">Language picker (incl. Hebrew for RTL) · Timezone picker · Save button.</span></li>
+      <li><span class="k">Account</span><span class="v">Signed-in user · role badge · <strong>Change password</strong> expand-drawer · Sign out (destructive).</span></li>
+      <li><span class="k">System Status</span><span class="v">Live health card: backend up, HA connected, MQTT, Zigbee bridge, push subscription. Needs distinct OK / degraded / down states.</span></li>
+      <li><span class="k">Presence tracking</span><span class="v">Per-person rows: name, location-mode (always / when home / when away), live distance, last seen. Owns the geolocation permission prompt.</span></li>
+      <li><span class="k">Zigbee bridge</span><span class="v">Connected coordinator info, paired devices, "Permit join 60s" action.</span></li>
+      <li><span class="k">Users &amp; Access</span><span class="v"><em>Super-admin only.</em> List users, set roles, invite, revoke.</span></li>
+      <li><span class="k">Quick Asks</span><span class="v">New panel here after the merge. CRUD list of pinned phrases.</span></li>
+      <li><span class="k">Memory</span><span class="v">New panel here after the merge. CRUD over profile-grouped entries.</span></li>
+    </ul>
+
+    <h3>Admin-gated (Settings &rsaquo; Admin)</h3>
+    <ul class="flat-list">
+      <li><span class="k">Notifications</span><span class="v">Push subscriptions list, channel toggles, test-notification button.</span></li>
+      <li><span class="k">API Keys</span><span class="v">Anthropic, OpenAI, Gemini, others. Masked entry, "test", per-key model selection.</span></li>
+      <li><span class="k">Email (SMTP)</span><span class="v">Host, port, username, password, from-address, TLS toggle, "send test email".</span></li>
+      <li><span class="k">MQTT</span><span class="v">Broker host/port/credentials, topic prefix. <strong>Restart required</strong> badge after save.</span></li>
+      <li><span class="k">Feature Flags</span><span class="v">smart_home, voice, task_tracking, file_management, home_map, buddy_mode, ifttt, local_storage, zigbee_support. <strong>Restart required.</strong></span></li>
+      <li><span class="k">Developer Tools</span><span class="v">Dry-run mode, verbose logging, replay last intent.</span></li>
+      <li><span class="k">Ollama (Local LLM)</span><span class="v">Endpoint URL, model picker, temperature.</span></li>
+      <li><span class="k">Pattern Learning</span><span class="v">Per-domain learning toggles, sensitivity slider, "forget patterns" destructive action.</span></li>
+    </ul>
+
+    <h3>Super-admin /ops console</h3>
+    <ul class="flat-list">
+      <li><span class="k">Admin Console</span><span class="v">Landing card grid. Two tools today (Debug, Cloud).</span></li>
+      <li><span class="k">Debug Console</span><span class="v">Streaming event log · scope / level filters · correlation-ID search · dry-run simulator · export JSON report.</span></li>
+      <li><span class="k">Cloud Administration</span><span class="v">Users / roles · invite links · relay status · provision / deprovision cloud homes.</span></li>
+    </ul>
+  </section>
+
+  <!-- ═════════ 06 · Cross-cutting ════════════════════════════════════ -->
+  <section id="cross">
+    <div class="head">
+      <span class="num">06</span>
+      <h2>Cross-cutting concerns</h2>
+      <span class="sub">The system layer. None of this is visible as a screen, but it touches every screen.</span>
+    </div>
+
+    <ul class="flat-list">
+      <li><span class="k">Palettes</span><span class="v">Two palettes: <code>data-palette=&quot;light&quot;</code> (warm) and <code>data-palette=&quot;dark&quot;</code> (premium). Every screen must work in both &mdash; not just the seven that have pair artboards today.</span></li>
+      <li><span class="k">RTL parity</span><span class="v">Hebrew is a first-class language. Today the redesign mirrors the Dashboard. Every other screen needs the same audit — directional icons (back/forward arrows), bottom-nav order, sliders, breadcrumbs.</span></li>
+      <li><span class="k">Roles &amp; gating</span><span class="v">Four roles: <code>guest</code>, <code>user</code>, <code>admin</code>, <code>super_admin</code>. Bottom nav, sidebar, and Settings tabs change. Empty / "you don't have access" states needed for each restricted surface.</span></li>
+      <li><span class="k">Auth flows</span><span class="v">Local login · invite redemption · password change · session expiry (silent re-login modal, no full reload). Designed today: zero. Today's app dispatches a <code>ziggy:unauthorized</code> event from any 401 to swap in the login UI without dropping the WebSocket.</span></li>
+      <li><span class="k">Live state (WebSocket)</span><span class="v">Every device tile streams state changes in real time. Need explicit "syncing" / "disconnected" affordances. Also: physical IR remote detection (a press on the user's TV remote updates the on-screen state) — toast confirmation pattern.</span></li>
+      <li><span class="k">Push notifications (PWA)</span><span class="v">Service worker registration, VAPID subscription, permission-prompt UX. Today: silent fallback if denied. Owed: a clear "enable notifications" CTA somewhere.</span></li>
+      <li><span class="k">Presence pinging</span><span class="v">Live geolocation watch, 2-min keep-alive, visibility re-pings. Owed: permission prompt UX, "presence is off" banner in the presence widget.</span></li>
+      <li><span class="k">Toasts</span><span class="v">Success / info / warning / error. Auto-dismiss timings (3s / 7s for errors). Action toasts ("undo"). Stacking rules.</span></li>
+      <li><span class="k">Execution results</span><span class="v">Automation / routine runs report back: <em>"Evening — 5 steps completed"</em> or <em>"2/5 steps failed: lamp.bedroom unreachable"</em>. Needs a per-result expand to see step list.</span></li>
+      <li><span class="k">Empty states</span><span class="v">Every list. No rooms, no devices, no automations, no alerts, no tasks, no memory, no quick asks, no cameras, no virtual devices. Each needs its own illustration / copy / primary CTA.</span></li>
+      <li><span class="k">Loading skeletons</span><span class="v">First load, cold-start re-fetch, slow-network. Per-surface skeleton shapes match the eventual content silhouette.</span></li>
+      <li><span class="k">Error states</span><span class="v">Network down, HA disconnected, backend 5xx, entity not found, action failed. Each surface needs a recovery affordance.</span></li>
+      <li><span class="k">Onboarding</span><span class="v">First-run trio is drawn. Owed: the actual flow from invite-acceptance to "ready to use" &mdash; voice permission, location permission, push permission, household member invites.</span></li>
+    </ul>
+  </section>
+
+  <!-- ═════════ 07 · Definition of done ═══════════════════════════════ -->
+  <section id="done">
+    <div class="head">
+      <span class="num">07</span>
+      <h2>Definition of done</h2>
+      <span class="sub">Before this redesign replaces the current app, every line on this list has to be true. No exceptions.</span>
+    </div>
+
+    <div class="checklist">
+      <div class="item"><div class="box-check"></div><div><div class="label">Every route in §02 either has an artboard or has an entry in §01's pruning ledger.</div><div class="desc">Nothing falls through the cracks. If a designer can't find a route on either list, it's a bug in this kit.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Every modal and wizard in §03 has at least one drawn state.</div><div class="desc">20 dialog surfaces. Two are drawn. 18 are owed.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Every wizard has its full step flow drawn, including back, validation, error, and success.</div><div class="desc">A "Next" button that goes nowhere is not a wizard.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">All 8 device-domain controllers in §04 are designed in the new system.</div><div class="desc">Light, Climate, IR are done. Media Player, Cover, Fan, Lock, Vacuum, Generic are owed.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Every section in §05 exists somewhere in the new Settings.</div><div class="desc">15 sub-sections. Zero are drawn. Plan the IA inside Settings before drawing the leaves.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Every primary screen has light + dark + RTL variants.</div><div class="desc">Today seven do. The other ~30 don't.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Every list has its empty state, loading skeleton, and error state.</div><div class="desc">~20 lists. Each gets three states minimum.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Role-gated surfaces have a "you don't have access" treatment, not a 404.</div><div class="desc">Today's app silently redirects. Owed: a designed denial.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Every destructive action has a confirm modal with consequences spelled out.</div><div class="desc">"Delete room — 6 devices will be unassigned" is the bar. Not "Are you sure?".</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Tablet wall display and Desktop dashboard cover the same primary surfaces as phone.</div><div class="desc">Not every modal needs a tablet variant, but Dashboard, Rooms, Room detail, Automations, Alerts do.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Onboarding flow connects start-to-finish, including permission prompts.</div><div class="desc">Voice, location, push. Each prompt has a "skip" path and the consequences are made clear.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Toast and execution-result patterns are specified once and reused.</div><div class="desc">Including the multi-line "2/5 steps failed" treatment.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Live state affordances: syncing dot, disconnected banner, physical-remote toast.</div><div class="desc">The app feels alive today because of these. The redesign has to inherit that feeling.</div></div></div>
+      <div class="item"><div class="box-check"></div><div><div class="label">Sign-off on each pruning decision in §01 with the product owner.</div><div class="desc">If anyone wants Scenes back, or HomeMap shipped, find out now &mdash; not after build.</div></div></div>
+    </div>
+  </section>
+
+  <!-- ═════════ 08 · Open questions ═══════════════════════════════════ -->
+  <section id="questions">
+    <div class="head">
+      <span class="num">08</span>
+      <h2>Open questions · before the next round</h2>
+      <span class="sub">Decisions I need from you before I keep drawing.</span>
+    </div>
+
+    <ol style="padding-left: 0; list-style: none; counter-reset: q; margin: 0;">
+      <li style="counter-increment: q; position: relative; padding: 16px 20px 16px 56px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; margin-bottom: 10px;">
+        <span style="position: absolute; left: 18px; top: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-2); color: var(--accent-3); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">01</span>
+        <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Is the <code style="font-family:'IBM Plex Mono',monospace; font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px;">/ops</code> admin console in scope for the redesign?</div>
+        <div style="font-size: 12.5px; color: var(--ink-mute); line-height: 1.55;">If yes &mdash; I'll re-skin Debug Console and Cloud Admin in the new tokens. If no &mdash; I'll leave them as a developer surface and we just keep the breadcrumb chrome consistent. <strong>Recommendation: out of scope.</strong> They're 1% of usage and pixel-fidelity work there is a poor ROI.</div>
+      </li>
+      <li style="counter-increment: q; position: relative; padding: 16px 20px 16px 56px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; margin-bottom: 10px;">
+        <span style="position: absolute; left: 18px; top: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-2); color: var(--accent-3); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">02</span>
+        <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Confirm HomeMap stays deferred &mdash; including the feature flag?</div>
+        <div style="font-size: 12.5px; color: var(--ink-mute); line-height: 1.55;">If the flag is still toggleable in admin settings, a super-admin can enable a half-built screen. Cleaner: hide the flag entirely until HomeMap is in scope.</div>
+      </li>
+      <li style="counter-increment: q; position: relative; padding: 16px 20px 16px 56px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; margin-bottom: 10px;">
+        <span style="position: absolute; left: 18px; top: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-2); color: var(--accent-3); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">03</span>
+        <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Virtual Devices &mdash; truly admin-only, or surfaced for power users?</div>
+        <div style="font-size: 12.5px; color: var(--ink-mute); line-height: 1.55;">Today it's a full nav item. The pruning agreement buries it under <code style="font-family:'IBM Plex Mono',monospace; font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px;">Settings &rsaquo; Admin &rsaquo; Capabilities</code>. Confirm &mdash; or do we want a "developer mode" entry point in user-facing nav for the technical user persona?</div>
+      </li>
+      <li style="counter-increment: q; position: relative; padding: 16px 20px 16px 56px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; margin-bottom: 10px;">
+        <span style="position: absolute; left: 18px; top: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-2); color: var(--accent-3); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">04</span>
+        <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Wizard pattern &mdash; modal-over-page, full-screen takeover, or inline step expansion?</div>
+        <div style="font-size: 12.5px; color: var(--ink-mute); line-height: 1.55;">Current app uses modal-over-page for everything. New system might benefit from a full-screen takeover for 4+ step wizards (IR, Pairing, Automation). Pick the rule before I draw seven of them.</div>
+      </li>
+      <li style="counter-increment: q; position: relative; padding: 16px 20px 16px 56px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; margin-bottom: 10px;">
+        <span style="position: absolute; left: 18px; top: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-2); color: var(--accent-3); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">05</span>
+        <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Floating voice orb &mdash; killed by &ldquo;Ask&rdquo; tab, or do both coexist?</div>
+        <div style="font-size: 12.5px; color: var(--ink-mute); line-height: 1.55;">IA doc says the chat tab replaces the orb. But the orb is "always-on, anywhere" &mdash; a discoverability advantage. Confirm we're really losing the floating action.</div>
+      </li>
+      <li style="counter-increment: q; position: relative; padding: 16px 20px 16px 56px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; margin-bottom: 10px;">
+        <span style="position: absolute; left: 18px; top: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-2); color: var(--accent-3); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">06</span>
+        <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Bottom nav has 5 slots. We agreed Home · Rooms · Ask · Devices · Automations.</div>
+        <div style="font-size: 12.5px; color: var(--ink-mute); line-height: 1.55;">That means Alerts is one tap deeper (sidebar / overflow). For a unified-alerts pitch that absorbs anomalies + offline + motion, that depth might be wrong. Reconsider, or stand pat?</div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ═════════ 09 · Assets ═══════════════════════════════════════════ -->
+  <section id="assets">
+    <div class="head">
+      <span class="num">09</span>
+      <h2>What's in this kit</h2>
+      <span class="sub">Where to pick up the work.</span>
+    </div>
+
+    <ul class="flat-list">
+      <li><span class="k">Redesign canvas</span><span class="v"><code>Ziggy redesign.html</code> &mdash; the main artboard composition. 12 sections, ~25 artboards.</span></li>
+      <li><span class="k">Tokens</span><span class="v"><code>ziggy-tokens.css</code> &mdash; both palettes, type roles, surfaces, chips, shadows, slider tracks, phone bezel. Use these as the source of truth.</span></li>
+      <li><span class="k">Atoms</span><span class="v"><code>ziggy-atoms.jsx</code> &mdash; icons, phone shell, bottom nav, control tiles, eyebrow type, base controls.</span></li>
+      <li><span class="k">Screens</span><span class="v"><code>ziggy-screens-1.jsx</code> through <code>ziggy-screens-4.jsx</code> &mdash; IA diagram, Dashboard, Rooms, Devices, Controls, Chat, Automations, Tasks, Alerts, Settings, Wall display, Desktop, Onboarding, RTL.</span></li>
+      <li><span class="k">Canvas composition</span><span class="v"><code>ziggy-canvas.jsx</code> &mdash; pairs every screen into light + dark artboards, organizes them into the 10 sections.</span></li>
+      <li><span class="k">This handover</span><span class="v"><code>handover/Handover&nbsp;Kit.html</code> + <code>handover/handover.css</code>. Print-friendly. Send the PDF to anyone who needs the brief.</span></li>
+    </ul>
+
+    <div class="warn-block" style="margin-top: 28px;">
+      <div class="label">One last thing</div>
+      <p>The current Ziggy is sprawling because it earned every feature. Pattern learning, IR detection, family presence, capability authoring, the debug console &mdash; none of these are dead weight; they're what makes Ziggy yours. The redesign tightens the front door, not the house. Treat this kit as the floor plan: <strong>every room that exists today has to exist tomorrow</strong>, redrawn in the new style, no exceptions outside §01.</p>
+    </div>
+  </section>
+
+  <footer style="margin-top: 64px; padding-top: 24px; border-top: 0.5px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--ink-faint);">
+    <span class="mono" style="letter-spacing: .08em; text-transform: uppercase;">Ziggy · handover kit · v1</span>
+    <span>Owner: design lead &mdash; sign off required before build.</span>
+  </footer>
+
+</div>
+
+</body>
+</html>

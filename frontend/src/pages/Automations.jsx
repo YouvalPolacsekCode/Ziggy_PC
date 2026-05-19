@@ -6,11 +6,13 @@ import { Input, Textarea } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { EntitySelect, getActionsForDomain } from '../components/ui/EntitySelect'
 import { useAutomationStore } from '../stores/automationStore'
+import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { CONTROLLABLE_DOMAINS } from '../lib/domainRegistry'
 import { getVirtualDevices, getCapabilities, getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
+import { RoutineWizard } from './Routines'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatRelativeTime(iso) {
@@ -963,9 +965,26 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
       <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: automation.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
-        </div>
+        {(() => {
+          const triggerType = automation.trigger?.type || 'time'
+          const tintMap = { time: 'var(--info)', state: 'var(--ok)', zone: 'var(--accent)', sunrise: 'var(--gold)', sunset: 'var(--accent)', webhook: 'var(--warn)', manual: 'var(--ink-mute)' }
+          const tint = automation.enabled ? (tintMap[triggerType] || 'var(--info)') : 'var(--ink-faint)'
+          const iconMap = {
+            time: <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>,
+            sunrise: <><circle cx="12" cy="13" r="3"/><path d="M12 4v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20"/></>,
+            sunset: <><circle cx="12" cy="13" r="3"/><path d="M12 3v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20M12 19v3"/></>,
+            zone: <><path d="M12 2L4 14h7l-1 8 9-12h-7l1-8z"/></>,
+            state: <><path d="M4 12l5 5L20 6"/></>,
+            webhook: <><circle cx="12" cy="12" r="3"/><path d="M12 9V5a2 2 0 0 0-4 0M9 12H5a2 2 0 0 0 0 4M12 15v4a2 2 0 0 0 4 0M15 12h4a2 2 0 0 0 0-4"/></>,
+          }
+          return (
+            <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))` }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? tint : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                {iconMap[triggerType] || <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>}
+              </svg>
+            </div>
+          )
+        })()}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.name}</p>
           {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.description}</p>}
@@ -1240,22 +1259,143 @@ function LibraryModal({ open, onClose, onConfigure }) {
   )
 }
 
+// ── Suggested tab (embedded from Suggestions.jsx logic) ──────────────────────
+function ConfidenceMeter({ value }) {
+  const filled = Math.round(value * 5)
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span className="z-mono" style={{ fontSize: 9, color: 'var(--ink-faint)' }}>{Math.round(value * 100)}%</span>
+      <span style={{ display: 'inline-flex', gap: 2 }}>
+        {[0,1,2,3,4].map(i => (
+          <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: i < filled ? 'var(--ink-2)' : 'var(--line)' }} />
+        ))}
+      </span>
+    </div>
+  )
+}
+
+const PATTERN_TYPE_META = {
+  time_based: { label: 'Time pattern', tint: 'var(--info)' },
+  sequence:   { label: 'Routine',      tint: 'var(--ok)' },
+  group:      { label: 'Group',        tint: 'var(--warn)' },
+}
+const SUGGESTION_STATUS_META = {
+  accepted:    { label: 'Accepted',  tint: 'var(--ok)' },
+  rejected:    { label: 'Dismissed', tint: 'var(--err)' },
+  snoozed:     { label: 'Snoozed',   tint: 'var(--warn)' },
+  implemented: { label: 'Active',    tint: 'var(--ok)' },
+}
+
+function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
+  const [expanded, setExpanded] = useState(false)
+  const [acting,   setActing]   = useState(null)
+  const isPending = suggestion.status === 'pending'
+  const meta = PATTERN_TYPE_META[suggestion.pattern_type] || PATTERN_TYPE_META.time_based
+  const act = async (fn, label) => { setActing(label); try { await fn() } finally { setActing(null) } }
+
+  return (
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: isPending ? 1 : 0.65, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.18 }}
+      style={{ padding: 14, borderRadius: 16, background: 'var(--surface)', border: '0.5px solid var(--line)' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <p className="z-eyebrow" style={{ color: meta.tint }}>{meta.label}</p>
+        <div style={{ flex: 1 }} />
+        <ConfidenceMeter value={suggestion.confidence} />
+        {!isPending && (
+          <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 5, background: `color-mix(in srgb, ${SUGGESTION_STATUS_META[suggestion.status]?.tint || 'var(--info)'} 14%, transparent)`, color: SUGGESTION_STATUS_META[suggestion.status]?.tint || 'var(--info)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {SUGGESTION_STATUS_META[suggestion.status]?.label || suggestion.status}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, color: 'var(--ink)', marginBottom: 8 }}>{suggestion.user_message}</p>
+      {(suggestion.trigger || suggestion.actions?.length > 0) && (
+        <div style={{ padding: '8px 10px', borderRadius: 9, background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 10 : 0 }}>
+          {suggestion.trigger?.type && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>WHEN  {suggestion.trigger.type}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}</span>}
+          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>DO    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}</span>)}
+        </div>
+      )}
+      {isPending && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => act(onAccept, 'accept')} disabled={!!acting} style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 13, fontWeight: 600, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
+            {acting === 'accept' ? 'Creating…' : 'Yes, create'}
+          </button>
+          <button onClick={() => act(() => onSnooze(3), 'snooze')} disabled={!!acting} style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 13, fontWeight: 500, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
+            {acting === 'snooze' ? '…' : 'Later'}
+          </button>
+          <button onClick={() => act(onReject, 'reject')} disabled={!!acting} style={{ padding: '10px', borderRadius: 10, background: 'transparent', color: 'var(--ink-faint)', border: '0.5px solid var(--line)', fontSize: 13, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>✕</button>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+function SuggestedTab({ suggestions, loading, analyzing, onAccept, onReject, onSnooze, onAnalyze }) {
+  const [subtab, setSubtab] = useState('pending')
+  const pending = suggestions.filter(s => s.status === 'pending')
+  const history = suggestions.filter(s => s.status !== 'pending')
+  const displayed = subtab === 'pending' ? pending : history
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[{ id: 'pending', label: 'Pending', count: pending.length }, { id: 'history', label: 'History' }].map(t => (
+            <button key={t.id} onClick={() => setSubtab(t.id)} style={{ padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: subtab === t.id ? 'var(--ink)' : 'var(--surface-2)', color: subtab === t.id ? 'var(--bg)' : 'var(--ink-mute)', border: subtab === t.id ? 'none' : '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              {t.label}
+              {t.count > 0 && <span style={{ background: subtab === t.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700 }}>{t.count}</span>}
+            </button>
+          ))}
+        </div>
+        <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, flexShrink: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: analyzing ? 'spin 1s linear infinite' : 'none' }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          {analyzing ? 'Analyzing…' : 'Analyze'}
+        </button>
+      </div>
+
+      {loading && <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{[1,2,3].map(i => <div key={i} style={{ height: 100, borderRadius: 14, background: 'var(--surface)', opacity: 0.6 }} />)}</div>}
+
+      {!loading && displayed.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{subtab === 'pending' ? 'No pending suggestions' : 'No history yet'}</p>
+          {subtab === 'pending' && <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto 16px' }}>Ziggy learns from your daily actions. Patterns appear here after a few days of use.</p>}
+          {subtab === 'pending' && <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{analyzing ? 'Analyzing…' : 'Run analysis now'}</button>}
+        </div>
+      )}
+
+      {!loading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <AnimatePresence mode="popLayout">
+            {displayed.map(s => (
+              <SuggestionCard key={s.id} suggestion={s} onAccept={() => onAccept(s.id)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
   const { automations, loading, fetchAutomations, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
+  const { suggestions, loading: sugLoading, fetch: fetchSuggestions, accept, reject, snooze, runAnalysis, analyzing, pendingCount } = useSuggestionStore()
   const { addToast } = useUIStore()
   const { ziggyRooms } = useDeviceStore()
+  const [tab,               setTab]               = useState('active')
   const [showWizard,        setShowWizard]        = useState(false)
-  const [editTarget,        setEditTarget]         = useState(null)
-  const [viewTarget,        setViewTarget]         = useState(null)
+  const [showRoutineWizard, setShowRoutineWizard] = useState(false)
+  const [editTarget,        setEditTarget]        = useState(null)
+  const [viewTarget,        setViewTarget]        = useState(null)
   const [suggestedTemplates, setSuggestedTemplates] = useState([])
-  const [showLibrary,       setShowLibrary]        = useState(false)
-  const [suggestionsOpen,   setSuggestionsOpen]    = useState(true)
+  const [showLibrary,       setShowLibrary]       = useState(false)
+  const [suggestionsOpen,   setSuggestionsOpen]   = useState(true)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
+  const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
 
   useEffect(() => {
     fetchAutomations()
+    fetchSuggestions()
     getSuggestedTemplates()
       .then(r => setSuggestedTemplates(r.suggested || []))
       .catch(() => {})
@@ -1289,18 +1429,23 @@ export default function Automations() {
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>React to events automatically</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Automations</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Automations</h1>
+          <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
             {enabled} enabled · {automations.length} total
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={() => setShowLibrary(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             Library
+          </button>
+          <button onClick={() => setShowRoutineWizard(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Simple
           </button>
           <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -1308,6 +1453,44 @@ export default function Automations() {
           </button>
         </div>
       </div>
+
+      {/* Tab switcher — segmented pill style */}
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20 }}>
+        {[
+          { id: 'active',    label: 'Active',    count: automations.filter(a => a.enabled).length },
+          { id: 'suggested', label: 'Suggested', count: pendingSuggestions.length, sparkle: true },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex: 1, padding: '8px 0', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+            background: tab === t.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 13, fontWeight: 600,
+            color: tab === t.id ? 'var(--ink)' : 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+            transition: 'background 0.15s',
+          }}>
+            {t.sparkle && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>}
+            {t.label}
+            {t.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── Suggested tab ─── */}
+      {tab === 'suggested' && (
+        <SuggestedTab
+          suggestions={suggestions}
+          loading={sugLoading}
+          analyzing={analyzing}
+          onAccept={async id => { try { await accept(id); addToast('Accepted — automation created', 'success') } catch { addToast('Failed', 'error') } }}
+          onReject={async id => { try { await reject(id); addToast('Dismissed', 'success') } catch { addToast('Failed', 'error') } }}
+          onSnooze={async (id, days) => { try { await snooze(id, days); addToast(`Snoozed ${days}d`, 'success') } catch { addToast('Failed', 'error') } }}
+          onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? `Found ${r.new_count} new suggestion${r.new_count > 1 ? 's' : ''}` : 'No new patterns yet', 'success') } catch { addToast('Analysis failed', 'error') } }}
+        />
+      )}
+
+      {/* ─── Active tab ─── */}
+      {tab === 'active' && (<>
 
       {/* ── Recommended by Ziggy ─────────────────────────────────────────── */}
       {suggestedTemplates.length > 0 && (
@@ -1369,6 +1552,22 @@ export default function Automations() {
         </div>
       )}
 
+      {!loading && automations.length > 0 && (
+        <button
+          onClick={() => setShowRoutineWizard(true)}
+          style={{
+            marginTop: 8, width: '100%', padding: '13px',
+            borderRadius: 14, background: 'var(--surface)',
+            border: '1px dashed var(--line-2)',
+            color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'inherit',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New routine
+        </button>
+      )}
+
       <AnimatePresence mode="popLayout">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {automations.map(a => (
@@ -1393,6 +1592,23 @@ export default function Automations() {
 
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Automation details">
         <AutomationViewModal automation={viewTarget} roomNameMap={roomNameMap} />
+      </Modal>
+      </>)}
+
+      {/* Routine Wizard — simple creation path */}
+      <Modal open={showRoutineWizard} onClose={() => setShowRoutineWizard(false)} title="New Routine">
+        <RoutineWizard
+          initial={null}
+          onSave={async (data) => {
+            try {
+              const { addRoutine } = useAutomationStore.getState()
+              await addRoutine(data)
+              addToast('Routine created', 'success')
+              setShowRoutineWizard(false)
+            } catch { addToast('Failed to save routine', 'error') }
+          }}
+          onClose={() => setShowRoutineWizard(false)}
+        />
       </Modal>
     </div>
   )

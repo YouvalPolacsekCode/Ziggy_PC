@@ -15,12 +15,14 @@ export function Toggle({ checked, onCheckedChange, disabled, className }) {
         opacity: disabled ? 0.5 : 1,
         transition: 'background 0.15s',
         flexShrink: 0,
+        outline: 'none',
       }}
     >
       <Switch.Thumb
         style={{
           display: 'block', width: 16, height: 16, borderRadius: '50%',
-          background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          background: 'var(--surface)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
           transition: 'transform 0.15s',
           transform: checked ? 'translateX(18px)' : 'translateX(2px)',
         }}

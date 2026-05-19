@@ -21,6 +21,7 @@ import AdminSettings from './pages/AdminSettings'
 import AdminConsole from './pages/AdminConsole'
 import CloudAdmin from './pages/CloudAdmin'
 import DebugPage from './pages/DebugPage'
+import HAUpdate from './pages/HAUpdate'
 import { useUIStore } from './stores/uiStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
@@ -179,8 +180,9 @@ function AppRoutes() {
         <Route path="memory" element={<Memory />} />
         <Route path="settings" element={<Settings />} />
         <Route path="virtual-devices" element={<VirtualDevices />} />
+        <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
-        <Route path="anomalies" element={<Anomalies />} />
+        <Route path="anomalies" element={<Navigate to="/alerts" replace />} />
         <Route path="quick-asks" element={<QuickAsks />} />
         <Route path="cameras" element={<Cameras />} />
         <Route path="admin" element={<AdminSettings />} />
@@ -195,7 +197,13 @@ function AppRoutes() {
         <Route element={<OpsPageWrapper title="Cloud Administration" />}>
           <Route path="cloud" element={<CloudAdmin />} />
         </Route>
+        <Route element={<OpsPageWrapper title="HA Update Checker" />}>
+          <Route path="ha-update" element={<HAUpdate />} />
+        </Route>
       </Route>
+
+      {/* ── Legacy redirect from old bookmark ── */}
+      <Route path="ha-update" element={<Navigate to="/ops/ha-update" replace />} />
 
       {/* ── Legacy redirects (old bookmarks) ── */}
       <Route path="debug" element={<Navigate to="/ops/debug" replace />} />
@@ -209,12 +217,7 @@ export default function App() {
   const { authenticated, setRole, logout } = useAuthStore()
 
   useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
+    document.documentElement.setAttribute('data-palette', theme === 'dark' ? 'dark' : 'light')
   }, [theme])
 
   // Refresh role on every app load (soft — never auto-logout)

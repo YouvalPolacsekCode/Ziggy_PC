@@ -36,6 +36,7 @@ from backend.routers.presence_router import router as presence_router
 from backend.routers.camera_router import router as camera_router
 from backend.routers.push_router import router as push_router
 from backend.routers.debug_router import router as debug_router
+from backend.routers.update_router import router as update_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -68,6 +69,13 @@ async def _startup():
     asyncio.create_task(run_subscriber())
     asyncio.create_task(_register_with_relay())
     asyncio.create_task(_start_ir_listener())
+    asyncio.create_task(_run_update_checker())
+
+
+async def _run_update_checker():
+    """Run the HA update check once in the background after startup."""
+    from services.ha_update_checker import background_check
+    await background_check()
 
 
 async def _start_ir_listener():
@@ -231,6 +239,7 @@ app.include_router(presence_router)
 app.include_router(camera_router,        dependencies=_auth)
 app.include_router(push_router,          dependencies=_auth)
 app.include_router(debug_router,         dependencies=_auth)
+app.include_router(update_router,        dependencies=_auth)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.

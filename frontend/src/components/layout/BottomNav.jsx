@@ -1,94 +1,81 @@
-import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
+import { Bell, CheckSquare, Settings, ShieldAlert, WifiOff } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 
-function ZIcon({ name, size = 20 }) {
-  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }
+const ROLE_ORDER = ['user', 'admin', 'super_admin']
+function hasRole(userRole, minRole) {
+  return ROLE_ORDER.indexOf(userRole) >= ROLE_ORDER.indexOf(minRole)
+}
+
+// Design-system icons matching ziggy-atoms.jsx
+function ZIcon({ name, size = 20, stroke = 1.6, color = 'currentColor' }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round' }
   switch (name) {
-    case 'home':  return <svg {...p}><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>
-    case 'grid':  return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-    case 'mic':   return <svg {...p}><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-    case 'bolt':  return <svg {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
-    case 'tasks': return <svg {...p}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-    case 'more':  return <svg {...p}><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>
-    case 'cpu':   return <svg {...p}><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
-    case 'brain': return <svg {...p}><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-1.07-4.58A3 3 0 0 1 4.5 9.5a2.5 2.5 0 0 1 3-3.45A2.5 2.5 0 0 1 9.5 2M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 1.07-4.58A3 3 0 0 0 19.5 9.5a2.5 2.5 0 0 0-3-3.45A2.5 2.5 0 0 0 14.5 2"/></svg>
-    case 'route': return <svg {...p}><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg>
-    case 'scene': return <svg {...p}><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
-    case 'bulb':  return <svg {...p}><path d="M9 18h6M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.7.7 1 1.6 1 2.5v1h6v-1c0-.9.3-1.8 1-2.5A6 6 0 0 0 12 2z"/></svg>
-    case 'bell':  return <svg {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-    case 'wave':  return <svg {...p}><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 12h2"/></svg>
-    case 'camera':return <svg {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-    case 'cog':   return <svg {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1c.5.5 1.3.6 1.8.3.6-.2 1-.8 1-1.5V3a2 2 0 0 1 4 0v.1c0 .7.4 1.3 1 1.5.5.3 1.3.2 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8c.2.6.8 1 1.5 1H21a2 2 0 0 1 0 4h-.1c-.7 0-1.3.4-1.5 1z"/></svg>
-    case 'shield':return <svg {...p}><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/></svg>
-    case 'debug': return <svg {...p}><path d="M9 9H5a2 2 0 0 0-2 2v1M9 9V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4M9 9h6m0 0h4a2 2 0 0 1 2 2v1M15 9V5M3 12v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5M8 17v1M12 17v1M16 17v1"/></svg>
-    case 'boxes': return <svg {...p}><path d="M12 3l-8 4.5v9L12 21l8-4.5v-9L12 3zM12 3v18M4 7.5l8 4.5 8-4.5"/></svg>
+    case 'home':    return <svg {...p}><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+    case 'rooms':   return <svg {...p}><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+    case 'plug':    return <svg {...p}><path d="M9 2v6M15 2v6"/><path d="M5 8h14v3a7 7 0 0 1-14 0z"/><path d="M12 18v4"/></svg>
+    case 'auto':    return <svg {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    case 'sparkle': return <svg {...p}><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
+    case 'mic':     return <svg {...p}><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
     default: return null
   }
 }
 
-// Left of mic
-const LEFT_NAV = [
-  { to: '/',       icon: 'home',  label: 'Home' },
-  { to: '/rooms',  icon: 'grid',  label: 'Rooms' },
-  { to: '/devices', icon: 'cpu',  label: 'Devices' },
-]
-// Right of mic
-const RIGHT_NAV = [
-  { to: '/tasks',       icon: 'tasks', label: 'Tasks' },
-  { to: '/automations', icon: 'bolt',  label: 'Automations' },
-]
-// More drawer
-const MORE_NAV = [
-  { to: '/cameras',         icon: 'camera', label: 'Security' },
-  { to: '/memory',          icon: 'brain',  label: 'Memory' },
-  { to: '/virtual-devices', icon: 'boxes',  label: 'Capabilities' },
-  { to: '/routines',        icon: 'route',  label: 'Routines' },
-  { to: '/scenes',          icon: 'scene',  label: 'Scenes' },
-  { to: '/quick-asks',      icon: 'wave',   label: 'Quick Asks' },
-  { to: '/suggestions',     icon: 'bulb',   label: 'Suggestions' },
-  { to: '/anomalies',       icon: 'bell',   label: 'Alerts' },
-  { to: '/settings',        icon: 'cog',    label: 'Settings' },
+const PRIMARY = [
+  { to: '/',            name: 'home',    label: 'Home' },
+  { to: '/rooms',       name: 'rooms',   label: 'Rooms' },
+  { to: '/devices',     name: 'plug',    label: 'Devices' },
+  { to: '/automations', name: 'auto',    label: 'Auto' },
 ]
 
-function TabItem({ to, icon, label, active, onClick }) {
+const SECONDARY = [
+  { to: '/alerts',   Icon: Bell,        label: 'Alerts' },
+  { to: '/tasks',    Icon: CheckSquare, label: 'Tasks' },
+  { to: '/settings', Icon: Settings,    label: 'Settings' },
+]
+
+function Tab({ to, name, label }) {
+  const location = useLocation()
+  const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
   return (
     <NavLink
       to={to}
-      onClick={onClick}
-      style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 4px', textDecoration: 'none' }}
+      style={{
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+        padding: '7px 4px', textDecoration: 'none', WebkitTapHighlightColor: 'transparent',
+      }}
     >
-      <div style={{
-        width: 40, height: 28, borderRadius: 10,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: active ? 'var(--ink)' : 'transparent',
-        transition: 'background 0.15s',
+      <ZIcon
+        name={name}
+        size={20}
+        stroke={active ? 1.9 : 1.5}
+        color={active ? 'var(--ink)' : 'var(--ink-faint)'}
+      />
+      <span style={{
+        fontSize: 10, fontWeight: active ? 600 : 500,
+        color: active ? 'var(--ink)' : 'var(--ink-faint)',
+        lineHeight: 1, letterSpacing: '0.01em',
       }}>
-        <span style={{ color: active ? 'var(--bg)' : 'var(--ink-faint)' }}>
-          <ZIcon name={icon} size={18} />
-        </span>
-      </div>
-      <span style={{ fontSize: 10, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-faint)' }}>
         {label}
       </span>
     </NavLink>
   )
 }
 
-export function BottomNav({ connected, features }) {
+export function BottomNav({ connected }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const [showMore, setShowMore] = useState(false)
   const { role } = useAuthStore()
-  const ziggyActive = location.pathname.startsWith('/chat')
-  const visibleMore = [
-    ...MORE_NAV.filter(item => !(item.to === '/scenes' && !features?.scenes)),
-    ...(role === 'super_admin' ? [
-      { to: '/ops', icon: 'cog', label: 'Admin' },
-    ] : []),
+  const [showMore, setShowMore] = useState(false)
+
+  const chatActive = location.pathname.startsWith('/chat')
+  const moreItems = [
+    ...SECONDARY,
+    ...(hasRole(role, 'super_admin') ? [{ to: '/ops', Icon: ShieldAlert, label: 'Ops' }] : []),
   ]
-  const isMoreActive = visibleMore.some(n => location.pathname.startsWith(n.to))
+  const isMoreActive = moreItems.some(n => location.pathname.startsWith(n.to))
 
   return (
     <>
@@ -98,44 +85,44 @@ export function BottomNav({ connected, features }) {
           <>
             <motion.div
               className="fixed inset-0 z-30 md:hidden"
-              style={{ background: 'rgba(0,0,0,0.3)' }}
+              style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)' }}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
               onClick={() => setShowMore(false)}
             />
             <motion.div
-              className="fixed left-0 right-0 z-40 md:hidden mx-3"
-              style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px) + 6px)' }}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 12 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="fixed left-0 right-0 z-40 md:hidden"
+              style={{
+                bottom: 'calc(68px + env(safe-area-inset-bottom, 0px) + 8px)',
+                padding: '0 12px',
+              }}
+              initial={{ opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             >
               <div style={{
-                background: 'var(--surface)',
-                border: '0.5px solid var(--line)',
-                borderRadius: 18,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-                padding: 8,
-                display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4,
+                background: 'var(--surface)', border: '0.5px solid var(--line)',
+                borderRadius: 20, boxShadow: 'var(--shadow-lg)',
+                padding: 10, display: 'grid',
+                gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 6,
               }}>
-                {visibleMore.map(({ to, icon, label }) => {
+                {moreItems.map(({ to, Icon, label }) => {
                   const active = location.pathname.startsWith(to)
                   return (
                     <button
                       key={to}
                       onClick={() => { navigate(to); setShowMore(false) }}
                       style={{
-                        background: active ? 'var(--bg-2)' : 'transparent',
-                        border: 'none', cursor: 'pointer',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                        padding: '12px 8px', borderRadius: 12,
-                        fontFamily: 'inherit',
+                        background: active ? 'var(--surface-2)' : 'transparent',
+                        border: active ? '0.5px solid var(--line)' : 'none',
+                        cursor: 'pointer', borderRadius: 14,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                        padding: '14px 8px', fontFamily: 'inherit',
                       }}
                     >
-                      <span style={{ color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>
-                        <ZIcon name={icon} size={20} />
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>
+                      <Icon size={22} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
+                      <span style={{ fontSize: 11, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-mute)', letterSpacing: '0.01em' }}>
                         {label}
                       </span>
                     </button>
@@ -147,73 +134,73 @@ export function BottomNav({ connected, features }) {
         )}
       </AnimatePresence>
 
-      {/* Bottom bar */}
+      {/* Bottom bar — frosted glass */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 md:hidden"
         style={{
-          background: 'var(--bg)',
+          background: 'color-mix(in srgb, var(--bg) 88%, transparent)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
           borderTop: '0.5px solid var(--line)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: 60, padding: '0 4px', maxWidth: 480, margin: '0 auto' }}>
-          {LEFT_NAV.map(({ to, icon, label }) => {
-            const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
-            return <TabItem key={to} to={to} icon={icon} label={label} active={active} onClick={() => setShowMore(false)} />
-          })}
+        {connected === false && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 0', background: 'var(--err)', gap: 5 }}>
+            <WifiOff size={10} color="#fff" />
+            <span style={{ fontSize: 10, color: '#fff', fontWeight: 500 }}>offline</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'flex-end', height: 60, maxWidth: 480, margin: '0 auto', padding: '0 4px' }}>
 
-          {/* Center mic button */}
+          {/* Left 2 */}
+          {PRIMARY.slice(0, 2).map(p => <Tab key={p.to} {...p} />)}
+
+          {/* Center Ask */}
           <NavLink
             to="/chat"
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: -18 }}
+            onClick={() => setShowMore(false)}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textDecoration: 'none', marginBottom: 4, WebkitTapHighlightColor: 'transparent' }}
           >
             <div style={{
-              width: 52, height: 52, borderRadius: '50%',
-              background: 'var(--ink)',
-              color: 'var(--bg)',
+              width: 44, height: 44, borderRadius: '50%',
+              background: chatActive ? 'var(--accent)' : 'var(--ink)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 6px 18px -6px rgba(0,0,0,0.35)',
-              border: '3px solid var(--bg)',
-              opacity: ziggyActive ? 0.75 : 1,
+              boxShadow: chatActive ? '0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent)' : 'var(--shadow-md)',
+              transition: 'background 0.2s, box-shadow 0.2s',
             }}>
-              <ZIcon name="mic" size={22} />
+              <ZIcon name="sparkle" size={18} stroke={1.8} color="var(--bg)" />
             </div>
-            <span style={{ fontSize: 10, fontWeight: 500, marginTop: 2, color: ziggyActive ? 'var(--ink)' : 'var(--ink-faint)' }}>
-              Ziggy
+            <span style={{ fontSize: 10, fontWeight: 600, color: chatActive ? 'var(--accent)' : 'var(--ink-faint)', lineHeight: 1, letterSpacing: '0.01em' }}>
+              Ask
             </span>
           </NavLink>
 
-          {RIGHT_NAV.map(({ to, icon, label }) => {
-            const active = location.pathname.startsWith(to)
-            return <TabItem key={to} to={to} icon={icon} label={label} active={active} onClick={() => setShowMore(false)} />
-          })}
+          {/* Right 2 */}
+          {PRIMARY.slice(2).map(p => <Tab key={p.to} {...p} />)}
 
+          {/* More */}
           <button
             onClick={() => setShowMore(v => !v)}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 4px', background: 'none', border: 'none', cursor: 'pointer' }}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              padding: '7px 4px', background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'inherit', WebkitTapHighlightColor: 'transparent',
+            }}
           >
-            <div style={{
-              width: 40, height: 28, borderRadius: 10,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: (isMoreActive || showMore) ? 'var(--ink)' : 'transparent',
-            }}>
-              <span style={{ color: (isMoreActive || showMore) ? 'var(--bg)' : 'var(--ink-faint)' }}>
-                <ZIcon name="more" size={18} />
-              </span>
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center', height: 20 }}>
+              {[0, 1, 2].map(i => (
+                <span key={i} style={{
+                  width: 4, height: 4, borderRadius: '50%',
+                  background: (isMoreActive || showMore) ? 'var(--ink)' : 'var(--ink-faint)',
+                }} />
+              ))}
             </div>
-            <span style={{ fontSize: 10, fontWeight: 500, color: (isMoreActive || showMore) ? 'var(--ink)' : 'var(--ink-faint)' }}>
+            <span style={{ fontSize: 10, fontWeight: (isMoreActive || showMore) ? 600 : 500, color: (isMoreActive || showMore) ? 'var(--ink)' : 'var(--ink-faint)', lineHeight: 1, letterSpacing: '0.01em' }}>
               More
             </span>
           </button>
         </div>
-
-        {connected === false && (
-          <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translate(-50%, -100%)' }}>
-            <span style={{ fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '2px 8px', borderRadius: 999 }}>
-              offline
-            </span>
-          </div>
-        )}
       </nav>
     </>
   )

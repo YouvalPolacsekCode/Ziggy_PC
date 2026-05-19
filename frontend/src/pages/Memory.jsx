@@ -132,8 +132,8 @@ function FactCard({ entry, onEdit, onDelete }) {
   )
 }
 
-// ── Main page (Profile-B layout) ──────────────────────────────────────────────
-export default function Memory() {
+// ── Shared hook ──────────────────────────────────────────────────────────────
+function useMemoryLogic() {
   const { addToast } = useUIStore()
   const [entries,     setEntries]     = useState([])
   const [loading,     setLoading]     = useState(false)
@@ -174,7 +174,6 @@ export default function Memory() {
     finally { setSaving(false) }
   }
 
-  // Filter + group
   const filtered = useMemo(() => {
     if (!search) return entries
     const q = search.toLowerCase()
@@ -188,7 +187,6 @@ export default function Memory() {
   const groups  = useMemo(() => groupByProfile(filtered), [filtered])
   const profiles = Object.keys(groups).sort()
 
-  // Auto-select first profile
   useEffect(() => {
     if (profiles.length > 0 && (!activeProfile || !profiles.includes(activeProfile))) {
       setActiveProfile(profiles[0])
@@ -196,6 +194,72 @@ export default function Memory() {
   }, [profiles.join(',')])
 
   const activeFacts = activeProfile ? (groups[activeProfile] || []) : []
+
+  return { entries, loading, refreshing, search, setSearch, showAdd, setShowAdd, newKey, setNewKey, newValue, setNewValue, saving, editEntry, setEditEntry, editValue, setEditValue, editSaving, handleRefresh, handleDelete, handleEditSave, handleAdd, filtered, groups, profiles, activeProfile, setActiveProfile, activeFacts, addToast }
+}
+
+// ── Settings panel (embedded in Settings › General › Memory) ─────────────────
+export function MemoryPanel() {
+  const s = useMemoryLogic()
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder="Search memory…" className="z-input" style={{ paddingLeft: 34, height: 36, fontSize: 12 }} />
+        </div>
+        <button onClick={() => s.setShowAdd(true)} className="z-btn-primary" style={{ padding: '0 14px', height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, flexShrink: 0 }}>
+          + Add
+        </button>
+      </div>
+
+      {s.loading && <div style={{ height: 60, borderRadius: 12, background: 'var(--surface-2)', opacity: 0.6 }} />}
+
+      {!s.loading && s.entries.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--ink-faint)', fontSize: 12 }}>No memory entries yet</div>
+      )}
+
+      {s.profiles.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {s.profiles.map(p => (
+            <button key={p} onClick={() => s.setActiveProfile(p)} style={{
+              padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
+              background: s.activeProfile === p ? 'var(--ink)' : 'var(--surface-2)',
+              color: s.activeProfile === p ? 'var(--bg)' : 'var(--ink-mute)',
+              border: s.activeProfile === p ? 'none' : '0.5px solid var(--line)',
+            }}>{p}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <AnimatePresence>
+          {s.activeFacts.map(e => <FactCard key={e.key} entry={e} onEdit={(entry, val) => { s.setEditEntry(entry); s.setEditValue(val) }} onDelete={s.handleDelete} />)}
+        </AnimatePresence>
+      </div>
+
+      {/* Add / Edit modals */}
+      <Modal open={s.showAdd} onClose={() => s.setShowAdd(false)} title="Add Memory">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Input label="Key" placeholder="e.g. youval_coffee" value={s.newKey} onChange={e => s.setNewKey(e.target.value)} />
+          <Input label="Value" placeholder="e.g. loves espresso" value={s.newValue} onChange={e => s.setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && s.handleAdd()} />
+          <button onClick={s.handleAdd} disabled={!s.newKey.trim() || !s.newValue.trim() || s.saving} className="z-btn-primary" style={{ width: '100%' }}>{s.saving ? 'Saving…' : 'Save to memory'}</button>
+        </div>
+      </Modal>
+      <Modal open={!!s.editEntry} onClose={() => s.setEditEntry(null)} title="Edit Memory">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Input label="Key" value={s.editEntry?.key || ''} disabled />
+          <Input label="Value" value={s.editValue} onChange={e => s.setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && s.handleEditSave()} autoFocus />
+          <button onClick={s.handleEditSave} disabled={!s.editValue.trim() || s.editSaving} className="z-btn-primary" style={{ width: '100%' }}>{s.editSaving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+// ── Main page (Profile-B layout) ──────────────────────────────────────────────
+export default function Memory() {
+  const { entries, loading, refreshing, search, setSearch, showAdd, setShowAdd, newKey, setNewKey, newValue, setNewValue, saving, editEntry, setEditEntry, editValue, setEditValue, editSaving, handleRefresh, handleDelete, handleEditSave, handleAdd, filtered, groups, profiles, activeProfile, setActiveProfile, activeFacts } = useMemoryLogic()
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>

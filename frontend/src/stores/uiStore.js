@@ -9,12 +9,13 @@ export const useUIStore = create(
       toggleTheme: () =>
         set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
       setTheme: (theme) => set({ theme }),
-      addToast: (message, type = 'info', duration = 3500) => {
+      addToast: (message, type = 'info', duration, detail) => {
         const id = Date.now()
-        set((s) => ({ toasts: [...s.toasts, { id, message, type }] }))
+        const ms = duration ?? (type === 'error' ? 7000 : 3000)
+        set((s) => ({ toasts: [...s.toasts, { id, message, type, detail }] }))
         setTimeout(() => {
           set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
-        }, duration)
+        }, ms)
       },
       removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     }),

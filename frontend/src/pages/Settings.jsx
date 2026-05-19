@@ -24,6 +24,9 @@ import {
   getPresenceZone, savePresenceZone,
 } from '../lib/api'
 import AdminSettings from './AdminSettings'
+import { MemoryPanel } from './Memory'
+import QuickAsks from './QuickAsks'
+import VirtualDevices from './VirtualDevices'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -711,8 +714,17 @@ export default function Settings() {
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
   ]
 
+  const applyLanguage = (lang) => {
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr'
+    document.documentElement.lang = lang === 'he' ? 'he' : 'en'
+  }
+
   const loadAll = () => {
-    getGeneralSettings().then(g => setGeneral({ language: 'en', timezone: 'UTC', ...g })).catch(() => {})
+    getGeneralSettings().then(g => {
+      const merged = { language: 'en', timezone: 'UTC', ...g }
+      setGeneral(merged)
+      applyLanguage(merged.language)
+    }).catch(() => {})
     getAuthStatus().then(auth => {
       setUsername(auth?.username || '')
       setPwForm(f => ({ ...f, username: auth?.username || '' }))
@@ -730,7 +742,11 @@ export default function Settings() {
 
   const saveGeneral = async () => {
     setSavingGeneral(true)
-    try { await patchGeneralSettings(general); addToast('Saved', 'success') }
+    try {
+      await patchGeneralSettings(general)
+      applyLanguage(general.language)
+      addToast('Saved', 'success')
+    }
     catch { addToast('Failed to save', 'error') }
     finally { setSavingGeneral(false) }
   }
@@ -757,7 +773,7 @@ export default function Settings() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>System · local</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Settings</h1>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Settings</h1>
         </div>
         {activeTab === 'general' && (
           <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
@@ -876,11 +892,38 @@ export default function Settings() {
             </div>
           )}
 
+          {/* Quick Asks */}
+          <div style={{ marginBottom: 22 }}>
+            <SectionTitle>Quick Asks</SectionTitle>
+            <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: '16px 16px 8px' }}>
+              <QuickAsks embedded />
+            </div>
+          </div>
+
+          {/* Memory */}
+          <div style={{ marginBottom: 22 }}>
+            <SectionTitle>Memory</SectionTitle>
+            <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
+              <MemoryPanel />
+            </div>
+          </div>
+
         </>
       )}
 
       {/* ── Admin tab ──────────────────────────────────────────────────────────── */}
-      {activeTab === 'admin' && isAdmin && <AdminSettings />}
+      {activeTab === 'admin' && isAdmin && (
+        <>
+          <AdminSettings />
+
+          {/* Capabilities (Virtual Devices) — admin only */}
+          <div style={{ marginTop: 32 }}>
+            <SectionTitle>Capabilities</SectionTitle>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14 }}>Virtual devices and custom capabilities for automation triggers.</p>
+            <VirtualDevices embedded />
+          </div>
+        </>
+      )}
 
     </div>
   )

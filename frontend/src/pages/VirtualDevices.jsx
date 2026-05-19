@@ -447,7 +447,7 @@ function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function VirtualDevices() {
+export default function VirtualDevices({ embedded = false }) {
   const { addToast } = useUIStore()
   const { getRooms } = useDeviceStore()
   const [devices, setDevices] = useState([])
@@ -554,20 +554,29 @@ export default function VirtualDevices() {
   }, {})
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Software-only devices</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Capabilities</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
-            {devices.filter(d => d.enabled).length} active · {devices.length} total
-          </p>
+    <div style={embedded ? {} : { maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+      {/* Header — hidden when embedded */}
+      {!embedded && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <p className="z-eyebrow" style={{ marginBottom: 4 }}>Software-only devices</p>
+            <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Capabilities</h1>
+            <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
+              {devices.filter(d => d.enabled).length} active · {devices.length} total
+            </p>
+          </div>
+          <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
+            <Plus size={13} /> Add capability
+          </button>
         </div>
-        <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-          <Plus size={13} /> Add capability
-        </button>
-      </div>
+      )}
+      {embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+          <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+            <Plus size={12} /> Add capability
+          </button>
+        </div>
+      )}
 
       {/* Category filter */}
       {devices.length > 0 && (

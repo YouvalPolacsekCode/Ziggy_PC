@@ -71,8 +71,10 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -16 }}
       style={{
         display: 'flex', flexDirection: 'column',
-        padding: '12px 14px', borderRadius: 11,
-        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        padding: '11px 12px', borderRadius: 12,
+        background: 'var(--surface)',
+        border: '0.5px solid var(--line)',
+        borderLeft: isOverdue ? '3px solid var(--err)' : '0.5px solid var(--line)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -353,7 +355,7 @@ export default function Tasks() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Tasks</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0, lineHeight: 1 }}>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>
             {pendingCount > 0 ? `${pendingCount} pending` : 'All clear'}
           </h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
@@ -370,20 +372,17 @@ export default function Tasks() {
         </button>
       </div>
 
-      {/* Filter chips */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 22, flexWrap: 'wrap' }}>
+      {/* Filter tabs — segmented pill */}
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 22 }}>
         {FILTERS.map(f => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            style={{
-              padding: '5px 12px', borderRadius: 999,
-              background: filter === f.id ? 'var(--ink)' : 'var(--surface)',
-              color:      filter === f.id ? 'var(--bg)'  : 'var(--ink-mute)',
-              border: filter === f.id ? 'none' : '0.5px solid var(--line)',
-              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{
+            flex: 1, padding: '7px 0', borderRadius: 9, fontFamily: 'inherit', cursor: 'pointer',
+            background: filter === f.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 12, fontWeight: 600,
+            color: filter === f.id ? 'var(--ink)' : 'var(--ink-mute)',
+            boxShadow: filter === f.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+            transition: 'background 0.15s',
+          }}>
             {f.label}
           </button>
         ))}

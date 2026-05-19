@@ -30,11 +30,58 @@ function VoiceWave({ active, size = 22 }) {
   )
 }
 
+// ── Pattern detected card ─────────────────────────────────────────────────────
+function PatternCard({ msg, onSaveRoutine }) {
+  const [saved, setSaved] = useState(false)
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+      style={{ maxWidth: '92%', alignSelf: 'flex-start' }}
+    >
+      <div style={{
+        padding: 14, borderRadius: 14,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
+          <span className="z-mono" style={{ fontSize: 10, color: 'var(--accent)', letterSpacing: '0.12em', fontWeight: 600 }}>PATTERN DETECTED</span>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 10, lineHeight: 1.45 }}>
+          {msg.text} Save as a routine called <strong>"{msg.patternLabel}"</strong>?
+        </div>
+        {!saved ? (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setSaved(true)}
+              style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Save routine
+            </button>
+            <button
+              style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Not now
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ok)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+            Routine saved!
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 // ── Message bubble (Chat-A) ───────────────────────────────────────────────────
 function Message({ msg }) {
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
   const rtl     = isHebrew(msg.text)
+
+  // Pattern card
+  if (msg.isPattern) return <PatternCard msg={msg} />
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -62,25 +109,32 @@ function Message({ msg }) {
           background:  isUser ? 'var(--ink)'    : 'var(--surface)',
           color:       isUser ? 'var(--bg)'     : 'var(--ink)',
           border:      isError
-            ? '0.5px solid color-mix(in srgb, #e05050 60%, var(--line))'
+            ? '0.5px solid color-mix(in srgb, var(--err) 60%, var(--line))'
             : isUser ? 'none' : '0.5px solid var(--line)',
           fontSize: 14.5, lineHeight: 1.45,
           textAlign: rtl ? 'right' : 'left',
         }}
       >
-        <p style={{ margin: 0, color: isError ? '#c94040' : undefined }}>{msg.text}</p>
+        <p style={{ margin: 0, color: isError ? 'var(--err)' : undefined }}>{msg.text}</p>
         <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: rtl ? 'left' : 'right' }}>
           {formatTime(msg.ts)}
         </p>
       </div>
 
-      {/* What Ziggy did — mono ops strip */}
+      {/* Action chips — green check bubbles per design */}
       {msg.actions && msg.actions.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 6 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxWidth: '88%' }}>
           {msg.actions.map((a, i) => (
-            <span key={i} style={{ fontSize: 10, color: 'var(--ok)', fontFamily: '"IBM Plex Mono", monospace', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span>↳</span> {a}
-            </span>
+            <div key={i} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 10px', borderRadius: 999,
+              background: 'color-mix(in srgb, var(--ok) 10%, var(--surface))',
+              border: '0.5px solid color-mix(in srgb, var(--ok) 35%, var(--line))',
+              fontSize: 11, color: 'var(--ink-2)',
+            }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+              {a}
+            </div>
           ))}
         </div>
       )}
@@ -197,7 +251,21 @@ export default function AIChat() {
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendChat(t, historyForApi)
-      addMessage('assistant', res.reply || '…', res.ok !== false)
+      // Build action chip labels from the response
+      const actions = res.actions?.map(a => {
+        if (typeof a === 'string') return a
+        if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
+        if (a.label) return a.label
+        return String(a)
+      }) || []
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      // Pattern suggestion card
+      if (res.pattern_suggestion) {
+        addMessage('pattern', res.pattern_suggestion.message || 'Pattern detected', true, {
+          patternLabel: res.pattern_suggestion.suggested_name || 'Routine',
+          isPattern: true,
+        })
+      }
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
     } catch (e) {
@@ -214,7 +282,8 @@ export default function AIChat() {
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendDirectIntent(qa.intent, qa.params)
-      addMessage('assistant', res.reply || '…', res.ok !== false)
+      const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
       setOrbState('speaking')
       setTimeout(() => setOrbState('idle'), 2500)
     } catch (e) {
@@ -341,9 +410,7 @@ export default function AIChat() {
       }}>
         <div>
           <p className="z-eyebrow">Ziggy AI</p>
-          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', margin: '2px 0 0', color: 'var(--ink)' }}>
-            Chat
-          </h1>
+          <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>Chat</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Voice status indicator */}
@@ -410,22 +477,33 @@ export default function AIChat() {
 
             {/* Quick ask chips */}
             {quickAsks.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 400 }}>
-                {quickAsks.map(qa => (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 420 }}>
+                {quickAsks.slice(0, 6).map(qa => (
                   <button
                     key={qa.id}
                     onClick={() => handleDirectQuickAsk(qa)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '7px 12px', borderRadius: 999,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '8px 14px', borderRadius: 999, flexShrink: 0,
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
                       fontSize: 12, fontWeight: 500, color: 'var(--ink-2)',
                       cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
-                    {qa.icon && <span>{qa.icon}</span>}
+                    {qa.icon && <span style={{ fontSize: 14 }}>{qa.icon}</span>}
                     {qa.label}
                   </button>
+                ))}
+              </div>
+            )}
+            {!quickAsks.length && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 380 }}>
+                {['Goodnight', 'Movie time', 'Who is home?', 'Good morning'].map(s => (
+                  <button key={s} onClick={() => handleSend(s)} style={{
+                    padding: '7px 14px', borderRadius: 999,
+                    background: 'var(--surface)', border: '0.5px solid var(--line)',
+                    fontSize: 12, color: 'var(--ink-2)', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                  }}>{s}</button>
                 ))}
               </div>
             )}
@@ -445,30 +523,51 @@ export default function AIChat() {
         </div>
       )}
 
+      {/* Suggestion chips above input (when has messages) */}
+      {hasMessages && quickAsks.length > 0 && (
+        <div style={{ padding: '8px 16px 0', display: 'flex', gap: 6, overflowX: 'auto', flexShrink: 0 }} className="scrollbar-thin">
+          {quickAsks.slice(0, 4).map(qa => (
+            <div key={qa.id} onClick={() => handleDirectQuickAsk(qa)} style={{
+              padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer',
+              background: 'var(--surface)', border: '0.5px solid var(--line)',
+              fontSize: 11, color: 'var(--ink-2)', fontWeight: 500,
+            }}>
+              {qa.icon && <span style={{ marginRight: 4 }}>{qa.icon}</span>}
+              {qa.label}
+            </div>
+          ))}
+          {!quickAsks.length && ['Goodnight', 'Movie time', 'Who is home?'].map(s => (
+            <div key={s} onClick={() => handleSend(s)} style={{ padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer', background: 'var(--surface)', border: '0.5px solid var(--line)', fontSize: 11, color: 'var(--ink-2)', fontWeight: 500 }}>{s}</div>
+          ))}
+        </div>
+      )}
+
       {/* ── Composer ── */}
       <div style={{
-        padding: '10px 16px 14px',
+        padding: '10px 16px 18px',
         borderTop: '0.5px solid var(--line)',
-        display: 'flex', alignItems: 'center', gap: 8,
+        display: 'flex', alignItems: 'center', gap: 10,
         flexShrink: 0,
       }}>
         <div style={{
-          flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+          flex: 1, display: 'flex', alignItems: 'center', gap: 10,
           background: 'var(--surface)', border: '0.5px solid var(--line)',
-          borderRadius: 999, padding: '9px 14px',
+          borderRadius: 22, padding: '12px 16px',
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 12h2"/></svg>
+          {/* Sparkle icon */}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/>
+          </svg>
           <input
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder="Ask Ziggy…"
+            placeholder={`Try: "open shades and start coffee"`}
             dir={isHebrew(input) ? 'rtl' : 'ltr'}
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
-              fontSize: 14, color: 'var(--ink)',
-              fontFamily: 'inherit',
+              fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit',
             }}
           />
         </div>
@@ -481,12 +580,13 @@ export default function AIChat() {
           whileTap={{ scale: 0.9 }}
           style={{
             width: 44, height: 44, borderRadius: '50%',
-            background: input.trim() ? 'var(--ink)' : (listening ? 'var(--accent)' : 'var(--surface)'),
-            color: input.trim() ? 'var(--bg)' : (listening ? '#fff' : 'var(--ink-2)'),
-            border: input.trim() || listening ? 'none' : '0.5px solid var(--line)',
+            background: input.trim() ? 'var(--ink)' : 'var(--accent)',
+            color: '#fff',
+            border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', flexShrink: 0,
             touchAction: 'none', userSelect: 'none',
+            boxShadow: 'var(--shadow-md)',
           }}
         >
           {input.trim() ? (
@@ -494,7 +594,7 @@ export default function AIChat() {
           ) : listening ? (
             <VoiceWave active size={18} />
           ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
           )}
         </motion.button>
       </div>

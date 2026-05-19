@@ -16,6 +16,7 @@ import { cn } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
+import { getRoomPhoto } from '../lib/roomPhotos'
 
 function _fmtAgo(isoOrDateStr) {
   if (!isoOrDateStr) return ''
@@ -429,17 +430,32 @@ function buildGroupFilters(entities, irEntities) {
 // (DOMAIN_GROUPS and domainGroup imported at top of file)
 
 // ── Collapsible group header ───────────────────────────────────────────────────
-function CollapsibleGroup({ label, count, open, onToggle, children, action }) {
+function CollapsibleGroup({ label, count, open, onToggle, children, action, room, onRoomClick }) {
+  const photo = room ? getRoomPhoto(room) : null
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+    <div style={{ marginBottom: 20 }}>
+      {/* Room header — matches design's RoomBlock header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px 10px' }}>
+        {photo && (
+          <div style={{ width: 32, height: 32, borderRadius: 9, overflow: 'hidden', background: 'var(--surface-2)', flexShrink: 0 }}>
+            <img src={photo} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        )}
         <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.01em' }}>{label}</span>
-          {count != null && <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{count}</span>}
-          <span style={{ marginLeft: 'auto', color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
+            {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginLeft: 6 }}>{count} devices</span>}
+          </div>
+          <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </span>
         </button>
+        {onRoomClick && (
+          <button onClick={onRoomClick} style={{ padding: '5px 10px', borderRadius: 8, background: 'transparent', border: '0.5px solid var(--line)', fontSize: 10, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>
+            Open room
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        )}
         {action && <div style={{ flexShrink: 0 }}>{action}</div>}
       </div>
       <AnimatePresence initial={false}>
@@ -840,6 +856,9 @@ const DeviceCard = forwardRef(function DeviceCard({
   const isActive = !isOff
   const showStatusBadge = !isIr && !linkedIr && ziggyStatus && ziggyStatus !== 'connected' && STATUS_LABEL[ziggyStatus]
 
+  // Controls collapsed by default — expand on demand
+  const [controlsExpanded, setControlsExpanded] = useState(false)
+
   // IR assumed-state picker (standalone IR cards only)
   const [showStatePicker, setShowStatePicker] = useState(false)
   const irStateOptions = IR_STATE_OPTIONS_MAP[irDevice?.type] || IR_STATE_OPTIONS_MAP.default
@@ -860,19 +879,19 @@ const DeviceCard = forwardRef(function DeviceCard({
       <Card className={cn('p-4 transition-all duration-200', isActive && !isHidden && 'shadow-card-hover')}>
         {/* ── Card header ── */}
         <div className="flex items-start justify-between mb-3">
-          <div className={cn(
-            'w-10 h-10 rounded-xl flex items-center justify-center text-xl relative',
-            isActive ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
-          )}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, fontSize: 21,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+            background: isActive ? 'var(--ink)' : 'var(--surface-2)',
+            color: isActive ? 'var(--bg)' : 'var(--ink)',
+          }}>
             {domainIcon(entity.domain, entity.device_class)}
-            {isIr && (
-              <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none tracking-tight">IR</span>
-            )}
-            {linkedIr && (
-              <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none tracking-tight">IR</span>
+            {(isIr || linkedIr) && (
+              <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'var(--accent)', color: '#fff', fontSize: 6, fontWeight: 700, padding: '1px 4px', borderRadius: 3, lineHeight: 1.2 }}>IR</span>
             )}
             {!isIr && !linkedIr && ziggyStatus && STATUS_DOT[ziggyStatus] && (
-              <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900', STATUS_DOT[ziggyStatus])} />
+              <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2', STATUS_DOT[ziggyStatus])} style={{ borderColor: 'var(--surface)' }} />
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -988,32 +1007,48 @@ const DeviceCard = forwardRef(function DeviceCard({
           </p>
         )}
 
-        {/* ── Controls ── */}
+        {/* ── Controls — collapsible ── */}
         {!isHidden && (
-          isIr ? (
-            // Standalone IR card: full remote drawer trigger
-            <IRRemoteButton irDevice={irDevice} onCommand={onIrCommand} onChannel={onIrChannel} />
-          ) : linkedIr ? (
-            // Merged card: HA controls + IR Power-On + IR Remote drawer trigger
-            <>
-              {/* Power On via IR — shown prominently when device is off/unavailable */}
-              {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
-                <button
-                  onClick={() => onIrCommand(linkedIr.id, 'power')}
-                  className="w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-xl bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 text-xs font-semibold hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors border border-violet-200 dark:border-violet-800/50"
-                >
-                  ⏻ Turn On via IR
-                </button>
-              )}
-              {/* Standard HA controls (play/pause, volume, sources, climate modes, etc.) */}
-              <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-              {/* IR Remote drawer trigger */}
-              <IRRemoteButton irDevice={linkedIr} onCommand={onIrCommand} onChannel={onIrChannel} />
-            </>
-          ) : (
-            // Regular HA entity
-            <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-          )
+          <>
+            {/* Collapse/expand toggle bar */}
+            <button
+              onClick={() => setControlsExpanded(v => !v)}
+              style={{
+                width: '100%', marginTop: 10, padding: '6px 0',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--ink-faint)', fontSize: 11, fontFamily: 'inherit', fontWeight: 500,
+                borderTop: '0.5px solid var(--line)', borderRadius: 0,
+              }}
+            >
+              {controlsExpanded ? 'Hide controls' : 'Show controls'}
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </button>
+
+            {controlsExpanded && (
+              isIr ? (
+                <IRRemoteButton irDevice={irDevice} onCommand={onIrCommand} onChannel={onIrChannel} />
+              ) : linkedIr ? (
+                <>
+                  {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
+                    <button
+                      onClick={() => onIrCommand(linkedIr.id, 'power')}
+                      style={{ width: '100%', marginTop: 8, padding: '8px 0', borderRadius: 10, background: 'color-mix(in srgb, var(--accent) 10%, var(--surface))', color: 'var(--accent)', border: '0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      ⏻ Turn On via IR
+                    </button>
+                  )}
+                  <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
+                  <IRRemoteButton irDevice={linkedIr} onCommand={onIrCommand} onChannel={onIrChannel} />
+                </>
+              ) : (
+                <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
+              )
+            )}
+          </>
         )}
 
         {showAssign && !isIr && (
@@ -1231,7 +1266,7 @@ export default function Devices() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Home Assistant entities</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Devices</h1>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Devices</h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
             {activeCount} of {getTotalControllable()} active · {entities.length} total
             {hiddenCount > 0 && ` · ${hiddenCount} hidden`}
@@ -1401,7 +1436,7 @@ export default function Devices() {
         return (
           <>
             {roomGroups.map(({ room, items }) => (
-              <CollapsibleGroup key={room.id} label={room.name} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)}>
+              <CollapsibleGroup key={room.id} label={room.name} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}

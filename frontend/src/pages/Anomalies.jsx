@@ -29,8 +29,7 @@ function humanRoom(roomId) {
   return roomId.replace(/_/g, ' ')
 }
 
-const SEV_COLOR = { critical: '#ef4444', warning: '#f97316', info: '#6366f1' }
-const SEV_BG    = { critical: 'color-mix(in srgb, #ef4444 10%, var(--surface))', warning: 'color-mix(in srgb, #f97316 10%, var(--surface))', info: 'var(--surface)' }
+const SEV_COLOR = { critical: 'var(--err)', warning: 'var(--warn)', info: 'var(--info)' }
 const RULE_LABELS = {
   'ANOM-01': 'Away + lights on',
   'ANOM-02': 'Climate + empty room',
@@ -38,6 +37,22 @@ const RULE_LABELS = {
   'ANOM-04': 'Motion at night',
   'ANOM-05': 'No motion 24h',
   'ANOM-06': 'Device left on',
+}
+
+// Map anomaly message keywords → icon SVG paths
+function anomalyIcon(message = '', ruleId = '') {
+  const m = message.toLowerCase()
+  const r = ruleId.toLowerCase()
+  if (m.includes('faucet') || m.includes('water') || r.includes('water')) return <path d="M12 2s7 8 7 13a7 7 0 1 1-14 0c0-5 7-13 7-13z"/>
+  if (m.includes('door') || r.includes('door')) return <><rect x="6" y="3" width="12" height="18" rx="1"/><circle cx="15" cy="12" r="0.7" fill="currentColor"/></>
+  if (m.includes('window') || r.includes('window')) return <><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M12 4v16M4 12h16"/></>
+  if (m.includes('motion') || r.includes('motion') || r.includes('anom-04') || r.includes('anom-05')) return <><circle cx="12" cy="5" r="2"/><path d="M8 22l2-6 2 2 2-2 2 6M9 12l3 3 3-3"/></>
+  if (m.includes('light') || r.includes('anom-01')) return <><path d="M9 18h6M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.7.7 1 1.6 1 2.5v1h6v-1c0-.9.3-1.8 1-2.5A6 6 0 0 0 12 2z"/></>
+  if (m.includes('ac') || m.includes('climate') || r.includes('anom-02')) return <path d="M14 14.76V4a2 2 0 1 0-4 0v10.76a4 4 0 1 0 4 0z"/>
+  if (m.includes('offline') || m.includes('connection') || m.includes('wifi')) return <><path d="M2 9a16 16 0 0 1 20 0M5 13a11 11 0 0 1 14 0M8.5 16.5a6 6 0 0 1 7 0M12 20h.01"/></>
+  if (m.includes('camera')) return <><rect x="3" y="6" width="14" height="12" rx="2"/><path d="M17 10l4-2v8l-4-2z"/></>
+  // default: bolt
+  return <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>
 }
 
 // ── Snooze picker ─────────────────────────────────────────────────────────────
@@ -125,84 +140,64 @@ function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
   )
 }
 
-// ── Active anomaly card ───────────────────────────────────────────────────────
+// ── Active anomaly card — matches design exactly ──────────────────────────────
 function ActiveCard({ anomaly, roomId, onSnoozed }) {
-  const sev    = anomaly.severity || 'warning'
-  const color  = SEV_COLOR[sev] || SEV_COLOR.warning
-  const bg     = SEV_BG[sev]    || SEV_BG.warning
-  const conf   = anomaly.confidence ?? 1.0
-  const label  = RULE_LABELS[anomaly.rule_id] || anomaly.rule_id
+  const sev   = anomaly.severity || 'warning'
+  const color = SEV_COLOR[sev] || SEV_COLOR.warning
+  const room  = humanRoom(roomId)
 
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
       transition={{ duration: 0.16 }}
-      style={{ padding: '14px 16px', borderRadius: 14, background: bg, border: `0.5px solid ${color}33` }}
+      style={{
+        display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 14,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        borderLeft: `3px solid ${color}`,
+      }}
     >
-      {/* Top row */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
-        {/* Severity dot */}
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%', background: color,
-          flexShrink: 0, marginTop: 5,
-          boxShadow: sev === 'critical' ? `0 0 6px ${color}` : 'none',
-        }} />
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Rule + room */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-            <span style={{
-              fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-              color, fontFamily: '"IBM Plex Mono", monospace',
-            }}>
-              {anomaly.rule_id}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{label}</span>
-            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', flexShrink: 0 }}>
-              {humanRoom(roomId)}
-            </span>
-          </div>
-
-          {/* Message */}
-          <p style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.45, margin: 0 }}>
-            {anomaly.message}
-          </p>
-          {anomaly.context === 'quiet_hours' && (
-            <span style={{
-              display: 'inline-block', marginTop: 4,
-              fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
-              textTransform: 'uppercase', fontFamily: '"IBM Plex Mono", monospace',
-              color: 'var(--ink-faint)', background: 'var(--bg-2)',
-              borderRadius: 4, padding: '2px 6px',
-            }}>
-              during quiet hours
-            </span>
-          )}
-        </div>
+      {/* Tinted icon box */}
+      <div style={{
+        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+        background: `color-mix(in srgb, ${color} 10%, var(--surface-2))`,
+        color,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          {anomalyIcon(anomaly.message, anomaly.rule_id)}
+        </svg>
       </div>
 
-      {/* Bottom row: meta + actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 18 }}>
-        {/* Confidence */}
-        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-          {Math.round(conf * 100)}% conf
-        </span>
-        <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>·</span>
-        <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{timeAgo(anomaly.since)}</span>
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Title + time */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.3 }}>{anomaly.message}</span>
+          <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeAgo(anomaly.since)}</span>
+        </div>
 
-        {/* Severity chip */}
-        <span style={{
-          marginLeft: 'auto',
-          fontSize: 9, padding: '2px 7px', borderRadius: 5,
-          background: `color-mix(in srgb, ${color} 14%, transparent)`,
-          color, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '0.04em',
-        }}>
-          {sev}
-        </span>
+        {/* Subtitle */}
+        {anomaly.details && (
+          <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.4 }}>{anomaly.details}</div>
+        )}
+        {!anomaly.details && anomaly.context === 'quiet_hours' && (
+          <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2 }}>During quiet hours</div>
+        )}
 
-        <SnoozeMenu roomId={roomId} ruleId={anomaly.rule_id} onSnoozed={onSnoozed} />
+        {/* Room chip + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+          {room && room !== 'Home' && (
+            <span className="z-mono" style={{
+              fontSize: 10, color: 'var(--ink-faint)', padding: '2px 8px', borderRadius: 999,
+              background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+              letterSpacing: '0.02em',
+            }}>{room}</span>
+          )}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <SnoozeMenu roomId={roomId} ruleId={anomaly.rule_id} onSnoozed={onSnoozed} />
+          </div>
+        </div>
       </div>
 
       {/* Suggested action hint */}
@@ -367,85 +362,44 @@ export default function Anomalies() {
   }).length
 
   const tabs = [
-    { id: 'active',  label: 'Active',  count: activeList.length },
-    { id: 'history', label: 'History', count: null },
-    { id: 'rules',   label: 'Rules',   count: null },
+    { id: 'active',  label: `All · ${activeList.length || 0}` },
+    { id: 'history', label: 'History' },
+    { id: 'rules',   label: 'Rules' },
   ]
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 40px' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+      {/* Header — matches design: eyebrow + title + Mark all read */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Smart home monitoring</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0, lineHeight: 1 }}>
-            Alerts
-          </h1>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 6, lineHeight: 1.5, maxWidth: 400 }}>
-            Active anomalies detected by Ziggy, with history and snooze controls.
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>
+            Today{criticalCount + warningCount > 0 ? ` · ${criticalCount + warningCount} need attention` : ''}
           </p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Alerts</h1>
         </div>
         <button
           onClick={loadActive}
           className="z-btn-secondary"
-          style={{ padding: '8px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
+          style={{ padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 500, flexShrink: 0 }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-            <path d="M21 3v5h-5"/>
-            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-            <path d="M8 16H3v5"/>
-          </svg>
-          Refresh
+          Mark all read
         </button>
       </div>
 
-      {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
-        {[
-          { label: 'Critical',    value: criticalCount, tint: '#ef4444' },
-          { label: 'Warnings',    value: warningCount,  tint: '#f97316' },
-          { label: 'Today',       value: todayCount,    tint: 'var(--ink-mute)' },
-        ].map(({ label, value, tint }) => (
-          <div key={label} style={{ padding: '10px 12px', borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center' }}>
-            <p style={{
-              fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.01em',
-              fontFamily: '"IBM Plex Mono", monospace',
-              color: value > 0 ? tint : 'var(--ink-faint)',
-            }}>
-              {value}
-            </p>
-            <p className="z-eyebrow" style={{ marginTop: 4 }}>{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+      {/* Tabs — segmented pill */}
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 18 }}>
         {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            style={{
-              padding: '5px 12px', borderRadius: 999,
-              background: tab === t.id ? 'var(--ink)' : 'var(--surface)',
-              color: tab === t.id ? 'var(--bg)' : 'var(--ink-mute)',
-              border: tab === t.id ? 'none' : '0.5px solid var(--line)',
-              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', gap: 5,
-            }}
-          >
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex: 1, padding: '7px 0', borderRadius: 9, fontFamily: 'inherit', cursor: 'pointer',
+            background: tab === t.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 12, fontWeight: 600,
+            color: tab === t.id ? 'var(--ink)' : 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+          }}>
             {t.label}
-            {t.count > 0 && (
-              <span style={{
-                background: tab === t.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)',
-                color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999,
-                fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700,
-              }}>
-                {t.count}
-              </span>
-            )}
+            {t.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t.count}</span>}
           </button>
         ))}
       </div>
@@ -471,20 +425,34 @@ export default function Anomalies() {
             </motion.div>
           )}
 
-          {!loading && activeList.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <AnimatePresence mode="popLayout">
-                {activeList.map((a, i) => (
-                  <ActiveCard
-                    key={`${a._roomId}:${a.rule_id}`}
-                    anomaly={a}
-                    roomId={a._roomId}
-                    onSnoozed={loadActive}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
+          {!loading && activeList.length > 0 && (() => {
+            const critical = activeList.filter(a => a.severity === 'critical' || a.severity === 'warning')
+            const info     = activeList.filter(a => a.severity === 'info')
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {critical.length > 0 && (
+                  <>
+                    <p className="z-eyebrow" style={{ marginBottom: 4 }}>Needs attention</p>
+                    <AnimatePresence mode="popLayout">
+                      {critical.map(a => (
+                        <ActiveCard key={`${a._roomId}:${a.rule_id}`} anomaly={a} roomId={a._roomId} onSnoozed={loadActive} />
+                      ))}
+                    </AnimatePresence>
+                  </>
+                )}
+                {info.length > 0 && (
+                  <>
+                    <p className="z-eyebrow" style={{ marginBottom: 4, marginTop: critical.length > 0 ? 8 : 0 }}>Earlier today</p>
+                    <AnimatePresence mode="popLayout">
+                      {info.map(a => (
+                        <ActiveCard key={`${a._roomId}:${a.rule_id}`} anomaly={a} roomId={a._roomId} onSnoozed={loadActive} />
+                      ))}
+                    </AnimatePresence>
+                  </>
+                )}
+              </div>
+            )
+          })()}
         </>
       )}
 

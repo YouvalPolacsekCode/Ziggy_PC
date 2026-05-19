@@ -205,7 +205,7 @@ function LiveModal({ camera, onClose }) {
             borderRadius: '14px 14px 0 0',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--err)', display: 'inline-block' }} />
               <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{camera.name}</span>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontFamily: '"IBM Plex Mono", monospace' }}>LIVE</span>
             </div>
@@ -245,7 +245,7 @@ function MotionLog({ events }) {
         >
           <span style={{
             width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-            background: ev.type === 'camera' ? '#3b82f6' : '#ef4444',
+            background: ev.type === 'camera' ? 'var(--info)' : 'var(--err)',
           }} />
           <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ev.name || friendlyName(ev.entity_id)}

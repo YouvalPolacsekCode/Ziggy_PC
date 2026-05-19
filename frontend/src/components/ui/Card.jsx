@@ -1,11 +1,11 @@
-export function Card({ className, children, onClick, style, ...props }) {
+export function Card({ className, children, onClick, soft, style, ...props }) {
   return (
     <div
       onClick={onClick}
       style={{
-        background: 'var(--surface)',
+        background: soft ? 'var(--surface-2)' : 'var(--surface)',
         border: '0.5px solid var(--line)',
-        borderRadius: 14,
+        borderRadius: soft ? 16 : 18,
         cursor: onClick ? 'pointer' : undefined,
         transition: onClick ? 'border-color 0.12s' : undefined,
         ...style,
@@ -21,9 +21,20 @@ export function Card({ className, children, onClick, style, ...props }) {
 }
 
 export function CardHeader({ className, children, style }) {
-  return <div className={className} style={{ padding: '14px 16px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...style }}>{children}</div>
+  return (
+    <div
+      className={className}
+      style={{ padding: '14px 16px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...style }}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function CardBody({ className, children, style }) {
-  return <div className={className} style={{ padding: '0 16px 14px', ...style }}>{children}</div>
+  return (
+    <div className={className} style={{ padding: '0 16px 14px', ...style }}>
+      {children}
+    </div>
+  )
 }
