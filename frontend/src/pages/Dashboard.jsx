@@ -133,20 +133,19 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
   )
 }
 
-// ── Rooms carousel — fixed snap-slot, inner photo grows for active tile ───────
-// Outer slot size is constant → snap points never shift → no jump.
-// Inner photo width + height animate independently.
-const SLOT_W      = 204   // outer snap-slot (constant)
-const SLOT_H      = 170   // outer slot height (constant)
-const ACTIVE_W    = 204   // inner width when active — fills slot
-const ACTIVE_H    = 164   // inner height when active
-const INACTIVE_W  = 122   // inner width when inactive — narrower
-const INACTIVE_H  = 112   // inner height when inactive — shorter
+// ── Rooms carousel — production-grade centered snap ───────────────────────────
+// One dominant card fills ~78% of the viewport. Neighbouring tiles peek ~24px
+// each side. All tiles are the same DOM width → snap points never shift.
+// Uniform scale() keeps photo proportions correct. Shadow lifts active tile.
+const C_W   = 270   // tile DOM width (px) — set once, never changes
+const C_H   = 186   // tile DOM height
+const C_GAP = 14    // gap between tiles
+const C_PAD = 20    // horizontal padding inside scroll container
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const navigate  = useNavigate()
   const scrollRef = useRef(null)
-  const slotRefs  = useRef([])
+  const tileRefs  = useRef([])
   const [activeIdx, setActiveIdx] = useState(0)
 
   useEffect(() => {
@@ -155,9 +154,9 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
     const handle = () => {
       const cx = el.getBoundingClientRect().left + el.clientWidth / 2
       let best = 0, minD = Infinity
-      slotRefs.current.forEach((slot, i) => {
-        if (!slot) return
-        const r = slot.getBoundingClientRect()
+      tileRefs.current.forEach((tile, i) => {
+        if (!tile) return
+        const r = tile.getBoundingClientRect()
         const d = Math.abs(r.left + r.width / 2 - cx)
         if (d < minD) { minD = d; best = i }
       })
@@ -169,16 +168,21 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
 
   if (!sortedRooms.length) return null
 
+  // Vertical padding so the active-tile shadow doesn't clip
+  const vPad = 14
+
   return (
     <div>
       <p className="z-eyebrow" style={{ marginBottom: 10 }}>Rooms</p>
-      <div style={{ overflow: 'hidden', marginLeft: -20, marginRight: -20 }}>
+      {/* outer clips left/right overflow */}
+      <div style={{ overflow: 'hidden', marginLeft: -C_PAD, marginRight: -C_PAD }}>
         <div
           ref={scrollRef}
           style={{
-            display: 'flex', gap: 2,
+            display: 'flex', gap: C_GAP,
             overflowX: 'auto',
-            paddingLeft: 20, paddingRight: 20, paddingTop: 4, paddingBottom: 4,
+            paddingLeft: C_PAD, paddingRight: C_PAD,
+            paddingTop: vPad, paddingBottom: vPad,
             scrollSnapType: 'x mandatory',
             WebkitOverflowScrolling: 'touch',
           }}
@@ -190,56 +194,59 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
             const photo = getRoomPhoto(room)
             const isActive = idx === activeIdx
             return (
-              // Outer slot — fixed size, snap target (never changes)
               <div
                 key={room.id}
-                ref={el => { slotRefs.current[idx] = el }}
-                style={{ width: SLOT_W, height: SLOT_H, flexShrink: 0, scrollSnapAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                ref={el => { tileRefs.current[idx] = el }}
+                onClick={() => navigate(`/rooms/${room.id}`)}
+                style={{
+                  position: 'relative', flexShrink: 0,
+                  width: C_W, height: C_H,
+                  borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
+                  scrollSnapAlign: 'center',
+                  // Scale + opacity — no layout change, no jump
+                  transform: isActive ? 'scale(1)' : 'scale(0.88)',
+                  opacity:   isActive ? 1 : 0.6,
+                  // Elevation on active card (standard depth cue)
+                  boxShadow: isActive ? '0 10px 28px rgba(0,0,0,0.32)' : 'none',
+                  // Material ease-in-out, 300ms — matches platform expectations
+                  transition: 'transform 300ms cubic-bezier(0.4,0,0.2,1), opacity 300ms cubic-bezier(0.4,0,0.2,1), box-shadow 300ms cubic-bezier(0.4,0,0.2,1)',
+                  transformOrigin: 'center center',
+                }}
               >
-                {/* Inner photo tile — both width and height animate */}
-                <div
-                  onClick={() => navigate(`/rooms/${room.id}`)}
-                  style={{
-                    position: 'relative',
-                    width: isActive ? ACTIVE_W : INACTIVE_W,
-                    height: isActive ? ACTIVE_H : INACTIVE_H,
-                    borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
-                    opacity: isActive ? 1 : 0.55,
-                    transition: 'width 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), height 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.32s ease',
-                  }}
-                >
-                  <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.65) 100%)' }} />
+                <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
 
-                  <span style={{
-                    position: 'absolute', top: 10, right: 10,
-                    width: 7, height: 7, borderRadius: '50%',
-                    background: summary.activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.35)',
-                    boxShadow: summary.activeCount > 0 ? '0 0 0 2.5px rgba(108,191,140,0.35)' : 'none',
-                  }} />
+                {/* Active dot */}
+                <span style={{
+                  position: 'absolute', top: 12, right: 12,
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: summary.activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.3)',
+                  boxShadow: summary.activeCount > 0 ? '0 0 0 3px rgba(108,191,140,0.3)' : 'none',
+                }} />
 
-                  {isActive && (summary.tempSensor || summary.humSensor) && (
-                    <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 4 }}>
-                      {summary.tempSensor && (
-                        <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(6px)', padding: '2px 6px', borderRadius: 999 }}>
-                          {parseFloat(summary.tempSensor.state).toFixed(1)}°
-                        </span>
-                      )}
-                      {summary.humSensor && (
-                        <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(6px)', padding: '2px 6px', borderRadius: 999 }}>
-                          {parseFloat(summary.humSensor.state).toFixed(0)}%
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{room.name}</p>
-                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
-                      {summary.activeCount > 0 ? `${summary.activeCount} active` : 'idle'}
-                      {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
-                    </p>
+                {/* Sensor chips — active only */}
+                {isActive && (summary.tempSensor || summary.humSensor) && (
+                  <div style={{ position: 'absolute', top: 11, left: 12, display: 'flex', gap: 5 }}>
+                    {summary.tempSensor && (
+                      <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                        {parseFloat(summary.tempSensor.state).toFixed(1)}°
+                      </span>
+                    )}
+                    {summary.humSensor && (
+                      <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                        {parseFloat(summary.humSensor.state).toFixed(0)}%
+                      </span>
+                    )}
                   </div>
+                )}
+
+                {/* Name + status */}
+                <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14 }}>
+                  <p style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{room.name}</p>
+                  <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
+                    {summary.activeCount > 0 ? `${summary.activeCount} active` : 'idle'}
+                    {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
+                  </p>
                 </div>
               </div>
             )
