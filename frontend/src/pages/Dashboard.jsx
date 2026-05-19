@@ -134,9 +134,9 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
 }
 
 // ── Rooms carousel — center-snap with scale on active tile ───────────────────
-const CAROUSEL_TILE_W = 162
-const CAROUSEL_TILE_H = 132
-const CAROUSEL_SCALE  = 1.14
+const CAROUSEL_TILE_W = 158
+const CAROUSEL_TILE_H = 130
+const CAROUSEL_SCALE  = 1.18
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const navigate  = useNavigate()
@@ -174,7 +174,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
         <div
           ref={scrollRef}
           style={{
-            display: 'flex', gap: 10,
+            display: 'flex', gap: 20,
             overflowX: 'auto', overflowY: 'visible',
             paddingLeft: 20, paddingRight: 20,
             paddingTop: SCALE_PAD, paddingBottom: SCALE_PAD,
