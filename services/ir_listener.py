@@ -61,31 +61,71 @@ def _all_ir_devices_by_host() -> dict[str, list[dict]]:
         return {}
 
 
-def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str]]:
+def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
     """
     Scan all ir_devices.json entries for a code matching received_bytes.
-    Returns (device_id, logical_command) on match, None otherwise.
+
+    Match strategy, in order:
+      1. Exact base64 match — fastest path, hits if Broadlink captures are
+         byte-identical (rare in practice; pulse jitter usually breaks this).
+      2. Fingerprint match — robust to typical capture jitter via magnitude-
+         class leader + median-split body classification.
+      3. Fuzzy pulse-array match — per-pulse tolerance fallback for cases
+         where fingerprints differ by one bit due to a noise pulse.
+
+    Returns (device_id, logical_command, match_method) on hit, None otherwise.
+    `match_method` is one of "exact" | "fingerprint" | "fuzzy" for diagnostics.
     """
     try:
         from services.ir_manager import list_ir_devices
+        from services.ir_protocol import (
+            fingerprint_bytes, fingerprint_b64,
+            parse_broadlink_raw, fuzzy_match_pulses,
+        )
+
         received_b64 = base64.b64encode(received_bytes).decode()
         devices = list_ir_devices(enabled_only=True)
         total_codes = sum(len(d.get("ir_codes") or {}) for d in devices)
 
+        # Pass 1: exact bytes
         for device in devices:
             ir_codes: dict = device.get("ir_codes") or {}
             for logical_cmd, stored_b64 in ir_codes.items():
                 if stored_b64 == received_b64:
-                    return device["id"], logical_cmd
+                    return device["id"], logical_cmd, "exact"
 
-        # Log once per receive so the user can diagnose missing codes
+        # Pass 2: fingerprint
+        recv_fp = fingerprint_bytes(received_bytes)
+        if recv_fp:
+            for device in devices:
+                ir_codes = device.get("ir_codes") or {}
+                for logical_cmd, stored_b64 in ir_codes.items():
+                    if fingerprint_b64(stored_b64) == recv_fp:
+                        return device["id"], logical_cmd, "fingerprint"
+
+        # Pass 3: fuzzy pulse comparison
+        recv_pulses = parse_broadlink_raw(received_bytes)
+        if recv_pulses:
+            for device in devices:
+                ir_codes = device.get("ir_codes") or {}
+                for logical_cmd, stored_b64 in ir_codes.items():
+                    try:
+                        stored_pulses = parse_broadlink_raw(
+                            base64.b64decode(stored_b64)
+                        )
+                    except Exception:
+                        continue
+                    if fuzzy_match_pulses(recv_pulses, stored_pulses):
+                        return device["id"], logical_cmd, "fuzzy"
+
+        # No match — diagnostics for the user
         device_summary = ", ".join(
             f"{d.get('name','?')}({len(d.get('ir_codes') or {})} codes)"
             for d in devices
         ) or "none"
         log_info(
-            f"[IRListener] No match: {total_codes} stored codes across "
-            f"{len(devices)} device(s): {device_summary}"
+            f"[IRListener] No match (fp={recv_fp}): {total_codes} stored codes "
+            f"across {len(devices)} device(s): {device_summary}"
         )
         return None
     except Exception as e:
@@ -93,24 +133,51 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str]]:
         return None
 
 
-async def _on_code_received(received_bytes: bytes) -> None:
+async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     """Called when the listener captures a code. Matches and updates state."""
     match = _find_code_match(received_bytes)
     if not match:
-        # Unknown code — broadcast for the UI's "unknown remote activity" flow
-        log_info("[IRListener] Unknown IR code received (no device match)")
+        # Unknown code — persist to the unassigned queue and broadcast so the
+        # UI's "Unassigned signals" panel can offer to bind it to a device.
+        code_b64 = base64.b64encode(received_bytes).decode()
+        try:
+            from services.ir_protocol import fingerprint_bytes, parse_broadlink_raw
+            from services.ir_unassigned import record_signal
+
+            pulses = parse_broadlink_raw(received_bytes)
+            fp = fingerprint_bytes(received_bytes)
+            entry = record_signal(
+                code_b64,
+                blaster_host=host,
+                fingerprint=fp,
+                pulse_count=len(pulses),
+            )
+            log_info(
+                f"[IRListener] Unassigned signal queued id={entry.get('id')} "
+                f"fp={fp} pulses={len(pulses)} count={entry.get('count')}"
+            )
+        except Exception as e:
+            log_error(f"[IRListener] Failed to queue unassigned signal: {e}")
+            entry = None
+
         try:
             from backend.ws_manager import manager
             await manager.broadcast({
                 "type": "ir_unknown_signal",
-                "code_b64": base64.b64encode(received_bytes).decode(),
+                "signal_id": (entry or {}).get("id"),
+                "fingerprint": (entry or {}).get("fingerprint"),
+                "code_b64": code_b64,
+                "blaster_host": host,
             })
         except Exception:
             pass
         return
 
-    device_id, logical_cmd = match
-    log_info(f"[IRListener] Physical remote: device={device_id} command={logical_cmd}")
+    device_id, logical_cmd, match_method = match
+    log_info(
+        f"[IRListener] Physical remote: device={device_id} command={logical_cmd} "
+        f"match={match_method}"
+    )
 
     # Re-use the same post-command logic as Ziggy's own sends
     try:
@@ -132,6 +199,7 @@ async def _on_code_received(received_bytes: bytes) -> None:
             "command": logical_cmd,
             "new_assumed_state": new_state,
             "source": "physical_remote",
+            "match_method": match_method,
         })
     except Exception as e:
         log_error(f"[IRListener] State update after detection failed: {e}")
@@ -224,7 +292,7 @@ async def _listen_loop(host: str) -> None:
 
             data = await loop.run_in_executor(None, _check_data, dev)
             if data:
-                await _on_code_received(bytes(data))
+                await _on_code_received(bytes(data), host=host)
                 break  # break inner loop to re-enter learning for the next signal
 
             await asyncio.sleep(_POLL_INTERVAL)

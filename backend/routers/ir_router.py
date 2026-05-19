@@ -307,3 +307,66 @@ async def ir_listener_status():
         return {"listeners": hosts}
     except Exception as e:
         return {"listeners": [], "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Unassigned signals — captured IR codes that didn't match any device.
+# The UI lists these and lets the user bind each to (device, command).
+# ---------------------------------------------------------------------------
+
+class IrAssignSignalBody(BaseModel):
+    device_id: str
+    command_name: str
+
+
+@router.get("/api/ir/unassigned-signals")
+async def ir_list_unassigned_signals():
+    """Return all captured IR signals that didn't match any device, newest-first."""
+    from services.ir_unassigned import list_signals
+    return {"signals": list_signals()}
+
+
+@router.post("/api/ir/unassigned-signals/{signal_id}/assign")
+async def ir_assign_unassigned_signal(signal_id: str, body: IrAssignSignalBody):
+    """
+    Bind a captured signal to (device, command). Writes the raw code into
+    ir_devices.json under ir_codes, then removes the signal from the queue.
+    """
+    from services.ir_unassigned import take_signal
+    device = get_ir_device(body.device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found")
+
+    signal = take_signal(signal_id)
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    code_b64 = signal.get("code_b64")
+    if not code_b64:
+        raise HTTPException(status_code=400, detail="Signal has no code payload")
+
+    mark_command_learned(body.device_id, body.command_name, raw_code_b64=code_b64)
+    return {
+        "ok": True,
+        "message": (
+            f"Bound signal to {device['name']} → {body.command_name}. "
+            "Future presses of this button will update state automatically."
+        ),
+    }
+
+
+@router.delete("/api/ir/unassigned-signals/{signal_id}")
+async def ir_remove_unassigned_signal(signal_id: str):
+    """Dismiss a captured signal without assigning it."""
+    from services.ir_unassigned import remove_signal
+    if not remove_signal(signal_id):
+        raise HTTPException(status_code=404, detail="Signal not found")
+    return {"ok": True}
+
+
+@router.delete("/api/ir/unassigned-signals")
+async def ir_clear_unassigned_signals():
+    """Clear all queued unassigned signals."""
+    from services.ir_unassigned import clear_signals
+    removed = clear_signals()
+    return {"ok": True, "removed": removed}

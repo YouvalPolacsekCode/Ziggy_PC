@@ -147,6 +147,12 @@ function AppRoutes() {
       addToast(`Physical remote: ${cmd}`, 'info', 3000)
     }
 
+    // Unknown IR signal — re-broadcast as a window event so Devices.jsx can
+    // refresh the "Unassigned signals" badge without opening its own WS.
+    if (last.type === 'ir_unknown_signal') {
+      window.dispatchEvent(new CustomEvent('ziggy:ir_unknown_signal', { detail: last }))
+    }
+
     // Automation / routine execution result
     if (last.type === 'execution_result') {
       const { label, ok, steps_total, steps_failed, errors } = last
@@ -299,6 +305,7 @@ export default function App() {
   // Register service worker and subscribe to web push after login
   useEffect(() => {
     if (!authenticated) return
+    if (import.meta.env.DEV) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
 
     const register = async () => {

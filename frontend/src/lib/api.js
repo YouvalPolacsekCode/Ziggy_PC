@@ -320,6 +320,17 @@ export const irSendChannel = (deviceId, channel) =>
   post(`/ir/devices/${deviceId}/channel`, { channel })
 export const getIrListenerStatus = () => get('/ir/listener/status')
 
+// IR Unassigned Signals — physical-remote presses that didn't match any device.
+// The Devices page lists these and lets the user bind each to (device, command).
+export const getIrUnassignedSignals = () => get('/ir/unassigned-signals').then((r) => r.signals ?? r)
+export const assignIrUnassignedSignal = (signalId, deviceId, commandName) =>
+  post(`/ir/unassigned-signals/${signalId}/assign`, { device_id: deviceId, command_name: commandName })
+export const dismissIrUnassignedSignal = (signalId) => del(`/ir/unassigned-signals/${signalId}`)
+export const clearIrUnassignedSignals = () => del('/ir/unassigned-signals')
+
+// IR device state + confidence (live)
+export const getIrDeviceState = (deviceId) => get(`/ir/devices/${deviceId}/state`)
+
 // Quick Asks
 export const getQuickAsks = () => get('/quick-asks')
 export const createQuickAsk = (data) => post('/quick-asks', data)

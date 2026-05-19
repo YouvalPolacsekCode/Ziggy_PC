@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, forwardRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight } from 'lucide-react'
+import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight, Radio } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
@@ -11,11 +11,12 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms } from '../lib/api'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals } from '../lib/api'
 import { cn } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
+import UnassignedSignalsPanel from '../components/UnassignedSignalsPanel'
 import { getRoomPhoto } from '../lib/roomPhotos'
 
 function _fmtAgo(isoOrDateStr) {
@@ -863,8 +864,17 @@ const DeviceCard = forwardRef(function DeviceCard({
   const [showStatePicker, setShowStatePicker] = useState(false)
   const irStateOptions = IR_STATE_OPTIONS_MAP[irDevice?.type] || IR_STATE_OPTIONS_MAP.default
   const assumedState = irDevice?.assumed_state && irDevice.assumed_state !== 'unknown' ? irDevice.assumed_state : null
+  // Stale check: if we assumed 'on' but the last IR activity was hours ago and
+  // no real-state link exists, downgrade confidence — the assumption may be wrong.
+  const STALE_AFTER_HOURS = 4
+  const lastActivityIso = irDevice?.assumed_state_at || irDevice?.last_command_sent_at
+  const ageHours = lastActivityIso
+    ? (Date.now() - new Date(String(lastActivityIso).replace(' ', 'T')).getTime()) / 3_600_000
+    : Infinity
+  const isStale = assumedState === 'on' && !irDevice?.ha_entity_id && ageHours > STALE_AFTER_HOURS
   // State confidence: confirmed (has HA entity link), estimated (we sent a command), unknown (no info)
   const irConfidence = irDevice?.ha_entity_id ? 'confirmed'
+    : isStale ? 'stale'
     : (assumedState != null) ? 'estimated'
     : 'unknown'
 
@@ -949,10 +959,14 @@ const DeviceCard = forwardRef(function DeviceCard({
           <div className="relative">
             <button
               onClick={() => setShowStatePicker((v) => !v)}
-              title="IR state is estimated — tap to correct manually"
+              title={isStale
+                ? `Assumed "on" since ${Math.round(ageHours)}h ago — tap to confirm or correct`
+                : 'IR state is estimated — tap to correct manually'}
               className={cn(
                 'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors',
-                assumedState === 'on' || (assumedState && assumedState !== 'off')
+                isStale
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                  : assumedState === 'on' || (assumedState && assumedState !== 'off')
                   ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
                   : assumedState === 'off'
                   ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500'
@@ -1169,6 +1183,24 @@ export default function Devices() {
   const [linkingIrDevice, setLinkingIrDevice] = useState(null) // IR device being linked to HA entity
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
 
+  // Unassigned IR signals — captured physical-remote presses that didn't
+  // match any device. Show a badge in the header so the user discovers it.
+  const [showUnassignedSignals, setShowUnassignedSignals]   = useState(false)
+  const [unassignedSignalCount, setUnassignedSignalCount]   = useState(0)
+  const [unassignedRefreshTick, setUnassignedRefreshTick]   = useState(0)
+
+  useEffect(() => {
+    const refresh = () => {
+      getIrUnassignedSignals()
+        .then((sigs) => setUnassignedSignalCount(Array.isArray(sigs) ? sigs.length : 0))
+        .catch(() => {})
+    }
+    refresh()
+    const onSignal = () => { refresh(); setUnassignedRefreshTick((t) => t + 1) }
+    window.addEventListener('ziggy:ir_unknown_signal', onSignal)
+    return () => window.removeEventListener('ziggy:ir_unknown_signal', onSignal)
+  }, [])
+
   const handleLinkIr = async (haEntityId) => {
     if (!linkingIrDevice || !haEntityId) return
     try {
@@ -1285,6 +1317,23 @@ export default function Devices() {
             }}>
               {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
               {showHidden ? 'Showing hidden' : 'Show hidden'}
+            </button>
+          )}
+          {unassignedSignalCount > 0 && (
+            <button
+              onClick={() => setShowUnassignedSignals(true)}
+              title="Unassigned IR signals — bind to a device"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                background: `color-mix(in srgb, var(--accent) 12%, var(--surface))`,
+                color: 'var(--accent)',
+                border: `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              <Radio size={12} />
+              {unassignedSignalCount} unknown
             </button>
           )}
           <button onClick={() => setShowPairing(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
@@ -1526,6 +1575,20 @@ export default function Devices() {
         open={!!linkingIrDevice}
         onClose={() => setLinkingIrDevice(null)}
         onLink={handleLinkIr}
+      />
+
+      <UnassignedSignalsPanel
+        open={showUnassignedSignals}
+        onClose={() => {
+          setShowUnassignedSignals(false)
+          // Refresh count + IR device list after closing — likely the user
+          // just bound a signal, which adds a learned command.
+          getIrUnassignedSignals()
+            .then((sigs) => setUnassignedSignalCount(Array.isArray(sigs) ? sigs.length : 0))
+            .catch(() => {})
+          fetchAll()
+        }}
+        refreshSignal={unassignedRefreshTick}
       />
     </div>
   )
