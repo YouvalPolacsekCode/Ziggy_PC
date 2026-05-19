@@ -714,8 +714,17 @@ export default function Settings() {
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
   ]
 
+  const applyLanguage = (lang) => {
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr'
+    document.documentElement.lang = lang === 'he' ? 'he' : 'en'
+  }
+
   const loadAll = () => {
-    getGeneralSettings().then(g => setGeneral({ language: 'en', timezone: 'UTC', ...g })).catch(() => {})
+    getGeneralSettings().then(g => {
+      const merged = { language: 'en', timezone: 'UTC', ...g }
+      setGeneral(merged)
+      applyLanguage(merged.language)
+    }).catch(() => {})
     getAuthStatus().then(auth => {
       setUsername(auth?.username || '')
       setPwForm(f => ({ ...f, username: auth?.username || '' }))
@@ -733,7 +742,11 @@ export default function Settings() {
 
   const saveGeneral = async () => {
     setSavingGeneral(true)
-    try { await patchGeneralSettings(general); addToast('Saved', 'success') }
+    try {
+      await patchGeneralSettings(general)
+      applyLanguage(general.language)
+      addToast('Saved', 'success')
+    }
     catch { addToast('Failed to save', 'error') }
     finally { setSavingGeneral(false) }
   }

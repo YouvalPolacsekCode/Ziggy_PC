@@ -141,7 +141,7 @@ function CameraPanel({ entityId, navigate }) {
             onClick={() => setLive(v => !v)}
             style={{
               padding: '3px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
-              background: live ? '#ef4444' : 'var(--ink)', color: '#fff',
+              background: live ? 'var(--err)' : 'var(--ink)', color: 'var(--bg)',
               border: 'none', cursor: 'pointer', fontFamily: 'inherit',
             }}
           >
@@ -198,7 +198,7 @@ function CameraPanel({ entityId, navigate }) {
             const ago = diff < 60 ? `${diff}s ago` : diff < 3600 ? `${Math.floor(diff / 60)}m ago` : `${Math.floor(diff / 3600)}h ago`
             return (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < camMotion.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--err)', flexShrink: 0 }} />
                 <span style={{ flex: 1, fontSize: 11, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {ev.name || ev.entity_id.split('.')[1]?.replace(/_/g, ' ')}
                 </span>
