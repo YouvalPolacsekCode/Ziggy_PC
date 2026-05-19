@@ -16,6 +16,7 @@ import { cn } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
+import { getRoomPhoto } from '../lib/roomPhotos'
 
 function _fmtAgo(isoOrDateStr) {
   if (!isoOrDateStr) return ''
@@ -429,17 +430,32 @@ function buildGroupFilters(entities, irEntities) {
 // (DOMAIN_GROUPS and domainGroup imported at top of file)
 
 // ── Collapsible group header ───────────────────────────────────────────────────
-function CollapsibleGroup({ label, count, open, onToggle, children, action }) {
+function CollapsibleGroup({ label, count, open, onToggle, children, action, room, onRoomClick }) {
+  const photo = room ? getRoomPhoto(room) : null
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+    <div style={{ marginBottom: 20 }}>
+      {/* Room header — matches design's RoomBlock header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px 10px' }}>
+        {photo && (
+          <div style={{ width: 32, height: 32, borderRadius: 9, overflow: 'hidden', background: 'var(--surface-2)', flexShrink: 0 }}>
+            <img src={photo} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        )}
         <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.01em' }}>{label}</span>
-          {count != null && <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{count}</span>}
-          <span style={{ marginLeft: 'auto', color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
+            {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginLeft: 6 }}>{count} devices</span>}
+          </div>
+          <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </span>
         </button>
+        {onRoomClick && (
+          <button onClick={onRoomClick} style={{ padding: '5px 10px', borderRadius: 8, background: 'transparent', border: '0.5px solid var(--line)', fontSize: 10, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>
+            Open room
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        )}
         {action && <div style={{ flexShrink: 0 }}>{action}</div>}
       </div>
       <AnimatePresence initial={false}>
@@ -1401,7 +1417,7 @@ export default function Devices() {
         return (
           <>
             {roomGroups.map(({ room, items }) => (
-              <CollapsibleGroup key={room.id} label={room.name} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)}>
+              <CollapsibleGroup key={room.id} label={room.name} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}

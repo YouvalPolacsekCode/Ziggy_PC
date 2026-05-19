@@ -172,6 +172,19 @@ export default function AdminConsole() {
             ]}
             onOpen={() => navigate('/ops/cloud')}
           />
+          <ToolCard
+            badge="home assistant"
+            title="HA Update Checker"
+            description="Detect available Home Assistant updates and see which breaking changes actually affect your Ziggy setup before updating."
+            bullets={[
+              'Current vs latest version comparison',
+              'Risk level: safe / low / medium / high / unknown',
+              'Breaking changes matched against your live HA setup',
+              'Web push + Telegram notification for risky updates',
+              'Backup reminder and link to official release notes',
+            ]}
+            onOpen={() => navigate('/ops/ha-update')}
+          />
         </div>
       </main>
     </div>

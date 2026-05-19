@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Sun, Moon, Wifi, WifiOff, Home, Grid2x2, Cpu, Zap, MessageCircle, Bell, CheckSquare, Settings, ShieldAlert, RefreshCw } from 'lucide-react'
+import { Sun, Moon, Wifi, WifiOff, Home, Grid2x2, Cpu, Zap, MessageCircle, Bell, CheckSquare, Settings, ShieldAlert } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -17,10 +17,9 @@ const PRIMARY = [
 ]
 
 const SECONDARY = [
-  { to: '/alerts',    Icon: Bell,        label: 'Alerts' },
-  { to: '/tasks',     Icon: CheckSquare, label: 'Tasks' },
-  { to: '/ha-update', Icon: RefreshCw,   label: 'HA Update' },
-  { to: '/settings',  Icon: Settings,    label: 'Settings' },
+  { to: '/alerts',   Icon: Bell,        label: 'Alerts' },
+  { to: '/tasks',    Icon: CheckSquare, label: 'Tasks' },
+  { to: '/settings', Icon: Settings,    label: 'Settings' },
 ]
 
 function NavItem({ to, Icon, label }) {

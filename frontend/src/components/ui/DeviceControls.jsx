@@ -22,6 +22,76 @@ export function isEntityOn(entity) {
   return entity.state === 'on'
 }
 
+// ── Dial — large circular progress arc ────────────────────────────────────────
+function Dial({ size = 220, value = 70, max = 100, label, sublabel, color = 'var(--accent)', trackColor = 'var(--line)' }) {
+  const r = size / 2 - 18
+  const c = 2 * Math.PI * r
+  const off = c * (1 - Math.max(0, Math.min(value, max)) / max)
+  return (
+    <div style={{ position: 'relative', width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={trackColor} strokeWidth="14" />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="14"
+          strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+        <div style={{ fontSize: Math.round(size * 0.22), fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--ink)', lineHeight: 1 }}>{label}</div>
+        {sublabel && <div className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, letterSpacing: '0.04em' }}>{sublabel}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── Gradient drag slider ───────────────────────────────────────────────────────
+function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradient, height = 44 }) {
+  const trackRef = useRef(null)
+  const pct = ((value - min) / (max - min)) * 100
+
+  const getValueFromEvent = (e) => {
+    const rect = trackRef.current.getBoundingClientRect()
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left
+    const pct = Math.max(0, Math.min(1, x / rect.width))
+    return Math.round(min + pct * (max - min))
+  }
+
+  const onPointerDown = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const v = getValueFromEvent(e)
+    onChange(v)
+  }
+  const onPointerMove = (e) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    onChange(getValueFromEvent(e))
+  }
+  const onPointerUp = (e) => {
+    const v = getValueFromEvent(e)
+    onChange(v)
+    onCommit?.(v)
+  }
+
+  return (
+    <div
+      ref={trackRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      style={{
+        height, borderRadius: 14, position: 'relative',
+        background: gradient, border: '0.5px solid var(--line)',
+        cursor: 'ew-resize', touchAction: 'none', userSelect: 'none',
+        overflow: 'visible',
+      }}
+    >
+      <div style={{
+        position: 'absolute', top: 0, bottom: 0,
+        left: `calc(${pct}% - 2px)`, width: 4,
+        background: 'var(--ink)', borderRadius: 2,
+        boxShadow: '0 0 0 3px rgba(0,0,0,0.15)',
+      }} />
+    </div>
+  )
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 const COLOR_SWATCHES = [
@@ -86,283 +156,274 @@ function ModeChips({ label, modes, current, colorActive, colorIdle, onSelect }) 
 }
 
 // ─── Light ────────────────────────────────────────────────────────────────────
+const COLOR_PRESETS = [
+  { name: 'Warm',   hex: '#F4D08E' },
+  { name: 'Cool',   hex: '#FFFFFF' },
+  { name: 'Sunset', hex: '#E27A55' },
+  { name: 'Ocean',  hex: '#7AAEE0' },
+  { name: 'Forest', hex: '#6CBF8C' },
+  { name: 'Candle', hex: '#C99845' },
+]
+
 function LightControls({ entity, onService }) {
   const isOn = isEntityOn(entity)
-  const rawBrightness = entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 0
+  const rawBrightness = entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 80
   const [brightness, setBrightness] = useState(rawBrightness)
-  const [expanded, setExpanded] = useState(false)
 
   const colorModes = entity.supported_color_modes || []
   const supportsColorTemp = colorModes.includes('color_temp') || entity.color_temp != null
   const supportsColor = colorModes.some((m) => ['hs', 'rgb', 'xy', 'rgbw', 'rgbww'].includes(m))
   const effectList = entity.effect_list || []
-  const currentEffect = entity.effect
   const currentRgb = entity.rgb_color
 
   const minK = entity.max_mireds ? Math.round(1000000 / entity.max_mireds) : 2700
   const maxK = entity.min_mireds ? Math.round(1000000 / entity.min_mireds) : 6500
-  const rawK = entity.color_temp ? Math.round(1000000 / entity.color_temp) : minK
+  const rawK = entity.color_temp ? Math.round(1000000 / entity.color_temp) : 2700
   const [colorTemp, setColorTemp] = useState(rawK)
 
-  useEffect(() => {
-    setBrightness(entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 0)
-  }, [entity.brightness])
-  useEffect(() => {
-    setColorTemp(entity.color_temp ? Math.round(1000000 / entity.color_temp) : minK)
-  }, [entity.color_temp])
+  useEffect(() => { setBrightness(entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 80) }, [entity.brightness])
+  useEffect(() => { setColorTemp(entity.color_temp ? Math.round(1000000 / entity.color_temp) : 2700) }, [entity.color_temp])
 
-  const hasSecondary = supportsColorTemp || supportsColor || effectList.length > 0
-  if (!isOn) return null
+  const ctPct = ((colorTemp - minK) / (maxK - minK)) * 100
 
   return (
-    <div className="flex flex-col gap-3 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-      {/* Primary: brightness */}
-      <div>
-        <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
-          <span>Brightness</span>
-          <span className="tabular-nums">{brightness}%</span>
-        </div>
-        <Slider
-          value={brightness}
-          onValueChange={setBrightness}
-          onValueCommit={(v) => onService('turn_on', { brightness_pct: v })}
-          min={1} max={100}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingTop: 8 }}>
+      {/* Dial */}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <Dial
+          size={220}
+          value={isOn ? brightness : 0}
+          max={100}
+          label={isOn ? `${brightness}%` : 'Off'}
+          sublabel={isOn ? `WARM · ${colorTemp}K` : undefined}
+          color="var(--gold)"
+          trackColor="var(--line)"
         />
       </div>
 
-      {hasSecondary && (
-        <MoreToggle
-          expanded={expanded}
-          onToggle={() => setExpanded((v) => !v)}
-          label="Color & effects"
+      {/* Brightness gradient slider */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span className="z-eyebrow">Brightness</span>
+          <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{brightness}%</span>
+        </div>
+        <GradientSlider
+          value={brightness}
+          onChange={setBrightness}
+          onCommit={(v) => onService('turn_on', { brightness_pct: v })}
+          min={1} max={100}
+          gradient="linear-gradient(90deg, var(--ink-ghost) 0%, var(--gold) 100%)"
         />
-      )}
+      </div>
 
-      {/* Secondary: color temp + swatches + effects */}
-      {expanded && (
-        <div className="flex flex-col gap-3">
-          {supportsColorTemp && (
-            <div>
-              <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
-                <span>☀ Warm</span>
-                <span>Cool ❄</span>
-              </div>
-              <Slider
-                value={colorTemp}
-                onValueChange={setColorTemp}
-                onValueCommit={(v) => onService('turn_on', { color_temp_kelvin: v })}
-                min={minK} max={maxK}
-              />
-            </div>
-          )}
-
-          {supportsColor && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {COLOR_SWATCHES.map(({ label, rgb }) => {
-                const hex = rgbToHex(rgb)
-                const isActive = currentRgb &&
-                  Math.abs(currentRgb[0] - rgb[0]) < 25 &&
-                  Math.abs(currentRgb[1] - rgb[1]) < 25 &&
-                  Math.abs(currentRgb[2] - rgb[2]) < 25
-                return (
-                  <button
-                    key={label}
-                    title={label}
-                    onClick={() => onService('turn_on', { rgb_color: rgb })}
-                    className={cn(
-                      'w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 shrink-0',
-                      isActive
-                        ? 'border-zinc-900 dark:border-white scale-110'
-                        : 'border-zinc-200 dark:border-zinc-600',
-                    )}
-                    style={{ backgroundColor: hex }}
-                  />
-                )
-              })}
-              <label
-                title="Custom color"
-                className="w-5 h-5 rounded-full border-2 border-dashed border-zinc-300 dark:border-zinc-600 overflow-hidden cursor-pointer shrink-0 relative flex items-center justify-center"
-              >
-                <input
-                  type="color"
-                  className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                  value={rgbToHex(currentRgb)}
-                  onChange={(e) => onService('turn_on', { rgb_color: hexToRgb(e.target.value) })}
-                />
-                <span className="text-[9px] text-zinc-400 pointer-events-none">+</span>
-              </label>
-            </div>
-          )}
-
-          {effectList.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-thin">
-              <button
-                onClick={() => onService('turn_on', { effect: 'none' })}
-                className={cn(
-                  'px-2 py-0.5 rounded-lg text-[10px] font-medium whitespace-nowrap transition-colors shrink-0',
-                  !currentEffect || currentEffect === 'none'
-                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
-                )}
-              >
-                No effect
-              </button>
-              {effectList.map((effect) => (
-                <button
-                  key={effect}
-                  onClick={() => onService('turn_on', { effect })}
-                  className={cn(
-                    'px-2 py-0.5 rounded-lg text-[10px] font-medium whitespace-nowrap transition-colors shrink-0',
-                    currentEffect === effect
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
-                  )}
-                >
-                  {effect}
-                </button>
-              ))}
-            </div>
-          )}
+      {/* Color temp slider */}
+      {supportsColorTemp && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span className="z-eyebrow">Temperature</span>
+            <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{colorTemp}K · {colorTemp < 3500 ? 'warm' : colorTemp < 5000 ? 'neutral' : 'cool'}</span>
+          </div>
+          <GradientSlider
+            value={colorTemp}
+            onChange={setColorTemp}
+            onCommit={(v) => onService('turn_on', { color_temp_kelvin: v })}
+            min={minK} max={maxK}
+            gradient="linear-gradient(90deg, #FFB060 0%, #FFE6C0 30%, #FFFFFF 60%, #C0DDFF 100%)"
+          />
         </div>
       )}
+
+      {/* Color presets */}
+      {supportsColor && (
+        <div>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Presets</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {COLOR_PRESETS.map(p => {
+              const rgb = hexToRgb(p.hex)
+              const isActive = currentRgb && Math.abs(currentRgb[0] - rgb[0]) < 25 && Math.abs(currentRgb[1] - rgb[1]) < 25 && Math.abs(currentRgb[2] - rgb[2]) < 25
+              return (
+                <button
+                  key={p.name}
+                  title={p.name}
+                  onClick={() => onService('turn_on', { rgb_color: rgb })}
+                  style={{
+                    flex: 1, aspectRatio: '1', borderRadius: 12,
+                    background: p.hex,
+                    border: isActive ? '2.5px solid var(--ink)' : '0.5px solid var(--line)',
+                    cursor: 'pointer',
+                    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.15)',
+                    transition: 'transform 0.1s',
+                    transform: isActive ? 'scale(1.06)' : 'none',
+                  }}
+                />
+              )
+            })}
+            <label title="Custom color" style={{ flex: 1, aspectRatio: '1', borderRadius: 12, border: '1px dashed var(--line-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', color: 'var(--ink-faint)', fontSize: 18 }}>
+              <input type="color" style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+                value={rgbToHex(currentRgb)} onChange={(e) => onService('turn_on', { rgb_color: hexToRgb(e.target.value) })} />
+              +
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Effects */}
+      {effectList.length > 0 && (
+        <div>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Effects</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {['none', ...effectList].map(fx => (
+              <button key={fx} onClick={() => onService('turn_on', { effect: fx === 'none' ? null : fx })} style={{
+                padding: '6px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                background: (entity.effect === fx || (!entity.effect && fx === 'none')) ? 'var(--ink)' : 'var(--surface-2)',
+                color: (entity.effect === fx || (!entity.effect && fx === 'none')) ? 'var(--bg)' : 'var(--ink-mute)',
+                border: '0.5px solid var(--line)', textTransform: 'capitalize',
+              }}>{fx === 'none' ? 'None' : fx.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Big on/off */}
+      <button
+        onClick={() => onService(isOn ? 'turn_off' : 'turn_on', {})}
+        style={{
+          width: '100%', padding: 14, borderRadius: 14, marginTop: 4,
+          background: 'var(--ink)', color: 'var(--bg)', border: 'none',
+          fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.7.7 1 1.6 1 2.5v1h6v-1c0-.9.3-1.8 1-2.5A6 6 0 0 0 12 2z"/></svg>
+        {isOn ? 'On' : 'Off'}
+      </button>
     </div>
   )
 }
 
 // ─── Climate ──────────────────────────────────────────────────────────────────
-const HVAC_IDLE = {
-  off:       'bg-zinc-100 dark:bg-zinc-800 text-zinc-500',
-  heat:      'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
-  cool:      'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-  heat_cool: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-  auto:      'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400',
-  fan_only:  'bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400',
-  dry:       'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400',
-}
-const HVAC_ACTIVE = {
-  off:       'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900',
-  heat:      'bg-orange-500 text-white',
-  cool:      'bg-blue-500 text-white',
-  heat_cool: 'bg-purple-500 text-white',
-  auto:      'bg-emerald-500 text-white',
-  fan_only:  'bg-sky-500 text-white',
-  dry:       'bg-amber-500 text-white',
+const HVAC_MODE_META = {
+  off:       { icon: '●', color: 'var(--ink-mute)' },
+  auto:      { icon: '⚡', color: 'var(--accent)' },
+  cool:      { icon: '❄', color: 'var(--info)' },
+  heat:      { icon: '🔥', color: '#E07848' },
+  heat_cool: { icon: '⇅', color: 'var(--warn)' },
+  fan_only:  { icon: '💨', color: 'var(--ok)' },
+  dry:       { icon: '💧', color: 'var(--warn)' },
 }
 
 function ClimateControls({ entity, onService }) {
-  const [expanded, setExpanded] = useState(false)
-
-  const hvacMode  = entity.hvac_mode || entity.state
-  const hvacModes = entity.hvac_modes || []
-  const targetTemp    = entity.temperature
-  const currentTemp   = entity.current_temperature
-  const step    = entity.target_temp_step || 0.5
-  const minTemp = entity.min_temp || 16
-  const maxTemp = entity.max_temp || 30
-
-  const fanMode    = entity.fan_mode
-  const fanModes   = entity.fan_modes   || []
+  const hvacMode    = entity.hvac_mode || entity.state
+  const hvacModes   = entity.hvac_modes || []
+  const targetTemp  = entity.temperature
+  const currentTemp = entity.current_temperature
+  const step        = entity.target_temp_step || 1
+  const minTemp     = entity.min_temp || 16
+  const maxTemp     = entity.max_temp || 30
+  const fanMode     = entity.fan_mode
+  const fanModes    = entity.fan_modes   || []
   const presetMode  = entity.preset_mode
   const presetModes = entity.preset_modes || []
   const swingMode   = entity.swing_mode
   const swingModes  = entity.swing_modes  || []
 
+  const displayTemp = targetTemp ?? currentTemp ?? 22
+  const dialPct = ((displayTemp - minTemp) / (maxTemp - minTemp)) * 100
+
   const adjustTemp = (delta) => {
-    const base = targetTemp ?? currentTemp ?? 20
+    const base = targetTemp ?? currentTemp ?? 22
     const next = Math.round(Math.min(maxTemp, Math.max(minTemp, base + delta)) * 10) / 10
     onService('set_temperature', { temperature: next })
   }
 
-  const hasSecondary = fanModes.length > 1 || presetModes.length > 0 || swingModes.length > 1
-
   return (
-    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-      {/* Primary: temp + hvac modes */}
-      <div className="flex items-center justify-between">
-        {currentTemp != null && (
-          <span className="text-xs text-zinc-400">Now {currentTemp}°</span>
-        )}
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={() => adjustTemp(-step)}
-            className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            <Minus size={12} className="text-zinc-600 dark:text-zinc-400" />
-          </button>
-          <span className="text-sm font-semibold tabular-nums w-10 text-center text-zinc-900 dark:text-zinc-100">
-            {targetTemp != null ? `${targetTemp}°` : '—'}
-          </span>
-          <button
-            onClick={() => adjustTemp(step)}
-            className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            <Plus size={12} className="text-zinc-600 dark:text-zinc-400" />
-          </button>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingTop: 8 }}>
+      {/* Dial */}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <Dial
+          size={220}
+          value={Math.max(0, dialPct)}
+          max={100}
+          label={`${displayTemp}°`}
+          sublabel={currentTemp ? `${hvacMode?.toUpperCase()} · ${currentTemp}° NOW` : hvacMode?.toUpperCase()}
+          color="var(--info)"
+          trackColor="var(--line)"
+        />
       </div>
 
+      {/* Temp stepper below dial */}
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 20 }}>
+        <button onClick={() => adjustTemp(-step)} style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: 'var(--ink-2)' }}>−</button>
+        <span className="z-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.04em', minWidth: 56, textAlign: 'center' }}>{displayTemp}°</span>
+        <button onClick={() => adjustTemp(step)} style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: 'var(--ink-2)' }}>+</button>
+      </div>
+
+      {/* HVAC mode chips */}
       {hvacModes.length > 0 && (
-        <div className="flex gap-1 flex-wrap">
-          {hvacModes.map((mode) => (
-            <button
-              key={mode}
-              onClick={() => onService('set_hvac_mode', { hvac_mode: mode })}
-              className={cn(
-                'px-2 py-1 rounded-lg text-[10px] font-medium capitalize transition-colors',
-                hvacMode === mode
-                  ? (HVAC_ACTIVE[mode] || 'bg-zinc-900 text-white')
-                  : (HVAC_IDLE[mode]   || 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'),
-              )}
-            >
-              {mode.replace(/_/g, ' ')}
-            </button>
-          ))}
+        <div>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Mode</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {hvacModes.map(mode => {
+              const meta = HVAC_MODE_META[mode] || { icon: '●', color: 'var(--ink-mute)' }
+              const active = hvacMode === mode
+              return (
+                <button key={mode} onClick={() => onService('set_hvac_mode', { hvac_mode: mode })} style={{
+                  padding: '8px 14px', borderRadius: 11, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                  background: active ? 'var(--ink)' : 'var(--surface)',
+                  color: active ? 'var(--bg)' : 'var(--ink-2)',
+                  border: '0.5px solid var(--line)',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}>
+                  <span style={{ fontSize: 12 }}>{meta.icon}</span>
+                  {mode === 'heat_cool' ? 'Auto' : mode.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
-      {hasSecondary && (
-        <MoreToggle
-          expanded={expanded}
-          onToggle={() => setExpanded((v) => !v)}
-          label="Fan & presets"
-        />
-      )}
-
-      {/* Secondary: fan / preset / swing */}
-      {expanded && (
-        <div className="flex flex-col gap-2">
-          {fanModes.length > 1 && (
-            <ModeChips
-              label="Fan"
-              modes={fanModes}
-              current={fanMode}
-              colorActive="bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"
-              colorIdle="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-              onSelect={(mode) => onService('set_fan_mode', { fan_mode: mode })}
-            />
-          )}
-          {presetModes.length > 0 && (
-            <ModeChips
-              label="Preset"
-              modes={presetModes}
-              current={presetMode}
-              colorActive="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
-              colorIdle="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-              onSelect={(mode) => onService('set_preset_mode', { preset_mode: mode })}
-            />
-          )}
-          {swingModes.length > 1 && (
-            <ModeChips
-              label="Swing"
-              modes={swingModes}
-              current={swingMode}
-              colorActive="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300"
-              colorIdle="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-              onSelect={(mode) => onService('set_swing_mode', { swing_mode: mode })}
-            />
-          )}
+      {/* Fan speed chips */}
+      {fanModes.length > 1 && (
+        <div>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Fan speed</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {fanModes.map(mode => (
+              <button key={mode} onClick={() => onService('set_fan_mode', { fan_mode: mode })} style={{
+                flex: 1, padding: '10px 0', borderRadius: 11, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                background: fanMode === mode ? 'var(--ink)' : 'var(--surface)',
+                color: fanMode === mode ? 'var(--bg)' : 'var(--ink-2)',
+                border: '0.5px solid var(--line)', textTransform: 'capitalize',
+              }}>{mode.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Swing */}
+      {swingModes.length > 1 && (
+        <div>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Swing</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {swingModes.map(mode => (
+              <button key={mode} onClick={() => onService('set_swing_mode', { swing_mode: mode })} style={{
+                padding: '6px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                background: swingMode === mode ? 'var(--ink)' : 'var(--surface-2)',
+                color: swingMode === mode ? 'var(--bg)' : 'var(--ink-mute)',
+                border: '0.5px solid var(--line)', textTransform: 'capitalize',
+              }}>{mode.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* On/Off */}
+      <button
+        onClick={() => onService(hvacMode === 'off' ? 'set_hvac_mode' : 'set_hvac_mode', { hvac_mode: hvacMode === 'off' ? (hvacModes.find(m => m !== 'off') || 'cool') : 'off' })}
+        style={{ width: '100%', padding: 14, borderRadius: 14, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+      >
+        {hvacMode === 'off' ? 'Turn on' : 'Turn off'}
+      </button>
     </div>
   )
 }
@@ -981,155 +1042,199 @@ function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
   const learned = new Set(irDevice.learned_commands || [])
   const cmds    = irDevice.commands || {}
   const canDo   = (cmd) => cmd in cmds && learned.has(cmd)
-  const has     = (group) => REMOTE_GROUPS[group].some(canDo)
+  const has     = (group) => REMOTE_GROUPS[group]?.some(canDo) ?? false
 
   const [ch, setCh] = useState('')
-  const inputRef = useRef(null)
+  const [volDisplay, setVolDisplay] = useState(24)
+  const [chDisplay, setChDisplay] = useState(1)
 
-  const allDigitsLearned = ['digit_0','digit_1','digit_2','digit_3','digit_4',
-    'digit_5','digit_6','digit_7','digit_8','digit_9','digit_ok'].every(canDo)
+  const fire = (cmd) => { if (canDo(cmd)) onCommand(irDevice.id, cmd) }
+  const sourceCommands = (REMOTE_GROUPS.sources || []).filter(c => c in cmds)
+  const extras = [...learned].filter(c => !new Set(Object.values(REMOTE_GROUPS).flat()).has(c) && canDo(c)).sort()
 
-  const handleChannel = () => {
-    const n = parseInt(ch, 10)
-    if (!isNaN(n) && n >= 0 && n <= 9999) {
-      onChannel(irDevice.id, n)
-      setCh('')
-    }
+  const topBtns = [
+    { cmd: 'power',    label: 'Power', accent: 'var(--err)' },
+    { cmd: 'mute',     label: 'Mute' },
+    { cmd: 'input',    label: 'Input' },
+  ]
+
+  const ArrowIcon = ({ dir }) => {
+    const paths = { up: 'M6 15l6-6 6 6', down: 'M6 9l6 6 6-6', left: 'M15 18l-6-6 6-6', right: 'M9 6l6 6-6 6' }
+    return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[dir]}/></svg>
   }
 
-  // Extra learned commands not covered by any group
-  const allGrouped = new Set(Object.values(REMOTE_GROUPS).flat())
-  const extras = [...learned].filter((c) => !allGrouped.has(c) && canDo(c)).sort()
-
   return (
-    <div className="flex flex-col h-full overflow-y-auto overscroll-contain pb-6">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-5 pb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <Tv2 size={16} className="text-violet-500" />
-          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{irDevice.name}</span>
-          <span className="text-[10px] text-zinc-400 ml-0.5">{learned.size} cmds</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '0.5px solid var(--line)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={onClose} className="z-icon-btn" style={{ width: 32, height: 32, borderRadius: 10 }}><X size={14} /></button>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{irDevice.name}</div>
+            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{irDevice.room ? `${irDevice.room} · ` : ''}IR · {learned.size} commands</div>
+          </div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-        >
-          <X size={14} />
-        </button>
       </div>
 
-      <div className="flex flex-col gap-4 px-5">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '20px 20px 32px', overflowY: 'auto' }}>
 
-        {/* Top bar — power, mute, CH+/-, vol (shown if not all covered by WiFi) */}
-        {has('top_bar') && (
-          <div className="flex gap-2 flex-wrap">
-            {REMOTE_GROUPS.top_bar.map((cmd) => (cmd in cmds) && (
-              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
-                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
-            ))}
+        {/* Now-playing card */}
+        <div style={{ padding: '12px 14px', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 9, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)' }}>
+            <Tv2 size={20} />
           </div>
-        )}
-
-        {/* D-pad + Numpad side by side */}
-        {(has('nav') || has('numpad')) && (
-          <div className="flex gap-4 items-start justify-center">
-
-            {/* D-pad */}
-            {has('nav') && (
-              <div className="flex flex-col items-center gap-1.5 shrink-0">
-                <RemoteBtn cmd="nav_up" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
-                <div className="flex gap-1.5">
-                  <RemoteBtn cmd="nav_left"  learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
-                  <RemoteBtn cmd="nav_ok"    learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} size="lg" />
-                  <RemoteBtn cmd="nav_right" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
-                </div>
-                <RemoteBtn cmd="nav_down" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
-                <div className="flex gap-1.5 mt-1">
-                  {['back','home','menu'].filter((c) => c in cmds).map((cmd) => (
-                    <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
-                      onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Numpad */}
-            {has('numpad') && (
-              <div className="flex flex-col gap-1.5 shrink-0">
-                {[['digit_1','digit_2','digit_3'],['digit_4','digit_5','digit_6'],
-                  ['digit_7','digit_8','digit_9']].map((row, i) => (
-                  <div key={i} className="flex gap-1.5">
-                    {row.map((cmd) => (
-                      <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
-                        onPress={(c) => onCommand(irDevice.id, c)} />
-                    ))}
-                  </div>
-                ))}
-                <div className="flex gap-1.5">
-                  <div className="w-12" /> {/* spacer */}
-                  <RemoteBtn cmd="digit_0"  learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
-                  <RemoteBtn cmd="digit_ok" learned={learned} cmds={cmds} onPress={(c) => onCommand(irDevice.id, c)} />
-                </div>
-                {!allDigitsLearned && (
-                  <p className="text-[9px] text-zinc-400 text-center mt-0.5">Learn all digits to enable channel entry</p>
-                )}
-              </div>
-            )}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{irDevice.name}</div>
+            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>Last command · {learned.size} learned</div>
           </div>
-        )}
+          <span className="z-dot z-dot-on" />
+        </div>
 
-        {/* Sources */}
-        {has('sources') && (
-          <div className="flex gap-2 flex-wrap">
-            {REMOTE_GROUPS.sources.filter((c) => c in cmds).map((cmd) => (
-              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
-                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
-            ))}
-          </div>
-        )}
-
-        {/* AC modes */}
-        {has('ac_modes') && (
-          <div className="flex gap-1.5 flex-wrap">
-            {REMOTE_GROUPS.ac_modes.filter((c) => c in cmds).map((cmd) => (
-              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
-                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
-            ))}
-          </div>
-        )}
-
-        {/* Extra learned commands not in any group */}
-        {extras.length > 0 && (
-          <div className="flex gap-1.5 flex-wrap">
-            {extras.map((cmd) => (
-              <RemoteBtn key={cmd} cmd={cmd} learned={learned} cmds={cmds}
-                onPress={(c) => onCommand(irDevice.id, c)} size="sm" />
-            ))}
-          </div>
-        )}
-
-        {/* Channel entry — only when all digits learned */}
-        {allDigitsLearned && (
-          <div className="flex items-center gap-2 mt-1 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-            <span className="text-xs text-zinc-400 shrink-0">Ch</span>
-            <input
-              ref={inputRef}
-              type="number"
-              min={0}
-              max={9999}
-              value={ch}
-              onChange={(e) => setCh(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
-              onKeyDown={(e) => e.key === 'Enter' && handleChannel()}
-              placeholder="e.g. 12"
-              className="flex-1 h-9 px-3 rounded-xl text-sm border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
+        {/* Power / Mute / Input */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          {topBtns.map(b => (
             <button
-              disabled={!ch || isNaN(parseInt(ch, 10))}
-              onClick={handleChannel}
-              className="px-4 h-9 rounded-xl bg-violet-500 text-white text-sm font-medium hover:bg-violet-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              key={b.cmd}
+              onClick={() => fire(b.cmd)}
+              disabled={!canDo(b.cmd)}
+              style={{
+                padding: '14px 0', borderRadius: 14,
+                background: 'var(--surface)', border: '0.5px solid var(--line)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+                cursor: canDo(b.cmd) ? 'pointer' : 'not-allowed',
+                opacity: canDo(b.cmd) ? 1 : 0.35,
+                color: b.accent || 'var(--ink-2)', fontFamily: 'inherit',
+              }}
             >
-              Go
+              {b.cmd === 'power' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>}
+              {b.cmd === 'mute' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9v6h4l5 4V5L7 9zM22 9l-6 6M16 9l6 6"/></svg>}
+              {b.cmd === 'input' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="10" r="2" fill="currentColor"/><circle cx="20" cy="14" r="2" fill="currentColor"/></svg>}
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-2)' }}>{b.label}</span>
             </button>
+          ))}
+        </div>
+
+        {/* D-pad circle */}
+        {has('nav') && (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div style={{
+              width: 220, height: 220, borderRadius: '50%',
+              background: 'var(--surface)', border: '0.5px solid var(--line)',
+              position: 'relative', boxShadow: 'var(--shadow-md)',
+            }}>
+              {/* Center OK */}
+              <button
+                onClick={() => fire('nav_ok')}
+                disabled={!canDo('nav_ok')}
+                style={{
+                  position: 'absolute', top: '50%', left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 82, height: 82, borderRadius: '50%',
+                  background: 'var(--ink)', color: 'var(--bg)',
+                  border: 'none', fontSize: 14, fontWeight: 700,
+                  cursor: 'pointer', letterSpacing: '0.02em',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >OK</button>
+              {/* Arrows */}
+              {[
+                { dir: 'up',    cmd: 'nav_up',    style: { top: 14, left: '50%', transform: 'translateX(-50%)' } },
+                { dir: 'down',  cmd: 'nav_down',  style: { bottom: 14, left: '50%', transform: 'translateX(-50%)' } },
+                { dir: 'left',  cmd: 'nav_left',  style: { left: 14, top: '50%', transform: 'translateY(-50%)' } },
+                { dir: 'right', cmd: 'nav_right', style: { right: 14, top: '50%', transform: 'translateY(-50%)' } },
+              ].map(a => (
+                <button key={a.dir} onClick={() => fire(a.cmd)} disabled={!canDo(a.cmd)}
+                  style={{ position: 'absolute', background: 'none', border: 'none', cursor: canDo(a.cmd) ? 'pointer' : 'default', color: 'var(--ink-mute)', padding: 6, opacity: canDo(a.cmd) ? 1 : 0.3, ...a.style }}>
+                  <ArrowIcon dir={a.dir} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Back / Home / Menu row */}
+        {['back','home','menu'].some(c => c in cmds) && (
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            {['back','home','menu'].filter(c => c in cmds).map(cmd => (
+              <button key={cmd} onClick={() => fire(cmd)} disabled={!canDo(cmd)} style={{
+                padding: '10px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)',
+                fontSize: 11, fontWeight: 600, cursor: canDo(cmd) ? 'pointer' : 'default', color: 'var(--ink-2)', fontFamily: 'inherit',
+                opacity: canDo(cmd) ? 1 : 0.35, textTransform: 'capitalize',
+              }}>{cmd}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Vol / Mic / Ch */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          {/* Volume */}
+          <div style={{ padding: '10px 0', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => { fire('volume_up');   setVolDisplay(v => Math.min(100, v+1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="up" /></button>
+            <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>Vol {volDisplay}</span>
+            <button onClick={() => { fire('volume_down'); setVolDisplay(v => Math.max(0, v-1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="down" /></button>
+          </div>
+
+          {/* Mic / voice */}
+          <button style={{
+            padding: '14px 0', borderRadius: 22,
+            background: 'var(--accent)', color: '#fff', border: 'none',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5,
+            cursor: 'pointer', boxShadow: 'var(--shadow-md)',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>Speak</span>
+          </button>
+
+          {/* Channel */}
+          <div style={{ padding: '10px 0', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => { fire('channel_up');   setChDisplay(v => v+1) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="up" /></button>
+            <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>Ch {chDisplay}</span>
+            <button onClick={() => { fire('channel_down'); setChDisplay(v => Math.max(1, v-1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="down" /></button>
+          </div>
+        </div>
+
+        {/* Source chips */}
+        {sourceCommands.length > 0 && (
+          <div>
+            <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Source</span>
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }} className="scrollbar-thin">
+              {sourceCommands.map(cmd => (
+                <button key={cmd} onClick={() => fire(cmd)} style={{
+                  padding: '8px 12px', borderRadius: 10, flexShrink: 0,
+                  background: 'var(--surface)', border: '0.5px solid var(--line)',
+                  fontSize: 11, fontWeight: 500, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit',
+                  textTransform: 'capitalize',
+                }}>{cmd.replace(/_/g, ' ')}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Extra commands */}
+        {extras.length > 0 && (
+          <div>
+            <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>More</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {extras.map(cmd => (
+                <button key={cmd} onClick={() => fire(cmd)} style={{
+                  padding: '7px 12px', borderRadius: 9, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                  background: 'var(--surface-2)', border: '0.5px solid var(--line)', color: 'var(--ink-2)', textTransform: 'capitalize',
+                }}>{cmd.replace(/_/g, ' ')}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Channel entry */}
+        {['digit_0','digit_1','digit_2','digit_3','digit_4','digit_5','digit_6','digit_7','digit_8','digit_9'].every(canDo) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
+            <span className="z-eyebrow" style={{ flexShrink: 0 }}>Channel</span>
+            <input type="number" min={0} max={9999} value={ch}
+              onChange={e => setCh(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+              onKeyDown={e => e.key === 'Enter' && onChannel && onChannel(irDevice.id, parseInt(ch, 10))}
+              placeholder="12" className="z-input" style={{ height: 36, padding: '0 12px', flex: 1, fontSize: 13 }} />
+            <button onClick={() => { if (ch) onChannel?.(irDevice.id, parseInt(ch, 10)); setCh('') }}
+              className="z-btn-primary" style={{ padding: '0 16px', height: 36, borderRadius: 10, flexShrink: 0 }}>Go</button>
           </div>
         )}
       </div>

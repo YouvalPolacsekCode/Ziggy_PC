@@ -965,9 +965,26 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
       <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: automation.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
-        </div>
+        {(() => {
+          const triggerType = automation.trigger?.type || 'time'
+          const tintMap = { time: 'var(--info)', state: 'var(--ok)', zone: 'var(--accent)', sunrise: 'var(--gold)', sunset: 'var(--accent)', webhook: 'var(--warn)', manual: 'var(--ink-mute)' }
+          const tint = automation.enabled ? (tintMap[triggerType] || 'var(--info)') : 'var(--ink-faint)'
+          const iconMap = {
+            time: <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>,
+            sunrise: <><circle cx="12" cy="13" r="3"/><path d="M12 4v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20"/></>,
+            sunset: <><circle cx="12" cy="13" r="3"/><path d="M12 3v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20M12 19v3"/></>,
+            zone: <><path d="M12 2L4 14h7l-1 8 9-12h-7l1-8z"/></>,
+            state: <><path d="M4 12l5 5L20 6"/></>,
+            webhook: <><circle cx="12" cy="12" r="3"/><path d="M12 9V5a2 2 0 0 0-4 0M9 12H5a2 2 0 0 0 0 4M12 15v4a2 2 0 0 0 4 0M15 12h4a2 2 0 0 0 0-4"/></>,
+          }
+          return (
+            <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))` }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? tint : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                {iconMap[triggerType] || <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>}
+              </svg>
+            </div>
+          )
+        })()}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.name}</p>
           {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.description}</p>}
@@ -1437,27 +1454,24 @@ export default function Automations() {
         </div>
       </div>
 
-      {/* Tab switcher */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+      {/* Tab switcher — segmented pill style */}
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20 }}>
         {[
-          { id: 'active',    label: 'Active' },
-          { id: 'suggested', label: 'Suggested', count: pendingSuggestions.length },
+          { id: 'active',    label: 'Active',    count: automations.filter(a => a.enabled).length },
+          { id: 'suggested', label: 'Suggested', count: pendingSuggestions.length, sparkle: true },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: '5px 13px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-            background: tab === t.id ? 'var(--ink)' : 'var(--surface)',
-            color:      tab === t.id ? 'var(--bg)'  : 'var(--ink-mute)',
-            border:     tab === t.id ? 'none'        : '0.5px solid var(--line)',
-            display: 'flex', alignItems: 'center', gap: 6,
+            flex: 1, padding: '8px 0', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+            background: tab === t.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 13, fontWeight: 600,
+            color: tab === t.id ? 'var(--ink)' : 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+            transition: 'background 0.15s',
           }}>
+            {t.sparkle && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>}
             {t.label}
-            {t.count > 0 && (
-              <span style={{
-                background: tab === t.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)',
-                color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999,
-                fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700,
-              }}>{t.count}</span>
-            )}
+            {t.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t.count}</span>}
           </button>
         ))}
       </div>
@@ -1536,6 +1550,22 @@ export default function Automations() {
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Create one to automate your home</p>
           <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>Create automation</button>
         </div>
+      )}
+
+      {!loading && automations.length > 0 && (
+        <button
+          onClick={() => setShowRoutineWizard(true)}
+          style={{
+            marginTop: 8, width: '100%', padding: '13px',
+            borderRadius: 14, background: 'var(--surface)',
+            border: '1px dashed var(--line-2)',
+            color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'inherit',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New routine
+        </button>
       )}
 
       <AnimatePresence mode="popLayout">

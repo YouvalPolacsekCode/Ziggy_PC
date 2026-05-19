@@ -347,6 +347,12 @@ export const triggerMapRender = (rooms) => post('/map/render/generate', { rooms 
 export const snoozeMapAnomaly = (roomId, ruleId, durationMinutes = 60) =>
   post(`/map/anomalies/snooze/${encodeURIComponent(roomId)}/${encodeURIComponent(ruleId)}`, { duration_minutes: durationMinutes })
 
+// HA Update Checker
+export const getUpdateStatus   = ()        => get('/update/status')
+export const forceUpdateCheck  = ()        => post('/update/check', {})
+export const dismissUpdate     = (version) => post('/update/dismiss', { version })
+export const getUpdateHistory  = ()        => get('/update/history')
+
 // Cameras
 export const getCameras = () => get('/cameras')
 export const getCameraMotionEvents = (hours = 24) => get(`/cameras/motion?hours=${hours}`)

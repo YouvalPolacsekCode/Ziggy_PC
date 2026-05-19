@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, Settings, Zap, Play, RotateCcw } from 'lucide-react'
+import { ChevronDown, Settings, Zap, Play, RotateCcw, ChevronRight } from 'lucide-react'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useAutomationStore } from '../stores/automationStore'
@@ -67,6 +67,77 @@ function avatarColor(name) {
 }
 
 const QA_TINTS = ['oklch(0.85 0.10 75)','oklch(0.35 0.10 280)','oklch(0.40 0.06 250)','oklch(0.65 0.10 130)','oklch(0.72 0.12 20)','oklch(0.55 0.12 200)']
+
+// ── Design-system icon set (matches ziggy-atoms) ──────────────────────────────
+function ZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round' }
+  switch (name) {
+    case 'light':   return <svg {...p}><path d="M9 18h6M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.7.7 1 1.6 1 2.5v1h6v-1c0-.9.3-1.8 1-2.5A6 6 0 0 0 12 2z"/></svg>
+    case 'climate': return <svg {...p}><path d="M14 14.76V4a2 2 0 1 0-4 0v10.76a4 4 0 1 0 4 0z"/></svg>
+    case 'media':   return <svg {...p}><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+    case 'lock':    return <svg {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    case 'fan':     return <svg {...p}><path d="M12 12a4 4 0 0 0-4-4 4 4 0 0 0 4 4zM12 12a4 4 0 0 1 4 4 4 4 0 0 1-4-4zM12 12a4 4 0 0 0 4-4 4 4 0 0 0-4 4zM12 12a4 4 0 0 1-4 4 4 4 0 0 1 4-4z"/></svg>
+    case 'plug':    return <svg {...p}><path d="M9 2v6M15 2v6"/><path d="M5 8h14v3a7 7 0 0 1-14 0z"/><path d="M12 18v4"/></svg>
+    case 'check':   return <svg {...p}><path d="M4 12l5 5L20 6"/></svg>
+    case 'fwd':     return <svg {...p}><path d="M9 6l6 6-6 6"/></svg>
+    case 'bolt':    return <svg {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    case 'sunrise': return <svg {...p}><circle cx="12" cy="13" r="3"/><path d="M12 4v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20"/></svg>
+    case 'sun':     return <svg {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    case 'sunset':  return <svg {...p}><circle cx="12" cy="13" r="3"/><path d="M12 3v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20M12 19v3"/></svg>
+    case 'moon':    return <svg {...p}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    case 'leaf':    return <svg {...p}><path d="M11 20A7 7 0 0 1 4 13c0-6 5-10 17-10 0 12-4 17-10 17z"/><path d="M2 22l8-8"/></svg>
+    case 'family':  return <svg {...p}><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M14 20c0-2 2-3 3-3s3 1 3 3"/></svg>
+    default:        return <svg {...p}><circle cx="12" cy="12" r="9"/></svg>
+  }
+}
+
+// ── ControlTile — matches ziggy-atoms ControlTile exactly ─────────────────────
+function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: 14, borderRadius: 18,
+        background: on ? 'var(--ink)' : 'var(--surface)',
+        color: on ? 'var(--bg)' : 'var(--ink)',
+        border: '0.5px solid var(--line)',
+        display: 'flex', flexDirection: 'column', gap: 14,
+        minHeight: 96, cursor: 'pointer', textAlign: 'left',
+        fontFamily: 'inherit', width: '100%',
+        transition: 'opacity 0.12s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
+      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 10,
+          background: on ? `color-mix(in srgb, ${accentColor || 'var(--accent)'} 28%, rgba(255,255,255,0.12))` : 'var(--surface-2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: on ? (accentColor || 'var(--gold)') : 'var(--ink-2)',
+        }}>
+          <ZIcon name={icon} size={16} stroke={1.7} />
+        </div>
+        <span style={{
+          width: 28, height: 16, borderRadius: 999,
+          background: on ? (accentColor || 'var(--ok)') : 'var(--line-2)',
+          position: 'relative', display: 'inline-block', flexShrink: 0,
+        }}>
+          <span style={{
+            position: 'absolute', top: 2, left: on ? 14 : 2,
+            width: 12, height: 12, borderRadius: '50%', background: '#fff',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+            transition: 'left 0.15s',
+          }} />
+        </span>
+      </div>
+      <div>
+        <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.25, color: on ? 'var(--bg)' : 'var(--ink)' }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: on ? 'rgba(255,255,255,0.65)' : 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>}
+      </div>
+    </button>
+  )
+}
 
 // ── Widget system ─────────────────────────────────────────────────────────────
 const WIDGET_DEFAULTS = [
@@ -250,7 +321,7 @@ export default function Dashboard() {
     ...(haOffline ? [{ id: 'ha-offline', sev: 'critical', text: 'Home Assistant offline', to: '/settings' }] : []),
     ...(criticalAnomalies.length > 0 ? [{ id: 'anom-crit', sev: 'critical', text: `${criticalAnomalies.length} critical alert${criticalAnomalies.length > 1 ? 's' : ''}`, to: '/alerts' }] : []),
     ...(warningAnomalies.length  > 0 ? [{ id: 'anom-warn', sev: 'warn',     text: `${warningAnomalies.length} anomal${warningAnomalies.length > 1 ? 'ies' : 'y'}`,          to: '/alerts' }] : []),
-    ...(haUpdateSev ? [{ id: 'ha-update', sev: haUpdateSev, text: `HA ${haUpdateStatus.latest_version} · ${haUpdateRisk} risk`, to: '/ha-update' }] : []),
+    ...(haUpdateSev ? [{ id: 'ha-update', sev: haUpdateSev, text: `HA ${haUpdateStatus.latest_version} · ${haUpdateRisk} risk`, to: '/ops/ha-update' }] : []),
     ...(pendingCount() > 0 ? [{ id: 'sug', sev: 'info', text: `${pendingCount()} suggestion${pendingCount() > 1 ? 's' : ''} ready`, to: '/automations' }] : []),
     ...(overdueTasks.length > 0 ? [{ id: 'tasks', sev: 'warn', text: `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`, to: '/tasks' }] : []),
   ]
@@ -409,7 +480,72 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── 4. Presence widget ── */}
+      {/* ── 4. Quick controls 2×2 ── */}
+      {(() => {
+        const allEntities = entities.filter(e => !['unavailable','unknown'].includes(e.state))
+        const firstLight   = allEntities.find(e => e.domain === 'light')
+        const firstClimate = allEntities.find(e => e.domain === 'climate')
+        const firstMedia   = allEntities.find(e => e.domain === 'media_player')
+        const firstLock    = allEntities.find(e => e.domain === 'lock')
+        const tiles = [
+          firstLight   ? { icon: 'light',   label: firstLight.friendly_name || firstLight.display_name || 'Lights',   sub: firstLight.state === 'on' ? `On · ${firstLight.ha_attributes?.brightness ? Math.round(firstLight.ha_attributes.brightness / 2.55) + '%' : ''}` : 'Off', on: firstLight.state === 'on', accentColor: 'var(--gold)',  id: firstLight.entity_id } : null,
+          firstClimate ? { icon: 'climate', label: firstClimate.friendly_name || firstClimate.display_name || 'AC',      sub: firstClimate.ha_attributes?.temperature ? `${firstClimate.ha_state} · ${firstClimate.ha_attributes.temperature}°` : firstClimate.ha_state, on: !['off','unavailable','unknown'].includes(firstClimate.state), accentColor: 'var(--info)', id: firstClimate.entity_id } : null,
+          firstMedia   ? { icon: 'media',   label: firstMedia.friendly_name || firstMedia.display_name || 'Media',    sub: firstMedia.ha_attributes?.media_title || firstMedia.ha_state || 'Off', on: firstMedia.state === 'playing', accentColor: 'var(--accent)', id: firstMedia.entity_id } : null,
+          firstLock    ? { icon: 'lock',    label: firstLock.friendly_name || firstLock.display_name || 'Front door', sub: firstLock.state === 'locked' ? 'Locked' : 'Unlocked', on: false, accentColor: 'var(--err)', id: firstLock.entity_id } : null,
+        ].filter(Boolean)
+        if (tiles.length < 2) return null
+        return (
+          <div>
+            <p className="z-eyebrow" style={{ marginBottom: 8 }}>Quick controls</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {tiles.map(t => (
+                <ControlTile
+                  key={t.id}
+                  icon={t.icon}
+                  label={t.label}
+                  sub={t.sub}
+                  on={t.on}
+                  accentColor={t.accentColor}
+                  onClick={() => navigate(`/devices/${encodeURIComponent(t.id)}`)}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── 4b. Today's tasks peek ── */}
+      {pendingTasks.length > 0 && (
+        <button
+          onClick={() => navigate('/tasks')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '12px 14px', borderRadius: 14,
+            background: 'var(--surface)', border: '0.5px solid var(--line)',
+            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%',
+            transition: 'border-color 0.12s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}
+        >
+          <div style={{
+            width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+            background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))',
+            color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <ZIcon name="check" size={14} stroke={2.5} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} today</div>
+            {overdueTasks.length > 0 && (
+              <div className="z-mono" style={{ fontSize: 10, color: 'var(--err)', marginTop: 2 }}>{overdueTasks.length} overdue</div>
+            )}
+          </div>
+          <ZIcon name="fwd" size={12} color="var(--ink-faint)" />
+        </button>
+      )}
+
+      {/* ── 5. Presence widget ── */}
       <Widget eyebrow="Home" collapsed={isCollapsed('presence')} onToggle={() => toggleWidget('presence')}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {homePersons.map(p => (

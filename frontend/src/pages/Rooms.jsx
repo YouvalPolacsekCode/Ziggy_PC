@@ -1,7 +1,7 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Map, List, Zap, Play, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight } from 'lucide-react'
 import { getMapRoomsSummary, getAutomations, triggerAutomation, getFeaturesSettings } from '../lib/api'
 
 const HomeMapCanvas = lazy(() =>
@@ -593,6 +593,268 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
   )
 }
 
+// ── ZIcon for RoomDetail ──────────────────────────────────────────────────────
+function RoomZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round' }
+  switch (name) {
+    case 'light':   return <svg {...p}><path d="M9 18h6M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.7.7 1 1.6 1 2.5v1h6v-1c0-.9.3-1.8 1-2.5A6 6 0 0 0 12 2z"/></svg>
+    case 'climate': return <svg {...p}><path d="M14 14.76V4a2 2 0 1 0-4 0v10.76a4 4 0 1 0 4 0z"/></svg>
+    case 'media':   return <svg {...p}><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+    case 'lock':    return <svg {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+    case 'tv':      return <svg {...p}><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg>
+    case 'temp':    return <svg {...p}><path d="M14 14.76V4a2 2 0 1 0-4 0v10.76a4 4 0 1 0 4 0z"/></svg>
+    case 'humid':   return <svg {...p}><path d="M12 2.5s6 7 6 11.5a6 6 0 0 1-12 0c0-4.5 6-11.5 6-11.5z"/></svg>
+    case 'motion':  return <svg {...p}><circle cx="12" cy="5" r="2"/><path d="M8 22l2-6 2 2 2-2 2 6M9 12l3 3 3-3"/></svg>
+    case 'back':    return <svg {...p}><path d="M15 18l-6-6 6-6"/></svg>
+    case 'fwd':     return <svg {...p}><path d="M9 6l6 6-6 6"/></svg>
+    case 'bolt':    return <svg {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    case 'sparkle': return <svg {...p}><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
+    case 'remote':  return <svg {...p}><rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="8" r="1.5"/><path d="M10 14h4M10 17h4"/></svg>
+    case 'fan':     return <svg {...p}><path d="M12 12a4 4 0 0 0-4-4 4 4 0 0 0 4 4zM12 12a4 4 0 0 1 4 4 4 4 0 0 1-4-4zM12 12a4 4 0 0 0 4-4 4 4 0 0 0-4 4zM12 12a4 4 0 0 1-4 4 4 4 0 0 1 4-4z"/></svg>
+    case 'cover':   return <svg {...p}><rect x="2" y="4" width="20" height="2" rx="1"/><rect x="4" y="8" width="16" height="12" rx="1"/></svg>
+    case 'switch':  return <svg {...p}><path d="M18 8A6 6 0 0 1 6 8M12 8v8M8 16h8"/></svg>
+    default:        return <svg {...p}><circle cx="12" cy="12" r="9"/></svg>
+  }
+}
+
+// ── Domain-specific group renderers ──────────────────────────────────────────
+function LightsGroup({ devices, onToggle, eyebrow }) {
+  const onCount = devices.filter(d => isEntityOn(d)).length
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+        <p className="z-eyebrow">{eyebrow} · {onCount} of {devices.length} on</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(devices.length, 3)}, 1fr)`, gap: 8 }}>
+        {devices.map((entity, i) => {
+          const on = isEntityOn(entity)
+          const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Light'
+          const bri = entity.ha_attributes?.brightness ? Math.round(entity.ha_attributes.brightness / 2.55) + '%' : null
+          const val = on ? (bri || 'on') : 'off'
+          return (
+            <button
+              key={entity.entity_id || i}
+              onClick={() => onToggle(entity.entity_id, !on)}
+              style={{
+                padding: 12, borderRadius: 14, aspectRatio: '1',
+                background: on ? 'var(--ink)' : 'var(--surface)',
+                color: on ? 'var(--bg)' : 'var(--ink-2)',
+                border: '0.5px solid var(--line)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.15s',
+              }}
+            >
+              <RoomZIcon name="light" size={20} stroke={1.6} color={on ? 'var(--gold)' : 'var(--ink-faint)'} />
+              <div style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</div>
+              <div className="z-mono" style={{ fontSize: 10, opacity: 0.75 }}>{val}</div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ClimateRowCard({ entity, onService }) {
+  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Climate'
+  const temp = entity.ha_attributes?.temperature
+  const currentTemp = entity.ha_attributes?.current_temperature
+  const hvacMode = entity.ha_state
+  const [localTemp, setLocalTemp] = useState(temp ?? 22)
+  useEffect(() => { if (temp != null) setLocalTemp(temp) }, [temp])
+  const adj = (delta) => {
+    const next = Math.max(16, Math.min(30, localTemp + delta))
+    setLocalTemp(next)
+    onService(entity, 'set_temperature', { temperature: next })
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+      <div style={{ width: 42, height: 42, borderRadius: 12, background: 'color-mix(in srgb, var(--info) 12%, var(--surface-2))', color: 'var(--info)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <RoomZIcon name="climate" size={18} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>
+          {hvacMode}{currentTemp ? ` · ${currentTemp}° now` : ''}
+        </div>
+      </div>
+      {temp != null && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button onClick={() => adj(-1)} style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <RoomZIcon name="back" size={14} color="var(--ink-2)" />
+          </button>
+          <span className="z-mono" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', minWidth: 30, textAlign: 'center' }}>{localTemp}°</span>
+          <button onClick={() => adj(1)} style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <RoomZIcon name="fwd" size={14} color="var(--ink-2)" />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MediaRowCard({ entity, onService }) {
+  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Media'
+  const title = entity.ha_attributes?.media_title
+  const artist = entity.ha_attributes?.media_artist
+  const source = entity.ha_attributes?.source || entity.ha_attributes?.app_name
+  const isPlaying = entity.ha_state === 'playing'
+  const sub = title ? `${title}${artist ? ' · ' + artist : ''}` : (source || entity.ha_state)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+      <div style={{ width: 42, height: 42, borderRadius: 12, background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <RoomZIcon name="media" size={18} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
+      </div>
+      <button
+        onClick={() => onService(entity, isPlaying ? 'media_pause' : 'media_play', {})}
+        style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--ink)', color: 'var(--bg)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+      >
+        {isPlaying ? <Pause size={14} fill="var(--bg)" stroke="none" /> : <Play size={14} fill="var(--bg)" stroke="none" />}
+      </button>
+    </div>
+  )
+}
+
+function TVRowCard({ entity }) {
+  const [showRemote, setShowRemote] = useState(false)
+  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'TV'
+  const isIr = entity._is_ir === true || entity.domain === 'remote'
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: 'var(--surface-2)', color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <RoomZIcon name="tv" size={18} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{name}</div>
+          <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>Off · IR</div>
+        </div>
+        <button
+          onClick={() => setShowRemote(true)}
+          style={{ padding: '6px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '0.5px solid var(--line)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)', cursor: 'pointer', flexShrink: 0 }}
+        >
+          Remote
+        </button>
+      </div>
+      {showRemote && <IRRemoteButton entity={entity} onClose={() => setShowRemote(false)} />}
+    </>
+  )
+}
+
+function SensorsStrip({ devices }) {
+  const renderSensor = (entity) => {
+    const domain = entity.domain
+    const dc = entity.ha_attributes?.device_class || entity.device_class
+    const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || ''
+    const val = entity.ha_state || entity.state || '—'
+    const unit = entity.ha_attributes?.unit_of_measurement || ''
+    let icon = 'motion'
+    if (dc === 'temperature') icon = 'temp'
+    else if (dc === 'humidity') icon = 'humid'
+    else if (dc === 'motion' || dc === 'occupancy') icon = 'motion'
+    return { icon, val: val + unit, name, entity }
+  }
+  const items = devices.map(renderSensor)
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      {items.map(({ icon, val, name }, i) => (
+        <div key={i} style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+          <div style={{ color: 'var(--ink-faint)', marginBottom: 6 }}><RoomZIcon name={icon} size={13} /></div>
+          <div className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{val}</div>
+          <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>{name}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StandardDeviceRow({ entity, onToggle, onService }) {
+  const isOn = isEntityOn(entity)
+  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Device'
+  const state = entity.ha_state || entity.state || '—'
+  const isToggleable = TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderBottom: '0.5px solid var(--line)' }} className="last:border-b-0">
+      <div style={{
+        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+        background: isOn ? 'var(--ink)' : 'var(--surface-2)',
+        color: isOn ? 'var(--bg)' : 'var(--ink-2)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+      }}>
+        {domainIcon(entity.domain, entity.device_class)}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1 }}>{state}</div>
+      </div>
+      {isToggleable && <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />}
+    </div>
+  )
+}
+
+function renderDomainSection(group, devices, handlers) {
+  const { onToggle, onService } = handlers
+  const visibleDevices = devices.filter(e => e.state !== 'unavailable' || group.id === 'sensors')
+
+  if (group.id === 'lights') {
+    const lights = visibleDevices.filter(e => e.domain === 'light')
+    if (!lights.length) return null
+    return <LightsGroup devices={lights} onToggle={onToggle} eyebrow={group.label} />
+  }
+
+  if (group.id === 'climate') {
+    const climateDev = visibleDevices.filter(e => e.domain === 'climate')
+    const fans = visibleDevices.filter(e => e.domain === 'fan')
+    return (
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {climateDev.map((e, i) => <ClimateRowCard key={e.entity_id || i} entity={e} onService={onService} />)}
+          {fans.map((e, i) => <StandardDeviceRow key={e.entity_id || i} entity={e} onToggle={onToggle} onService={onService} />)}
+        </div>
+      </div>
+    )
+  }
+
+  if (group.id === 'media') {
+    const tvIr = visibleDevices.filter(e => e.domain === 'tv' || e._is_ir || ['tv', 'projector'].includes(e.ha_attributes?.device_class))
+    const mediaPlayers = visibleDevices.filter(e => e.domain === 'media_player' && !tvIr.includes(e))
+    return (
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {mediaPlayers.map((e, i) => <MediaRowCard key={e.entity_id || i} entity={e} onService={onService} />)}
+          {tvIr.map((e, i) => <TVRowCard key={e.entity_id || i} entity={e} />)}
+        </div>
+      </div>
+    )
+  }
+
+  if (group.id === 'sensors') {
+    if (!visibleDevices.length) return null
+    return (
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
+        <SensorsStrip devices={visibleDevices} />
+      </div>
+    )
+  }
+
+  // Standard row cards for everything else
+  return (
+    <div>
+      <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
+      <div style={{ borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
+        {visibleDevices.map((e, i) => <StandardDeviceRow key={e.entity_id || i} entity={e} onToggle={onToggle} onService={onService} />)}
+      </div>
+    </div>
+  )
+}
+
 export function RoomDetail() {
   const { roomId } = useParams()
   const navigate = useNavigate()
@@ -758,7 +1020,32 @@ export function RoomDetail() {
         </div>
       </div>
 
-      <div style={{ padding: '20px 20px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {/* Everything off + sparkle row */}
+      <div style={{ padding: '14px 20px 0', display: 'flex', gap: 8 }}>
+        <button
+          onClick={async () => {
+            for (const d of roomDevices.filter(d => isEntityOn(d) && d.entity_id)) {
+              try { await controlDevice(d.entity_id, 'turn_off') } catch {}
+            }
+            addToast('Everything off', 'success')
+            setTimeout(() => fetchAll(), 1500)
+          }}
+          style={{
+            flex: 1, padding: '12px 14px', borderRadius: 14,
+            background: 'var(--ink)', color: 'var(--bg)', border: 'none',
+            fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          <RoomZIcon name="bolt" size={14} color="var(--bg)" />
+          Everything off
+        </button>
+        <button style={{ width: 48, padding: 12, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <RoomZIcon name="sparkle" size={16} color="var(--ink-2)" />
+        </button>
+      </div>
+
+      <div style={{ padding: '16px 20px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Devices — grouped by domain type */}
         {(() => {
           const hiddenCount = roomDevices.filter(e => e.entity_id && hiddenEntities.has(e.entity_id)).length
@@ -787,27 +1074,11 @@ export function RoomDetail() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {deviceGroups.map(group => (
-                  <div key={group.id}>
-                    <p className="z-eyebrow" style={{ marginBottom: 6 }}>{group.label}</p>
-                    <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
-                      {group.devices.map((entity, i) => (
-                        <DeviceRow
-                          key={entity.entity_id || i}
-                          entity={entity}
-                          onToggle={handleToggle}
-                          onService={handleService}
-                          onRemove={handleRemove}
-                          onHide={handleHide}
-                          onUnhide={handleUnhide}
-                          isHidden={!!(entity.entity_id && hiddenEntities.has(entity.entity_id))}
-                          ziggyStatus={entity.ziggyStatus}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {deviceGroups.map(group => {
+                  const section = renderDomainSection(group, group.devices, { onToggle: handleToggle, onService: handleService })
+                  return section ? <div key={group.id}>{section}</div> : null
+                })}
               </div>
             </div>
           )

@@ -138,7 +138,7 @@ function ActiveCard({ anomaly, roomId, onSnoozed }) {
       layout
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
       transition={{ duration: 0.16 }}
-      style={{ padding: '14px 16px', borderRadius: 14, background: bg, border: `0.5px solid ${color}33` }}
+      style={{ padding: '14px 16px', borderRadius: 14, background: bg, border: '0.5px solid var(--line)', borderLeft: `3px solid ${color}` }}
     >
       {/* Top row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
@@ -419,31 +419,19 @@ export default function Anomalies() {
         ))}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+      {/* Tabs — segmented pill */}
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 18 }}>
         {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            style={{
-              padding: '5px 12px', borderRadius: 999,
-              background: tab === t.id ? 'var(--ink)' : 'var(--surface)',
-              color: tab === t.id ? 'var(--bg)' : 'var(--ink-mute)',
-              border: tab === t.id ? 'none' : '0.5px solid var(--line)',
-              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', gap: 5,
-            }}
-          >
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex: 1, padding: '7px 0', borderRadius: 9, fontFamily: 'inherit', cursor: 'pointer',
+            background: tab === t.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 12, fontWeight: 600,
+            color: tab === t.id ? 'var(--ink)' : 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+          }}>
             {t.label}
-            {t.count > 0 && (
-              <span style={{
-                background: tab === t.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)',
-                color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999,
-                fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700,
-              }}>
-                {t.count}
-              </span>
-            )}
+            {t.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t.count}</span>}
           </button>
         ))}
       </div>

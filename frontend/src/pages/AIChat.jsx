@@ -74,13 +74,20 @@ function Message({ msg }) {
         </p>
       </div>
 
-      {/* What Ziggy did — mono ops strip */}
+      {/* Action chips — green check bubbles per design */}
       {msg.actions && msg.actions.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 6 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxWidth: '88%' }}>
           {msg.actions.map((a, i) => (
-            <span key={i} style={{ fontSize: 10, color: 'var(--ok)', fontFamily: '"IBM Plex Mono", monospace', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span>↳</span> {a}
-            </span>
+            <div key={i} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 10px', borderRadius: 999,
+              background: 'color-mix(in srgb, var(--ok) 10%, var(--surface))',
+              border: '0.5px solid color-mix(in srgb, var(--ok) 35%, var(--line))',
+              fontSize: 11, color: 'var(--ink-2)',
+            }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+              {a}
+            </div>
           ))}
         </div>
       )}
@@ -408,22 +415,33 @@ export default function AIChat() {
 
             {/* Quick ask chips */}
             {quickAsks.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 400 }}>
-                {quickAsks.map(qa => (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 420 }}>
+                {quickAsks.slice(0, 6).map(qa => (
                   <button
                     key={qa.id}
                     onClick={() => handleDirectQuickAsk(qa)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '7px 12px', borderRadius: 999,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '8px 14px', borderRadius: 999, flexShrink: 0,
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
                       fontSize: 12, fontWeight: 500, color: 'var(--ink-2)',
                       cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
-                    {qa.icon && <span>{qa.icon}</span>}
+                    {qa.icon && <span style={{ fontSize: 14 }}>{qa.icon}</span>}
                     {qa.label}
                   </button>
+                ))}
+              </div>
+            )}
+            {!quickAsks.length && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 380 }}>
+                {['Goodnight', 'Movie time', 'Who is home?', 'Good morning'].map(s => (
+                  <button key={s} onClick={() => handleSend(s)} style={{
+                    padding: '7px 14px', borderRadius: 999,
+                    background: 'var(--surface)', border: '0.5px solid var(--line)',
+                    fontSize: 12, color: 'var(--ink-2)', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                  }}>{s}</button>
                 ))}
               </div>
             )}
@@ -443,30 +461,51 @@ export default function AIChat() {
         </div>
       )}
 
+      {/* Suggestion chips above input (when has messages) */}
+      {hasMessages && quickAsks.length > 0 && (
+        <div style={{ padding: '8px 16px 0', display: 'flex', gap: 6, overflowX: 'auto', flexShrink: 0 }} className="scrollbar-thin">
+          {quickAsks.slice(0, 4).map(qa => (
+            <div key={qa.id} onClick={() => handleDirectQuickAsk(qa)} style={{
+              padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer',
+              background: 'var(--surface)', border: '0.5px solid var(--line)',
+              fontSize: 11, color: 'var(--ink-2)', fontWeight: 500,
+            }}>
+              {qa.icon && <span style={{ marginRight: 4 }}>{qa.icon}</span>}
+              {qa.label}
+            </div>
+          ))}
+          {!quickAsks.length && ['Goodnight', 'Movie time', 'Who is home?'].map(s => (
+            <div key={s} onClick={() => handleSend(s)} style={{ padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer', background: 'var(--surface)', border: '0.5px solid var(--line)', fontSize: 11, color: 'var(--ink-2)', fontWeight: 500 }}>{s}</div>
+          ))}
+        </div>
+      )}
+
       {/* ── Composer ── */}
       <div style={{
-        padding: '10px 16px 14px',
+        padding: '10px 16px 18px',
         borderTop: '0.5px solid var(--line)',
-        display: 'flex', alignItems: 'center', gap: 8,
+        display: 'flex', alignItems: 'center', gap: 10,
         flexShrink: 0,
       }}>
         <div style={{
-          flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+          flex: 1, display: 'flex', alignItems: 'center', gap: 10,
           background: 'var(--surface)', border: '0.5px solid var(--line)',
-          borderRadius: 999, padding: '9px 14px',
+          borderRadius: 22, padding: '12px 16px',
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 12h2"/></svg>
+          {/* Sparkle icon */}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/>
+          </svg>
           <input
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder="Ask Ziggy…"
+            placeholder={`Try: "open shades and start coffee"`}
             dir={isHebrew(input) ? 'rtl' : 'ltr'}
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
-              fontSize: 14, color: 'var(--ink)',
-              fontFamily: 'inherit',
+              fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit',
             }}
           />
         </div>
@@ -479,12 +518,13 @@ export default function AIChat() {
           whileTap={{ scale: 0.9 }}
           style={{
             width: 44, height: 44, borderRadius: '50%',
-            background: input.trim() ? 'var(--ink)' : (listening ? 'var(--accent)' : 'var(--surface)'),
-            color: input.trim() ? 'var(--bg)' : (listening ? '#fff' : 'var(--ink-2)'),
-            border: input.trim() || listening ? 'none' : '0.5px solid var(--line)',
+            background: input.trim() ? 'var(--ink)' : 'var(--accent)',
+            color: '#fff',
+            border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', flexShrink: 0,
             touchAction: 'none', userSelect: 'none',
+            boxShadow: 'var(--shadow-md)',
           }}
         >
           {input.trim() ? (
@@ -492,7 +532,7 @@ export default function AIChat() {
           ) : listening ? (
             <VoiceWave active size={18} />
           ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
           )}
         </motion.button>
       </div>
