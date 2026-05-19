@@ -133,11 +133,9 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
   )
 }
 
-// ── Rooms carousel — center-snap, active tile is physically wider ─────────────
-const TILE_W_ACTIVE   = 230
-const TILE_W_INACTIVE = 140
-const TILE_H_ACTIVE   = 152
-const TILE_H_INACTIVE = 120
+// ── Rooms carousel — center-snap, scale on active (no layout reflow) ─────────
+const CAROUSEL_TILE_W = 200
+const CAROUSEL_TILE_H = 140    // fixed — never scaled up
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const navigate  = useNavigate()
@@ -165,6 +163,8 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
 
   if (!sortedRooms.length) return null
 
+  const vPad = 6  // scaleX only — no vertical overhang needed
+
   return (
     <div>
       <p className="z-eyebrow" style={{ marginBottom: 10 }}>Rooms</p>
@@ -172,9 +172,10 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
         <div
           ref={scrollRef}
           style={{
-            display: 'flex', gap: 10, alignItems: 'center',
+            display: 'flex', gap: 16, alignItems: 'center',
             overflowX: 'auto',
-            paddingLeft: 20, paddingRight: 20, paddingTop: 4, paddingBottom: 4,
+            paddingLeft: 20, paddingRight: 20,
+            paddingTop: vPad, paddingBottom: vPad,
             scrollSnapType: 'x mandatory',
             WebkitOverflowScrolling: 'touch',
           }}
@@ -185,8 +186,6 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
             if (!room) return null
             const photo = getRoomPhoto(room)
             const isActive = idx === activeIdx
-            const w = isActive ? TILE_W_ACTIVE : TILE_W_INACTIVE
-            const h = isActive ? TILE_H_ACTIVE : TILE_H_INACTIVE
             return (
               <div
                 key={room.id}
@@ -194,17 +193,17 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                 onClick={() => navigate(`/rooms/${room.id}`)}
                 style={{
                   position: 'relative', flexShrink: 0,
-                  width: w, height: h,
+                  width: CAROUSEL_TILE_W, height: CAROUSEL_TILE_H,
                   borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
                   scrollSnapAlign: 'center',
-                  transition: 'width 0.32s cubic-bezier(0.34, 1.2, 0.64, 1), height 0.32s cubic-bezier(0.34, 1.2, 0.64, 1)',
-                  opacity: isActive ? 1 : 0.72,
+                  transform: isActive ? 'scaleX(1.42)' : 'scaleX(0.72)',
+                  opacity: isActive ? 1 : 0.5,
+                  transition: 'transform 0.35s ease, opacity 0.35s ease',
                 }}
               >
-                <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'opacity 0.2s' }} />
+                <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.65) 100%)' }} />
 
-                {/* Active dot */}
                 <span style={{
                   position: 'absolute', top: 10, right: 10,
                   width: 7, height: 7, borderRadius: '50%',
@@ -212,7 +211,6 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                   boxShadow: summary.activeCount > 0 ? '0 0 0 2.5px rgba(108,191,140,0.35)' : 'none',
                 }} />
 
-                {/* Sensor chips — active only */}
                 {isActive && (summary.tempSensor || summary.humSensor) && (
                   <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 4 }}>
                     {summary.tempSensor && (
@@ -228,9 +226,8 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                   </div>
                 )}
 
-                {/* Name + status */}
                 <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
-                  <p style={{ fontSize: isActive ? 13 : 11, fontWeight: 600, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{room.name}</p>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{room.name}</p>
                   <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
                     {summary.activeCount > 0 ? `${summary.activeCount} active` : 'idle'}
                     {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
