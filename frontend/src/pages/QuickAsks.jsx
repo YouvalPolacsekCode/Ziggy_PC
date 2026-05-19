@@ -165,7 +165,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function QuickAsks() {
+export default function QuickAsks({ embedded = false }) {
   const { items, loading, fetch, create, update, remove } = useQuickAskStore()
   const { addToast } = useUIStore()
   const [showCreate, setShowCreate] = useState(false)
@@ -192,23 +192,26 @@ export default function QuickAsks() {
   }
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+    <div style={embedded ? {} : { maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+      {/* Header — hidden when embedded in Settings */}
+      {!embedded && (<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Saved phrases that fire instantly</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>
-            Quick Asks
-          </h1>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>
-            Dispatch exact intents with one tap — no AI guessing
-          </p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Quick Asks</h1>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>Dispatch exact intents with one tap — no AI guessing</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Add
         </button>
-      </div>
+      </div>)}
+
+      {/* Embedded add button */}
+      {embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>+ Add</button>
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (

@@ -62,13 +62,13 @@ function Message({ msg }) {
           background:  isUser ? 'var(--ink)'    : 'var(--surface)',
           color:       isUser ? 'var(--bg)'     : 'var(--ink)',
           border:      isError
-            ? '0.5px solid color-mix(in srgb, #e05050 60%, var(--line))'
+            ? '0.5px solid color-mix(in srgb, var(--err) 60%, var(--line))'
             : isUser ? 'none' : '0.5px solid var(--line)',
           fontSize: 14.5, lineHeight: 1.45,
           textAlign: rtl ? 'right' : 'left',
         }}
       >
-        <p style={{ margin: 0, color: isError ? '#c94040' : undefined }}>{msg.text}</p>
+        <p style={{ margin: 0, color: isError ? 'var(--err)' : undefined }}>{msg.text}</p>
         <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: rtl ? 'left' : 'right' }}>
           {formatTime(msg.ts)}
         </p>
@@ -341,9 +341,7 @@ export default function AIChat() {
       }}>
         <div>
           <p className="z-eyebrow">Ziggy AI</p>
-          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', margin: '2px 0 0', color: 'var(--ink)' }}>
-            Chat
-          </h1>
+          <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>Chat</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Voice status indicator */}
