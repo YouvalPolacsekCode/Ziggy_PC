@@ -1,15 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, Settings, Zap, Play, RotateCcw, ChevronRight } from 'lucide-react'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
-import { useQuickAskStore } from '../stores/quickAskStore'
 import { greetingByTime } from '../lib/utils'
 import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, getUpdateStatus } from '../lib/api'
-import { useCameraStore, cameraSnapshotUrl } from '../stores/cameraStore'
 import { getRoomPhoto } from '../lib/roomPhotos'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
@@ -65,8 +61,6 @@ function avatarColor(name) {
   let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffff
   return AVATAR_COLORS[h % AVATAR_COLORS.length]
 }
-
-const QA_TINTS = ['oklch(0.85 0.10 75)','oklch(0.35 0.10 280)','oklch(0.40 0.06 250)','oklch(0.65 0.10 130)','oklch(0.72 0.12 20)','oklch(0.55 0.12 200)']
 
 // ── Design-system icon set (matches ziggy-atoms) ──────────────────────────────
 function ZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
@@ -139,32 +133,6 @@ function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
   )
 }
 
-// ── Widget system ─────────────────────────────────────────────────────────────
-const WIDGET_DEFAULTS = [
-  { id: 'alerts',       visible: true },
-  { id: 'presence',     visible: true },
-  { id: 'active_rooms', visible: true },
-  { id: 'security',     visible: true },
-  { id: 'activity',     visible: true },
-  { id: 'quick_ask',    visible: true },
-]
-const WIDGET_META = [
-  { id: 'alerts',       label: 'Alerts' },
-  { id: 'presence',     label: "Who's home" },
-  { id: 'active_rooms', label: 'Rooms' },
-  { id: 'security',     label: 'Security' },
-  { id: 'activity',     label: 'Recent Activity' },
-  { id: 'quick_ask',    label: 'Quick Asks' },
-]
-function loadWidgets() {
-  try {
-    const s = JSON.parse(localStorage.getItem('ziggy_home_widgets') || '[]')
-    const m = Object.fromEntries(s.map(w => [w.id, w]))
-    return WIDGET_DEFAULTS.map(d => ({ ...d, ...(m[d.id] || {}) }))
-  } catch { return [...WIDGET_DEFAULTS] }
-}
-function saveWidgets(list) { try { localStorage.setItem('ziggy_home_widgets', JSON.stringify(list)) } catch {} }
-
 // ── Hero room card ────────────────────────────────────────────────────────────
 function HeroRoomCard({ room, summary }) {
   const navigate = useNavigate()
@@ -229,67 +197,33 @@ function HeroRoomCard({ room, summary }) {
   )
 }
 
-// ── Collapsible widget card ────────────────────────────────────────────────────
-function Widget({ eyebrow, children, collapsed, onToggle, action, visible }) {
-  return (
-    <div className="z-card" style={{ padding: '13px 15px' }}>
-      <button
-        onClick={onToggle}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', marginBottom: !collapsed ? 10 : 0, fontFamily: 'inherit', gap: 8 }}
-      >
-        <p className="z-eyebrow" style={{ margin: 0 }}>{eyebrow}</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-          {action}
-          <ChevronDown size={13} color="var(--ink-faint)" style={{ transition: 'transform 0.2s', transform: collapsed ? 'none' : 'rotate(180deg)', flexShrink: 0 }} />
-        </div>
-      </button>
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'hidden' }}>
-            {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { entities, ziggyRooms, fetchAll, getActiveCount, getTotalControllable } = useDeviceStore()
-  const { tasks, fetch: fetchTasks }                           = useTaskStore()
-  const { fetchAutomations, fetchRoutines, routines }         = useAutomationStore()
-  const { fetch: fetchSuggestions, pendingCount }             = useSuggestionStore()
-  const { items: quickAsks, fetch: fetchQuickAsks }           = useQuickAskStore()
+  const { entities, ziggyRooms, fetchAll } = useDeviceStore()
+  const { tasks, fetch: fetchTasks }       = useTaskStore()
+  const { fetchAutomations, fetchRoutines, routines } = useAutomationStore()
+  const { fetch: fetchSuggestions, pendingCount }     = useSuggestionStore()
 
-  const [widgets,         setWidgets]         = useState(loadWidgets)
-  const [editMode,        setEditMode]        = useState(false)
-  const [activity,        setActivity]        = useState([])
-  const [anomalies,       setAnomalies]       = useState([])
-  const [health,          setHealth]          = useState(null)
-  const [reloading,       setReloading]       = useState(false)
-  const [reloadMsg,       setReloadMsg]       = useState(null)
-  const [coordDismissedAt, setCoordDismissedAt] = useState(() => {
+  const [activity,          setActivity]          = useState([])
+  const [anomalies,         setAnomalies]         = useState([])
+  const [health,            setHealth]            = useState(null)
+  const [reloading,         setReloading]         = useState(false)
+  const [reloadMsg,         setReloadMsg]         = useState(null)
+  const [coordDismissedAt,  setCoordDismissedAt]  = useState(() => {
     try { return parseInt(localStorage.getItem('coordWarnDismissed') || '0', 10) } catch { return 0 }
   })
-  const [presencePersons, setPresencePersons] = useState([])
-  const [haUpdateStatus,  setHaUpdateStatus]  = useState(null)
+  const [presencePersons,   setPresencePersons]   = useState([])
+  const [haUpdateStatus,    setHaUpdateStatus]    = useState(null)
   const [activatingRoutine, setActivatingRoutine] = useState(null)
-  const { cameras, motionEvents, fetchCameras, fetchMotionHistory } = useCameraStore()
-  const [snapTick, setSnapTick] = useState(0)
-  const snapIntervalRef = useRef(null)
 
   useEffect(() => {
-    fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions(); fetchQuickAsks()
-    fetchCameras(); fetchMotionHistory(24)
-    snapIntervalRef.current = setInterval(() => setSnapTick(t => t + 1), 30_000)
+    fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions()
     getActivity(15).then(r => setActivity(r.activity ?? [])).catch(() => {})
     getActiveAnomalies().then(r => setAnomalies(Object.values(r.anomalies ?? {}).flat())).catch(() => {})
     getHealth().then(setHealth).catch(() => {})
     getPresencePersons().then(r => setPresencePersons(r.persons ?? [])).catch(() => {})
     getUpdateStatus().then(setHaUpdateStatus).catch(() => {})
-    return () => clearInterval(snapIntervalRef.current)
   }, [])
 
   useEffect(() => {
@@ -298,9 +232,6 @@ export default function Dashboard() {
     }, 30_000)
     return () => clearInterval(id)
   }, [])
-
-  const toggleWidget = id => { const u = widgets.map(w => w.id === id ? { ...w, visible: !w.visible } : w); setWidgets(u); saveWidgets(u) }
-  const isCollapsed  = id => !(widgets.find(w => w.id === id)?.visible ?? true)
 
   const pendingTasks = tasks.filter(t => !t.done && !t.completed)
   const overdueTasks = pendingTasks.filter(t => t.due_date && new Date(t.due_date) < new Date())
@@ -352,34 +283,43 @@ export default function Dashboard() {
   const heroRoomData = sortedRooms[0]
   const heroRoom     = heroRoomData ? ziggyRooms.find(r => r.id === heroRoomData.id) : null
 
+  // Presence string: "Maya & kids home" style
+  const homeNames = homePersons.map(p => p.name)
+  const presenceStr = homeNames.length === 0
+    ? 'Nobody home'
+    : homeNames.length === 1
+      ? `${homeNames[0]} home`
+      : homeNames.length === 2
+        ? `${homeNames[0]} & ${homeNames[1]} home`
+        : `${homeNames.slice(0, -1).join(', ')} & ${homeNames[homeNames.length - 1]} home`
+
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 'clamp(16px, 3vw, 36px)', paddingTop: 24, paddingBottom: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '20px 20px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* ── 1. Greeting header ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{greetingByTime()}</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h1 className="z-display" style={{ fontSize: 'clamp(20px, 4vw, 28px)', margin: 0 }}>{statusText}</h1>
-            <span className="z-dot" style={{ background: activeRooms.length > 0 ? 'var(--ok)' : 'var(--ink-ghost)', flexShrink: 0 }}
-              title={activeRooms.length > 0 ? 'Devices active' : 'All quiet'} />
-          </div>
-        </div>
-
-        {/* Alert chips */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', maxWidth: '50%' }}>
-          {alerts.slice(0, 3).map(a => {
+      {/* ── 1. Greeting ── */}
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 6 }}>{greetingByTime()}</p>
+        <h1 className="z-display" style={{ fontSize: 26, margin: '0 0 8px' }}>{statusText}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="z-dot" style={{ background: activeRooms.length > 0 ? 'var(--ok)' : 'var(--line-2)', flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
+            {activeRooms.length > 0 ? `${activeRooms.length} room${activeRooms.length > 1 ? 's' : ''} active` : 'All quiet'}
+          </span>
+          {homePersons.length > 0 && (
+            <>
+              <span style={{ color: 'var(--ink-ghost)', fontSize: 12 }}>·</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-mute)', textTransform: 'capitalize' }}>{presenceStr}</span>
+            </>
+          )}
+          {/* Alert chips inline */}
+          {alerts.slice(0, 2).map(a => {
             const dotColor = a.sev === 'critical' ? 'var(--err)' : a.sev === 'warn' ? 'var(--warn)' : 'var(--info)'
-            const bg = a.sev === 'critical'
-              ? 'color-mix(in srgb, var(--err) 10%, var(--surface))'
-              : a.sev === 'warn'
-                ? 'color-mix(in srgb, var(--warn) 8%, var(--surface))'
-                : 'var(--surface)'
             return (
               <button key={a.id} onClick={() => navigate(a.to)} style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px',
                 borderRadius: 999, fontSize: 11, fontWeight: 500,
-                background: bg, border: '0.5px solid var(--line)', cursor: 'pointer',
+                background: 'color-mix(in srgb, ' + dotColor + ' 8%, var(--surface))',
+                border: '0.5px solid ' + dotColor + '44', cursor: 'pointer',
                 fontFamily: 'inherit', color: 'var(--ink)',
               }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
@@ -388,59 +328,25 @@ export default function Dashboard() {
             )
           })}
         </div>
-
-        <button onClick={() => setEditMode(v => !v)} style={{
-          background: editMode ? 'var(--ink)' : 'transparent', color: editMode ? 'var(--bg)' : 'var(--ink-faint)',
-          border: '0.5px solid ' + (editMode ? 'transparent' : 'var(--line)'),
-          borderRadius: 8, padding: '6px 8px', cursor: 'pointer', flexShrink: 0,
-        }}>
-          <Settings size={13} />
-        </button>
       </div>
-
-      {/* Widget customise panel */}
-      <AnimatePresence>
-        {editMode && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.15 }} className="z-card" style={{ overflow: 'hidden', marginTop: -4 }}
-          >
-            <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
-              <p className="z-eyebrow">Show on dashboard</p>
-            </div>
-            {WIDGET_META.map((meta, i) => {
-              const on = widgets.find(w => w.id === meta.id)?.visible ?? true
-              return (
-                <div key={meta.id} style={{ display: 'flex', alignItems: 'center', padding: '9px 16px', borderBottom: i < WIDGET_META.length - 1 ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{meta.label}</span>
-                  <button className="z-toggle" aria-checked={on} onClick={() => toggleWidget(meta.id)} />
-                </div>
-              )
-            })}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* System health banners */}
       {haOffline && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--err) 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--err) 30%, transparent)', fontSize: 12, color: 'var(--ink)' }}>
           <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
           <span style={{ fontWeight: 600 }}>Home Assistant is offline.</span>
-          <span style={{ color: 'var(--ink-mute)' }}>Device control and automations will not work until the connection is restored.</span>
+          <span style={{ color: 'var(--ink-mute)' }}>Device control will not work.</span>
         </div>
       )}
       {coordWarning && coordDismissedAt !== health?.offline_count && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--err) 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--err) 30%, transparent)', fontSize: 12, color: 'var(--ink)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--err) 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--err) 30%, transparent)', fontSize: 12, color: 'var(--ink)' }}>
           <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
           <span style={{ fontWeight: 600 }}>{health.offline_count} devices offline.</span>
           <span style={{ color: 'var(--ink-mute)', flex: 1 }}>Some devices may be unreachable.</span>
-          {reloadMsg
-            ? <span style={{ fontSize: 11, color: reloadMsg.ok ? 'var(--ok)' : 'var(--err)', fontFamily: '"IBM Plex Mono", monospace' }}>{reloadMsg.ok ? reloadMsg.text : 'Could not reconnect.'}</span>
-            : <button onClick={handleReloadZigbee} disabled={reloading} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--err)', color: '#fff', border: 'none', cursor: reloading ? 'default' : 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', opacity: reloading ? 0.6 : 1, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {reloading ? <><RotateCcw size={10} style={{ animation: 'spin 1s linear infinite' }} /> Reconnecting…</> : 'Reconnect'}
-              </button>
-          }
-          <button onClick={() => { try { localStorage.setItem('coordWarnDismissed', String(health.offline_count)) } catch {} setCoordDismissedAt(health.offline_count) }} style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
+          <button onClick={handleReloadZigbee} disabled={reloading} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--err)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}>
+            {reloading ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+          <button onClick={() => { try { localStorage.setItem('coordWarnDismissed', String(health.offline_count)) } catch {} setCoordDismissedAt(health.offline_count) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, padding: '0 2px' }}>×</button>
         </div>
       )}
 
@@ -449,29 +355,33 @@ export default function Dashboard() {
         <HeroRoomCard room={heroRoom} summary={heroRoomData} />
       )}
 
-      {/* ── 3. Quick routines carousel ── */}
+      {/* ── 3. Quick routines ── */}
       {activeRoutines.length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Routines</p>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Quick routines</p>
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }} className="scrollbar-thin">
-            {activeRoutines.map(r => {
+            {activeRoutines.map((r, idx) => {
               const isActive = activatingRoutine === r.id
+              // Tint icons matching design (sunrise/sun/sunset/moon/leaf/family)
+              const icons = ['sunrise','sun','sunset','moon','leaf','family','bolt','sparkle']
+              const iconName = icons[idx % icons.length]
+              const tints = ['var(--gold)','var(--info)','var(--accent)','var(--info)','var(--ok)','var(--accent)']
+              const tint = tints[idx % tints.length]
               return (
                 <button
                   key={r.id}
                   onClick={() => handleRunRoutine(r)}
                   style={{
                     flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '7px 14px', borderRadius: 999,
+                    padding: '10px 14px', borderRadius: 14,
                     background: isActive ? 'var(--ink)' : 'var(--surface)',
-                    color: isActive ? 'var(--bg)' : 'var(--ink)',
+                    color: isActive ? 'var(--bg)' : 'var(--ink-2)',
                     border: '0.5px solid var(--line)', cursor: 'pointer',
                     fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-                    transition: 'background 0.12s, color 0.12s',
-                    whiteSpace: 'nowrap',
+                    transition: 'background 0.12s, color 0.12s', whiteSpace: 'nowrap',
                   }}
                 >
-                  {isActive ? <Play size={11} fill="currentColor" stroke="none" /> : <Zap size={11} strokeWidth={2} />}
+                  <ZIcon name={iconName} size={14} stroke={1.6} color={isActive ? tint : tint} />
                   {r.name}
                 </button>
               )
@@ -488,10 +398,10 @@ export default function Dashboard() {
         const firstMedia   = allEntities.find(e => e.domain === 'media_player')
         const firstLock    = allEntities.find(e => e.domain === 'lock')
         const tiles = [
-          firstLight   ? { icon: 'light',   label: firstLight.friendly_name || firstLight.display_name || 'Lights',   sub: firstLight.state === 'on' ? `On · ${firstLight.ha_attributes?.brightness ? Math.round(firstLight.ha_attributes.brightness / 2.55) + '%' : ''}` : 'Off', on: firstLight.state === 'on', accentColor: 'var(--gold)',  id: firstLight.entity_id } : null,
-          firstClimate ? { icon: 'climate', label: firstClimate.friendly_name || firstClimate.display_name || 'AC',      sub: firstClimate.ha_attributes?.temperature ? `${firstClimate.ha_state} · ${firstClimate.ha_attributes.temperature}°` : firstClimate.ha_state, on: !['off','unavailable','unknown'].includes(firstClimate.state), accentColor: 'var(--info)', id: firstClimate.entity_id } : null,
-          firstMedia   ? { icon: 'media',   label: firstMedia.friendly_name || firstMedia.display_name || 'Media',    sub: firstMedia.ha_attributes?.media_title || firstMedia.ha_state || 'Off', on: firstMedia.state === 'playing', accentColor: 'var(--accent)', id: firstMedia.entity_id } : null,
-          firstLock    ? { icon: 'lock',    label: firstLock.friendly_name || firstLock.display_name || 'Front door', sub: firstLock.state === 'locked' ? 'Locked' : 'Unlocked', on: false, accentColor: 'var(--err)', id: firstLock.entity_id } : null,
+          firstLight   && { icon: 'light',   label: firstLight.display_name || firstLight.friendly_name || 'Lights',   sub: firstLight.state === 'on' ? `${firstLight.ha_attributes?.brightness ? Math.round(firstLight.ha_attributes.brightness / 2.55) + '%' : 'on'}` : 'Off', on: firstLight.state === 'on', accentColor: 'var(--gold)',  id: firstLight.entity_id },
+          firstClimate && { icon: 'climate', label: firstClimate.display_name || firstClimate.friendly_name || 'AC',    sub: firstClimate.ha_attributes?.temperature ? `${firstClimate.ha_state} · ${firstClimate.ha_attributes.temperature}°` : firstClimate.ha_state, on: !['off','unavailable','unknown'].includes(firstClimate.state), accentColor: 'var(--info)', id: firstClimate.entity_id },
+          firstMedia   && { icon: 'media',   label: firstMedia.display_name || firstMedia.friendly_name || 'Media',    sub: firstMedia.ha_attributes?.media_title || firstMedia.ha_state || 'Off', on: firstMedia.state === 'playing', accentColor: 'var(--accent)', id: firstMedia.entity_id },
+          firstLock    && { icon: 'lock',    label: firstLock.display_name || firstLock.friendly_name || 'Front door', sub: firstLock.state === 'locked' ? 'Locked' : 'Unlocked', on: false, accentColor: 'var(--err)', id: firstLock.entity_id },
         ].filter(Boolean)
         if (tiles.length < 2) return null
         return (
@@ -499,22 +409,15 @@ export default function Dashboard() {
             <p className="z-eyebrow" style={{ marginBottom: 8 }}>Quick controls</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {tiles.map(t => (
-                <ControlTile
-                  key={t.id}
-                  icon={t.icon}
-                  label={t.label}
-                  sub={t.sub}
-                  on={t.on}
-                  accentColor={t.accentColor}
-                  onClick={() => navigate(`/devices/${encodeURIComponent(t.id)}`)}
-                />
+                <ControlTile key={t.id} icon={t.icon} label={t.label} sub={t.sub} on={t.on} accentColor={t.accentColor}
+                  onClick={() => navigate(`/devices/${encodeURIComponent(t.id)}`)} />
               ))}
             </div>
           </div>
         )
       })()}
 
-      {/* ── 4b. Today's tasks peek ── */}
+      {/* ── 5. Tasks peek ── */}
       {pendingTasks.length > 0 && (
         <button
           onClick={() => navigate('/tasks')}
@@ -523,180 +426,39 @@ export default function Dashboard() {
             padding: '12px 14px', borderRadius: 14,
             background: 'var(--surface)', border: '0.5px solid var(--line)',
             cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%',
-            transition: 'border-color 0.12s',
           }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}
         >
-          <div style={{
-            width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-            background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))',
-            color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ZIcon name="check" size={14} stroke={2.5} />
+          <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface-2))', color: 'var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ZIcon name="check" size={14} stroke={2.5} color="var(--ok)" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} today</div>
-            {overdueTasks.length > 0 && (
-              <div className="z-mono" style={{ fontSize: 10, color: 'var(--err)', marginTop: 2 }}>{overdueTasks.length} overdue</div>
-            )}
+            <div className="z-mono" style={{ fontSize: 10, color: overdueTasks.length > 0 ? 'var(--err)' : 'var(--ink-faint)', marginTop: 2 }}>
+              {overdueTasks.length > 0 ? `${overdueTasks.length} overdue` : `${pendingTasks.length} pending`}
+              {pendingTasks[0]?.title && ` · ${pendingTasks[0].title}`}
+            </div>
           </div>
           <ZIcon name="fwd" size={12} color="var(--ink-faint)" />
         </button>
       )}
 
-      {/* ── 5. Presence widget ── */}
-      <Widget eyebrow="Home" collapsed={isCollapsed('presence')} onToggle={() => toggleWidget('presence')}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {homePersons.map(p => (
-            <span key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px 3px 4px', borderRadius: 999, background: 'var(--bg-2)', border: '0.5px solid var(--line)', fontSize: 11, color: 'var(--ink)' }}>
-              <span style={{ width: 18, height: 18, borderRadius: '50%', background: avatarColor(p.name), color: '#fff', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                {p.name[0]?.toUpperCase()}
-              </span>
-              <span style={{ textTransform: 'capitalize' }}>{p.name}</span>
-            </span>
-          ))}
-          {homePersons.length === 0 && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Nobody home</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-            {getActiveCount()} of {getTotalControllable()} on
-            {pendingTasks.length > 0 && (
-              <button onClick={() => navigate('/tasks')} style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, color: 'var(--ink-mute)', padding: 0 }}>
-                · {pendingTasks.length} task{pendingTasks.length > 1 ? 's' : ''}
-              </button>
-            )}
-          </span>
-        </div>
-      </Widget>
-
-      {/* ── 5. Rooms widget ── */}
-      {sortedRooms.length > 0 && (
-        <Widget eyebrow="Rooms" collapsed={isCollapsed('active_rooms')} onToggle={() => toggleWidget('active_rooms')}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-            {sortedRooms.map(s => (
-              <button
-                key={s.id}
-                onClick={() => navigate(`/rooms/${s.id}`)}
-                className="z-card-soft"
-                style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'border-color 0.12s' }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--ink)', flex: 1 }}>{s.name}</span>
-                  {s.activeCount > 0 && <span className="z-dot z-dot-on" />}
-                  {s.offlineCount > 0 && <span style={{ fontSize: 9, color: 'var(--err)', fontFamily: '"IBM Plex Mono", monospace' }}>{s.offlineCount} off</span>}
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', fontSize: 11, color: 'var(--ink-mute)' }}>
-                  {s.parts.slice(0, 3).map((p, i) => <span key={i}>{p}</span>)}
-                  {s.parts.length === 0 && <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-faint)' }}>idle</span>}
-                </div>
-              </button>
-            ))}
-          </div>
-        </Widget>
-      )}
-
-      {/* ── 6. Security cameras widget ── */}
-      {cameras.length > 0 && (
-        <Widget
-          eyebrow="Security"
-          collapsed={isCollapsed('security')}
-          onToggle={() => toggleWidget('security')}
-          action={
-            <button onClick={e => { e.stopPropagation(); navigate('/alerts') }} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
-              Alerts
-            </button>
-          }
-        >
-          <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 2 }} className="scrollbar-thin">
-            {cameras.slice(0, 4).map(cam => {
-              const lastMotion = motionEvents.find(e => e.entity_id === cam.entity_id || e.entity_id.includes(cam.entity_id.split('.')[1]))
-              return (
-                <button
-                  key={cam.entity_id}
-                  onClick={() => navigate('/rooms')}
-                  style={{ flex: '0 0 auto', width: 160, borderRadius: 12, background: 'var(--bg-2)', border: '0.5px solid var(--line)', overflow: 'hidden', cursor: 'pointer', padding: 0, position: 'relative' }}
-                >
-                  <div style={{ aspectRatio: '16/9', background: 'var(--bg-2)', overflow: 'hidden' }}>
-                    <img src={`${cameraSnapshotUrl(cam.entity_id)}?t=${snapTick}`} alt={cam.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={e => { e.target.style.display = 'none' }} />
-                  </div>
-                  <div style={{ padding: '5px 8px', textAlign: 'left' }}>
-                    <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cam.name}</p>
-                    {lastMotion
-                      ? <p style={{ fontSize: 9, color: 'var(--err)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>motion detected</p>
-                      : <p style={{ fontSize: 9, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>{cam.state}</p>
-                    }
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-          {motionEvents.length > 0 && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="z-dot z-dot-err" />
-              <span style={{ fontSize: 11, color: 'var(--ink-mute)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {motionEvents[0].name || motionEvents[0].entity_id.split('.')[1]?.replace(/_/g, ' ')}
-              </span>
-              <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', flexShrink: 0 }}>
-                {(() => { const diff = Math.floor((Date.now() - new Date(motionEvents[0].timestamp)) / 1000); return diff < 60 ? `${diff}s ago` : diff < 3600 ? `${Math.floor(diff/60)}m ago` : `${Math.floor(diff/3600)}h ago` })()}
-              </span>
-            </div>
-          )}
-        </Widget>
-      )}
-
-      {/* ── 7. Activity widget ── */}
-      <Widget eyebrow="Recent" collapsed={isCollapsed('activity')} onToggle={() => toggleWidget('activity')}>
-        {activity.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 168, overflowY: 'auto' }} className="scrollbar-thin">
-            {activity.slice(0, 10).map((entry, i) => {
+      {/* ── 6. Just now — compact activity strip ── */}
+      {activity.length > 0 && (
+        <div>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Just now</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {activity.slice(0, 4).map((entry, i) => {
               const { label, timeStr, ok } = formatActivity(entry)
               return (
-                <div key={i} style={{ display: 'flex', gap: 10, padding: '7px 0', borderBottom: i < Math.min(activity.length, 10) - 1 ? '0.5px solid var(--line)' : 'none' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: ok ? 'var(--ok)' : 'var(--err)', flexShrink: 0, marginTop: 5 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 12, color: 'var(--ink)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</p>
-                    <p className="z-mono" style={{ fontSize: 9.5, color: 'var(--ink-faint)', marginTop: 1 }}>{timeStr}</p>
-                  </div>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px' }}>
+                  <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                  <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
                 </div>
               )
             })}
           </div>
-        ) : (
-          <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>No activity yet</p>
-        )}
-      </Widget>
-
-      {/* ── 8. Quick Asks widget ── */}
-      {quickAsks.length > 0 && (
-        <Widget eyebrow="Quick asks" collapsed={isCollapsed('quick_ask')} onToggle={() => toggleWidget('quick_ask')}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            {quickAsks.slice(0, 6).map((qa, idx) => {
-              const tint = QA_TINTS[idx % QA_TINTS.length]
-              return (
-                <button
-                  key={qa.id}
-                  onClick={() => navigate('/chat', { state: { quickAsk: qa } })}
-                  style={{
-                    position: 'relative', overflow: 'hidden', aspectRatio: '1',
-                    padding: '14px 12px', borderRadius: 14, border: 'none', cursor: 'pointer',
-                    background: `linear-gradient(145deg, ${tint} 0%, oklch(0.20 0.02 250) 100%)`,
-                    textAlign: 'left', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                    transition: 'transform 0.1s', fontFamily: 'inherit',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'none' }}
-                >
-                  <span style={{ position: 'absolute', right: -12, top: -12, width: 52, height: 52, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
-                  <span style={{ fontSize: 20, lineHeight: 1 }}>{qa.icon || '⚡'}</span>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.3, letterSpacing: '-0.01em', textShadow: '0 1px 3px rgba(0,0,0,0.3)', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {qa.label}
-                  </p>
-                </button>
-              )
-            })}
-          </div>
-        </Widget>
+        </div>
       )}
 
     </div>
