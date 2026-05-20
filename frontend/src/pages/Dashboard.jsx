@@ -1,12 +1,20 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
+import { useQuickAskStore } from '../stores/quickAskStore'
+import { useUIStore } from '../stores/uiStore'
+import { useAuthStore } from '../stores/authStore'
+import { useWebSocket } from '../hooks/useWebSocket'
 import { greetingByTime } from '../lib/utils'
-import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, getUpdateStatus } from '../lib/api'
+import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, getUpdateStatus, sendDirectIntent } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
+import { DeviceCard } from '../components/device/DeviceCard'
+import { QuickControlsPicker } from '../components/QuickControlsPicker'
+import { Modal } from '../components/ui/Modal'
+import { Pencil, Play, Sparkles, Check } from 'lucide-react'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
@@ -41,18 +49,50 @@ function buildRoomSummary(room, entityMap) {
 }
 
 // ── Activity formatter ────────────────────────────────────────────────────────
-function formatActivity(entry) {
+const INTENT_LABELS = {
+  toggle_device:        'Device',
+  control_device:       'Device',
+  control_tv:           'TV',
+  ir_send_command:      'IR',
+  create_automation:    'Automation created',
+  create_task:          'Task created',
+  unrecognized_command: 'Unrecognized command',
+  get_temperature:      'Checked temperature',
+  get_humidity:         'Checked humidity',
+  get_sensor:           'Checked sensor',
+  get_room_summary:     'Room summary',
+  list_devices:         'Listed devices',
+  list_active_devices:  'Listed active devices',
+  get_device_state:     'Checked device state',
+  is_someone_home:      'Checked presence',
+  get_presence:         'Checked presence',
+}
+function prettifyIntent(intent) {
+  const words = intent.replace(/_/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+function formatActivity(entry, entityMap) {
   const ts   = new Date(entry.ts)
   const diff = Math.floor((Date.now() - ts) / 60000)
   const timeStr = diff < 1 ? 'now' : diff < 60 ? `${diff}m` : diff < 1440 ? `${Math.floor(diff / 60)}h` : ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const { intent, action, room } = entry
+  const { intent, action, room, entity_id } = entry
+  const ent = entity_id ? entityMap?.[entity_id] : null
+  const entName = ent?.display_name || ent?.friendly_name || (entity_id ? entity_id.split('.').slice(-1)[0].replace(/_/g, ' ') : null)
+
   let label
-  if      (intent === 'control_tv')         label = `TV ${action}`
-  else if (intent === 'ir_send_command')     label = room ? `IR ${action} · ${room}` : `IR ${action}`
-  else if (intent === 'create_automation')   label = 'Automation created'
-  else if (intent === 'create_task')         label = 'Task created'
-  else if (intent === 'control_device')      label = `Device ${action}${room ? ` · ${room}` : ''}`
-  else label = intent.replace(/_/g, ' ') + (action && action !== intent ? ` · ${action}` : '')
+  if (intent === 'create_automation' || intent === 'create_task') {
+    label = INTENT_LABELS[intent]
+  } else if (intent === 'toggle_device' || intent === 'control_device') {
+    const head = entName || INTENT_LABELS[intent]
+    label = action ? `${head} · ${action}${room ? ` · ${room}` : ''}` : head
+  } else if (intent === 'control_tv' || intent === 'ir_send_command') {
+    const head = INTENT_LABELS[intent]
+    label = `${head} ${action}${room ? ` · ${room}` : ''}`
+  } else if (INTENT_LABELS[intent]) {
+    label = room ? `${INTENT_LABELS[intent]} · ${room}` : INTENT_LABELS[intent]
+  } else {
+    label = prettifyIntent(intent) + (action && action !== intent ? ` · ${action}` : '')
+  }
   return { label, timeStr, ok: entry.result === 'ok' }
 }
 
@@ -85,60 +125,14 @@ function ZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
   }
 }
 
-// ── ControlTile — matches ziggy-atoms ControlTile exactly ─────────────────────
-function ControlTile({ icon, label, sub, on, accentColor, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: 14, borderRadius: 18,
-        background: on ? 'var(--ink)' : 'var(--surface)',
-        color: on ? 'var(--bg)' : 'var(--ink)',
-        border: '0.5px solid var(--line)',
-        display: 'flex', flexDirection: 'column', gap: 14,
-        minHeight: 96, cursor: 'pointer', textAlign: 'left',
-        fontFamily: 'inherit', width: '100%',
-        transition: 'opacity 0.12s',
-      }}
-      onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 10,
-          background: on ? `color-mix(in srgb, ${accentColor || 'var(--accent)'} 28%, rgba(255,255,255,0.12))` : 'var(--surface-2)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: on ? (accentColor || 'var(--gold)') : 'var(--ink-2)',
-        }}>
-          <ZIcon name={icon} size={16} stroke={1.7} />
-        </div>
-        <span style={{
-          width: 28, height: 16, borderRadius: 999,
-          background: on ? (accentColor || 'var(--ok)') : 'var(--line-2)',
-          position: 'relative', display: 'inline-block', flexShrink: 0,
-        }}>
-          <span style={{
-            position: 'absolute', top: 2, left: on ? 14 : 2,
-            width: 12, height: 12, borderRadius: '50%', background: '#fff',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-            transition: 'left 0.15s',
-          }} />
-        </span>
-      </div>
-      <div>
-        <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.25, color: on ? 'var(--bg)' : 'var(--ink)' }}>{label}</div>
-        {sub && <div style={{ fontSize: 11, color: on ? 'rgba(255,255,255,0.65)' : 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>}
-      </div>
-    </button>
-  )
-}
+// (ControlTile removed — Quick Controls now uses the unified DeviceCard variant="tile".)
 
 // ── Rooms carousel — production-grade centered snap ───────────────────────────
 // One dominant card fills ~78% of the viewport. Neighbouring tiles peek ~24px
 // each side. All tiles are the same DOM width → snap points never shift.
 // Uniform scale() keeps photo proportions correct. Shadow lifts active tile.
-const C_W   = 270   // tile DOM width (px) — set once, never changes
-const C_H   = 186   // tile DOM height
+const C_W   = 300   // tile DOM width (px) — set once, never changes
+const C_H   = 206   // tile DOM height
 const C_GAP = 14    // gap between tiles
 const C_PAD = 20    // horizontal padding inside scroll container
 
@@ -174,19 +168,30 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   return (
     <div>
       <p className="z-eyebrow" style={{ marginBottom: 10 }}>Rooms</p>
-      {/* outer clips left/right overflow */}
-      <div style={{ overflow: 'hidden', marginLeft: -C_PAD, marginRight: -C_PAD }}>
+      {/* outer clips left/right overflow.
+          The `.z-carousel-bleed` class extends the carousel beyond the page
+          padding on phones/tablets so tiles scroll to the screen edges
+          (matches the iOS-app feel). On lg+ the bleed is disabled because
+          the carousel lives inside the 2-col grid's main column and would
+          otherwise visually overflow into the right rail. */}
+      <div className="z-carousel-bleed" style={{ overflow: 'hidden' }}>
         <div
           ref={scrollRef}
           style={{
             display: 'flex', gap: C_GAP,
             overflowX: 'auto',
-            paddingLeft: C_PAD, paddingRight: C_PAD,
+            // Side padding scales with the scroll-container width so the first
+            // and last tiles can actually reach the viewport center when
+            // `scroll-snap-align: center` kicks in. On mobile the calc falls
+            // through to the 20px floor (the old behavior). On a wide desktop
+            // main column it grows so the carousel scrolls fully both ways.
+            paddingLeft:  `max(${C_PAD}px, calc((100% - ${C_W}px) / 2))`,
+            paddingRight: `max(${C_PAD}px, calc((100% - ${C_W}px) / 2))`,
             paddingTop: vPad, paddingBottom: vPad,
             scrollSnapType: 'x mandatory',
             WebkitOverflowScrolling: 'touch',
           }}
-          className="scrollbar-thin"
+          className="no-scrollbar"
         >
           {sortedRooms.map((summary, idx) => {
             const room = ziggyRooms.find(r => r.id === summary.id)
@@ -216,22 +221,46 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                 <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
 
-                {/* Active dot */}
-                <span style={{
-                  position: 'absolute', top: 12, right: 12,
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: summary.activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.3)',
-                  boxShadow: summary.activeCount > 0 ? '0 0 0 3px rgba(108,191,140,0.3)' : 'none',
-                }} />
+                {/* Active dot — same criteria as the greeting's "N rooms active"
+                    count so they never disagree. Previously the dot only checked
+                    activeCount > 0, while the greeting also counted hasMotion,
+                    so a room with motion but no on-devices was counted in the
+                    header but rendered as an "idle" tile with a grey dot. */}
+                {(() => {
+                  const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
+                  return (
+                    <span style={{
+                      position: 'absolute', top: 12, right: 12,
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: isActiveRoom ? '#6CBF8C' : 'rgba(255,255,255,0.3)',
+                      boxShadow: isActiveRoom ? '0 0 0 3px rgba(108,191,140,0.3)' : 'none',
+                    }} />
+                  )
+                })()}
 
-                {/* Sensor chips — active only */}
+                {/* Sensor chips — active only. Temperature is tinted by the
+                    same indoor-comfort thresholds used on the Rooms page
+                    (<18°C cool blue, 18–25°C neutral, >25°C warm red) so
+                    the two surfaces read as the same design system. Unit is
+                    sniffed from HA's unit_of_measurement attribute so the
+                    threshold stays sensible whether the sensor reports °C or °F. */}
                 {isActive && (summary.tempSensor || summary.humSensor) && (
                   <div style={{ position: 'absolute', top: 11, left: 12, display: 'flex', gap: 5 }}>
-                    {summary.tempSensor && (
-                      <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
-                        {parseFloat(summary.tempSensor.state).toFixed(1)}°
-                      </span>
-                    )}
+                    {summary.tempSensor && (() => {
+                      const raw = parseFloat(summary.tempSensor.state)
+                      const unit = summary.tempSensor.unit_of_measurement
+                                || summary.tempSensor.attributes?.unit_of_measurement
+                                || '°C'
+                      const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
+                      const bg = tempC < 18 ? 'rgba(60, 130, 220, 0.55)'
+                               : tempC > 25 ? 'rgba(220, 80, 60, 0.55)'
+                               : 'rgba(0, 0, 0, 0.32)'
+                      return (
+                        <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: bg, backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                          {raw.toFixed(1)}°
+                        </span>
+                      )
+                    })()}
                     {summary.humSensor && (
                       <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
                         {parseFloat(summary.humSensor.state).toFixed(0)}%
@@ -244,7 +273,13 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                 <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14 }}>
                   <p style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{room.name}</p>
                   <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
-                    {summary.activeCount > 0 ? `${summary.activeCount} active` : 'idle'}
+                    {/* Same condition as the dot and greeting count: a room with
+                        motion but zero on-devices is still "active" to the user. */}
+                    {summary.activeCount > 0
+                      ? `${summary.activeCount} active`
+                      : summary.hasMotion
+                        ? 'motion'
+                        : 'idle'}
                     {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
                   </p>
                 </div>
@@ -257,13 +292,205 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   )
 }
 
+// ── Shortcuts: merged Routines + Quick Asks tile grid ────────────────────────
+// One semantic surface for "tap to fire a thing." Routine = multi-step sequence.
+// Ask = a single saved intent + params. Visually distinct on the tile (mono
+// kind label) and in the picker (two sections). Max 8 pinned, 2 rows × 4.
+// Trailing row is left sparse when count is 5/6/7 — iOS home-screen pattern,
+// no awkward centering attempts.
+function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFireAsk, onEdit }) {
+  if (pinnedShortcuts.length === 0) return null
+
+  // Resolve each pin to its live record. Drop stale pins silently.
+  const routineMap = Object.fromEntries(routines.map(r => [r.id, r]))
+  const askMap     = Object.fromEntries(asks.map(a => [a.id, a]))
+  const resolved = pinnedShortcuts
+    .map(s => s.type === 'routine'
+      ? { ...s, record: routineMap[s.id] }
+      : { ...s, record: askMap[s.id] })
+    .filter(s => s.record)
+
+  if (resolved.length === 0) return null
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+        <p className="z-eyebrow">Shortcuts</p>
+        <button
+          onClick={onEdit}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit', padding: '2px 4px',
+          }}
+        >
+          <Pencil size={11} /> Edit
+        </button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+        {resolved.map(s => (
+          <ShortcutTile
+            key={`${s.type}:${s.id}`}
+            type={s.type}
+            record={s.record}
+            onFire={() => s.type === 'routine' ? onFireRoutine(s.record) : onFireAsk(s.record)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ShortcutTile({ type, record, onFire }) {
+  const [pending, setPending] = useState(false)
+  const icon  = record.icon || (type === 'routine' ? '⚡' : '✦')
+  const label = type === 'routine' ? record.name : record.label
+  const kind  = type === 'routine' ? 'routine' : 'ask'
+  const tint  = type === 'routine' ? 'var(--ok)' : 'var(--accent)'
+
+  const handle = async () => {
+    if (pending) return
+    setPending(true)
+    try { await onFire() } finally { setTimeout(() => setPending(false), 600) }
+  }
+
+  return (
+    <button
+      onClick={handle}
+      aria-label={`${kind}: ${label}`}
+      style={{
+        // Trust aspectRatio for a true square. The previous `minHeight: 92`
+        // overrode aspectRatio on narrow phones (Galaxy S24, iPhone SE) and
+        // forced 74×92 tiles — the "squished tall" look.
+        position: 'relative', aspectRatio: '1 / 1',
+        padding: 10, borderRadius: 14,
+        // Cozy tinted tile — matches Pinned-devices palette family. Shortcuts
+        // are stateless ("always alive"), so they get a single mid-saturation
+        // tint, halfway between Pinned OFF and Pinned ON.
+        background: `color-mix(in srgb, ${tint} 14%, var(--tile-base))`,
+        color: 'var(--ink)',
+        border: '0.5px solid ' + `color-mix(in srgb, ${tint} 24%, var(--line))`,
+        textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        opacity: pending ? 0.6 : 1,
+        transition: 'opacity 0.15s, transform 0.1s',
+      }}
+    >
+      <div style={{
+        width: 26, height: 26, borderRadius: 7,
+        background: `color-mix(in srgb, ${tint} 32%, var(--tile-base))`,
+        color: `color-mix(in srgb, ${tint} 80%, var(--ink))`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 15,
+      }}>{icon}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.01em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </div>
+        {/* Type cue stays small + neutral — tile color already encodes the type. */}
+        <div className="z-mono" style={{ fontSize: 9, color: 'var(--ink-faint)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          {kind}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, togglePinnedShortcut }) {
+  const SHORTCUTS_MAX = 8
+  const pinnedSet = new Set(pinnedShortcuts.map(s => `${s.type}:${s.id}`))
+  const isFull    = pinnedShortcuts.length >= SHORTCUTS_MAX
+
+  const renderRow = (type, record) => {
+    const key      = `${type}:${record.id}`
+    const isPinned = pinnedSet.has(key)
+    const disabled = isFull && !isPinned
+    const label    = type === 'routine' ? record.name : record.label
+    const icon     = record.icon || (type === 'routine' ? '⚡' : '✦')
+    return (
+      <button
+        key={key}
+        onClick={() => togglePinnedShortcut(type, record.id)}
+        disabled={disabled}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+          padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
+          background: isPinned ? 'color-mix(in srgb, var(--ok) 8%, var(--surface))' : 'var(--surface)',
+          border: '0.5px solid ' + (isPinned ? 'color-mix(in srgb, var(--ok) 30%, var(--line))' : 'var(--line)'),
+          opacity: disabled ? 0.4 : 1, fontFamily: 'inherit', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{icon}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </span>
+        {isPinned && <Check size={15} style={{ color: 'var(--ok)', flexShrink: 0 }} />}
+      </button>
+    )
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit shortcuts">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', margin: 0 }}>
+          {pinnedShortcuts.length} / {SHORTCUTS_MAX} pinned · tap to add or remove
+        </p>
+
+        {/* Routines */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Play size={11} style={{ color: 'var(--ok)' }} />
+            <p className="z-eyebrow" style={{ margin: 0 }}>Routines</p>
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{routines.length}</span>
+          </div>
+          {routines.length === 0 ? (
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>No routines yet — create one from the Automations page.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {routines.map(r => renderRow('routine', r))}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Asks */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Sparkles size={11} style={{ color: 'var(--accent)' }} />
+            <p className="z-eyebrow" style={{ margin: 0 }}>Quick Asks</p>
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{asks.length}</span>
+          </div>
+          {asks.length === 0 ? (
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>No quick asks yet — create one from Settings → Quick Asks.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {asks.map(a => renderRow('ask', a))}
+            </div>
+          )}
+        </div>
+
+        <button onClick={onClose} className="z-btn-primary" style={{ width: '100%', padding: '10px', borderRadius: 10 }}>
+          Done
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { entities, ziggyRooms, fetchAll } = useDeviceStore()
-  const { tasks, fetch: fetchTasks }       = useTaskStore()
-  const { fetchAutomations, fetchRoutines, routines } = useAutomationStore()
-  const { fetch: fetchSuggestions, pendingCount }     = useSuggestionStore()
+  const { entities, ziggyRooms, fetchAll, quickControlIds, pinnedShortcuts, togglePinnedShortcut } = useDeviceStore()
+  const [showQuickPicker,     setShowQuickPicker]     = useState(false)
+  const [showShortcutsPicker, setShowShortcutsPicker] = useState(false)
+  const { tasks, fetch: fetchTasks }                  = useTaskStore()
+  const { fetchAutomations, fetchRoutines, routines, runRoutine } = useAutomationStore()
+  const { fetch: fetchSuggestions, pendingCount, pending: pendingSuggestions, accept: acceptSuggestionAction, reject: rejectSuggestionAction } = useSuggestionStore()
+  const { items: quickAsks, fetch: fetchQuickAsks }   = useQuickAskStore()
+  const { addToast }                                  = useUIStore()
+  const role                                          = useAuthStore(s => s.role)
+  const isSuperAdmin                                  = role === 'super_admin'
 
   const [activity,          setActivity]          = useState([])
   const [anomalies,         setAnomalies]         = useState([])
@@ -275,16 +502,23 @@ export default function Dashboard() {
   })
   const [presencePersons,   setPresencePersons]   = useState([])
   const [haUpdateStatus,    setHaUpdateStatus]    = useState(null)
-  const [activatingRoutine, setActivatingRoutine] = useState(null)
+
+  const loadAnomalies = useCallback(() => {
+    getActiveAnomalies()
+      .then(r => setAnomalies(Object.values(r.anomalies ?? {}).flat()))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
-    fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions()
+    fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions(); fetchQuickAsks()
     getActivity(15).then(r => setActivity(r.activity ?? [])).catch(() => {})
-    getActiveAnomalies().then(r => setAnomalies(Object.values(r.anomalies ?? {}).flat())).catch(() => {})
+    loadAnomalies()
     getHealth().then(setHealth).catch(() => {})
     getPresencePersons().then(r => setPresencePersons(r.persons ?? [])).catch(() => {})
-    getUpdateStatus().then(setHaUpdateStatus).catch(() => {})
-  }, [])
+    if (isSuperAdmin) {
+      getUpdateStatus().then(setHaUpdateStatus).catch(() => {})
+    }
+  }, [isSuperAdmin])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -293,10 +527,27 @@ export default function Dashboard() {
     return () => clearInterval(id)
   }, [])
 
+  // Live anomaly refresh — engine broadcasts anomaly_active/cleared on every
+  // fire/clear. Refresh the alert card and the Dashboard banners when one
+  // arrives so the user doesn't have to navigate away and back.
+  const { messages } = useWebSocket()
+  const lastSeenWsTs = useRef(0)
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (!m || m.ts <= lastSeenWsTs.current) break
+      if (m.type === 'anomaly_active' || m.type === 'anomaly_cleared') {
+        loadAnomalies()
+        break
+      }
+    }
+    if (messages.length) lastSeenWsTs.current = messages[messages.length - 1].ts
+  }, [messages, loadAnomalies])
+
   const pendingTasks = tasks.filter(t => !t.done && !t.completed)
   const overdueTasks = pendingTasks.filter(t => t.due_date && new Date(t.due_date) < new Date())
   const entityMap    = Object.fromEntries(entities.map(e => [e.entity_id, e]))
-  const roomSummaries = ziggyRooms.filter(r => (r.devices || []).length > 0).map(r => buildRoomSummary(r, entityMap))
+  const roomSummaries = ziggyRooms.map(r => buildRoomSummary(r, entityMap))
   const sortedRooms   = [...roomSummaries].sort((a, b) => ((b.activeCount > 0 || b.hasMotion ? 1 : 0) - (a.activeCount > 0 || a.hasMotion ? 1 : 0)))
   const activeRooms   = roomSummaries.filter(r => r.activeCount > 0 || r.hasMotion)
 
@@ -305,7 +556,7 @@ export default function Dashboard() {
   const haOffline    = health !== null && health.ha_connected === false
   const coordWarning = health?.coordinator_warning && !haOffline
 
-  const haUpdateRisk = haUpdateStatus?.update_available ? haUpdateStatus.risk_level : null
+  const haUpdateRisk = isSuperAdmin && haUpdateStatus?.update_available ? haUpdateStatus.risk_level : null
   const haUpdateSev  = haUpdateRisk === 'high' ? 'critical' : haUpdateRisk === 'medium' ? 'warn' : haUpdateRisk ? 'info' : null
 
   const alerts = [
@@ -332,13 +583,6 @@ export default function Dashboard() {
     finally { setReloading(false) }
   }
 
-  const activeRoutines = (routines || []).filter(r => r.enabled !== false).slice(0, 8)
-
-  const handleRunRoutine = async (r) => {
-    setActivatingRoutine(r.id)
-    setTimeout(() => setActivatingRoutine(null), 1200)
-  }
-
   // Presence string: "Maya & kids home" style
   const homeNames = homePersons.map(p => p.name)
   const presenceStr = homeNames.length === 0
@@ -349,8 +593,19 @@ export default function Dashboard() {
         ? `${homeNames[0]} & ${homeNames[1]} home`
         : `${homeNames.slice(0, -1).join(', ')} & ${homeNames[homeNames.length - 1]} home`
 
+  // Top pending suggestion for the right-rail "Suggested" card.
+  // Picking just the first one matches the design mockup — surface ONE concrete
+  // thing the user can act on, link to /suggestions for the full list.
+  const topSuggestion = pendingSuggestions()[0]
+
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: '20px 20px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    // Wide max-width: accommodates the desktop 2-col grid (main + 320px rail
+    // + 24px gap). Single-column on phone/tablet via `.z-dashboard-grid`.
+    <div style={{ maxWidth: 'var(--page-max-w-wide)', margin: '0 auto', padding: '20px 20px 100px' }}>
+      <div className="z-dashboard-grid">
+
+      {/* ─── MAIN COLUMN ─── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
 
       {/* ── 1. Greeting ── */}
       <div>
@@ -367,7 +622,9 @@ export default function Dashboard() {
               <span style={{ fontSize: 12, color: 'var(--ink-mute)', textTransform: 'capitalize' }}>{presenceStr}</span>
             </>
           )}
-          {/* Alert chips inline */}
+          {/* Alert chips inline — mobile/tablet only. On lg+ the full Alerts
+              card in the right rail replaces these to avoid duplication. */}
+          <span className="hide-lg" style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
           {alerts.slice(0, 2).map(a => {
             const dotColor = a.sev === 'critical' ? 'var(--err)' : a.sev === 'warn' ? 'var(--warn)' : 'var(--info)'
             return (
@@ -383,6 +640,7 @@ export default function Dashboard() {
               </button>
             )
           })}
+          </span>
         </div>
       </div>
 
@@ -411,67 +669,153 @@ export default function Dashboard() {
         <RoomsCarousel sortedRooms={sortedRooms} ziggyRooms={ziggyRooms} />
       )}
 
-      {/* ── 3. Quick routines ── */}
-      {activeRoutines.length > 0 && (
-        <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Quick routines</p>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }} className="scrollbar-thin">
-            {activeRoutines.map((r, idx) => {
-              const isActive = activatingRoutine === r.id
-              // Tint icons matching design (sunrise/sun/sunset/moon/leaf/family)
-              const icons = ['sunrise','sun','sunset','moon','leaf','family','bolt','sparkle']
-              const iconName = icons[idx % icons.length]
-              const tints = ['var(--gold)','var(--info)','var(--accent)','var(--info)','var(--ok)','var(--accent)']
-              const tint = tints[idx % tints.length]
+      {/* ── 3. Shortcuts — merged Routines + Quick Asks. Hidden when empty;
+              user pins via the section's Edit button (opens ShortcutsPicker).
+              Empty state surfaces as the Pinned-devices section below. ── */}
+      <ShortcutsSection
+        pinnedShortcuts={pinnedShortcuts}
+        routines={routines}
+        asks={quickAsks}
+        onFireRoutine={async (r) => {
+          try { await runRoutine(r.id); addToast(`Running "${r.name}"`, 'success') }
+          catch { addToast('Failed to run', 'error') }
+        }}
+        onFireAsk={async (qa) => {
+          try { await sendDirectIntent(qa.intent, qa.params || {}); addToast(qa.label, 'success') }
+          catch (e) { addToast(e.message || 'Failed', 'error') }
+        }}
+        onEdit={() => setShowShortcutsPicker(true)}
+      />
+
+      {/* Discover-shortcuts CTA — shown only when nothing is pinned AND the
+          user has at least one routine or quick-ask to choose from. */}
+      {pinnedShortcuts.length === 0 && (routines.length > 0 || quickAsks.length > 0) && (
+        <button
+          onClick={() => setShowShortcutsPicker(true)}
+          style={{
+            width: '100%', padding: '14px 12px', borderRadius: 14,
+            background: 'var(--surface-2)', border: '0.5px dashed var(--line-2)',
+            color: 'var(--ink-mute)', cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}
+        >
+          <Pencil size={12} /> Pin routines & quick asks as shortcuts
+        </button>
+      )}
+
+      {/* ── 4. Quick controls — user-pinned, up to 4. Falls back to auto-pick ── */}
+      {(() => {
+        const live = entities.filter(e => !['unavailable','unknown'].includes(e.state))
+        const entityMap = Object.fromEntries(entities.map(e => [e.entity_id, e]))
+
+        // User pinned list takes priority (drop ids that no longer exist).
+        let picks = quickControlIds.map(id => entityMap[id]).filter(Boolean)
+
+        // Backfill with auto-pick only when the user hasn't customised yet.
+        if (quickControlIds.length === 0) {
+          const pickKind = (pred) => live.find(e => pred(e) && e.state === 'on') || live.find(pred)
+          picks = [
+            pickKind(e => e.domain === 'light'),
+            pickKind(e => e.domain === 'climate' || (e._ir && e._irDevice?.type === 'ac')),
+            pickKind(e => e.domain === 'media_player' || (e._ir && ['tv', 'soundbar', 'projector'].includes(e._irDevice?.type))),
+            pickKind(e => e.domain === 'lock'),
+          ].filter(Boolean)
+        }
+
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+              <p className="z-eyebrow">Pinned devices</p>
+              <button
+                onClick={() => setShowQuickPicker(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit',
+                  padding: '2px 4px',
+                }}
+              >
+                <Pencil size={11} /> Edit
+              </button>
+            </div>
+            {picks.length === 0 ? (
+              <button
+                onClick={() => setShowQuickPicker(true)}
+                style={{
+                  width: '100%', padding: '18px 12px', borderRadius: 14,
+                  background: 'var(--surface-2)', border: '0.5px dashed var(--line-2)',
+                  color: 'var(--ink-mute)', cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+                }}
+              >
+                + Pin up to 4 devices
+              </button>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+                {picks.map(entity => (
+                  <DeviceCard key={entity.entity_id} entity={entity} variant="tile" dense />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      <QuickControlsPicker open={showQuickPicker} onClose={() => setShowQuickPicker(false)} />
+
+      <ShortcutsPicker
+        open={showShortcutsPicker}
+        onClose={() => setShowShortcutsPicker(false)}
+        routines={routines}
+        asks={quickAsks}
+        pinnedShortcuts={pinnedShortcuts}
+        togglePinnedShortcut={togglePinnedShortcut}
+      />
+
+      {/* ── Active alerts (mobile only) ──
+          Sits below the user's pinned controls so it doesn't push the rooms
+          carousel and shortcuts (the daily-use surfaces) down the page. The
+          desktop rail's Alerts card covers the same data — `.hide-lg` keeps
+          this copy mobile/tablet-only to avoid duplication. */}
+      {anomalies.length > 0 && (
+        <div className="hide-lg z-card" style={{ padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+            <p className="z-eyebrow" style={{ margin: 0 }}>Alerts</p>
+            <button
+              onClick={() => navigate('/alerts')}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 11, color: 'var(--ink-faint)',
+                padding: '2px 4px',
+              }}
+            >
+              See all {anomalies.length}
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {anomalies.slice(0, 3).map((a, i) => {
+              const dotColor = a.severity === 'critical' ? 'var(--err)' : a.severity === 'warning' ? 'var(--warn)' : 'var(--info)'
               return (
                 <button
-                  key={r.id}
-                  onClick={() => handleRunRoutine(r)}
+                  key={a.id || `${a.room_id}-${a.rule_id}-${i}`}
+                  onClick={() => navigate('/alerts')}
                   style={{
-                    flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '10px 14px', borderRadius: 14,
-                    background: isActive ? 'var(--ink)' : 'var(--surface)',
-                    color: isActive ? 'var(--bg)' : 'var(--ink-2)',
-                    border: '0.5px solid var(--line)', cursor: 'pointer',
-                    fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-                    transition: 'background 0.12s, color 0.12s', whiteSpace: 'nowrap',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 4px', borderRadius: 8,
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'inherit', textAlign: 'left', width: '100%',
                   }}
                 >
-                  <ZIcon name={iconName} size={14} stroke={1.6} color={isActive ? tint : tint} />
-                  {r.name}
+                  <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{a.message}</span>
+                  <ZIcon name="fwd" size={11} color="var(--ink-faint)" />
                 </button>
               )
             })}
           </div>
         </div>
       )}
-
-      {/* ── 4. Quick controls 2×2 ── */}
-      {(() => {
-        const allEntities = entities.filter(e => !['unavailable','unknown'].includes(e.state))
-        const firstLight   = allEntities.find(e => e.domain === 'light')
-        const firstClimate = allEntities.find(e => e.domain === 'climate')
-        const firstMedia   = allEntities.find(e => e.domain === 'media_player')
-        const firstLock    = allEntities.find(e => e.domain === 'lock')
-        const tiles = [
-          firstLight   && { icon: 'light',   label: firstLight.display_name || firstLight.friendly_name || 'Lights',   sub: firstLight.state === 'on' ? `${firstLight.ha_attributes?.brightness ? Math.round(firstLight.ha_attributes.brightness / 2.55) + '%' : 'on'}` : 'Off', on: firstLight.state === 'on', accentColor: 'var(--gold)',  id: firstLight.entity_id },
-          firstClimate && { icon: 'climate', label: firstClimate.display_name || firstClimate.friendly_name || 'AC',    sub: firstClimate.ha_attributes?.temperature ? `${firstClimate.ha_state} · ${firstClimate.ha_attributes.temperature}°` : firstClimate.ha_state, on: !['off','unavailable','unknown'].includes(firstClimate.state), accentColor: 'var(--info)', id: firstClimate.entity_id },
-          firstMedia   && { icon: 'media',   label: firstMedia.display_name || firstMedia.friendly_name || 'Media',    sub: firstMedia.ha_attributes?.media_title || firstMedia.ha_state || 'Off', on: firstMedia.state === 'playing', accentColor: 'var(--accent)', id: firstMedia.entity_id },
-          firstLock    && { icon: 'lock',    label: firstLock.display_name || firstLock.friendly_name || 'Front door', sub: firstLock.state === 'locked' ? 'Locked' : 'Unlocked', on: false, accentColor: 'var(--err)', id: firstLock.entity_id },
-        ].filter(Boolean)
-        if (tiles.length < 2) return null
-        return (
-          <div>
-            <p className="z-eyebrow" style={{ marginBottom: 8 }}>Quick controls</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {tiles.map(t => (
-                <ControlTile key={t.id} icon={t.icon} label={t.label} sub={t.sub} on={t.on} accentColor={t.accentColor}
-                  onClick={() => navigate(`/devices/${encodeURIComponent(t.id)}`)} />
-              ))}
-            </div>
-          </div>
-        )
-      })()}
 
       {/* ── 5. Tasks peek ── */}
       {pendingTasks.length > 0 && (
@@ -498,25 +842,191 @@ export default function Dashboard() {
         </button>
       )}
 
-      {/* ── 6. Just now — compact activity strip ── */}
+      {/* ── Mobile-only Just-now activity ──
+          Original "Just now" lives at the bottom of the main column on
+          phones/tablets. On desktop the same content moves to the rail's
+          "Recent Activity" card, so we hide this copy via `.hide-lg`.
+          (Mobile is intentionally untouched — the rail's Alerts/Suggested
+          cards exist on desktop only and are not surfaced here.) */}
+      <div className="hide-lg">
       {activity.length > 0 && (
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 8 }}>Just now</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {activity.slice(0, 4).map((entry, i) => {
-              const { label, timeStr, ok } = formatActivity(entry)
-              return (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px' }}>
-                  <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                  <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
-                </div>
-              )
-            })}
+          <div className="z-card" style={{ padding: '4px 6px' }}>
+            {/* Show exactly 5 rows fully (no peek), then scroll for rows 6–10.
+                Row stride = 28 height + 4 gap = 32. 5 rows × 28 + 4 gaps × 4 = 156.
+                The container holds up to 10 (activity.slice(0, 10)), so scrolling
+                reveals 5 more. */}
+            <div
+              className="scrollbar-thin"
+              style={{
+                maxHeight: 156,
+                overflowY: 'auto',
+                display: 'flex', flexDirection: 'column', gap: 4,
+              }}
+            >
+              {activity.slice(0, 10).map((entry, i) => {
+                const { label, timeStr, ok } = formatActivity(entry, entityMap)
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, height: 28, padding: '0 2px', flexShrink: 0 }}>
+                    <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                    <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
+      </div>
 
+      {/* ─── END MAIN COLUMN ─── */}
+      </div>
+
+      {/* ─── RIGHT RAIL ─── Alerts · Suggested · Recent Activity.
+          Desktop-only (≥1024px). The .only-lg utility hides this entire
+          aside on phones/tablets, so Alerts and Suggested NEVER render on
+          mobile — that view stays identical to the pre-redesign Dashboard
+          (greeting + chips, carousel, shortcuts, pinned, tasks, Just-now). */}
+      <aside className="z-dashboard-rail only-lg">
+
+        {/* Alerts card — actual anomaly items from /alerts, NOT the synthetic
+            count entries (HA-update info, "1 suggestion ready", overdue tasks).
+            Those have their own homes elsewhere; the rail Alerts card should
+            be a quick scan of "what's actually wrong right now", matching
+            the mobile copy and the design mockup ("Front door unlocked 14m"
+            style, not "1 critical alert"). */}
+        {anomalies.length > 0 && (
+          <div className="z-card" style={{ padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+              <p className="z-eyebrow" style={{ margin: 0 }}>Alerts</p>
+              <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>· {anomalies.length}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {anomalies.slice(0, 5).map((a, i) => {
+                const dotColor = a.severity === 'critical' ? 'var(--err)' : a.severity === 'warning' ? 'var(--warn)' : 'var(--info)'
+                return (
+                  <button
+                    key={a.id || `${a.room_id}-${a.rule_id}-${i}`}
+                    onClick={() => navigate('/alerts')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 6px', borderRadius: 8,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', textAlign: 'left', width: '100%',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.message}</span>
+                    <ZIcon name="fwd" size={11} color="var(--ink-faint)" />
+                  </button>
+                )
+              })}
+              {anomalies.length > 5 && (
+                <button
+                  onClick={() => navigate('/alerts')}
+                  style={{
+                    fontFamily: 'inherit', fontSize: 11, color: 'var(--ink-faint)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '6px', textAlign: 'left',
+                  }}
+                >
+                  See all {anomalies.length} →
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Suggested card — surfaces ONE pending suggestion with inline
+            Save / Not now actions, matching the design mockup. Full list at
+            /suggestions; the "{N} suggestions ready" alert chip already links
+            there if the user wants to see them all. */}
+        {topSuggestion && (
+          <div
+            className="z-card"
+            style={{
+              padding: '14px 16px',
+              background: 'color-mix(in srgb, var(--accent) 6%, var(--surface))',
+              borderColor: 'color-mix(in srgb, var(--accent) 22%, var(--line))',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+              <Sparkles size={11} style={{ color: 'var(--accent)' }} />
+              <p className="z-eyebrow" style={{ margin: 0, color: 'var(--accent-3)' }}>Suggested</p>
+            </div>
+            <p style={{
+              fontSize: 13, lineHeight: 1.45, color: 'var(--ink)',
+              margin: '0 0 12px',
+              display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 4,
+              overflow: 'hidden',
+            }}>
+              {topSuggestion.user_message}
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={async () => {
+                  try { await acceptSuggestionAction(topSuggestion.id); addToast('Suggestion saved', 'success') }
+                  catch (e) { addToast(e.message || 'Failed', 'error') }
+                }}
+                className="z-btn-primary"
+                style={{ padding: '7px 14px', fontSize: 12 }}
+              >
+                Save
+              </button>
+              <button
+                onClick={async () => {
+                  try { await rejectSuggestionAction(topSuggestion.id) }
+                  catch (e) { addToast(e.message || 'Failed', 'error') }
+                }}
+                className="z-btn-secondary"
+                style={{ padding: '7px 14px', fontSize: 12 }}
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Recent Activity — was "Just now" at the bottom of the main column.
+            On desktop it makes more sense in the rail (always visible while
+            scrolling). On mobile it stacks below main, same as before just
+            without the "Just now" eyebrow change. */}
+        {activity.length > 0 && (
+          <div className="z-card" style={{ padding: '14px 16px' }}>
+            <p className="z-eyebrow" style={{ margin: '0 0 10px' }}>Recent Activity</p>
+            {/* Row stride pinned to 28px so the scroll math is deterministic.
+                10 rows × 28 + 9 gaps × 4 = 316. Cap below that for a scroll
+                affordance; on desktop the sticky-rail max-height also applies. */}
+            <div
+              className="scrollbar-thin"
+              style={{
+                maxHeight: 280,
+                overflowY: 'auto',
+                display: 'flex', flexDirection: 'column', gap: 4,
+              }}
+            >
+              {activity.slice(0, 10).map((entry, i) => {
+                const { label, timeStr, ok } = formatActivity(entry, entityMap)
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, height: 28, padding: '0 2px', flexShrink: 0 }}>
+                    <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                    <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+      </aside>
+
+      </div>  {/* close .z-dashboard-grid */}
     </div>
   )
 }

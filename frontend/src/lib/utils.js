@@ -159,3 +159,47 @@ export function isHebrew(text) {
 export function textDir(text) {
   return isHebrew(text) ? 'rtl' : 'ltr'
 }
+
+/**
+ * Approximate Kelvin → [r, g, b] (0–255). Tanner Helland's algorithm.
+ * Used to render the actual perceived color of a color-temperature light.
+ */
+export function kelvinToRgb(kelvin) {
+  const t = Math.max(1000, Math.min(40000, kelvin)) / 100
+  let r, g, b
+  if (t <= 66) {
+    r = 255
+    g = Math.max(0, Math.min(255, 99.4708025861 * Math.log(t) - 161.1195681661))
+    if (t <= 19) {
+      b = 0
+    } else {
+      b = Math.max(0, Math.min(255, 138.5177312231 * Math.log(t - 10) - 305.0447927307))
+    }
+  } else {
+    r = Math.max(0, Math.min(255, 329.698727446 * Math.pow(t - 60, -0.1332047592)))
+    g = Math.max(0, Math.min(255, 288.1221695283 * Math.pow(t - 60, -0.0755148492)))
+    b = 255
+  }
+  return [Math.round(r), Math.round(g), Math.round(b)]
+}
+
+/**
+ * Return the perceived RGB of a light given its raw HA attributes.
+ * Respects the active color_mode so the visual matches reality:
+ *   - In color_temp mode, derive from the current temperature (ignore stale rgb_color)
+ *   - Otherwise prefer rgb_color, fall back to kelvin/mireds
+ */
+export function lightRgb({ rgb_color, color_temp_kelvin, color_temp, color_mode } = {}) {
+  const kelvin = () => {
+    const k = color_temp_kelvin || (color_temp ? Math.round(1000000 / color_temp) : null)
+    return k ? kelvinToRgb(k) : null
+  }
+  if (color_mode === 'color_temp') {
+    const k = kelvin()
+    if (k) return k
+  }
+  if (Array.isArray(rgb_color) && rgb_color.length >= 3) {
+    return [rgb_color[0], rgb_color[1], rgb_color[2]]
+  }
+  return kelvin()
+}

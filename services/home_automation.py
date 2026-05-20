@@ -72,6 +72,28 @@ def call_service(domain: str, service: str, data: Dict[str, Any]) -> Dict[str, A
                  result="error",
                  suggestion=f"Check HA logs for {domain}.{service} errors.")
         return {"ok": False, "message": f"HA {domain}.{service} error {resp.status_code}: {resp.text}"}
+    except requests.exceptions.ReadTimeout:
+        # HA blocks the REST until the device handler returns. Hitting our
+        # timeout almost always means the physical device didn't ack — it's
+        # offline, on a flaky link, or its integration is misbehaving. HA
+        # itself is fine (state reads still work).
+        duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
+        entity = (data or {}).get("entity_id", "")
+        log_error(f"[HA] Device timeout on {domain}.{service} (entity={entity}) after {duration_ms}ms")
+        bus.emit("ha", BASIC, "ha_service_timeout",
+                 domain=domain, service=service, duration_ms=duration_ms,
+                 entity_id=entity, result="timeout",
+                 suggestion="Device did not respond. Check power, WiFi/Zigbee link, or the integration.")
+        label = entity.split(".", 1)[1].replace("_", " ") if entity else f"{domain}.{service}"
+        return {"ok": False, "message": f"{label} did not respond — check it's powered and online"}
+    except requests.exceptions.ConnectionError as e:
+        duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
+        log_error(f"[HA] Connection error to HA on {domain}.{service}: {e}")
+        bus.emit("ha", BASIC, "ha_service_connection_error",
+                 domain=domain, service=service, duration_ms=duration_ms,
+                 error=str(e), result="connection_error",
+                 suggestion="Home Assistant is unreachable. Check the HA URL and that HA is running.")
+        return {"ok": False, "message": "Home Assistant is unreachable"}
     except Exception as e:
         duration_ms = round((_time.perf_counter() - t0) * 1000, 1)
         log_error(f"[HA] Exception in call_service({domain}.{service}): {e}")

@@ -554,7 +554,7 @@ export default function VirtualDevices({ embedded = false }) {
   }, {})
 
   return (
-    <div style={embedded ? {} : { maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={embedded ? {} : { maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header — hidden when embedded */}
       {!embedded && (
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>

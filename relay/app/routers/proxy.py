@@ -21,6 +21,23 @@ router = APIRouter(prefix="/proxy")
 
 PROXY_TIMEOUT = 30
 
+# Hop-by-hop headers (RFC 7230 §6.1) plus body-framing headers that no longer
+# describe the response after httpx has decoded the body. Forwarding these
+# verbatim causes Fly's edge to disagree with the actual byte length and
+# return 502 Bad Gateway.
+_STRIP_RESPONSE_HEADERS = {
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "upgrade",
+}
+
 
 @router.api_route("/{home_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(home_id: str, path: str, request: Request):
@@ -68,10 +85,14 @@ async def proxy(home_id: str, path: str, request: Request):
                 headers = headers,
                 content = body,
             )
+        safe_headers = {
+            k: v for k, v in resp.headers.items()
+            if k.lower() not in _STRIP_RESPONSE_HEADERS
+        }
         return Response(
             content     = resp.content,
             status_code = resp.status_code,
-            headers     = dict(resp.headers),
+            headers     = safe_headers,
         )
     except httpx.ConnectError:
         raise HTTPException(503, "Cannot reach home hub. Tunnel may be down.")

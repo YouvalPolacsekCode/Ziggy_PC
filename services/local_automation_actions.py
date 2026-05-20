@@ -56,9 +56,13 @@ def delete_automation_meta(automation_id: str) -> None:
 
 
 # All step types that Ziggy's own executor can run.
-# call_service, delay, notify, send_intent are now handled natively so that
-# time-triggered automations stored in automations.json don't need HA.
-_LOCAL_TYPES = {"ziggy_intent", "ir_command", "call_service", "delay", "notify", "send_intent", "message"}
+# - `device` is the routine-wizard variant of call_service (different field names).
+# - `automation` runs another automation's action list inline.
+# - `scene` is intentionally absent; scenes are no longer a Ziggy concept.
+_LOCAL_TYPES = {
+    "ziggy_intent", "ir_command", "call_service", "device",
+    "delay", "notify", "send_intent", "message", "automation",
+}
 
 
 def save_ziggy_actions(automation_id: str, actions: list[dict]) -> None:
@@ -198,10 +202,17 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
                           step_type=kind, step_data={k: v for k, v in step.items() if k != "type"})
 
                 # ── HA service call executed directly by Ziggy ───────────────────
-                if kind == "call_service":
+                # `device` is the routine-wizard alias for call_service — same payload,
+                # different field names (action/ha_service vs service_value/service).
+                if kind in ("call_service", "device"):
                     from services.home_automation import call_service as ha_call, get_state
                     entity_id = step.get("entity_id", "")
-                    svc_key = step.get("ha_service") or step.get("service_value") or ""
+                    svc_key = (
+                        step.get("ha_service")
+                        or step.get("service_value")
+                        or step.get("action")
+                        or ""
+                    )
                     if not svc_key:
                         svc_key = step.get("service", "homeassistant.turn_on").split(".")[-1]
                     domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
@@ -308,6 +319,28 @@ async def execute_ziggy_actions(automation_id: str, label: str = "") -> list[dic
                             "params": step.get("params", {}),
                             "source": "automation",
                         })
+
+                # ── Run another automation inline ────────────────────────────────
+                # Loads the target automation's saved actions and executes them
+                # one-by-one in this routine's flow. Trigger/conditions of the
+                # target are intentionally ignored — this is a manual "include".
+                elif kind == "automation":
+                    target_id = step.get("automation_id") or ""
+                    if not target_id:
+                        result = {"ok": False, "message": "Automation step has no automation_id."}
+                    elif target_id == automation_id:
+                        result = {"ok": False, "message": "Refusing to recursively run the same automation."}
+                    else:
+                        sub_results = await execute_ziggy_actions(target_id, label=f"sub:{target_id}")
+                        sub_failed = [r for r in sub_results if not r.get("ok")]
+                        result = {
+                            "ok": not sub_failed,
+                            "message": (
+                                f"Ran {len(sub_results)} step(s) from {target_id}"
+                                if not sub_failed
+                                else f"{len(sub_failed)}/{len(sub_results)} step(s) failed in {target_id}"
+                            ),
+                        }
 
                 else:
                     result = {"ok": False, "message": f"Unknown step type: {kind}"}

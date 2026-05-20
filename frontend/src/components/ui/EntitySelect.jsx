@@ -125,9 +125,6 @@ export const DOMAIN_ACTIONS = {
     { value: 'oscillate_on',  label: 'Oscillate On', haService: 'oscillate', serviceData: { oscillating: true } },
     { value: 'oscillate_off', label: 'Oscillate Off',haService: 'oscillate', serviceData: { oscillating: false } },
   ],
-  scene: [
-    { value: 'turn_on', label: 'Activate Scene', haService: 'turn_on' },
-  ],
   script: [
     { value: 'turn_on', label: 'Run Script', haService: 'turn_on' },
   ],

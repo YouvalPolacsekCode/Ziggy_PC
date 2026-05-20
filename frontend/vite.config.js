@@ -23,17 +23,30 @@ export default defineConfig({
         name: 'Ziggy',
         short_name: 'Ziggy',
         description: 'Your AI smart home assistant',
-        theme_color: '#18181b',
-        background_color: '#18181b',
+        // theme/background match the LIGHT palette --bg (#F5F2ED). The dark
+        // status-bar color is set per-color-scheme in index.html via
+        // <meta name="theme-color"> media queries, which override this for
+        // dark-mode users. Manifest is the install-time fallback.
+        theme_color: '#F5F2ED',
+        background_color: '#F5F2ED',
         display: 'standalone',
-        // display_override lets browsers that support it use window-controls-overlay
-        // (edge-to-edge) while falling back to standalone on older versions.
-        display_override: ['window-controls-overlay', 'standalone'],
+        // Chain: standalone everywhere → minimal-ui on legacy Android Chrome
+        // (which sometimes refuses standalone). window-controls-overlay is
+        // desktop-PWA only; it has no effect on phones and is harmless here.
+        display_override: ['standalone', 'minimal-ui'],
         orientation: 'portrait',
         start_url: '/',
+        scope: '/',
+        categories: ['productivity', 'utilities', 'lifestyle'],
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          // Both `any` (regular launch icon) and `maskable` (Android adaptive
+          // icon framing) need explicit entries. A single combined "any maskable"
+          // works but Android sometimes still crops it; splitting is safest.
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon.svg',     sizes: 'any',      type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       workbox: {

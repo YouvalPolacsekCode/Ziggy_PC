@@ -61,9 +61,16 @@ export function ToastContainer() {
 
   return (
     <div style={{
-      position: 'fixed', bottom: 96, left: '50%', transform: 'translateX(-50%)',
+      position: 'fixed',
+      // Sit above the bottom nav + safe-area on mobile.
+      // On desktop (md+), no bottom nav — but anchoring to nav-h + safe still
+      // gives a comfortable 60-68px hover above the bottom edge.
+      bottom: 'calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 12px)',
+      left: '50%', transform: 'translateX(-50%)',
       zIndex: 60, display: 'flex', flexDirection: 'column', gap: 6,
-      width: '100%', maxWidth: 360, padding: '0 16px',
+      width: '100%', maxWidth: 360,
+      paddingLeft: 'max(16px, var(--safe-left))',
+      paddingRight: 'max(16px, var(--safe-right))',
       pointerEvents: 'none',
     }}>
       <AnimatePresence>

@@ -12,6 +12,7 @@ from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
 from .routers.proxy import router as proxy_router
 from .routers.provision import router as provision_router
+from .routers.public_presence import router as public_presence_router
 
 
 @asynccontextmanager
@@ -35,6 +36,9 @@ app.include_router(auth_router,      prefix="/api")
 app.include_router(homes_router,     prefix="/api")
 app.include_router(invites_router,   prefix="/api")
 app.include_router(provision_router, prefix="/api")
+# Public presence passthrough — must register BEFORE the catch-all proxy so
+# its specific /api/presence/ping route takes precedence.
+app.include_router(public_presence_router)
 # Proxy last — catch-all pattern
 app.include_router(proxy_router,     prefix="/api")
 

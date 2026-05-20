@@ -41,12 +41,23 @@ export function AppShell({ connected }) {
   const isChatRoute = location.pathname.startsWith('/chat')
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+    // Use dvh (via --vh) so the shell tracks the *visible* viewport as
+    // mobile browser chrome and the on-screen keyboard show/hide. Safe-area
+    // padding is moved inside each column (sidebar + main) rather than on
+    // the outer flex — the outer one would also offset the sidebar's
+    // sticky top, breaking flush-to-top alignment on desktop.
+    <div style={{ display: 'flex', minHeight: 'var(--vh)', background: 'var(--bg)' }}>
       <Sidebar connected={connected} />
 
       <main
         className={`flex-1 min-w-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto scrollbar-thin pb-nav'}`}
-        style={{ background: 'var(--bg)' }}
+        style={{
+          background: 'var(--bg)',
+          // Safe-area top here, NOT on the outer wrapper, so sidebar can stay
+          // flush at viewport top on desktop while mobile main content clears
+          // the status bar on iOS PWA (black-translucent) and Android cutouts.
+          paddingTop: 'var(--safe-top)',
+        }}
       >
         {/* Disconnected banner */}
         {connected === false && (

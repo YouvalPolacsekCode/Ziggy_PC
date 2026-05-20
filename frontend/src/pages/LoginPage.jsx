@@ -41,7 +41,7 @@ export default function LoginPage() {
 
   if (mode === 'loading') {
     return (
-      <div data-palette="dark" style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div data-palette="dark" style={{ minHeight: 'var(--vh)', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ width: 20, height: 20, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
@@ -51,7 +51,7 @@ export default function LoginPage() {
     <div
       data-palette="dark"
       style={{
-        minHeight: '100vh',
+        minHeight: 'var(--vh)',
         background: 'var(--bg)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '24px 20px',

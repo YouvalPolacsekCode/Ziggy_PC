@@ -6,6 +6,8 @@ import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceStore } from '../stores/voiceStore'
+import { useDeviceStore } from '../stores/deviceStore'
+import { useAutomationStore } from '../stores/automationStore'
 import { formatTime, isHebrew } from '../lib/utils'
 
 // Detect Web Speech API support at module level — evaluated once, not per render.
@@ -173,6 +175,14 @@ export default function AIChat() {
   const { addToast }                              = useUIStore()
   const { messages, addMessage, clearMessages }   = useChatStore()
   const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
+  // Awareness counters for the header strip — same pattern as the TV-remote
+  // page's "HDMI 2 · Apple TV" contextual cue: tells you what Ziggy can act on
+  // before you ask. Read from caches; no fetches added on this surface.
+  const { entities, ziggyRooms } = useDeviceStore()
+  const { routines }             = useAutomationStore()
+  const knownDevices = entities.length
+  const knownRooms   = ziggyRooms.length
+  const knownRoutines = (routines || []).length
   const {
     micEnabled,
     wakewordEnabled,
@@ -219,21 +229,42 @@ export default function AIChat() {
   }, [])
 
   // Pin the chat container to an exact pixel height at all times.
-  // Relying on calc(100dvh - 4rem) alone can leave the composer floating when dvh
-  // updates asynchronously (e.g. after keyboard closes on Android) or is slightly
-  // wrong. JS always wins and guarantees the container fills exactly the visible area
-  // minus the bottom nav. On iOS, vv.height shrinks when the keyboard opens while
-  // window.innerHeight stays fixed — that's how we detect "keyboard open" and stop
-  // subtracting nav height (the nav is hidden behind the keyboard in that state).
+  //
+  // Pure CSS dvh + calc() handles modern Chrome/Edge fine, but we still need
+  // JS for two cases:
+  //   1) iOS Safari does not currently honor `interactive-widget=resizes-content`
+  //      — when the keyboard opens, only the *visual* viewport shrinks (vv.height),
+  //      while the *layout* viewport (and dvh) stays full-height. Without JS the
+  //      composer ends up behind the keyboard.
+  //   2) Older Android Chrome PWAs ship stale dvh values after a keyboard close
+  //      animation finishes.
+  //
+  // We read the shell-geometry tokens (--nav-h, --safe-top, --safe-bottom)
+  // from CSS so this stays in lockstep with index.css / BottomNav.jsx — no
+  // duplicated magic numbers like the old hardcoded `64` / `4rem`.
   useEffect(() => {
+    // Resolve a CSS length variable to pixels. Falls back to 0 if the var
+    // isn't defined (very old browser).
+    const cssPx = (name) => {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+      if (!v) return 0
+      // Most of these are already pixels (e.g. "60px"). env() values resolve
+      // to px in computed style. parseFloat handles both.
+      return parseFloat(v) || 0
+    }
     const setSize = () => {
       if (!containerRef.current) return
       const vv = window.visualViewport
       const viewH = vv ? vv.height : window.innerHeight
       const isMobile = window.innerWidth < 768
+      // 0.8 heuristic: any drop > 20% from window.innerHeight is almost
+      // certainly the keyboard. Tabs/URL-bar animation is < 15%.
       const keyboardOpen = vv ? vv.height < window.innerHeight * 0.8 : false
-      const navH = isMobile && !keyboardOpen ? 64 : 0
-      containerRef.current.style.height = `${viewH - navH}px`
+      const navH = isMobile && !keyboardOpen
+        ? cssPx('--nav-h') + Math.max(cssPx('--safe-bottom'), 8)
+        : 0
+      const safeTop = cssPx('--safe-top')
+      containerRef.current.style.height = `${viewH - navH - safeTop}px`
     }
     setSize()
     window.addEventListener('resize', setSize)
@@ -426,7 +457,10 @@ export default function AIChat() {
       ref={containerRef}
       style={{
         display: 'flex', flexDirection: 'column',
-        height: 'calc(100dvh - 4rem)',
+        // Pre-JS fallback: dvh minus the nav row + bottom safe-area floor.
+        // The useEffect above immediately overrides this with the exact pixel
+        // value, but this avoids a single-frame "too tall" flash before hydration.
+        height: 'calc(var(--vh) - var(--nav-h) - max(var(--safe-bottom), 8px))',
         background: 'var(--bg)',
         overflow: 'hidden',
       }}
@@ -441,6 +475,12 @@ export default function AIChat() {
         <div>
           <p className="z-eyebrow">Ziggy AI</p>
           <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>Chat</h1>
+          {knownDevices > 0 && (
+            <p className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
+              knows {knownDevices} device{knownDevices !== 1 ? 's' : ''} · {knownRooms} room{knownRooms !== 1 ? 's' : ''}
+              {knownRoutines > 0 ? ` · ${knownRoutines} routine${knownRoutines !== 1 ? 's' : ''}` : ''}
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Wake-word master toggle — controls the backend always-on listener,
@@ -509,30 +549,27 @@ export default function AIChat() {
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', gap: 24 }}
           >
-            {/* Mic + wave */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-              <button
-                onPointerDown={handleMicPointerDown}
-                onPointerUp={handleMicPointerUp}
-                style={{
-                  width: 72, height: 72, borderRadius: '50%',
-                  background: listening ? 'color-mix(in srgb, var(--accent) 15%, var(--surface))' : 'var(--ink)',
-                  color: listening ? 'var(--accent)' : 'var(--bg)',
-                  border: listening ? '1.5px solid var(--accent)' : 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', touchAction: 'none',
-                  boxShadow: listening ? '0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent)' : '0 6px 20px -6px rgba(0,0,0,0.3)',
-                  transition: 'all 0.2s',
-                  userSelect: 'none',
-                }}
-              >
-                {listening
-                  ? <VoiceWave active size={28} />
-                  : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-                }
-              </button>
-              <p style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center' }}>
-                {listening ? 'Release to send' : 'Hold to speak, or type below'}
+            {/* Identity strip — replaces the redundant middle mic. The composer
+                below already has a mic; one prominent voice affordance is enough.
+                A subtle sparkle + friendly prompt sets the stage without
+                competing with the suggestion chips that follow. */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: '50%',
+                background: 'color-mix(in srgb, var(--accent) 12%, var(--tile-base))',
+                border: '0.5px solid color-mix(in srgb, var(--accent) 28%, var(--line))',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'color-mix(in srgb, var(--accent) 80%, var(--ink))',
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/>
+                </svg>
+              </div>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, letterSpacing: '-0.01em' }}>
+                {listening ? 'Listening…' : 'What can I do for you?'}
+              </p>
+              <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, textAlign: 'center', maxWidth: 280 }}>
+                Try one below, or tap and hold the mic in the composer to speak.
               </p>
             </div>
 

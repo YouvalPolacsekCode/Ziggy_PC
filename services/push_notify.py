@@ -119,8 +119,18 @@ def _send_one(sub: dict, data: str, private_pem: str) -> bool:
         return True  # transient error — keep subscription
 
 
-def push_notify_sync(title: str, body: str, url: str = "/", category: str = "general") -> None:
+def push_notify_sync(
+    title: str,
+    body: str,
+    url: str = "/",
+    category: str = "general",
+    exclude_user_id: str | None = None,
+) -> None:
     """Send a web push to all subscriptions that pass per-user preference checks.
+
+    `exclude_user_id`: if set, subscriptions whose `user_id` matches (case-
+    insensitive) are skipped — used for self-notification suppression so a
+    user doesn't get pushed about their own presence transitions.
 
     Safe to call from any thread.
     category must match a key in push_preferences.CATEGORIES, or "general" to skip filtering.
@@ -138,10 +148,17 @@ def push_notify_sync(title: str, body: str, url: str = "/", category: str = "gen
 
         still_valid: list[dict] = []
         sent = 0
+        excl_lower = (exclude_user_id or "").lower() if exclude_user_id else ""
 
         for sub in subs:
-            # Per-user preference gate
             user_id = sub.get("user_id")
+
+            # Self-suppression — keep the subscription, just skip sending.
+            if excl_lower and user_id and user_id.lower() == excl_lower:
+                still_valid.append(sub)
+                continue
+
+            # Per-user preference gate
             if user_id and category != "general":
                 try:
                     from services.push_preferences import is_allowed
@@ -166,9 +183,15 @@ def push_notify_sync(title: str, body: str, url: str = "/", category: str = "gen
         log_error(f"[Push] push_notify_sync failed: {exc}")
 
 
-async def push_notify(title: str, body: str, url: str = "/", category: str = "general") -> None:
+async def push_notify(
+    title: str,
+    body: str,
+    url: str = "/",
+    category: str = "general",
+    exclude_user_id: str | None = None,
+) -> None:
     """Async wrapper — offloads to thread pool to avoid blocking the event loop."""
     import asyncio
     await asyncio.get_event_loop().run_in_executor(
-        None, push_notify_sync, title, body, url, category
+        None, push_notify_sync, title, body, url, category, exclude_user_id
     )

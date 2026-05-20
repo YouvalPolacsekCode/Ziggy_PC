@@ -44,12 +44,20 @@ export function Sidebar({ connected }) {
 
   return (
     <aside
-      className="hidden md:flex flex-col shrink-0 h-screen sticky top-0 scrollbar-thin"
+      className="hidden md:flex flex-col shrink-0 sticky top-0 scrollbar-thin"
       style={{
-        width: 196,
+        // dvh keeps the sidebar exactly viewport-tall as URL bars animate,
+        // and avoids the iOS "100vh = layout viewport > visible viewport"
+        // gap that leaves an empty band at the bottom of fixed/sticky cols.
+        height: 'var(--vh)',
+        width: 'var(--sidebar-w)',
         background: 'var(--surface)',
         borderRight: '0.5px solid var(--line)',
         padding: '18px 10px',
+        // Sidebar is desktop-only; safe-area-top is for tablets/laptops with
+        // notch (e.g. MacBook Pro in fullscreen, iPad PWA).
+        paddingTop: 'calc(18px + var(--safe-top))',
+        paddingBottom: 'calc(18px + var(--safe-bottom))',
       }}
     >
       {/* Logo */}

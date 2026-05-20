@@ -46,6 +46,17 @@ export const PHOTO_OPTIONS = [
 ]
 
 const CUSTOM_KEY = 'ziggy_room_custom_photos'
+const OVERRIDE_KEY = 'ziggy_room_photos'
+
+// Server sync: every write hits the server too via putUiPrefs so room photos
+// survive PWA cache evictions, multiple devices, and "clear site data" — same
+// reason we did this for the Dashboard pins. Import is lazy to avoid a circular
+// dep at module load (api.js → ... → roomPhotos.js in some entry points).
+function _syncToServer(patch) {
+  import('./api.js').then(({ putUiPrefs }) => {
+    putUiPrefs(patch).catch(() => {})
+  }).catch(() => {})
+}
 
 export function getCustomPhoto(roomId) {
   try {
@@ -59,6 +70,7 @@ export function storeCustomDataUrl(roomId, dataUrl) {
     const data = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '{}')
     data[roomId] = dataUrl
     localStorage.setItem(CUSTOM_KEY, JSON.stringify(data))
+    _syncToServer({ roomCustomPhotos: data })
   } catch {}
 }
 
@@ -67,6 +79,7 @@ export function removeCustomPhoto(roomId) {
     const data = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '{}')
     delete data[roomId]
     localStorage.setItem(CUSTOM_KEY, JSON.stringify(data))
+    _syncToServer({ roomCustomPhotos: data })
   } catch {}
 }
 
@@ -104,8 +117,9 @@ export function getRoomPhoto(room) {
 
 export function saveRoomPhoto(roomId, photoKey) {
   try {
-    const overrides = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
+    const overrides = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}')
     overrides[roomId] = photoKey
-    localStorage.setItem('ziggy_room_photos', JSON.stringify(overrides))
+    localStorage.setItem(OVERRIDE_KEY, JSON.stringify(overrides))
+    _syncToServer({ roomPhotos: overrides })
   } catch {}
 }

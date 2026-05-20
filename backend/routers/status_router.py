@@ -127,30 +127,6 @@ async def voice_status(_: dict = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
-# Anomaly engine settings
-# ---------------------------------------------------------------------------
-
-@router.get("/api/settings/anomaly")
-async def get_anomaly_settings(_: dict = Depends(get_current_user)):
-    return settings.get("anomaly_engine", {})
-
-
-class AnomalyPatch(BaseModel):
-    enabled: Optional[bool] = None
-    quiet_hour_start: Optional[int] = None
-    quiet_hour_end: Optional[int] = None
-
-
-@router.patch("/api/settings/anomaly")
-async def patch_anomaly_settings(patch: AnomalyPatch, _: dict = Depends(get_current_user)):
-    anomaly = settings.setdefault("anomaly_engine", {})
-    for field, val in patch.model_dump(exclude_none=True).items():
-        anomaly[field] = val
-    save_settings(settings)
-    return {"ok": True, "anomaly_engine": anomaly}
-
-
-# ---------------------------------------------------------------------------
 # Feature flags — Super Admin only
 # ---------------------------------------------------------------------------
 
@@ -172,36 +148,3 @@ async def patch_features(patch: FeaturesPatch, _: dict = Depends(get_current_use
     return {"ok": True, "features": feats}
 
 
-# ---------------------------------------------------------------------------
-# Sensor alert rules
-# ---------------------------------------------------------------------------
-
-@router.get("/api/settings/alerts")
-async def get_alert_settings(_: dict = Depends(get_current_user)):
-    return settings.get("sensor_alerts", {})
-
-
-class AlertSensorModel(BaseModel):
-    entity_id: str
-    label: str
-    message: str
-    trigger_state: str
-
-
-class AlertsPatch(BaseModel):
-    enabled: Optional[bool] = None
-    cooldown_minutes: Optional[int] = None
-    sensors: Optional[List[AlertSensorModel]] = None
-
-
-@router.patch("/api/settings/alerts")
-async def patch_alert_settings(patch: AlertsPatch, _: dict = Depends(get_current_user)):
-    alerts = settings.setdefault("sensor_alerts", {})
-    data = patch.model_dump(exclude_none=True)
-    for field, val in data.items():
-        if field == "sensors":
-            alerts["sensors"] = [s.model_dump() for s in (patch.sensors or [])]
-        else:
-            alerts[field] = val
-    save_settings(settings)
-    return {"ok": True, "sensor_alerts": alerts}

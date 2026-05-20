@@ -46,6 +46,18 @@ state_cache: dict[str, dict] = {}
 # Active anomalies per room.  { room_id: [ { rule_id, severity, message, since } ] }
 active_anomalies: dict[str, list] = {}
 
+# Restore persisted dev mock alerts at module import time so the Alerts UI has
+# state on a fresh boot without needing to re-POST the inject endpoint. No-op
+# in production (file simply doesn't exist).
+try:
+    from backend.routers.map_router import load_mock_anomalies_into
+    _n_mocks = load_mock_anomalies_into(active_anomalies)
+    if _n_mocks:
+        log_info(f"[ha_subscriber] Restored {_n_mocks} persisted mock anomalies")
+except Exception as _e:
+    # Don't let dev-only loader block production startup if the file is malformed.
+    log_info(f"[ha_subscriber] Mock-anomaly restore skipped: {_e}")
+
 # Public connection health flag.  True once HA auth + subscription succeeds.
 # Becomes False when the connection drops.  Read by /api/health.
 ha_connected: bool = False

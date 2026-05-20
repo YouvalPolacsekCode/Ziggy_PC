@@ -1,0 +1,869 @@
+/**
+ * Unified device model — the single source of truth that erases the
+ * IR ⇄ HA split. Every device-rendering surface (cards, tiles, detail page,
+ * remotes) should read from `deviceFacts(entity)` and write via
+ * `sendDeviceCommand(entity, command, params)` so the same UI works
+ * regardless of whether the backend is an HA entity, a learned IR device,
+ * or a hybrid (HA entity with a linked IR codeset).
+ *
+ *   entity (HA or IR-shaped)  ─►  deviceFacts()  ─►  { kind, isOn, capabilities, ... }
+ *   deviceFacts + command name ─►  sendDeviceCommand()  ─►  routes to IR or HA
+ *
+ * `kind` is the canonical user-facing label ("tv", "ac", "light", "motion") —
+ * NOT the HA domain. This is what every renderer should switch on.
+ */
+
+import { callHaService, irSend, irSendChannel, controlDevice } from './api'
+import { DOMAIN_REGISTRY } from './domainRegistry'
+import { lightRgb } from './utils'
+
+// ─── Kind taxonomy ──────────────────────────────────────────────────────────
+//
+// One "kind" per visually-distinct device category. Used by DeviceCard,
+// DeviceRemote, icons, and color tinting. This is intentionally coarser than
+// HA domains (we treat all media_player as 'tv', all climate as 'ac') because
+// users think in product categories, not protocol abstractions.
+
+export const KIND = {
+  LIGHT:        'light',
+  SWITCH:       'switch',
+  PLUG:         'plug',
+  TV:           'tv',
+  SOUNDBAR:     'soundbar',
+  PROJECTOR:    'projector',
+  AC:           'ac',
+  FAN:          'fan',
+  COVER:        'cover',
+  LOCK:         'lock',
+  ALARM:        'alarm',
+  VACUUM:       'vacuum',
+  HUMIDIFIER:   'humidifier',
+  WATER_HEATER: 'water_heater',
+  VALVE:        'valve',
+  LAWN_MOWER:   'lawn_mower',
+  CAMERA:       'camera',
+  SENSOR:       'sensor',
+  MOTION:       'motion',
+  DOOR:         'door',
+  WINDOW:       'window',
+  LEAK:         'leak',
+  OCCUPANCY:    'occupancy',
+  SMOKE:        'smoke',
+  TEMPERATURE:  'temperature',
+  HUMIDITY:     'humidity',
+  POWER_METER:  'power_meter',
+  BINARY:       'binary',
+  PERSON:       'person',
+  UNKNOWN:      'unknown',
+}
+
+const KIND_META = {
+  light:        { label: 'Light',      tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '💡' },
+  switch:       { label: 'Switch',     tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },
+  plug:         { label: 'Plug',       tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },
+  tv:           { label: 'TV',         tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📺' },
+  soundbar:     { label: 'Soundbar',   tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🔊' },
+  projector:    { label: 'Projector',  tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📽️' },
+  ac:           { label: 'AC',         tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '❄️' },
+  fan:          { label: 'Fan',        tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '💨' },
+  cover:        { label: 'Blind',      tint: 'var(--ink-mute)', group: 'cover',  toggle: false, controllable: true,  icon: '🪟' },
+  lock:         { label: 'Lock',       tint: 'var(--warn)',   group: 'security', toggle: false, controllable: true,  icon: '🔒' },
+  alarm:        { label: 'Alarm',      tint: 'var(--err)',    group: 'security', toggle: false, controllable: true,  icon: '🚨' },
+  vacuum:       { label: 'Vacuum',     tint: 'var(--ink-mute)', group: 'other',  toggle: false, controllable: true,  icon: '🤖' },
+  humidifier:   { label: 'Humidifier', tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '💧' },
+  water_heater: { label: 'Heater',     tint: 'var(--err)',    group: 'water',    toggle: true,  controllable: true,  icon: '🔥' },
+  valve:        { label: 'Valve',      tint: 'var(--info)',   group: 'water',    toggle: false, controllable: true,  icon: '🚰' },
+  lawn_mower:   { label: 'Mower',      tint: 'var(--ok)',     group: 'other',    toggle: false, controllable: true,  icon: '🌿' },
+  camera:       { label: 'Camera',     tint: 'var(--info)',   group: 'security', toggle: false, controllable: false, icon: '📷' },
+  sensor:       { label: 'Sensor',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '📊' },
+  motion:       { label: 'Motion',     tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '🚶' },
+  door:         { label: 'Door',       tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '🚪' },
+  window:       { label: 'Window',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '🪟' },
+  leak:         { label: 'Leak',       tint: 'var(--err)',    group: 'sensors',  toggle: false, controllable: false, icon: '💦' },
+  occupancy:    { label: 'Presence',   tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '🏠' },
+  smoke:        { label: 'Smoke',      tint: 'var(--err)',    group: 'sensors',  toggle: false, controllable: false, icon: '🚨' },
+  temperature:  { label: 'Temp',       tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '🌡️' },
+  humidity:     { label: 'Humidity',   tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '💧' },
+  power_meter:  { label: 'Power',      tint: 'var(--warn)',   group: 'sensors',  toggle: false, controllable: false, icon: '⚡' },
+  binary:       { label: 'Binary',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '🔍' },
+  person:       { label: 'Person',     tint: 'var(--info)',   group: 'other',    toggle: false, controllable: false, icon: '👤' },
+  unknown:      { label: 'Device',     tint: 'var(--ink-mute)', group: 'other',  toggle: false, controllable: false, icon: '⚙️' },
+}
+
+export function kindMeta(kind) { return KIND_META[kind] || KIND_META.unknown }
+
+// ─── kind resolution ────────────────────────────────────────────────────────
+
+const IR_TYPE_TO_KIND = {
+  tv:        KIND.TV,
+  soundbar:  KIND.SOUNDBAR,
+  projector: KIND.PROJECTOR,
+  ac:        KIND.AC,
+  fan:       KIND.FAN,
+  custom:    KIND.SWITCH,
+}
+
+// Map binary_sensor device_class → kind. Anything not listed falls through
+// to KIND.BINARY (a generic on/off indicator) so unknown sensor types still
+// render rather than disappear.
+const BINARY_CLASS_TO_KIND = {
+  motion:      KIND.MOTION,
+  occupancy:   KIND.OCCUPANCY,
+  presence:    KIND.OCCUPANCY,
+  door:        KIND.DOOR,
+  window:      KIND.WINDOW,
+  moisture:    KIND.LEAK,
+  smoke:       KIND.SMOKE,
+  gas:         KIND.SMOKE,
+  opening:     KIND.DOOR,
+}
+
+const SENSOR_CLASS_TO_KIND = {
+  temperature: KIND.TEMPERATURE,
+  humidity:    KIND.HUMIDITY,
+  power:       KIND.POWER_METER,
+  energy:      KIND.POWER_METER,
+  illuminance: KIND.SENSOR,
+}
+
+export function getKind(entity) {
+  if (!entity) return KIND.UNKNOWN
+  if (entity._ir && entity._irDevice) {
+    return IR_TYPE_TO_KIND[entity._irDevice.type] || KIND.SWITCH
+  }
+  const domain = entity.domain || entity.entity_id?.split('.')[0]
+  switch (domain) {
+    case 'light':               return KIND.LIGHT
+    case 'switch':              return KIND.SWITCH
+    case 'input_boolean':       return KIND.SWITCH
+    case 'climate':             return KIND.AC
+    case 'fan':                 return KIND.FAN
+    case 'media_player':        return KIND.TV
+    case 'cover':               return KIND.COVER
+    case 'lock':                return KIND.LOCK
+    case 'alarm_control_panel': return KIND.ALARM
+    case 'vacuum':              return KIND.VACUUM
+    case 'humidifier':          return KIND.HUMIDIFIER
+    case 'water_heater':        return KIND.WATER_HEATER
+    case 'valve':               return KIND.VALVE
+    case 'lawn_mower':          return KIND.LAWN_MOWER
+    case 'camera':              return KIND.CAMERA
+    case 'person':              return KIND.PERSON
+    case 'binary_sensor':
+      return BINARY_CLASS_TO_KIND[entity.device_class] || KIND.BINARY
+    case 'sensor':
+      return SENSOR_CLASS_TO_KIND[entity.device_class] || KIND.SENSOR
+    default:                    return KIND.UNKNOWN
+  }
+}
+
+// ─── On / off / available ───────────────────────────────────────────────────
+
+const MEDIA_ACTIVE = new Set(['on', 'playing', 'paused', 'idle'])
+
+export function isOn(entity) {
+  if (!entity) return false
+  const domain = entity.domain || entity.entity_id?.split('.')[0]
+  const state  = entity._ir ? (entity.assumed_state || entity.state) : entity.state
+  if (state === 'unavailable' || state == null) return false
+  if (domain === 'media_player') return MEDIA_ACTIVE.has(state)
+  if (domain === 'climate')      return state !== 'off' && state !== 'unavailable'
+  if (domain === 'cover')        return state === 'open' || state === 'opening'
+  if (domain === 'lock')         return state === 'unlocked'
+  if (domain === 'alarm_control_panel') return state.startsWith('armed_') || state === 'triggered'
+  if (domain === 'vacuum')       return state === 'cleaning' || state === 'returning'
+  if (domain === 'binary_sensor') return state === 'on'
+  return state === 'on'
+}
+
+export function isAvailable(entity) {
+  if (!entity) return false
+  if (entity._ir) return true                       // IR is always "available" (assumed)
+  return entity.state !== 'unavailable' && entity.state != null
+}
+
+// ─── Capabilities ───────────────────────────────────────────────────────────
+//
+// A `capabilities` set tells renderers what controls to expose. This is the
+// abstraction that makes IR-AC and HA-climate render the same remote — both
+// declare the same logical capabilities, even though the backends differ.
+
+const HA_FEATURE = {
+  // Light
+  LIGHT_BRIGHTNESS:    1,
+  LIGHT_COLOR_TEMP:    2,
+  LIGHT_EFFECT:        4,
+  LIGHT_FLASH:         8,
+  LIGHT_COLOR:        16,
+  LIGHT_TRANSITION:   32,
+  LIGHT_WHITE_VALUE:  128,
+  // Climate
+  CLIMATE_TARGET_TEMPERATURE:        1,
+  CLIMATE_TARGET_TEMPERATURE_RANGE:  2,
+  CLIMATE_TARGET_HUMIDITY:           4,
+  CLIMATE_FAN_MODE:                  8,
+  CLIMATE_PRESET_MODE:              16,
+  CLIMATE_SWING_MODE:               32,
+  // Media
+  MEDIA_PAUSE:           1,
+  MEDIA_SEEK:            2,
+  MEDIA_VOLUME_SET:      4,
+  MEDIA_VOLUME_MUTE:     8,
+  MEDIA_PREVIOUS_TRACK: 16,
+  MEDIA_NEXT_TRACK:     32,
+  MEDIA_TURN_ON:       128,
+  MEDIA_TURN_OFF:      256,
+  MEDIA_PLAY_MEDIA:    512,
+  MEDIA_VOLUME_STEP: 1024,
+  MEDIA_SELECT_SOURCE:    2048,
+  MEDIA_STOP:          4096,
+  MEDIA_PLAY:        16384,
+  MEDIA_SHUFFLE_SET: 32768,
+  MEDIA_SELECT_SOUND_MODE: 65536,
+  MEDIA_REPEAT_SET: 262144,
+  // Cover
+  COVER_OPEN:        1,
+  COVER_CLOSE:       2,
+  COVER_SET_POSITION: 4,
+  COVER_STOP:        8,
+  // Fan
+  FAN_SET_SPEED:        1,
+  FAN_OSCILLATE:        2,
+  FAN_DIRECTION:        4,
+  FAN_PRESET_MODE:      8,
+}
+
+function hasFeature(entity, bit) {
+  return ((entity.supported_features ?? 0) & bit) === bit
+}
+
+function irHasCommand(entity, cmd) {
+  if (!entity._ir || !entity._irDevice) return false
+  const learned = new Set(entity._irDevice.learned_commands || [])
+  return learned.has(cmd)
+}
+
+function linkedIrHasCommand(entity, cmd) {
+  const ir = entity._linkedIr
+  if (!ir) return false
+  const learned = new Set(ir.learned_commands || [])
+  return learned.has(cmd)
+}
+
+/**
+ * Returns the capability set for an entity. Capabilities are unified across
+ * IR and HA — a TV with both an HA media_player and a learned IR codeset
+ * declares everything either backend can do.
+ */
+export function getCapabilities(entity) {
+  const caps = new Set()
+  if (!entity) return caps
+  const kind = getKind(entity)
+  const isIr = !!entity._ir
+
+  // Power is universal for anything controllable
+  const meta = kindMeta(kind)
+  if (meta.controllable) caps.add('power')
+
+  switch (kind) {
+    case KIND.LIGHT: {
+      caps.add('brightness')
+      if (hasFeature(entity, HA_FEATURE.LIGHT_COLOR_TEMP) || entity.color_temp != null) caps.add('color_temp')
+      if (hasFeature(entity, HA_FEATURE.LIGHT_COLOR) || (entity.supported_color_modes || []).some(m => ['hs','rgb','xy','rgbw','rgbww'].includes(m))) caps.add('color')
+      if (hasFeature(entity, HA_FEATURE.LIGHT_EFFECT) || (entity.effect_list || []).length) caps.add('effects')
+      break
+    }
+    case KIND.AC: {
+      if (isIr) {
+        // IR AC: capability surface is the learned-command intersection of
+        // standard AC commands. Always show core temp + mode if AC type.
+        caps.add('temp')
+        caps.add('hvac_mode')
+        if (irHasCommand(entity, 'fan_low') || irHasCommand(entity, 'fan_medium') || irHasCommand(entity, 'fan_high') || irHasCommand(entity, 'fan_auto')) caps.add('fan_mode')
+        if (irHasCommand(entity, 'swing_on') || irHasCommand(entity, 'swing_off')) caps.add('swing')
+      } else {
+        if (hasFeature(entity, HA_FEATURE.CLIMATE_TARGET_TEMPERATURE)) caps.add('temp')
+        if ((entity.hvac_modes || []).length) caps.add('hvac_mode')
+        if ((entity.fan_modes || []).length)  caps.add('fan_mode')
+        if ((entity.swing_modes || []).length) caps.add('swing')
+        if ((entity.preset_modes || []).length) caps.add('preset')
+      }
+      break
+    }
+    case KIND.TV:
+    case KIND.SOUNDBAR:
+    case KIND.PROJECTOR: {
+      if (isIr) {
+        if (irHasCommand(entity, 'volume_up') || irHasCommand(entity, 'volume_down')) caps.add('volume_step')
+        if (irHasCommand(entity, 'mute')) caps.add('mute')
+        if (irHasCommand(entity, 'channel_up') || irHasCommand(entity, 'channel_down')) caps.add('channel_step')
+        if (irHasCommand(entity, 'nav_ok') || irHasCommand(entity, 'nav_up')) caps.add('dpad')
+        const digits = ['digit_0','digit_1','digit_2','digit_3','digit_4','digit_5','digit_6','digit_7','digit_8','digit_9']
+        if (digits.every(d => irHasCommand(entity, d))) caps.add('numpad')
+        const sourceCmds = ['hdmi_1','hdmi_2','hdmi_3','input','source_tv','source_av','source_pc']
+        if (sourceCmds.some(c => irHasCommand(entity, c))) caps.add('sources')
+        if (irHasCommand(entity, 'back')) caps.add('back')
+        if (irHasCommand(entity, 'home')) caps.add('home')
+        if (irHasCommand(entity, 'menu')) caps.add('menu')
+        if (irHasCommand(entity, 'play') || irHasCommand(entity, 'pause')) caps.add('play_pause')
+      } else {
+        if (hasFeature(entity, HA_FEATURE.MEDIA_PLAY) || hasFeature(entity, HA_FEATURE.MEDIA_PAUSE)) caps.add('play_pause')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_VOLUME_SET) || hasFeature(entity, HA_FEATURE.MEDIA_VOLUME_STEP)) caps.add('volume')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_VOLUME_MUTE)) caps.add('mute')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_PREVIOUS_TRACK)) caps.add('prev_track')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_NEXT_TRACK))     caps.add('next_track')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_SELECT_SOURCE) && (entity.source_list || []).length) caps.add('sources')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_SELECT_SOUND_MODE) && (entity.sound_mode_list || []).length) caps.add('sound_mode')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_SHUFFLE_SET))   caps.add('shuffle')
+        if (hasFeature(entity, HA_FEATURE.MEDIA_REPEAT_SET))    caps.add('repeat')
+      }
+      // Hybrid: HA covers state, IR fills gaps (e.g. HDMI inputs that HA doesn't expose)
+      if (entity._linkedIr) {
+        const linked = entity._linkedIr
+        const learned = new Set(linked.learned_commands || [])
+        if (learned.has('nav_ok') || learned.has('nav_up')) caps.add('dpad')
+        const digits = ['digit_0','digit_1','digit_2','digit_3','digit_4','digit_5','digit_6','digit_7','digit_8','digit_9']
+        if (digits.every(d => learned.has(d))) caps.add('numpad')
+        const sourceCmds = ['hdmi_1','hdmi_2','hdmi_3','input']
+        if (sourceCmds.some(c => learned.has(c))) caps.add('sources')
+        if (learned.has('back')) caps.add('back')
+        if (learned.has('home')) caps.add('home')
+        if (learned.has('menu')) caps.add('menu')
+        if (learned.has('channel_up') || learned.has('channel_down')) caps.add('channel_step')
+      }
+      break
+    }
+    case KIND.FAN: {
+      if (isIr) {
+        if (irHasCommand(entity, 'speed_low') || irHasCommand(entity, 'speed_medium') || irHasCommand(entity, 'speed_high')) caps.add('speed_step')
+      } else {
+        if (hasFeature(entity, HA_FEATURE.FAN_SET_SPEED)) caps.add('speed')
+        if (hasFeature(entity, HA_FEATURE.FAN_OSCILLATE)) caps.add('oscillate')
+        if ((entity.preset_modes || []).length) caps.add('preset')
+      }
+      break
+    }
+    case KIND.COVER: {
+      if (hasFeature(entity, HA_FEATURE.COVER_OPEN))         caps.add('open')
+      if (hasFeature(entity, HA_FEATURE.COVER_CLOSE))        caps.add('close')
+      if (hasFeature(entity, HA_FEATURE.COVER_STOP))         caps.add('stop')
+      if (hasFeature(entity, HA_FEATURE.COVER_SET_POSITION)) caps.add('position')
+      break
+    }
+    case KIND.LOCK: {
+      caps.add('lock_unlock')
+      break
+    }
+    default: break
+  }
+  return caps
+}
+
+// ─── Facts: normalized state for renderers ──────────────────────────────────
+
+const KIND_STATE_LABEL = {
+  light:    (e) => isOn(e) ? 'On' : 'Off',
+  switch:   (e) => isOn(e) ? 'On' : 'Off',
+  plug:     (e) => isOn(e) ? 'On' : 'Off',
+  tv:       (e) => {
+    const s = e._ir ? (e.assumed_state || 'off') : e.state
+    return ({ playing: 'Playing', paused: 'Paused', idle: 'Idle', on: 'On', off: 'Off', standby: 'Standby' })[s] || (s ? s[0].toUpperCase() + s.slice(1) : 'Off')
+  },
+  soundbar: (e) => isOn(e) ? 'On' : 'Off',
+  projector:(e) => isOn(e) ? 'On' : 'Off',
+  ac:       (e) => {
+    const s = e._ir ? (e.assumed_state || 'off') : e.state
+    return ({ off: 'Off', heat: 'Heating', cool: 'Cooling', heat_cool: 'Auto', auto: 'Auto', fan_only: 'Fan', dry: 'Dry' })[s] || (s || 'Off')
+  },
+  fan:      (e) => isOn(e) ? 'On' : 'Off',
+  cover:    (e) => ({ open: 'Open', closed: 'Closed', opening: 'Opening…', closing: 'Closing…' })[e.state] || e.state,
+  lock:     (e) => ({ locked: 'Locked', unlocked: 'Unlocked', locking: 'Locking…', unlocking: 'Unlocking…' })[e.state] || e.state,
+  vacuum:   (e) => ({ cleaning: 'Cleaning', docked: 'Docked', paused: 'Paused', idle: 'Idle', returning: 'Returning' })[e.state] || e.state,
+  motion:   (e) => e.state === 'on' ? 'Motion' : 'Clear',
+  door:     (e) => e.state === 'on' ? 'Open' : 'Closed',
+  window:   (e) => e.state === 'on' ? 'Open' : 'Closed',
+  leak:     (e) => e.state === 'on' ? 'Wet' : 'Dry',
+  occupancy:(e) => e.state === 'on' ? 'Present' : 'Empty',
+  smoke:    (e) => e.state === 'on' ? 'Detected' : 'Clear',
+  temperature: (e) => {
+    const v = parseFloat(e.state)
+    if (Number.isNaN(v)) return e.state
+    const unit = e.unit_of_measurement || '°'
+    return `${Math.round(v * 10) / 10}${unit}`
+  },
+  humidity: (e) => {
+    const v = parseFloat(e.state)
+    if (Number.isNaN(v)) return e.state
+    return `${Math.round(v)}%`
+  },
+  power_meter: (e) => {
+    const v = parseFloat(e.state)
+    if (Number.isNaN(v)) return e.state
+    const unit = e.unit_of_measurement || 'W'
+    return `${Math.round(v * 10) / 10} ${unit}`
+  },
+  person:   (e) => e.state === 'home' ? 'Home' : 'Away',
+  alarm:    (e) => DOMAIN_REGISTRY.alarm_control_panel?.stateLabels[e.state] || e.state,
+  binary:   (e) => e.state === 'on' ? 'On' : 'Off',
+  sensor:   (e) => {
+    if (e.unit_of_measurement) {
+      const v = parseFloat(e.state)
+      if (!Number.isNaN(v)) return `${v} ${e.unit_of_measurement}`
+    }
+    return e.state
+  },
+  camera:   (e) => e.state === 'recording' ? 'Recording' : 'Live',
+  humidifier:   (e) => isOn(e) ? 'On' : 'Off',
+  water_heater: (e) => DOMAIN_REGISTRY.water_heater?.stateLabels[e.state] || e.state,
+  valve:    (e) => ({ open: 'Open', closed: 'Closed', opening: 'Opening…', closing: 'Closing…' })[e.state] || e.state,
+  lawn_mower: (e) => DOMAIN_REGISTRY.lawn_mower?.stateLabels[e.state] || e.state,
+  unknown:  (e) => e.state || '—',
+}
+
+function brightnessPct(entity) {
+  if (entity.brightness == null) return null
+  return Math.round((entity.brightness / 255) * 100)
+}
+
+// Live tint for the device — overrides meta.tint when the entity carries a
+// real color (lights with rgb_color or color_temp). Used by tile/row cards so
+// the room page reflects the same color the device detail page renders.
+function liveTintFor(entity, kind, meta, isOnState) {
+  if (kind === KIND.LIGHT && isOnState) {
+    const rgb = lightRgb(entity)
+    if (rgb) return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+  }
+  return meta.tint
+}
+
+// Resolve a tint string to a raw [r, g, b] when possible. Used so callers
+// (DeviceCard tile) can compose tinted backgrounds and pick a readable
+// foreground based on luminance. Returns null for CSS variable tints.
+function tintToRgb(tint) {
+  if (!tint || typeof tint !== 'string') return null
+  const m = tint.match(/rgb\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i)
+  if (!m) return null
+  return [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])]
+}
+
+// Perceived luminance (sRGB) — used to choose ink/bg as readable foreground.
+export function tintLuminance(tint) {
+  const rgb = tintToRgb(tint)
+  if (!rgb) return null
+  const [r, g, b] = rgb.map(v => v / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/**
+ * The normalized facts for any device. This is what cards, tiles, and remote
+ * components consume. Keeps the IR/HA branching out of every render path.
+ */
+export function deviceFacts(entity) {
+  if (!entity) {
+    return { kind: KIND.UNKNOWN, isOn: false, isAvailable: false, capabilities: new Set() }
+  }
+  const kind = getKind(entity)
+  const meta = kindMeta(kind)
+  const isIr = !!entity._ir
+  const hasIr = isIr || !!entity._linkedIr
+  const linkedIr = entity._linkedIr || (isIr ? entity._irDevice : null)
+  const labelFn = KIND_STATE_LABEL[kind] || KIND_STATE_LABEL.unknown
+  const isOnState = isOn(entity)
+  return {
+    id:           entity.entity_id,
+    irId:         linkedIr?.id || null,
+    name:         entity.display_name || entity.friendly_name || (entity.entity_id || '').split('.')[1]?.replace(/_/g, ' ') || 'Device',
+    domain:       entity.domain || entity.entity_id?.split('.')[0],
+    deviceClass:  entity.device_class || null,
+    kind,
+    meta,
+    // Live, kind-aware tint. For lights this is the real bulb color (rgb_color
+    // or color-temp-derived) when on; falls back to meta.tint for everything
+    // else and for lights that are off.
+    tint:         liveTintFor(entity, kind, meta, isOnState),
+    isOn:         isOnState,
+    isAvailable:  isAvailable(entity),
+    isIr,
+    hasIr,
+    linkedIr,
+    state:        entity.state,
+    stateLabel:   labelFn(entity),
+    capabilities: getCapabilities(entity),
+    // Light values
+    brightness:   brightnessPct(entity),
+    colorTemp:    entity.color_temp,
+    colorTempKelvin: entity.color_temp_kelvin,
+    rgbColor:     entity.rgb_color,
+    // Climate values
+    targetTemp:   entity.temperature ?? entity.target_temp ?? null,
+    currentTemp:  entity.current_temperature ?? null,
+    hvacMode:     entity.hvac_mode ?? null,
+    hvacModes:    entity.hvac_modes ?? [],
+    fanMode:      entity.fan_mode ?? null,
+    fanModes:     entity.fan_modes ?? [],
+    swingMode:    entity.swing_mode ?? null,
+    swingModes:   entity.swing_modes ?? [],
+    presetMode:   entity.preset_mode ?? null,
+    presetModes:  entity.preset_modes ?? [],
+    minTemp:      entity.min_temp ?? 16,
+    maxTemp:      entity.max_temp ?? 30,
+    tempStep:     entity.target_temp_step ?? 1,
+    // Media values
+    volume:       entity.volume_level != null ? Math.round(entity.volume_level * 100) : null,
+    muted:        entity.is_volume_muted ?? null,
+    source:       entity.source ?? null,
+    sourceList:   entity.source_list ?? [],
+    appList:      entity.app_list ?? [],
+    soundMode:    entity.sound_mode ?? null,
+    soundModeList:entity.sound_mode_list ?? [],
+    shuffle:      entity.shuffle ?? null,
+    repeat:       entity.repeat ?? null,
+    mediaTitle:   entity.media_title ?? null,
+    mediaArtist:  entity.media_artist ?? null,
+    // Cover values
+    position:     entity.current_position ?? null,
+    // Sensor values
+    reading:      entity.state,
+    unit:         entity.unit_of_measurement ?? null,
+    battery:      entity.battery ?? null,
+    rssi:         entity.rssi ?? entity.signal_strength ?? null,
+    // Diagnostics
+    lastChanged:  entity.last_changed ?? null,
+    lastUpdated:  entity.last_updated ?? null,
+  }
+}
+
+// ─── Command dispatch — backend-agnostic ────────────────────────────────────
+//
+// Pages call `sendDeviceCommand(entity, command, params)`. Routing rules:
+//
+//  - HA entity (no IR):   call HA service.
+//  - IR entity:           map to IR command name, call irSend().
+//  - Hybrid (HA+IR):      prefer HA. For IR-only commands (HDMI source,
+//                         numeric channel, etc.), fall back to the linked IR.
+//
+// `command` is one of a small canonical vocabulary. Adding a new command
+// here is the only place to wire a new logical action — every UI consumer
+// uses the same name.
+
+const HA_SERVICE_BY_DOMAIN = {
+  light: {
+    power_on:     { service: 'turn_on',  data: (p) => ({}) },
+    power_off:    { service: 'turn_off', data: (p) => ({}) },
+    set_brightness: { service: 'turn_on',  data: (p) => ({ brightness_pct: p.value }) },
+    set_color_temp: { service: 'turn_on',  data: (p) => p.kelvin ? { color_temp_kelvin: p.kelvin } : { color_temp: p.mireds } },
+    set_color:      { service: 'turn_on',  data: (p) => ({ rgb_color: p.rgb }) },
+    set_effect:     { service: 'turn_on',  data: (p) => ({ effect: p.effect }) },
+  },
+  switch: {
+    power_on:  { service: 'turn_on',  data: () => ({}) },
+    power_off: { service: 'turn_off', data: () => ({}) },
+    toggle:    { service: 'toggle',   data: () => ({}) },
+  },
+  input_boolean: {
+    power_on:  { service: 'turn_on',  data: () => ({}) },
+    power_off: { service: 'turn_off', data: () => ({}) },
+    toggle:    { service: 'toggle',   data: () => ({}) },
+  },
+  climate: {
+    power_on:        { service: 'turn_on',  data: () => ({}) },
+    power_off:       { service: 'turn_off', data: () => ({}) },
+    set_temp:        { service: 'set_temperature', data: (p) => ({ temperature: p.value }) },
+    set_hvac_mode:   { service: 'set_hvac_mode',   data: (p) => ({ hvac_mode: p.mode }) },
+    set_fan_mode:    { service: 'set_fan_mode',    data: (p) => ({ fan_mode: p.mode }) },
+    set_swing_mode:  { service: 'set_swing_mode',  data: (p) => ({ swing_mode: p.mode }) },
+    set_preset_mode: { service: 'set_preset_mode', data: (p) => ({ preset_mode: p.mode }) },
+  },
+  media_player: {
+    power_on:       { service: 'turn_on',          data: () => ({}) },
+    power_off:      { service: 'turn_off',         data: () => ({}) },
+    play_pause:     { service: 'media_play_pause', data: () => ({}) },
+    play:           { service: 'media_play',       data: () => ({}) },
+    pause:          { service: 'media_pause',      data: () => ({}) },
+    stop:           { service: 'media_stop',       data: () => ({}) },
+    next_track:     { service: 'media_next_track', data: () => ({}) },
+    prev_track:     { service: 'media_previous_track', data: () => ({}) },
+    set_volume:     { service: 'volume_set',       data: (p) => ({ volume_level: p.value / 100 }) },
+    volume_up:      { service: 'volume_up',        data: () => ({}) },
+    volume_down:    { service: 'volume_down',      data: () => ({}) },
+    mute_toggle:    { service: 'volume_mute',      data: (p) => ({ is_volume_muted: p.muted }) },
+    set_source:     { service: 'select_source',    data: (p) => ({ source: p.source }) },
+    set_sound_mode: { service: 'select_sound_mode',data: (p) => ({ sound_mode: p.mode }) },
+    set_shuffle:    { service: 'shuffle_set',      data: (p) => ({ shuffle: p.shuffle }) },
+    set_repeat:     { service: 'repeat_set',       data: (p) => ({ repeat: p.repeat }) },
+  },
+  fan: {
+    power_on:    { service: 'turn_on',        data: () => ({}) },
+    power_off:   { service: 'turn_off',       data: () => ({}) },
+    toggle:      { service: 'toggle',         data: () => ({}) },
+    set_speed:   { service: 'set_percentage', data: (p) => ({ percentage: p.value }) },
+    set_preset:  { service: 'set_preset_mode',data: (p) => ({ preset_mode: p.mode }) },
+  },
+  cover: {
+    open:         { service: 'open_cover',     data: () => ({}) },
+    close:        { service: 'close_cover',    data: () => ({}) },
+    stop:         { service: 'stop_cover',     data: () => ({}) },
+    set_position: { service: 'set_cover_position', data: (p) => ({ position: p.value }) },
+  },
+  lock: {
+    lock:   { service: 'lock',   data: () => ({}) },
+    unlock: { service: 'unlock', data: () => ({}) },
+    open:   { service: 'open',   data: () => ({}) },
+  },
+  vacuum: {
+    start:  { service: 'start',          data: () => ({}) },
+    pause:  { service: 'pause',          data: () => ({}) },
+    stop:   { service: 'stop',           data: () => ({}) },
+    dock:   { service: 'return_to_base', data: () => ({}) },
+    locate: { service: 'locate',         data: () => ({}) },
+  },
+  alarm_control_panel: {
+    arm_away:    { service: 'alarm_arm_away',     data: () => ({}) },
+    arm_home:    { service: 'alarm_arm_home',     data: () => ({}) },
+    arm_night:   { service: 'alarm_arm_night',    data: () => ({}) },
+    arm_vacation:{ service: 'alarm_arm_vacation', data: () => ({}) },
+    disarm:      { service: 'alarm_disarm',       data: () => ({}) },
+  },
+  humidifier: {
+    power_on:  { service: 'turn_on',  data: () => ({}) },
+    power_off: { service: 'turn_off', data: () => ({}) },
+    set_mode:  { service: 'set_mode', data: (p) => ({ mode: p.mode }) },
+  },
+}
+
+// IR command vocabulary for each kind. Maps logical `command` → IR command
+// name(s) to try in order. The first one the device has learned wins.
+const IR_COMMAND_MAP = {
+  ac: {
+    power_on:  ['power'],
+    power_off: ['power'],
+    toggle:    ['power'],
+    temp_up:   ['temperature_up', 'temp_up'],
+    temp_down: ['temperature_down', 'temp_down'],
+    set_hvac_mode: {
+      cool:     ['mode_cool'],
+      heat:     ['mode_heat'],
+      fan_only: ['mode_fan'],
+      auto:     ['mode_auto'],
+      dry:      ['mode_dry'],
+    },
+    set_fan_mode: {
+      low:    ['fan_low'],
+      medium: ['fan_medium'],
+      high:   ['fan_high'],
+      auto:   ['fan_auto'],
+    },
+    set_swing_mode: {
+      on:  ['swing_on'],
+      off: ['swing_off'],
+    },
+  },
+  tv: {
+    power_on:    ['power'],
+    power_off:   ['power'],
+    toggle:      ['power'],
+    volume_up:   ['volume_up'],
+    volume_down: ['volume_down'],
+    mute_toggle: ['mute'],
+    channel_up:  ['channel_up'],
+    channel_down:['channel_down'],
+    play:        ['play'],
+    pause:       ['pause'],
+    play_pause:  ['play_pause', 'play'],
+    stop:        ['stop'],
+    next_track:  ['next', 'next_track'],
+    prev_track:  ['previous', 'prev_track'],
+    nav_up:      ['nav_up'],
+    nav_down:    ['nav_down'],
+    nav_left:    ['nav_left'],
+    nav_right:   ['nav_right'],
+    nav_ok:      ['nav_ok', 'ok'],
+    back:        ['back'],
+    home:        ['home'],
+    menu:        ['menu'],
+  },
+  soundbar: {
+    power_on:    ['power'],
+    power_off:   ['power'],
+    toggle:      ['power'],
+    volume_up:   ['volume_up'],
+    volume_down: ['volume_down'],
+    mute_toggle: ['mute'],
+    next_track:  ['next'],
+    prev_track:  ['previous'],
+  },
+  projector: {
+    power_on:    ['power'],
+    power_off:   ['power'],
+    toggle:      ['power'],
+  },
+  fan: {
+    power_on:    ['power'],
+    power_off:   ['power'],
+    toggle:      ['power'],
+    speed_step:  ['speed_step'],
+    set_speed_preset: {
+      low:    ['speed_low'],
+      medium: ['speed_medium'],
+      high:   ['speed_high'],
+    },
+  },
+  switch: {
+    power_on:  ['power'],
+    power_off: ['power'],
+    toggle:    ['power'],
+  },
+}
+
+function resolveIrCommandName(kind, command, params) {
+  const map = IR_COMMAND_MAP[kind]
+  if (!map) return null
+  const entry = map[command]
+  if (!entry) return null
+  if (Array.isArray(entry)) return entry
+  // entry is an object keyed by param value (e.g. { cool: ['mode_cool'] })
+  const key = params?.mode ?? params?.value ?? null
+  if (key && entry[key]) return entry[key]
+  return null
+}
+
+function pickLearnedIrCommand(irDevice, candidates) {
+  if (!irDevice || !candidates) return null
+  const learned = new Set(irDevice.learned_commands || [])
+  for (const c of candidates) {
+    if (learned.has(c)) return c
+  }
+  return null
+}
+
+/**
+ * Send a command to a device. Routes to HA or IR (or both for hybrid)
+ * based on what the entity supports. Returns the underlying API promise.
+ *
+ * Examples:
+ *   sendDeviceCommand(lightEntity, 'set_brightness', { value: 70 })
+ *   sendDeviceCommand(tvEntity, 'volume_up')
+ *   sendDeviceCommand(acEntity, 'set_hvac_mode', { mode: 'cool' })
+ *   sendDeviceCommand(coverEntity, 'set_position', { value: 50 })
+ *   sendDeviceCommand(tvEntity, 'send_channel', { channel: 42 })   // IR-only
+ */
+export async function sendDeviceCommand(entity, command, params = {}) {
+  if (!entity) throw new Error('sendDeviceCommand: no entity')
+  const kind   = getKind(entity)
+  const isIr   = !!entity._ir
+  const linked = entity._linkedIr
+
+  // Special case: numeric channel (IR-only feature)
+  if (command === 'send_channel') {
+    const ir = isIr ? entity._irDevice : linked
+    if (!ir) throw new Error('Channel entry requires an IR device')
+    return irSendChannel(ir.id, params.channel)
+  }
+
+  // Toggle expands to power_on or power_off based on current state
+  if (command === 'toggle') {
+    command = isOn(entity) ? 'power_off' : 'power_on'
+  }
+
+  // HA climate has no native temp_up/temp_down — compute next target from
+  // current attributes and call set_temperature, clamped to min/max.
+  if ((command === 'temp_up' || command === 'temp_down') && !isIr && kind === KIND.AC) {
+    const step = entity.target_temp_step || 1
+    const cur  = entity.temperature ?? entity.target_temp ?? entity.current_temperature ?? 22
+    const min  = entity.min_temp ?? 16
+    const max  = entity.max_temp ?? 30
+    const next = command === 'temp_up' ? cur + step : cur - step
+    return callHaService('climate', 'set_temperature', {
+      entity_id: entity.entity_id,
+      temperature: Math.max(min, Math.min(max, next)),
+    })
+  }
+
+  // HA media_player has no "next input" service — rotate through source_list.
+  // IR devices typically have a learned 'input' command (single press cycles).
+  if (command === 'next_source') {
+    if (!isIr) {
+      const list = entity.source_list || []
+      if (list.length === 0) {
+        // Fall back to IR 'input' if linked
+        if (linked) {
+          const learned = new Set(linked.learned_commands || [])
+          if (learned.has('input')) return irSend(linked.id, 'input')
+        }
+        throw new Error('No source list available')
+      }
+      const idx = Math.max(0, list.indexOf(entity.source))
+      const nextSource = list[(idx + 1) % list.length]
+      return callHaService('media_player', 'select_source', {
+        entity_id: entity.entity_id,
+        source: nextSource,
+      })
+    }
+    // IR-only: fire 'input' if learned
+    const ir = entity._irDevice
+    const learned = new Set(ir?.learned_commands || [])
+    if (learned.has('input')) return irSend(ir.id, 'input')
+    throw new Error('Device has no learned "input" command')
+  }
+
+  // Try HA first if available
+  if (!isIr) {
+    const domain = entity.domain || entity.entity_id?.split('.')[0]
+    const map    = HA_SERVICE_BY_DOMAIN[domain]
+    const spec   = map?.[command]
+    if (spec) {
+      // Power on/off → use controlDevice for pattern-logged on/off (only for
+      // toggleable kinds where 'turn_on'/'turn_off' is the canonical action)
+      if ((command === 'power_on' || command === 'power_off') &&
+          (kind === KIND.LIGHT || kind === KIND.SWITCH || kind === KIND.PLUG)) {
+        return controlDevice(entity.entity_id, command === 'power_on' ? 'turn_on' : 'turn_off', 'ui')
+      }
+      const data = { entity_id: entity.entity_id, ...spec.data(params) }
+      return callHaService(domain, spec.service, data)
+    }
+
+    // HA doesn't expose this command — fall back to linked IR if available
+    if (linked) {
+      const candidates = resolveIrCommandName(kind, command, params)
+      const cmd = pickLearnedIrCommand(linked, candidates)
+      if (cmd) return irSend(linked.id, cmd)
+    }
+
+    throw new Error(`HA domain ${domain} doesn't support command ${command}`)
+  }
+
+  // Pure IR path
+  const candidates = resolveIrCommandName(kind, command, params)
+  if (!candidates) throw new Error(`IR kind ${kind} doesn't support command ${command}`)
+  const ir = entity._irDevice
+  const cmd = pickLearnedIrCommand(ir, candidates)
+  if (!cmd) throw new Error(`IR device hasn't learned: ${candidates.join('/')}`)
+  return irSend(ir.id, cmd)
+}
+
+// ─── Grouping & sorting ─────────────────────────────────────────────────────
+
+const KIND_PRIORITY = {
+  light: 1, switch: 2, plug: 2,
+  tv: 3, soundbar: 3, projector: 3,
+  ac: 4, fan: 4, humidifier: 4,
+  cover: 5, lock: 6, alarm: 6,
+  vacuum: 7, lawn_mower: 7,
+  camera: 8,
+  temperature: 9, humidity: 9, power_meter: 9,
+  motion: 10, occupancy: 10, door: 10, window: 10, leak: 10, smoke: 10,
+  sensor: 11, binary: 11,
+  person: 12, unknown: 99,
+}
+
+export function kindSortKey(kind) { return KIND_PRIORITY[kind] || 99 }
+
+// Sort an entity list by kind, then by name within kind.
+export function sortByKind(entities) {
+  return [...entities].sort((a, b) => {
+    const ka = kindSortKey(getKind(a))
+    const kb = kindSortKey(getKind(b))
+    if (ka !== kb) return ka - kb
+    return (a.friendly_name || a.entity_id || '').localeCompare(b.friendly_name || b.entity_id || '')
+  })
+}

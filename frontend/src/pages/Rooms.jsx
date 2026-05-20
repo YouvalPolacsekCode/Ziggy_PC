@@ -1,23 +1,23 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight, Pencil } from 'lucide-react'
 import { getMapRoomsSummary, getAutomations, triggerAutomation, getFeaturesSettings } from '../lib/api'
 
 const HomeMapCanvas = lazy(() =>
   import('./HomeMapCanvas').then((m) => ({ default: m.HomeMapCanvas }))
 )
 import { Toggle } from '../components/ui/Toggle'
-import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
+import { isEntityOn } from '../components/ui/DeviceControls'
+import { DeviceCard } from '../components/device/DeviceCard'
 import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
-import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
-import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice, irSend } from '../lib/api'
+import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
@@ -25,6 +25,51 @@ import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
 const roomDomainGroup = domainGroup
+
+// Resolve a room-device entry (shape from /rooms/devices) to the canonical
+// entity from the store. Room devices use _is_ir / _ir_device_id markers and
+// nest attributes under ha_attributes; the entities store has the unified
+// shape DeviceCard / deviceFacts expects (_ir, _irDevice, attributes spread).
+function resolveRoomDeviceToEntity(roomDev, entities) {
+  // HA-backed entity
+  if (roomDev.entity_id) {
+    const hit = entities.find(e => e.entity_id === roomDev.entity_id)
+    if (hit) return hit
+  }
+  // Pure IR device
+  if (roomDev._is_ir || roomDev._ir_device_id) {
+    const irId = roomDev._ir_device_id || roomDev.id
+    const hit = entities.find(e => e._ir && e._irDevice?.id === irId)
+    if (hit) return hit
+    // Fallback: synthesize a minimal entity from the room device payload so
+    // the card renders even if the store hasn't caught up yet.
+    return {
+      entity_id: `ir.${irId}`,
+      state: roomDev.ha_state || roomDev.assumed_state || 'unknown',
+      domain: roomDev.domain || 'switch',
+      display_name: roomDev.display_name || roomDev.device_type,
+      friendly_name: roomDev.display_name || roomDev.device_type,
+      _ir: true,
+      _irDevice: {
+        id: irId,
+        name: roomDev.display_name || roomDev.device_type,
+        type: roomDev.device_type,
+        learned_commands: roomDev.learned_commands || [],
+        commands: roomDev.commands || {},
+        assumed_state: roomDev.assumed_state,
+      },
+    }
+  }
+  // Fallback: treat the room device itself as entity-shaped
+  return {
+    entity_id: roomDev.entity_id || `unknown.${roomDev.id || Math.random()}`,
+    state: roomDev.state || roomDev.ha_state || 'unknown',
+    domain: roomDev.domain || 'unknown',
+    display_name: roomDev.display_name,
+    friendly_name: roomDev.display_name,
+    ...(roomDev.ha_attributes || {}),
+  }
+}
 
 function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   const [hovered, setHovered] = useState(false)
@@ -36,7 +81,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', cursor: 'pointer', height: 156 }}
+      style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', cursor: 'pointer', height: 'var(--rooms-tile-h)' }}
     >
       <button onClick={onClick} style={{
         width: '100%', height: '100%', padding: 0, border: 'none',
@@ -54,6 +99,40 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
           background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.4)',
           boxShadow: hasActive ? '0 0 0 3px rgba(108,191,140,0.35)' : 'none',
         }} />
+
+        {/* Temp / humidity chips — top left, matches the Dashboard carousel
+            chip styling so the two surfaces feel like one design system.
+            Temperature is tinted by indoor comfort range:
+              < 18 °C  → cold (cool blue)
+              18–25 °C → comfortable (neutral dark, unchanged)
+              > 25 °C  → hot (warm red)
+            HA reports a `unit_of_measurement` attribute (°C / °F); we
+            normalize to °C for the threshold comparison so the chip behaves
+            sensibly regardless of locale. */}
+        {(room.tempSensor || room.humSensor) && (
+          <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 5 }}>
+            {room.tempSensor && (() => {
+              const raw = parseFloat(room.tempSensor.state)
+              const unit = room.tempSensor.unit_of_measurement
+                        || room.tempSensor.attributes?.unit_of_measurement
+                        || '°C'
+              const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
+              const bg = tempC < 18 ? 'rgba(60, 130, 220, 0.55)'
+                       : tempC > 25 ? 'rgba(220, 80, 60, 0.55)'
+                       : 'rgba(0, 0, 0, 0.32)'
+              return (
+                <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: bg, backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                  {raw.toFixed(1)}°
+                </span>
+              )
+            })()}
+            {room.humSensor && (
+              <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                {parseFloat(room.humSensor.state).toFixed(0)}%
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Name + count — bottom */}
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px' }}>
@@ -84,9 +163,135 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   )
 }
 
+// ── Shared Edit-room modal ────────────────────────────────────────────────────
+// Used from both the Rooms-list tile hover-menu AND the Room-detail header
+// kebab menu, so the rename + photo-picker UX is consistent across surfaces.
+export function RoomEditModal({ open, room, onClose, onSaved }) {
+  const { fetchAll }  = useDeviceStore()
+  const { addToast }  = useUIStore()
+  const [photoKey,    setPhotoKey]    = useState('living_room')
+  const [customPhoto, setCustomPhoto] = useState(null)
+  const [roomName,    setRoomName]    = useState('')
+  const [saving,      setSaving]      = useState(false)
+
+  // Reset state whenever the target room changes (i.e. modal opens).
+  useEffect(() => {
+    if (!room) return
+    setRoomName(room.name)
+    setCustomPhoto(getCustomPhoto(room.id))
+    try {
+      const overrides = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
+      setPhotoKey(overrides[room.id] || room.id)
+    } catch { setPhotoKey('living_room') }
+  }, [room?.id])
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try { setCustomPhoto(await resizeImageToDataUrl(file)) }
+    catch { addToast('Could not load photo', 'error') }
+    e.target.value = ''
+  }
+
+  const handleSave = async () => {
+    if (!room) return
+    setSaving(true)
+    try {
+      const nameChanged = roomName.trim() && roomName.trim() !== room.name
+      if (nameChanged) {
+        await renameRoom(room.id, roomName.trim())
+        await fetchAll()
+      }
+      if (customPhoto) {
+        storeCustomDataUrl(room.id, customPhoto)
+      } else {
+        removeCustomPhoto(room.id)
+        saveRoomPhoto(room.id, photoKey)
+      }
+      addToast(nameChanged ? 'Room updated' : 'Photo updated', 'success')
+      onSaved?.({ ...room, name: nameChanged ? roomName.trim() : room.name })
+      onClose()
+    } catch (e) {
+      addToast(e.message || 'Failed to save', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={() => { setCustomPhoto(null); onClose() }} title="Edit Room">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Input label="Room name" value={roomName} onChange={e => setRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()} />
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Photo</p>
+          {customPhoto && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ position: 'relative', borderRadius: 11, overflow: 'hidden', height: 120, marginBottom: 6 }}>
+                <img src={customPhoto} alt="Custom" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <button onClick={() => setCustomPhoto(null)} style={{ position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
+              </div>
+            </div>
+          )}
+          <div style={{ height: 252, overflowY: 'scroll', borderRadius: 10, border: '0.5px solid var(--line)', marginBottom: 12 }} className="scrollbar-thin">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: 8 }}>
+              {PHOTO_OPTIONS.map(({ key, label }) => {
+                const isSelected = !customPhoto && photoKey === key
+                return (
+                  <button key={key} type="button" onClick={() => { setPhotoKey(key); setCustomPhoto(null) }} style={{
+                    position: 'relative', overflow: 'hidden', borderRadius: 9,
+                    height: 72,
+                    border: isSelected ? '2.5px solid var(--accent)' : '2.5px solid transparent',
+                    cursor: 'pointer', padding: 0, background: 'var(--surface-2)',
+                    opacity: isSelected ? 1 : 0.7,
+                    transition: 'opacity 0.15s, border-color 0.15s',
+                    flexShrink: 0,
+                  }}>
+                    <img src={ROOM_PHOTOS[key]} alt={label} style={{
+                      position: 'absolute', inset: 0, width: '100%', height: '100%',
+                      objectFit: 'cover', display: 'block',
+                    }} />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
+              📷 Take photo
+              <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
+              🖼 Choose file
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
+            </label>
+          </div>
+        </div>
+        <button onClick={handleSave} disabled={!roomName.trim() || saving} className="z-btn-primary" style={{ width: '100%' }}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Shared Delete-room confirm modal ──────────────────────────────────────────
+export function RoomDeleteConfirm({ room, onClose, onConfirm }) {
+  return (
+    <Modal open={!!room} onClose={onClose} title="Delete room">
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 16, lineHeight: 1.5 }}>
+        Delete <strong style={{ color: 'var(--ink)' }}>{room?.name}</strong>? This will also remove all devices assigned to this room.
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+        <button onClick={() => onConfirm(room)} style={{ flex: 1, background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: 10, padding: '10px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+      </div>
+    </Modal>
+  )
+}
+
 export function RoomsList() {
   const navigate = useNavigate()
-  const { loading, fetchAll, ziggyRooms, getUnassigned, getNoRoom } = useDeviceStore()
+  const { loading, fetchAll, ziggyRooms, entities, getUnassigned, getNoRoom } = useDeviceStore()
   const { addToast } = useUIStore()
   const [showAdd, setShowAdd] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
@@ -94,21 +299,28 @@ export function RoomsList() {
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [editPhotoRoom, setEditPhotoRoom] = useState(null)
-  const [editPhotoKey, setEditPhotoKey] = useState('living_room')
-  const [editCustomPhoto, setEditCustomPhoto] = useState(null)
-  const [editRoomName, setEditRoomName] = useState('')
-  const [editSaving, setEditSaving] = useState(false)
   const [search, setSearch] = useState('')
 
   useEffect(() => { fetchAll() }, [])
 
-  // Enrich ziggyRooms with display counts for RoomRow
-  const rooms = ziggyRooms.map((r) => ({
-    ...r,
-    entityCount:  r.devices.length,
-    activeCount:  r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
-    offlineCount: r.devices.filter((d) => d.ha_state === 'unavailable' || d.ha_state === 'unknown').length,
-  }))
+  // Enrich ziggyRooms with display counts and temp/humidity sensors for RoomTile.
+  // entityMap lets us look up full HA entity objects (with device_class) from the
+  // device list — the device entries themselves only carry ha_state, not the
+  // attributes the sensor chips need.
+  const entityMap = Object.fromEntries(entities.map(e => [e.entity_id, e]))
+  const rooms = ziggyRooms.map((r) => {
+    const sensors = r.devices
+      .map(d => entityMap[d.entity_id])
+      .filter(e => e?.domain === 'sensor' && !['unavailable', 'unknown'].includes(e.state))
+    return {
+      ...r,
+      entityCount:  r.devices.length,
+      activeCount:  r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
+      offlineCount: r.devices.filter((d) => d.ha_state === 'unavailable' || d.ha_state === 'unknown').length,
+      tempSensor:   sensors.find(e => e.device_class === 'temperature') || null,
+      humSensor:    sensors.find(e => e.device_class === 'humidity') || null,
+    }
+  })
   const unassigned = getUnassigned()
   const noRoomDevices = getNoRoom()
 
@@ -131,55 +343,6 @@ export function RoomsList() {
     }
   }
 
-  const handleEditPhoto = (room) => {
-    setEditPhotoRoom(room)
-    setEditRoomName(room.name)
-    setEditCustomPhoto(getCustomPhoto(room.id))
-    try {
-      const overrides = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
-      setEditPhotoKey(overrides[room.id] || room.id)
-    } catch {
-      setEditPhotoKey('living_room')
-    }
-  }
-
-  const handleUploadEditPhoto = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const dataUrl = await resizeImageToDataUrl(file)
-      setEditCustomPhoto(dataUrl)
-    } catch {
-      addToast('Could not load photo', 'error')
-    }
-    e.target.value = ''
-  }
-
-  const handleSaveRoomEdit = async () => {
-    if (!editPhotoRoom) return
-    setEditSaving(true)
-    try {
-      const nameChanged = editRoomName.trim() && editRoomName.trim() !== editPhotoRoom.name
-      if (nameChanged) {
-        await renameRoom(editPhotoRoom.id, editRoomName.trim())
-        await fetchAll()
-      }
-      if (editCustomPhoto) {
-        storeCustomDataUrl(editPhotoRoom.id, editCustomPhoto)
-      } else {
-        removeCustomPhoto(editPhotoRoom.id)
-        saveRoomPhoto(editPhotoRoom.id, editPhotoKey)
-      }
-      setEditPhotoRoom(null)
-      setEditCustomPhoto(null)
-      addToast(nameChanged ? 'Room updated' : 'Photo updated', 'success')
-    } catch (e) {
-      addToast(e.message || 'Failed to save', 'error')
-    } finally {
-      setEditSaving(false)
-    }
-  }
-
   const handleDeleteRoom = async (room) => {
     try {
       await deleteRoom(room.id)
@@ -194,7 +357,7 @@ export function RoomsList() {
   const filteredRooms = rooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
@@ -235,10 +398,13 @@ export function RoomsList() {
         </div>
       )}
 
-      {/* Room photo-tile grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+      {/* Room photo-tile grid — `.z-rooms-grid` sets responsive cols/gap
+          (2 on phones, 3 on tablet+) and bumps `--rooms-tile-h` on desktop
+          so the tiles read as big anchor cards there rather than mobile-
+          sized thumbnails stretched wide. */}
+      <div className="z-rooms-grid">
         {loading && [1, 2, 3, 4].map(i => (
-          <div key={i} style={{ height: 156, borderRadius: 16, background: 'var(--surface-2)', opacity: 0.6 }} />
+          <div key={i} style={{ height: 'var(--rooms-tile-h)', borderRadius: 16, background: 'var(--surface-2)', opacity: 0.6 }} />
         ))}
         {!loading && filteredRooms.map(room => (
           <RoomTile
@@ -246,7 +412,7 @@ export function RoomsList() {
             room={room}
             onClick={() => navigate(`/rooms/${room.id}`)}
             onDelete={r => setConfirmDelete(r)}
-            onEditPhoto={handleEditPhoto}
+            onEditPhoto={(r) => setEditPhotoRoom(r)}
           />
         ))}
       </div>
@@ -323,73 +489,17 @@ export function RoomsList() {
         </div>
       </Modal>
 
-      {/* Confirm delete modal */}
-      <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete room">
-        <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 16, lineHeight: 1.5 }}>
-          Delete <strong style={{ color: 'var(--ink)' }}>{confirmDelete?.name}</strong>? This will also remove all devices assigned to this room.
-        </p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setConfirmDelete(null)} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
-          <button onClick={() => handleDeleteRoom(confirmDelete)} style={{ flex: 1, background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: 10, padding: '10px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
-        </div>
-      </Modal>
+      <RoomDeleteConfirm
+        room={confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDeleteRoom}
+      />
 
-      {/* Edit room modal */}
-      <Modal open={!!editPhotoRoom} onClose={() => { setEditPhotoRoom(null); setEditCustomPhoto(null) }} title="Edit Room">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Input label="Room name" value={editRoomName} onChange={e => setEditRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveRoomEdit()} />
-          <div>
-            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Photo</p>
-            {editCustomPhoto && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ position: 'relative', borderRadius: 11, overflow: 'hidden', height: 120, marginBottom: 6 }}>
-                  <img src={editCustomPhoto} alt="Custom" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                  <button onClick={() => setEditCustomPhoto(null)} style={{ position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
-                </div>
-              </div>
-            )}
-            {/* Scrollable photo picker — fixed-height cells so images never squish */}
-            <div style={{ height: 252, overflowY: 'scroll', borderRadius: 10, border: '0.5px solid var(--line)', marginBottom: 12 }} className="scrollbar-thin">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: 8 }}>
-                {PHOTO_OPTIONS.map(({ key, label }) => {
-                  const isSelected = !editCustomPhoto && editPhotoKey === key
-                  return (
-                    <button key={key} type="button" onClick={() => { setEditPhotoKey(key); setEditCustomPhoto(null) }} style={{
-                      position: 'relative', overflow: 'hidden', borderRadius: 9,
-                      height: 72,                           /* fixed height — grid cannot compress this */
-                      border: isSelected ? '2.5px solid var(--accent)' : '2.5px solid transparent',
-                      cursor: 'pointer', padding: 0, background: 'var(--surface-2)',
-                      opacity: isSelected ? 1 : 0.7,
-                      transition: 'opacity 0.15s, border-color 0.15s',
-                      flexShrink: 0,
-                    }}>
-                      <img src={ROOM_PHOTOS[key]} alt={label} style={{
-                        position: 'absolute', inset: 0, width: '100%', height: '100%',
-                        objectFit: 'cover', display: 'block',
-                      }} />
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Two distinct upload options — no forced camera on mobile */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
-                📷 Take photo
-                <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadEditPhoto} />
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
-                🖼 Choose file
-                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUploadEditPhoto} />
-              </label>
-            </div>
-          </div>
-          <button onClick={handleSaveRoomEdit} disabled={!editRoomName.trim() || editSaving} className="z-btn-primary" style={{ width: '100%' }}>
-            {editSaving ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
-      </Modal>
+      <RoomEditModal
+        open={!!editPhotoRoom}
+        room={editPhotoRoom}
+        onClose={() => setEditPhotoRoom(null)}
+      />
     </div>
   )
 }
@@ -433,145 +543,9 @@ function CameraPreview({ entityId }) {
   )
 }
 
-// Minimal IR quick-fire buttons for the room list view
-function IRRowControls({ entity }) {
-  const irId = entity._ir_device_id
-  const learned = new Set(entity.learned_commands || [])
-  const cmds = entity.commands || {}
-  const canDo = (cmd) => cmd in cmds && learned.has(cmd)
-
-  const buttons = []
-  if (canDo('power'))       buttons.push({ cmd: 'power',       label: '⏻ Power' })
-  if (canDo('volume_up'))   buttons.push({ cmd: 'volume_up',   label: '🔊+' })
-  if (canDo('volume_down')) buttons.push({ cmd: 'volume_down', label: '🔊−' })
-  if (canDo('mute'))        buttons.push({ cmd: 'mute',        label: '🔇' })
-  if (canDo('mode_cool'))   buttons.push({ cmd: 'mode_cool',   label: '❄ Cool' })
-  if (canDo('mode_heat'))   buttons.push({ cmd: 'mode_heat',   label: '🔥 Heat' })
-
-  if (!irId || buttons.length === 0) return null
-
-  return (
-    <div className="flex gap-1.5 flex-wrap mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-      {buttons.map(({ cmd, label }) => (
-        <button
-          key={cmd}
-          onClick={() => irSend(irId, cmd)}
-          className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-[10px] font-medium"
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function DeviceRow({ entity, onToggle, onService, onRemove, onHide, onUnhide, isHidden, ziggyStatus }) {
-  const isIr = entity._is_ir === true
-  const linkedIr = entity._linkedIr || null
-  const isOn = isEntityOn(entity)
-  const isOff = entity.state === 'off' || entity.state === 'unavailable' || entity.state === 'unknown'
-  const isUnavailable = entity.state === 'unavailable'
-  const isToggleable = !isIr && TOGGLEABLE_DOMAINS.has(entity.domain) && !isUnavailable
-  const isActive = !isOff
-  const { primary: stateLabel, secondary: stateSecondary } = !isIr ? formatEntityState(entity) : { primary: '', secondary: null }
-  const showStatusBadge = !isIr && ziggyStatus && ziggyStatus !== 'connected' && LOST_LABEL[ziggyStatus]
-  const assumedState = entity.assumed_state && entity.assumed_state !== 'unknown' ? entity.assumed_state : null
-
-  return (
-    <div className={cn(
-      'px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 group transition-opacity',
-      isHidden && 'opacity-40'
-    )}>
-      <div className="flex items-center gap-3">
-        <div className={cn(
-          'w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 relative',
-          isActive && !isHidden ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
-        )}>
-          {domainIcon(entity.domain, entity.device_class)}
-          {(isIr || linkedIr) && (
-            <span className="absolute -bottom-1 -right-1 bg-violet-500 text-white text-[7px] font-bold px-1 py-px rounded-sm leading-none">IR</span>
-          )}
-          {!isIr && !linkedIr && (
-            isUnavailable
-              ? <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900 bg-red-400" />
-              : (ziggyStatus && LOST_DOT[ziggyStatus] &&
-                  <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900', LOST_DOT[ziggyStatus])} />
-                )
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-            {entity.display_name || entity.friendly_name || entity.entity_id}
-          </p>
-          {isHidden ? (
-            <p className="text-xs text-zinc-300 dark:text-zinc-600 font-medium">Hidden</p>
-          ) : isIr ? (
-            <p className={cn('text-xs font-medium', assumedState === 'on' ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600')}>
-              {assumedState ? `${assumedState} (assumed)` : 'state unknown'}
-            </p>
-          ) : isUnavailable ? (
-            <p className="text-xs font-medium text-red-400">Offline</p>
-          ) : showStatusBadge ? (
-            <p className="text-xs font-medium text-red-400">{LOST_LABEL[ziggyStatus]}</p>
-          ) : (
-            <p className={cn('text-xs font-medium', isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600')}>
-              {stateLabel}
-              {stateSecondary && <span className="text-zinc-400 font-normal ml-1">· {stateSecondary}</span>}
-            </p>
-          )}
-        </div>
-        {!isIr && entity.entity_id && (
-          // Always visible on mobile; hidden on desktop until hover
-          <div className={cn(
-            'items-center gap-1 shrink-0',
-            isHidden ? 'flex' : 'flex md:hidden md:group-hover:flex'
-          )}>
-            {isHidden ? (
-              <button title="Unhide device" onClick={() => onUnhide?.(entity.entity_id)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
-                <Eye size={13} />
-              </button>
-            ) : (
-              <button title="Hide device" onClick={() => onHide(entity.entity_id)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                <EyeOff size={13} />
-              </button>
-            )}
-            <button title="Remove from room" onClick={() => onRemove(entity.entity_id)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
-        {isToggleable && !isHidden && (
-          <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} className="shrink-0" />
-        )}
-      </div>
-
-      {/* Controls — suppressed when device is hidden */}
-      {!isHidden && (isIr ? (
-        <IRRowControls entity={entity} />
-      ) : linkedIr ? (
-        <>
-          {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
-            <button
-              onClick={() => irSend(linkedIr.id, 'power')}
-              className="w-full mt-2 flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 text-xs font-semibold hover:bg-violet-100 transition-colors border border-violet-200 dark:border-violet-800/50"
-            >
-              ⏻ Turn On via IR
-            </button>
-          )}
-          <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-          <IRRemoteButton irDevice={linkedIr} onCommand={(id, cmd) => irSend(id, cmd)} />
-        </>
-      ) : entity.domain === 'camera' && entity.entity_id ? (
-        <CameraPreview entityId={entity.entity_id} />
-      ) : (
-        <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-      ))}
-    </div>
-  )
-}
+// Legacy IRRowControls + DeviceRow removed — both replaced by the unified
+// DeviceCard variant="row" rendered via renderDomainSection.
+// _LegacyDeviceRow_unused removed (lines 485-591) — superseded by DeviceCard variant="row".
 
 function VirtualDeviceRow({ device, onTrigger, triggering }) {
   const isTriggering = triggering === device.id
@@ -618,192 +592,9 @@ function RoomZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
 }
 
 // ── Domain-specific group renderers ──────────────────────────────────────────
-function LightsGroup({ devices, onToggle, eyebrow }) {
-  const navigate = useNavigate()
-  const onCount = devices.filter(d => isEntityOn(d)).length
-  const avgBri = (() => {
-    const lit = devices.filter(d => isEntityOn(d) && d.ha_attributes?.brightness)
-    if (!lit.length) return null
-    return Math.round(lit.reduce((s, d) => s + d.ha_attributes.brightness / 2.55, 0) / lit.length)
-  })()
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-        <p className="z-eyebrow">{eyebrow} · {onCount} of {devices.length} on</p>
-        {avgBri != null && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{avgBri}% avg</span>}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(devices.length, 3)}, 1fr)`, gap: 8 }}>
-        {devices.map((entity, i) => {
-          const on = isEntityOn(entity)
-          const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Light'
-          const bri = entity.ha_attributes?.brightness ? Math.round(entity.ha_attributes.brightness / 2.55) + '%' : null
-          const val = on ? (bri || 'on') : 'off'
-          return (
-            <div key={entity.entity_id || i} style={{ display: 'flex', flexDirection: 'column', borderRadius: 14, border: '0.5px solid var(--line)', overflow: 'hidden', background: on ? 'var(--ink)' : 'var(--surface)' }}>
-              {/* Tap tile = toggle */}
-              <button
-                onClick={() => onToggle(entity.entity_id, !on)}
-                style={{
-                  flex: 1, padding: 12, minHeight: 110,
-                  color: on ? 'var(--bg)' : 'var(--ink-2)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  cursor: 'pointer', fontFamily: 'inherit', transition: 'opacity 0.12s',
-                  background: 'none', border: 'none',
-                }}
-              >
-                <RoomZIcon name="light" size={20} stroke={1.6} color={on ? 'var(--gold)' : 'var(--ink-faint)'} />
-                <div style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</div>
-                <div className="z-mono" style={{ fontSize: 10, opacity: 0.75 }}>{val}</div>
-              </button>
-              {/* Chevron → full controls page */}
-              {entity.entity_id && (
-                <button
-                  onClick={() => navigate(`/devices/${encodeURIComponent(entity.entity_id)}`)}
-                  style={{
-                    borderTop: `0.5px solid ${on ? 'rgba(255,255,255,0.12)' : 'var(--line)'}`,
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: on ? 'rgba(255,255,255,0.45)' : 'var(--ink-faint)',
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 18l6-6-6-6"/>
-                  </svg>
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ── Expandable device card — shows full DeviceControls when expanded ──────────
-function ExpandableCard({ entity, header, onService, onToggle }) {
-  const [expanded, setExpanded] = useState(false)
-  return (
-    <div style={{ borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
-      {/* Row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-        <div style={{ flex: 1 }}>{header}</div>
-        <button
-          onClick={() => setExpanded(v => !v)}
-          style={{
-            width: 44, height: '100%', minHeight: 60, flexShrink: 0, background: 'none', border: 'none',
-            borderLeft: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink-faint)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-          title={expanded ? 'Collapse controls' : 'Show controls'}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-            <path d="M6 9l6 6 6-6"/>
-          </svg>
-        </button>
-      </div>
-      {/* Full controls */}
-      {expanded && (
-        <div style={{ padding: '0 16px 20px', borderTop: '0.5px solid var(--line)' }}>
-          <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} onToggle={onToggle ? (v) => onToggle(entity.entity_id, v) : undefined} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ClimateRowCard({ entity, onService }) {
-  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Climate'
-  const temp = entity.ha_attributes?.temperature
-  const currentTemp = entity.ha_attributes?.current_temperature
-  const hvacMode = entity.ha_state
-  const [localTemp, setLocalTemp] = useState(temp ?? 22)
-  useEffect(() => { if (temp != null) setLocalTemp(temp) }, [temp])
-  const adj = (delta) => {
-    const next = Math.max(16, Math.min(30, localTemp + delta))
-    setLocalTemp(next)
-    onService(entity, 'set_temperature', { temperature: next })
-  }
-
-  const header = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14 }}>
-      <div style={{ width: 42, height: 42, borderRadius: 12, background: 'color-mix(in srgb, var(--info) 12%, var(--surface-2))', color: 'var(--info)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <RoomZIcon name="climate" size={18} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>
-          {hvacMode}{currentTemp ? ` · ${currentTemp}° now` : ''}
-        </div>
-      </div>
-      {temp != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <button onClick={() => adj(-1)} style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <RoomZIcon name="back" size={14} color="var(--ink-2)" />
-          </button>
-          <span className="z-mono" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', minWidth: 30, textAlign: 'center' }}>{localTemp}°</span>
-          <button onClick={() => adj(1)} style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <RoomZIcon name="fwd" size={14} color="var(--ink-2)" />
-          </button>
-        </div>
-      )}
-    </div>
-  )
-  return <ExpandableCard entity={entity} header={header} onService={onService} />
-}
-
-function MediaRowCard({ entity, onService }) {
-  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Media'
-  const title = entity.ha_attributes?.media_title
-  const artist = entity.ha_attributes?.media_artist
-  const source = entity.ha_attributes?.source || entity.ha_attributes?.app_name
-  const isPlaying = entity.ha_state === 'playing'
-  const sub = title ? `${title}${artist ? ' · ' + artist : ''}` : (source || entity.ha_state)
-  const header = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14 }}>
-      <div style={{ width: 42, height: 42, borderRadius: 12, background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <RoomZIcon name="media" size={18} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
-      </div>
-      <button
-        onClick={e => { e.stopPropagation(); onService(entity, isPlaying ? 'media_pause' : 'media_play', {}) }}
-        style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--ink)', color: 'var(--bg)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-      >
-        {isPlaying ? <Pause size={14} fill="var(--bg)" stroke="none" /> : <Play size={14} fill="var(--bg)" stroke="none" />}
-      </button>
-    </div>
-  )
-  return <ExpandableCard entity={entity} header={header} onService={onService} />
-}
-
-function TVRowCard({ entity }) {
-  const [showRemote, setShowRemote] = useState(false)
-  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'TV'
-  const isIr = entity._is_ir === true || entity.domain === 'remote'
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
-        <div style={{ width: 42, height: 42, borderRadius: 12, background: 'var(--surface-2)', color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <RoomZIcon name="tv" size={18} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{name}</div>
-          <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>Off · IR</div>
-        </div>
-        <button
-          onClick={() => setShowRemote(true)}
-          style={{ padding: '6px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '0.5px solid var(--line)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)', cursor: 'pointer', flexShrink: 0 }}
-        >
-          Remote
-        </button>
-      </div>
-      {showRemote && <IRRemoteButton entity={entity} onClose={() => setShowRemote(false)} />}
-    </>
-  )
-}
+// Hold-and-drag thresholds for the LightTile brightness gesture
+// Dead legacy components removed (LightTile, LightsGroup, ExpandableCard, ClimateRowCard, MediaRowCard, TVRowCard, and tile-hold constants).
+// All superseded by DeviceCard variant="tile" / variant="row" rendered via renderDomainSection.
 
 function SensorsStrip({ devices }) {
   const renderSensor = (entity) => {
@@ -832,87 +623,27 @@ function SensorsStrip({ devices }) {
   )
 }
 
-function StandardDeviceRow({ entity, onToggle, onService }) {
-  const [expanded, setExpanded] = useState(false)
-  const isOn = isEntityOn(entity)
-  const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || 'Device'
-  const state = entity.ha_state || entity.state || '—'
-  const isToggleable = TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
-  const hasFullControls = ['light', 'climate', 'media_player', 'cover', 'fan', 'lock', 'vacuum'].includes(entity.domain)
-  return (
-    <div style={{ borderBottom: '0.5px solid var(--line)' }} className="last:border-b-0">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px' }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-          background: isOn ? 'var(--ink)' : 'var(--surface-2)',
-          color: isOn ? 'var(--bg)' : 'var(--ink-2)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
-        }}>
-          {domainIcon(entity.domain, entity.device_class)}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-          <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1 }}>{state}</div>
-        </div>
-        {isToggleable && <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />}
-        {hasFullControls && (
-          <button onClick={() => setExpanded(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: '4px 2px', marginLeft: 4 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-              <path d="M6 9l6 6 6-6"/>
-            </svg>
-          </button>
-        )}
-      </div>
-      {expanded && hasFullControls && (
-        <div style={{ padding: '0 14px 16px', borderTop: '0.5px solid var(--line)' }}>
-          <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} onToggle={(v) => onToggle(entity.entity_id, v)} />
-        </div>
-      )}
-    </div>
-  )
-}
+// StandardDeviceRow removed — superseded by DeviceCard variant="row".
 
-function renderDomainSection(group, devices, handlers) {
-  const { onToggle, onService } = handlers
-  const visibleDevices = devices.filter(e => e.state !== 'unavailable' || group.id === 'sensors')
+function renderDomainSection(group, devices) {
+  const visibleDevices = devices
+  if (!visibleDevices.length) return null
 
+  // Lights → 3-col grid of tile-variant DeviceCards (keeps the dashboard rhythm)
   if (group.id === 'lights') {
-    const lights = visibleDevices.filter(e => e.domain === 'light')
-    if (!lights.length) return null
-    return <LightsGroup devices={lights} onToggle={onToggle} eyebrow={group.label} />
-  }
-
-  if (group.id === 'climate') {
-    const climateDev = visibleDevices.filter(e => e.domain === 'climate')
-    const fans = visibleDevices.filter(e => e.domain === 'fan')
+    const onCount = visibleDevices.filter(e => isEntityOn(e)).length
     return (
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {climateDev.map((e, i) => <ClimateRowCard key={e.entity_id || i} entity={e} onService={onService} />)}
-          {fans.map((e, i) => <StandardDeviceRow key={e.entity_id || i} entity={e} onToggle={onToggle} onService={onService} />)}
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label} · {onCount} of {visibleDevices.length} on</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+          {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="tile" />)}
         </div>
       </div>
     )
   }
 
-  if (group.id === 'media') {
-    const tvIr = visibleDevices.filter(e => e.domain === 'tv' || e._is_ir || ['tv', 'projector'].includes(e.ha_attributes?.device_class))
-    const mediaPlayers = visibleDevices.filter(e => e.domain === 'media_player' && !tvIr.includes(e))
-    return (
-      <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {mediaPlayers.map((e, i) => <MediaRowCard key={e.entity_id || i} entity={e} onService={onService} />)}
-          {tvIr.map((e, i) => <TVRowCard key={e.entity_id || i} entity={e} />)}
-        </div>
-      </div>
-    )
-  }
-
+  // Sensors → 3-col chip strip (compact tiles, read-only)
   if (group.id === 'sensors') {
-    if (!visibleDevices.length) return null
     return (
       <div>
         <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
@@ -921,12 +652,12 @@ function renderDomainSection(group, devices, handlers) {
     )
   }
 
-  // Standard row cards for everything else
+  // Everything else → vertical list of row-variant DeviceCards
   return (
     <div>
       <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
-      <div style={{ borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
-        {visibleDevices.map((e, i) => <StandardDeviceRow key={e.entity_id || i} entity={e} onToggle={onToggle} onService={onService} />)}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="row" />)}
       </div>
     </div>
   )
@@ -935,7 +666,7 @@ function renderDomainSection(group, devices, handlers) {
 export function RoomDetail() {
   const { roomId } = useParams()
   const navigate = useNavigate()
-  const { fetchAll, ziggyRooms, hideEntity, unhideEntity, hiddenEntities, updateEntityState, loading } = useDeviceStore()
+  const { fetchAll, ziggyRooms, hideEntity, unhideEntity, hiddenEntities, updateEntityState, loading, entities } = useDeviceStore()
   const { addToast } = useUIStore()
   const [showAdd, setShowAdd] = useState(false)
   const [addEntityId, setAddEntityId] = useState('')
@@ -944,6 +675,28 @@ export function RoomDetail() {
   const [triggering, setTriggering] = useState(null)
   const [roomAutomations, setRoomAutomations] = useState([])
   const [showHiddenDevices, setShowHiddenDevices] = useState(false)
+  // Header kebab menu — popover with Edit / Delete actions.
+  const [menuOpen,    setMenuOpen]    = useState(false)
+  const [editRoom,    setEditRoom]    = useState(null)
+  const [deleteRoom_, setDeleteRoom]  = useState(null)
+  const menuRef = useRef(null)
+
+  // Click-outside / Escape to close the kebab popover.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false) }
+    const onKey  = (e) => { if (e.key === 'Escape') setMenuOpen(false) }
+    // Need touchstart for mobile — mousedown is unreliably dispatched on
+    // mobile browsers, so the desktop-only handler never closes the menu.
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown',   onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
 
   useEffect(() => { fetchAll() }, [])
 
@@ -960,7 +713,7 @@ export function RoomDetail() {
 
   // Adapt DeviceRegistry enriched format to the shape DeviceRow expects.
   // Spread d first so IR markers (_is_ir, _ir_device_id, commands, etc.) are preserved.
-  const roomDevices = (room?.devices || []).map((d) => ({
+  const rawRoomDevices = (room?.devices || []).map((d) => ({
     ...d,
     entity_id: d.entity_id || null,
     state: d.ha_state ?? 'unknown',
@@ -970,6 +723,13 @@ export function RoomDetail() {
     ...(d.ha_attributes || {}),
     ziggyStatus: d.status,
   }))
+  // Dedupe: when an HA entity already advertises a paired IR device via _linkedIr,
+  // hide the standalone IR row that points at the same physical IR device. Otherwise
+  // the room shows two entries for the same thing (one with the play button, one with the Remote).
+  const haPairedIrIds = new Set(
+    rawRoomDevices.filter((d) => d._linkedIr?.id).map((d) => d._linkedIr.id)
+  )
+  const roomDevices = rawRoomDevices.filter((d) => !(d._is_ir && d._ir_device_id && haPairedIrIds.has(d._ir_device_id)))
   const entityCount  = roomDevices.length
   const activeCount  = roomDevices.filter((d) => isEntityOn(d)).length
   const offlineCount = roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length
@@ -1086,11 +846,62 @@ export function RoomDetail() {
           }}>
             <ArrowLeft size={16} />
           </button>
-          <button style={{
-            width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)',
-            border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, letterSpacing: 1,
-          }}>···</button>
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setMenuOpen(v => !v)}
+              aria-label="Room options"
+              aria-expanded={menuOpen}
+              style={{
+                width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)',
+                border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, letterSpacing: 1,
+              }}
+            >···</button>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                  background: 'var(--surface)', border: '0.5px solid var(--line)',
+                  borderRadius: 12, boxShadow: 'var(--shadow-lg)',
+                  padding: 4, minWidth: 160, zIndex: 10,
+                  display: 'flex', flexDirection: 'column',
+                }}
+              >
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); setEditRoom(room) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '9px 12px', borderRadius: 8,
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'left',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <Pencil size={14} style={{ color: 'var(--ink-mute)' }} />
+                  Edit room
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); setDeleteRoom(room) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '9px 12px', borderRadius: 8,
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'inherit', fontSize: 13, color: 'var(--accent)', textAlign: 'left',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = `color-mix(in srgb, var(--accent) 8%, var(--surface))`}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <Trash2 size={14} />
+                  Delete room
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Title bottom */}
@@ -1115,31 +926,6 @@ export function RoomDetail() {
             {offlineCount > 0 && <><span>·</span><span style={{ color: 'rgba(252,165,165,0.9)' }}>{offlineCount} offline</span></>}
           </div>
         </div>
-      </div>
-
-      {/* Everything off + sparkle row */}
-      <div style={{ padding: '14px 20px 0', display: 'flex', gap: 8 }}>
-        <button
-          onClick={async () => {
-            for (const d of roomDevices.filter(d => isEntityOn(d) && d.entity_id)) {
-              try { await controlDevice(d.entity_id, 'turn_off') } catch {}
-            }
-            addToast('Everything off', 'success')
-            setTimeout(() => fetchAll(), 1500)
-          }}
-          style={{
-            flex: 1, padding: '12px 14px', borderRadius: 14,
-            background: 'var(--ink)', color: 'var(--bg)', border: 'none',
-            fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          <RoomZIcon name="bolt" size={14} color="var(--bg)" />
-          Everything off
-        </button>
-        <button style={{ width: 48, padding: 12, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <RoomZIcon name="sparkle" size={16} color="var(--ink-2)" />
-        </button>
       </div>
 
       <div style={{ padding: '16px 20px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -1173,7 +959,10 @@ export function RoomDetail() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {deviceGroups.map(group => {
-                  const section = renderDomainSection(group, group.devices, { onToggle: handleToggle, onService: handleService })
+                  // Resolve each room device to its canonical entity shape from
+                  // the store (proper _ir / _linkedIr markers, full attributes).
+                  const resolved = group.devices.map(d => resolveRoomDeviceToEntity(d, entities))
+                  const section = renderDomainSection(group, resolved)
                   return section ? <div key={group.id}>{section}</div> : null
                 })}
               </div>
@@ -1237,6 +1026,29 @@ export function RoomDetail() {
           </button>
         </div>
       </Modal>
+
+      {/* Header kebab-menu modals — same Edit / Delete UX as the Rooms-list tiles. */}
+      <RoomEditModal
+        open={!!editRoom}
+        room={editRoom}
+        onClose={() => setEditRoom(null)}
+      />
+
+      <RoomDeleteConfirm
+        room={deleteRoom_}
+        onClose={() => setDeleteRoom(null)}
+        onConfirm={async (r) => {
+          try {
+            await deleteRoom(r.id)
+            await fetchAll()
+            addToast(`Room "${r.name}" deleted`, 'success')
+            setDeleteRoom(null)
+            navigate('/rooms')
+          } catch (e) {
+            addToast(e.message || 'Failed to delete', 'error')
+          }
+        }}
+      />
     </div>
   )
 }

@@ -37,6 +37,7 @@ from backend.routers.camera_router import router as camera_router
 from backend.routers.push_router import router as push_router
 from backend.routers.debug_router import router as debug_router
 from backend.routers.update_router import router as update_router
+from backend.routers.ui_prefs_router import router as ui_prefs_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -240,6 +241,7 @@ app.include_router(camera_router,        dependencies=_auth)
 app.include_router(push_router,          dependencies=_auth)
 app.include_router(debug_router,         dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
+app.include_router(ui_prefs_router,      dependencies=_auth)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.

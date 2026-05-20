@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { createContext, createElement, useContext, useEffect, useRef, useState, useCallback } from 'react'
 
 function getWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -12,12 +12,17 @@ function getWsUrl() {
   return `${proto}//${host}/ws`
 }
 
-const WS_URL = getWsUrl()
-const MIN_RETRY_MS   = 3_000
-const MAX_RETRY_MS   = 30_000
-const PING_INTERVAL  = 20_000   // send a ping every 20s to keep tunnel alive
+const WS_URL        = getWsUrl()
+const MIN_RETRY_MS  = 3_000
+const MAX_RETRY_MS  = 30_000
+const PING_INTERVAL = 20_000   // send a ping every 20s to keep tunnel alive
 
-export function useWebSocket() {
+const WebSocketContext = createContext({ messages: [], connected: false })
+
+// Single shared WS connection. Mount once near the root of the tree (see main.jsx).
+// Every useWebSocket() call reads from the same Context, so adding new consumers
+// (Anomalies page, Dashboard alert card, …) never opens additional sockets.
+export function WebSocketProvider({ children }) {
   const ws             = useRef(null)
   const retryCount     = useRef(0)
   const reconnectTimer = useRef(null)
@@ -105,5 +110,13 @@ export function useWebSocket() {
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [connect])
 
-  return { messages, connected }
+  return createElement(
+    WebSocketContext.Provider,
+    { value: { messages, connected } },
+    children,
+  )
+}
+
+export function useWebSocket() {
+  return useContext(WebSocketContext)
 }

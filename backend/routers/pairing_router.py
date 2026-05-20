@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import List, Optional
-
-import re
-import requests as _requests
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -19,7 +16,6 @@ from services.ha_pairing import (
     commission_matter, get_pending_config_flows,
     WIFI_INTEGRATIONS,
 )
-from services.home_automation import call_service, get_all_states
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 
 router = APIRouter()
@@ -53,82 +49,6 @@ def _schedule_registry_refresh(delay_s: float = 5.0) -> None:
             pass
 
     threading.Thread(target=_run, daemon=True).start()
-
-
-# ---------------------------------------------------------------------------
-# Scenes
-# ---------------------------------------------------------------------------
-
-class SceneActivate(BaseModel):
-    entity_id: str
-
-
-@router.get("/api/ha/scenes")
-async def get_scenes():
-    try:
-        scenes = []
-        for s in get_all_states():
-            eid = s.get("entity_id", "")
-            if not eid.startswith("scene."):
-                continue
-            attrs = s.get("attributes", {})
-            scenes.append({
-                "entity_id": eid,
-                "name": attrs.get("friendly_name", eid.replace("scene.", "").replace("_", " ").title()),
-                "icon": attrs.get("icon", ""),
-            })
-        return {"scenes": sorted(scenes, key=lambda x: x["name"])}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/api/ha/scenes/activate")
-async def activate_scene(body: SceneActivate):
-    result = call_service("scene", "turn_on", {"entity_id": body.entity_id})
-    if not result.get("ok"):
-        raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
-    return {"ok": True}
-
-
-class SceneCreate(BaseModel):
-    name: str
-    snapshot_entities: List[str]
-
-
-@router.post("/api/ha/scenes")
-async def create_scene(body: SceneCreate):
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Scene name is required")
-    # Convert name → safe scene_id (lowercase, underscores)
-    scene_id = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-    result = call_service("scene", "create", {
-        "scene_id": scene_id,
-        "snapshot_entities": body.snapshot_entities,
-    })
-    if not result.get("ok"):
-        raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
-    return {"ok": True, "scene_id": f"scene.{scene_id}"}
-
-
-@router.delete("/api/ha/scenes/{entity_id:path}")
-async def delete_scene(entity_id: str):
-    # Strip scene. prefix to get the scene_id used by HA config API
-    scene_id = entity_id.removeprefix("scene.")
-    from services.home_automation import _ha_endpoint, _headers
-    try:
-        resp = _requests.delete(
-            _ha_endpoint(f"/api/config/scene/config/{scene_id}"),
-            headers=_headers(),
-            timeout=10,
-        )
-        if resp.status_code in (200, 204):
-            return {"ok": True}
-        raise HTTPException(status_code=resp.status_code, detail=f"HA returned {resp.status_code}: {resp.text[:200]}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

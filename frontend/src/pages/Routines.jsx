@@ -7,18 +7,18 @@ import { EntitySelect, getActionsForDomain } from '../components/ui/EntitySelect
 import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getVirtualDevices, getCapabilities, getEntityState } from '../lib/api'
+import { getEntityState } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
 
 const ICONS = ['⚡', '☀️', '🌙', '🏠', '🎬', '🏋️', '🛏️', '☕', '🌿', '🔒', '💡', '🎵']
 const DAYS  = [{ id: 'mon', label: 'M' }, { id: 'tue', label: 'T' }, { id: 'wed', label: 'W' }, { id: 'thu', label: 'T' }, { id: 'fri', label: 'F' }, { id: 'sat', label: 'S' }, { id: 'sun', label: 'S' }]
 const STEP_TYPES = [
-  { value: 'device',       label: 'Device control' },
-  { value: 'ir_command',   label: 'IR Command' },
-  { value: 'ziggy_intent', label: 'Ziggy Capability' },
-  { value: 'scene',        label: 'Scene' },
-  { value: 'delay',        label: 'Wait' },
-  { value: 'message',      label: 'Send command' },
+  { value: 'device',     label: 'Device control' },
+  { value: 'automation', label: 'Run automation' },
+  { value: 'ir_command', label: 'IR Command' },
+  { value: 'delay',      label: 'Wait' },
+  { value: 'notify',     label: 'Notify' },
+  { value: 'message',    label: 'Send command' },
 ]
 
 const selectStyle = {
@@ -30,34 +30,24 @@ const selectStyle = {
   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
 }
 
-// ── VirtualDeviceSelect ───────────────────────────────────────────────────────
-function VirtualDeviceSelect({ value, runtimeParams, onDeviceChange, onParamChange }) {
-  const [devices, setDevices] = useState([])
-  const [capMap,  setCapMap]  = useState({})
-  useEffect(() => {
-    getVirtualDevices().then(d => setDevices(d.devices || [])).catch(() => {})
-    getCapabilities().then(d => { const m = {}; (d.capabilities || []).forEach(c => { m[c.id] = c }); setCapMap(m) }).catch(() => {})
-  }, [])
-  const selectedDev    = devices.find(d => d.id === value)
-  const cap            = selectedDev ? capMap[selectedDev.capability] : null
-  const runtimeEntries = cap ? Object.entries(cap.params_schema || {}).filter(([, s]) => (s.param_type || 'config') === 'runtime') : []
+// ── AutomationPicker ──────────────────────────────────────────────────────────
+function AutomationPicker({ value, onChange }) {
+  const { automations, fetchAutomations } = useAutomationStore()
+  useEffect(() => { if (automations.length === 0) fetchAutomations() }, [])
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <Select
-        label="Ziggy capability device"
-        value={value || ''}
-        onChange={e => { const dev = devices.find(d => d.id === e.target.value); onDeviceChange(e.target.value, dev) }}
-        options={[{ value: '', label: '— Pick a capability —' }, ...devices.map(d => ({ value: d.id, label: `${d.icon} ${d.name}` }))]}
-      />
-      {runtimeEntries.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 12, borderLeft: '2px solid var(--line)' }}>
-          <p className="z-eyebrow">Step values</p>
-          {runtimeEntries.map(([key, schema]) => (
-            <Input key={key} label={schema.label} value={(runtimeParams || {})[key] ?? ''} onChange={e => onParamChange(key, e.target.value)} placeholder={schema.placeholder || ''} />
-          ))}
-        </div>
-      )}
-    </div>
+    <Select
+      label="Automation to run"
+      value={value || ''}
+      onChange={e => {
+        const id = e.target.value
+        const auto = automations.find(a => a.id === id)
+        onChange({ automation_id: id, automation_name: auto?.name || id })
+      }}
+      options={[
+        { value: '', label: automations.length ? '— Pick an automation —' : '— No automations yet —' },
+        ...automations.map(a => ({ value: a.id, label: a.name })),
+      ]}
+    />
   )
 }
 
@@ -144,9 +134,9 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
   const linkedIr = entities.find(e => e.entity_id === step.entity_id)?._linkedIr || null
   const stepLabel = step.type === 'device' ? `${availableActions.find(a => a.value === step.action)?.label || 'Control'} · ${step.entity_id || '?'}`
     : step.type === 'ir_command' ? `📡 ${step.ir_device_name || 'IR'} → ${step.ir_sequence || step.ir_command || '?'}`
-    : step.type === 'ziggy_intent' ? `⚡ ${step.virtual_device_name || step.capability || 'Capability'}`
+    : step.type === 'automation' ? `▶ ${step.automation_name || step.automation_id || 'Automation'}`
     : step.type === 'delay' ? `Wait ${step.delay_seconds || '?'}s`
-    : step.type === 'scene' ? `Scene: ${step.entity_id || '?'}`
+    : step.type === 'notify' ? `📣 ${step.message || 'Notification'}`
     : step.text || 'Send command'
 
   if (collapsed) {
@@ -176,11 +166,10 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
       </div>
       <Select options={STEP_TYPES} value={step.type || 'device'} onChange={e => onChange({ type: e.target.value })} />
       {step.type === 'ir_command' && <IRDeviceSelect value={step} onChange={patch => onChange({ ...step, ...patch })} />}
-      {step.type === 'ziggy_intent' && (
-        <VirtualDeviceSelect
-          value={step.virtual_device_id || ''} runtimeParams={step.runtime_params || {}}
-          onDeviceChange={(id, dev) => onChange({ ...step, virtual_device_id: id, capability: dev?.capability || '', virtual_device_name: dev?.name || '', runtime_params: {} })}
-          onParamChange={(key, val) => onChange({ ...step, runtime_params: { ...(step.runtime_params || {}), [key]: val } })}
+      {step.type === 'automation' && (
+        <AutomationPicker
+          value={step.automation_id || ''}
+          onChange={patch => onChange({ ...step, ...patch })}
         />
       )}
       {step.type === 'device' && (
@@ -202,8 +191,13 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
         </>
       )}
       {step.type === 'delay'   && <Input type="number" placeholder="Seconds to wait" value={step.delay_seconds || ''} onChange={e => onChange({ ...step, delay_seconds: parseInt(e.target.value) })} />}
+      {step.type === 'notify'  && (
+        <>
+          <Input label="Title (optional)" placeholder="e.g. Morning" value={step.title || ''} onChange={e => onChange({ ...step, title: e.target.value })} />
+          <Input label="Message" placeholder="Notification text" value={step.message || ''} onChange={e => onChange({ ...step, message: e.target.value })} />
+        </>
+      )}
       {step.type === 'message' && <SendIntentEditor value={step.text || ''} onChange={text => onChange({ ...step, text })} />}
-      {step.type === 'scene'   && <EntitySelect value={step.entity_id || ''} onChange={v => onChange({ ...step, entity_id: v })} domain="scene" placeholder="Select scene…" />}
     </div>
   )
 }
@@ -319,72 +313,160 @@ export function RoutineWizard({ initial, onSave, onClose }) {
   )
 }
 
-// ── RoutineCard (Checklist-B variant — expands to show steps) ─────────────────
-function RoutineCard({ routine, onEdit, onDelete, onRun, expanded, onExpand }) {
-  const hasSteps = (routine.steps || []).length > 0
+// ── RoutineCard ───────────────────────────────────────────────────────────────
+// Visually mirrors AutomationCard from Automations.jsx: tinted icon square on
+// the left, name + description + meta pills in the middle, right-side icon
+// buttons (Run · View · Edit · Delete). No toggle because routines are always
+// manual-run; no expand-on-click because the View modal now owns that role.
+function RoutineCard({ routine, onView, onEdit, onDelete, onRun }) {
+  const stepCount = (routine.steps || []).length
+  // Use the same tint family AutomationCard uses for the most prominent state
+  // (ok/green): routines are "ready, manual, on-demand".
+  const tint = 'var(--ok)'
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}
-      style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
+      <div style={{
+        padding: '14px 16px', borderRadius: 12,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+      }}>
+        {/* Tinted icon square — matches AutomationCard's left affordance */}
+        <div style={{
+          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`,
+          fontSize: 18,
+        }}>
+          {routine.icon || '⚡'}
+        </div>
+
+        {/* Name + description + meta pills */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {routine.icon && <span style={{ marginRight: 6 }}>{routine.icon}</span>}{routine.name}
+            {routine.name}
           </p>
-          {hasSteps && (
-            <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>
-              {routine.steps.length} step{routine.steps.length !== 1 ? 's' : ''}
+          {routine.description && (
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {routine.description}
             </p>
           )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600,
+              fontFamily: '"IBM Plex Mono", monospace',
+              background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint,
+            }}>
+              ROUTINE
+            </span>
+            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+              {stepCount} step{stepCount !== 1 ? 's' : ''}
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <button onClick={() => onRun(routine)} title="Run now" style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, padding: '5px 9px', color: 'var(--ok)', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Run</button>
-          {[
-            { onClick: () => onEdit(routine), title: 'Edit', path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
-            { onClick: () => onDelete(routine.id), title: 'Delete', path: <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>, color: 'var(--accent)' },
-          ].map(({ onClick, title, path, color }) => (
-            <button key={title} onClick={onClick} title={title} style={{ background: 'none', border: 'none', cursor: 'pointer', color: color || 'var(--ink-faint)', padding: 4 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
-            </button>
-          ))}
-          {hasSteps && (
-            <button onClick={onExpand} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-          )}
+
+        {/* Right column — no toggle (routines are manual-only); same icon row
+            as AutomationCard so the two surfaces feel like siblings. */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 2 }}>
+            {[
+              { onClick: () => onRun(routine),       color: 'var(--ok)',       title: 'Run now', path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
+              { onClick: () => onView(routine),      color: 'var(--ink-mute)', title: 'View',    path: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></> },
+              { onClick: () => onEdit(routine),      color: 'var(--ink-mute)', title: 'Edit',    path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
+              { onClick: () => onDelete(routine.id), color: 'var(--accent)',   title: 'Delete',  path: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></> },
+            ].map(({ onClick, color, title, path }) => (
+              <button key={title} onClick={onClick} title={title} style={{ background: 'none', border: 'none', cursor: 'pointer', color, padding: 4 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-
-      {/* Expanded steps */}
-      <AnimatePresence>
-        {expanded && hasSteps && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }} style={{ overflow: 'hidden' }}>
-            <div style={{ paddingTop: 10, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {routine.steps.map((s, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 9.5, color: 'var(--ink-faint)', minWidth: 16 }}>{i + 1}</span>
-                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{STEP_TYPES.find(t => t.value === s.type)?.label}</span>
-                  <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.entity_id || s.text || (s.delay_seconds && `${s.delay_seconds}s`) || ''}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   )
 }
 
+// ── RoutineViewModal ──────────────────────────────────────────────────────────
+// Read-only view of a routine. Mirrors AutomationViewModal's structure so
+// "View" feels the same across both surfaces, with quick Run / Edit footer.
+function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
+  if (!routine) return null
+  const steps = routine.steps || []
+  const stepSummary = (s) => {
+    switch (s.type) {
+      case 'device':     return `${s.entity_id || '?'} → ${s.action || s.ha_service || 'control'}`
+      case 'ir_command': return `${s.ir_device_name || 'IR device'} → ${s.ir_sequence || s.ir_command || '?'}`
+      case 'automation': return s.automation_name || s.automation_id || '?'
+      case 'delay':      return `Wait ${s.delay_seconds || '?'}s`
+      case 'notify':     return s.message || s.title || 'Notification'
+      case 'message':    return `"${s.text || '?'}"`
+      default:           return s.type || ''
+    }
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 11, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+          {routine.icon || '⚡'}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }}>{routine.name}</p>
+          {routine.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{routine.description}</p>}
+        </div>
+      </div>
+
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>Steps ({steps.length})</p>
+        {steps.length === 0
+          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>No steps configured.</p>
+          : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {steps.map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'color-mix(in srgb, var(--ok) 12%, transparent)', color: 'var(--ok)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
+                      {STEP_TYPES.find(t => t.value === s.type)?.label || s.type}
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {stepSummary(s)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line)' }}>
+        <button onClick={() => { onRun(routine); onClose?.() }} className="z-btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+          Run now
+        </button>
+        <button onClick={() => { onEdit(routine); onClose?.() }} className="z-btn-primary" style={{ flex: 1 }}>
+          Edit
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function Routines() {
+/**
+ * Headerless routines list + wizard. Renders inside any container, no page
+ * chrome. Used standalone via the <Routines /> page default export AND as a
+ * tab body inside the Automations page.
+ */
+export function RoutinesListPanel() {
   const { routines, loading, fetchRoutines, addRoutine, removeRoutine, runRoutine, loadRoutineConfig } = useAutomationStore()
   const { addToast } = useUIStore()
   const [showWizard, setShowWizard] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
-  const [expandedId, setExpandedId] = useState(null)
+  const [viewTarget, setViewTarget] = useState(null)
 
-  useEffect(() => { fetchRoutines() }, [])
+  // Only fetch on first visit — re-fetching on every mount toggles `loading`
+  // in the store, which flashes skeletons mid-tab-transition and looks jumpy.
+  useEffect(() => { if (routines.length === 0) fetchRoutines() }, [])
 
   const handleSave   = async data => { try { await addRoutine(data); addToast('Routine saved', 'success') } catch { addToast('Failed to save routine', 'error') } }
   const handleDelete = async id => { try { await removeRoutine(id); addToast('Deleted', 'success') } catch { addToast('Failed to delete', 'error') } }
@@ -393,23 +475,14 @@ export default function Routines() {
     try { const config = await loadRoutineConfig(r.id); setEditTarget(config || r) } catch { setEditTarget(r) }
     setShowWizard(true)
   }
+  const handleView = async r => {
+    try { const config = await loadRoutineConfig(r.id); setViewTarget(config || r) } catch { setViewTarget(r) }
+  }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Sequences of steps</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Routines</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>{routines.length} routine{routines.length !== 1 ? 's' : ''}</p>
-        </div>
-        <button onClick={() => setShowWizard(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          New
-        </button>
-      </div>
-
-      {loading && (
+    <>
+      {loading && routines.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 62, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
@@ -424,17 +497,57 @@ export default function Routines() {
       )}
 
       <AnimatePresence mode="popLayout">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {routines.map(r => (
-            <RoutineCard key={r.id} routine={r} onEdit={handleEdit} onDelete={handleDelete} onRun={handleRun}
-              expanded={expandedId === r.id} onExpand={() => setExpandedId(prev => prev === r.id ? null : r.id)} />
+            <RoutineCard key={r.id} routine={r} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onRun={handleRun} />
           ))}
         </div>
       </AnimatePresence>
 
+      {!loading && routines.length > 0 && (
+        <button
+          onClick={() => setShowWizard(true)}
+          style={{
+            marginTop: 8, width: '100%', padding: '13px',
+            borderRadius: 14, background: 'var(--surface)',
+            border: '1px dashed var(--line-2)',
+            color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'inherit',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New routine
+        </button>
+      )}
+
       <Modal open={showWizard} onClose={handleClose} title={editTarget ? 'Edit Routine' : 'New Routine'}>
         <RoutineWizard initial={editTarget} onSave={handleSave} onClose={handleClose} />
       </Modal>
+
+      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Routine details">
+        <RoutineViewModal
+          routine={viewTarget}
+          onEdit={(r) => { setViewTarget(null); handleEdit(r) }}
+          onRun={(r) => handleRun(r)}
+          onClose={() => setViewTarget(null)}
+        />
+      </Modal>
+    </>
+  )
+}
+
+export default function Routines() {
+  const { routines } = useAutomationStore()
+  return (
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Sequences of steps</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Routines</h1>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>{routines.length} routine{routines.length !== 1 ? 's' : ''}</p>
+        </div>
+      </div>
+      <RoutinesListPanel />
     </div>
   )
 }

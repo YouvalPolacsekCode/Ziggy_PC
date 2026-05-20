@@ -25,6 +25,15 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                     position: 'fixed', inset: 0, zIndex: 50,
                     display: 'flex', flexDirection: 'column',
                     background: 'var(--bg)',
+                    // Full-screen modals must explicitly clear system bars —
+                    // the body padding doesn't apply inside the fixed layer.
+                    paddingTop: 'var(--safe-top)',
+                    paddingBottom: 'var(--safe-bottom)',
+                    paddingLeft: 'var(--safe-left)',
+                    paddingRight: 'var(--safe-right)',
+                    // Use dvh-derived height instead of inset:0 alone, so the
+                    // sheet shrinks with the on-screen keyboard.
+                    height: 'var(--vh)',
                   }}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -52,10 +61,20 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                   </div>
                 </motion.div>
               ) : (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div style={{
+                  position: 'fixed', inset: 0, zIndex: 50,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  // Honor safe-areas so the modal never bumps against system
+                  // bars on Android PWA / iOS notch.
+                  padding: 'max(16px, var(--safe-top)) max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left))',
+                }}>
                   <motion.div
                     style={{
-                      width: '100%', maxWidth, maxHeight: '90vh',
+                      width: '100%', maxWidth,
+                      // dvh tracks the *visible* viewport so the modal's max
+                      // height shrinks with the URL bar and the keyboard,
+                      // preventing action buttons from being clipped.
+                      maxHeight: '90dvh',
                       display: 'flex', flexDirection: 'column',
                       background: 'var(--surface)',
                       border: '0.5px solid var(--line)',

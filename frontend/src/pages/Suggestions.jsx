@@ -225,7 +225,7 @@ export default function Suggestions() {
   const displayed = tab === 'pending' ? pending : history
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>

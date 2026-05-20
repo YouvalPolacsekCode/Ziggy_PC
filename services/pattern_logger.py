@@ -68,6 +68,7 @@ def log_event(intent: str, params: dict, result: dict, source: str) -> None:
         "source": source,
         "intent": intent,
         "room": room,
+        "entity_id": params.get("entity_id"),
         "action": action,
         "value": _extract_value(params),
         "result": "ok" if result.get("ok") else "err",

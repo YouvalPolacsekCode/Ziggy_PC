@@ -39,9 +39,11 @@ export const useAutomationStore = create((set, get) => ({
     return automation
   },
 
-  // No update endpoint — HA automations are saved as new via wizard (re-create with same id)
+  // No dedicated update endpoint — saving with the original id re-creates in
+  // place (the backend slugifies-on-create, so reusing the same id keeps the
+  // record identifiable instead of producing a duplicate with a fresh slug).
   updateAutomation: async (id, data) => {
-    const res = await createAutomation({ ...data, _id: id })
+    const res = await createAutomation({ ...data, id })
     const automation = res.automation
     set((s) => ({
       automations: s.automations.map((a) => (a.id === id ? automation : a)),

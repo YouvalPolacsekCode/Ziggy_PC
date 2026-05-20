@@ -142,16 +142,76 @@ def main():
 
     if settings.get("web_interface", {}).get("frontend_dev", True):
         def start_vite():
-            frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
-            frontend_dir = os.path.abspath(frontend_dir)
-            log_info(f"[Vite] Starting frontend dev server in {frontend_dir}")
-            proc = subprocess.Popen(
-                ["npm", "run", "dev"],
-                cwd=frontend_dir,
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            import shutil
+            frontend_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), '..', 'frontend')
             )
+
+            # `shutil.which` honors PATH from the parent shell. If launched from
+            # a stripped env (some IDE run configs, launchd plists) the user's
+            # Homebrew bin won't be on PATH; fall through to the common locations.
+            npm = shutil.which("npm")
+            if npm is None:
+                for p in ("/opt/homebrew/bin/npm", "/usr/local/bin/npm"):
+                    if os.path.isfile(p) and os.access(p, os.X_OK):
+                        npm = p
+                        break
+            if npm is None:
+                log_info("[Vite] npm not found on PATH — skipping. Install Node.js or "
+                         "add /opt/homebrew/bin to PATH to enable the dev server.")
+                return
+            log_info(f"[Vite] Starting frontend dev server in {frontend_dir}")
+
+            # `--host` binds both IPv4 + IPv6 (so `localhost:3000` resolves
+            # regardless of the browser's preferred family) and exposes the
+            # server on the LAN so a phone on the same Wi-Fi can hit it.
+            # Pipe output to logs/vite.log so silent crashes are recoverable.
+            log_dir = os.path.join(frontend_dir, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, "vite.log")
+            log_fh = open(log_path, "a", buffering=1)
+
+            # Ensure `node` is reachable by the npm wrapper. We located npm via
+            # shutil.which or a Homebrew fallback; the same directory holds
+            # `node`, but only if it's actually on PATH inside the child. macOS
+            # launchd / IDE-launched Python often have a minimal PATH that
+            # excludes /opt/homebrew/bin, which makes npm fail with
+            # "env: node: No such file or directory" the moment it tries to
+            # invoke its JS entrypoint.
+            child_env = os.environ.copy()
+            npm_dir = os.path.dirname(npm)
+            extra_paths = [npm_dir, "/opt/homebrew/bin", "/usr/local/bin"]
+            existing = child_env.get("PATH", "").split(":")
+            child_env["PATH"] = ":".join(
+                [p for p in extra_paths if p not in existing] + existing
+            )
+
+            # IMPORTANT: list-form + shell=False. The previous `shell=True` with
+            # a list only ran "npm" and dropped "run dev" silently — that's why
+            # the dev server appeared dead while the API thread came up fine.
+            proc = subprocess.Popen(
+                [npm, "run", "dev", "--", "--host"],
+                cwd=frontend_dir,
+                env=child_env,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+            )
+
+            # Tear the vite subprocess down when Ziggy is shutting down.
+            # daemon=True on the wrapping thread only kills the thread; the
+            # spawned npm/vite child would otherwise keep port 3000 occupied
+            # after Python exits, requiring a manual `lsof | kill`.
+            def _killer():
+                shutdown_event.wait()
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                except Exception:
+                    pass
+            threading.Thread(target=_killer, daemon=True).start()
+
             proc.wait()
 
         threads.append(threading.Thread(

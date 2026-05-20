@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices } from '../lib/api'
+import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices, getUiPrefs, putUiPrefs } from '../lib/api'
 import { CONTROLLABLE_DOMAINS, TOGGLEABLE_DOMAINS, DOMAIN_REGISTRY } from '../lib/domainRegistry'
 
 export { CONTROLLABLE_DOMAINS }
@@ -41,6 +41,34 @@ const HIDDEN_KEY = 'ziggy_hidden_entities'
 const loadHidden = () => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')) } catch { return new Set() } }
 const saveHidden = (s) => localStorage.setItem(HIDDEN_KEY, JSON.stringify([...s]))
 
+// User-chosen Dashboard quick controls — array of up to 4 entity_ids.
+// Empty array = "auto-pick" (the legacy first-light/climate/media/lock logic).
+const QUICK_KEY = 'ziggy_quick_controls'
+const QUICK_MAX = 4
+const loadQuick = () => {
+  try {
+    const arr = JSON.parse(localStorage.getItem(QUICK_KEY) || '[]')
+    return Array.isArray(arr) ? arr.slice(0, QUICK_MAX).filter(Boolean) : []
+  } catch { return [] }
+}
+const saveQuick = (ids) => localStorage.setItem(QUICK_KEY, JSON.stringify(ids))
+
+// Dashboard "Shortcuts" — merged Routines + Quick Asks, up to 8 (2 rows × 4).
+// Stored as [{type: 'routine' | 'ask', id: string}, ...] in pin order.
+const SHORTCUTS_KEY = 'ziggy_dashboard_shortcuts'
+const SHORTCUTS_MAX = 8
+const loadShortcuts = () => {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SHORTCUTS_KEY) || '[]')
+    return Array.isArray(arr)
+      ? arr.slice(0, SHORTCUTS_MAX).filter(s => s && (s.type === 'routine' || s.type === 'ask') && s.id)
+      : []
+  } catch { return [] }
+}
+const saveShortcuts = (arr) => localStorage.setItem(SHORTCUTS_KEY, JSON.stringify(arr))
+export const SHORTCUTS_MAX_COUNT = SHORTCUTS_MAX
+export const QUICK_CONTROLS_MAX = QUICK_MAX
+
 export const useDeviceStore = create((set, get) => ({
   // Unified entity list — HA entities + IR-shaped entities
   entities: [],
@@ -60,6 +88,102 @@ export const useDeviceStore = create((set, get) => ({
   lastUpdated: null,
   hiddenEntities: loadHidden(),
   showHidden: false,
+  // Dashboard quick controls — ordered list of up to 4 entity_ids the user
+  // pinned. Empty means "use the legacy auto-pick fallback".
+  quickControlIds: loadQuick(),
+
+  setQuickControlIds: (ids) => {
+    const clean = (Array.isArray(ids) ? ids : []).slice(0, QUICK_MAX).filter(Boolean)
+    saveQuick(clean)
+    set({ quickControlIds: clean })
+    // Fire-and-forget server sync. localStorage is the cache for instant first
+    // paint; the server is source of truth so the pins survive a PWA cache wipe.
+    putUiPrefs({ quickControlIds: clean }).catch(() => {})
+  },
+
+  // Merged Routines + Quick Asks pinned on the Dashboard.
+  pinnedShortcuts: loadShortcuts(),
+
+  setPinnedShortcuts: (arr) => {
+    const clean = (Array.isArray(arr) ? arr : [])
+      .slice(0, SHORTCUTS_MAX)
+      .filter(s => s && (s.type === 'routine' || s.type === 'ask') && s.id)
+    saveShortcuts(clean)
+    set({ pinnedShortcuts: clean })
+    putUiPrefs({ pinnedShortcuts: clean }).catch(() => {})
+  },
+
+  togglePinnedShortcut: (type, id) => {
+    const current = get().pinnedShortcuts
+    const idx = current.findIndex(s => s.type === type && s.id === id)
+    let next
+    if (idx >= 0)               next = current.filter((_, i) => i !== idx)
+    else if (current.length >= SHORTCUTS_MAX) return  // at max, no-op
+    else                        next = [...current, { type, id }]
+    saveShortcuts(next)
+    set({ pinnedShortcuts: next })
+    putUiPrefs({ pinnedShortcuts: next }).catch(() => {})
+  },
+
+  // One-shot reconciliation on app load. Server is source of truth: if the
+  // server has data, it overrides the localStorage cache. If the server is
+  // empty (first-ever request after the upgrade), the cache wins and we push
+  // it up so the next device sees it. Either way, the user never has to
+  // re-pin / re-upload after a PWA cache eviction.
+  syncUiPrefsFromServer: async () => {
+    try {
+      const remote = await getUiPrefs()
+      if (!remote) return
+      const remoteHasShortcuts = Array.isArray(remote.pinnedShortcuts) && remote.pinnedShortcuts.length > 0
+      const remoteHasQuick     = Array.isArray(remote.quickControlIds) && remote.quickControlIds.length > 0
+      const remoteHasPhotos    = remote.roomPhotos && Object.keys(remote.roomPhotos).length > 0
+      const remoteHasCustom    = remote.roomCustomPhotos && Object.keys(remote.roomCustomPhotos).length > 0
+
+      if (remoteHasShortcuts) {
+        const clean = remote.pinnedShortcuts
+          .slice(0, SHORTCUTS_MAX)
+          .filter(s => s && (s.type === 'routine' || s.type === 'ask') && s.id)
+        saveShortcuts(clean)
+        set({ pinnedShortcuts: clean })
+      } else if (get().pinnedShortcuts.length > 0) {
+        // Local has pins but server is empty — push the cache up so this user's
+        // other devices pick them up, and future PWA reinstalls survive.
+        putUiPrefs({ pinnedShortcuts: get().pinnedShortcuts }).catch(() => {})
+      }
+
+      if (remoteHasQuick) {
+        const clean = remote.quickControlIds.slice(0, QUICK_MAX).filter(Boolean)
+        saveQuick(clean)
+        set({ quickControlIds: clean })
+      } else if (get().quickControlIds.length > 0) {
+        putUiPrefs({ quickControlIds: get().quickControlIds }).catch(() => {})
+      }
+
+      // Room photos live in localStorage directly (no store state) — sync the
+      // localStorage cache so getRoomPhoto() reflects the server immediately.
+      // Server wins if non-empty; otherwise push the local cache so reinstalls
+      // and other devices pick it up.
+      if (remoteHasPhotos) {
+        try { localStorage.setItem('ziggy_room_photos', JSON.stringify(remote.roomPhotos)) } catch {}
+      } else {
+        try {
+          const local = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
+          if (Object.keys(local).length > 0) putUiPrefs({ roomPhotos: local }).catch(() => {})
+        } catch {}
+      }
+
+      if (remoteHasCustom) {
+        try { localStorage.setItem('ziggy_room_custom_photos', JSON.stringify(remote.roomCustomPhotos)) } catch {}
+      } else {
+        try {
+          const local = JSON.parse(localStorage.getItem('ziggy_room_custom_photos') || '{}')
+          if (Object.keys(local).length > 0) putUiPrefs({ roomCustomPhotos: local }).catch(() => {})
+        } catch {}
+      }
+    } catch {
+      // Network down / not authenticated yet — local cache is fine to use.
+    }
+  },
 
   hideEntity: (entityId) => {
     const next = new Set(get().hiddenEntities)
@@ -154,7 +278,9 @@ export const useDeviceStore = create((set, get) => ({
       ziggyRooms: s.ziggyRooms.map((r) => ({
         ...r,
         devices: r.devices.map((d) =>
-          d.entity_id === entityId ? { ...d, ha_state: state, ...attributes } : d
+          d.entity_id === entityId
+            ? { ...d, ha_state: state, ha_attributes: { ...(d.ha_attributes || {}), ...attributes } }
+            : d
         ),
       })),
     }))

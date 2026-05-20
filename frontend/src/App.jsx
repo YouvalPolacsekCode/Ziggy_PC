@@ -5,9 +5,9 @@ import Dashboard from './pages/Dashboard'
 import { RoomsList, RoomDetail } from './pages/Rooms'
 import Devices from './pages/Devices'
 import DeviceDetail from './pages/DeviceDetail'
+import Remote from './pages/Remote'
 import Automations from './pages/Automations'
 import Routines from './pages/Routines'
-import Scenes from './pages/Scenes'
 import AIChat from './pages/AIChat'
 import Tasks from './pages/Tasks'
 import Settings from './pages/Settings'
@@ -178,9 +178,10 @@ function AppRoutes() {
         <Route path="rooms/:roomId" element={<RoomDetail />} />
         <Route path="devices" element={<Devices />} />
         <Route path="devices/:entityId" element={<DeviceDetail />} />
+        <Route path="remote/:irId" element={<Remote />} />
         <Route path="automations" element={<Automations />} />
         <Route path="routines" element={<Routines />} />
-        <Route path="scenes" element={<Scenes />} />
+        <Route path="scenes" element={<Navigate to="/routines" replace />} />
         <Route path="chat" element={<AIChat />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="memory" element={<Memory />} />
@@ -232,7 +233,12 @@ export default function App() {
     getAuthStatus()
       .then(d => { if (d.role) setRole(d.role) })
       .catch(() => {})
-  }, [])
+    // Pull UI prefs (Dashboard pinned shortcuts + quick controls) from the
+    // server so they survive PWA service-worker cache evictions and "clear
+    // site data" — both wipe localStorage. Falls back silently to the
+    // localStorage cache if the server is unreachable.
+    useDeviceStore.getState().syncUiPrefsFromServer()
+  }, [authenticated])
 
   // Listen for 401 from any API call — show login page without a page reload.
   // A reload drops the WS and triggers a reconnect storm when the token is bad.

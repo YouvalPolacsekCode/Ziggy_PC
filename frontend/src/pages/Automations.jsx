@@ -10,9 +10,14 @@ import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { CONTROLLABLE_DOMAINS } from '../lib/domainRegistry'
-import { getVirtualDevices, getCapabilities, getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates } from '../lib/api'
+import { getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
-import { RoutineWizard } from './Routines'
+import { RoutinesListPanel } from './Routines'
+
+// Module-level cache so the Recommended-by-Ziggy block doesn't re-flash empty
+// every time the user navigates away and back. SuggestedTemplates lives in
+// local component state (no store), so its cache must live outside the render.
+let suggestedTemplatesCache = null
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatRelativeTime(iso) {
@@ -40,10 +45,11 @@ const TRACKER_TRIGGER_STATES = [
   { value: 'not_home', label: 'Leaves / goes away' },
 ]
 
+// `ziggy_intent` (Ziggy capabilities) is intentionally omitted here — it'll
+// come back behind a feature flag as part of the broader capabilities project.
 const ACTION_TYPES = [
   { value: 'call_service', label: 'Control Device' },
   { value: 'ir_command',   label: 'IR Command' },
-  { value: 'ziggy_intent', label: 'Ziggy Capability' },
   { value: 'send_intent',  label: 'Send Command' },
   { value: 'delay',        label: 'Wait' },
   { value: 'notify',       label: 'Notify' },
@@ -96,11 +102,17 @@ const DEFAULT_BINARY_CONDITION = [{ value: 'on', label: 'On' },       { value: '
 function triggerSummary(trigger) {
   if (!trigger?.type) return 'No trigger set'
   switch (trigger.type) {
-    case 'time':    return trigger.time ? `Every day at ${trigger.time}` : 'Time trigger (no time set)'
+    case 'time':    return trigger.time ? `Every day at ${trigger.time.slice(0, 5)}` : 'Time trigger (no time set)'
     case 'state': {
       let s = `When ${trigger.entity_id || 'device'} becomes ${trigger.state || 'on/off'}`
       if (trigger.for_minutes) s += ` for ${trigger.for_minutes} min`
       return s
+    }
+    case 'numeric_state': {
+      const ent = trigger.entity_id || 'sensor'
+      if (trigger.above !== undefined && trigger.above !== '') return `When ${ent} rises above ${trigger.above}`
+      if (trigger.below !== undefined && trigger.below !== '') return `When ${ent} drops below ${trigger.below}`
+      return `When ${ent} crosses a threshold`
     }
     case 'zone': {
       const who  = trigger.entity_id || 'person'
@@ -119,7 +131,6 @@ function actionSummary(action) {
   switch (action.type) {
     case 'call_service': return `${(action.service_value || action.service?.split('.')[1] || 'control').replace(/_/g, ' ')} ${action.entity_id || '?'}`
     case 'ir_command':   return `${action.ir_device_name || 'IR device'} → ${action.ir_sequence || action.ir_command || '?'}`
-    case 'ziggy_intent': return `Run: ${action.virtual_device_name || action.capability || 'capability'}`
     case 'send_intent':  return `Command: "${action.text || '?'}"`
     case 'delay':        return `Wait ${action.seconds || '?'} seconds`
     case 'notify':       return `Notify: "${action.message || '?'}"`
@@ -145,7 +156,7 @@ function conditionSummary(c) {
   }
 }
 
-const ACTION_TYPE_ICON = { call_service: '⚙', ir_command: '📡', ziggy_intent: '⚡', send_intent: '💬', delay: '⏱', notify: '📣' }
+const ACTION_TYPE_ICON = { call_service: '⚙', ir_command: '📡', send_intent: '💬', delay: '⏱', notify: '📣' }
 
 const selectStyle = {
   width: '100%', height: 38, padding: '0 28px 0 10px',
@@ -238,36 +249,6 @@ function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }
   })
 }
 
-// ── VirtualDeviceSelect ───────────────────────────────────────────────────────
-function VirtualDeviceSelect({ value, runtimeParams, onDeviceChange, onParamChange }) {
-  const [devices, setDevices] = useState([])
-  const [capMap,  setCapMap]  = useState({})
-  useEffect(() => {
-    getVirtualDevices().then(d => setDevices(d.devices || [])).catch(() => {})
-    getCapabilities().then(d => { const m = {}; (d.capabilities || []).forEach(c => { m[c.id] = c }); setCapMap(m) }).catch(() => {})
-  }, [])
-  const selectedDev    = devices.find(d => d.id === value)
-  const cap            = selectedDev ? capMap[selectedDev.capability] : null
-  const runtimeEntries = cap ? Object.entries(cap.params_schema || {}).filter(([, s]) => (s.param_type || 'config') === 'runtime') : []
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <Select
-        label="Ziggy capability device"
-        value={value || ''}
-        onChange={e => { const dev = devices.find(d => d.id === e.target.value); onDeviceChange(e.target.value, dev) }}
-        options={[{ value: '', label: '— Pick a capability —' }, ...devices.map(d => ({ value: d.id, label: `${d.icon} ${d.name}` }))]}
-      />
-      {runtimeEntries.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 12, borderLeft: '2px solid var(--line)' }}>
-          {runtimeEntries.map(([key, schema]) => (
-            <Input key={key} label={schema.label} value={(runtimeParams || {})[key] ?? ''} onChange={e => onParamChange(key, e.target.value)} placeholder={schema.placeholder || ''} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── MergedActionPicker ────────────────────────────────────────────────────────
 function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIrCommand }) {
   const learned = new Set(irDevice?.learned_commands || [])
@@ -301,25 +282,38 @@ function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIr
 // ── Step indicator ────────────────────────────────────────────────────────────
 const STEPS = ['Name', 'Trigger', 'Conditions', 'Actions', 'Review']
 
-function StepIndicator({ current }) {
+function StepIndicator({ current, onJump, maxReached = STEPS.length - 1 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
-      {STEPS.map((s, i) => (
-        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{
-            width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, fontWeight: 700,
-            background: i < current ? 'var(--ink)' : i === current ? `color-mix(in srgb, var(--ink) 12%, var(--surface))` : 'var(--bg-2)',
-            color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-faint)',
-            border: i === current ? '1.5px solid var(--ink)' : '0.5px solid var(--line)',
-          }}>
-            {i < current ? '✓' : i + 1}
+      {STEPS.map((s, i) => {
+        const enabled = onJump && i <= maxReached
+        const isCurrent = i === current
+        const isDone = i < current
+        return (
+          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => enabled && onJump(i)}
+              disabled={!enabled}
+              title={enabled ? `Go to ${s}` : `Complete the previous steps first`}
+              style={{
+                width: 24, height: 24, borderRadius: '50%', padding: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 700, fontFamily: 'inherit',
+                background: isDone ? 'var(--ink)' : isCurrent ? `color-mix(in srgb, var(--ink) 12%, var(--surface))` : 'var(--bg-2)',
+                color: isDone ? 'var(--bg)' : isCurrent ? 'var(--ink)' : 'var(--ink-faint)',
+                border: isCurrent ? '1.5px solid var(--ink)' : '0.5px solid var(--line)',
+                cursor: enabled ? 'pointer' : 'default',
+              }}
+            >
+              {isDone ? '✓' : i + 1}
+            </button>
+            {i < STEPS.length - 1 && (
+              <div style={{ width: 20, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />
+            )}
           </div>
-          {i < STEPS.length - 1 && (
-            <div style={{ width: 20, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -329,18 +323,26 @@ function ZoneTriggerEditor({ trigger, onChange }) {
   const [zones, setZones] = useState([])
   useEffect(() => {
     getEntities('zone').then(r => {
-      const list = (r.entities || r || []).filter(e => e.entity_id?.startsWith('zone.') && e.entity_id !== 'zone.home' ? true : true)
-      setZones(list)
+      setZones((r.entities || r || []).filter(e => e.entity_id?.startsWith('zone.')))
     }).catch(() => {})
   }, [])
 
+  // Build only the non-home zones — Home is the implied default and we don't
+  // make the user pick "Home" out of a one-item dropdown.
+  const extraZones = zones.filter(z => z.entity_id !== 'zone.home').map(z => ({
+    value: z.entity_id,
+    label: (z.attributes?.friendly_name || z.entity_id.replace('zone.', '')).replace(/_/g, ' '),
+  }))
   const zoneOptions = [
-    { value: 'zone.home', label: 'Home zone (arrived)' },
-    ...zones.filter(z => z.entity_id !== 'zone.home').map(z => ({
-      value: z.entity_id,
-      label: (z.attributes?.friendly_name || z.entity_id.replace('zone.', '')).replace(/_/g, ' '),
-    })),
+    { value: 'zone.home', label: 'Home zone' },
+    ...extraZones,
   ]
+
+  // Default the trigger to home if nothing's chosen yet. Stored value never goes
+  // empty so HA always gets a valid zone target.
+  useEffect(() => {
+    if (!trigger.zone) onChange({ ...trigger, zone: 'zone.home' })
+  }, [])
 
   const eventOptions = [
     { value: 'enter', label: 'Enters zone' },
@@ -356,13 +358,14 @@ function ZoneTriggerEditor({ trigger, onChange }) {
         allowedDomains={TRACKER_DOMAINS}
         placeholder="Select person or device tracker…"
       />
+      {/* Zone is always shown — even with only Home available — so users
+          discover they can add more zones in HA (the tip below explains how). */}
       <Select
         label="Zone"
         options={zoneOptions}
         value={trigger.zone || 'zone.home'}
         onChange={e => onChange({ ...trigger, zone: e.target.value })}
       />
-      {!trigger.zone || trigger.zone === 'zone.home' ? null : null}
       <Select
         label="When"
         options={eventOptions}
@@ -380,25 +383,40 @@ function ZoneTriggerEditor({ trigger, onChange }) {
           Triggering BEFORE you arrive
         </p>
         <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
-          The Home zone fires when you physically reach home. For a head-start (e.g. turn on AC while still 5 minutes away), create a second zone in Home Assistant with a larger radius — for example a "Near Home" zone at 2–3 km. Then select that zone here instead.
+          The Home zone fires when you physically reach home. For a head-start (e.g. turn on AC while still 5 minutes away), create a second zone in Home Assistant with a larger radius — a "Near Home" zone at 2–3 km, for example. Once that zone exists you'll be able to pick it here.
         </p>
       </div>
     </div>
   )
 }
 
+// Small helper: a one-line description below a field that explains what it does.
+function FieldHint({ children }) {
+  return (
+    <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', lineHeight: 1.5, fontFamily: '"IBM Plex Mono", monospace' }}>
+      {children}
+    </p>
+  )
+}
+
 // ── TriggerEditor ─────────────────────────────────────────────────────────────
 function TriggerEditor({ trigger, onChange }) {
   const { entities } = useDeviceStore()
+  // `numeric_state` is presented to the user as a sensor-aware variant of "Device
+  // State" — same picker, but the controls swap to above/below + threshold when
+  // a numeric sensor is selected.
   const effectiveType = trigger.type || 'time'
+  const uiType = (effectiveType === 'numeric_state') ? 'state' : effectiveType
   const triggerDomain = trigger.entity_id?.split('.')?.[0] || null
   const triggerEntity = trigger.entity_id ? entities.find(e => e.entity_id === trigger.entity_id) : null
   const isTracker     = triggerDomain === 'person' || triggerDomain === 'device_tracker'
+  const isNumericSensor = triggerDomain === 'sensor'
   const stateOptions  = isTracker
     ? TRACKER_TRIGGER_STATES
     : (triggerDomain === 'binary_sensor' && triggerEntity?.device_class)
       ? (BINARY_SENSOR_TRIGGER_STATES[triggerEntity.device_class] || DEFAULT_BINARY_TRIGGER)
       : DEFAULT_BINARY_TRIGGER
+  const unitHint = triggerEntity?.unit_of_measurement || ''
 
   const handleTypeChange = e => {
     const next = e.target.value
@@ -412,13 +430,20 @@ function TriggerEditor({ trigger, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Select label="Trigger type" options={TRIGGER_TYPES} value={effectiveType} onChange={handleTypeChange} />
+      <Select label="Trigger type" options={TRIGGER_TYPES} value={uiType} onChange={handleTypeChange} />
 
-      {effectiveType === 'time' && (
-        <Input label="Time (HH:MM)" type="time" value={trigger.time || ''} onChange={e => onChange({ ...trigger, type: 'time', time: e.target.value })} />
+      {uiType === 'time' && (
+        <Input
+          label="Time (HH:MM)"
+          type="time"
+          // HA stores time as "HH:MM:SS"; <input type="time"> needs "HH:MM".
+          // Slice defensively so edit-existing always shows the value.
+          value={(trigger.time || '').slice(0, 5)}
+          onChange={e => onChange({ ...trigger, type: 'time', time: e.target.value })}
+        />
       )}
 
-      {effectiveType === 'state' && (
+      {uiType === 'state' && (
         <>
           <EntitySelect
             label="Entity"
@@ -426,38 +451,91 @@ function TriggerEditor({ trigger, onChange }) {
             onChange={v => {
               const dom = v?.split('.')?.[0]
               const isT = dom === 'person' || dom === 'device_tracker'
-              onChange({ ...trigger, entity_id: v, state: isT ? 'home' : 'on', for_minutes: undefined })
+              const isN = dom === 'sensor'
+              if (isN) {
+                // Numeric sensor → switch to numeric_state with above threshold
+                onChange({ type: 'numeric_state', entity_id: v, above: '', below: undefined })
+              } else {
+                onChange({ type: 'state', entity_id: v, state: isT ? 'home' : 'on', for_minutes: undefined, above: undefined, below: undefined })
+              }
             }}
           />
-          <Select
-            label={isTracker ? 'When' : 'New state'}
-            options={stateOptions}
-            value={trigger.state || (isTracker ? 'home' : 'on')}
-            onChange={e => onChange({ ...trigger, state: e.target.value })}
-          />
-          <Input
-            label="Must stay in this state for (minutes, optional)"
-            type="number"
-            placeholder="e.g. 30 — leave empty to trigger instantly"
-            value={trigger.for_minutes || ''}
-            onChange={e => {
-              const v = e.target.value
-              onChange({ ...trigger, for_minutes: v ? parseInt(v) : undefined })
-            }}
-          />
+          {trigger.entity_id && isNumericSensor && (
+            <>
+              <Select
+                label="Trigger when"
+                options={[
+                  { value: 'above', label: 'Reading rises above' },
+                  { value: 'below', label: 'Reading drops below' },
+                ]}
+                value={trigger.below !== undefined && trigger.below !== '' && (trigger.above === undefined || trigger.above === '') ? 'below' : 'above'}
+                onChange={e => {
+                  // Switch operator: keep the existing numeric value but move
+                  // it to the chosen side of the threshold.
+                  const op = e.target.value
+                  const v = trigger.above ?? trigger.below ?? ''
+                  if (op === 'above') onChange({ type: 'numeric_state', entity_id: trigger.entity_id, above: v, below: undefined })
+                  else                onChange({ type: 'numeric_state', entity_id: trigger.entity_id, above: undefined, below: v })
+                }}
+              />
+              <Input
+                label={unitHint ? `Threshold (${unitHint})` : 'Threshold'}
+                type="number"
+                placeholder="e.g. 24"
+                value={trigger.above ?? trigger.below ?? ''}
+                onChange={e => {
+                  const v = e.target.value === '' ? '' : Number(e.target.value)
+                  const usingBelow = trigger.below !== undefined && trigger.below !== '' && (trigger.above === undefined || trigger.above === '')
+                  if (usingBelow) onChange({ type: 'numeric_state', entity_id: trigger.entity_id, above: undefined, below: v })
+                  else            onChange({ type: 'numeric_state', entity_id: trigger.entity_id, above: v, below: undefined })
+                }}
+              />
+              <FieldHint>Fires once each time the reading crosses the threshold.</FieldHint>
+            </>
+          )}
+          {trigger.entity_id && !isNumericSensor && (
+            <>
+              <Select
+                label={isTracker ? 'When' : 'New state'}
+                options={stateOptions}
+                value={trigger.state || (isTracker ? 'home' : 'on')}
+                onChange={e => onChange({ ...trigger, type: 'state', state: e.target.value })}
+              />
+              <Input
+                label="Must stay in this state for (minutes, optional)"
+                type="number"
+                placeholder="e.g. 30 — leave empty to trigger instantly"
+                value={trigger.for_minutes || ''}
+                onChange={e => {
+                  const v = e.target.value
+                  onChange({ ...trigger, for_minutes: v ? parseInt(v) : undefined })
+                }}
+              />
+            </>
+          )}
         </>
       )}
 
-      {effectiveType === 'zone' && (
+      {uiType === 'zone' && (
         <ZoneTriggerEditor trigger={trigger} onChange={onChange} />
       )}
 
-      {(effectiveType === 'sunrise' || effectiveType === 'sunset') && (
-        <Input label="Offset (e.g. +00:30 or -00:15)" placeholder="+00:00" value={trigger.offset || ''} onChange={e => onChange({ ...trigger, offset: e.target.value })} />
+      {(uiType === 'sunrise' || uiType === 'sunset') && (
+        <>
+          <Input label="Offset (e.g. +00:30 or -00:15)" placeholder="+00:00" value={trigger.offset || ''} onChange={e => onChange({ ...trigger, offset: e.target.value })} />
+          <FieldHint>
+            Offset shifts the trigger relative to actual {uiType}. <strong>+00:30</strong> fires 30 minutes after, <strong>-00:15</strong> fires 15 minutes before.
+          </FieldHint>
+        </>
       )}
 
-      {effectiveType === 'webhook' && (
-        <Input label="Webhook ID" placeholder="my_webhook_id" value={trigger.webhook_id || ''} onChange={e => onChange({ ...trigger, webhook_id: e.target.value })} />
+      {uiType === 'webhook' && (
+        <>
+          <Input label="Webhook ID" placeholder="my_webhook_id" value={trigger.webhook_id || ''} onChange={e => onChange({ ...trigger, webhook_id: e.target.value })} />
+          <FieldHint>
+            External services can fire this automation by POSTing to <code>/api/webhook/&lt;id&gt;</code>. Use it to bridge IFTTT, shortcuts, or custom scripts to Ziggy.
+          </FieldHint>
+        </>
       )}
     </div>
   )
@@ -468,38 +546,65 @@ const CONDITION_TYPES = [
   { value: 'time',   label: 'Time window' },
 ]
 
+// State options for "controllable" non-binary entities (lights, switches, TVs, etc.)
+// when used as a condition. Kept short — most users want simple is/is-not on/off.
+const CONTROLLABLE_CONDITION_STATES = {
+  light:        [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+  switch:       [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+  fan:          [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+  input_boolean:[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
+  media_player: [
+    { value: 'playing', label: 'Playing' },
+    { value: 'paused',  label: 'Paused' },
+    { value: 'idle',    label: 'Idle' },
+    { value: 'off',     label: 'Off' },
+    { value: 'on',      label: 'On' },
+  ],
+  climate:      [
+    { value: 'cool', label: 'Cooling' },
+    { value: 'heat', label: 'Heating' },
+    { value: 'auto', label: 'Auto' },
+    { value: 'off',  label: 'Off' },
+  ],
+  cover:        [{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }],
+  lock:         [{ value: 'locked', label: 'Locked' }, { value: 'unlocked', label: 'Unlocked' }],
+}
+
 // ── ConditionRow ──────────────────────────────────────────────────────────────
+// Visually aligned with TriggerEditor (plain controls, no warn tint) so steps 2
+// and 3 of the wizard feel like the same form. A small AND chip is drawn above
+// each condition (except the first) to make "all of these must be true" explicit.
 function ConditionRow({ condition, onChange, onRemove }) {
   const { entities } = useDeviceStore()
   const condType    = condition.type || 'entity'
   const domain      = condition.entity_id?.split('.')?.[0] || null
   const entity      = condition.entity_id ? entities.find(e => e.entity_id === condition.entity_id) : null
   const deviceClass = entity?.device_class || null
-  const isNumeric   = domain === 'sensor'
+  const isNumericSensor = domain === 'sensor'
   const isBinary    = domain === 'binary_sensor'
   const isTracker   = domain === 'person' || domain === 'device_tracker'
-  const stateOptions   = isTracker
-    ? [{ value: 'home', label: 'Is home' }, { value: 'not_home', label: 'Is away' }]
-    : isBinary
-    ? (BINARY_SENSOR_CONDITION_STATES[deviceClass] || DEFAULT_BINARY_CONDITION)
-    : []
-  const operatorOptions = isNumeric
-    ? [{ value: 'above', label: 'Is above' }, { value: 'below', label: 'Is below' }]
-    : isTracker
-    ? [{ value: 'is', label: 'Is' }]
-    : [{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is not' }]
+  // Controllable domains use a state dropdown (no operator), since "is not on"
+  // is rarely what users want and adds noise.
+  const controllableStates = CONTROLLABLE_CONDITION_STATES[domain] || null
+  const isSimpleControllable = !!controllableStates
   const unitHint = entity?.unit_of_measurement || ''
 
+  // For binary sensors / trackers we collapse operator+value into a single Select.
+  // "Motion detected" / "No motion" already implies the operator, so showing
+  // both is_not and on/off is redundant.
+  const binaryStateOptions = isBinary
+    ? (BINARY_SENSOR_CONDITION_STATES[deviceClass] || DEFAULT_BINARY_CONDITION)
+    : []
+  const trackerStateOptions = [
+    { value: 'home',     label: 'Is home' },
+    { value: 'not_home', label: 'Is away' },
+  ]
+
   const sharedWrapper = (children) => (
-    <div style={{
-      border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`,
-      borderRadius: 11, padding: 12,
-      background: `color-mix(in srgb, var(--warn) 4%, var(--surface))`,
-      display: 'flex', flexDirection: 'column', gap: 10,
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <p className="z-eyebrow">Only if…</p>
-        <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
+        <button onClick={onRemove} title="Remove condition" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
         </button>
       </div>
@@ -524,18 +629,16 @@ function ConditionRow({ condition, onChange, onRemove }) {
         <Input
           label="After (HH:MM)"
           type="time"
-          value={condition.after || ''}
+          value={(condition.after || '').slice(0, 5)}
           onChange={e => onChange({ ...condition, after: e.target.value })}
         />
         <Input
           label="Before (HH:MM)"
           type="time"
-          value={condition.before || ''}
+          value={(condition.before || '').slice(0, 5)}
           onChange={e => onChange({ ...condition, before: e.target.value })}
         />
-        <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-          Overnight ranges work — e.g. after 21:00, before 07:00
-        </p>
+        <FieldHint>Overnight ranges work — e.g. after 21:00, before 07:00.</FieldHint>
       </>
     )
   }
@@ -550,18 +653,24 @@ function ConditionRow({ condition, onChange, onRemove }) {
           const dom = v?.split('.')?.[0]
           const isT = dom === 'person' || dom === 'device_tracker'
           const isN = dom === 'sensor'
-          onChange({ ...condition, type: 'entity', entity_id: v, operator: isN ? 'above' : 'is', value: isT ? 'home' : (isN ? '' : 'on') })
+          onChange({
+            ...condition,
+            type: 'entity',
+            entity_id: v,
+            operator: isN ? 'above' : 'is',
+            value: isT ? 'home' : (isN ? '' : 'on'),
+          })
         }}
         placeholder="Select entity…"
       />
       {condition.entity_id && (
-        <>
-          <Select
-            options={operatorOptions}
-            value={condition.operator || (isNumeric ? 'above' : 'is')}
-            onChange={e => onChange({ ...condition, operator: e.target.value })}
-          />
-          {isNumeric ? (
+        isNumericSensor ? (
+          <>
+            <Select
+              options={[{ value: 'above', label: 'Is above' }, { value: 'below', label: 'Is below' }]}
+              value={condition.operator || 'above'}
+              onChange={e => onChange({ ...condition, operator: e.target.value })}
+            />
             <Input
               label={unitHint ? `Threshold (${unitHint})` : 'Threshold'}
               type="number"
@@ -569,16 +678,71 @@ function ConditionRow({ condition, onChange, onRemove }) {
               value={condition.value ?? ''}
               onChange={e => onChange({ ...condition, value: e.target.value })}
             />
-          ) : (isTracker || isBinary) ? (
+          </>
+        ) : isBinary ? (
+          // Binary sensors: a single Select that already implies is/is_not.
+          // We always store operator: 'is' and let value carry the meaning.
+          <Select
+            label="State"
+            options={binaryStateOptions}
+            value={condition.value || 'on'}
+            onChange={e => onChange({ ...condition, operator: 'is', value: e.target.value })}
+          />
+        ) : isTracker ? (
+          <Select
+            label="State"
+            options={trackerStateOptions}
+            value={condition.value || 'home'}
+            onChange={e => onChange({ ...condition, operator: 'is', value: e.target.value })}
+          />
+        ) : isSimpleControllable ? (
+          <>
             <Select
-              options={stateOptions}
-              value={condition.value || (isTracker ? 'home' : 'on')}
+              options={[{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is not' }]}
+              value={condition.operator || 'is'}
+              onChange={e => onChange({ ...condition, operator: e.target.value })}
+            />
+            <Select
+              label="State"
+              options={controllableStates}
+              value={condition.value || controllableStates[0].value}
               onChange={e => onChange({ ...condition, value: e.target.value })}
             />
-          ) : null}
-        </>
+          </>
+        ) : (
+          // Fallback for unknown domains: free-form text value with operator.
+          <>
+            <Select
+              options={[{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is not' }]}
+              value={condition.operator || 'is'}
+              onChange={e => onChange({ ...condition, operator: e.target.value })}
+            />
+            <Input
+              label="State value"
+              placeholder="e.g. on / home / open"
+              value={condition.value ?? ''}
+              onChange={e => onChange({ ...condition, value: e.target.value })}
+            />
+          </>
+        )
       )}
     </>
+  )
+}
+
+// Small AND chip drawn between consecutive conditions to make the implicit
+// "all of these must be true" relationship visible.
+function AndConnector() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+      <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+      <span style={{
+        fontSize: 9, padding: '2px 8px', borderRadius: 999,
+        background: 'var(--surface-2)', color: 'var(--ink-faint)',
+        fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700, letterSpacing: '0.08em',
+      }}>AND</span>
+      <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+    </div>
   )
 }
 
@@ -589,6 +753,9 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
   const availableActions = domain ? getActionsForDomain(domain) : [{ value: 'turn_on', label: 'Turn On' }, { value: 'turn_off', label: 'Turn Off' }, { value: 'toggle', label: 'Toggle' }]
   const linkedIr = entities.find(e => e.entity_id === action.entity_id)?._linkedIr || null
 
+  // Neutral look matching the Trigger / Conditions steps — no info tint, plain
+  // surface + hairline. The drag handle and the small numeric badge are kept
+  // because reordering and "step N" labelling carry real meaning here.
   if (collapsed) {
     return (
       <div onClick={onToggleCollapse} style={{
@@ -602,8 +769,8 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
         </span>
         <span style={{
           width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-          background: `color-mix(in srgb, var(--info) 14%, transparent)`,
-          color: 'var(--info)', fontSize: 10, fontWeight: 700,
+          background: 'var(--bg-2)', color: 'var(--ink-mute)',
+          fontSize: 10, fontWeight: 700,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: '"IBM Plex Mono", monospace',
         }}>
@@ -622,9 +789,9 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
 
   return (
     <div style={{
-      border: `0.5px solid color-mix(in srgb, var(--info) 35%, var(--line))`,
+      border: '0.5px solid var(--line)',
       borderRadius: 11, padding: 12, display: 'flex', flexDirection: 'column', gap: 10,
-      background: `color-mix(in srgb, var(--info) 5%, var(--surface))`,
+      background: 'var(--surface)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -644,15 +811,6 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
       <Select options={ACTION_TYPES} value={action.type || 'call_service'} onChange={e => onChange({ type: e.target.value, entity_id: '', service: '' })} />
 
       {action.type === 'ir_command' && <IRDeviceSelect value={action} onChange={patch => onChange({ ...action, ...patch })} />}
-
-      {action.type === 'ziggy_intent' && (
-        <VirtualDeviceSelect
-          value={action.virtual_device_id || ''}
-          runtimeParams={action.runtime_params || {}}
-          onDeviceChange={(id, dev) => onChange({ ...action, virtual_device_id: id, capability: dev?.capability || '', virtual_device_name: dev?.name || '', runtime_params: {} })}
-          onParamChange={(key, val) => onChange({ ...action, runtime_params: { ...(action.runtime_params || {}), [key]: val } })}
-        />
-      )}
 
       {action.type === 'call_service' && (
         <>
@@ -698,8 +856,20 @@ function DraggableActionRow({ action, index, onChange, onRemove, collapsed, onTo
   )
 }
 
+// A condition is "complete enough" to surface in summaries if it has an entity
+// (entity-state condition) or a time bound (time-window condition).
+function isCompleteCondition(c) {
+  if (!c) return false
+  if (c.type === 'time') return !!(c.after || c.before)
+  return !!c.entity_id
+}
+
 // ── ReviewPanel ───────────────────────────────────────────────────────────────
 function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
+  const completeConditions = conditions.filter(isCompleteCondition)
+  const triggerType = trigger?.type || 'time'
+  // numeric_state is presented as the "Device State" trigger family.
+  const triggerLabel = TRIGGER_TYPES.find(t => t.value === (triggerType === 'numeric_state' ? 'state' : triggerType))?.label
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
@@ -711,17 +881,17 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
             background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)',
             fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace',
           }}>
-            {TRIGGER_TYPES.find(t => t.value === (trigger?.type || 'time'))?.label}
+            {triggerLabel}
           </span>
           <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{triggerSummary(trigger)}</span>
         </div>
       </div>
-      {conditions.filter(c => c.entity_id).length > 0 && (
+      {completeConditions.length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Conditions ({conditions.filter(c => c.entity_id).length})</p>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Conditions ({completeConditions.length})</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {conditions.filter(c => c.entity_id).map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`, background: `color-mix(in srgb, var(--warn) 4%, var(--surface))` }}>
+            {completeConditions.map((c, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, border: `0.5px solid var(--line)`, background: 'var(--surface)' }}>
                 <span style={{ fontSize: 13, flexShrink: 0 }}>🔍</span>
                 <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
               </div>
@@ -779,15 +949,30 @@ function AutomationWizard({ initial, onSave, onClose }) {
 
   const handleSave = async () => {
     setSaving(true)
-    const cleanConditions = conditions.map(({ _key, ...rest }) => rest).filter(c => c.entity_id)
+    // Keep entity-state conditions that have an entity AND time-window conditions
+    // that have at least one bound. Anything else is half-filled noise.
+    const cleanConditions = conditions
+      .map(({ _key, ...rest }) => rest)
+      .filter(c => (c.type === 'time' ? (c.after || c.before) : !!c.entity_id))
     const cleanActions = actions.map(({ _key, ...rest }) => rest)
     await onSave({ name, description, trigger, conditions: cleanConditions, actions: cleanActions, rooms: selectedRooms })
     setSaving(false); onClose()
   }
 
+  // Track the furthest step the user has reached so back-jumping is free but
+  // forward-jumping past unfilled gates isn't (e.g. you can't skip Name → Review
+  // without first completing the trigger). When editing an existing automation,
+  // every step is unlocked because the data is already filled in.
+  const [maxReached, setMaxReached] = useState(initial ? STEPS.length - 1 : 0)
+  useEffect(() => { if (step > maxReached) setMaxReached(step) }, [step])
+
   return (
     <div>
-      <StepIndicator current={step} />
+      <StepIndicator
+        current={step}
+        maxReached={maxReached}
+        onJump={(i) => setStep(i)}
+      />
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.15 }}>
           {step === 0 && (
@@ -817,17 +1002,19 @@ function AutomationWizard({ initial, onSave, onClose }) {
           )}
           {step === 1 && <TriggerEditor trigger={trigger} onChange={setTrigger} />}
           {step === 2 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 2 }}>
-                Optional. Conditions must be true at trigger time for actions to run.
+                Optional. All conditions must be true at trigger time for actions to run.
               </p>
               {conditions.map((cond, i) => (
-                <ConditionRow
-                  key={cond._key}
-                  condition={cond}
-                  onChange={v => setConditions(cs => cs.map((c, j) => j === i ? { ...v, _key: c._key } : c))}
-                  onRemove={() => setConditions(cs => cs.filter((_, j) => j !== i))}
-                />
+                <div key={cond._key} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {i > 0 && <AndConnector />}
+                  <ConditionRow
+                    condition={cond}
+                    onChange={v => setConditions(cs => cs.map((c, j) => j === i ? { ...v, _key: c._key } : c))}
+                    onRemove={() => setConditions(cs => cs.filter((_, j) => j !== i))}
+                  />
+                </div>
               ))}
               <button
                 onClick={() => setConditions(cs => [...cs, { type: 'entity', entity_id: '', operator: 'is', value: 'on', _key: crypto.randomUUID() }])}
@@ -835,7 +1022,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Add condition
+                {conditions.length === 0 ? 'Add condition' : 'Add another condition'}
               </button>
             </div>
           )}
@@ -867,11 +1054,18 @@ function AutomationWizard({ initial, onSave, onClose }) {
 }
 
 // ── AutomationViewModal ───────────────────────────────────────────────────────
-function AutomationViewModal({ automation, roomNameMap }) {
+function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClose }) {
   if (!automation) return null
   const lastRun = formatRelativeTime(automation.last_triggered)
+  // numeric_state belongs to the "Device State" trigger family in the UI.
+  const tType = automation.trigger?.type
+  const triggerTypeLabel = TRIGGER_TYPES.find(t => t.value === (tType === 'numeric_state' ? 'state' : tType))?.label || 'Unknown'
+  const completeConditions = (automation.conditions || []).filter(isCompleteCondition)
+  const actions = automation.actions || []
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Header — name, description, state pill row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 40, height: 40, borderRadius: 11, background: automation.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
@@ -881,46 +1075,62 @@ function AutomationViewModal({ automation, roomNameMap }) {
           {automation.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{automation.description}</p>}
         </div>
       </div>
+
+      {/* Trigger */}
       <div style={{ padding: '12px 14px', borderRadius: 11, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
         <p className="z-eyebrow" style={{ marginBottom: 6 }}>Trigger</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace' }}>
-            {TRIGGER_TYPES.find(t => t.value === automation.trigger?.type)?.label || 'Unknown'}
+            {triggerTypeLabel}
           </span>
           <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{triggerSummary(automation.trigger)}</span>
         </div>
       </div>
-      {(automation.conditions?.filter(c => c.entity_id).length > 0) && (
+
+      {/* Conditions — keep time-only conditions visible. AND chip between rows
+          mirrors the wizard so this view answers "what will fire?" honestly. */}
+      {completeConditions.length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Conditions ({automation.conditions.filter(c => c.entity_id).length})</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {automation.conditions.filter(c => c.entity_id).map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`, background: `color-mix(in srgb, var(--warn) 4%, var(--surface))` }}>
-                <span style={{ fontSize: 13, flexShrink: 0 }}>🔍</span>
-                <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>
+            Conditions ({completeConditions.length}) — all must be true
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {completeConditions.map((c, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {i > 0 && <AndConnector />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                  <span style={{ fontSize: 13, flexShrink: 0 }}>🔍</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Steps */}
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>Actions ({automation.actions?.length || 0})</p>
-        {(!automation.actions || automation.actions.length === 0)
-          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>No actions configured</p>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>Steps ({actions.length})</p>
+        {actions.length === 0
+          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>No steps configured — this automation will do nothing when it fires.</p>
           : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {automation.actions.map((a, i) => (
+              {actions.map((a, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
                   <span style={{ width: 20, height: 20, borderRadius: '50%', background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
-                  <div>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{ACTION_TYPES.find(t => t.value === a.type)?.label || a.type}</p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>{actionSummary(a)}</p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
+                      {ACTION_TYPE_ICON[a.type] || '•'} {ACTION_TYPES.find(t => t.value === a.type)?.label || a.type}
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{actionSummary(a)}</p>
                   </div>
                 </div>
               ))}
             </div>
           )}
       </div>
+
+      {/* Rooms */}
       {(automation.rooms || []).length > 0 && (
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 6 }}>Rooms</p>
@@ -933,6 +1143,8 @@ function AutomationViewModal({ automation, roomNameMap }) {
           </div>
         </div>
       )}
+
+      {/* Status footer */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--ok)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--ok)' : 'var(--ink-mute)' }}>
           {automation.enabled ? 'ENABLED' : 'DISABLED'}
@@ -940,10 +1152,27 @@ function AutomationViewModal({ automation, roomNameMap }) {
         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: 'var(--bg-2)', color: 'var(--ink-faint)' }}>
           {automation.source === 'ziggy' ? 'Local scheduler' : 'HA-triggered'}
         </span>
-        {lastRun && (
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto', fontFamily: '"IBM Plex Mono", monospace' }}>last ran {lastRun}</span>
-        )}
+        <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto', fontFamily: '"IBM Plex Mono", monospace' }}>
+          {lastRun ? `last ran ${lastRun}` : 'never run'}
+        </span>
       </div>
+
+      {/* Footer actions — quick path to edit or run from the view itself */}
+      {(onEdit || onTrigger) && (
+        <div style={{ display: 'flex', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line)', marginTop: 2 }}>
+          {onTrigger && (
+            <button onClick={() => { onTrigger(automation.id); onClose?.() }} className="z-btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+              Run now
+            </button>
+          )}
+          {onEdit && (
+            <button onClick={() => { onEdit(automation); onClose?.() }} className="z-btn-primary" style={{ flex: 1 }}>
+              Edit
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -1149,8 +1378,11 @@ function LibraryModal({ open, onClose, onConfigure }) {
       .finally(() => setLoading(false))
   }, [open])
 
-  const categories = ['all', ...Array.from(new Set(templates.map(t => t.category)))]
-  const filtered = templates.filter(t =>
+  // Templates the user already created live in the Active tab — hide them here
+  // so the Library only shows templates that still represent a "next step".
+  const available = templates.filter(t => !t.already_exists)
+  const categories = ['all', ...Array.from(new Set(available.map(t => t.category)))]
+  const filtered = available.filter(t =>
     (category === 'all' || t.category === category) &&
     (search === '' || t.name.toLowerCase().includes(search.toLowerCase()) || t.description.toLowerCase().includes(search.toLowerCase()))
   )
@@ -1286,7 +1518,7 @@ const SUGGESTION_STATUS_META = {
   implemented: { label: 'Active',    tint: 'var(--ok)' },
 }
 
-function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
+function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
   const [expanded, setExpanded] = useState(false)
   const [acting,   setActing]   = useState(null)
   const isPending = suggestion.status === 'pending'
@@ -1316,8 +1548,8 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
       )}
       {isPending && (
         <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => act(onAccept, 'accept')} disabled={!!acting} style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 13, fontWeight: 600, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
-            {acting === 'accept' ? 'Creating…' : 'Yes, create'}
+          <button onClick={() => act(onConfigure, 'configure')} disabled={!!acting} style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 13, fontWeight: 600, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
+            {acting === 'configure' ? 'Opening…' : 'Configure'}
           </button>
           <button onClick={() => act(() => onSnooze(3), 'snooze')} disabled={!!acting} style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 13, fontWeight: 500, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
             {acting === 'snooze' ? '…' : 'Later'}
@@ -1329,7 +1561,39 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
   )
 }
 
-function SuggestedTab({ suggestions, loading, analyzing, onAccept, onReject, onSnooze, onAnalyze }) {
+// Translate a suggestion (from the pattern engine) into the shape the
+// Automation wizard expects. The pattern engine emits actions as
+// {intent, params} pairs — we map them to `send_intent` steps so the wizard
+// can show them as human-readable strings the user can refine before saving.
+function suggestionToWizardData(suggestion) {
+  const tr = suggestion.trigger || {}
+  let trigger = { type: 'time', time: '08:00' }
+  if (tr.type === 'time' && tr.value) trigger = { type: 'time', time: tr.value.slice(0, 5) }
+  else if (tr.type === 'sequence')    trigger = { type: 'time', time: '08:00' }   // sequence has no time; let the user choose
+  else if (tr.type)                   trigger = { type: tr.type, ...tr }
+
+  const actionToText = (a) => {
+    const intent = (a.intent || '').replace(/_/g, ' ')
+    const room   = a.params?.room ? ` in the ${a.params.room.replace(/_/g, ' ')}` : ''
+    const onOff  = a.params?.turn_on === true ? ' on' : a.params?.turn_on === false ? ' off' : ''
+    return `${intent}${onOff}${room}`.trim()
+  }
+  const actions = (suggestion.actions || []).map(a => ({
+    type: 'send_intent',
+    text: actionToText(a) || (a.intent || 'do something'),
+  }))
+
+  return {
+    name: suggestion.user_message?.slice(0, 60) || 'Suggested automation',
+    description: suggestion.reasoning || suggestion.user_message || '',
+    trigger,
+    conditions: [],
+    actions,
+    rooms: [],
+  }
+}
+
+function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, onSnooze, onAnalyze }) {
   const [subtab, setSubtab] = useState('pending')
   const pending = suggestions.filter(s => s.status === 'pending')
   const history = suggestions.filter(s => s.status !== 'pending')
@@ -1366,7 +1630,7 @@ function SuggestedTab({ suggestions, loading, analyzing, onAccept, onReject, onS
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <AnimatePresence mode="popLayout">
             {displayed.map(s => (
-              <SuggestionCard key={s.id} suggestion={s} onAccept={() => onAccept(s.id)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
+              <SuggestionCard key={s.id} suggestion={s} onConfigure={() => onConfigure(s)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
             ))}
           </AnimatePresence>
         </div>
@@ -1377,28 +1641,42 @@ function SuggestedTab({ suggestions, loading, analyzing, onAccept, onReject, onS
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
-  const { automations, loading, fetchAutomations, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
+  const { automations, routines, loading, fetchAutomations, fetchRoutines, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
   const { suggestions, loading: sugLoading, fetch: fetchSuggestions, accept, reject, snooze, runAnalysis, analyzing, pendingCount } = useSuggestionStore()
   const { addToast } = useUIStore()
   const { ziggyRooms } = useDeviceStore()
   const [tab,               setTab]               = useState('active')
   const [showWizard,        setShowWizard]        = useState(false)
-  const [showRoutineWizard, setShowRoutineWizard] = useState(false)
   const [editTarget,        setEditTarget]        = useState(null)
   const [viewTarget,        setViewTarget]        = useState(null)
-  const [suggestedTemplates, setSuggestedTemplates] = useState([])
+  const [suggestedTemplates, setSuggestedTemplates] = useState(suggestedTemplatesCache || [])
   const [showLibrary,       setShowLibrary]       = useState(false)
-  const [suggestionsOpen,   setSuggestionsOpen]   = useState(true)
+  // Collapsed by default — the Recommended-by-Ziggy block is helpful but
+  // not the user's primary intent when landing on the Suggested tab. They
+  // came to review pending suggestions; the templates banner is secondary.
+  // Keeping it closed unless explicitly opened keeps the tab compact.
+  const [suggestionsOpen,   setSuggestionsOpen]   = useState(false)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
   const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
 
+  // Only fetch what isn't cached. Re-fetching on every revisit toggles the
+  // store's `loading` flag, which flashes skeleton placeholders mid-mount and
+  // makes navigation feel jumpy. Stores persist within the SPA session, so a
+  // cache check is enough; data refreshes on explicit user action elsewhere.
   useEffect(() => {
-    fetchAutomations()
-    fetchSuggestions()
-    getSuggestedTemplates()
-      .then(r => setSuggestedTemplates(r.suggested || []))
-      .catch(() => {})
+    if (automations.length === 0)        fetchAutomations()
+    if (routines.length === 0)           fetchRoutines()
+    if (suggestions.length === 0)        fetchSuggestions()
+    if (suggestedTemplates.length === 0 && !suggestedTemplatesCache) {
+      getSuggestedTemplates()
+        .then(r => {
+          const arr = r.suggested || []
+          suggestedTemplatesCache = arr
+          setSuggestedTemplates(arr)
+        })
+        .catch(() => {})
+    }
   }, [])
 
   const handleConfigureTemplate = (template) => {
@@ -1407,9 +1685,32 @@ export default function Automations() {
     setShowWizard(true)
   }
 
+  // Accepting a suggestion opens the wizard pre-filled with the suggestion's
+  // trigger + actions so the user can review/edit before the automation lands.
+  // The suggestion itself is only marked accepted after a successful save —
+  // dismissing the wizard leaves the suggestion pending so it stays in the inbox.
+  const handleConfigureSuggestion = (suggestion) => {
+    setEditTarget({ ...suggestionToWizardData(suggestion), _fromSuggestion: suggestion.id })
+    setShowWizard(true)
+  }
+
   const handleSave = async (data) => {
-    try { await addAutomation({ ...data, id: editTarget?.id }); addToast(editTarget ? 'Automation updated' : 'Automation saved', 'success'); await fetchAutomations() }
-    catch { addToast('Failed to save automation', 'error') }
+    try {
+      await addAutomation({ ...data, id: editTarget?.id })
+      addToast(editTarget ? 'Automation saved' : 'Automation saved', 'success')
+      if (editTarget?._fromSuggestion) {
+        try { await accept(editTarget._fromSuggestion) } catch {}
+      }
+      await fetchAutomations()
+      // Refresh suggested templates so anything that's now `already_exists`
+      // drops out of the Recommended-by-Ziggy banner and the Library.
+      try {
+        const r = await getSuggestedTemplates()
+        const arr = r.suggested || []
+        suggestedTemplatesCache = arr
+        setSuggestedTemplates(arr)
+      } catch {}
+    } catch { addToast('Failed to save automation', 'error') }
   }
   const handleDelete = async (id) => {
     try { await removeAutomation(id); addToast('Automation deleted', 'success') }
@@ -1428,7 +1729,7 @@ export default function Automations() {
   const enabled = automations.filter(a => a.enabled).length
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
@@ -1443,13 +1744,9 @@ export default function Automations() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             Library
           </button>
-          <button onClick={() => setShowRoutineWizard(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Simple
-          </button>
           <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Custom
+            Automation
           </button>
         </div>
       </div>
@@ -1458,7 +1755,8 @@ export default function Automations() {
       <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20 }}>
         {[
           { id: 'active',    label: 'Active',    count: automations.filter(a => a.enabled).length },
-          { id: 'suggested', label: 'Suggested', count: pendingSuggestions.length, sparkle: true },
+          { id: 'suggested', label: 'Suggested', count: pendingSuggestions.length },
+          { id: 'routines',  label: 'Routines',  count: routines.length },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             flex: 1, padding: '8px 0', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
@@ -1469,76 +1767,126 @@ export default function Automations() {
             boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
             transition: 'background 0.15s',
           }}>
-            {t.sparkle && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>}
             {t.label}
             {t.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t.count}</span>}
           </button>
         ))}
       </div>
 
+      {/* Tab bodies — AnimatePresence with mode="wait" makes switches feel
+          intentional instead of jumpy. Old tab fades out before new fades in,
+          so the page never reflows mid-transition. Snappy 140ms each way. */}
+      <AnimatePresence mode="wait">
+
       {/* ─── Suggested tab ─── */}
       {tab === 'suggested' && (
-        <SuggestedTab
-          suggestions={suggestions}
-          loading={sugLoading}
-          analyzing={analyzing}
-          onAccept={async id => { try { await accept(id); addToast('Accepted — automation created', 'success') } catch { addToast('Failed', 'error') } }}
-          onReject={async id => { try { await reject(id); addToast('Dismissed', 'success') } catch { addToast('Failed', 'error') } }}
-          onSnooze={async (id, days) => { try { await snooze(id, days); addToast(`Snoozed ${days}d`, 'success') } catch { addToast('Failed', 'error') } }}
-          onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? `Found ${r.new_count} new suggestion${r.new_count > 1 ? 's' : ''}` : 'No new patterns yet', 'success') } catch { addToast('Analysis failed', 'error') } }}
-        />
+        <motion.div
+          key="suggested"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+        >
+
+      {/* ── Recommended by Ziggy — banner at the top of Suggested tab.
+            Templates already configured are filtered out (they live in the
+            Active tab). Expanded by default so users see suggestions instead
+            of having to find them behind a collapsed chip. ─────────────── */}
+      {(() => {
+        // Hide templates the user has already created — they belong in Active.
+        const recommended = suggestedTemplates.filter(t => !t.already_exists)
+        if (recommended.length === 0) return null
+        const readyCount = recommended.filter(t => t.tier === 'ready').length
+        const partialCount = recommended.filter(t => t.tier === 'partial').length
+        return (
+          <div style={{
+            marginBottom: 20,
+            borderRadius: 14,
+            border: `0.5px solid color-mix(in srgb, var(--info) 35%, var(--line))`,
+            background: `linear-gradient(180deg, color-mix(in srgb, var(--info) 6%, var(--surface)) 0%, var(--surface) 100%)`,
+            overflow: 'hidden',
+          }}>
+            <button
+              onClick={() => setSuggestionsOpen(v => !v)}
+              style={{ width: '100%', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <span style={{ fontSize: 18 }}>✨</span>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
+                      Recommended by Ziggy
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 1 }}>
+                      {readyCount > 0 && <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{readyCount} ready to set up</span>}
+                      {readyCount > 0 && partialCount > 0 && <span style={{ color: 'var(--ink-faint)' }}> · </span>}
+                      {partialCount > 0 && <span style={{ color: 'var(--warn)', fontWeight: 600 }}>{partialCount} need a device</span>}
+                      {readyCount === 0 && partialCount === 0 && <span>Curated suggestions for your home</span>}
+                    </p>
+                  </div>
+                </div>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-mute)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: suggestionsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><path d="M6 9l6 6 6-6"/></svg>
+              </div>
+            </button>
+            <AnimatePresence>
+              {suggestionsOpen && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
+                  <div style={{ padding: '0 12px 12px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {recommended.slice(0, 5).map(t => (
+                      <TemplateCard key={t.id} template={t} onConfigure={handleConfigureTemplate} />
+                    ))}
+                    {recommended.length > 5 && (
+                      <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
+                        +{recommended.length - 5} more in Library →
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )
+      })()}
+
+      <SuggestedTab
+        suggestions={suggestions}
+        loading={sugLoading}
+        analyzing={analyzing}
+        onConfigure={handleConfigureSuggestion}
+        onReject={async id => { try { await reject(id); addToast('Dismissed', 'success') } catch { addToast('Failed', 'error') } }}
+        onSnooze={async (id, days) => { try { await snooze(id, days); addToast(`Snoozed ${days}d`, 'success') } catch { addToast('Failed', 'error') } }}
+        onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? `Found ${r.new_count} new suggestion${r.new_count > 1 ? 's' : ''}` : 'No new patterns yet', 'success') } catch { addToast('Analysis failed', 'error') } }}
+      />
+        </motion.div>
+      )}
+
+      {/* ─── Routines tab ─── */}
+      {tab === 'routines' && (
+        <motion.div
+          key="routines"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+        >
+          <RoutinesListPanel />
+        </motion.div>
       )}
 
       {/* ─── Active tab ─── */}
-      {tab === 'active' && (<>
-
-      {/* ── Recommended by Ziggy ─────────────────────────────────────────── */}
-      {suggestedTemplates.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <button
-            onClick={() => setSuggestionsOpen(v => !v)}
-            style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', marginBottom: suggestionsOpen ? 10 : 0 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <p className="z-eyebrow">Recommended by Ziggy</p>
-                {suggestedTemplates.filter(t => t.tier === 'ready' && !t.already_exists).length > 0 && (
-                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, var(--ok) 14%, transparent)`, color: 'var(--ok)' }}>
-                    {suggestedTemplates.filter(t => t.tier === 'ready' && !t.already_exists).length} ready
-                  </span>
-                )}
-                {suggestedTemplates.filter(t => t.tier === 'partial').length > 0 && (
-                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, var(--warn) 14%, transparent)`, color: 'var(--warn)' }}>
-                    {suggestedTemplates.filter(t => t.tier === 'partial').length} incomplete
-                  </span>
-                )}
-              </div>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: suggestionsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><path d="M6 9l6 6 6-6"/></svg>
-            </div>
-          </button>
-          <AnimatePresence>
-            {suggestionsOpen && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {suggestedTemplates.slice(0, 5).map(t => (
-                    <TemplateCard key={t.id} template={t} onConfigure={handleConfigureTemplate} />
-                  ))}
-                  {suggestedTemplates.length > 5 && (
-                    <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
-                      +{suggestedTemplates.length - 5} more in Library →
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
+      {tab === 'active' && (
+        <motion.div
+          key="active"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+        >
 
       {/* ── My Automations ───────────────────────────────────────────────── */}
       {automations.length > 0 && <p className="z-eyebrow" style={{ marginBottom: 10 }}>My Automations</p>}
 
-      {loading && (
+      {loading && automations.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
@@ -1552,22 +1900,6 @@ export default function Automations() {
         </div>
       )}
 
-      {!loading && automations.length > 0 && (
-        <button
-          onClick={() => setShowRoutineWizard(true)}
-          style={{
-            marginTop: 8, width: '100%', padding: '13px',
-            borderRadius: 14, background: 'var(--surface)',
-            border: '1px dashed var(--line-2)',
-            color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'inherit',
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          New routine
-        </button>
-      )}
-
       <AnimatePresence mode="popLayout">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {automations.map(a => (
@@ -1576,7 +1908,14 @@ export default function Automations() {
           ))}
         </div>
       </AnimatePresence>
+        </motion.div>
+      )}
 
+      </AnimatePresence>
+
+      {/* Page-level modals — triggered from multiple tabs (Library/Configure
+          flow originates from both Active "Library" button and Suggested
+          template cards), so they must render outside any tab gate. */}
       <LibraryModal
         open={showLibrary}
         onClose={() => setShowLibrary(false)}
@@ -1584,6 +1923,7 @@ export default function Automations() {
       />
 
       <Modal open={showWizard} onClose={handleClose} title={
+        editTarget?._fromSuggestion ? `Review: ${editTarget.name}` :
         editTarget?._isTemplate ? `Configure: ${editTarget.name}` :
         editTarget ? `Edit: ${editTarget.name}` : 'New Custom Automation'
       }>
@@ -1591,23 +1931,12 @@ export default function Automations() {
       </Modal>
 
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Automation details">
-        <AutomationViewModal automation={viewTarget} roomNameMap={roomNameMap} />
-      </Modal>
-      </>)}
-
-      {/* Routine Wizard — simple creation path */}
-      <Modal open={showRoutineWizard} onClose={() => setShowRoutineWizard(false)} title="New Routine">
-        <RoutineWizard
-          initial={null}
-          onSave={async (data) => {
-            try {
-              const { addRoutine } = useAutomationStore.getState()
-              await addRoutine(data)
-              addToast('Routine created', 'success')
-              setShowRoutineWizard(false)
-            } catch { addToast('Failed to save routine', 'error') }
-          }}
-          onClose={() => setShowRoutineWizard(false)}
+        <AutomationViewModal
+          automation={viewTarget}
+          roomNameMap={roomNameMap}
+          onEdit={(automation) => { setViewTarget(null); handleEdit(automation) }}
+          onTrigger={async (id) => { try { await triggerAutomation(id); addToast('Triggered', 'success') } catch { addToast('Failed to trigger', 'error') } }}
+          onClose={() => setViewTarget(null)}
         />
       </Modal>
     </div>

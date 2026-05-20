@@ -5,6 +5,7 @@ import { Input } from '../components/ui/Input'
 import { IntentParamForm, validateIntentParams } from '../components/ui/IntentParamForm'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
+import { sendDirectIntent } from '../lib/api'
 
 // Curated list of useful intents — unchanged
 const INTENT_OPTIONS = [
@@ -190,9 +191,13 @@ export default function QuickAsks({ embedded = false }) {
     try { await remove(id); addToast('Deleted', 'success') }
     catch (e) { addToast(e.message || 'Failed', 'error') }
   }
+  const handleFire = async (qa) => {
+    try { await sendDirectIntent(qa.intent, qa.params || {}); addToast(qa.label, 'success') }
+    catch (e) { addToast(e.message || 'Failed to fire', 'error') }
+  }
 
   return (
-    <div style={embedded ? {} : { maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={embedded ? {} : { maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header — hidden when embedded in Settings */}
       {!embedded && (<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
@@ -239,13 +244,17 @@ export default function QuickAsks({ embedded = false }) {
             return (
               <motion.div
                 key={qa.id}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => { if (e.target.closest('[data-qa-stop]')) return; handleFire(qa) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleFire(qa) }}
                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
                 transition={{ duration: 0.15 }}
                 style={{
                   padding: '16px 16px', borderRadius: 13,
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
                   display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                  gap: 10, minHeight: 120,
+                  gap: 10, minHeight: 120, cursor: 'pointer',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -265,7 +274,7 @@ export default function QuickAsks({ embedded = false }) {
                     {qa.intent}{hasParams && ` · ${JSON.stringify(qa.params)}`}
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                <div data-qa-stop style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                   <button onClick={() => setEditing({ ...qa, params: qa.params || {} })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>

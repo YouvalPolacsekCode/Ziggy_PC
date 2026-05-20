@@ -32,8 +32,15 @@ async function request(method, path, body) {
 
 const get = (path) => request('GET', path)
 const post = (path, body) => request('POST', path, body)
+const put = (path, body) => request('PUT', path, body)
 const patch = (path, body) => request('PATCH', path, body)
 const del = (path, body) => request('DELETE', path, body)
+
+// ── UI prefs (server-side persistence of Dashboard pins) ─────────────────────
+// localStorage is best-effort; the server is the source of truth so pins
+// survive PWA cache evictions and "clear site data".
+export const getUiPrefs = () => get('/ui/prefs')
+export const putUiPrefs = (patch) => put('/ui/prefs', patch)
 
 // Intent / Voice
 export const sendIntent = (text, source = 'web') => post('/intent', { text, source })
@@ -122,12 +129,6 @@ export const matterCommission = (code) => post('/ha/matter/commission', { code }
 export const getConfigFlows = (protocol) =>
   get(protocol ? `/ha/config_flows?protocol=${protocol}` : '/ha/config_flows')
 
-// Scenes — HA scenes
-export const getScenes = () => get('/ha/scenes')
-export const activateScene = (entityId) => post('/ha/scenes/activate', { entity_id: entityId })
-export const createScene = (name, snapshotEntities) => post('/ha/scenes', { name, snapshot_entities: snapshotEntities })
-export const deleteScene = (entityId) => del(`/ha/scenes/${encodeURIComponent(entityId)}`)
-
 // Activity log
 export const getActivity = (limit = 20) => get(`/activity?limit=${limit}`)
 
@@ -137,12 +138,8 @@ export const getVoiceSettings = () => get('/settings/voice')
 export const patchVoiceSettings = (data) => patch('/settings/voice', data)
 // Runtime listening state (mic_enabled, wake state, voice thread running)
 export const getVoiceRuntimeStatus = () => get('/voice/status')
-export const getAlertSettings = () => get('/settings/alerts')
-export const patchAlertSettings = (data) => patch('/settings/alerts', data)
 export const getGeneralSettings = () => get('/settings/general')
 export const patchGeneralSettings = (data) => patch('/settings/general', data)
-export const getAnomalySettings = () => get('/settings/anomaly')
-export const patchAnomalySettings = (data) => patch('/settings/anomaly', data)
 
 // Auth management
 export const getAuthStatus    = ()           => get('/auth/status')
@@ -267,6 +264,9 @@ export const overridePresenceState    = (id, state)    => patch(`/presence/perso
 export const getPresenceZone          = ()             => get('/presence/zone')
 export const savePresenceZone         = (data)         => patch('/presence/zone', data)
 export const getMyPresencePerson      = ()             => get('/presence/my-person')
+export const getPresenceDebug         = ()             => get('/presence/debug')
+export const setPresenceLanHost       = (id, host)     => patch(`/presence/persons/${id}/lan-host`, { lan_host: host })
+export const pingMePresence           = (lat, lon, accuracy, ts) => post('/presence/me/ping', { lat, lon, accuracy, ts })
 
 // Sensor alert conditions
 export const getSensorAlertsSettings  = ()     => get('/settings/sensor-alerts')
@@ -359,6 +359,8 @@ export const getMapRender = () => get('/map/render')
 export const triggerMapRender = (rooms) => post('/map/render/generate', { rooms })
 export const snoozeMapAnomaly = (roomId, ruleId, durationMinutes = 60) =>
   post(`/map/anomalies/snooze/${encodeURIComponent(roomId)}/${encodeURIComponent(ruleId)}`, { duration_minutes: durationMinutes })
+export const executeAnomalyAction = (roomId, ruleId) =>
+  post(`/map/anomalies/action/${encodeURIComponent(roomId)}/${encodeURIComponent(ruleId)}`, {})
 
 // HA Update Checker
 export const getUpdateStatus   = ()        => get('/update/status')

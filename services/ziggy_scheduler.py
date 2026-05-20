@@ -24,43 +24,20 @@ from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 _started = False
 _tick: int = 0   # increments once per minute
 
-# Track last known effective states to detect expiry-driven transitions
-_last_effective: dict[str, str] = {}
-
 
 async def _sweep_presence_expiry() -> None:
-    """Mark stale persons as 'unknown' on disk and fire automations for the transitions."""
+    """Detect ping-expiry driven departures and fire automations for them.
+
+    All state-machine logic lives in services.presence_engine.sweep_expiry —
+    this scheduler hook only fans out the resulting fired transitions.
+    """
     try:
-        import json
-        from pathlib import Path
-        from datetime import timezone, timedelta
-        from services.presence_store import STALE_AFTER_MINUTES, effective_state
-
-        registry = Path(__file__).resolve().parent.parent / "user_files" / "persons.json"
-        if not registry.exists():
-            return
-
-        persons = json.loads(registry.read_text(encoding="utf-8"))
-        changed = False
-
-        for person in persons:
-            pid  = person["id"]
-            name = person["name"]
-            eff  = effective_state(person)
-            prev = _last_effective.get(pid)
-
-            _last_effective[pid] = eff
-
-            if prev is not None and prev != eff:
-                # Transition driven by expiry — only fire leave events (home → unknown counts as leaving)
-                if prev == "home" and eff == "unknown":
-                    log_info(f"[Presence] {name}: ping expired — treating as left (home → unknown)")
-                    await _fire_presence_automation("person_leaves", name)
-
-        # Persist cleared state for persons that became unknown via expiry
-        if changed:
-            registry.write_text(json.dumps(persons, indent=2, ensure_ascii=False), encoding="utf-8")
-
+        from services import presence_engine
+        decisions = presence_engine.sweep_expiry()
+        for decision in decisions:
+            presence_engine.log_decision(decision)
+            if decision.fired_transition and decision.new_confirmed == "not_home":
+                await _fire_presence_automation("person_leaves", decision.person_name)
     except Exception as exc:
         log_error(f"[Scheduler] Presence sweep failed: {exc}")
 
@@ -149,6 +126,15 @@ async def run_scheduler() -> None:
         # ── Every 5 minutes: sweep stale presence pings ───────────────────────
         if _tick % 5 == 0:
             await _sweep_presence_expiry()
+
+        # ── Every minute: LAN reachability probe for opt-in persons ──────────
+        # Matches the engine's dwell_seconds default of 60 s — multiple probes
+        # in a row are required to commit a transition.
+        try:
+            from services.lan_presence import probe_all_persons
+            await probe_all_persons()
+        except Exception as exc:
+            log_error(f"[Scheduler] LAN presence probe failed: {exc}")
 
         # ── Hourly: sweep stale sensors (ANOM-10) ─────────────────────────────
         if _tick % 60 == 0:

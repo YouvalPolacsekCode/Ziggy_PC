@@ -21,7 +21,8 @@ import {
   getUsers, updateUser, deleteUser,
   createInvite, listInvites, revokeInvite,
   getPresencePersons, createPresencePerson, deletePresencePerson,
-  getPresenceZone, savePresenceZone,
+  getPresenceZone, savePresenceZone, getPresenceDebug, setPresenceLanHost,
+  pingMePresence, getMyPresencePerson,
 } from '../lib/api'
 import AdminSettings from './AdminSettings'
 import { MemoryPanel } from './Memory'
@@ -319,9 +320,87 @@ function PresenceSection() {
   const [copiedId,   setCopiedId]  = useState(null)
   const [zone,       setZone]      = useState(null)
   const [zoneEdit,   setZoneEdit]  = useState(false)
-  const [zoneDraft,  setZoneDraft] = useState({ lat: '', lon: '', radius_m: 200 })
+  const [zoneDraft,  setZoneDraft] = useState({ lat: '', lon: '', radius_m: 100 })
   const [zoneSaving, setZoneSaving] = useState(false)
   const [locating,   setLocating]  = useState(false)
+  const [debugOpen,  setDebugOpen] = useState(false)
+  const [debug,      setDebug]     = useState(null)
+  const [myPersonId, setMyPersonId] = useState(null)
+  const [editingTrackerId, setEditingTrackerId] = useState(null)
+  const [trackerDraft, setTrackerDraft] = useState('')
+  const [trackerSaving, setTrackerSaving] = useState(false)
+
+  // ── "Track my location" — JWT-authenticated self-tracking ───────────────
+  // No invite link needed. Persists across reloads via localStorage so the
+  // toggle survives the user closing/reopening the PWA.
+  const TRACK_ME_KEY = 'ziggy_track_me_on'
+  const [trackMe,        setTrackMe]        = useState(() => localStorage.getItem(TRACK_ME_KEY) === '1')
+  const [trackMeStatus,  setTrackMeStatus]  = useState('idle')
+  const [trackMePerson,  setTrackMePerson]  = useState(null)
+  const watchIdRef = useRef(null)
+  const lastPingRef = useRef(0)
+
+  const stopWatch = () => {
+    if (watchIdRef.current != null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
+    }
+    watchIdRef.current = null
+  }
+
+  useEffect(() => {
+    if (!trackMe) {
+      stopWatch()
+      setTrackMeStatus('idle')
+      return
+    }
+    if (!('geolocation' in navigator)) {
+      setTrackMeStatus('error: geolocation unavailable')
+      return
+    }
+    setTrackMeStatus('requesting permission')
+    const MIN_INTERVAL_MS = 20 * 1000
+    const sendPing = async (pos) => {
+      const now = Date.now()
+      if (now - lastPingRef.current < MIN_INTERVAL_MS) return
+      lastPingRef.current = now
+      try {
+        const r = await pingMePresence(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, pos.timestamp || now)
+        setTrackMeStatus(r.state === 'home' ? 'home' : r.state === 'not_home' ? 'away' : 'pinging')
+        setTrackMePerson(r.person)
+        load()  // refresh the people list in the UI
+      } catch (e) {
+        setTrackMeStatus(`error: ${e.message || 'ping failed'}`)
+      }
+    }
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => sendPing(pos),
+      (err) => setTrackMeStatus(err.code === 1 ? 'permission denied' : `error: ${err.message}`),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    )
+    return stopWatch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackMe])
+
+  const toggleTrackMe = () => {
+    const next = !trackMe
+    localStorage.setItem(TRACK_ME_KEY, next ? '1' : '0')
+    setTrackMe(next)
+  }
+
+  const beginEditTracker = (p) => {
+    setEditingTrackerId(p.id)
+    setTrackerDraft(p.lan_host || '')
+  }
+  const saveTracker = async (p) => {
+    setTrackerSaving(true)
+    try {
+      await setPresenceLanHost(p.id, trackerDraft.trim() || null)
+      await load()
+      setEditingTrackerId(null)
+      addToast(trackerDraft.trim() ? `LAN probe → ${trackerDraft.trim()}` : 'LAN probe cleared', 'success')
+    } catch (e) { addToast(e.message || 'Failed to save', 'error') }
+    finally { setTrackerSaving(false) }
+  }
 
   const load = async () => {
     try {
@@ -330,8 +409,23 @@ function PresenceSection() {
       setZone(z)
       if (z?.lat != null) setZoneDraft({ lat: z.lat, lon: z.lon, radius_m: z.radius ?? 200 })
     } catch {}
+    // "(you)" identification — best-effort, ignore 404 (no linked person yet).
+    try {
+      const me = await getMyPresencePerson()
+      setMyPersonId(me?.person?.id ?? null)
+    } catch { setMyPersonId(null) }
     finally { setLoading(false) }
   }
+
+  const loadDebug = async () => {
+    try { setDebug(await getPresenceDebug()) } catch {}
+  }
+  useEffect(() => {
+    if (!debugOpen) return
+    loadDebug()
+    const t = setInterval(loadDebug, 5000)
+    return () => clearInterval(t)
+  }, [debugOpen])
 
   useEffect(() => { load() }, [])
 
@@ -401,6 +495,23 @@ function PresenceSection() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
+      {/* Track my location card — JWT-authenticated self-tracking */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px' }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Track my location</p>
+            <p style={{ fontSize: 11, color: trackMe ? 'var(--ok)' : 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {trackMe
+                ? (trackMeStatus === 'home'  ? `Active · home${trackMePerson ? ' · ' + trackMePerson.name : ''}`
+                  : trackMeStatus === 'away'  ? `Active · away${trackMePerson ? ' · ' + trackMePerson.name : ''}`
+                  : `Active · ${trackMeStatus}`)
+                : 'Off — turn on to let this device report its GPS to Ziggy'}
+            </p>
+          </div>
+          <Toggle checked={trackMe} onChange={toggleTrackMe} />
+        </div>
+      </div>
+
       {/* Home zone card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
@@ -450,7 +561,10 @@ function PresenceSection() {
               </button>
             </div>
             <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
-              Tip: click "Use my location" while at home to auto-fill. 200m radius works well for most homes.
+              Tip: click "Use my location" while at home to auto-fill. 100 m radius is the default; the engine adds GPS-jitter hysteresis on top.
+            </p>
+            <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5, paddingTop: 4, borderTop: '0.5px solid var(--line)', marginTop: 4 }}>
+              <strong style={{ color: 'var(--ink-mute)' }}>Want a head-start automation?</strong> The Home zone fires when you physically reach home. For automations that should run while you're still on the way (e.g. turn on the AC while you're 5 minutes out), create a second zone in Home Assistant with a larger radius — a "Near Home" zone at 2–3 km, for example. Once that zone exists, it'll be selectable when you build a zone-entry automation.
             </p>
           </div>
         )}
@@ -464,17 +578,53 @@ function PresenceSection() {
           </p>
         ) : (
           persons.map((p, i) => (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', borderBottom: i < persons.length - 1 ? '0.5px solid var(--line)' : 'none', flexWrap: 'wrap' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: presenceStateColor(p), flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 60 }}>{p.name}</span>
-              <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>{presenceStateLabel(p)}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{timeAgo(p.last_seen)}</span>
-              <button onClick={() => copyInvite(p)} title="Copy invite link" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedId === p.id ? 'var(--ok)' : 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
-                {copiedId === p.id ? <Check size={13} /> : <Copy size={13} />}
-              </button>
-              <button onClick={() => handleDelete(p)} title="Remove person" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
-                <Trash2 size={13} />
-              </button>
+            <div key={p.id} style={{ borderBottom: i < persons.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', flexWrap: 'wrap' }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: presenceStateColor(p), flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 60 }}>
+                  {p.name}
+                  {p.id === myPersonId && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>(you)</span>}
+                </span>
+                <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>{presenceStateLabel(p)}</span>
+                <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{timeAgo(p.last_seen)}</span>
+                <button onClick={() => copyInvite(p)} title="Copy invite link" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedId === p.id ? 'var(--ok)' : 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
+                  {copiedId === p.id ? <Check size={13} /> : <Copy size={13} />}
+                </button>
+                <button onClick={() => handleDelete(p)} title="Remove person" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px 11px 32px', fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                {editingTrackerId === p.id ? (
+                  <>
+                    <input
+                      autoFocus
+                      placeholder="youval-iphone.local or 192.168.1.42"
+                      value={trackerDraft}
+                      onChange={e => setTrackerDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveTracker(p); if (e.key === 'Escape') setEditingTrackerId(null) }}
+                      className="z-input"
+                      style={{ flex: 1, height: 26, padding: '0 8px', fontSize: 11 }}
+                    />
+                    <button onClick={() => saveTracker(p)} disabled={trackerSaving} className="z-btn-primary" style={{ height: 26, padding: '0 10px', borderRadius: 6, fontSize: 11 }}>
+                      {trackerSaving ? '…' : 'Save'}
+                    </button>
+                    <button onClick={() => setEditingTrackerId(null)} className="z-btn-secondary" style={{ height: 26, padding: '0 8px', borderRadius: 6, fontSize: 11 }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      LAN probe: {p.lan_host || <span style={{ color: 'var(--ink-faint)' }}>(none — GPS only)</span>}
+                      {p.lan_last_seen && <span style={{ color: 'var(--ok)', paddingLeft: 6 }}>· last seen {timeAgo(p.lan_last_seen)}</span>}
+                    </span>
+                    <button onClick={() => beginEditTracker(p)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>
+                      {p.lan_host ? 'edit' : 'add'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           ))
         )}
@@ -494,6 +644,58 @@ function PresenceSection() {
         <p style={{ fontSize: 10, color: 'var(--ink-faint)', padding: '0 16px 12px', lineHeight: 1.6 }}>
           Add each household member, then copy their invite link and open it on their phone.
         </p>
+      </div>
+
+      {/* Debug card */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <button
+          onClick={() => setDebugOpen(v => !v)}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 500 }}>Presence debug</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            {debugOpen ? 'hide' : 'show'}
+          </span>
+        </button>
+        {debugOpen && (
+          <div style={{ borderTop: '0.5px solid var(--line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {!debug ? (
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Loading…</p>
+            ) : (
+              <>
+                {/* Tunables */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4, fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {Object.entries(debug.tunables || {}).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                      <span>{k}</span><span style={{ color: 'var(--ink)' }}>{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Per-person debug */}
+                {(debug.persons ?? []).map(p => (
+                  <div key={p.id} style={{ borderTop: '0.5px solid var(--line)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ fontWeight: 600 }}>{p.name}</span>
+                      <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>
+                        {presenceStateLabel(p)} · {p.last_distance_m != null ? `${p.last_distance_m}m` : '—'} · acc {p.last_accuracy != null ? `${Math.round(p.last_accuracy)}m` : '—'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                      cand: {p.candidate_state ?? '—'} since {p.candidate_since ? new Date(p.candidate_since).toLocaleTimeString() : '—'}
+                      {' · '}
+                      last txn: {p.last_transition_to ?? '—'} at {p.last_transition_at ? new Date(p.last_transition_at).toLocaleTimeString() : '—'}
+                    </div>
+                    {(p.history ?? []).slice().reverse().slice(0, 6).map((h, idx) => (
+                      <div key={idx} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {new Date(h.ts).toLocaleTimeString()} · {h.src} · raw={h.raw} · d={h.dist ?? '—'}m · {h.result} · {h.reason}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
     </div>

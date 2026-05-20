@@ -262,7 +262,7 @@ export default function Memory() {
   const { entries, loading, refreshing, search, setSearch, showAdd, setShowAdd, newKey, setNewKey, newValue, setNewValue, saving, editEntry, setEditEntry, editValue, setEditValue, editSaving, handleRefresh, handleDelete, handleEditSave, handleAdd, filtered, groups, profiles, activeProfile, setActiveProfile, activeFacts } = useMemoryLogic()
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>

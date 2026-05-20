@@ -1,15 +1,18 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Zap, ChevronRight, RefreshCw, EyeOff, Eye, Pencil, Home } from 'lucide-react'
+import { ArrowLeft, Zap, ChevronRight, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
-import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
+import { TOGGLEABLE_DOMAINS, isEntityOn } from '../components/ui/DeviceControls'
+import { DeviceRemote } from '../components/device/DeviceRemote'
+import { deviceFacts, getKind, KIND, sendDeviceCommand } from '../lib/devices'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
+import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY } from '../lib/domainRegistry'
 import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms } from '../lib/api'
@@ -219,24 +222,51 @@ export default function DeviceDetail() {
   const navigate = useNavigate()
   const { entities, updateEntityState, hideEntity, unhideEntity, hiddenEntities } = useDeviceStore()
   const { addToast } = useUIStore()
+  const { suggestions, fetch: fetchSuggestions } = useSuggestionStore()
+  useEffect(() => { if (suggestions.length === 0) fetchSuggestions() }, [])
 
   const [details, setDetails] = useState(null)
   const [loading, setLoading] = useState(true)
   const [rooms, setRooms] = useState([])
   const [showRename, setShowRename] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [activeTab, setActiveTab] = useState('controls')
+  const [editingRoom, setEditingRoom] = useState(false)
 
   // Live entity from store — gives real-time state without re-fetching details
   const liveEntity = entities.find(e => e.entity_id === entityId) ?? null
 
+  // IR entities (ir.<id>) don't have HA-side details — synthesize from the
+  // store entity so the page renders rather than 404-ing.
+  const isIrTarget = entityId?.startsWith('ir.')
+
   const load = async () => {
     setLoading(true)
     try {
+      const fetchDetails = isIrTarget
+        ? Promise.resolve(null)
+        : getEntityDetails(entityId).catch(() => null)
       const [d, r] = await Promise.all([
-        getEntityDetails(entityId),
+        fetchDetails,
         getAllRooms().catch(() => ({ rooms: [] })),
       ])
-      setDetails(d)
+      if (d) {
+        setDetails(d)
+      } else if (liveEntity) {
+        // Synthesize a details-shaped object from the live store entity so the
+        // Info tab renders something useful for IR-only devices.
+        const ir = liveEntity._irDevice
+        setDetails({
+          state: liveEntity.state,
+          last_changed: liveEntity.last_changed,
+          attributes: { friendly_name: liveEntity.friendly_name || liveEntity.display_name },
+          domain_meta: {},
+          diagnostics: {},
+          sibling_entities: [],
+          automations_using: [],
+          ha_device: ir ? { manufacturer: ir.brand || null, model: ir.type } : null,
+        })
+      }
       setRooms(Array.isArray(r) ? r : r.rooms ?? [])
     } catch (e) {
       addToast(e.message || 'Failed to load device details', 'error')
@@ -253,11 +283,11 @@ export default function DeviceDetail() {
     setRefreshing(false)
   }
 
-  const handleToggle = async (on) => {
+  const handleToggle = async () => {
     if (!liveEntity) return
     try {
-      await controlDevice(entityId, on ? 'turn_on' : 'turn_off')
-    } catch { addToast('Control failed', 'error') }
+      await sendDeviceCommand(liveEntity, 'toggle')
+    } catch (e) { addToast(e.message || 'Control failed', 'error') }
   }
 
   const handleService = async (service, data) => {
@@ -320,17 +350,40 @@ export default function DeviceDetail() {
     )
   }
 
-  if (!details) return null
+  if (!details) {
+    return (
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+        <div className="flex items-center gap-3 mb-5">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 dark:text-zinc-500 transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="z-eyebrow" style={{ marginBottom: 2 }}>Device</p>
+            <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }} className="truncate">
+              Not found
+            </h1>
+          </div>
+        </div>
+        <div style={{ padding: '24px 16px', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center', color: 'var(--ink-mute)', fontSize: 13 }}>
+          Could not load device details for <span className="z-mono">{entityId}</span>.
+        </div>
+      </div>
+    )
+  }
 
-  const { ha_device, sibling_entities, automations_using, domain_meta, attributes } = details
+  const { ha_device, sibling_entities = [], automations_using = [], domain_meta, attributes = {} } = details
   // Merge last_changed: top-level (from raw HA state) takes precedence over diagnostics fallback
-  const diagnostics = { ...details.diagnostics, last_changed: details.last_changed ?? details.diagnostics?.last_changed }
+  const diagnostics = { ...(details.diagnostics || {}), last_changed: details.last_changed ?? details.diagnostics?.last_changed }
   const entity = liveEntity ?? { entity_id: entityId, domain: entityId.split('.')[0], state: details.state, ...attributes }
-  const isOn = isEntityOn(entity)
-  const isToggleable = TOGGLEABLE_DOMAINS.has(entity.domain)
-  const { primary: stateLabel } = formatEntityState({ ...entity, ...attributes })
-  const meta = DOMAIN_REGISTRY[entity.domain]
-  const displayName = attributes.friendly_name || details.attributes?.friendly_name || entityId.split('.')[1]?.replace(/_/g, ' ') || entityId
+  const facts = deviceFacts(entity)
+  const isOn = facts.isOn
+  const isToggleable = facts.meta.toggle
+  const stateLabel = facts.stateLabel
+  const meta = facts.meta
+  const displayName = facts.name || attributes.friendly_name || entityId
   const currentRoom = rooms.find(r => (r.entities || []).includes(entityId))
 
   // Filter siblings to show only useful ones (hide update/button/number noise)
@@ -340,90 +393,181 @@ export default function DeviceDetail() {
   const hasDiagnostics = diagnostics.battery != null || diagnostics.lqi != null || diagnostics.rssi != null ||
     diagnostics.last_changed || diagnostics.last_seen || diagnostics.firmware
 
+  // Tabs: every device gets Control + Info now (sensors get the SensorRemote
+  // as their Control view, which is read-only but still useful).
+  const hasControls   = facts.meta.controllable || facts.kind !== KIND.UNKNOWN
+  const showControls  = !hasControls || activeTab === 'controls'
+  const showData      = !hasControls || activeTab === 'data'
+
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
 
-      {/* ── Header ── */}
-      <div className="flex items-center gap-3 mb-5">
+      {/* ── Header — centered title with room subtitle, design-matched ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
         <button
           onClick={() => navigate(-1)}
-          className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 dark:text-zinc-500 transition-colors"
+          className="z-icon-btn"
+          style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
+          aria-label="Back"
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={16} />
         </button>
-        <div className="flex-1 min-w-0">
-          <p className="z-eyebrow" style={{ marginBottom: 2 }}>Device</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }} className="truncate">
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
+          <div style={{
+            fontSize: 15, fontWeight: 600, letterSpacing: '-0.015em', color: 'var(--ink)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
             {displayName}
-          </h1>
+          </div>
+          {(currentRoom || facts.isIr || facts.hasIr) && (
+            <div className="z-mono" style={{
+              fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2, letterSpacing: '0.04em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {[currentRoom?.name, facts.isIr ? 'IR' : facts.hasIr ? 'IR + WiFi' : null]
+                .filter(Boolean).join(' · ')}
+            </div>
+          )}
         </div>
         <button
           onClick={handleRefresh}
-          className={cn('p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-colors', refreshing && 'animate-spin')}
+          className={cn('z-icon-btn', refreshing && 'animate-spin')}
+          style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
+          aria-label="Refresh"
           title="Refresh"
         >
-          <RefreshCw size={16} />
+          <RefreshCw size={15} />
         </button>
       </div>
 
-      {/* ── Identity card ── */}
-      <Card className="p-4 mb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3">
-            <div className={cn(
-              'w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0',
-              isOn ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800',
-            )}>
-              {domainIcon(entity.domain, attributes.device_class)}
-            </div>
-            <div>
-              <p className="font-semibold text-zinc-900 dark:text-zinc-100">{displayName}</p>
-              <p className={cn(
-                'text-sm mt-0.5',
-                entity.state === 'unavailable' ? 'text-zinc-300 dark:text-zinc-600' :
-                isOn ? 'text-emerald-500' : 'text-zinc-400',
-              )}>
-                {stateLabel}
-              </p>
-              {currentRoom && (
-                <div className="flex items-center gap-1 mt-1">
-                  <Home size={10} className="text-zinc-400" />
-                  <span className="text-[11px] text-zinc-400">{currentRoom.name}</span>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {isToggleable && (
-              <Toggle checked={isOn} onCheckedChange={handleToggle} disabled={entity.state === 'unavailable'} />
-            )}
-            <button
-              onClick={() => setShowRename(true)}
-              className="p-1.5 rounded-lg text-zinc-300 dark:text-zinc-600 hover:text-violet-500 transition-colors"
-              title="Rename"
-            >
-              <Pencil size={15} />
-            </button>
-          </div>
+      {/* ── Tab switcher (only when there's something to control). Same
+            segmented-pill design as the Automations page — soft white active
+            pill with a faint shadow, no stark inversion. ── */}
+      {hasControls && (
+        <div style={{
+          display: 'flex', gap: 4, padding: 3, marginBottom: 16,
+          background: 'var(--surface-2)', borderRadius: 13,
+        }}>
+          {[
+            { id: 'controls', label: 'Controls' },
+            { id: 'data',     label: 'Info' },
+          ].map(t => {
+            const active = activeTab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                style={{
+                  flex: 1, padding: '8px 0', borderRadius: 10,
+                  background: active ? 'var(--surface)' : 'transparent',
+                  color: active ? 'var(--ink)' : 'var(--ink-mute)',
+                  border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  transition: 'background 0.15s',
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
         </div>
+      )}
 
-        {/* Controls */}
-        {entity.state !== 'unavailable' && (
-          <DeviceControls
-            entity={{ ...entity, ...attributes, entity_id: entityId }}
-            onService={handleService}
-          />
-        )}
+      {/* ── Identity strip + Control surface ── */}
+      {showControls && (
+        <>
+          <div className="z-card" style={{ padding: 16, marginBottom: 14, borderRadius: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 14,
+                background: isOn
+                  ? `color-mix(in srgb, ${facts.tint} 14%, var(--surface-2))`
+                  : 'var(--surface-2)',
+                color: isOn ? facts.tint : 'var(--ink-mute)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 22, flexShrink: 0,
+              }}>
+                {meta.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span className="z-eyebrow">{meta.label}</span>
+                  {facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>IR</span>}
+                  {facts.hasIr && !facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>IR + WiFi</span>}
+                  {!facts.isAvailable && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--warn)' }}>Unavailable</span>}
+                </div>
+                <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em', margin: '2px 0 0' }}>
+                  {displayName}
+                </h2>
+                {currentRoom && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                    <Home size={11} style={{ color: 'var(--ink-faint)' }} />
+                    <span className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>{currentRoom.name}</span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowRename(true)}
+                className="z-icon-btn"
+                style={{ width: 32, height: 32, borderRadius: 10 }}
+                title="Rename"
+              >
+                <Pencil size={13} />
+              </button>
+            </div>
+          </div>
 
-        {/* Entity ID */}
-        <p className="mt-3 text-[10px] text-zinc-300 dark:text-zinc-700 font-mono truncate">{entityId}</p>
-      </Card>
+          {/* Per-kind control surface — passes relevant automations +
+              suggestion to the kind-specific remote (used by AC for the
+              Schedule + AI cards). */}
+          {entity.state !== 'unavailable' && (() => {
+            // Pick automations that schedule this entity (time-triggered).
+            // automations_using is the list of automations referencing this
+            // entity; we filter to ones with a time trigger for the
+            // Schedule card.
+            const scheduledAutos = (automations_using || []).filter(a => {
+              const t = a.trigger || a.triggers?.[0]
+              if (!t) return false
+              if (t.platform === 'time' || t.type === 'time') return true
+              if (t.platform === 'sun') return true
+              return false
+            })
+            // Pick a pending suggestion whose user_message mentions this
+            // device or its room. Loose match — the suggestion engine doesn't
+            // carry entity_id directly, so we match on name + room.
+            const lowerName = (displayName || '').toLowerCase()
+            const lowerRoom = (currentRoom?.name || '').toLowerCase()
+            const relevantSuggestion = suggestions.find(s => {
+              if (s.status !== 'pending') return false
+              const msg = (s.user_message || '').toLowerCase()
+              return (lowerName && msg.includes(lowerName)) ||
+                     (lowerRoom && msg.includes(lowerRoom))
+            })
+            return (
+              <div className="z-card" style={{ padding: 18, marginBottom: 14, borderRadius: 18 }}>
+                <DeviceRemote
+                  entity={{ ...attributes, ...entity, entity_id: entityId }}
+                  automations={scheduledAutos}
+                  suggestion={relevantSuggestion}
+                />
+              </div>
+            )
+          })()}
 
-      {/* ── Camera view ── */}
-      {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
+          {/* Camera live view — keep as separate panel below the remote */}
+          {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
+
+          {/* Entity ID footer */}
+          <p style={{ marginTop: 4, fontSize: 10, color: 'var(--ink-ghost)', fontFamily: 'IBM Plex Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {entityId}{facts.irId ? ` · ir:${facts.irId}` : ''}
+          </p>
+        </>
+      )}
 
       {/* ── Diagnostics ── */}
-      {hasDiagnostics && (
+      {showData && hasDiagnostics && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Diagnostics</p>
 
@@ -462,7 +606,7 @@ export default function DeviceDetail() {
       )}
 
       {/* ── HA Device info ── */}
-      {ha_device && (ha_device.manufacturer || ha_device.model) && (
+      {showData && ha_device && (ha_device.manufacturer || ha_device.model) && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Hardware</p>
           <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
@@ -474,8 +618,40 @@ export default function DeviceDetail() {
         </Card>
       )}
 
+      {/* ── IR codeset info — shown for both pure IR and IR+HA hybrid ── */}
+      {showData && facts.linkedIr && (
+        <Card className="p-4 mb-3">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+            IR Codeset
+          </p>
+          <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+            <DiagRow label="Type" value={facts.linkedIr.type} />
+            <DiagRow label="Brand" value={facts.linkedIr.brand || '—'} />
+            <DiagRow label="Commands learned" value={`${(facts.linkedIr.learned_commands || []).length}`} />
+            <DiagRow label="IR ID">
+              <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink)' }}>{facts.linkedIr.id}</span>
+            </DiagRow>
+            {facts.linkedIr.assumed_state && (
+              <DiagRow label="Assumed state" value={facts.linkedIr.assumed_state} />
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Capability list — what this device can actually do ── */}
+      {showData && facts.capabilities.size > 0 && (
+        <Card className="p-4 mb-3">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Capabilities</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {[...facts.capabilities].map(c => (
+              <span key={c} className="z-chip" style={{ padding: '4px 9px', fontSize: 10.5 }}>{c.replace(/_/g, ' ')}</span>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* ── Sibling entities ── */}
-      {usefulSiblings.length > 0 && (
+      {showData && usefulSiblings.length > 0 && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
             Also on this device
@@ -502,7 +678,7 @@ export default function DeviceDetail() {
       )}
 
       {/* ── Automations using this device ── */}
-      {automations_using.length > 0 && (
+      {showData && automations_using.length > 0 && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
             Used in automations
@@ -530,39 +706,75 @@ export default function DeviceDetail() {
         </Card>
       )}
 
-      {/* ── Room assignment ── */}
+      {/* ── Room assignment — locked by default to prevent fat-finger
+          reassignment. Tap the lock to enter edit mode. ── */}
+      {showData && (
       <Card className="p-4 mb-3">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Room</p>
-        <div className="space-y-1">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Room</p>
           <button
-            onClick={() => handleAssignRoom(null)}
-            className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
-              !currentRoom ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800',
-            )}
+            onClick={() => setEditingRoom(v => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 9px', borderRadius: 8,
+              background: editingRoom ? 'var(--ink)' : 'var(--surface-2)',
+              color: editingRoom ? 'var(--bg)' : 'var(--ink-mute)',
+              border: '0.5px solid ' + (editingRoom ? 'var(--ink)' : 'var(--line)'),
+              fontSize: 10.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+            title={editingRoom ? 'Lock' : 'Unlock to edit'}
           >
-            <Home size={13} /> No room
+            {editingRoom ? <><LockOpen size={11} /> Done</> : <><Lock size={11} /> Edit</>}
           </button>
-          {rooms.map(r => (
+        </div>
+
+        {!editingRoom ? (
+          // Locked: read-only summary of the current assignment
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 12px', borderRadius: 11,
+            background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+          }}>
+            <Home size={13} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+              {currentRoom?.name || 'No room'}
+            </span>
+          </div>
+        ) : (
+          // Unlocked: full radio list
+          <div className="space-y-1">
             <button
-              key={r.id}
-              onClick={() => handleAssignRoom(r.id)}
+              onClick={() => handleAssignRoom(null)}
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
-                currentRoom?.id === r.id
-                  ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium'
-                  : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                !currentRoom ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800',
               )}
             >
-              <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-700')} />
-              {r.name}
-              {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
+              <Home size={13} /> No room
             </button>
-          ))}
-        </div>
+            {rooms.map(r => (
+              <button
+                key={r.id}
+                onClick={() => handleAssignRoom(r.id)}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
+                  currentRoom?.id === r.id
+                    ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium'
+                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                )}
+              >
+                <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-700')} />
+                {r.name}
+                {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </Card>
+      )}
 
       {/* ── Danger zone ── */}
+      {showData && (
       <Card className="p-4">
         <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Actions</p>
         <button
@@ -575,6 +787,7 @@ export default function DeviceDetail() {
           }
         </button>
       </Card>
+      )}
 
       <RenameModal
         open={showRename}

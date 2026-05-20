@@ -35,8 +35,19 @@ def _step_to_ha(step: dict) -> Optional[dict]:
         if service_data:
             ha_step["data"] = service_data
         return ha_step
-    if kind == "scene":
-        return {"service": "scene.turn_on", "target": {"entity_id": step.get("entity_id", "")}}
+    if kind == "automation":
+        # HA-side representation: a placeholder service call. Real execution
+        # happens via execute_ziggy_actions when the routine is run.
+        return {"service": "notify.persistent_notification",
+                "data": {"message": f"[Ziggy] Run automation: {step.get('automation_id', '?')}"}}
+    if kind == "notify":
+        # Notify uses Ziggy's web-push; we keep an HA-side placeholder so the
+        # script remains visible in HA. Real notification lives in execute_ziggy_actions.
+        return {"service": "notify.persistent_notification",
+                "data": {
+                    "message": step.get("message", ""),
+                    "title": step.get("title", "Ziggy"),
+                }}
     if kind == "delay":
         secs = int(step.get("delay_seconds", 0))
         m, s = divmod(secs, 60)
@@ -65,8 +76,6 @@ def _ha_step_to_ziggy(s: dict) -> dict:
         entity_id = target.get("entity_id", "")
         if isinstance(entity_id, list):
             entity_id = entity_id[0] if entity_id else ""
-        if svc.startswith("scene."):
-            return {"type": "scene", "entity_id": entity_id}
         return {"type": "device", "entity_id": entity_id, "action": svc.split(".")[-1]}
     if "delay" in s:
         d = s["delay"]

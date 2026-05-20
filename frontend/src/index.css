@@ -4,6 +4,87 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Responsive foundation ────────────────────────────────────────────────
+ * Safe-area, dvh, and shell-geometry tokens. Centralized so every page
+ * uses the same numbers — no per-component magic.
+ *
+ * --safe-*: passthrough to env(safe-area-inset-*) with a 0 fallback so the
+ *   tokens resolve everywhere. Wrap with max() at the call site if a non-zero
+ *   floor is needed (e.g. gesture-bar bottom nav).
+ *
+ * --vh / --vh-min: full viewport height. Prefer --vh (dynamic) so layouts
+ *   track the *visible* area as URL bars / system bars animate. Fall back
+ *   to 100vh for browsers without dvh.
+ *
+ * --nav-h: bottom-nav row height. Mirrors BottomNav ROW_H so pb-nav,
+ *   chat-composer math, and toast spacing all derive from one source.
+ * --sidebar-w: desktop sidebar width. Mirrors Sidebar.
+ * --nav-clearance: bottom space that any scrollable page must leave for
+ *   the bottom-nav + safe-area + a small breathing gap.
+ */
+:root {
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+
+  /* Dynamic viewport. Older browsers ignore dvh and fall through to vh. */
+  --vh: 100vh;
+  --vh: 100dvh;
+
+  /* Shell geometry — kept in sync with the JS constants in BottomNav.jsx
+     (ROW_H) and Sidebar.jsx (width). Change them together. */
+  --nav-h: 60px;
+  --sidebar-w: 196px;
+
+  /* Bottom padding for any scrollable page so content never hides under
+     the floating bottom nav. Includes a gesture-bar floor for Android
+     3-button mode where env(safe-area-inset-bottom) reports 0. */
+  --nav-clearance: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 8px);
+
+  /* Page container max-widths.
+     --page-max-w        : list/grid pages (Dashboard, Rooms, Devices, etc.).
+                            Mobile inherits the value but viewports < 1100px
+                            never hit the cap, so layout looks identical.
+     --page-max-w-narrow : form/settings pages where line length matters more
+                            than horizontal space utilization.
+     --page-max-w-wide   : the Dashboard with right rail. Wider so main+rail
+                            fits on a 1280px laptop with sidebar.
+  */
+  --page-max-w:        1100px;
+  --page-max-w-narrow: 760px;
+  --page-max-w-wide:   1240px;
+
+  /* Room tile height — bumped on desktop via media query below so anchor
+     cards don't look like phone thumbs stretched wide. */
+  --rooms-tile-h: 156px;
+}
+
+@media (min-width: 1024px) {
+  :root { --rooms-tile-h: 200px; }
+}
+
+/* Rooms list grid — 2 cols on phones (original mobile tile density),
+   3 cols on tablet+ for a roomier desktop feel. Defined OUTSIDE
+   @layer components so the nested media queries always apply at the
+   author origin (inside a Tailwind layer they were silently dropped
+   on some PostCSS pipelines, which is why the page kept rendering as
+   a single stacked column). */
+.z-rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 768px) {
+  .z-rooms-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+@media (min-width: 1024px) {
+  .z-rooms-grid { gap: 16px; }
+}
+
 /* ── Warm-light palette (default + explicit) ─────────────────────────────── */
 :root,
 [data-palette="light"] {
@@ -29,6 +110,9 @@
   --err:        #C24530;
   --info:       #3D6A9E;
   --gold:       #C99845;
+  /* Tile base for cozy tinted device tiles — darker than page bg in light
+     mode so a tint mix reads as warm/grounded, not washed-out pastel. */
+  --tile-base:  #E5DFD4;
   --shadow-sm:  0 1px 0 rgba(0,0,0,0.04);
   --shadow-md:  0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -12px rgba(0,0,0,0.10);
   --shadow-lg:  0 1px 0 rgba(0,0,0,0.04), 0 24px 48px -24px rgba(0,0,0,0.16);
@@ -59,6 +143,9 @@
   --err:        #E27A55;
   --info:       #7AAEE0;
   --gold:       #D7AE6A;
+  /* In dark mode tile sits LIGHTER than page bg — a tint mix on this base
+     reads as a warm glow, not a flat shadow. Inverse of the light-mode goal. */
+  --tile-base:  #2C2620;
   --shadow-sm:  0 1px 0 rgba(0,0,0,0.4);
   --shadow-md:  0 4px 16px -4px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(255,230,180,0.04);
   --shadow-lg:  0 24px 60px -24px rgba(0,0,0,0.9), 0 0 0 0.5px rgba(255,230,180,0.04);
@@ -69,11 +156,20 @@
 @layer base {
   * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   html, body, #root { height: 100%; margin: 0; padding: 0; }
+  /* iOS rubber-band scroll inside the root would expose the page bg behind
+     fixed elements during the bounce. Locking the root prevents that without
+     blocking inner scroll containers. */
+  html, body { overflow-x: hidden; overscroll-behavior-y: none; }
+  /* Tap response: kill the 300ms delay and the gray flash on iOS/Android. */
+  html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   body {
     background: var(--bg);
     color: var(--ink);
     font-family: 'Heebo', system-ui, -apple-system, sans-serif;
     transition: background-color 0.2s, color 0.2s;
+    /* iOS 16 sometimes ignores body min-height: 100% from html; this guarantees
+       the page paints to the bottom of the dynamic viewport. */
+    min-height: var(--vh);
   }
   button:focus-visible,
   input:focus-visible,
@@ -209,12 +305,34 @@
   .z-nav-item:hover { background: var(--surface); color: var(--ink); }
   .z-nav-item.active { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 600; }
 
-  /* Page container */
-  .z-page { max-width: 800px; margin: 0 auto; padding: 24px 20px 16px; }
+  /* Page container.
+     Horizontal env() padding so content clears notches in landscape on iPhone /
+     Galaxy with curved edges; vertical stays tight to the safe top. */
+  .z-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding-top: 24px;
+    padding-bottom: 16px;
+    padding-left: max(20px, var(--safe-left));
+    padding-right: max(20px, var(--safe-right));
+  }
 
-  /* Bottom safe area */
-  .pb-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
+  /* Full dynamic viewport height. Use instead of h-screen / min-h-screen on
+     any shell-level container. */
+  .z-app-h     { height: var(--vh); }
+  .z-app-min-h { min-height: var(--vh); }
+
+  /* Bottom-nav clearance for scrollable main areas on mobile.
+     The clamp() value already accounts for safe-area-bottom + gesture-bar floor. */
+  .pb-nav { padding-bottom: var(--nav-clearance); }
   @media (min-width: 768px) { .pb-nav { padding-bottom: 0; } }
+
+  /* Horizontal safe-area utility — apply to anything that spans full width
+     and contains tappable / visible content (toasts, sheets, fixed bars). */
+  .pl-safe { padding-left:  var(--safe-left); }
+  .pr-safe { padding-right: var(--safe-right); }
+  .pt-safe { padding-top:   var(--safe-top); }
+  .pb-safe { padding-bottom: var(--safe-bottom); }
 
   /* Scrollbar */
   .scrollbar-thin { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.12) transparent; }
@@ -223,13 +341,79 @@
   .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 99px; }
   [data-palette="dark"] .scrollbar-thin { scrollbar-color: rgba(255,255,255,0.10) transparent; }
   [data-palette="dark"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
-  /* Dashboard grids */
+  /* Dashboard 2-col layout — main content + right rail (Alerts / Suggested /
+     Activity). Single column on phone+tablet (<1024px), split on laptop+.
+     The 320px rail is wide enough for alert cards and activity rows without
+     stealing too much from the main column on a 1280–1440px laptop.
+     `minmax(0, 1fr)` on the main column prevents long words / unbroken
+     content (e.g. an inline error path) from pushing the rail off-screen. */
   .z-dashboard-grid {
-    display: grid; grid-template-columns: 1.4fr 2fr 1fr; gap: 18px; align-items: start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
   }
-  @media (max-width: 1000px) { .z-dashboard-grid { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 640px)  { .z-dashboard-grid { grid-template-columns: 1fr; } }
+  @media (min-width: 1024px) {
+    .z-dashboard-grid {
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+    }
+  }
+  /* Right rail can stick while main scrolls — feels more "desktop app",
+     less "long mobile page". Top offset = page padding so the rail aligns
+     to the greeting block on first paint. */
+  .z-dashboard-rail {
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  @media (min-width: 1024px) {
+    .z-dashboard-rail {
+      position: sticky;
+      /* margin-top (not padding-top) so the rail's initial top edge aligns
+         with the ROOM PHOTO tops in the main column. Padding would have left
+         empty space ABOVE the Alerts card even after the rail goes sticky,
+         wasting vertical real estate on long pages. Greeting block + main-
+         column gap + ROOMS eyebrow ≈ 110px. */
+      margin-top: 110px;
+      top: calc(var(--safe-top) + 24px);
+      max-height: calc(var(--vh) - var(--safe-top) - 48px);
+      overflow-y: auto;
+    }
+  }
+
+/* Horizontal carousel bleed: extend the carousel ±20px beyond the page
+     padding so tiles can scroll to the screen edge on mobile (the iOS-app
+     look). Disabled at lg+ because the carousel sits inside the dashboard
+     grid's main column and would otherwise paint over the right rail. */
+  .z-carousel-bleed {
+    margin-left:  -20px;
+    margin-right: -20px;
+  }
+  @media (min-width: 1024px) {
+    .z-carousel-bleed { margin-left: 0; margin-right: 0; }
+  }
+
+  /* Visibility utilities tied to the same breakpoints as the dashboard split.
+     `hide-lg`: visible <1024px, hidden ≥1024px — for things like the alert
+                chips inline with the Dashboard greeting that get a fuller
+                home in the right rail on desktop.
+     `only-lg`: inverse — hidden <1024px, visible ≥1024px.
+
+     Both rules are wrapped in a media query rather than setting a default
+     display value, so they don't clobber the element's existing `display`
+     (e.g. an `<aside class="z-dashboard-rail only-lg">` needs to keep its
+     `display: flex` on desktop — if `.only-lg` set `display: initial` at lg+,
+     the aside would render as block and the rail items would stop being a
+     vertical flex column). */
+  @media (max-width: 1023px) {
+    .only-lg { display: none !important; }
+  }
+  @media (min-width: 1024px) {
+    .hide-lg { display: none !important; }
+  }
+
   .z-bottom-split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
 
   /* Section heading */

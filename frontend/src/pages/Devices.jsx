@@ -5,6 +5,8 @@ import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
 import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
+import { DeviceRemote as UnifiedDeviceRemote } from '../components/device/DeviceRemote'
+import { getKind, kindMeta } from '../lib/devices'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -1002,17 +1004,48 @@ const DeviceCard = forwardRef(function DeviceCard({
           </div>
         ) : showStatusBadge ? (
           <p className="text-xs font-medium text-red-400">{STATUS_LABEL[ziggyStatus]}</p>
-        ) : (
-          <p className={cn(
+        ) : (() => {
+          // Read-only kinds (sensors, motion, door, etc.) collapse primary +
+          // secondary onto one line so the tile is just name + reading.
+          // Controllable kinds put the state and "Show controls" affordance
+          // on the same row so the tile is no taller than a sensor tile.
+          const isControllable = kindMeta(getKind(entity)).controllable
+          const showsExpander  = !isHidden && isControllable && entity.state !== 'unavailable'
+          const colorClass = cn(
             'text-xs font-medium',
             isHidden ? 'text-zinc-300 dark:text-zinc-700' :
             entity.state === 'unavailable' ? 'text-zinc-300 dark:text-zinc-600' :
             isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600',
-          )}>
-            {stateLabel}
-          </p>
-        )}
-        {!isIr && stateSecondary && !isHidden && (
+          )
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <p className={cn(colorClass, 'truncate min-w-0 flex-1')}>
+                {stateLabel}
+                {!isControllable && stateSecondary && (
+                  <span className="text-zinc-400 dark:text-zinc-600 font-normal ml-1">· {stateSecondary}</span>
+                )}
+              </p>
+              {showsExpander && (
+                <button
+                  onClick={() => setControlsExpanded(v => !v)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--accent)', fontSize: 10.5, fontWeight: 600,
+                    fontFamily: 'inherit', padding: '2px 4px', flexShrink: 0,
+                  }}
+                >
+                  {controlsExpanded ? 'Hide' : 'Show'} controls
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                    <path d="M6 9l6 6 6-6"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+          )
+        })()}
+        {!isIr && stateSecondary && !isHidden && kindMeta(getKind(entity)).controllable && (
           <p className="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">{stateSecondary}</p>
         )}
         {isIr && irDevice?.last_command_sent_at && (
@@ -1021,48 +1054,26 @@ const DeviceCard = forwardRef(function DeviceCard({
           </p>
         )}
 
-        {/* ── Controls — collapsible ── */}
-        {!isHidden && (
-          <>
-            {/* Collapse/expand toggle bar */}
-            <button
-              onClick={() => setControlsExpanded(v => !v)}
-              style={{
-                width: '100%', marginTop: 10, padding: '6px 0',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--ink-faint)', fontSize: 11, fontFamily: 'inherit', fontWeight: 500,
-                borderTop: '0.5px solid var(--line)', borderRadius: 0,
-              }}
-            >
-              {controlsExpanded ? 'Hide controls' : 'Show controls'}
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
-
+        {/* Expanded control surface — animated height + fade so opening
+            and closing doesn't snap the list around. Hidden / sensor /
+            unavailable devices never reach this branch. */}
+        {!isHidden && kindMeta(getKind(entity)).controllable && entity.state !== 'unavailable' && (
+          <AnimatePresence initial={false}>
             {controlsExpanded && (
-              isIr ? (
-                <IRRemoteButton irDevice={irDevice} onCommand={onIrCommand} onChannel={onIrChannel} />
-              ) : linkedIr ? (
-                <>
-                  {isOff && linkedIr.learned_commands?.includes('power') && linkedIr.commands?.power && (
-                    <button
-                      onClick={() => onIrCommand(linkedIr.id, 'power')}
-                      style={{ width: '100%', marginTop: 8, padding: '8px 0', borderRadius: 10, background: 'color-mix(in srgb, var(--accent) 10%, var(--surface))', color: 'var(--accent)', border: '0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                    >
-                      ⏻ Turn On via IR
-                    </button>
-                  )}
-                  <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-                  <IRRemoteButton irDevice={linkedIr} onCommand={onIrCommand} onChannel={onIrChannel} />
-                </>
-              ) : (
-                <DeviceControls entity={entity} onService={(service, data) => onService(entity, service, data)} />
-              )
+              <motion.div
+                key="controls"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{ marginTop: 10, paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
+                  <UnifiedDeviceRemote entity={entity} />
+                </div>
+              </motion.div>
             )}
-          </>
+          </AnimatePresence>
         )}
 
         {showAssign && !isIr && (
@@ -1293,7 +1304,7 @@ export default function Devices() {
   })
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>

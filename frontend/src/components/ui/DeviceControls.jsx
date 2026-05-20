@@ -6,7 +6,7 @@ import {
   Shuffle, Repeat, ChevronDown, X, Tv2,
 } from 'lucide-react'
 import { Slider } from './Slider'
-import { cn } from '../../lib/utils'
+import { cn, lightRgb } from '../../lib/utils'
 import { DOMAIN_REGISTRY, TOGGLEABLE_DOMAINS as _REGISTRY_TOGGLEABLE } from '../../lib/domainRegistry'
 
 // Re-export TOGGLEABLE_DOMAINS derived from registry (keeps external imports working).
@@ -20,6 +20,82 @@ export function isEntityOn(entity) {
   const domain = entity.domain || entity.entity_id?.split('.')[0]
   if (domain === 'media_player') return MEDIA_ACTIVE.has(entity.state)
   return entity.state === 'on'
+}
+
+// ── BrightnessLamp — vertical relative-drag for brightness, tap for on/off ──
+// Anchors to the current value at pointerDown; vertical movement = delta.
+// Tap with no movement fires onTap (parent uses this to toggle the light).
+function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 'var(--gold)', width = 128, height = 184 }) {
+  const trackRef = useRef(null)
+  const gesture  = useRef({ ptr: null, startY: 0, startValue: 0, moved: false })
+  const [dragging, setDragging] = useState(false)
+  const pct = Math.max(1, Math.min(100, value))
+
+  const onPointerDown = (e) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    gesture.current = { ptr: e.pointerId, startY: e.clientY, startValue: pct, moved: false }
+    setDragging(true)
+  }
+  const onPointerMove = (e) => {
+    const g = gesture.current
+    if (g.ptr !== e.pointerId || !trackRef.current) return
+    const dy = g.startY - e.clientY
+    if (!g.moved && Math.abs(dy) < 3) return
+    g.moved = true
+    const h = trackRef.current.getBoundingClientRect().height
+    const delta = (dy / Math.max(1, h)) * 100
+    onChange(Math.max(1, Math.min(100, Math.round(g.startValue + delta))))
+  }
+  const onPointerUp = (e) => {
+    const g = gesture.current
+    if (g.ptr !== e.pointerId) return
+    e.currentTarget.releasePointerCapture?.(e.pointerId)
+    const moved = g.moved
+    gesture.current.ptr = null
+    setDragging(false)
+    if (moved) { onCommit?.(pct) }
+    else       { onTap?.() }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+      <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.035em', color: 'var(--ink)', lineHeight: 1 }}>
+        {isOn ? `${pct}%` : 'Off'}
+      </div>
+      <div
+        ref={trackRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        style={{
+          position: 'relative', width, height, borderRadius: 14,
+          background: 'var(--surface-3)', overflow: 'hidden',
+          border: '0.5px solid var(--line)',
+          cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none',
+        }}
+      >
+        {isOn && (
+          <>
+            <div style={{
+              position: 'absolute', left: 0, right: 0, bottom: 0,
+              height: `${pct}%`,
+              background: accentColor,
+              transition: dragging ? 'none' : 'height 0.18s',
+            }} />
+            <div style={{
+              position: 'absolute', left: '22%', right: '22%',
+              bottom: `${pct}%`,
+              height: 4, marginBottom: -2,
+              background: 'var(--ink)',
+              borderRadius: 2,
+              transition: dragging ? 'none' : 'bottom 0.18s',
+            }} />
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // ── Dial — large circular progress arc ────────────────────────────────────────
@@ -43,7 +119,7 @@ function Dial({ size = 220, value = 70, max = 100, label, sublabel, color = 'var
 }
 
 // ── Gradient drag slider ───────────────────────────────────────────────────────
-function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradient, height = 44 }) {
+function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradient, height = 34 }) {
   const trackRef = useRef(null)
   const pct = ((value - min) / (max - min)) * 100
 
@@ -165,7 +241,7 @@ const COLOR_PRESETS = [
   { name: 'Candle', hex: '#C99845' },
 ]
 
-function LightControls({ entity, onService }) {
+export function LightControls({ entity, onService }) {
   const isOn = isEntityOn(entity)
   const rawBrightness = entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 80
   const [brightness, setBrightness] = useState(rawBrightness)
@@ -181,23 +257,82 @@ function LightControls({ entity, onService }) {
   const rawK = entity.color_temp ? Math.round(1000000 / entity.color_temp) : 2700
   const [colorTemp, setColorTemp] = useState(rawK)
 
-  useEffect(() => { setBrightness(entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 80) }, [entity.brightness])
-  useEffect(() => { setColorTemp(entity.color_temp ? Math.round(1000000 / entity.color_temp) : 2700) }, [entity.color_temp])
+  // Persistent commit lock: after the user commits a value we hold it locally until HA's
+  // reported value actually matches (within tolerance). If HA's WS reply briefly overwrites
+  // the optimistic store value with a stale reading, the local state stays put — no jump.
+  // Lock releases on:
+  //   - HA's reported value matching our commit (within tolerance) → HA confirmed
+  //   - The user committing a new value → previous intent superseded
+  const lastCommittedBri  = useRef(null)
+  const lastCommittedTemp = useRef(null)
+
+  useEffect(() => {
+    if (entity.brightness == null) return
+    const next = Math.round(entity.brightness / 255 * 100)
+    if (lastCommittedBri.current != null) {
+      if (Math.abs(next - lastCommittedBri.current) <= 2) {
+        // HA confirmed our commit — release the lock and accept HA's value.
+        lastCommittedBri.current = null
+        setBrightness(next)
+      }
+      // else: HA hasn't applied our value yet (or sent a stale event); hold the committed value.
+      return
+    }
+    setBrightness(next)
+  }, [entity.brightness])
+
+  useEffect(() => {
+    if (entity.color_temp == null) return
+    const next = Math.round(1000000 / entity.color_temp)
+    if (lastCommittedTemp.current != null) {
+      if (Math.abs(next - lastCommittedTemp.current) <= 100) {
+        lastCommittedTemp.current = null
+        setColorTemp(next)
+      }
+      return
+    }
+    setColorTemp(next)
+  }, [entity.color_temp])
+
+  // Commit handlers: arm the lock and fire HA service. We DON'T optimistically write to
+  // the store here — doing so would echo through entity.brightness and trick the useEffect
+  // into releasing the lock before HA's real WS confirmation arrives, after which a stale
+  // WS event could snap the display back to the pre-commit value.
+  const commitBri = (v) => {
+    lastCommittedBri.current = v
+    setBrightness(v)
+    onService('turn_on', { brightness_pct: v })
+  }
+  const commitTemp = (v) => {
+    lastCommittedTemp.current = v
+    setColorTemp(v)
+    onService('turn_on', { color_temp_kelvin: v })
+  }
 
   const ctPct = ((colorTemp - minK) / (maxK - minK)) * 100
 
+  // Live perceived color — respects color_mode so the lamp follows the active control:
+  // in color_temp mode, the live colorTemp slider drives the tint; in color mode, rgb_color wins.
+  const livePreviewRgb = lightRgb({
+    rgb_color: currentRgb,
+    color_temp_kelvin: colorTemp,
+    color_mode: entity.color_mode,
+  })
+  const livePreviewColor = livePreviewRgb
+    ? `rgb(${livePreviewRgb[0]}, ${livePreviewRgb[1]}, ${livePreviewRgb[2]})`
+    : 'var(--gold)'
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingTop: 8 }}>
-      {/* Dial */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4, maxWidth: 320, width: '100%', margin: '0 auto' }}>
+      {/* Brightness lamp — tap to toggle, hold + vertical drag for brightness */}
       <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <Dial
-          size={220}
-          value={isOn ? brightness : 0}
-          max={100}
-          label={isOn ? `${brightness}%` : 'Off'}
-          sublabel={isOn ? `WARM · ${colorTemp}K` : undefined}
-          color="var(--gold)"
-          trackColor="var(--line)"
+        <BrightnessLamp
+          value={brightness}
+          onChange={setBrightness}
+          onCommit={commitBri}
+          onTap={() => onService(isOn ? 'turn_off' : 'turn_on', {})}
+          isOn={isOn}
+          accentColor={livePreviewColor}
         />
       </div>
 
@@ -210,7 +345,7 @@ function LightControls({ entity, onService }) {
         <GradientSlider
           value={brightness}
           onChange={setBrightness}
-          onCommit={(v) => onService('turn_on', { brightness_pct: v })}
+          onCommit={commitBri}
           min={1} max={100}
           gradient="linear-gradient(90deg, var(--ink-ghost) 0%, var(--gold) 100%)"
         />
@@ -226,7 +361,7 @@ function LightControls({ entity, onService }) {
           <GradientSlider
             value={colorTemp}
             onChange={setColorTemp}
-            onCommit={(v) => onService('turn_on', { color_temp_kelvin: v })}
+            onCommit={commitTemp}
             min={minK} max={maxK}
             gradient="linear-gradient(90deg, #FFB060 0%, #FFE6C0 30%, #FFFFFF 60%, #C0DDFF 100%)"
           />
@@ -312,7 +447,7 @@ const HVAC_MODE_META = {
   dry:       { icon: '💧', color: 'var(--warn)' },
 }
 
-function ClimateControls({ entity, onService }) {
+export function ClimateControls({ entity, onService }) {
   const hvacMode    = entity.hvac_mode || entity.state
   const hvacModes   = entity.hvac_modes || []
   const targetTemp  = entity.temperature
@@ -432,7 +567,7 @@ function ClimateControls({ entity, onService }) {
 const MP_SHUFFLE = 32768
 const MP_REPEAT  = 262144
 
-function MediaPlayerControls({ entity, onService }) {
+export function MediaPlayerControls({ entity, onService }) {
   const [expanded, setExpanded] = useState(false)
   const isPlaying = entity.state === 'playing'
   const isMuted   = entity.is_volume_muted
@@ -635,7 +770,7 @@ const ctrlBtn = {
   color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit',
 }
 
-function CoverControls({ entity, onService }) {
+export function CoverControls({ entity, onService }) {
   const position = entity.current_position
   const [localPos, setLocalPos] = useState(position ?? 0)
 
@@ -666,7 +801,7 @@ function CoverControls({ entity, onService }) {
 }
 
 // ─── Fan ──────────────────────────────────────────────────────────────────────
-function FanControls({ entity, onService }) {
+export function FanControls({ entity, onService }) {
   const isOn = isEntityOn(entity)
   const rawPct = entity.percentage ?? 0
   const [pct, setPct] = useState(rawPct)
@@ -709,7 +844,7 @@ function FanControls({ entity, onService }) {
 }
 
 // ─── Lock ─────────────────────────────────────────────────────────────────────
-function LockControls({ entity, onService }) {
+export function LockControls({ entity, onService }) {
   const [confirming, setConfirming] = useState(false)
   const isLocked  = entity.state === 'locked'
   const isPending = entity.state === 'locking' || entity.state === 'unlocking'
@@ -753,7 +888,7 @@ function LockControls({ entity, onService }) {
 }
 
 // ─── Vacuum ───────────────────────────────────────────────────────────────────
-function VacuumControls({ entity, onService }) {
+export function VacuumControls({ entity, onService }) {
   const state      = entity.state
   const isCleaning = state === 'cleaning'
   const isPaused   = state === 'paused'
@@ -804,7 +939,7 @@ function VacuumControls({ entity, onService }) {
 //
 // Specialized components (LightControls, ClimateControls…) still handle
 // complex domains. GenericControls handles everything else with zero per-device code.
-function GenericControls({ entity, onService }) {
+export function GenericControls({ entity, onService }) {
   const meta = DOMAIN_REGISTRY[entity.domain]
   const [confirming, setConfirming] = useState(null)
 
@@ -1038,7 +1173,7 @@ function RemoteBtn({ cmd, learned, cmds, onPress, size = 'md' }) {
   )
 }
 
-function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
+export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
   const learned = new Set(irDevice.learned_commands || [])
   const cmds    = irDevice.commands || {}
   const canDo   = (cmd) => cmd in cmds && learned.has(cmd)
@@ -1118,7 +1253,7 @@ function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {has('nav') && (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <div style={{
-              width: 220, height: 220, borderRadius: '50%',
+              width: 184, height: 184, borderRadius: '50%',
               background: 'var(--surface)', border: '0.5px solid var(--line)',
               position: 'relative', boxShadow: 'var(--shadow-md)',
             }}>
@@ -1244,8 +1379,16 @@ function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
 
 // IRRemoteButton — trigger row that opens the full remote drawer.
 // Replaces the old IRRemotePanel. onCommand(id, cmd), onChannel(id, channel).
-export function IRRemoteButton({ irDevice, onCommand, onChannel }) {
-  const [open, setOpen] = useState(false)
+// Optional controlled mode: pass `open` + `onOpenChange` to control the drawer from a
+// parent (lets a row's own button open the drawer directly without the intermediate
+// "Open →" row). Pass `hideTrigger` to suppress that intermediate row entirely.
+export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp, onOpenChange, hideTrigger = false }) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp !== undefined ? openProp : internalOpen
+  const setOpen = (v) => {
+    if (onOpenChange) onOpenChange(v)
+    else setInternalOpen(v)
+  }
   if (!irDevice) return null
 
   const learned = new Set(irDevice.learned_commands || [])
@@ -1253,6 +1396,7 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel }) {
 
   return (
     <>
+      {!hideTrigger && (
       <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400">
           <Tv2 size={11} className="text-violet-400" />
@@ -1265,6 +1409,7 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel }) {
           Open →
         </button>
       </div>
+      )}
 
       <AnimatePresence>
         {open && (
@@ -1284,7 +1429,14 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel }) {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl max-h-[85vh] overflow-hidden"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl overflow-hidden"
+              style={{
+                // dvh + safe-area-bottom: keeps the sheet inside the visible
+                // viewport on Android Chrome (URL bar shown) and lifts the
+                // bottom action area above iOS home-indicator / Galaxy gesture bar.
+                maxHeight: '85dvh',
+                paddingBottom: 'var(--safe-bottom)',
+              }}
             >
               {/* Drag handle */}
               <div className="flex justify-center pt-3 pb-1">
