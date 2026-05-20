@@ -19,6 +19,7 @@ import playsound
 from faster_whisper import WhisperModel
 
 from core.settings_loader import settings
+from core.shared_flags import mic_enabled_event
 from services.debug_control import is_verbose, toggle_verbose
 from core.intent_parser import quick_parse
 from core.action_parser import handle_intent
@@ -967,10 +968,34 @@ def start_voice_interface():
     is_active = not WAKEWORD_ENABLED
     last_active_time = 0
 
-    if WAKEWORD_ENABLED:
+    if WAKEWORD_ENABLED and mic_enabled_event.is_set():
         ww_stream = start_wake_stream()
 
     while True:
+        # ===== Mic master switch =====
+        # When muted, release the OS mic and idle the loop. Periodic wake so the
+        # daemon can still observe shutdown_event. An in-flight sr.listen() call
+        # below won't be interrupted mid-capture — mute takes effect on the next
+        # loop iteration, which is the right grain.
+        if not mic_enabled_event.is_set():
+            if ww_stream is not None:
+                stop_wake_stream(ww_stream)
+                ww_stream = None
+            hits_window.clear()
+            is_active = False
+            mic_enabled_event.wait(timeout=1.0)
+            continue
+
+        # Just got unmuted: reopen the wake stream if needed.
+        if WAKEWORD_ENABLED and ww_stream is None and not is_active:
+            ww_stream = start_wake_stream()
+            if ww_stream is None:
+                time.sleep(1.0)
+                continue
+        # Resume always-listen after unmute.
+        if not WAKEWORD_ENABLED and not is_active:
+            is_active = True
+
         # ===== Wake-word detection =====
         if WAKEWORD_ENABLED and not is_active and ww_stream is not None:
             try:

@@ -83,6 +83,7 @@ class VoicePatch(BaseModel):
     active_timeout_s: Optional[int] = None
     wakeword_model: Optional[str] = None
     speed: Optional[float] = None
+    mic_enabled: Optional[bool] = None  # master switch — flips runtime event
 
 
 @router.patch("/api/settings/voice")
@@ -91,7 +92,38 @@ async def patch_voice_settings(patch: VoicePatch, _: dict = Depends(get_current_
     for field, val in patch.model_dump(exclude_none=True).items():
         voice[field] = val
     save_settings(settings)
+
+    # Mic master switch has a runtime side-effect: flip the event so the voice
+    # loop releases or reopens the OS mic immediately rather than at next restart.
+    if patch.mic_enabled is not None:
+        from core.shared_flags import mic_enabled_event
+        if patch.mic_enabled:
+            mic_enabled_event.set()
+        else:
+            mic_enabled_event.clear()
+
     return {"ok": True, "voice": voice}
+
+
+@router.get("/api/voice/status")
+async def voice_status(_: dict = Depends(get_current_user)):
+    """Runtime listening state — distinct from /api/settings/voice (config)."""
+    from core.shared_flags import mic_enabled_event
+    voice_cfg = settings.get("voice", {})
+    try:
+        from interfaces.voice_interface import WAKE_INIT_FAILED, WAKEWORD_ENABLED
+        wake_init_failed = WAKE_INIT_FAILED
+        wakeword_runtime = WAKEWORD_ENABLED
+    except Exception:
+        wake_init_failed = False
+        wakeword_runtime = bool(voice_cfg.get("wakeword_enabled", False))
+    return {
+        "mic_enabled": mic_enabled_event.is_set(),
+        "wakeword_enabled": wakeword_runtime,
+        "wakeword_model": voice_cfg.get("wakeword_model"),
+        "wake_init_failed": wake_init_failed,
+        "voice_thread_running": any(t.name == "Voice" for t in threading.enumerate()),
+    }
 
 
 # ---------------------------------------------------------------------------

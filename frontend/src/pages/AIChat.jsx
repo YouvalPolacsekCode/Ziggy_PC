@@ -5,6 +5,7 @@ import { sendChat, sendVoice, sendDirectIntent } from '../lib/api'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
+import { useVoiceStore } from '../stores/voiceStore'
 import { formatTime, isHebrew } from '../lib/utils'
 
 // Detect Web Speech API support at module level — evaluated once, not per render.
@@ -172,6 +173,13 @@ export default function AIChat() {
   const { addToast }                              = useUIStore()
   const { messages, addMessage, clearMessages }   = useChatStore()
   const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
+  const {
+    micEnabled,
+    wakewordEnabled,
+    wakeInitFailed,
+    fetchStatus: fetchVoiceStatus,
+    setMicEnabled,
+  } = useVoiceStore()
 
   const [input,     setInput]     = useState('')
   const [orbState,  setOrbState]  = useState('idle')
@@ -187,6 +195,15 @@ export default function AIChat() {
   const recognitionRef = useRef(null)   // Web Speech API instance
 
   useEffect(() => { fetchQuickAsks() }, [])
+  useEffect(() => { fetchVoiceStatus() }, [])
+
+  const onToggleMic = async () => {
+    try {
+      await setMicEnabled(!micEnabled)
+    } catch (e) {
+      addToast(e?.message || 'Failed to toggle wake-word', 'error')
+    }
+  }
 
   // Release any open mic/speech-recognition resources if the user navigates away
   // mid-recording. Without this, MediaRecorder + its MediaStreamTracks linger
@@ -426,7 +443,38 @@ export default function AIChat() {
           <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>Chat</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Voice status indicator */}
+          {/* Wake-word master toggle — controls the backend always-on listener,
+              NOT the hold-to-talk mic on this page. Hidden when wake-word is
+              not configured/working; in that case only push-to-talk is in play. */}
+          {wakewordEnabled && !wakeInitFailed && micEnabled !== null && (
+            <button
+              onClick={onToggleMic}
+              title={micEnabled
+                ? 'Ziggy is listening for the wake word. Click to mute.'
+                : 'Wake-word listening is muted. Click to enable.'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', borderRadius: 999,
+                background: micEnabled
+                  ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))'
+                  : 'var(--surface)',
+                border: micEnabled
+                  ? '0.5px solid color-mix(in srgb, var(--accent) 45%, var(--line))'
+                  : '0.5px solid var(--line)',
+                fontSize: 11,
+                color: micEnabled ? 'var(--accent)' : 'var(--ink-mute)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: micEnabled ? 'var(--accent)' : 'var(--ink-faint)',
+              }} />
+              {micEnabled ? 'Wake-word ON' : 'Muted'}
+            </button>
+          )}
+
+          {/* Hold-to-talk status — only while actively recording/processing */}
           {(listening || busy) && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,

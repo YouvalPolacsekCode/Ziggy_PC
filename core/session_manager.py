@@ -11,6 +11,11 @@ import threading
 from datetime import datetime
 
 # ── Mode constants ─────────────────────────────────────────────────────────────
+# Note: MODE_CHAT here is the *conversational intent whitelist* — a per-session
+# state the user enters by saying "conversation mode" / "let's talk" / "מצב שיחה"
+# and exits by saying "back to commands". It is NOT a microphone on/off switch.
+# The actual mic master switch lives in core.shared_flags.mic_enabled_event,
+# persisted as voice.mic_enabled in settings.yaml.
 
 MODE_COMMAND = "command"
 MODE_CHAT = "chat"
