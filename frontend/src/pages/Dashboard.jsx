@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useTaskStore } from '../stores/taskStore'
@@ -481,7 +481,16 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { entities, ziggyRooms, fetchAll, quickControlIds, pinnedShortcuts, togglePinnedShortcut } = useDeviceStore()
+  // Per-field selectors keep this component out of the "re-render when
+  // anything in deviceStore changes" club. The destructure form previously
+  // triggered a Dashboard render on every entity tick the store received,
+  // even when none of the entities the Dashboard cares about changed.
+  const entities                = useDeviceStore(s => s.entities)
+  const ziggyRooms              = useDeviceStore(s => s.ziggyRooms)
+  const quickControlIds         = useDeviceStore(s => s.quickControlIds)
+  const pinnedShortcuts         = useDeviceStore(s => s.pinnedShortcuts)
+  const fetchAll                = useDeviceStore(s => s.fetchAll)
+  const togglePinnedShortcut    = useDeviceStore(s => s.togglePinnedShortcut)
   const [showQuickPicker,     setShowQuickPicker]     = useState(false)
   const [showShortcutsPicker, setShowShortcutsPicker] = useState(false)
   const { tasks, fetch: fetchTasks }                  = useTaskStore()
@@ -547,15 +556,42 @@ export default function Dashboard() {
     if (messages.length) lastSeenWsTs.current = messages[messages.length - 1].ts
   }, [messages, loadAnomalies])
 
-  const pendingTasks = tasks.filter(t => !t.done && !t.completed)
-  const overdueTasks = pendingTasks.filter(t => t.due_date && new Date(t.due_date) < new Date())
-  const entityMap    = Object.fromEntries(entities.map(e => [e.entity_id, e]))
-  const roomSummaries = ziggyRooms.map(r => buildRoomSummary(r, entityMap))
-  const sortedRooms   = [...roomSummaries].sort((a, b) => ((b.activeCount > 0 || b.hasMotion ? 1 : 0) - (a.activeCount > 0 || a.hasMotion ? 1 : 0)))
-  const activeRooms   = roomSummaries.filter(r => r.activeCount > 0 || r.hasMotion)
+  // Memoize derived state so an unrelated entity tick (or any WS broadcast that
+  // bumps the messages array) doesn't force rebuilding entityMap / room
+  // summaries / the sorted-room list.
+  const pendingTasks = useMemo(
+    () => tasks.filter(t => !t.done && !t.completed),
+    [tasks],
+  )
+  const overdueTasks = useMemo(
+    () => pendingTasks.filter(t => t.due_date && new Date(t.due_date) < new Date()),
+    [pendingTasks],
+  )
+  const entityMap = useMemo(
+    () => Object.fromEntries(entities.map(e => [e.entity_id, e])),
+    [entities],
+  )
+  const roomSummaries = useMemo(
+    () => ziggyRooms.map(r => buildRoomSummary(r, entityMap)),
+    [ziggyRooms, entityMap],
+  )
+  const sortedRooms = useMemo(
+    () => [...roomSummaries].sort((a, b) => ((b.activeCount > 0 || b.hasMotion ? 1 : 0) - (a.activeCount > 0 || a.hasMotion ? 1 : 0))),
+    [roomSummaries],
+  )
+  const activeRooms = useMemo(
+    () => roomSummaries.filter(r => r.activeCount > 0 || r.hasMotion),
+    [roomSummaries],
+  )
 
-  const criticalAnomalies = anomalies.filter(a => a.severity === 'critical')
-  const warningAnomalies  = anomalies.filter(a => a.severity === 'warning')
+  const criticalAnomalies = useMemo(
+    () => anomalies.filter(a => a.severity === 'critical'),
+    [anomalies],
+  )
+  const warningAnomalies = useMemo(
+    () => anomalies.filter(a => a.severity === 'warning'),
+    [anomalies],
+  )
   const haOffline    = health !== null && health.ha_connected === false
   const coordWarning = health?.coordinator_warning && !haOffline
 

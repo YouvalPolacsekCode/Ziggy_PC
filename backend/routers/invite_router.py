@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from datetime import datetime, timezone, timedelta
@@ -36,6 +37,16 @@ def _load() -> list[dict]:
 def _save(invites: list[dict]) -> None:
     _STORE.parent.mkdir(parents=True, exist_ok=True)
     _STORE.write_text(json.dumps(invites, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+# Async wrappers so endpoints don't stall the event loop on disk I/O. Keep
+# the sync helpers above for `_find` / `_is_expired` and any non-async caller.
+async def _load_async() -> list[dict]:
+    return await asyncio.to_thread(_load)
+
+
+async def _save_async(invites: list[dict]) -> None:
+    await asyncio.to_thread(_save, invites)
 
 
 def _find(token: str) -> dict | None:
@@ -118,9 +129,9 @@ async def create_invite(body: CreateInviteBody, current: dict = Depends(require_
         "accepted_at": None,
         "accepted_by": None,
     }
-    invites = _load()
+    invites = await _load_async()
     invites.append(inv)
-    _save(invites)
+    await _save_async(invites)
     log_info(f"[Invite] Created {body.type} invite for {body.email or '(open)'} by {current['username']}")
 
     token_path = f"/invite/{inv['token']}"
@@ -165,7 +176,7 @@ async def create_invite(body: CreateInviteBody, current: dict = Depends(require_
 async def list_invites(_: dict = Depends(require_role("super_admin"))):
     now = datetime.now(timezone.utc)
     result = []
-    for inv in _load():
+    for inv in await _load_async():
         try:
             exp = datetime.fromisoformat(inv["expires_at"])
             status = "accepted" if inv["accepted"] else ("expired" if now > exp else "pending")
@@ -177,11 +188,11 @@ async def list_invites(_: dict = Depends(require_role("super_admin"))):
 
 @router.delete("/api/auth/invites/{token}")
 async def revoke_invite(token: str, _: dict = Depends(require_role("super_admin"))):
-    invites = _load()
+    invites = await _load_async()
     new_list = [i for i in invites if i["token"] != token]
     if len(new_list) == len(invites):
         raise HTTPException(404, "Invite not found.")
-    _save(new_list)
+    await _save_async(new_list)
     log_info(f"[Invite] Revoked invite {token[:12]}…")
     return {"ok": True}
 
@@ -192,7 +203,7 @@ async def revoke_invite(token: str, _: dict = Depends(require_role("super_admin"
 
 @router.get("/api/auth/invite/{token}")
 async def get_invite(token: str):
-    inv = _find(token)
+    inv = await asyncio.to_thread(_find, token)
     if not inv:
         raise HTTPException(404, "Invite not found or already used.")
     if inv["accepted"]:
@@ -211,7 +222,7 @@ async def get_invite(token: str):
 
 @router.post("/api/auth/invite/{token}/accept")
 async def accept_invite(token: str, body: AcceptInviteBody):
-    invites = _load()
+    invites = await _load_async()
     inv = next((i for i in invites if i["token"] == token), None)
     if not inv:
         raise HTTPException(404, "Invite not found.")
@@ -251,7 +262,7 @@ async def accept_invite(token: str, body: AcceptInviteBody):
     inv["accepted"]    = True
     inv["accepted_at"] = datetime.now(timezone.utc).isoformat()
     inv["accepted_by"] = email
-    _save(invites)
+    await _save_async(invites)
 
     log_info(f"[Invite] Accepted by {email} (role={inv['role']}, type={inv['type']})")
     return {"token": tok, "role": inv["role"], "username": email}

@@ -178,11 +178,11 @@ export default function AIChat() {
   // Awareness counters for the header strip — same pattern as the TV-remote
   // page's "HDMI 2 · Apple TV" contextual cue: tells you what Ziggy can act on
   // before you ask. Read from caches; no fetches added on this surface.
-  const { entities, ziggyRooms } = useDeviceStore()
-  const { routines }             = useAutomationStore()
-  const knownDevices = entities.length
-  const knownRooms   = ziggyRooms.length
-  const knownRoutines = (routines || []).length
+  // Length-only selectors keep this page out of the re-render fanout on
+  // every entity/room/routine update.
+  const knownDevices  = useDeviceStore(s => s.entities.length)
+  const knownRooms    = useDeviceStore(s => s.ziggyRooms.length)
+  const knownRoutines = useAutomationStore(s => (s.routines || []).length)
   const {
     micEnabled,
     wakewordEnabled,

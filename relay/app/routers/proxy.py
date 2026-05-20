@@ -21,6 +21,16 @@ router = APIRouter(prefix="/proxy")
 
 PROXY_TIMEOUT = 30
 
+# Module-level client → keeps TCP/TLS connections to each hub tunnel hot.
+# Previously every request opened a fresh AsyncClient, costing one TLS
+# handshake per proxied call. With keepalive at 20 connections per host
+# and a 5 s idle window, repeated calls reuse the same socket.
+_proxy_client = httpx.AsyncClient(
+    timeout=PROXY_TIMEOUT,
+    limits=httpx.Limits(max_keepalive_connections=20, max_connections=100,
+                        keepalive_expiry=5.0),
+)
+
 # Hop-by-hop headers (RFC 7230 §6.1) plus body-framing headers that no longer
 # describe the response after httpx has decoded the body. Forwarding these
 # verbatim causes Fly's edge to disagree with the actual byte length and
@@ -78,13 +88,12 @@ async def proxy(home_id: str, path: str, request: Request):
     body = await request.body()
 
     try:
-        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
-            resp = await client.request(
-                method  = request.method,
-                url     = target,
-                headers = headers,
-                content = body,
-            )
+        resp = await _proxy_client.request(
+            method  = request.method,
+            url     = target,
+            headers = headers,
+            content = body,
+        )
         safe_headers = {
             k: v for k, v in resp.headers.items()
             if k.lower() not in _STRIP_RESPONSE_HEADERS

@@ -134,6 +134,14 @@ def _cfg(key: str):
 _REGISTRY = Path(__file__).resolve().parent.parent / "user_files" / "persons.json"
 _lock = threading.RLock()
 
+# In-memory cache for _load(). Audit found `ingest_ping()` calls _load() 9–10×
+# per pass (find_person → load → state checks → ... → save). The cached list
+# is deep-copied on every read so callers can mutate freely without poisoning
+# the cache. Validity is gated on file mtime + size so writes from the HTTP
+# router (which uses its own _load/_save against the same file) are picked
+# up on the next call, not deferred for any TTL window.
+_load_cache: tuple[float, int, list[dict]] | None = None  # (mtime_ns, size, persons)
+
 
 # Fields added by the engine refactor. _migrate_in_place backfills them when
 # loading legacy records so the engine never has to defend against `KeyError`
@@ -212,8 +220,31 @@ def _ensure_registry() -> None:
         _REGISTRY.write_text("[]", encoding="utf-8")
 
 
+def _file_signature() -> tuple[float, int] | None:
+    try:
+        st = _REGISTRY.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def _load() -> list[dict]:
+    """Return the current persons list. Cached and invalidated by file
+    mtime+size so concurrent writes from the HTTP router (which uses its
+    own _save against the same file) are reflected on the next call.
+    """
+    global _load_cache
+    import copy
+
     _ensure_registry()
+    sig = _file_signature()
+
+    with _lock:
+        if _load_cache is not None and sig is not None:
+            cached_mtime, cached_size, cached_persons = _load_cache
+            if (cached_mtime, cached_size) == sig:
+                return copy.deepcopy(cached_persons)
+
     try:
         persons = json.loads(_REGISTRY.read_text(encoding="utf-8"))
     except Exception:
@@ -221,17 +252,29 @@ def _load() -> list[dict]:
     if _migrate_in_place(persons):
         try:
             _save(persons)
+            sig = _file_signature()
         except Exception as exc:
             log_error(f"[Presence] Migration save failed: {exc}")
+
+    if sig is not None:
+        with _lock:
+            _load_cache = (sig[0], sig[1], copy.deepcopy(persons))
     return persons
 
 
 def _save(persons: list[dict]) -> None:
+    global _load_cache
+    import copy
+
     _REGISTRY.parent.mkdir(parents=True, exist_ok=True)
     _REGISTRY.write_text(
         json.dumps(persons, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    sig = _file_signature()
+    if sig is not None:
+        with _lock:
+            _load_cache = (sig[0], sig[1], copy.deepcopy(persons))
 
 
 # ── geometry ──────────────────────────────────────────────────────────────────

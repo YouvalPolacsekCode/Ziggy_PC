@@ -80,7 +80,7 @@ async def _get_canvas_from_db() -> list[dict]:
                 return [dict(r) for r in rows]
     except Exception as e:
         log_error(f"[MapRouter] SQLite read failed, trying JSON fallback: {e}")
-        return _get_canvas_from_json()
+        return await asyncio.to_thread(_get_canvas_from_json)
 
 
 def _get_canvas_from_json() -> list[dict]:
@@ -104,7 +104,7 @@ async def _save_position_to_db(room_id: str, x: float, y: float, w: float, h: fl
             await db.commit()
     except Exception as e:
         log_error(f"[MapRouter] SQLite write failed, using JSON fallback: {e}")
-        _save_position_to_json(room_id, x, y, w, h)
+        await asyncio.to_thread(_save_position_to_json, room_id, x, y, w, h)
 
 
 def _save_position_to_json(room_id: str, x: float, y: float, w: float, h: float) -> None:

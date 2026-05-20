@@ -1086,7 +1086,26 @@ const DeviceCard = forwardRef(function DeviceCard({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Devices() {
-  const { entities, rooms, deviceStatusMap, loading, fetchAll, hiddenEntities, showHidden, hideEntity, unhideEntity, toggleShowHidden, getUnassigned, getNoRoom, ziggyRooms, unclaimedDevices, updateIrAssumedState, getActiveCount, getTotalControllable } = useDeviceStore()
+  // Per-field selectors: subscribing to one large destructure caused this
+  // page to re-render on every WS-driven store change, even when none of
+  // the fields it actually reads had changed.
+  const entities              = useDeviceStore(s => s.entities)
+  const rooms                 = useDeviceStore(s => s.rooms)
+  const deviceStatusMap       = useDeviceStore(s => s.deviceStatusMap)
+  const loading               = useDeviceStore(s => s.loading)
+  const hiddenEntities        = useDeviceStore(s => s.hiddenEntities)
+  const showHidden            = useDeviceStore(s => s.showHidden)
+  const ziggyRooms            = useDeviceStore(s => s.ziggyRooms)
+  const unclaimedDevices      = useDeviceStore(s => s.unclaimedDevices)
+  const fetchAll              = useDeviceStore(s => s.fetchAll)
+  const hideEntity            = useDeviceStore(s => s.hideEntity)
+  const unhideEntity          = useDeviceStore(s => s.unhideEntity)
+  const toggleShowHidden      = useDeviceStore(s => s.toggleShowHidden)
+  const getUnassigned         = useDeviceStore(s => s.getUnassigned)
+  const getNoRoom             = useDeviceStore(s => s.getNoRoom)
+  const updateIrAssumedState  = useDeviceStore(s => s.updateIrAssumedState)
+  const getActiveCount        = useDeviceStore(s => s.getActiveCount)
+  const getTotalControllable  = useDeviceStore(s => s.getTotalControllable)
   const { addToast } = useUIStore()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')

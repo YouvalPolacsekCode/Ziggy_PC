@@ -17,6 +17,7 @@ translate between server and store representations.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Optional
@@ -136,7 +137,7 @@ class PrefsUpdate(BaseModel):
 
 @router.get("/api/ui/prefs")
 async def get_prefs(user: dict = Depends(get_current_user)):
-    all_prefs = _load_all()
+    all_prefs = await asyncio.to_thread(_load_all)
     # Backfill any missing fields with empty defaults so the client doesn't have
     # to special-case "key absent" vs "key present but empty".
     record = {**_empty_prefs(), **all_prefs.get(_user_key(user), {})}
@@ -145,7 +146,7 @@ async def get_prefs(user: dict = Depends(get_current_user)):
 
 @router.put("/api/ui/prefs")
 async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
-    all_prefs = _load_all()
+    all_prefs = await asyncio.to_thread(_load_all)
     key = _user_key(user)
     current = {**_empty_prefs(), **all_prefs.get(key, {})}
 
@@ -159,5 +160,5 @@ async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
         current["roomCustomPhotos"] = _sanitize_room_custom_photos(body.roomCustomPhotos)
 
     all_prefs[key] = current
-    _save_all(all_prefs)
+    await asyncio.to_thread(_save_all, all_prefs)
     return current

@@ -57,6 +57,18 @@ def _save(persons: list[dict]) -> None:
     )
 
 
+# Async wrappers — endpoints must not block the event loop on disk I/O when
+# persons.json is being read or rewritten under concurrent ping load.
+async def _load_async() -> list[dict]:
+    import asyncio
+    return await asyncio.to_thread(_load)
+
+
+async def _save_async(persons: list[dict]) -> None:
+    import asyncio
+    await asyncio.to_thread(_save, persons)
+
+
 # ── WiFi-LAN hint (additive evidence, never overrides cooldown) ──────────────
 
 def _extract_client_ip(request: Request) -> str:
@@ -167,7 +179,7 @@ async def create_person(body: PersonCreate, _=Depends(require_role("admin"))):
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name is required.")
-    persons = _load()
+    persons = await _load_async()
     if any(p["name"].lower() == name.lower() for p in persons):
         raise HTTPException(status_code=409, detail="A person with that name already exists.")
     token = secrets.token_urlsafe(24)
@@ -192,17 +204,17 @@ async def create_person(body: PersonCreate, _=Depends(require_role("admin"))):
         "history":         [],
     }
     persons.append(person)
-    _save(persons)
+    await _save_async(persons)
     return {"person": person}
 
 
 @router.delete("/api/presence/persons/{person_id}")
 async def delete_person(person_id: str, _=Depends(require_role("admin"))):
-    persons = _load()
+    persons = await _load_async()
     updated = [p for p in persons if p["id"] != person_id]
     if len(updated) == len(persons):
         raise HTTPException(status_code=404, detail="Person not found.")
-    _save(updated)
+    await _save_async(updated)
     return {"ok": True}
 
 
@@ -215,7 +227,7 @@ async def set_lan_host(person_id: str, body: LanHostPatch, _=Depends(require_rol
     minute via the scheduler; reachability is a strong "home" signal that
     works even when the phone has the PWA closed.
     """
-    persons = _load()
+    persons = await _load_async()
     person = next((p for p in persons if p["id"] == person_id), None)
     if person is None:
         raise HTTPException(status_code=404, detail="Person not found.")
@@ -225,7 +237,7 @@ async def set_lan_host(person_id: str, body: LanHostPatch, _=Depends(require_rol
         raise HTTPException(status_code=400, detail="lan_host must be a hostname or IP without spaces.")
 
     person["lan_host"] = host
-    _save(persons)
+    await _save_async(persons)
     log_info(f"[Presence] {person['name']}: lan_host = {host}")
     return {"ok": True, "lan_host": host}
 
@@ -357,7 +369,11 @@ async def ping_me(body: MePingBody, request: Request, user=Depends(get_current_u
     Auto-creates a person record for the user on first call so there's zero
     setup — just grant location once in the PWA.
     """
-    person    = _resolve_or_create_my_person(user)
+    import asyncio
+    # `_resolve_or_create_my_person` does sync file I/O (load/save persons.json
+    # and may write linked_user). Off-load to the threadpool so a hot ping path
+    # doesn't stall the event loop for other handlers.
+    person    = await asyncio.to_thread(_resolve_or_create_my_person, user)
     client_ts = _client_ts_from_body(body.ts)
     wifi_hint = _is_local_ip(_extract_client_ip(request))
 

@@ -10,7 +10,7 @@ from .database import init_db
 from .routers.auth import router as auth_router, ensure_relay_admin
 from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
-from .routers.proxy import router as proxy_router
+from .routers.proxy import router as proxy_router, _proxy_client
 from .routers.provision import router as provision_router
 from .routers.public_presence import router as public_presence_router
 
@@ -19,7 +19,10 @@ from .routers.public_presence import router as public_presence_router
 async def lifespan(app: FastAPI):
     await init_db()
     await ensure_relay_admin()
-    yield
+    try:
+        yield
+    finally:
+        await _proxy_client.aclose()
 
 
 app = FastAPI(title="Ziggy Relay", version="1.0", lifespan=lifespan)
