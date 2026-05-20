@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS map_render (
 async def _init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
+        # WAL persists in the DB header — set it once, every future open
+        # (anomaly_engine, map_renderer, this router) inherits it. WAL lets
+        # readers and the lone writer proceed in parallel, which matters
+        # when an HA-event-driven anomaly write collides with a UI read.
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
         await db.executescript(_SCHEMA)
         await db.commit()
 

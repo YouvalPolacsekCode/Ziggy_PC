@@ -55,7 +55,10 @@ WW_BLOCK_SIZE = 512
 recognizer = sr.Recognizer()
 recognizer.energy_threshold = 200           # starting point; calibration may adjust
 recognizer.dynamic_energy_threshold = False  # OFF — dynamic mode drifts too high after loud sounds
-recognizer.pause_threshold = 1.0            # wait 1s of silence before cutting off
+# 0.4 s lets short commands ("lights", "כבה") return ~600 ms sooner without
+# truncating mid-sentence. Override via voice.pause_threshold_s if your room
+# tail is louder.
+recognizer.pause_threshold = float(VOICE_CFG.get("pause_threshold_s", 0.4))
 
 _whisper_base = None
 _whisper_hebrew = None
@@ -90,18 +93,27 @@ def _get_whisper_hebrew() -> WhisperModel | None:
 
 
 def _prewarm_models() -> None:
-    """Load the base Whisper model at startup.
+    """Load Whisper models at startup so the first utterance doesn't pay
+    the 5–30 s cold-load cost.
 
-    The Hebrew ivrit-ai model (30s+ on CPU) is NOT pre-warmed here — web voice
-    uses the OpenAI API instead, so the local Hebrew model is only needed as a
-    fallback when the API is completely unavailable. Loading it eagerly would
-    block 30s of background CPU for something rarely used.
+    Base (English/lang-detect) always preloads. Hebrew preloads unless
+    ``voice.preload_hebrew_model`` is explicitly false — needed for the
+    standalone mic path which falls back to the local ivrit-ai model when
+    the OpenAI API is unreachable. Disable on cloud/headless deployments
+    that have no mic and never hit the local Hebrew path.
     """
     try:
         _get_whisper()
         print("[Voice] Whisper base model pre-warmed.")
     except Exception as e:
-        print(f"[Voice] Pre-warm failed: {e}")
+        print(f"[Voice] Base pre-warm failed: {e}")
+
+    if VOICE_CFG.get("preload_hebrew_model", True):
+        try:
+            _get_whisper_hebrew()
+            print("[Voice] Whisper Hebrew model pre-warmed.")
+        except Exception as e:
+            print(f"[Voice] Hebrew pre-warm failed: {e}")
 
 # Kick off pre-warming immediately — daemon thread so it doesn't block shutdown.
 __import__("threading").Thread(target=_prewarm_models, daemon=True, name="WhisperPrewarm").start()

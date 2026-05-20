@@ -302,16 +302,19 @@ export default function AIChat() {
   const handleSend = async (text) => {
     const t = (text || input).trim()
     if (!t) return
-    setInput('')
+    const fromInput = !text
     // History = previous messages only. The backend appends req.text as the final user turn.
     const historyForApi = messages.map((m) => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.text,
     }))
     addMessage('user', t)
+    // Defer clearing the input until sendChat() succeeds so a network blip
+    // doesn't make the user re-type a long question.
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendChat(t, historyForApi)
+      if (fromInput) setInput('')
       // Build action chip labels from the response
       const actions = res.actions?.map(a => {
         if (typeof a === 'string') return a

@@ -152,8 +152,10 @@ def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
                            state=state, trigger=trigger, message=message,
                            result="ok")
                 try:
-                    from services.push_notify import push_notify_sync
-                    push_notify_sync(f"🔔 {label}", message, "/anomalies", f"sensor:{entity_id}")
+                    from services.push_notify import push_notify_fire_and_forget
+                    # Don't block the sensor polling loop on push delivery —
+                    # a slow VAPID endpoint must not delay the next sensor read.
+                    push_notify_fire_and_forget(f"🔔 {label}", message, "/anomalies", f"sensor:{entity_id}")
                 except Exception as e:
                     log_error(f"[SensorAlerts] Push failed: {e}")
                     _dbus.emit("sensor", BASIC, "sensor_alert_push_failed",

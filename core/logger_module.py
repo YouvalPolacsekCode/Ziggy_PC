@@ -1,6 +1,8 @@
+import atexit
 import logging
 import os
-from logging.handlers import TimedRotatingFileHandler
+import queue
+from logging.handlers import QueueHandler, QueueListener, TimedRotatingFileHandler
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -16,9 +18,19 @@ _file_handler = TimedRotatingFileHandler(
 _file_handler.setLevel(logging.DEBUG)
 _file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
+# Async logging: the file write happens on a background thread, so callers
+# only pay the cost of a queue.put_nowait (a few microseconds) instead of
+# blocking on disk fsync. A busy request emits ~20 log lines — that used to
+# add ~20 ms of synchronous file I/O to every request.
+_log_queue: "queue.Queue[logging.LogRecord]" = queue.Queue(-1)
+_queue_handler = QueueHandler(_log_queue)
+_queue_listener = QueueListener(_log_queue, _file_handler, respect_handler_level=True)
+_queue_listener.start()
+atexit.register(_queue_listener.stop)
+
 _root = logging.getLogger()
 _root.setLevel(logging.DEBUG)
-_root.addHandler(_file_handler)
+_root.addHandler(_queue_handler)
 
 
 def log_info(message: str) -> None:

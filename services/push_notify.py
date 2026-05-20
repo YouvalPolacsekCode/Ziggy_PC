@@ -195,3 +195,35 @@ async def push_notify(
     await asyncio.get_event_loop().run_in_executor(
         None, push_notify_sync, title, body, url, category, exclude_user_id
     )
+
+
+def push_notify_fire_and_forget(
+    title: str,
+    body: str,
+    url: str = "/",
+    category: str = "general",
+    exclude_user_id: str | None = None,
+) -> None:
+    """Schedule a push without waiting for HTTP delivery.
+
+    Safe from any context: if an asyncio loop is running we hand the work
+    to its default executor; otherwise we spawn a one-shot daemon thread.
+    Use this on hot paths (HA event handler, presence engine, scheduler
+    tick) where a slow web-push subscription must not stall the caller —
+    a single dead endpoint can otherwise block the event loop 10–30 s.
+    """
+    import asyncio, threading
+    try:
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(
+            None, push_notify_sync, title, body, url, category, exclude_user_id
+        )
+        return
+    except RuntimeError:
+        pass
+    threading.Thread(
+        target=push_notify_sync,
+        args=(title, body, url, category, exclude_user_id),
+        daemon=True,
+        name="PushNotify",
+    ).start()

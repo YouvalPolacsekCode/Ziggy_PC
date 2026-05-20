@@ -17,6 +17,12 @@ const MIN_RETRY_MS  = 3_000
 const MAX_RETRY_MS  = 30_000
 const PING_INTERVAL = 20_000   // send a ping every 20s to keep tunnel alive
 
+// Buffer size: every consumer of useWebSocket() re-renders when this array
+// changes. 50 covers the deepest look-back any current consumer does (the
+// Dashboard walks newest-to-oldest until it hits a seen ts) without keeping
+// hundreds of state_changed payloads (~1–2 KB each) live in React state.
+const MESSAGE_BUFFER_SIZE = 50
+
 const WebSocketContext = createContext({ messages: [], connected: false })
 
 // Single shared WS connection. Mount once near the root of the tree (see main.jsx).
@@ -65,7 +71,7 @@ export function WebSocketProvider({ children }) {
       try {
         const data = JSON.parse(evt.data)
         if (data.type === 'pong') return  // ignore server pong responses
-        setMessages(prev => [...prev.slice(-199), { ...data, ts: Date.now() }])
+        setMessages(prev => [...prev.slice(-(MESSAGE_BUFFER_SIZE - 1)), { ...data, ts: Date.now() }])
       } catch { /* ignore non-JSON frames */ }
     }
 

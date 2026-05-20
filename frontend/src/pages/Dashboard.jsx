@@ -520,26 +520,29 @@ export default function Dashboard() {
     }
   }, [isSuperAdmin])
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      getPresencePersons().then(r => setPresencePersons(r.persons ?? [])).catch(() => {})
-    }, 30_000)
-    return () => clearInterval(id)
-  }, [])
+  // Presence updates are pushed by the backend on every confirmed transition
+  // (see services/presence_side_effects.py). The 30 s polling fallback used
+  // to mean the Dashboard could show stale state for up to 30 s and race
+  // with the WS update; the WS refresh is sub-second.
 
-  // Live anomaly refresh — engine broadcasts anomaly_active/cleared on every
-  // fire/clear. Refresh the alert card and the Dashboard banners when one
-  // arrives so the user doesn't have to navigate away and back.
+  // Live refresh from the WS bus:
+  //   - anomaly_active / anomaly_cleared → reload anomalies
+  //   - presence_transition → reload presence persons
+  // Walk newest-to-oldest until we hit a message we've already processed.
   const { messages } = useWebSocket()
   const lastSeenWsTs = useRef(0)
   useEffect(() => {
+    let refreshAnomalies = false
+    let refreshPresence  = false
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]
       if (!m || m.ts <= lastSeenWsTs.current) break
-      if (m.type === 'anomaly_active' || m.type === 'anomaly_cleared') {
-        loadAnomalies()
-        break
-      }
+      if (m.type === 'anomaly_active' || m.type === 'anomaly_cleared') refreshAnomalies = true
+      if (m.type === 'presence_transition') refreshPresence = true
+    }
+    if (refreshAnomalies) loadAnomalies()
+    if (refreshPresence) {
+      getPresencePersons().then(r => setPresencePersons(r.persons ?? [])).catch(() => {})
     }
     if (messages.length) lastSeenWsTs.current = messages[messages.length - 1].ts
   }, [messages, loadAnomalies])

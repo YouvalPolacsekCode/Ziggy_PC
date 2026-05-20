@@ -220,8 +220,10 @@ def check_reminders():
                 late = now_dt > reminder_dt
                 body = f"Due: {t.get('due', 'no due date')}" + (" [Late]" if late else "")
                 try:
-                    from services.push_notify import push_notify_sync
-                    push_notify_sync(f"Reminder: {t['task']}", body, "/tasks", "task_reminder")
+                    from services.push_notify import push_notify_fire_and_forget
+                    # Reminder thread runs a sleep loop; blocking it on push
+                    # delays every other reminder behind it.
+                    push_notify_fire_and_forget(f"Reminder: {t['task']}", body, "/tasks", "task_reminder")
                 except Exception:
                     pass
                 t["reminded"] = True

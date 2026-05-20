@@ -63,11 +63,26 @@ async def _fire_automations(name: str, new_state: str) -> None:
         log_error(f"[Presence] Transition handler error: {exc}")
 
 
+async def _broadcast_transition(person_id: str, name: str, new_state: str) -> None:
+    """Push a `presence_transition` over the WS so the Dashboard refreshes
+    immediately, instead of waiting on the 30 s polling fallback."""
+    try:
+        from backend.ws_manager import manager
+        await manager.broadcast({
+            "type":       "presence_transition",
+            "person_id":  person_id,
+            "person":     name,
+            "new_state":  new_state,
+        })
+    except Exception as exc:
+        log_error(f"[Presence] WS broadcast failed: {exc}")
+
+
 def schedule_side_effects(decision: Decision) -> None:
-    """Fire push + automation tasks for a confirmed transition.
+    """Fire push + automation tasks + WS broadcast for a confirmed transition.
 
     No-op if `decision.fired_transition` is False or the new state is unknown.
-    Both side effects run as independent tasks; neither blocks the other.
+    All three side effects run as independent tasks; none blocks the others.
 
     Must be called from inside an asyncio event loop — uses asyncio.create_task.
     """
@@ -79,6 +94,7 @@ def schedule_side_effects(decision: Decision) -> None:
     try:
         asyncio.create_task(_send_push(decision.person_name, new_state, decision.person_id))
         asyncio.create_task(_fire_automations(decision.person_name, new_state))
+        asyncio.create_task(_broadcast_transition(decision.person_id, decision.person_name, new_state))
     except RuntimeError as exc:
         # Called from outside an asyncio loop — log and continue. The state
         # was already committed in persons.json so the next sweep / ping will

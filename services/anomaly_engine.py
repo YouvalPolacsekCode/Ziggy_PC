@@ -182,16 +182,38 @@ def register_rule(
 def _db_init() -> None:
     try:
         _DB.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(_DB) as conn:
+        with _connect() as conn:
+            # WAL persists in the DB header; setting it here covers any future
+            # opener (map_router via aiosqlite, this module). synchronous=NORMAL
+            # is per-connection — repeated on every open below — and is a safe
+            # default with WAL since fsync happens on checkpoints.
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.executescript(_SCHEMA)
             conn.commit()
     except Exception as e:
         log_error(f"[AnomalyEngine] DB init failed: {e}")
 
 
+def _connect():
+    """Open a SQLite connection with safe pragmas for hot paths.
+
+    synchronous=NORMAL must be set per-connection (it's not stored in the
+    DB header). The default FULL adds fsync to every commit, which is
+    overkill for the anomaly history table and added ~50–80 ms per write
+    on macOS HFS+. NORMAL is the recommended pairing with WAL.
+    """
+    conn = sqlite3.connect(_DB)
+    try:
+        conn.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass
+    return conn
+
+
 def _load_snooze_from_db() -> None:
     try:
-        with sqlite3.connect(_DB) as conn:
+        with _connect() as conn:
             now = time.time()
             rows = conn.execute(
                 "SELECT key, snooze_until FROM anomaly_snooze WHERE snooze_until > ?", (now,)
@@ -205,7 +227,7 @@ def _load_snooze_from_db() -> None:
 
 def _save_snooze_to_db(key: str, until: float) -> None:
     try:
-        with sqlite3.connect(_DB) as conn:
+        with _connect() as conn:
             conn.execute(
                 "INSERT INTO anomaly_snooze(key, snooze_until) VALUES (?,?) "
                 "ON CONFLICT(key) DO UPDATE SET snooze_until=excluded.snooze_until",
@@ -219,7 +241,7 @@ def _save_snooze_to_db(key: str, until: float) -> None:
 def _log_history_fired(rule_id: str, room_id: str, severity: str,
                        confidence: float, message: str) -> None:
     try:
-        with sqlite3.connect(_DB) as conn:
+        with _connect() as conn:
             conn.execute(
                 "INSERT INTO anomaly_history"
                 "(rule_id, room_id, severity, confidence, message, fired_at) "
@@ -233,7 +255,7 @@ def _log_history_fired(rule_id: str, room_id: str, severity: str,
 
 def _log_history_cleared(rule_id: str, room_id: str) -> None:
     try:
-        with sqlite3.connect(_DB) as conn:
+        with _connect() as conn:
             conn.execute(
                 "UPDATE anomaly_history SET cleared_at=? "
                 "WHERE rule_id=? AND room_id=? AND cleared_at IS NULL",
@@ -336,10 +358,14 @@ def _push_anomaly(active: dict, room_id: str, rule: AnomalyRule,
         return
 
     try:
-        from services.push_notify import push_notify_sync
+        from services.push_notify import push_notify_fire_and_forget
         category = "anomaly_critical" if rule.severity == "critical" else "anomaly_warning"
         icon = "🚨" if rule.severity == "critical" else "⚠️"
-        push_notify_sync(f"{icon} Ziggy Alert", result.message, "/anomalies", category)
+        # Fire-and-forget: a slow web-push endpoint must not stall the HA WS
+        # event handler that triggered this rule evaluation. webpush() has a
+        # 10 s per-subscription timeout; 3 dead endpoints = 30 s of blocked
+        # event-loop time, which freezes every downstream HA state update.
+        push_notify_fire_and_forget(f"{icon} Ziggy Alert", result.message, "/anomalies", category)
     except Exception as e:
         log_error(f"[AnomalyEngine] Push notification failed: {e}")
 

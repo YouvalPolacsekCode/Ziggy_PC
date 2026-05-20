@@ -522,10 +522,11 @@ def _notify(report: dict) -> None:
         body_parts.append(f"{risk_count} potential compatibility issue{'s' if risk_count > 1 else ''} detected.")
     body = " · ".join(body_parts)
 
-    # Web push
+    # Web push — fire-and-forget so a slow VAPID endpoint can't stall the
+    # checker thread mid-cycle.
     try:
-        from services.push_notify import push_notify_sync
-        push_notify_sync(title, body, "/ha-update", "ha_update")
+        from services.push_notify import push_notify_fire_and_forget
+        push_notify_fire_and_forget(title, body, "/ha-update", "ha_update")
     except Exception as exc:
         log_error(f"[UpdateChecker] push notify failed: {exc}")
 
