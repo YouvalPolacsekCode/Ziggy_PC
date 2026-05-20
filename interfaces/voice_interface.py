@@ -165,8 +165,13 @@ _PIPER_VOICE    = _REPO_ROOT / "piper_voices" / "en_US-libritts_r-medium.onnx"
 _PIPER_VOICE_HE = _REPO_ROOT / "piper_voices" / "he_IL-sivri-medium.onnx"
 
 # ── Azure Cognitive Services Neural TTS ────────────────────────────────────
+# Key priority: env var first, settings.yaml as fallback. settings.yaml is
+# git-tracked; storing the live key there leaks it via every push. Prefer .env.
 _AZURE_CFG      = VOICE_CFG.get("azure") or {}
-_AZURE_KEY      = _AZURE_CFG.get("speech_key") or os.environ.get("AZURE_SPEECH_KEY", "")
+_AZURE_KEY      = os.environ.get("AZURE_SPEECH_KEY") or _AZURE_CFG.get("speech_key", "")
+if _AZURE_KEY and not os.environ.get("AZURE_SPEECH_KEY"):
+    print("[Voice] WARNING: Azure speech key loaded from config/settings.yaml. "
+          "Move it to AZURE_SPEECH_KEY in .env to keep it out of git history.")
 _AZURE_REGION   = _AZURE_CFG.get("speech_region", "eastus")
 _AZURE_VOICE_HE = _AZURE_CFG.get("voice_he", "he-IL-HilaNeural")
 _AZURE_VOICE_EN = _AZURE_CFG.get("voice_en", "en-US-JennyNeural")
@@ -907,11 +912,24 @@ if WAKEWORD_ENABLED:
             print(f"[Voice] Porcupine init failed: {e}")
 
     if wake_engine is None:
-        print("[Voice] Wakeword requested but no engine could be initialized; falling back to always-listen.")
-        WAKEWORD_ENABLED = False
+        # Refuse to silently fall back to always-listen — that's a privacy regression
+        # the user didn't opt into. They asked for wake-word; if it can't load, the
+        # safe action is to disable voice entirely until they fix it or explicitly
+        # opt out by setting voice.wakeword_enabled=false in settings.yaml.
+        print("[Voice] ERROR: Wake-word requested in settings but no engine could be initialized.")
+        print("[Voice] Refusing to silently fall back to always-listen mode (privacy regression).")
+        print("[Voice] To enable always-listen, set voice.wakeword_enabled=false in config/settings.yaml.")
+        WAKE_INIT_FAILED = True
+    else:
+        WAKE_INIT_FAILED = False
+else:
+    WAKE_INIT_FAILED = False
 
 
 def start_voice_interface():
+    if WAKEWORD_ENABLED and WAKE_INIT_FAILED:
+        print("[Voice] Voice interface DISABLED — wake-word engine failed to initialize. Fix or opt out via settings.yaml.")
+        return
     print("[Voice] Wake-word mode enabled..." if WAKEWORD_ENABLED else "[Voice] Always-listen mode enabled...")
 
     # Calibrate once so we don't eat the first 400ms of every utterance

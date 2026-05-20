@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import uuid
+from collections import deque
+from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from backend.ws_manager import manager
@@ -13,9 +16,49 @@ from core.action_parser import handle_intent
 from core.intent_parser import quick_parse
 from core.logger_module import log_error, log_info
 from core.result_utils import render_result
-from core.debug_bus import bus, BASIC, VERBOSE
+from core.debug_bus import bus, BASIC, VERBOSE, TRACE
 
 router = APIRouter()
+
+# /api/voice rate limit + size guard. In-memory sliding window per client key.
+# Each /api/voice call typically hits OpenAI Whisper, so cap usage to keep both
+# accidental loops and compromised cookies from running up cost.
+_VOICE_MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # 5 MB
+_VOICE_RATE_WINDOW_S    = 60
+_VOICE_RATE_MAX         = 30                # 30 /min/client
+_VOICE_ALLOWED_TYPES    = {"audio/wav", "audio/x-wav", "audio/wave",
+                           "audio/webm", "audio/ogg", "audio/mpeg",
+                           "application/octet-stream"}
+
+_voice_hits: dict[str, deque[float]] = {}
+_voice_hits_lock = Lock()
+
+
+def _voice_client_key(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    if isinstance(user, dict):
+        ident = user.get("username") or user.get("user_id")
+        if ident:
+            return f"u:{ident}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
+def _voice_rate_check(request: Request) -> None:
+    key = _voice_client_key(request)
+    now = time.time()
+    cutoff = now - _VOICE_RATE_WINDOW_S
+    with _voice_hits_lock:
+        dq = _voice_hits.setdefault(key, deque())
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= _VOICE_RATE_MAX:
+            retry_after = max(1, int(dq[0] + _VOICE_RATE_WINDOW_S - now))
+            raise HTTPException(
+                status_code=429,
+                detail=f"Voice rate limit ({_VOICE_RATE_MAX}/min) exceeded. Retry in {retry_after}s.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        dq.append(now)
 
 # Intents that should bypass direct execution in chat mode and go through
 # handle_chat_with_gpt (session history + autonomous web search) instead.
@@ -173,27 +216,46 @@ async def process_chat(req: ChatRequest):
 
 
 @router.post("/api/voice")
-async def process_voice(file: UploadFile = File(...)):
+async def process_voice(request: Request, file: UploadFile = File(...)):
+    _voice_rate_check(request)
     request_id = _new_request_id()
-    suffix = ".wav" if "wav" in (file.content_type or "") else ".webm"
+
+    ctype = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if ctype and ctype not in _VOICE_ALLOWED_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported audio content-type: {ctype}")
+
+    suffix = ".wav" if "wav" in ctype else ".webm"
     tmp_path = None
     try:
+        data = await file.read()
+        if len(data) > _VOICE_MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio upload too large ({len(data)} > {_VOICE_MAX_UPLOAD_BYTES} bytes).",
+            )
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await file.read())
+            tmp.write(data)
             tmp_path = tmp.name
 
         bus.emit("voice", BASIC, "voice_received",
                  request_id=request_id,
-                 content_type=file.content_type)
+                 content_type=ctype,
+                 bytes=len(data))
 
         from interfaces.voice_interface import _translate, transcribe_web
         transcription, lang = transcribe_web(tmp_path)
 
+        # Privacy: at VERBOSE, expose only metadata. Raw transcripts go out at TRACE
+        # only — debug.level must be explicitly raised to TRACE to see them.
         bus.emit("voice", VERBOSE, "voice_transcribed",
                  request_id=request_id,
-                 transcription=transcription,
+                 length=len(transcription),
                  language=lang,
                  empty=not transcription.strip())
+        bus.emit("voice", TRACE, "voice_transcribed_full",
+                 request_id=request_id,
+                 transcription=transcription,
+                 language=lang)
 
         if not transcription.strip():
             return {"reply": "", "transcription": "", "ok": False, "error": "No speech detected"}
@@ -220,6 +282,8 @@ async def process_voice(file: UploadFile = File(...)):
         return {"transcription": transcription, "reply": reply, "lang": lang,
                 "ok": result.get("ok", True), "request_id": request_id}
 
+    except HTTPException:
+        raise
     except Exception as e:
         log_error(f"[API] Voice error: {e}")
         bus.emit("voice", BASIC, "voice_error",

@@ -188,6 +188,19 @@ export default function AIChat() {
 
   useEffect(() => { fetchQuickAsks() }, [])
 
+  // Release any open mic/speech-recognition resources if the user navigates away
+  // mid-recording. Without this, MediaRecorder + its MediaStreamTracks linger
+  // until GC, leaving the browser mic indicator on.
+  useEffect(() => {
+    return () => {
+      try { recognitionRef.current?.stop() } catch {}
+      try { mediaRef.current?.stop() } catch {}
+      try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
+      recognitionRef.current = null
+      mediaRef.current = null
+    }
+  }, [])
+
   // Pin the chat container to an exact pixel height at all times.
   // Relying on calc(100dvh - 4rem) alone can leave the composer floating when dvh
   // updates asynchronously (e.g. after keyboard closes on Android) or is slightly

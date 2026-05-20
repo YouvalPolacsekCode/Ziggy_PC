@@ -33,6 +33,20 @@ def handle_sigterm(signum, frame):
 signal.signal(signal.SIGTERM, handle_sigterm)
 
 
+def _has_audio_input_device() -> bool:
+    """Return True if the host exposes at least one audio input device.
+
+    Cloud/Docker deployments have no /dev/snd; spawning the Voice thread there
+    just produces a swallowed exception. Probe explicitly so we can skip cleanly.
+    """
+    try:
+        import sounddevice as sd
+        return any(d.get("max_input_channels", 0) > 0 for d in sd.query_devices())
+    except Exception as e:
+        log_info(f"[Main] Audio device probe failed: {e}")
+        return False
+
+
 def main():
     log_info("🚀 Ziggy startup initiated...")
 
@@ -56,11 +70,14 @@ def main():
     threads = []
 
     if settings.get("features", {}).get("voice", True):
-        threads.append(threading.Thread(
-            target=thread_wrapper("Voice", start_voice_interface),
-            name="Voice",
-            daemon=True,
-        ))
+        if _has_audio_input_device():
+            threads.append(threading.Thread(
+                target=thread_wrapper("Voice", start_voice_interface),
+                name="Voice",
+                daemon=True,
+            ))
+        else:
+            log_info("[Main] No audio input device detected — skipping Voice thread (cloud/headless deployment).")
 
     if settings.get("debug", {}).get("enable_dashboard", False):
         threads.append(threading.Thread(
