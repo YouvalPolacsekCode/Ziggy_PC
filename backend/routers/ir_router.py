@@ -10,11 +10,25 @@ from services.ir_manager import (
     list_ir_devices, get_ir_device, create_ir_device,
     update_ir_device, delete_ir_device,
     list_ir_blasters, send_ir_command, start_learning,
-    mark_command_learned, send_channel,
+    mark_command_learned, send_channel, send_ac_temperature,
     get_device_state_with_confidence,
+    get_command_catalog, add_custom_command, remove_custom_command,
+    set_sequence, delete_sequence, send_sequence,
 )
+from core.debug_bus import bus as _bus, BASIC as _BASIC, VERBOSE as _VERBOSE
 
 router = APIRouter()
+
+
+def _refresh_device_registry() -> None:
+    """Re-reconcile the device registry off-thread so the IR change is visible
+    on the next API call without blocking the response."""
+    try:
+        from services.device_registry import refresh as dr_refresh
+        import threading
+        threading.Thread(target=dr_refresh, daemon=True).start()
+    except Exception:
+        pass
 
 
 class IrDeviceCreate(BaseModel):
@@ -144,6 +158,9 @@ async def create_ir_device_endpoint(body: IrDeviceCreate):
                 restart_listener_for_host(body.blaster_host)
             except Exception:
                 pass
+        # Merge the new IR device into the device registry so it appears in
+        # /api/devices and /api/rooms/devices without waiting for restart.
+        _refresh_device_registry()
         return {"ok": True, "device": device}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -170,13 +187,8 @@ async def patch_ir_device(device_id: str, body: IrDevicePatch):
         except Exception:
             pass
 
-    # Refresh device registry so room changes are reflected immediately
-    try:
-        from services.device_registry import refresh as dr_refresh
-        import threading
-        threading.Thread(target=dr_refresh, daemon=True).start()
-    except Exception:
-        pass
+    # Refresh device registry so room/type/link changes are reflected immediately
+    _refresh_device_registry()
     return device
 
 
@@ -184,6 +196,8 @@ async def patch_ir_device(device_id: str, body: IrDevicePatch):
 async def remove_ir_device(device_id: str):
     if not delete_ir_device(device_id):
         raise HTTPException(status_code=404, detail="IR device not found")
+    # Drop the stale row from the device registry without waiting for restart.
+    _refresh_device_registry()
     return {"ok": True}
 
 
@@ -209,6 +223,99 @@ async def ir_channel(device_id: str, body: IrChannelBody):
 
 
 # ---------------------------------------------------------------------------
+# Command catalog — read-only metadata used by the learn UI to know which
+# commands each device type can have (grouped + labeled).
+# ---------------------------------------------------------------------------
+
+@router.get("/api/ir/catalog")
+async def ir_catalog(device_type: Optional[str] = None):
+    return {"catalog": get_command_catalog(device_type)}
+
+
+# ---------------------------------------------------------------------------
+# Custom commands — user-defined buttons not in the catalog (e.g. "scene_movie")
+# ---------------------------------------------------------------------------
+
+class IrCustomCommandBody(BaseModel):
+    id: str
+    label: Optional[str] = None
+
+
+@router.post("/api/ir/devices/{device_id}/custom-command")
+async def ir_add_custom_command(device_id: str, body: IrCustomCommandBody):
+    device = add_custom_command(device_id, body.id, body.label)
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found or invalid command id")
+    return {"ok": True, "device": device}
+
+
+@router.delete("/api/ir/devices/{device_id}/custom-command/{command_id}")
+async def ir_remove_custom_command(device_id: str, command_id: str):
+    device = remove_custom_command(device_id, command_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found")
+    return {"ok": True, "device": device}
+
+
+# ---------------------------------------------------------------------------
+# Sequences (macros) — ordered command lists with per-step delays
+# ---------------------------------------------------------------------------
+
+class IrSequenceStep(BaseModel):
+    command: str
+    delay_after_ms: int = 400
+
+
+class IrSequenceBody(BaseModel):
+    name: str
+    steps: list[IrSequenceStep]
+
+
+@router.post("/api/ir/devices/{device_id}/sequences")
+async def ir_save_sequence(device_id: str, body: IrSequenceBody):
+    device = set_sequence(device_id, body.name, [s.model_dump() for s in body.steps])
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found or invalid sequence name")
+    return {"ok": True, "device": device}
+
+
+@router.delete("/api/ir/devices/{device_id}/sequences/{name}")
+async def ir_delete_sequence(device_id: str, name: str):
+    device = delete_sequence(device_id, name)
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found")
+    return {"ok": True, "device": device}
+
+
+@router.post("/api/ir/devices/{device_id}/sequences/{name}/run")
+async def ir_run_sequence(device_id: str, name: str):
+    result = await send_sequence(device_id, name)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("message", "Sequence failed"))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# AC temperature — auto-selects discrete vs step based on learned commands
+# ---------------------------------------------------------------------------
+
+class IrAcTempBody(BaseModel):
+    temperature: int
+    mode: Optional[str] = None
+
+
+@router.post("/api/ir/devices/{device_id}/ac/temperature")
+async def ir_ac_temperature(device_id: str, body: IrAcTempBody):
+    device = get_ir_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="IR device not found")
+    result = await send_ac_temperature(device_id, body.temperature, body.mode)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("message", "Temperature send failed"))
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Learn — prefers direct python-broadlink path when blaster_host set
 # ---------------------------------------------------------------------------
 
@@ -229,20 +336,34 @@ async def ir_learn(body: IrLearnBody):
         raise HTTPException(status_code=404, detail="IR device not found")
 
     blaster_host = (device.get("blaster_host") or "").strip()
+    _bus.emit("ir", _BASIC, "ir_learn_started",
+              device_id=body.device_id, command=body.command_name,
+              via="direct" if blaster_host else "ha",
+              blaster_host=blaster_host or None)
 
     if blaster_host:
         # Direct path: python-broadlink captures raw code
         try:
             from services.ir_listener import learn_command_direct
         except ImportError:
+            _bus.emit("ir", _BASIC, "ir_learn_unavailable",
+                      device_id=body.device_id, command=body.command_name,
+                      result="error", error="broadlink package missing")
             raise HTTPException(status_code=503, detail="broadlink package not installed. Run: pip install broadlink")
 
         raw_bytes = await learn_command_direct(blaster_host, timeout=20)
         if raw_bytes is None:
+            _bus.emit("ir", _BASIC, "ir_learn_timeout",
+                      device_id=body.device_id, command=body.command_name,
+                      result="timeout",
+                      suggestion="Aim the remote at the blaster and press the button within 20s.")
             raise HTTPException(status_code=504, detail="No IR signal received within 20 seconds.")
 
         raw_b64 = base64.b64encode(raw_bytes).decode()
         mark_command_learned(body.device_id, body.command_name, raw_code_b64=raw_b64)
+        _bus.emit("ir", _BASIC, "ir_learn_captured",
+                  device_id=body.device_id, command=body.command_name,
+                  via="direct", code_bytes=len(raw_bytes), result="ok")
         return {
             "ok": True,
             "message": (
@@ -272,6 +393,9 @@ async def ir_learn(body: IrLearnBody):
     await asyncio.sleep(20)   # hold open so frontend countdown runs
 
     mark_command_learned(body.device_id, body.command_name)
+    _bus.emit("ir", _BASIC, "ir_learn_captured",
+              device_id=body.device_id, command=body.command_name,
+              via="ha", result="ok")
     return result
 
 
@@ -281,6 +405,11 @@ async def ir_learn(body: IrLearnBody):
 
 @router.post("/api/ir/send")
 async def ir_send(body: IrSendBody):
+    # The IR send path itself emits scope=ir VERBOSE events from ir_manager;
+    # here we mark the API-side entry so it shows up in the request timeline
+    # for the click that triggered it (test-button on the IR wizard, etc).
+    _bus.emit("ir", _VERBOSE, "ir_send_api",
+              device_id=body.device_id, command=body.command, repeats=body.repeats)
     result = send_ir_command(body.device_id, body.command, repeats=body.repeats)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "Send failed"))
@@ -324,6 +453,61 @@ async def ir_list_unassigned_signals():
     """Return all captured IR signals that didn't match any device, newest-first."""
     from services.ir_unassigned import list_signals
     return {"signals": list_signals()}
+
+
+@router.get("/api/ir/unassigned-signals/{signal_id}/analyze")
+async def ir_analyze_unassigned_signal(signal_id: str):
+    """
+    Deep-inspection of a captured IR signal: parsed pulses, leader timing
+    + magnitude class, protocol-decoder attempt, fingerprint. Use this to
+    identify which protocol family an unknown remote is using.
+    """
+    from services.ir_unassigned import get_signal
+    from services.ir_protocol import (
+        parse_broadlink_raw, decode_protocol_bytes, _magnitude_class,
+    )
+    sig = get_signal(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="Signal not found")
+    try:
+        raw = base64.b64decode(sig.get("code_b64") or "")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 payload")
+    pulses = parse_broadlink_raw(raw)
+    leader_us = pulses[:2] if len(pulses) >= 2 else []
+    leader_class = "".join(_magnitude_class(p) for p in leader_us)
+    decode = decode_protocol_bytes(raw)
+    decoded_dict = None
+    if decode:
+        decoded_dict = {
+            "family": decode.family,
+            "payload_hex": decode.payload_hex,
+            "payload_bits": decode.payload_bits,
+            "ac_state": (
+                {
+                    "power": decode.ac_state.power,
+                    "mode":  decode.ac_state.mode,
+                    "temp":  decode.ac_state.temp,
+                    "fan":   decode.ac_state.fan,
+                    "brand": decode.ac_state.brand,
+                }
+                if decode.ac_state else None
+            ),
+        }
+    return {
+        "signal_id": signal_id,
+        "fingerprint": sig.get("fingerprint"),
+        "blaster_host": sig.get("blaster_host"),
+        "count": sig.get("count"),
+        "received_at": sig.get("received_at"),
+        "last_seen_at": sig.get("last_seen_at"),
+        "pulse_count": len(pulses),
+        "leader_us": leader_us,
+        "leader_class": leader_class,
+        "early_pulses_us": pulses[:30],
+        "all_pulses_us": pulses,
+        "protocol_decoded": decoded_dict,
+    }
 
 
 @router.post("/api/ir/unassigned-signals/{signal_id}/assign")

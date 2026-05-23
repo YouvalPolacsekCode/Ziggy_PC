@@ -150,7 +150,9 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
                     if fuzzy_match_pulses(recv_pulses, stored_pulses):
                         return device["id"], logical_cmd, "fuzzy"
 
-        # No match — diagnostics for the user
+        # No match — diagnostics for the user. Includes the leader pulse
+        # timings + magnitude class so the protocol family can be identified
+        # from the log even when no decoder catches it (e.g. unknown AC).
         device_summary = ", ".join(
             f"{d.get('name','?')}({len(d.get('ir_codes') or {})} codes)"
             for d in devices
@@ -159,9 +161,19 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
             f"{recv_decode.family}/{recv_decode.payload_bits}b"
             if recv_decode else "no_protocol"
         )
+        leader_info = ""
+        if recv_pulses and len(recv_pulses) >= 2:
+            try:
+                from services.ir_protocol import _magnitude_class
+                lm, ls = recv_pulses[0], recv_pulses[1]
+                lead_cls = _magnitude_class(lm) + _magnitude_class(ls)
+                body_preview = "/".join(str(p) for p in recv_pulses[2:10])
+                leader_info = f" leader={lm}µs/{ls}µs({lead_cls}) body={body_preview}"
+            except Exception:
+                pass
         log_info(
             f"[IRListener] No match (fp={recv_fp} proto={proto_info} "
-            f"pulses={len(recv_pulses) if recv_pulses else 0}): "
+            f"pulses={len(recv_pulses) if recv_pulses else 0}){leader_info}: "
             f"{total_codes} stored codes across {len(devices)} device(s): "
             f"{device_summary}"
         )
