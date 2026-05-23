@@ -954,14 +954,17 @@ def _try_decode_tadiran_short(pulses: list[int]) -> Optional[ProtocolDecode]:
         return None
 
     payload = _bits_to_bytes(bits, lsb_first=True)
-    # Command-type identification is pending bit-position mapping. For now
-    # return an "unknown" command — the listener will log the bytes and
-    # the user can paste them back for reverse engineering.
+    # Real captures show the "short" packet actually carries full state in
+    # the same byte layout as the long-leader version — Tadiran just sends
+    # one transmission with a leader and a second without, both containing
+    # state bytes. Apply the same state extractor; the listener treats
+    # this packet as another state snapshot.
+    ac_state = _decode_tadiran_ac_state(payload) if len(payload) >= 8 else None
     return ProtocolDecode(
         family="tadiran_short",
         payload_hex=payload.hex(),
         payload_bits=len(bits),
-        ac_command=AcCommand(action="unknown", brand="tadiran"),
+        ac_state=ac_state,
     )
 
 
