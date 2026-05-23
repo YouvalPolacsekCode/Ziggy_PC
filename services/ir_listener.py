@@ -72,15 +72,20 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
          class leader + median-split body classification.
       3. Fuzzy pulse-array match — per-pulse tolerance fallback for cases
          where fingerprints differ by one bit due to a noise pulse.
+      4. Protocol-decode payload equivalence — for NEC/Sony/Samsung/LG/AC
+         packets, decoded payload hex is the canonical "what was pressed";
+         two captures of the same button always produce the same decoded
+         payload even when fingerprints differ at the noise floor.
 
     Returns (device_id, logical_command, match_method) on hit, None otherwise.
-    `match_method` is one of "exact" | "fingerprint" | "fuzzy" for diagnostics.
+    `match_method` is one of "exact" | "fingerprint" | "fuzzy" | "protocol".
     """
     try:
         from services.ir_manager import list_ir_devices
         from services.ir_protocol import (
             fingerprint_bytes, fingerprint_b64,
             parse_broadlink_raw, fuzzy_match_pulses,
+            decode_protocol_bytes, decode_protocol_b64,
         )
 
         received_b64 = base64.b64encode(received_bytes).decode()
@@ -118,14 +123,31 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
                     if fuzzy_match_pulses(recv_pulses, stored_pulses):
                         return device["id"], logical_cmd, "fuzzy"
 
+        # Pass 4: protocol-decode payload equivalence
+        recv_decode = decode_protocol_bytes(received_bytes)
+        if recv_decode:
+            for device in devices:
+                ir_codes = device.get("ir_codes") or {}
+                for logical_cmd, stored_b64 in ir_codes.items():
+                    stored_decode = decode_protocol_b64(stored_b64)
+                    if (stored_decode is not None
+                            and stored_decode.family == recv_decode.family
+                            and stored_decode.payload_hex == recv_decode.payload_hex):
+                        return device["id"], logical_cmd, "protocol"
+
         # No match — diagnostics for the user
         device_summary = ", ".join(
             f"{d.get('name','?')}({len(d.get('ir_codes') or {})} codes)"
             for d in devices
         ) or "none"
+        proto_info = (
+            f"{recv_decode.family}/{recv_decode.payload_bits}b"
+            if recv_decode else "no_protocol"
+        )
         log_info(
-            f"[IRListener] No match (fp={recv_fp}): {total_codes} stored codes "
-            f"across {len(devices)} device(s): {device_summary}"
+            f"[IRListener] No match (fp={recv_fp} proto={proto_info}): "
+            f"{total_codes} stored codes across {len(devices)} device(s): "
+            f"{device_summary}"
         )
         return None
     except Exception as e:
@@ -133,9 +155,93 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
         return None
 
 
+def _find_ac_state_match(received_bytes: bytes, host: str) -> Optional[tuple[str, "object", str]]:
+    """
+    Pass 5: when no learned code matches but the packet decodes to a known
+    AC protocol, apply the decoded state directly to the (unique) AC device
+    on this blaster_host. Returns (device_id, AcState, match_method) or None.
+
+    This is what catches the stateful-AC-remote case: any press from the
+    physical AC remote updates state without us having to learn every
+    combination of mode/temp/fan/power.
+    """
+    try:
+        from services.ir_manager import list_ir_devices
+        from services.ir_protocol import decode_protocol_bytes
+
+        decoded = decode_protocol_bytes(received_bytes)
+        if decoded is None or decoded.ac_state is None:
+            return None
+
+        # Find AC device(s) on this blaster_host
+        ac_devices = [
+            d for d in list_ir_devices(enabled_only=True)
+            if d.get("type") == "ac"
+            and (d.get("blaster_host") or "") == host
+        ]
+        if not ac_devices:
+            log_info(
+                f"[IRListener] Decoded {decoded.family} AC state but no AC "
+                f"device configured on host={host}"
+            )
+            return None
+        if len(ac_devices) > 1:
+            log_info(
+                f"[IRListener] Decoded {decoded.family} AC state but multiple "
+                f"AC devices on host={host} — ambiguous, skipping state apply"
+            )
+            return None
+
+        return ac_devices[0]["id"], decoded.ac_state, f"ac_state_decoded:{decoded.family}"
+    except Exception as e:
+        log_error(f"[IRListener] AC state match failed: {e}")
+        return None
+
+
 async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     """Called when the listener captures a code. Matches and updates state."""
     match = _find_code_match(received_bytes)
+
+    # Pass 5: if no learned code matches but the packet decodes to a known AC
+    # protocol, apply the decoded HVAC state to the AC device on this blaster.
+    # This is what makes stateful AC remotes work — every press updates state,
+    # without needing to learn every combination of mode/temp/fan/power.
+    if not match:
+        ac_match = _find_ac_state_match(received_bytes, host)
+        if ac_match:
+            device_id, ac_state, method = ac_match
+            log_info(
+                f"[IRListener] AC state inferred: device={device_id} "
+                f"power={ac_state.power} mode={ac_state.mode} "
+                f"temp={ac_state.temp} fan={ac_state.fan} ({method})"
+            )
+            try:
+                from services.ir_manager import apply_decoded_ac_state, get_ir_device
+                applied = apply_decoded_ac_state(device_id, ac_state)
+                updated = get_ir_device(device_id) if applied else None
+                new_state = (
+                    updated.get("assumed_state", "unknown") if updated else "unknown"
+                )
+                from backend.ws_manager import manager
+                await manager.broadcast({
+                    "type": "ir_command_detected",
+                    "device_id": device_id,
+                    "command": f"physical_remote_{ac_state.power or 'state'}",
+                    "new_assumed_state": new_state,
+                    "source": "physical_remote",
+                    "match_method": method,
+                    "ac_state": {
+                        "power": ac_state.power,
+                        "mode": ac_state.mode,
+                        "temp": ac_state.temp,
+                        "fan": ac_state.fan,
+                        "brand": ac_state.brand,
+                    },
+                })
+            except Exception as e:
+                log_error(f"[IRListener] AC state apply failed: {e}")
+            return
+
     if not match:
         # Unknown code — persist to the unassigned queue and broadcast so the
         # UI's "Unassigned signals" panel can offer to bind it to a device.

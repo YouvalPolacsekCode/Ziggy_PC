@@ -208,3 +208,252 @@ def test_learn_then_match_round_trip():
 
     # The fingerprint path catches it
     assert fingerprint_b64(learned_b64) == fingerprint_bytes(received_bytes)
+
+
+# ===========================================================================
+# Phase 2 — Protocol decoder tests
+# ===========================================================================
+
+from services.ir_protocol import (
+    decode_protocol,
+    decode_protocol_b64,
+    decode_protocol_bytes,
+    AcState,
+    ProtocolDecode,
+    _encode_nec_pulses,
+    _encode_sony_pulses,
+    _encode_mitsubishi_pulses,
+    _encode_daikin_pulses,
+    _encode_gree_pulses,
+)
+
+
+def _bits_lsb(byte_val: int) -> list[int]:
+    return [(byte_val >> i) & 1 for i in range(8)]
+
+
+def _bytes_to_bit_list_lsb(payload: bytes) -> list[int]:
+    bits: list[int] = []
+    for b in payload:
+        bits.extend(_bits_lsb(b))
+    return bits
+
+
+# ---------------------------------------------------------------------------
+# NEC family
+# ---------------------------------------------------------------------------
+
+def test_decode_nec_32bit():
+    # 32-bit NEC payload: address 0x20, ~address 0xDF, command 0x10, ~command 0xEF
+    payload = bytes([0x20, 0xDF, 0x10, 0xEF])
+    pulses = _encode_nec_pulses(_bytes_to_bit_list_lsb(payload))
+    result = decode_protocol(pulses)
+    assert result is not None
+    assert result.family == "nec"
+    assert result.payload_hex == "20df10ef"
+    assert result.payload_bits == 32
+
+
+def test_decode_nec_with_jitter():
+    payload = bytes([0xAA, 0x55, 0x12, 0xED])
+    bits = _bytes_to_bit_list_lsb(payload)
+    clean = _encode_nec_pulses(bits)
+    noisy = _jitter(clean, pct=0.10, seed=7)
+    assert decode_protocol(noisy).payload_hex == "aa5512ed"
+
+
+def test_decode_nec_payload_invariant_across_captures():
+    """Same button → same payload_hex even though raw bytes differ."""
+    bits = _bytes_to_bit_list_lsb(bytes([0x40, 0xBF, 0x12, 0xED]))
+    a = _encode_nec_pulses(bits)
+    b = _jitter(a, pct=0.08, seed=11)
+    assert decode_protocol(a).payload_hex == decode_protocol(b).payload_hex
+
+
+# ---------------------------------------------------------------------------
+# Sony SIRC
+# ---------------------------------------------------------------------------
+
+def test_decode_sony_12bit():
+    bits = [1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1]  # 12 bits
+    pulses = _encode_sony_pulses(bits)
+    result = decode_protocol(pulses)
+    assert result is not None
+    assert result.family == "sony12"
+    assert result.payload_bits == 12
+
+
+def test_decode_sony_with_jitter():
+    bits = [0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0]
+    clean = _encode_sony_pulses(bits)
+    noisy = _jitter(clean, pct=0.10, seed=13)
+    assert decode_protocol(clean).payload_hex == decode_protocol(noisy).payload_hex
+
+
+# ---------------------------------------------------------------------------
+# Mitsubishi AC — full state decode
+# ---------------------------------------------------------------------------
+
+def _mitsubishi_state_bytes(*, power_on: bool, mode_bits: int, temp_c: int, fan_bits: int) -> bytes:
+    """
+    Build a synthetic Mitsubishi MSZ-FH state packet with bytes 5/6/7 set to
+    encode the given AC state. Bytes 0-4 and 8+ are filler for length.
+    """
+    b5 = (0x20 if power_on else 0x00) | (mode_bits & 0x0F)
+    b6 = (temp_c - 16) & 0x1F
+    b7 = fan_bits & 0x07
+    return bytes([0x23, 0xCB, 0x26, 0x01, 0x00, b5, b6, b7] + [0] * 10)
+
+
+def test_decode_mitsubishi_ac_cool_24():
+    payload = _mitsubishi_state_bytes(power_on=True, mode_bits=0x3, temp_c=24, fan_bits=1)
+    result = decode_protocol(_encode_mitsubishi_pulses(payload))
+    assert result is not None
+    assert result.family == "mitsubishi_ac"
+    assert result.ac_state == AcState(
+        power="on", mode="cool", temp=24, fan="auto", brand="mitsubishi",
+    )
+
+
+def test_decode_mitsubishi_ac_power_off():
+    payload = _mitsubishi_state_bytes(power_on=False, mode_bits=0x3, temp_c=22, fan_bits=2)
+    result = decode_protocol(_encode_mitsubishi_pulses(payload))
+    assert result is not None
+    assert result.ac_state.power == "off"
+    assert result.ac_state.temp == 22
+    assert result.ac_state.fan == "low"
+
+
+def test_decode_mitsubishi_ac_heat_mode():
+    payload = _mitsubishi_state_bytes(power_on=True, mode_bits=0x1, temp_c=27, fan_bits=5)
+    result = decode_protocol(_encode_mitsubishi_pulses(payload))
+    assert result.ac_state.mode == "heat"
+    assert result.ac_state.fan == "high"
+
+
+# ---------------------------------------------------------------------------
+# Daikin AC
+# ---------------------------------------------------------------------------
+
+def _daikin_state_bytes(*, power_on: bool, mode_bits: int, temp_c: int, fan_bits: int) -> bytes:
+    """
+    Build a synthetic Daikin ARC state packet with bytes 5/6/8 carrying state.
+    """
+    b5 = (0x01 if power_on else 0x00) | ((mode_bits & 0x07) << 4)
+    b6 = (temp_c * 2) & 0xFF
+    b8 = (fan_bits & 0x0F) << 4
+    # Daikin frames are long (~280 bits = 35 bytes); make sure we provide enough.
+    return bytes([0x11, 0xDA, 0x27, 0x00, 0xC5, b5, b6, 0x00, b8] + [0] * 26)
+
+
+def test_decode_daikin_ac_cool_25():
+    payload = _daikin_state_bytes(power_on=True, mode_bits=2, temp_c=25, fan_bits=0xA)
+    result = decode_protocol(_encode_daikin_pulses(payload))
+    assert result is not None
+    assert result.family == "daikin_ac"
+    assert result.ac_state.power == "on"
+    assert result.ac_state.mode == "cool"
+    assert result.ac_state.temp == 25
+    assert result.ac_state.fan == "auto"
+
+
+def test_decode_daikin_ac_power_off():
+    payload = _daikin_state_bytes(power_on=False, mode_bits=2, temp_c=20, fan_bits=5)
+    result = decode_protocol(_encode_daikin_pulses(payload))
+    assert result.ac_state.power == "off"
+    assert result.ac_state.temp == 20
+    assert result.ac_state.fan == "high"
+
+
+# ---------------------------------------------------------------------------
+# Detection rejection / fallback
+# ---------------------------------------------------------------------------
+
+def test_decode_unknown_returns_none():
+    # Random pulses that don't match any protocol leader
+    assert decode_protocol([1000, 2000, 500, 500, 500, 500]) is None
+
+
+def test_decode_empty_returns_none():
+    assert decode_protocol([]) is None
+    assert decode_protocol([0]) is None
+
+
+def test_decode_protocol_b64_garbage():
+    assert decode_protocol_b64("not-valid-b64!!!") is None
+    assert decode_protocol_b64("") is None
+
+
+# ---------------------------------------------------------------------------
+# Gree AC (used by Tadiran and many other Israeli/Asian-OEM split units)
+# ---------------------------------------------------------------------------
+
+def _gree_state_bits(*, power_on: bool, mode_bits: int, temp_c: int) -> list[int]:
+    """
+    Build a synthetic Gree single-half payload (32 bits = 4 bytes) encoding
+    the AC state's power/mode/temp. Fan lives in byte 4 of the full frame and
+    isn't covered by single-half decode — see ir_protocol._decode_gree_ac_state.
+    """
+    byte0 = (mode_bits & 0x07) | (0x08 if power_on else 0x00)
+    byte1 = (temp_c - 16) & 0x0F
+    bits: list[int] = []
+    for byte in (byte0, byte1, 0, 0):
+        for i in range(8):
+            bits.append((byte >> i) & 1)
+    return bits
+
+
+def test_decode_gree_ac_cool_24():
+    bits = _gree_state_bits(power_on=True, mode_bits=1, temp_c=24)
+    result = decode_protocol(_encode_gree_pulses(bits))
+    assert result is not None
+    assert result.family == "gree_ac"
+    assert result.ac_state.power == "on"
+    assert result.ac_state.mode == "cool"
+    assert result.ac_state.temp == 24
+
+
+def test_decode_gree_ac_power_off():
+    bits = _gree_state_bits(power_on=False, mode_bits=1, temp_c=20)
+    result = decode_protocol(_encode_gree_pulses(bits))
+    assert result is not None
+    assert result.ac_state.power == "off"
+    assert result.ac_state.temp == 20
+
+
+def test_decode_gree_ac_heat_mode():
+    bits = _gree_state_bits(power_on=True, mode_bits=4, temp_c=27)
+    result = decode_protocol(_encode_gree_pulses(bits))
+    assert result.ac_state.mode == "heat"
+    assert result.ac_state.temp == 27
+
+
+def test_gree_not_misdetected_as_nec():
+    """Gree shares NEC's 9000/4500 leader. A real Gree frame must NOT come
+    back as a 32-bit NEC decode — that would silently produce a wrong match."""
+    bits = _gree_state_bits(power_on=True, mode_bits=1, temp_c=24)
+    result = decode_protocol(_encode_gree_pulses(bits))
+    assert result.family != "nec"
+
+
+def test_short_nec_not_misdetected_as_gree():
+    """Conversely, a real NEC TV remote (~67 pulses) must still decode as NEC."""
+    payload = bytes([0x20, 0xDF, 0x10, 0xEF])
+    pulses = _encode_nec_pulses(_bytes_to_bit_list_lsb(payload))
+    result = decode_protocol(pulses)
+    assert result.family == "nec"
+
+
+def test_payload_match_equivalence_after_round_trip():
+    """
+    A learned code and a re-pressed code of the same physical button should
+    decode to the same payload_hex — even when their fingerprints differ.
+    """
+    bits = _bytes_to_bit_list_lsb(bytes([0xE0, 0xE0, 0x40, 0xBF]))  # Samsung-ish
+    clean = encode_broadlink_raw(_encode_nec_pulses(bits))
+    noisy_pulses = _jitter(_encode_nec_pulses(bits), pct=0.09, seed=21)
+    noisy = encode_broadlink_raw(noisy_pulses)
+    da = decode_protocol_bytes(clean)
+    db = decode_protocol_bytes(noisy)
+    assert da is not None and db is not None
+    assert da.payload_hex == db.payload_hex

@@ -295,6 +295,48 @@ def _update_ac_memory(device_id: str, **kwargs) -> None:
     _save(devices)
 
 
+def apply_decoded_ac_state(device_id: str, ac_state) -> bool:
+    """
+    Apply state extracted from a physical-remote AC IR packet to the device.
+
+    Called by ir_listener when an AC protocol packet (Mitsubishi, Daikin,
+    Gree/Tadiran, ...) is decoded but no exact code matches. Updates the
+    assumed_state, ac_memory, and last-command tracking so Ziggy's
+    next-command logic (power-first if off, ac_memory-based mode/temp
+    preservation) reflects what the physical remote just did.
+
+    `ac_state` is a services.ir_protocol.AcState dataclass. Accepted as
+    plain object here to avoid an import cycle (ir_protocol stays pure).
+    """
+    devices = _load()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        if getattr(ac_state, "power", None) in ("on", "off"):
+            d["assumed_state"] = ac_state.power
+            d["assumed_state_at"] = timestamp
+        mem = d.get("ac_memory") or {}
+        for field in ("mode", "temp", "fan"):
+            val = getattr(ac_state, field, None)
+            if val is not None:
+                mem[field] = val
+        d["ac_memory"] = mem
+        brand = getattr(ac_state, "brand", "") or "unknown"
+        d["last_command_sent"] = f"physical_remote_{brand}"
+        d["last_command_sent_at"] = timestamp
+        _save(devices)
+        log_info(
+            f"[IR] Applied decoded AC state to {d.get('name')}: "
+            f"power={getattr(ac_state, 'power', None)} "
+            f"mode={getattr(ac_state, 'mode', None)} "
+            f"temp={getattr(ac_state, 'temp', None)} "
+            f"fan={getattr(ac_state, 'fan', None)} brand={brand}"
+        )
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Device resolution
 # ---------------------------------------------------------------------------

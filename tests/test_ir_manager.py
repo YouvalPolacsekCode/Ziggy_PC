@@ -55,8 +55,26 @@ def _make_device(
     }
 
 
+@pytest.fixture(autouse=True)
+def _isolate_ir_devices_file(tmp_path, monkeypatch):
+    """Redirect IR_DEVICES_FILE to a per-test tmp path.
+
+    Previously this test file only patched `_load` (not `_save`). Any test
+    that called send_ir_command / send_channel etc. triggered `_after_command`
+    → `_record_last_command` → `update_ir_device` → `_save`, which wrote the
+    in-memory fixture device ("Test TV") to the real user_files/ir_devices.json,
+    overwriting the user's actual saved IR devices on every pytest run.
+
+    Pointing IR_DEVICES_FILE at a tmp path makes any accidental _save during
+    a test land in a throwaway file, so production data can never be touched.
+    """
+    from services import ir_manager
+    monkeypatch.setattr(ir_manager, "IR_DEVICES_FILE", str(tmp_path / "ir_devices.json"))
+
+
 def _patch_load(device: dict):
-    """Patch _load to return [device] and _save to be a no-op."""
+    """Patch _load to return [device] and isolate _save so it can't touch the
+    real file (the autouse fixture above redirects IR_DEVICES_FILE to tmp)."""
     return patch("services.ir_manager._load", return_value=[device])
 
 
@@ -225,3 +243,73 @@ def test_send_ir_command_success():
         result = send_ir_command("ir_test01", "power")
 
     assert result["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# apply_decoded_ac_state — physical AC remote → device state (Phase 2)
+# ---------------------------------------------------------------------------
+
+def test_apply_decoded_ac_state_updates_power_mode_temp():
+    """Decoded AC state from a physical remote should update assumed_state +
+    ac_memory so Ziggy's next command sees the real configuration."""
+    device = _make_device(device_id="ir_ac01", device_type="ac")
+    device["ac_memory"] = {"mode": None, "temp": None, "fan": None}
+
+    saved = []
+
+    class FakeAcState:
+        power = "off"
+        mode = "cool"
+        temp = 23
+        fan = "auto"
+        brand = "gree"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_state
+        result = apply_decoded_ac_state("ir_ac01", FakeAcState())
+
+    assert result is True
+    assert saved, "_save was never called"
+    final = saved[-1][0]
+    assert final["assumed_state"] == "off"
+    assert final["ac_memory"]["mode"] == "cool"
+    assert final["ac_memory"]["temp"] == 23
+    assert final["ac_memory"]["fan"] == "auto"
+    assert "physical_remote_gree" in final["last_command_sent"]
+
+
+def test_apply_decoded_ac_state_partial_fields_preserve_memory():
+    """If the protocol decoder only extracted some fields (Gree single-half
+    decode has no fan), existing ac_memory fields must not be wiped."""
+    device = _make_device(device_id="ir_ac02", device_type="ac")
+    device["ac_memory"] = {"mode": "heat", "temp": 24, "fan": "high"}
+
+    saved = []
+
+    class PartialAcState:
+        power = "on"
+        mode = "cool"
+        temp = 22
+        fan = None
+        brand = "gree"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_state
+        apply_decoded_ac_state("ir_ac02", PartialAcState())
+
+    final = saved[-1][0]
+    assert final["ac_memory"]["mode"] == "cool"   # updated
+    assert final["ac_memory"]["temp"] == 22        # updated
+    assert final["ac_memory"]["fan"] == "high"     # preserved
+
+
+def test_apply_decoded_ac_state_unknown_device_returns_false():
+    with patch("services.ir_manager._load", return_value=[]):
+        from services.ir_manager import apply_decoded_ac_state
+
+        class FakeState:
+            power = "on"; mode = "cool"; temp = 24; fan = "low"; brand = "gree"
+
+        assert apply_decoded_ac_state("ir_missing", FakeState()) is False
