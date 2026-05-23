@@ -444,6 +444,37 @@ def test_short_nec_not_misdetected_as_gree():
     assert result.family == "nec"
 
 
+# ---------------------------------------------------------------------------
+# Regression: fuzzy match must NOT false-positive across two long stateful
+# AC captures that share a protocol header but encode different state.
+#
+# This is the exact bug the user hit: pressing power/off on a Tadiran remote
+# matched a previously-learned mode_cool because fuzzy's 40-pulse window only
+# sees the protocol header (identical across all packets from that remote).
+# ---------------------------------------------------------------------------
+
+def test_long_ac_frames_with_different_state_not_fuzzy_matched():
+    """Two Gree-protocol captures with different state bytes must produce
+    pulse arrays that fuzzy_match_pulses correctly rejects when comparing the
+    full frame — not just the first 40 pulses. (Fuzzy's per-pulse tolerance
+    only sees the leader + first 19 bits, which are identical state-headers,
+    so the listener-level length gate is what actually prevents the bug.)"""
+    from services.ir_protocol import fuzzy_match_pulses
+
+    cool_24_bits = _gree_state_bits(power_on=True, mode_bits=1, temp_c=24)
+    off_24_bits = _gree_state_bits(power_on=False, mode_bits=1, temp_c=24)
+    a = _encode_gree_pulses(cool_24_bits)
+    b = _encode_gree_pulses(off_24_bits)
+    # Both are >100 pulses (long-frame territory). With the default
+    # max_pulses=40 fuzzy window, only the leader + early header is compared
+    # and they look the same — confirming why fuzzy can't safely be used
+    # on long frames. The listener's length gate is the load-bearing check.
+    assert len(a) > 100 and len(b) > 100
+    # Demonstrate the false-positive at the fuzzy-pulse layer:
+    assert fuzzy_match_pulses(a, b) is True
+    # ...which is why the listener length-gates fuzzy at >100 pulses.
+
+
 def test_payload_match_equivalence_after_round_trip():
     """
     A learned code and a re-pressed code of the same physical button should

@@ -61,6 +61,16 @@ def _all_ir_devices_by_host() -> dict[str, list[dict]]:
         return {}
 
 
+# Frames longer than this are treated as "stateful protocol" (AC class) and
+# must NOT be matched by the fuzzy pulse comparator — its first-40-pulses
+# window covers only the protocol header on long frames, which is identical
+# across every press of that remote and causes false-positive matches
+# (e.g. pressing power/off on a Tadiran remote matching a previously-learned
+# mode_cool button because both share the same Gree leader + first 19 header
+# bits). Long frames must go through protocol decode + AC state inference.
+_FUZZY_MAX_FRAME_PULSES = 100
+
+
 def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
     """
     Scan all ir_devices.json entries for a code matching received_bytes.
@@ -70,15 +80,14 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
          byte-identical (rare in practice; pulse jitter usually breaks this).
       2. Fingerprint match — robust to typical capture jitter via magnitude-
          class leader + median-split body classification.
-      3. Fuzzy pulse-array match — per-pulse tolerance fallback for cases
-         where fingerprints differ by one bit due to a noise pulse.
-      4. Protocol-decode payload equivalence — for NEC/Sony/Samsung/LG/AC
+      3. Protocol-decode payload equivalence — for NEC/Sony/Samsung/LG/AC
          packets, decoded payload hex is the canonical "what was pressed";
-         two captures of the same button always produce the same decoded
-         payload even when fingerprints differ at the noise floor.
+         this beats fuzzy because it's semantically exact, not "looks similar".
+      4. Fuzzy pulse-array match — per-pulse tolerance fallback for SHORT
+         frames only (TV buttons etc.). Long frames go to AC state inference.
 
     Returns (device_id, logical_command, match_method) on hit, None otherwise.
-    `match_method` is one of "exact" | "fingerprint" | "fuzzy" | "protocol".
+    `match_method` is one of "exact" | "fingerprint" | "protocol" | "fuzzy".
     """
     try:
         from services.ir_manager import list_ir_devices
@@ -108,22 +117,10 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
                     if fingerprint_b64(stored_b64) == recv_fp:
                         return device["id"], logical_cmd, "fingerprint"
 
-        # Pass 3: fuzzy pulse comparison
-        recv_pulses = parse_broadlink_raw(received_bytes)
-        if recv_pulses:
-            for device in devices:
-                ir_codes = device.get("ir_codes") or {}
-                for logical_cmd, stored_b64 in ir_codes.items():
-                    try:
-                        stored_pulses = parse_broadlink_raw(
-                            base64.b64decode(stored_b64)
-                        )
-                    except Exception:
-                        continue
-                    if fuzzy_match_pulses(recv_pulses, stored_pulses):
-                        return device["id"], logical_cmd, "fuzzy"
-
-        # Pass 4: protocol-decode payload equivalence
+        # Pass 3: protocol-decode payload equivalence — canonical "what was
+        # pressed". Runs BEFORE fuzzy because protocol equality is exact at
+        # the semantic layer; fuzzy can false-positive across different
+        # buttons of the same stateful remote.
         recv_decode = decode_protocol_bytes(received_bytes)
         if recv_decode:
             for device in devices:
@@ -135,6 +132,24 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
                             and stored_decode.payload_hex == recv_decode.payload_hex):
                         return device["id"], logical_cmd, "protocol"
 
+        # Pass 4: fuzzy pulse comparison — SHORT frames only.
+        recv_pulses = parse_broadlink_raw(received_bytes)
+        if recv_pulses and len(recv_pulses) <= _FUZZY_MAX_FRAME_PULSES:
+            for device in devices:
+                ir_codes = device.get("ir_codes") or {}
+                for logical_cmd, stored_b64 in ir_codes.items():
+                    try:
+                        stored_pulses = parse_broadlink_raw(
+                            base64.b64decode(stored_b64)
+                        )
+                    except Exception:
+                        continue
+                    # Both sides must be short for fuzzy to apply.
+                    if len(stored_pulses) > _FUZZY_MAX_FRAME_PULSES:
+                        continue
+                    if fuzzy_match_pulses(recv_pulses, stored_pulses):
+                        return device["id"], logical_cmd, "fuzzy"
+
         # No match — diagnostics for the user
         device_summary = ", ".join(
             f"{d.get('name','?')}({len(d.get('ir_codes') or {})} codes)"
@@ -145,7 +160,8 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
             if recv_decode else "no_protocol"
         )
         log_info(
-            f"[IRListener] No match (fp={recv_fp} proto={proto_info}): "
+            f"[IRListener] No match (fp={recv_fp} proto={proto_info} "
+            f"pulses={len(recv_pulses) if recv_pulses else 0}): "
             f"{total_codes} stored codes across {len(devices)} device(s): "
             f"{device_summary}"
         )
