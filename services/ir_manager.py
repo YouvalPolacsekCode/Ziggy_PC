@@ -154,6 +154,8 @@ def update_ir_device(device_id: str, updates: dict) -> Optional[dict]:
         "assumed_state", "assumed_state_at", "ac_memory", "ha_entity_id",
         "ir_codes", "ir_capabilities", "blaster_host",
         "last_command_sent", "last_command_sent_at",
+        # Free-form user-defined buttons (managed via add/remove_custom_command).
+        "custom_commands",
     }
     # normalise device_type → type (frontend uses device_type, storage uses type)
     if "device_type" in updates:
@@ -176,6 +178,162 @@ def delete_ir_device(device_id: str) -> bool:
     _save(updated)
     log_info(f"[IR] Deleted device: {device_id}")
     return True
+
+
+# ---------------------------------------------------------------------------
+# Command catalog — metadata used by the wizard/edit UI to show which logical
+# commands each device type supports. Pulled from the same _default_commands
+# table that new devices are seeded from, so the two never drift.
+# ---------------------------------------------------------------------------
+
+def _label_for(command_id: str) -> str:
+    """Default human label for a command id (snake_case → Title Case)."""
+    return command_id.replace("_", " ").strip().title()
+
+
+def get_command_catalog(device_type: Optional[str] = None) -> dict:
+    """
+    Catalog of available command ids per device type, with friendly labels.
+
+    Called by the learn UI to know which buttons to surface for a given
+    device. Returns a dict keyed by device type when device_type is None,
+    or a single entry when a specific type is requested.
+    """
+    types = (
+        [device_type.lower()] if device_type else
+        ["tv", "ac", "fan", "soundbar", "projector", "custom"]
+    )
+    catalog: dict = {}
+    for dt in types:
+        cmd_map = _default_commands(dt)
+        catalog[dt] = {
+            "type": dt,
+            "capabilities": _default_capabilities(dt),
+            "commands": [
+                {"id": cmd_id, "label": _label_for(cmd_id)}
+                for cmd_id in cmd_map.keys()
+            ],
+        }
+    if device_type:
+        return catalog[device_type.lower()]
+    return catalog
+
+
+# ---------------------------------------------------------------------------
+# Custom commands — user-defined buttons not in the default catalog.
+# Stored under d["custom_commands"] as a list of {id, label}; also mirrored
+# into d["commands"] so the existing dispatcher can resolve them.
+# ---------------------------------------------------------------------------
+
+def _normalize_command_id(command_id: str) -> str:
+    """Slug-safe normalization for user-entered command ids."""
+    s = (command_id or "").strip().lower()
+    out = []
+    for ch in s:
+        if ch.isalnum():
+            out.append(ch)
+        elif ch in (" ", "-", "_"):
+            out.append("_")
+    return "".join(out).strip("_")
+
+
+def add_custom_command(
+    device_id: str,
+    command_id: str,
+    label: Optional[str] = None,
+) -> Optional[dict]:
+    """Add a custom command to a device. Returns the updated device or None."""
+    norm_id = _normalize_command_id(command_id)
+    if not norm_id:
+        return None
+    devices = _load()
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        custom: list = d.get("custom_commands") or []
+        if not any(c.get("id") == norm_id for c in custom):
+            custom.append({"id": norm_id, "label": label or _label_for(norm_id)})
+            d["custom_commands"] = custom
+        # Mirror into the commands map so send_ir_command can resolve it
+        cmds = d.get("commands") or {}
+        if norm_id not in cmds:
+            cmds[norm_id] = norm_id
+            d["commands"] = cmds
+        _save(devices)
+        log_info(f"[IR] Added custom command '{norm_id}' to {d.get('name')}")
+        return d
+    return None
+
+
+def remove_custom_command(device_id: str, command_id: str) -> Optional[dict]:
+    """
+    Remove a custom command and any state it accumulated (learned flag,
+    stored ir_codes). Returns the updated device or None.
+    """
+    devices = _load()
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        d["custom_commands"] = [
+            c for c in (d.get("custom_commands") or [])
+            if c.get("id") != command_id
+        ]
+        cmds = d.get("commands") or {}
+        cmds.pop(command_id, None)
+        d["commands"] = cmds
+        d["learned_commands"] = [
+            c for c in (d.get("learned_commands") or [])
+            if c != command_id
+        ]
+        ir_codes = d.get("ir_codes") or {}
+        ir_codes.pop(command_id, None)
+        d["ir_codes"] = ir_codes
+        _save(devices)
+        log_info(f"[IR] Removed custom command '{command_id}' from {d.get('name')}")
+        return d
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Sequence (macro) CRUD — execution lives further down in send_sequence().
+# ---------------------------------------------------------------------------
+
+def set_sequence(
+    device_id: str,
+    name: str,
+    steps: list[dict],
+) -> Optional[dict]:
+    """Create or update a sequence (macro) on a device."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    devices = _load()
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        seqs = d.get("sequences") or {}
+        seqs[name] = list(steps or [])
+        d["sequences"] = seqs
+        _save(devices)
+        log_info(f"[IR] Saved sequence '{name}' ({len(steps or [])} steps) on {d.get('name')}")
+        return d
+    return None
+
+
+def delete_sequence(device_id: str, name: str) -> Optional[dict]:
+    """Delete a sequence by name. Returns the updated device or None."""
+    devices = _load()
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        seqs = d.get("sequences") or {}
+        if name in seqs:
+            del seqs[name]
+            d["sequences"] = seqs
+            _save(devices)
+            log_info(f"[IR] Deleted sequence '{name}' from {d.get('name')}")
+        return d
+    return None
 
 
 def mark_command_learned(device_id: str, command_name: str, raw_code_b64: Optional[str] = None) -> bool:
