@@ -742,6 +742,76 @@ def _try_decode_daikin_ac(pulses: list[int]) -> Optional[ProtocolDecode]:
 
 
 # ---------------------------------------------------------------------------
+# "Tadiran" AC (real-capture-driven; the user's specific protocol).
+#
+# This is a 64-bit-per-half frame with PULSE-PAIR INVERSION encoding — both
+# the mark and the space vary, in inverted patterns:
+#   Bit 0: SHORT mark (~620µs) + LONG  space (~1938µs)
+#   Bit 1: LONG  mark (~1870µs) + SHORT space (~690µs)
+# Leader: ~8500µs / ~4630µs (magnitude class LM, similar to NEC but with
+# narrower mark). Two halves of 64 bits transmitted with a ~33ms gap.
+#
+# Named "tadiran" because that's where this was first observed (Israeli
+# market). The encoding scheme isn't brand-exclusive — several AC OEMs
+# use pulse-pair inversion — so any AC that captures with this leader +
+# encoding will route here. State decoding (power/mode/temp/fan from bits)
+# is NOT yet implemented; we'd need known-state captures to map bit
+# positions. For now, this decoder enables exact same-button matching
+# across presses (Pass 3 of the listener), which is the Phase-1-grade win.
+# ---------------------------------------------------------------------------
+
+_TADIRAN_LEADER_MARK = 8500
+_TADIRAN_LEADER_SPACE = 4630
+_TADIRAN_LEADER_TOL = 0.15
+_TADIRAN_PAIR_RATIO_MIN = 1.5  # mark/space (or space/mark) must differ by ≥1.5×
+_TADIRAN_MIN_BITS = 32         # reject very short frames as not-Tadiran
+_TADIRAN_MAX_BITS = 96         # one half's worth + slack
+
+
+def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
+    """
+    Pulse-pair-inversion 64-bit AC frame. Decodes the FIRST half only;
+    the second half is a redundant repeat for transmission reliability.
+    """
+    if len(pulses) < 2 + _TADIRAN_MIN_BITS * 2:
+        return None
+    if not (_near(pulses[0], _TADIRAN_LEADER_MARK, _TADIRAN_LEADER_TOL)
+            and _near(pulses[1], _TADIRAN_LEADER_SPACE, _TADIRAN_LEADER_TOL)):
+        return None
+
+    bits: list[int] = []
+    i = 2
+    while i + 1 < len(pulses):
+        mark, space = pulses[i], pulses[i + 1]
+        if mark <= 0 or space <= 0:
+            break
+        # End-of-half detector: a very large pulse (>~3000µs) on either side
+        # is the trailer or inter-half gap, not a bit.
+        if mark > 3000 or space > 3000:
+            break
+        if mark >= space * _TADIRAN_PAIR_RATIO_MIN:
+            bits.append(1)
+        elif space >= mark * _TADIRAN_PAIR_RATIO_MIN:
+            bits.append(0)
+        else:
+            # Ambiguous pulse-pair — abort decode rather than emit garbage.
+            return None
+        i += 2
+        if len(bits) >= _TADIRAN_MAX_BITS:
+            break
+
+    if len(bits) < _TADIRAN_MIN_BITS:
+        return None
+    payload = _bits_to_bytes(bits, lsb_first=True)
+    return ProtocolDecode(
+        family="tadiran_ac",
+        payload_hex=payload.hex(),
+        payload_bits=len(bits),
+        ac_state=None,  # bit positions for state TBD — needs more captures
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
@@ -749,6 +819,9 @@ _DECODERS = (
     # Gree first: it shares NEC's leader but the frame is much longer, so
     # the stricter length check disambiguates cleanly.
     _try_decode_gree,
+    # Tadiran before NEC: it has a distinctive narrower leader (~8500 vs
+    # NEC's 9000) and varying marks that NEC's constant-mark check rejects.
+    _try_decode_tadiran,
     _try_decode_nec_family,
     _try_decode_sony,
     # AC decoders run last because their leaders are shorter and could

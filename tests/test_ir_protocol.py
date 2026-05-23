@@ -475,6 +475,46 @@ def test_long_ac_frames_with_different_state_not_fuzzy_matched():
     # ...which is why the listener length-gates fuzzy at >100 pulses.
 
 
+# ---------------------------------------------------------------------------
+# Tadiran AC (pulse-pair-inversion 64-bit) — regression test against the
+# real capture from a user's Tadiran power button, recorded 2026-05-23 via
+# /api/ir/unassigned-signals/9b74fe95ab/analyze. Don't replace this with a
+# synthetic vector — it's the live-hardware ground truth.
+# ---------------------------------------------------------------------------
+
+def test_decode_real_tadiran_capture():
+    """Real Broadlink capture of a Tadiran AC button press (first 132 pulses
+    = first half of the double-transmission). Must decode as tadiran_ac with
+    a stable 64-bit payload."""
+    real_pulses = [
+        8473, 4630, 1872, 690, 624, 1938, 591, 1938, 624, 1938, 591, 1938,
+        591, 1938, 624, 1938, 591, 1970, 1839, 690, 624, 1938, 591, 1938,
+        591, 1938, 624, 1938, 591, 1938, 1872, 690, 624, 1938, 591, 1938,
+        624, 1938, 1806, 722, 1872, 657, 624, 1938, 1839, 690, 624, 1938,
+        624, 1938, 591, 1938, 624, 1938, 591, 1938, 591, 1938, 624, 1938,
+        624, 1938, 591, 1938, 624, 1938, 591, 1938, 591, 1938, 624, 1938,
+        591, 1938, 624, 1938, 624, 1938, 591, 1938, 624, 1938, 591, 1938,
+        591, 1938, 624, 1938, 624, 1938, 591, 1938, 624, 1938, 1806, 722,
+        1872, 657, 624, 1938, 591, 1938, 624, 1938, 624, 1938, 591, 1938,
+        624, 1938, 591, 1938, 591, 1970, 591, 1938, 624, 1905, 624, 1938,
+        624, 1938, 591, 1938, 1872, 690, 591, 1938, 591, 1938, 1741,
+    ]
+    result = decode_protocol(real_pulses)
+    assert result is not None
+    assert result.family == "tadiran_ac"
+    assert result.payload_bits == 64
+    # Payload extracted from this exact capture — must be stable across runs.
+    assert result.payload_hex == "01412c0000c00020"
+
+
+def test_tadiran_rejects_too_short_frame():
+    # A short frame with Tadiran-shaped leader but only 16 bits of data
+    # must not be claimed as tadiran_ac (we require >=32 bits).
+    short_pulses = [8473, 4630] + [624, 1938] * 16
+    result = decode_protocol(short_pulses)
+    assert result is None or result.family != "tadiran_ac"
+
+
 def test_payload_match_equivalence_after_round_trip():
     """
     A learned code and a re-pressed code of the same physical button should
