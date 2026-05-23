@@ -828,6 +828,13 @@ def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
         return None
 
     bits: list[int] = []
+    ambiguous_count = 0
+    # Real-world Broadlink captures occasionally narrow the mark/space ratio
+    # on one or two pulse-pairs (jitter near a bit boundary). We tolerate a
+    # small number of borderline pairs by guessing from whichever side is
+    # larger, but bail above this — keeps NEC/Sony frames (where every pair
+    # is ratio ~1.0) from being misread as a partial Tadiran decode.
+    _MAX_AMBIGUOUS = 3
     i = 2
     while i + 1 < len(pulses):
         mark, space = pulses[i], pulses[i + 1]
@@ -842,8 +849,10 @@ def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
         elif space >= mark * _TADIRAN_PAIR_RATIO_MIN:
             bits.append(0)
         else:
-            # Ambiguous pulse-pair — abort decode rather than emit garbage.
-            return None
+            ambiguous_count += 1
+            if ambiguous_count > _MAX_AMBIGUOUS:
+                return None
+            bits.append(1 if mark > space else 0)
         i += 2
         if len(bits) >= _TADIRAN_MAX_BITS:
             break
