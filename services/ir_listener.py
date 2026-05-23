@@ -226,6 +226,51 @@ def _find_ac_state_match(received_bytes: bytes, host: str) -> Optional[tuple[str
         return None
 
 
+def _find_ac_command_match(received_bytes: bytes, host: str) -> Optional[tuple[str, "object", str, str]]:
+    """
+    Pass 5.5: when the packet decodes to a known *command* protocol (e.g.
+    Tadiran short-form temp+/-/fan/swing), apply that command as an
+    increment against the AC device's tracked ac_memory. Distinct from
+    Pass 5 because the short packet doesn't carry full state — only the
+    button that was pressed.
+
+    Returns (device_id, AcCommand, match_method, payload_hex) or None.
+    Includes payload_hex so the listener can log the raw bytes — needed
+    for reverse-engineering command-bit positions when action is "unknown".
+    """
+    try:
+        from services.ir_manager import list_ir_devices
+        from services.ir_protocol import decode_protocol_bytes
+
+        decoded = decode_protocol_bytes(received_bytes)
+        if decoded is None or decoded.ac_command is None:
+            return None
+
+        ac_devices = [
+            d for d in list_ir_devices(enabled_only=True)
+            if d.get("type") == "ac"
+            and (d.get("blaster_host") or "") == host
+        ]
+        if not ac_devices:
+            return None
+        if len(ac_devices) > 1:
+            log_info(
+                f"[IRListener] Decoded {decoded.family} AC command but multiple "
+                f"AC devices on host={host} — ambiguous, skipping"
+            )
+            return None
+
+        return (
+            ac_devices[0]["id"],
+            decoded.ac_command,
+            f"ac_command_decoded:{decoded.family}",
+            decoded.payload_hex,
+        )
+    except Exception as e:
+        log_error(f"[IRListener] AC command match failed: {e}")
+        return None
+
+
 async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     """Called when the listener captures a code. Matches and updates state."""
     match = _find_code_match(received_bytes)
@@ -279,6 +324,47 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                 })
             except Exception as e:
                 log_error(f"[IRListener] AC state apply failed: {e}")
+            return
+
+    # Pass 5.5: AC command packets (Tadiran short-form, temp+/-/fan/swing).
+    # These don't carry state — they encode the BUTTON that was pressed.
+    # Apply as an increment against the AC device's ac_memory.
+    if not match:
+        cmd_match = _find_ac_command_match(received_bytes, host)
+        if cmd_match:
+            device_id, ac_command, method, payload_hex = cmd_match
+            log_info(
+                f"[IRListener] AC command inferred: device={device_id} "
+                f"action={ac_command.action} brand={ac_command.brand} "
+                f"({method}) payload={payload_hex}"
+            )
+            try:
+                from services.ir_manager import apply_decoded_ac_command, get_ir_device
+                applied = apply_decoded_ac_command(device_id, ac_command)
+                updated = get_ir_device(device_id) if applied else None
+                from backend.ws_manager import manager
+                await manager.broadcast({
+                    "type": "ir_command_detected",
+                    "device_id": device_id,
+                    "command": f"physical_remote_{ac_command.action}",
+                    "new_assumed_state": (updated or {}).get("assumed_state", "unknown") if updated else "unknown",
+                    "source": "physical_remote",
+                    "match_method": method,
+                    # Send the full ac_memory snapshot so the frontend chip
+                    # reflects the incremented value immediately. The
+                    # decoder only knows "+1 temp" — the manager applied
+                    # it to whatever ac_memory was, and that result is
+                    # what the UI needs.
+                    "ac_state": {
+                        "power": (updated or {}).get("assumed_state"),
+                        "mode":  ((updated or {}).get("ac_memory") or {}).get("mode"),
+                        "temp":  ((updated or {}).get("ac_memory") or {}).get("temp"),
+                        "fan":   ((updated or {}).get("ac_memory") or {}).get("fan"),
+                        "brand": ac_command.brand,
+                    },
+                })
+            except Exception as e:
+                log_error(f"[IRListener] AC command apply failed: {e}")
             return
 
     if not match:

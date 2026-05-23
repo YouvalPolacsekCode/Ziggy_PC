@@ -510,6 +510,65 @@ def _update_ac_memory(device_id: str, **kwargs) -> None:
     _save(devices)
 
 
+def apply_decoded_ac_command(device_id: str, ac_command) -> bool:
+    """
+    Apply a decoded short-packet AC command (TEMP+, TEMP-, FAN, SWING) as
+    an increment against the device's ac_memory. Distinct from
+    apply_decoded_ac_state — short packets carry only the action, not the
+    resulting state, so we mutate the locally tracked memory.
+
+    Stops short of any change for action='unknown' — those captures get
+    logged at the listener and the user pastes them back so we can map
+    the command-encoding bits. After that mapping lands, action will
+    arrive as a concrete value and this method does its job.
+
+    `ac_command` is a services.ir_protocol.AcCommand. Accepted as plain
+    object to avoid an import cycle.
+    """
+    action = getattr(ac_command, "action", None)
+    if not action or action == "unknown":
+        return False  # nothing actionable to apply
+
+    devices = _load()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fan_cycle = ["auto", "low", "medium", "high"]
+
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        mem = d.get("ac_memory") or {}
+        prev_temp = mem.get("temp")
+        prev_fan  = mem.get("fan")
+
+        if action == "temp_up":
+            if prev_temp is None:
+                prev_temp = 24  # default starting point if we never saw a full-state packet
+            mem["temp"] = min(30, int(prev_temp) + 1)
+        elif action == "temp_down":
+            if prev_temp is None:
+                prev_temp = 24
+            mem["temp"] = max(16, int(prev_temp) - 1)
+        elif action == "fan_cycle":
+            idx = fan_cycle.index(prev_fan) if prev_fan in fan_cycle else -1
+            mem["fan"] = fan_cycle[(idx + 1) % len(fan_cycle)]
+        elif action == "swing":
+            mem["swing"] = "on" if mem.get("swing") != "on" else "off"
+        else:
+            return False  # action recognized in dataclass but not yet handled
+
+        d["ac_memory"] = mem
+        brand = getattr(ac_command, "brand", "") or "unknown"
+        d["last_command_sent"] = f"physical_remote_{action}"
+        d["last_command_sent_at"] = timestamp
+        _save(devices)
+        log_info(
+            f"[IR] Applied AC command {action} to {d.get('name')}: "
+            f"ac_memory={mem} brand={brand}"
+        )
+        return True
+    return False
+
+
 def apply_decoded_ac_state(device_id: str, ac_state) -> bool:
     """
     Apply state extracted from a physical-remote AC IR packet to the device.

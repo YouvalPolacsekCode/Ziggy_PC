@@ -313,3 +313,106 @@ def test_apply_decoded_ac_state_unknown_device_returns_false():
             power = "on"; mode = "cool"; temp = 24; fan = "low"; brand = "gree"
 
         assert apply_decoded_ac_state("ir_missing", FakeState()) is False
+
+
+# ---------------------------------------------------------------------------
+# apply_decoded_ac_command — short-packet command increments
+# ---------------------------------------------------------------------------
+
+def _ac_device_with_memory(mem):
+    d = _make_device(device_id="ir_ac01", device_type="ac")
+    d["ac_memory"] = mem
+    return d
+
+
+def test_apply_command_temp_up_increments_and_caps_at_30():
+    saved = []
+    device = _ac_device_with_memory({"mode": "cool", "temp": 29, "fan": "auto"})
+
+    class C:
+        action = "temp_up"
+        brand = "tadiran"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_command
+        apply_decoded_ac_command("ir_ac01", C())
+        # Bump again — should cap at 30
+        apply_decoded_ac_command("ir_ac01", C())
+
+    assert saved[0][0]["ac_memory"]["temp"] == 30
+    assert saved[1][0]["ac_memory"]["temp"] == 30
+
+
+def test_apply_command_temp_down_decrements_and_floors_at_16():
+    saved = []
+    device = _ac_device_with_memory({"mode": "cool", "temp": 17, "fan": "auto"})
+
+    class C:
+        action = "temp_down"
+        brand = "tadiran"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_command
+        apply_decoded_ac_command("ir_ac01", C())
+        apply_decoded_ac_command("ir_ac01", C())
+
+    assert saved[0][0]["ac_memory"]["temp"] == 16
+    assert saved[1][0]["ac_memory"]["temp"] == 16
+
+
+def test_apply_command_temp_up_with_no_prior_temp_uses_default():
+    """If we've never seen a full-state packet, ac_memory.temp is None.
+    Temp+ from None should default to 24°C (the Israeli AC standard)
+    and increment to 25."""
+    saved = []
+    device = _ac_device_with_memory({"mode": None, "temp": None, "fan": None})
+
+    class C:
+        action = "temp_up"
+        brand = "tadiran"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_command
+        apply_decoded_ac_command("ir_ac01", C())
+
+    assert saved[0][0]["ac_memory"]["temp"] == 25
+
+
+def test_apply_command_fan_cycle_advances_in_order():
+    saved = []
+    device = _ac_device_with_memory({"mode": "cool", "temp": 24, "fan": "auto"})
+
+    class C:
+        action = "fan_cycle"
+        brand = "tadiran"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_command
+        apply_decoded_ac_command("ir_ac01", C())
+
+    # auto → low (next in cycle)
+    assert saved[0][0]["ac_memory"]["fan"] == "low"
+
+
+def test_apply_command_unknown_action_returns_false():
+    """The decoder identifies a short Tadiran packet but doesn't yet know
+    which button it was (command-bit mapping pending). apply must no-op
+    rather than corrupting ac_memory."""
+    saved = []
+    device = _ac_device_with_memory({"mode": "cool", "temp": 24, "fan": "auto"})
+
+    class C:
+        action = "unknown"
+        brand = "tadiran"
+
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_command
+        result = apply_decoded_ac_command("ir_ac01", C())
+
+    assert result is False
+    assert saved == []  # no save = no mutation

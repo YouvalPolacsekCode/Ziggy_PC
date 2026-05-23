@@ -297,12 +297,25 @@ class AcState:
 
 
 @dataclass(frozen=True)
+class AcCommand:
+    """
+    Decoded command from a short-form AC remote packet (e.g. TEMP+, TEMP-,
+    FAN, SWING). Distinct from AcState because the short packet carries
+    only the action, not the resulting state — Ziggy applies the action
+    as an increment against its tracked ac_memory.
+    """
+    action: str                       # 'temp_up' | 'temp_down' | 'fan_cycle' | 'swing' | 'unknown'
+    brand: str = ""
+
+
+@dataclass(frozen=True)
 class ProtocolDecode:
     """Result of decoding a Broadlink capture against a known IR protocol."""
-    family: str                       # 'nec' | 'sony' | 'samsung' | 'lg' | 'mitsubishi_ac' | 'daikin_ac'
+    family: str                       # 'nec' | 'sony' | 'samsung' | 'lg' | 'mitsubishi_ac' | 'daikin_ac' | 'tadiran_ac' | 'tadiran_short'
     payload_hex: str                  # canonical hex of decoded payload — usable as a match key
     payload_bits: int = 0             # bit length of the payload
-    ac_state: Optional[AcState] = None  # populated for stateful AC protocols
+    ac_state: Optional[AcState] = None    # populated for stateful AC full-state packets
+    ac_command: Optional[AcCommand] = None  # populated for short command packets
 
 
 # ---------------------------------------------------------------------------
@@ -870,6 +883,89 @@ def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
 
 
 # ---------------------------------------------------------------------------
+# Tadiran SHORT command packets — emitted by temp+/-, fan, swing buttons.
+#
+# Unlike the full-state LM packets (which carry the AC's complete state),
+# these short packets carry only the *command*. They have no long leader —
+# the capture starts immediately with a data-bit pulse-pair (1850/690 = a
+# Tadiran "bit 1", which my full-state decoder rejects as a malformed
+# leader). Total length is ~262 pulses, encoding ~130 bits of data.
+#
+# Bit-position mapping for command type is NOT yet reverse-engineered
+# (needs paired captures: TEMP+ vs TEMP-, FAN vs SWING). Until then the
+# decoder identifies these as tadiran_short packets and surfaces the
+# payload bytes via logs — so they stop polluting the unassigned-signals
+# queue and we can compare bytes across button types.
+# ---------------------------------------------------------------------------
+
+_TADIRAN_SHORT_MIN_PULSES = 200
+_TADIRAN_SHORT_MAX_PULSES = 320
+_TADIRAN_SHORT_MIN_BITS = 48
+
+
+def _try_decode_tadiran_short(pulses: list[int]) -> Optional[ProtocolDecode]:
+    """
+    Tadiran command-code packet. No long leader; the first pulse-pair is
+    already a data bit. Distinguished from full-state Tadiran by the
+    absence of the 8500/4630 leader.
+    """
+    n = len(pulses)
+    if n < _TADIRAN_SHORT_MIN_PULSES or n > _TADIRAN_SHORT_MAX_PULSES:
+        return None
+    # Reject if it actually has a long Tadiran leader — that's a full-state
+    # packet and belongs to _try_decode_tadiran (full).
+    if _near(pulses[0], _TADIRAN_LEADER_MARK, _TADIRAN_LEADER_TOL):
+        return None
+    # The first pulse-pair should look like a Tadiran bit pair: one side
+    # ~600µs short, the other ~1850µs long. Use this as the discriminator.
+    p0, p1 = pulses[0], pulses[1]
+    lo, hi = min(p0, p1), max(p0, p1)
+    if not (300 <= lo <= 1000 and 1300 <= hi <= 2300):
+        return None
+    if hi < lo * _TADIRAN_PAIR_RATIO_MIN:
+        return None
+
+    bits: list[int] = []
+    ambiguous_count = 0
+    _MAX_AMBIGUOUS = 4
+    i = 0
+    while i + 1 < n:
+        mark, space = pulses[i], pulses[i + 1]
+        if mark <= 0 or space <= 0:
+            break
+        if mark > 3000 or space > 3000:
+            break  # trailer or end-of-frame
+        if mark >= space * _TADIRAN_PAIR_RATIO_MIN:
+            bits.append(1)
+        elif space >= mark * _TADIRAN_PAIR_RATIO_MIN:
+            bits.append(0)
+        else:
+            ambiguous_count += 1
+            if ambiguous_count > _MAX_AMBIGUOUS:
+                return None
+            bits.append(1 if mark > space else 0)
+        i += 2
+        # Cap at one half-frame worth of bits; Tadiran short packets seem
+        # to also transmit twice, so we'd otherwise double-decode.
+        if len(bits) >= 80:
+            break
+
+    if len(bits) < _TADIRAN_SHORT_MIN_BITS:
+        return None
+
+    payload = _bits_to_bytes(bits, lsb_first=True)
+    # Command-type identification is pending bit-position mapping. For now
+    # return an "unknown" command — the listener will log the bytes and
+    # the user can paste them back for reverse engineering.
+    return ProtocolDecode(
+        family="tadiran_short",
+        payload_hex=payload.hex(),
+        payload_bits=len(bits),
+        ac_command=AcCommand(action="unknown", brand="tadiran"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
@@ -877,9 +973,13 @@ _DECODERS = (
     # Gree first: it shares NEC's leader but the frame is much longer, so
     # the stricter length check disambiguates cleanly.
     _try_decode_gree,
-    # Tadiran before NEC: it has a distinctive narrower leader (~8500 vs
+    # Tadiran full-state before NEC: distinctive narrower leader (~8500 vs
     # NEC's 9000) and varying marks that NEC's constant-mark check rejects.
     _try_decode_tadiran,
+    # Tadiran short before NEC too: starts with a bit-pair (not a leader)
+    # that NEC's strict leader check rejects, so order isn't critical, but
+    # being explicit keeps the precedence clear.
+    _try_decode_tadiran_short,
     _try_decode_nec_family,
     _try_decode_sony,
     # AC decoders run last because their leaders are shorter and could
