@@ -768,6 +768,54 @@ _TADIRAN_MIN_BITS = 32         # reject very short frames as not-Tadiran
 _TADIRAN_MAX_BITS = 96         # one half's worth + slack
 
 
+def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
+    """
+    Extract HVAC state fields from a decoded Tadiran payload.
+
+    Bit-position mapping derived from real captures (2026-05-23, user's
+    own Tadiran inverter):
+
+      Power: byte 2 bit 1 (set = on, clear = off). Byte 7 mirrors the
+             flip as part of its checksum-style aggregate.
+
+      Temperature: two consecutive set bits sliding through bytes 5-6,
+             position = 2 * (temp - 22).
+               22°C → byte 5 bits 0,1
+               23°C → byte 5 bits 2,3
+               24°C → byte 5 bits 4,5  (= 0x30)
+               25°C → byte 5 bits 6,7  (= 0xc0)
+               26°C → byte 6 bits 0,1
+               27°C → byte 6 bits 2,3
+               28°C → byte 6 bits 4,5
+               29°C → byte 6 bits 6,7
+             16-21°C and 30°C ranges are extrapolation TBD — return None
+             rather than guess wrong values.
+
+      Mode and fan: not yet reverse-engineered (would need fan-change /
+             mode-change captures to diff). Return None for both —
+             ac_memory keeps any prior value the device already had.
+    """
+    if len(payload) < 8:
+        return None
+
+    power = "on" if (payload[2] & 0x02) else "off"
+
+    temp: Optional[int] = None
+    # Scan byte 5 for the two-consecutive-ones pattern → temp 22-25
+    for i in range(0, 8, 2):
+        if (payload[5] >> i) & 0x03 == 0x03:
+            temp = 22 + (i // 2)
+            break
+    if temp is None:
+        # Scan byte 6 → temp 26-29
+        for i in range(0, 8, 2):
+            if (payload[6] >> i) & 0x03 == 0x03:
+                temp = 26 + (i // 2)
+                break
+
+    return AcState(power=power, mode=None, temp=temp, fan=None, brand="tadiran")
+
+
 def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
     """
     Pulse-pair-inversion 64-bit AC frame. Decodes the FIRST half only;
@@ -803,11 +851,12 @@ def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
     if len(bits) < _TADIRAN_MIN_BITS:
         return None
     payload = _bits_to_bytes(bits, lsb_first=True)
+    ac_state = _decode_tadiran_ac_state(payload)
     return ProtocolDecode(
         family="tadiran_ac",
         payload_hex=payload.hex(),
         payload_bits=len(bits),
-        ac_state=None,  # bit positions for state TBD — needs more captures
+        ac_state=ac_state,
     )
 
 

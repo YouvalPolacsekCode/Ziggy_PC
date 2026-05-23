@@ -507,6 +507,67 @@ def test_decode_real_tadiran_capture():
     assert result.payload_hex == "01412c0000c00020"
 
 
+# ---------------------------------------------------------------------------
+# Tadiran AC state decoding — ground-truth bit-position mapping derived
+# from three real captures the user took on 2026-05-23. Don't replace
+# these payloads with synthetic ones; they're the validation set that
+# proves the bit positions are right for at least this Tadiran model.
+# ---------------------------------------------------------------------------
+
+def test_tadiran_state_decode_power_off():
+    # User captured this after pressing OFF on the physical remote while
+    # the AC was running at 24°C cool.
+    payload = bytes.fromhex("014130000030000c")
+    from services.ir_protocol import _decode_tadiran_ac_state
+    state = _decode_tadiran_ac_state(payload)
+    assert state is not None
+    assert state.power == "off"
+    assert state.temp == 24
+    assert state.brand == "tadiran"
+
+
+def test_tadiran_state_decode_power_on_24c():
+    payload = bytes.fromhex("014132000030000e")
+    from services.ir_protocol import _decode_tadiran_ac_state
+    state = _decode_tadiran_ac_state(payload)
+    assert state.power == "on"
+    assert state.temp == 24
+
+
+def test_tadiran_state_decode_power_on_25c():
+    # Captured after pressing TEMP+ from 24°C → 25°C.
+    payload = bytes.fromhex("0141320000c00017")
+    from services.ir_protocol import _decode_tadiran_ac_state
+    state = _decode_tadiran_ac_state(payload)
+    assert state.power == "on"
+    assert state.temp == 25
+
+
+def test_tadiran_real_capture_decodes_with_state():
+    """End-to-end: parse real pulses → decode_protocol returns
+    ProtocolDecode with ac_state populated."""
+    real_pulses = [
+        8473, 4630, 1872, 690, 624, 1938, 591, 1938, 624, 1938, 591, 1938,
+        591, 1938, 624, 1938, 591, 1970, 1839, 690, 624, 1938, 591, 1938,
+        591, 1938, 624, 1938, 591, 1938, 1872, 690, 624, 1938, 591, 1938,
+        624, 1938, 1806, 722, 1872, 657, 624, 1938, 1839, 690, 624, 1938,
+        624, 1938, 591, 1938, 624, 1938, 591, 1938, 591, 1938, 624, 1938,
+        624, 1938, 591, 1938, 624, 1938, 591, 1938, 591, 1938, 624, 1938,
+        591, 1938, 624, 1938, 624, 1938, 591, 1938, 624, 1938, 591, 1938,
+        591, 1938, 624, 1938, 624, 1938, 591, 1938, 624, 1938, 1806, 722,
+        1872, 657, 624, 1938, 591, 1938, 624, 1938, 624, 1938, 591, 1938,
+        624, 1938, 591, 1938, 591, 1970, 591, 1938, 624, 1905, 624, 1938,
+        624, 1938, 591, 1938, 1872, 690, 591, 1938, 591, 1938, 1741,
+    ]
+    result = decode_protocol(real_pulses)
+    assert result.family == "tadiran_ac"
+    assert result.ac_state is not None
+    # This original capture was a power press at 25°C cool — state derived
+    # from byte positions per the user's three-capture bit-mapping pass.
+    assert result.ac_state.power in ("on", "off")
+    assert result.ac_state.temp == 25
+
+
 def test_tadiran_rejects_too_short_frame():
     # A short frame with Tadiran-shaped leader but only 16 bits of data
     # must not be claimed as tadiran_ac (we require >=32 bits).
