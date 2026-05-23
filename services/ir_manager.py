@@ -191,32 +191,133 @@ def _label_for(command_id: str) -> str:
     return command_id.replace("_", " ").strip().title()
 
 
+# Group/core layout per device type. Drives the wizard's Learn-Commands
+# step: groups are rendered in order, "core" commands always visible,
+# non-core (extras) hidden behind a per-group expand link.
+_CATALOG_GROUPS: dict[str, list[dict]] = {
+    "tv": [
+        {"id": "power", "label": "Power",
+         "core": ["power"], "extras": []},
+        {"id": "volume", "label": "Volume",
+         "core": ["volume_up", "volume_down", "mute"], "extras": []},
+        {"id": "inputs", "label": "Inputs",
+         "core": ["hdmi_1"], "extras": ["hdmi_2", "hdmi_3"]},
+        {"id": "navigation", "label": "Navigation",
+         "core": ["nav_up", "nav_down", "nav_left", "nav_right", "nav_ok"],
+         "extras": ["back", "menu", "home"]},
+        {"id": "channels", "label": "Channels",
+         "core": ["channel_up", "channel_down"],
+         "extras": [*(f"digit_{i}" for i in range(10)), "digit_ok"]},
+    ],
+    "ac": [
+        {"id": "power", "label": "Power",
+         "core": ["power"], "extras": ["power_on", "power_off"]},
+        {"id": "mode", "label": "Mode",
+         "core": ["mode_cool"],
+         "extras": ["mode_heat", "mode_fan", "mode_auto", "mode_dry"]},
+        {"id": "fan", "label": "Fan",
+         "core": ["fan_auto"],
+         "extras": ["fan_low", "fan_medium", "fan_high"]},
+        {"id": "temperature", "label": "Temperature",
+         "core": [], "extras": [f"temp_{t}" for t in range(16, 31)]},
+        {"id": "swing", "label": "Swing",
+         "core": [], "extras": ["swing_on", "swing_off"]},
+    ],
+    "fan": [
+        {"id": "power", "label": "Power",
+         "core": ["power"], "extras": []},
+        {"id": "speed", "label": "Speed",
+         "core": ["speed_low", "speed_medium", "speed_high"], "extras": []},
+        {"id": "oscillate", "label": "Oscillate",
+         "core": [], "extras": ["oscillate"]},
+    ],
+    "soundbar": [
+        {"id": "power", "label": "Power",
+         "core": ["power"], "extras": []},
+        {"id": "volume", "label": "Volume",
+         "core": ["volume_up", "volume_down", "mute"], "extras": []},
+        {"id": "inputs", "label": "Inputs",
+         "core": ["input_hdmi"],
+         "extras": ["input_optical", "input_bluetooth"]},
+    ],
+    "projector": [
+        {"id": "power", "label": "Power",
+         "core": ["power"], "extras": []},
+        {"id": "inputs", "label": "Inputs",
+         "core": ["input_hdmi"], "extras": []},
+        {"id": "navigation", "label": "Navigation",
+         "core": ["nav_ok"],
+         "extras": ["nav_up", "nav_down", "back"]},
+    ],
+    "custom": [
+        {"id": "power", "label": "Power",
+         "core": ["power"], "extras": []},
+    ],
+}
+
+
+def _build_catalog_for(device_type: str) -> dict:
+    """
+    Catalog for one device type in the grouped + core/extras shape the
+    frontend wizard expects:
+      { type, label, capabilities, groups: [
+          { id, label, commands: [{id, label, core: bool}] }
+      ]}
+    """
+    dt = device_type.lower()
+    cmd_map = _default_commands(dt)
+    layout = _CATALOG_GROUPS.get(dt) or _CATALOG_GROUPS["custom"]
+    seen: set[str] = set()
+    groups = []
+    for g in layout:
+        commands = []
+        for cmd_id in g.get("core", []):
+            if cmd_id in cmd_map:
+                commands.append({"id": cmd_id, "label": _label_for(cmd_id), "core": True})
+                seen.add(cmd_id)
+        for cmd_id in g.get("extras", []):
+            if cmd_id in cmd_map:
+                commands.append({"id": cmd_id, "label": _label_for(cmd_id), "core": False})
+                seen.add(cmd_id)
+        if commands:
+            groups.append({"id": g["id"], "label": g["label"], "commands": commands})
+    # Surface any commands present in the type's default map that weren't
+    # caught by the layout above — defensive against drift between
+    # _default_commands and _CATALOG_GROUPS.
+    leftover = [cmd_id for cmd_id in cmd_map.keys() if cmd_id not in seen]
+    if leftover:
+        groups.append({
+            "id": "other",
+            "label": "Other",
+            "commands": [
+                {"id": cmd_id, "label": _label_for(cmd_id), "core": False}
+                for cmd_id in leftover
+            ],
+        })
+    return {
+        "type": dt,
+        "label": dt.capitalize(),
+        "capabilities": _default_capabilities(dt),
+        "groups": groups,
+    }
+
+
 def get_command_catalog(device_type: Optional[str] = None) -> dict:
     """
-    Catalog of available command ids per device type, with friendly labels.
+    Catalog of available command ids per device type, with friendly labels
+    and a groups+core/extras layout the wizard renders.
 
     Called by the learn UI to know which buttons to surface for a given
-    device. Returns a dict keyed by device type when device_type is None,
-    or a single entry when a specific type is requested.
+    device. Returns a single catalog entry when device_type is provided,
+    or a dict keyed by device type otherwise.
     """
     types = (
         [device_type.lower()] if device_type else
         ["tv", "ac", "fan", "soundbar", "projector", "custom"]
     )
-    catalog: dict = {}
-    for dt in types:
-        cmd_map = _default_commands(dt)
-        catalog[dt] = {
-            "type": dt,
-            "capabilities": _default_capabilities(dt),
-            "commands": [
-                {"id": cmd_id, "label": _label_for(cmd_id)}
-                for cmd_id in cmd_map.keys()
-            ],
-        }
     if device_type:
-        return catalog[device_type.lower()]
-    return catalog
+        return _build_catalog_for(device_type)
+    return {dt: _build_catalog_for(dt) for dt in types}
 
 
 # ---------------------------------------------------------------------------

@@ -15,26 +15,22 @@ import {
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
-import { discoverIrBlasters, createIrDevice, irLearn, irSend, getRooms } from '../lib/api'
+import {
+  discoverIrBlasters, createIrDevice, irLearn, irSend, getRooms,
+  getIrCatalog, getIrUnassignedSignals, assignIrUnassignedSignal,
+} from '../lib/api'
 import { cn } from '../lib/utils'
+import logger from '../lib/logger'
 
 const DEVICE_TYPES = [
   { id: 'tv',        label: 'TV',        Icon: Radio },
   { id: 'ac',        label: 'AC',        Icon: Thermometer },
   { id: 'fan',       label: 'Fan',       Icon: Wind },
   { id: 'soundbar',  label: 'Soundbar',  Icon: Volume2 },
+  { id: 'receiver',  label: 'Receiver',  Icon: Volume2 },
   { id: 'projector', label: 'Projector', Icon: MonitorPlay },
   { id: 'custom',    label: 'Custom',    Icon: Zap },
 ]
-
-const DEFAULT_COMMANDS_BY_TYPE = {
-  tv:        ['power', 'volume_up', 'volume_down', 'mute', 'hdmi_1', 'hdmi_2', 'channel_up', 'channel_down', 'nav_up', 'nav_down', 'nav_ok', 'back', 'home'],
-  ac:        ['power', 'mode_cool', 'mode_heat', 'mode_fan', 'fan_low', 'fan_medium', 'fan_high', 'swing_on', 'swing_off'],
-  fan:       ['power', 'speed_low', 'speed_medium', 'speed_high', 'oscillate'],
-  soundbar:  ['power', 'volume_up', 'volume_down', 'mute', 'input_hdmi', 'input_optical', 'input_bluetooth'],
-  projector: ['power', 'volume_up', 'volume_down', 'hdmi_1', 'hdmi_2', 'nav_ok', 'back', 'home'],
-  custom:    ['power'],
-}
 
 const LEARN_DURATION = 20  // seconds
 
@@ -247,16 +243,20 @@ function StepDeviceDetails({ details, onChange }) {
 }
 
 // ---------------------------------------------------------------------------
-// Single command row
+// Single command row — catalog-driven. Renders a fixed, labelled slot from
+// the backend catalog (not editable). Lets the user learn via long-press OR
+// auto-bind a freshly-captured IR signal via the ⚡ button.
 // ---------------------------------------------------------------------------
 
-function CommandRow({ cmd, deviceId, onRemove, onChange }) {
-  const [status, setStatus]   = useState('idle')  // idle | learning | learned | error
+function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal }) {
+  const [status, setStatus]   = useState(learnedNow ? 'learned' : 'idle')
   const [countdown, setCountdown] = useState(0)
   const timerRef = useRef(null)
 
+  useEffect(() => { if (learnedNow) setStatus('learned') }, [learnedNow])
+
   const startLearning = async () => {
-    if (!deviceId || !cmd) return
+    if (!deviceId) return
     setStatus('learning')
     setCountdown(LEARN_DURATION)
 
@@ -268,8 +268,9 @@ function CommandRow({ cmd, deviceId, onRemove, onChange }) {
     }, 1000)
 
     try {
-      await irLearn(deviceId, cmd)
+      await irLearn(deviceId, cmd.id)
       setStatus('learned')
+      onLearned?.(cmd.id)
     } catch {
       setStatus('error')
     } finally {
@@ -278,13 +279,19 @@ function CommandRow({ cmd, deviceId, onRemove, onChange }) {
     }
   }
 
-  const testCommand = async () => {
-    if (!deviceId || !cmd) return
+  const bindRecent = async () => {
+    if (!recentSignal || !deviceId) return
     try {
-      await irSend(deviceId, cmd)
-      // If test succeeds and we were in error/idle, mark as learned
-      if (status !== 'learned') setStatus('learned')
-    } catch { /* best-effort */ }
+      await assignIrUnassignedSignal(recentSignal.id, deviceId, cmd.id)
+      setStatus('learned')
+      onLearned?.(cmd.id)
+    } catch { setStatus('error') }
+  }
+
+  const testCommand = async () => {
+    if (!deviceId) return
+    try { await irSend(deviceId, cmd.id); if (status !== 'learned') setStatus('learned') }
+    catch {}
   }
 
   useEffect(() => () => clearInterval(timerRef.current), [])
@@ -299,17 +306,23 @@ function CommandRow({ cmd, deviceId, onRemove, onChange }) {
                                'bg-zinc-300 dark:bg-zinc-600',
       )} />
 
-      <Input
-        value={cmd}
-        onChange={(e) => onChange(e.target.value)}
-        className="flex-1 text-xs h-7 px-2"
-        placeholder="command_name"
-      />
+      <span className="flex-1 min-w-0 text-xs text-zinc-700 dark:text-zinc-300">
+        <span className="font-medium">{cmd.label}</span>
+        {cmd.id !== cmd.label && (
+          <span className="text-[10px] text-zinc-400 ml-1 font-mono">· {cmd.id}</span>
+        )}
+      </span>
+
+      {recentSignal && status !== 'learned' && status !== 'learning' && (
+        <button onClick={bindRecent}
+          className="text-[10px] text-violet-400 hover:text-violet-600 whitespace-nowrap"
+          title="Bind the IR signal we just captured">
+          ⚡ bind
+        </button>
+      )}
 
       {status === 'learning' ? (
-        <span className="text-xs text-yellow-500 w-14 text-center font-mono">
-          {countdown}s…
-        </span>
+        <span className="text-xs text-yellow-500 w-14 text-center font-mono">{countdown}s…</span>
       ) : (
         <Button
           size="xs"
@@ -326,61 +339,101 @@ function CommandRow({ cmd, deviceId, onRemove, onChange }) {
         size="xs"
         variant="ghost"
         onClick={testCommand}
-        disabled={!deviceId || !cmd || status === 'learning'}
+        disabled={!deviceId || status === 'learning' || status !== 'learned'}
         className="text-xs w-10"
-        title="Test — fires the command. If HA already has this code, it works without re-learning."
+        title="Fire the command. Useful for verifying."
       >
         Test
       </Button>
-
-      <button onClick={onRemove} className="text-zinc-300 dark:text-zinc-600 hover:text-red-400 transition-colors">
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — Learn commands
+// Step 3 — Learn commands. Pulls the catalog from the backend and renders
+// it as core/optional groups. The user learns each command via the in-row
+// Learn button OR the ⚡ bind button next to a freshly-captured signal.
 // ---------------------------------------------------------------------------
 
-function StepLearnCommands({ commands, onChange, deviceId }) {
-  const addCommand = () => onChange([...commands, ''])
+function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }) {
+  const [catalog, setCatalog] = useState(null)
+  useEffect(() => {
+    if (!deviceType) return
+    getIrCatalog(deviceType).then(setCatalog).catch(() => setCatalog({ label: deviceType, groups: [] }))
+  }, [deviceType])
 
-  const removeCommand = (i) => onChange(commands.filter((_, idx) => idx !== i))
+  // Poll unassigned signals so ⚡-bind targets the newest physical press.
+  const [signals, setSignals] = useState([])
+  useEffect(() => {
+    let alive = true
+    const refresh = async () => {
+      try { const list = await getIrUnassignedSignals(); if (alive) setSignals(list) }
+      catch {}
+    }
+    refresh()
+    const t = setInterval(refresh, 3000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+  const recent = signals[0] || null
 
-  const updateCommand = (i, val) => {
-    const next = [...commands]
-    next[i] = val
-    onChange(next)
+  const [expanded, setExpanded] = useState(new Set())
+  const toggleGroup = (id) => setExpanded((s) => {
+    const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+
+  if (!catalog) {
+    return <p className="text-xs text-zinc-400 py-4">Loading commands…</p>
   }
+
+  const groups = catalog.groups || []
 
   return (
     <div>
       <p className="text-xs text-zinc-500 mb-3">
-        If your blaster already learned these commands in HA, click <strong className="text-zinc-700 dark:text-zinc-300">Test</strong> — it fires the command live. If it works, it auto-marks as learned.
-        To teach a new code, click <strong className="text-zinc-700 dark:text-zinc-300">Learn</strong> and press the button on your physical remote within 20 seconds.
+        Core commands are listed first. Tap <strong className="text-zinc-700 dark:text-zinc-300">Learn</strong> then press the button on your physical remote within 20 seconds — or press the button first and tap <strong className="text-zinc-700 dark:text-zinc-300">⚡ bind</strong>. Optional buttons (sleep, eco, etc.) live behind each group's expand link.
       </p>
 
-      <div className="space-y-0.5 max-h-72 overflow-y-auto pr-1">
-        {commands.map((cmd, i) => (
-          <CommandRow
-            key={i}
-            cmd={cmd}
-            deviceId={deviceId}
-            onRemove={() => removeCommand(i)}
-            onChange={(val) => updateCommand(i, val)}
-          />
-        ))}
+      <div className="max-h-[60vh] overflow-y-auto pr-1">
+        {groups.map((g) => {
+          const core   = g.commands.filter((c) => c.core)
+          const extras = g.commands.filter((c) => !c.core)
+          const learnedExtras = extras.filter((c) => learnedSet.has(c.id))
+          const isOpen = expanded.has(g.id)
+          return (
+            <div key={g.id} className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">{g.label}</span>
+                {extras.length > 0 && (
+                  <button onClick={() => toggleGroup(g.id)}
+                    className="text-[10px] text-violet-400 hover:text-violet-600">
+                    {isOpen ? `Hide optional (${extras.length})` : `+ ${extras.length} optional${learnedExtras.length ? ` · ${learnedExtras.length} learned` : ''}`}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-0.5">
+                {core.map((c) => (
+                  <CatalogCommandRow key={c.id} cmd={c} deviceId={deviceId}
+                    learnedNow={learnedSet.has(c.id)} onLearned={onLearnedChange}
+                    recentSignal={recent} />
+                ))}
+                {isOpen && extras.map((c) => (
+                  <CatalogCommandRow key={c.id} cmd={c} deviceId={deviceId}
+                    learnedNow={learnedSet.has(c.id)} onLearned={onLearnedChange}
+                    recentSignal={recent} />
+                ))}
+                {!isOpen && learnedExtras.map((c) => (
+                  <CatalogCommandRow key={c.id} cmd={c} deviceId={deviceId}
+                    learnedNow={true} onLearned={onLearnedChange}
+                    recentSignal={recent} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+        {groups.length === 0 && (
+          <p className="text-xs text-zinc-400 py-2">No commands available for this device type.</p>
+        )}
       </div>
-
-      <button
-        onClick={addCommand}
-        className="mt-3 flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors"
-      >
-        <Plus className="w-3.5 h-3.5" />
-        Add command
-      </button>
     </div>
   )
 }
@@ -420,17 +473,16 @@ export default function IRWizard({ onClose, onCreated }) {
   const [step, setStep]               = useState(1)
   const [blaster, setBlaster]         = useState(null)
   const [details, setDetails]         = useState({ name: '', device_type: 'tv', room: '', brand: '' })
-  const [commands, setCommands]       = useState([])
+  // Track which catalog command ids the user has learned (or bound) in step 3.
+  // Used to show ✓ next to each row and to drive the optional-expand counts.
+  const [learnedSet, setLearnedSet]   = useState(new Set())
   const [savedDeviceId, setSavedDeviceId] = useState(null)
   const [saving, setSaving]           = useState(false)
   const [saveError, setSaveError]     = useState(null)
 
-  // Pre-populate default commands when entering step 3
-  useEffect(() => {
-    if (step === 3) {
-      setCommands(DEFAULT_COMMANDS_BY_TYPE[details.device_type] || ['power'])
-    }
-  }, [step])  // only on step change, not device_type change (user may have edited)
+  const markLearned = (cmdId) => setLearnedSet((s) => {
+    const next = new Set(s); next.add(cmdId); return next
+  })
 
   const deviceNamespace = details.name
     ? details.name.toLowerCase().replace(/\s+/g, '_')
@@ -443,13 +495,15 @@ export default function IRWizard({ onClose, onCreated }) {
   }
 
   const handleNext = async () => {
-    // Step 2 → 3: create the device so we have an ID for learn/send calls
+    logger.action('ir_wizard_next', { from_step: step })
+    // Step 2 → 3: create the device the FIRST time only. If the user went
+    // back to step 2 after we already saved, just patch the existing device
+    // with any edited fields rather than creating a second one — otherwise
+    // every "Back → forward" cycle leaves an orphan in ir_devices.json.
     if (step === 2) {
       setSaving(true)
       setSaveError(null)
       try {
-        const commandMap = {}
-        ;(DEFAULT_COMMANDS_BY_TYPE[details.device_type] || ['power']).forEach((c) => { commandMap[c] = c })
         const payload = {
           name: details.name.trim(),
           device_type: details.device_type,
@@ -458,12 +512,32 @@ export default function IRWizard({ onClose, onCreated }) {
           blaster_entity_id: `direct_${blaster.blaster_host}`,
           blaster_host: blaster.blaster_host,
           ha_device_namespace: deviceNamespace,
-          commands: commandMap,
         }
-        const created = await createIrDevice(payload)
-        setSavedDeviceId(created.device?.id ?? created.id)
+        if (savedDeviceId) {
+          // Already created on a previous step-2 pass — patch the editable
+          // fields instead of creating again. blaster_host / ha namespace
+          // are immutable after creation so we omit them from the patch.
+          await patchIrDevice(savedDeviceId, {
+            name: payload.name,
+            device_type: payload.device_type,
+            room: payload.room,
+            brand: payload.brand,
+          })
+          logger.action('ir_wizard_device_patched', { device_id: savedDeviceId })
+        } else {
+          const created = await createIrDevice(payload)
+          const newId = created.device?.id ?? created.id
+          setSavedDeviceId(newId)
+          // Seed learnedSet from anything the backend already had (defensive).
+          setLearnedSet(new Set(created.device?.learned_commands || []))
+          logger.action('ir_wizard_device_created', {
+            device_id: newId,
+            device_type: payload.device_type,
+          })
+        }
         setStep(3)
       } catch (e) {
+        logger.error('ir_wizard_create_failed', e, { device_type: details.device_type })
         setSaveError(e.message || 'Failed to create device.')
       } finally {
         setSaving(false)
@@ -510,9 +584,10 @@ export default function IRWizard({ onClose, onCreated }) {
           )}
           {step === 3 && (
             <StepLearnCommands
-              commands={commands}
-              onChange={setCommands}
+              deviceType={details.device_type}
               deviceId={savedDeviceId}
+              learnedSet={learnedSet}
+              onLearnedChange={markLearned}
             />
           )}
           {step === 4 && <StepDone deviceName={details.name} />}
