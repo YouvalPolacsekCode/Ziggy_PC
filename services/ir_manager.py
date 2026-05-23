@@ -191,109 +191,65 @@ def _label_for(command_id: str) -> str:
     return command_id.replace("_", " ").strip().title()
 
 
-# Group/core layout per device type. Drives the wizard's Learn-Commands
-# step: groups are rendered in order, "core" commands always visible,
-# non-core (extras) hidden behind a per-group expand link.
-_CATALOG_GROUPS: dict[str, list[dict]] = {
-    "tv": [
-        {"id": "power", "label": "Power",
-         "core": ["power"], "extras": []},
-        {"id": "volume", "label": "Volume",
-         "core": ["volume_up", "volume_down", "mute"], "extras": []},
-        {"id": "inputs", "label": "Inputs",
-         "core": ["hdmi_1"], "extras": ["hdmi_2", "hdmi_3"]},
-        {"id": "navigation", "label": "Navigation",
-         "core": ["nav_up", "nav_down", "nav_left", "nav_right", "nav_ok"],
-         "extras": ["back", "menu", "home"]},
-        {"id": "channels", "label": "Channels",
-         "core": ["channel_up", "channel_down"],
-         "extras": [*(f"digit_{i}" for i in range(10)), "digit_ok"]},
-    ],
-    "ac": [
-        {"id": "power", "label": "Power",
-         "core": ["power"], "extras": ["power_on", "power_off"]},
-        {"id": "mode", "label": "Mode",
-         "core": ["mode_cool"],
-         "extras": ["mode_heat", "mode_fan", "mode_auto", "mode_dry"]},
-        {"id": "fan", "label": "Fan",
-         "core": ["fan_auto"],
-         "extras": ["fan_low", "fan_medium", "fan_high"]},
-        {"id": "temperature", "label": "Temperature",
-         "core": [], "extras": [f"temp_{t}" for t in range(16, 31)]},
-        {"id": "swing", "label": "Swing",
-         "core": [], "extras": ["swing_on", "swing_off"]},
-    ],
-    "fan": [
-        {"id": "power", "label": "Power",
-         "core": ["power"], "extras": []},
-        {"id": "speed", "label": "Speed",
-         "core": ["speed_low", "speed_medium", "speed_high"], "extras": []},
-        {"id": "oscillate", "label": "Oscillate",
-         "core": [], "extras": ["oscillate"]},
-    ],
-    "soundbar": [
-        {"id": "power", "label": "Power",
-         "core": ["power"], "extras": []},
-        {"id": "volume", "label": "Volume",
-         "core": ["volume_up", "volume_down", "mute"], "extras": []},
-        {"id": "inputs", "label": "Inputs",
-         "core": ["input_hdmi"],
-         "extras": ["input_optical", "input_bluetooth"]},
-    ],
-    "projector": [
-        {"id": "power", "label": "Power",
-         "core": ["power"], "extras": []},
-        {"id": "inputs", "label": "Inputs",
-         "core": ["input_hdmi"], "extras": []},
-        {"id": "navigation", "label": "Navigation",
-         "core": ["nav_ok"],
-         "extras": ["nav_up", "nav_down", "back"]},
-    ],
-    "custom": [
-        {"id": "power", "label": "Power",
-         "core": ["power"], "extras": []},
-    ],
+# Top-N + everything-else layout. Each device type surfaces at most
+# `_CATALOG_TOP_N` commands inline; the rest sit under a single "More"
+# expand. Avoid drowning the user in 40+ commands on first setup — most
+# remotes only need a handful for daily use, and Unassigned-Signals
+# binding handles the rest on demand.
+_CATALOG_TOP_N = 4
+
+# Ordered top-N picks per device type. Anything in default_commands NOT
+# listed here lands in "More".
+#
+# AC layout is Israel-first (product launches there): cool-mode-dominant
+# usage, heat is rare. power_on + power_off as separate captures matter
+# because most Israeli AC remotes (Tadiran/Electra/Tornado) are stateful —
+# learning the same physical "on" button at two different AC states gives
+# Ziggy reliable on/off state inference without bit-position decoding.
+_CATALOG_TOP_COMMANDS: dict[str, list[str]] = {
+    "tv":        ["power", "volume_up", "volume_down", "mute"],
+    "ac":        ["power_on", "power_off", "mode_cool", "fan_auto"],
+    "fan":       ["power", "speed_low", "speed_medium", "speed_high"],
+    "soundbar":  ["power", "volume_up", "volume_down", "mute"],
+    "projector": ["power", "input_hdmi", "nav_ok", "back"],
+    "custom":    ["power"],
 }
 
 
 def _build_catalog_for(device_type: str) -> dict:
     """
     Catalog for one device type in the grouped + core/extras shape the
-    frontend wizard expects:
-      { type, label, capabilities, groups: [
-          { id, label, commands: [{id, label, core: bool}] }
-      ]}
+    wizard renders.
+
+    Layout: ONE "Top" group with up to _CATALOG_TOP_N commands (always
+    visible), ONE "More" group with everything else (collapsed behind a
+    single expand link). Surfacing more than ~4 commands inline on first
+    setup overwhelms; the rest are one click away and physical-remote
+    binding can teach new ones on demand.
     """
     dt = device_type.lower()
     cmd_map = _default_commands(dt)
-    layout = _CATALOG_GROUPS.get(dt) or _CATALOG_GROUPS["custom"]
-    seen: set[str] = set()
+    top_picks = _CATALOG_TOP_COMMANDS.get(dt) or _CATALOG_TOP_COMMANDS["custom"]
+
+    # Top: only ids that actually exist in the default command map for
+    # this type — defensive against drift between the two tables.
+    top_ids = [cid for cid in top_picks if cid in cmd_map][:_CATALOG_TOP_N]
+    top_commands = [
+        {"id": cid, "label": _label_for(cid), "core": True}
+        for cid in top_ids
+    ]
+    # More: everything else in the default command map, in declaration order.
+    more_ids = [cid for cid in cmd_map.keys() if cid not in top_ids]
+    more_commands = [
+        {"id": cid, "label": _label_for(cid), "core": False}
+        for cid in more_ids
+    ]
+
     groups = []
-    for g in layout:
-        commands = []
-        for cmd_id in g.get("core", []):
-            if cmd_id in cmd_map:
-                commands.append({"id": cmd_id, "label": _label_for(cmd_id), "core": True})
-                seen.add(cmd_id)
-        for cmd_id in g.get("extras", []):
-            if cmd_id in cmd_map:
-                commands.append({"id": cmd_id, "label": _label_for(cmd_id), "core": False})
-                seen.add(cmd_id)
-        if commands:
-            groups.append({"id": g["id"], "label": g["label"], "commands": commands})
-    # Surface any commands present in the type's default map that weren't
-    # caught by the layout above — defensive against drift between
-    # _default_commands and _CATALOG_GROUPS.
-    leftover = [cmd_id for cmd_id in cmd_map.keys() if cmd_id not in seen]
-    if leftover:
-        groups.append({
-            "id": "other",
-            "label": "Other",
-            "commands": [
-                {"id": cmd_id, "label": _label_for(cmd_id), "core": False}
-                for cmd_id in leftover
-            ],
-        })
+    if top_commands:
+        groups.append({"id": "top", "label": "Top", "commands": top_commands})
+    if more_commands:
+        groups.append({"id": "more", "label": "More", "commands": more_commands})
     return {
         "type": dt,
         "label": dt.capitalize(),
@@ -978,6 +934,13 @@ def _default_commands(device_type: str) -> dict[str, str]:
             "digit_ok":     "digit_ok",
         },
         "ac": {
+            # Two on/off variants — same physical button, captured at two AC
+            # states (AC currently off → captures power_on; AC currently on →
+            # captures power_off). Lets Ziggy infer on/off reliably for
+            # stateful Israeli AC remotes (Tadiran/Electra/Tornado) without
+            # protocol-level bit-position decoding.
+            "power_on":    "power_on",
+            "power_off":   "power_off",
             "power":       "power",
             "mode_cool":   "mode_cool",
             "mode_heat":   "mode_heat",

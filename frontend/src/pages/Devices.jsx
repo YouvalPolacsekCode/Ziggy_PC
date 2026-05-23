@@ -49,7 +49,7 @@ const IR_DEVICE_TYPES = ['tv', 'ac', 'fan', 'soundbar', 'receiver', 'projector',
 // off the chip), escaping any ancestor with overflow constraints. The
 // previous `absolute top-full` version got clipped on narrow cards because
 // the chip's parent flex row didn't always reserve enough vertical space.
-function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, ageHours, irStateOptions, onIrStateChange }) {
+function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, ageHours, irStateOptions, onIrStateChange, acFacts = [] }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const [pos, setPos]   = useState({ top: 0, left: 0 })
@@ -104,6 +104,9 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
         className={chipClass}
       >
         <span>{assumedState ?? t('common.unknown')}</span>
+        {acFacts.length > 0 && (
+          <span className="opacity-80">· {acFacts.join(' · ')}</span>
+        )}
         <span className="text-[9px] opacity-60 ml-0.5">▾</span>
       </button>
       <AnimatePresence>
@@ -791,6 +794,16 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   const assumedState = device.assumed_state && device.assumed_state !== 'unknown'
     ? device.assumed_state : null
   const stateOptions = IR_STATE_OPTIONS[device.device_type ?? device.type] || IR_STATE_OPTIONS.default
+  // AC state — populated by protocol decoders when a physical-remote packet
+  // is recognized (currently Mitsubishi, Daikin, Gree-vanilla). Tadiran
+  // packets decode but state-bit mapping isn't implemented yet, so this
+  // stays empty for Tadiran until the bit-position pass lands.
+  const isAc = (device.device_type ?? device.type) === 'ac'
+  const acMemory = isAc ? (device.ac_memory || {}) : null
+  const acFacts = []
+  if (acMemory?.temp != null) acFacts.push(`${acMemory.temp}°C`)
+  if (acMemory?.mode) acFacts.push(String(acMemory.mode).toLowerCase())
+  if (acMemory?.fan) acFacts.push(`fan ${String(acMemory.fan).toLowerCase()}`)
 
   return (
     <Card className="p-4">
@@ -804,7 +817,8 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
           {room && <p dir="auto" className="text-xs text-zinc-400 mt-0.5 capitalize">{room}</p>}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className="text-xs text-zinc-400">{t('devices.commandsCount', { learned: learnedCount, total: totalCount })}</span>
-            {/* Interactive assumed-state chip */}
+            {/* Interactive assumed-state chip — for AC, the state line also
+                surfaces decoded temp/mode/fan from physical-remote packets. */}
             <div className="relative">
               <button
                 onClick={() => setShowStatePicker((v) => !v)}
@@ -819,6 +833,9 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
                 )}
               >
                 <span>{assumedState ?? t('common.unknown')}</span>
+                {acFacts.length > 0 && (
+                  <span className="opacity-80">· {acFacts.join(' · ')}</span>
+                )}
                 <span className="text-[9px] opacity-60 ml-0.5">{t('devices.assumedSuffix')} ▾</span>
               </button>
               <AnimatePresence>
@@ -1490,6 +1507,15 @@ const DeviceCard = forwardRef(function DeviceCard({
               ageHours={ageHours}
               irStateOptions={irStateOptions}
               onIrStateChange={onIrStateChange}
+              acFacts={(() => {
+                if (irDevice?.type !== 'ac') return []
+                const m = irDevice?.ac_memory || {}
+                const facts = []
+                if (m.temp != null) facts.push(`${m.temp}°C`)
+                if (m.mode) facts.push(String(m.mode).toLowerCase())
+                if (m.fan) facts.push(`fan ${String(m.fan).toLowerCase()}`)
+                return facts
+              })()}
             />
             {getKind(entity) === KIND.AC && (
               <CompactAcStepper entity={entity} />
