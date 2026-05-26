@@ -194,8 +194,20 @@ def _bootstrap_cloud_admin():
 
 
 async def _register_with_relay():
-    """Register this hub with the relay on startup. No-op if relay not configured."""
-    import os, asyncio
+    """Register this hub with the relay on startup. No-op if relay not configured.
+
+    Signed with the HMAC scheme in core/relay_signing. On first run of the
+    patched agent against a still-pre-Task-2 relay, the request would have
+    been auto-accepted; against the patched relay, the signature is required.
+
+    Pre-patch hubs hold the legacy shared secret; this function detects that
+    on the way in and rotates to a per-home secret before signing the
+    register-hub request.
+    """
+    import os, asyncio, json
+    from core.settings_loader import save_secrets
+    from core.relay_signing import sign, LEGACY_SHARED_SECRET
+
     relay_url    = os.getenv("RELAY_URL") or settings.get("relay", {}).get("url")
     relay_secret = os.getenv("RELAY_SECRET") or settings.get("relay", {}).get("secret")
     tunnel_url   = os.getenv("TUNNEL_URL") or settings.get("relay", {}).get("tunnel_url")
@@ -209,24 +221,76 @@ async def _register_with_relay():
     # Short delay so HA subscriber starts first, but don't block for long.
     # Use 5s timeout — Fly.io cold starts can be slow but we won't wait forever.
     await asyncio.sleep(2)
+
+    # Step 1: if we're still holding the legacy shared secret, rotate to a
+    # per-home secret before doing anything else. Persist immediately so a
+    # crash mid-startup doesn't leave us with a secret only the relay knows.
+    if relay_secret == LEGACY_SHARED_SECRET:
+        new_secret = await _rotate_relay_secret(relay_url, relay_secret, home_id)
+        if new_secret:
+            try:
+                save_secrets({"relay": {"secret": new_secret}})
+            except Exception as e:
+                log_info(f"[Relay] save_secrets after rotation failed: {e}")
+            settings.setdefault("relay", {})["secret"] = new_secret
+            relay_secret = new_secret
+            log_info(f"[Relay] Rotated legacy secret for '{home_id}'")
+        else:
+            log_info(f"[Relay] Rotation failed — register-hub will likely 401 until resolved")
+
+    # Step 2: sign + post register-hub. Serialize once so the bytes we hash
+    # equal the bytes httpx puts on the wire.
     try:
         import httpx
+        body = json.dumps({
+            "home_id":    home_id,
+            "name":       home_name,
+            "tunnel_url": tunnel_url,
+        }).encode("utf-8")
+        signature = sign(relay_secret, body)
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.post(
                 f"{relay_url}/api/homes/register-hub",
-                json={
-                    "home_id":      home_id,
-                    "name":         home_name,
-                    "tunnel_url":   tunnel_url,
-                    "relay_secret": relay_secret,
+                content=body,
+                headers={
+                    "Content-Type":      "application/json",
+                    "X-Ziggy-Signature": signature,
                 },
             )
             if r.is_success:
                 log_info(f"[Relay] Registered hub '{home_id}' with relay at {relay_url}")
             else:
-                log_info(f"[Relay] Registration failed: {r.status_code}")
+                log_info(f"[Relay] Registration failed: {r.status_code} {r.text[:200]}")
     except Exception as e:
         log_info(f"[Relay] Registration skipped (relay may be sleeping): {type(e).__name__}")
+
+
+async def _rotate_relay_secret(relay_url: str, current_secret: str, home_id: str) -> str | None:
+    """Call /api/homes/rotate-hub-secret signed with the current (legacy) secret.
+
+    Returns the new secret string on success, None on any failure.
+    """
+    try:
+        import httpx, json
+        from core.relay_signing import sign
+        body = json.dumps({"home_id": home_id}).encode("utf-8")
+        signature = sign(current_secret, body)
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{relay_url}/api/homes/rotate-hub-secret",
+                content=body,
+                headers={
+                    "Content-Type":      "application/json",
+                    "X-Ziggy-Signature": signature,
+                },
+            )
+            if r.is_success:
+                data = r.json()
+                return data.get("relay_secret")
+            log_info(f"[Relay] Rotate failed: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        log_info(f"[Relay] Rotate error: {type(e).__name__}: {e}")
+    return None
 
 
 app.add_middleware(RelayAuthMiddleware)
