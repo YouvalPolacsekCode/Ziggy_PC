@@ -154,10 +154,62 @@ class HaServiceCall(BaseModel):
     data: dict = {}
 
 
+# Domains the app/PWA is allowed to invoke. Default-deny everything else,
+# including homeassistant.*, shell_command.*, hassio.*, system_log.*,
+# persistent_notification.*, recorder.*, backup.*, etc. — any of which can
+# escalate an auth'd-user session into full host takeover.
+#
+# Founder review pending — adjust here before deploying. `remote` is included
+# so IR/RF blasters routed through HA (services/command_router → remote.
+# send_command) keep working.
+_HA_DOMAIN_ALLOWLIST: set[str] = {
+    "light", "switch", "climate", "scene", "script", "automation",
+    "input_boolean", "input_select", "input_number",
+    "media_player", "cover", "fan", "lock", "vacuum",
+    "remote", "notify",
+}
+
+# Services that ARE in an allowed domain but are still admin-only — usually
+# config-reload paths that can be triggered from automations.yaml only.
+_HA_SERVICE_DENYLIST: dict[str, set[str]] = {
+    "automation": {"reload"},
+    "script":     {"reload"},
+    "scene":      {"reload"},
+}
+
+
+def _ha_service_allowed(domain: str, service: str) -> tuple[bool, str]:
+    if domain not in _HA_DOMAIN_ALLOWLIST:
+        return False, f"domain '{domain}' not in allowlist"
+    denied = _HA_SERVICE_DENYLIST.get(domain, set())
+    if service in denied:
+        return False, f"service '{domain}.{service}' is denied within '{domain}'"
+    return True, ""
+
+
 @router.post("/api/ha/service")
 async def ha_call_service(body: HaServiceCall):
     import asyncio as _asyncio
     import time as _t
+
+    # Domain/service allowlist — closes the audit's S3 finding where any
+    # authenticated user could call homeassistant.restart, shell_command.*,
+    # hassio.*, system_log.*, etc. and take over the HA host.
+    ok, reason = _ha_service_allowed(body.domain, body.service)
+    if not ok:
+        log_info(
+            f"[HASvc] BLOCKED {body.domain}.{body.service} — {reason}"
+        )
+        raise ZiggyError(
+            code=ErrorCode.HA_SERVICE_BLOCKED,
+            log_message=f"HA service blocked: {body.domain}.{body.service} — {reason}",
+            details={
+                "domain":  body.domain,
+                "service": body.service,
+                "reason":  reason,
+            },
+        )
+
     # call_service is sync (requests.post) — running it inline on an async
     # endpoint blocks the event loop for the full HA round-trip (100-300 ms
     # typical, up to several seconds on a slow tunnel or unresponsive

@@ -66,6 +66,7 @@ class ErrorCode:
     HA_UNAVAILABLE = "ha_unavailable"
     HA_ENTITY_NOT_FOUND = "ha_entity_not_found"
     HA_SERVICE_FAILED = "ha_service_failed"
+    HA_SERVICE_BLOCKED = "ha_service_blocked"
 
     # Device control (covers HA-backed and Ziggy-native)
     DEVICE_UNAVAILABLE = "device_unavailable"
@@ -104,6 +105,7 @@ DEFAULT_MESSAGES: dict[str, str] = {
     ErrorCode.HA_UNAVAILABLE:           "Ziggy can't reach the home hub right now.",
     ErrorCode.HA_ENTITY_NOT_FOUND:      "That device isn't recognized.",
     ErrorCode.HA_SERVICE_FAILED:        "The home hub couldn't complete that action.",
+    ErrorCode.HA_SERVICE_BLOCKED:       "That action isn't allowed from the app.",
     ErrorCode.DEVICE_UNAVAILABLE:       "That device is temporarily unavailable.",
     ErrorCode.DEVICE_COMMAND_FAILED:    "That action didn't go through.",
     ErrorCode.IR_BLASTER_UNREACHABLE:   "The remote blaster isn't responding.",
@@ -130,6 +132,7 @@ DEFAULT_HTTP_STATUS: dict[str, int] = {
     ErrorCode.HA_UNAVAILABLE:           502,
     ErrorCode.HA_ENTITY_NOT_FOUND:      404,
     ErrorCode.HA_SERVICE_FAILED:        502,
+    ErrorCode.HA_SERVICE_BLOCKED:       403,
     ErrorCode.DEVICE_UNAVAILABLE:       503,
     ErrorCode.DEVICE_COMMAND_FAILED:    502,
     ErrorCode.IR_BLASTER_UNREACHABLE:   503,
