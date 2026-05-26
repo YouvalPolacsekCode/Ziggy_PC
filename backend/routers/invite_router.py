@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from backend.routers.auth_deps import get_current_user, require_role, ROLE_ORDER
 from core.logger_module import log_info
 from core.settings_loader import settings, save_settings
+from services import auth_db
 
 router = APIRouter()
 
@@ -247,6 +248,18 @@ async def accept_invite(token: str, body: AcceptInviteBody):
     salt  = secrets.token_hex(16)
     phash = hmac.new(salt.encode(), body.password.encode(), hashlib.sha256).hexdigest()
     tok   = secrets.token_hex(32)
+
+    # Persist in auth.db (source of truth post-migration). Also append to
+    # yaml users[] during the transition so any code still reading
+    # settings["users"] keeps working until Commit 13 strips it.
+    user_id = auth_db.create_user(
+        username=email,
+        password_hash=phash,
+        salt=salt,
+        role=inv["role"],
+        hash_algo="hmac_sha256",
+    )
+    auth_db.add_session(user_id, tok)
 
     new_user = {
         "username":      email,

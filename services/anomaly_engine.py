@@ -303,10 +303,18 @@ def _in_quiet_hours() -> bool:
     """Use push-preferences quiet hours as the single quiet-hours definition."""
     try:
         from services.push_preferences import get_prefs
-        users = settings.get("users", [])
-        if not users:
-            return False
-        prefs = get_prefs(users[0]["username"])
+        from services import auth_db
+        # auth.db is the source of truth post-migration; settings.yaml users[]
+        # is the transitional fallback while the two stores converge.
+        db_users = auth_db.list_users()
+        if db_users:
+            username = db_users[0]["username"]
+        else:
+            yaml_users = settings.get("users", [])
+            if not yaml_users:
+                return False
+            username = yaml_users[0]["username"]
+        prefs = get_prefs(username)
         qh = prefs.get("quiet_hours", {})
         if not qh.get("enabled"):
             return False
