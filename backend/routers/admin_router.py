@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from core.settings_loader import save_settings, settings
+from core.settings_loader import save_secrets, save_settings, settings
 from .auth_deps import get_current_user, require_role
 
 router = APIRouter(prefix="/api/settings")
@@ -40,9 +40,19 @@ class HaPatch(BaseModel):
 @router.patch("/ha")
 async def patch_ha_settings(patch: HaPatch, _: dict = Depends(require_role("super_admin"))):
     ha = settings.setdefault("home_assistant", {})
-    for field, val in patch.model_dump(exclude_none=True).items():
-        ha[field] = val
-    save_settings(settings)
+    data = patch.model_dump(exclude_none=True)
+
+    # Non-secret fields persist to settings.yaml.
+    if "url" in data:
+        ha["url"] = data["url"]
+        save_settings(settings)
+
+    # Token is a secret — routed to config/secrets.yaml so it never lands in
+    # the tracked settings.yaml even if a later save_settings() call runs.
+    if "token" in data:
+        ha["token"] = data["token"]
+        save_secrets({"home_assistant": {"token": data["token"]}})
+
     return {"ok": True}
 
 
@@ -130,14 +140,17 @@ _FEATURE_DEFAULTS: dict[str, bool] = {
     "ifttt":          True,
     "local_storage":  True,
     "smart_home":     True,
-    "task_tracking":  True,
+    "task_tracking":  False,
     "voice":          True,
     "zigbee_support": True,
 }
 
 
 @router.get("/features")
-async def get_features(_: dict = Depends(require_role("admin"))):
+async def get_features(_: dict = Depends(require_role("user"))):
+    # Readable by any authenticated user so the FE can gate UI (hide a tab,
+    # short-circuit a route) on the same flag the admin toggles. Mutation
+    # still requires super_admin via PATCH below.
     stored = settings.get("features", {})
     return {**_FEATURE_DEFAULTS, **stored}
 
@@ -350,37 +363,59 @@ async def test_email(current: dict = Depends(require_role("super_admin"))):
 # Anomaly rules
 # ---------------------------------------------------------------------------
 
+# Display metadata only (label, description, threshold-key). The severity is
+# read from the engine's @register_rule registry at request time so card colour,
+# push category, and history row never drift apart.
 _RULE_META = [
-    {"id": "ANOM-01", "label": "Away + lights on",          "description": "Persons away ≥5 min + lights on with no recent motion",     "severity": "warning",  "config": None},
-    {"id": "ANOM-02", "label": "Climate + empty room",       "description": "AC/heat running while room has been empty for a while",     "severity": "warning",  "config": {"key": "anom02_empty_minutes",    "label": "Minutes empty before alert", "default": 30,  "unit": "min"}},
-    {"id": "ANOM-03", "label": "Door/window open",           "description": "A door or window left open too long",                       "severity": "warning",  "config": {"key": "anom03_door_open_minutes","label": "Minutes open before alert",  "default": 60,  "unit": "min"}},
-    {"id": "ANOM-04", "label": "Motion at night",            "description": "Motion detected during quiet hours",                        "severity": "warning",  "config": None},
-    {"id": "ANOM-05", "label": "No motion 24 h",             "description": "No motion anywhere for 24 h while someone is home",         "severity": "warning",  "config": None},
-    {"id": "ANOM-06", "label": "Device left on",             "description": "Switch, light or plug left on too long",                    "severity": "warning",  "config": {"key": "anom06_runtime_hours",    "label": "Hours on before alert",      "default": 4,   "unit": "h"}},
-    {"id": "ANOM-07", "label": "Automation device offline",  "description": "A device used in an automation went offline/unavailable",   "severity": "critical", "config": None},
-    {"id": "ANOM-08", "label": "Low battery",                "description": "A device's battery is below threshold",                     "severity": "info",     "config": None},
-    {"id": "ANOM-09", "label": "Multiple devices offline",   "description": "Multiple devices offline — possible coordinator failure",   "severity": "critical", "config": None},
+    {"id": "ANOM-01", "label": "Away + lights on",          "description": "Persons away ≥5 min + lights on with no recent motion",     "config": None},
+    {"id": "ANOM-02", "label": "Climate + empty room",       "description": "AC/heat running while room has been empty for a while",     "config": {"key": "anom02_empty_minutes",    "label": "Minutes empty before alert", "default": 30,  "unit": "min"}},
+    {"id": "ANOM-03", "label": "Door/window open",           "description": "A door or window left open too long",                       "config": {"key": "anom03_door_open_minutes","label": "Minutes open before alert",  "default": 60,  "unit": "min"}},
+    {"id": "ANOM-04", "label": "Motion at night",            "description": "Motion at night while nobody is home",                       "config": None},
+    {"id": "ANOM-05", "label": "No motion 24 h",             "description": "No motion anywhere for 24 h while someone is home",         "config": None},
+    {"id": "ANOM-06", "label": "Device left on",             "description": "Switch, light or plug left on too long",                    "config": {"key": "anom06_runtime_hours",    "label": "Hours on before alert",      "default": 4,   "unit": "h"}},
+    {"id": "ANOM-07", "label": "Automation device offline",  "description": "A device used in an automation went offline/unavailable",   "config": None},
+    {"id": "ANOM-08", "label": "Low battery",                "description": "A device's battery is below threshold",                     "config": {"key": "anom08_battery_threshold","label": "Battery % threshold",        "default": 20,  "unit": "%"}},
+    {"id": "ANOM-09", "label": "Multiple devices offline",   "description": "Multiple devices offline — possible coordinator failure",   "config": None},
+    {"id": "ANOM-10", "label": "Safety sensor silent",       "description": "A smoke / leak / door sensor hasn't reported in a while",   "config": {"key": "anom10_stale_hours",      "label": "Hours silent before alert",  "default": 24,  "unit": "h"}},
 ]
+
+
+def _engine_severities() -> dict[str, str]:
+    """Map rule_id → severity from the engine's @register_rule registry."""
+    try:
+        from services.anomaly_engine import _RULES, _ANOM10_RULE
+        sev = {r.rule_id: r.severity for r in _RULES}
+        sev[_ANOM10_RULE.rule_id] = _ANOM10_RULE.severity
+        return sev
+    except Exception:
+        return {}
 
 
 @router.get("/anomaly-rules")
 async def get_anomaly_rules(_: dict = Depends(require_role("admin"))):
     ae = settings.get("anomaly_engine", {})
     disabled = ae.get("disabled_rules", [])
+    severities = _engine_severities()
     rules = []
     for meta in _RULE_META:
         rule = dict(meta)
-        rule["enabled"] = meta["id"] not in disabled
+        rule["severity"] = severities.get(meta["id"], "warning")
+        rule["enabled"]  = meta["id"] not in disabled
         if meta["config"]:
             key = meta["config"]["key"]
             rule["config"] = {**meta["config"], "value": ae.get(key, meta["config"]["default"])}
         rules.append(rule)
-    return {"rules": rules, "engine_enabled": ae.get("enabled", True)}
+    return {
+        "rules":          rules,
+        "engine_enabled": ae.get("enabled", True),
+        "exemptions":     ae.get("exemptions", []),
+    }
 
 
 class AnomalyRulesPatch(BaseModel):
     engine_enabled: Optional[bool]       = None
     rules:          Optional[List[dict]] = None  # [{id, enabled, config_value?}]
+    exemptions:     Optional[List[str]]  = None  # entity_ids ANOM-06 should ignore
 
 
 @router.patch("/anomaly-rules")
@@ -405,6 +440,10 @@ async def patch_anomaly_rules(body: AnomalyRulesPatch, _: dict = Depends(require
             if meta and meta["config"] and "config_value" in r:
                 ae[meta["config"]["key"]] = r["config_value"]
         ae["disabled_rules"] = sorted(disabled)
+
+    if body.exemptions is not None:
+        # De-dup and strip to keep YAML tidy; entity_id format is owner-validated.
+        ae["exemptions"] = sorted({e.strip() for e in body.exemptions if e and e.strip()})
 
     save_settings(settings)
     return {"ok": True}
