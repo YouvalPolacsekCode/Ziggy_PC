@@ -91,6 +91,82 @@ async def register_hub(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# One-shot rotation — legacy hubs upgrade their shared secret to per-home
+# ---------------------------------------------------------------------------
+
+class RotateHubBody(BaseModel):
+    home_id: str
+
+
+@router.post("/rotate-hub-secret")
+async def rotate_hub_secret(request: Request):
+    """Issue a fresh per-home relay_secret.
+
+    Auth: HMAC-SHA256 signature over the raw body, verified against the
+    home's CURRENT stored relay_secret. For homes that were created
+    pre-Task-2 with the shared `ziggy-hub-primary-secret-2026`, that
+    legacy value is what authenticates the rotation; afterwards the home
+    holds an unguessable per-home secret. The endpoint is meant to be
+    called once per legacy home on first run of the patched edge agent.
+
+    Returns the new secret in the response body so the caller can
+    persist it. The relay never re-emits an existing secret — calling
+    rotate-hub-secret a second time generates yet another fresh value.
+    """
+    raw = await request.body()
+    src_ip = _client_ip(request)
+    sig_header = request.headers.get("X-Ziggy-Signature", "")
+
+    import json as _json
+    try:
+        payload = _json.loads(raw.decode("utf-8")) if raw else {}
+        body = RotateHubBody(**payload)
+    except Exception as e:
+        await log_event(
+            "rotate_hub_secret", source_ip=src_ip, ok=False,
+            detail=f"bad_body: {type(e).__name__}",
+        )
+        raise HTTPException(400, "Malformed rotate-hub-secret body.")
+
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT relay_secret FROM homes WHERE id=?", (body.home_id,)
+        )
+        if not rows:
+            await log_event(
+                "rotate_hub_secret", home_id=body.home_id, source_ip=src_ip,
+                ok=False, detail="unknown_home_id",
+            )
+            raise HTTPException(404, "Home not provisioned.")
+        current_secret = rows[0]["relay_secret"]
+
+        ok, reason = verify_signature(current_secret, raw, sig_header)
+        if not ok:
+            await log_event(
+                "rotate_hub_secret", home_id=body.home_id, source_ip=src_ip,
+                ok=False, detail=f"signature: {reason}",
+            )
+            raise HTTPException(401, "Invalid signature.")
+
+        import secrets as _secrets
+        new_secret = _secrets.token_hex(32)
+        await db.execute(
+            "UPDATE homes SET relay_secret=? WHERE id=?",
+            (new_secret, body.home_id),
+        )
+        await db.commit()
+
+    await log_event(
+        "rotate_hub_secret", home_id=body.home_id, source_ip=src_ip,
+        ok=True, detail="secret_rotated",
+    )
+    return {
+        "relay_secret": new_secret,
+        "rotated_at":   datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
