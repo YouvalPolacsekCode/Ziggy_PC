@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_REPO_CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config/settings.yaml')
+_REPO_CONFIG  = os.path.join(os.path.dirname(__file__), '..', 'config/settings.yaml')
 _HOME_CONFIG  = os.path.expanduser("~/.ziggy/home.yaml")
+_SECRETS_FILE = os.path.join(os.path.dirname(__file__), '..', 'config/secrets.yaml')
 
 _REQUIRED_KEYS = [
     ("home_assistant", "url"),
@@ -43,6 +44,34 @@ def _config_path() -> str:
     return _REPO_CONFIG
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    # Recursively merge `override` into `base`. Dict values are merged
+    # key-by-key; everything else is replaced. Used to layer secrets.yaml
+    # on top of settings.yaml without clobbering unrelated sections.
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+    return base
+
+
+def _load_secrets_file() -> dict:
+    # Optional config/secrets.yaml — untracked, owned by the operator.
+    # Provides a YAML-shaped secrets layer for values that don't fit cleanly
+    # into env vars (multi-line keys, structured secrets). Env vars still
+    # win over this file; this file wins over settings.yaml.
+    if not os.path.exists(_SECRETS_FILE):
+        return {}
+    try:
+        with open(_SECRETS_FILE, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"\n[Ziggy] WARNING: Failed to read {_SECRETS_FILE}: {e}\n",
+              file=sys.stderr)
+        return {}
+
+
 def load_settings() -> dict:
     path = _config_path()
     try:
@@ -59,6 +88,9 @@ def load_settings() -> dict:
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    # Layer config/secrets.yaml on top (operator-owned, untracked).
+    _deep_merge(data, _load_secrets_file())
 
     # Environment variables override YAML values so secrets stay out of source control.
     ha = data.setdefault("home_assistant", {})
@@ -110,6 +142,34 @@ def load_settings() -> dict:
         relay["secret"] = os.getenv("RELAY_SECRET")
     if os.getenv("TUNNEL_URL"):
         relay["tunnel_url"] = os.getenv("TUNNEL_URL")
+
+    # SMTP / email — credentials never belong in tracked YAML.
+    email = data.setdefault("email", {})
+    if os.getenv("SMTP_HOST"):
+        email["host"] = os.getenv("SMTP_HOST")
+    if os.getenv("SMTP_PORT"):
+        email["port"] = int(os.getenv("SMTP_PORT"))
+    if os.getenv("SMTP_USERNAME"):
+        email["username"] = os.getenv("SMTP_USERNAME")
+    if os.getenv("SMTP_PASSWORD"):
+        email["password"] = os.getenv("SMTP_PASSWORD")
+    if os.getenv("SMTP_FROM_ADDRESS"):
+        email["from_address"] = os.getenv("SMTP_FROM_ADDRESS")
+    if os.getenv("SMTP_FROM_NAME"):
+        email["from_name"] = os.getenv("SMTP_FROM_NAME")
+
+    # Azure Cognitive Services (neural TTS).
+    voice = data.setdefault("voice", {})
+    azure = voice.setdefault("azure", {})
+    if os.getenv("AZURE_SPEECH_KEY"):
+        azure["speech_key"] = os.getenv("AZURE_SPEECH_KEY")
+    if os.getenv("AZURE_SPEECH_REGION"):
+        azure["speech_region"] = os.getenv("AZURE_SPEECH_REGION")
+
+    # IFTTT webhook key.
+    ifttt = data.setdefault("ifttt", {})
+    if os.getenv("IFTTT_WEBHOOK_KEY"):
+        ifttt["webhook_key"] = os.getenv("IFTTT_WEBHOOK_KEY")
 
     _validate(data)
     return data
