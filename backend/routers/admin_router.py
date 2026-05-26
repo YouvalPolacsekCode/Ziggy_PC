@@ -129,9 +129,22 @@ class MqttPatch(BaseModel):
 @router.patch("/mqtt")
 async def patch_mqtt_settings(patch: MqttPatch, _: dict = Depends(require_role("super_admin"))):
     mqtt = settings.setdefault("mqtt", {})
-    for field, val in patch.model_dump(exclude_none=True).items():
-        mqtt[field] = val
-    save_settings(settings)
+    data = patch.model_dump(exclude_none=True)
+
+    # host/port/username are non-secret — settings.yaml.
+    non_secret_changed = False
+    for field in ("host", "port", "username"):
+        if field in data:
+            mqtt[field] = data[field]
+            non_secret_changed = True
+    if non_secret_changed:
+        save_settings(settings)
+
+    # password is the secret.
+    if "password" in data:
+        mqtt["password"] = data["password"]
+        save_secrets({"mqtt": {"password": data["password"]}})
+
     return {"ok": True}
 
 
