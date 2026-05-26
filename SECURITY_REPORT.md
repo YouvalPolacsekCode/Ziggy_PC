@@ -122,7 +122,7 @@ After deploying:
 Per the prompt, the following are deferred to other prompts:
 
 - Architecture reconciliation (TTS, wake-word, motion→light, Hetzner migration) — `PROMPT_ARCH_RECONCILIATION.md`.
-- Edge agent password hashing — still HMAC-SHA256 in `backend/routers/auth_router.py::_hash_password`. The audit's S4 finding was scoped to the relay; the same vulnerability exists on the edge agent and warrants a follow-up commit (similar shape to the relay fix).
+- Edge agent password hashing — **landed in follow-up S5**, see `SECURITY_REPORT_EDGE.md`. Same shape as the relay's S4. 90-day forced-reset sweep target: **2026-08-24** (90 days after the edge fix).
 - The 11-prompt feature series (cloud rebuild, OTA, backups, billing, etc.).
 
 The contaminated commit `f352ccf` could be cleaned up with an interactive rebase before sharing the branch; it does not affect runtime behavior.

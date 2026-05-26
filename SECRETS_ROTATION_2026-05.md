@@ -236,11 +236,15 @@ SELECT event, ok, count(*) FROM audit_log GROUP BY 1, 2;
 
 ---
 
-## Step 4 — 90-day forced-reset sweep (2026-08-22)
+## Step 4 — 90-day forced-reset sweep (2026-08-22 relay, 2026-08-24 edge)
 
-Some relay users may never log in within the 90-day window. Their
-password rows will still be HMAC-SHA256 because the rehash only triggers
-on successful login. After 2026-08-22:
+Some users may never log in within the 90-day window. Their password
+rows will still be HMAC-SHA256 because the rehash only triggers on
+successful login. Two parallel sweeps — one per surface.
+
+### Relay sweep (target 2026-08-22)
+
+After 2026-08-22, on the Fly.io relay DB:
 
 ```sql
 -- Find users still on legacy hash:
@@ -252,9 +256,31 @@ UPDATE users SET password_hash = '', hash_algo = 'forced_reset'
 WHERE hash_algo = 'hmac_sha256';
 ```
 
-`/api/auth/login` returns 401 for any row with `password_hash = ''`
-because `verify_password()` short-circuits on empty stored hash. No
-code change needed.
+`/auth/login` returns 401 for any row with `password_hash = ''` because
+`verify_password()` short-circuits on empty stored hash. No code change
+needed.
+
+### Edge-agent sweep (target 2026-08-24)
+
+The edge agent's S5 fix landed 2026-05-26; 90 days out is **2026-08-24**.
+After that date, on each edge agent's `user_files/auth.db`:
+
+```sql
+-- Find users still on legacy hash:
+SELECT id, username, role, created_at FROM users WHERE hash_algo = 'hmac_sha256';
+
+-- Force reset on stragglers. Operator informs the user out of band.
+UPDATE users SET password_hash = '', salt = '', hash_algo = 'forced_reset'
+WHERE hash_algo = 'hmac_sha256';
+```
+
+`/api/auth/login` returns 401 because the new `verify_password()`
+short-circuits on `not stored_hash`. The operator then either runs
+`/api/auth/setup` (if it's the only account, after deleting the row) or
+issues a new password via the super_admin `PATCH /api/auth/users/{u}`.
+
+The same fact lives in `SECURITY_REPORT.md` so whoever opens either file
+sees the trigger date.
 
 ---
 
