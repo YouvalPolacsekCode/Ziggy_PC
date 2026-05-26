@@ -45,10 +45,22 @@ CREATE TABLE IF NOT EXISTS invites (
     accepted_by TEXT
 );
 
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT    NOT NULL,
+    event       TEXT    NOT NULL,
+    home_id     TEXT,
+    source_ip   TEXT,
+    ok          INTEGER NOT NULL DEFAULT 0,
+    detail      TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_home     ON users(home_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token  ON invites(token);
 CREATE INDEX IF NOT EXISTS idx_invites_home   ON invites(home_id);
+CREATE INDEX IF NOT EXISTS idx_audit_event    ON audit_log(event, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_home     ON audit_log(home_id, ts);
 """
 
 
