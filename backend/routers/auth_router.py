@@ -186,6 +186,21 @@ async def login(body: LoginBody):
     if user_id is None:
         user_id = _ensure_user_in_db(user)
 
+    # Transparent rehash: a successful login on a legacy HMAC row rotates the
+    # stored hash to bcrypt. Single auth_db.update_user_password call ⇒ one
+    # SQLite UPDATE+COMMIT, so the row is internally consistent if anything
+    # crashes mid-flight. Session row is independent and untouched, so the
+    # token we're about to mint (and any other active session for this user)
+    # keeps working without re-login.
+    if user_id is not None and algo != "bcrypt":
+        auth_db.update_user_password(
+            user["username"], hash_password_bcrypt(body.password), "", "bcrypt",
+        )
+        log_info(
+            f"[Auth] Hash upgraded user_id={user_id} username={user['username']} "
+            f"old_algo={algo} new_algo=bcrypt"
+        )
+
     token = secrets.token_hex(32)
     if user_id is not None:
         auth_db.add_session(user_id, token)
