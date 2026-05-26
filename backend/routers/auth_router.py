@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from core.logger_module import log_info
 from core.settings_loader import save_settings, settings
 from services import auth_db
+from services.auth_hashing import hash_password_bcrypt, verify_password
 from .auth_deps import ROLE_ORDER, find_user_by_token, get_current_user, require_role
 
 router = APIRouter()
@@ -148,14 +149,13 @@ async def setup(body: SetupBody):
         raise HTTPException(status_code=400, detail="Username required.")
     if len(body.password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
-    salt = secrets.token_hex(16)
     token = secrets.token_hex(32)
     user_id = auth_db.create_user(
         username=body.username.strip(),
-        password_hash=_hash_password(body.password, salt),
-        salt=salt,
+        password_hash=hash_password_bcrypt(body.password),
+        salt="",
         role="super_admin",
-        hash_algo="hmac_sha256",
+        hash_algo="bcrypt",
     )
     auth_db.add_session(user_id, token)
     log_info(f"[Auth] Account created for '{body.username}' (super_admin).")
@@ -177,8 +177,8 @@ async def login(body: LoginBody):
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
-    expected = _hash_password(body.password, user.get("salt", ""))
-    if not hmac.compare_digest(expected, user["password_hash"]):
+    algo = user.get("hash_algo") or "hmac_sha256"
+    if not verify_password(body.password, user["password_hash"], user.get("salt", ""), algo):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     # Lazy-migrate any yaml-only user so subsequent sessions live in DB.
@@ -216,12 +216,11 @@ async def change_password(body: ChangePasswordBody, current: dict = Depends(get_
     if user_id is None:
         user_id = _ensure_user_in_db(target)
 
-    salt = secrets.token_hex(16)
-    new_hash = _hash_password(body.password, salt)
+    new_hash = hash_password_bcrypt(body.password)
     token = secrets.token_hex(32)
 
     if user_id is not None:
-        auth_db.update_user_password(target_name, new_hash, salt, "hmac_sha256")
+        auth_db.update_user_password(target_name, new_hash, "", "bcrypt")
         auth_db.add_session(user_id, token)
     log_info(f"[Auth] Password changed for '{target_name}'.")
     return {"token": token}
@@ -264,13 +263,12 @@ async def create_user(body: CreateUserBody, current: dict = Depends(require_role
         raise HTTPException(status_code=400, detail=f"Invalid role. Choose from: {list(ROLE_ORDER)}")
     if body.role == "super_admin" and current.get("role") != "super_admin":
         raise HTTPException(status_code=403, detail="Only super_admin can create super_admin accounts.")
-    salt = secrets.token_hex(16)
     auth_db.create_user(
         username=body.username.strip(),
-        password_hash=_hash_password(body.password, salt),
-        salt=salt,
+        password_hash=hash_password_bcrypt(body.password),
+        salt="",
         role=body.role,
-        hash_algo="hmac_sha256",
+        hash_algo="bcrypt",
     )
     log_info(f"[Auth] User created: '{body.username}' role={body.role}")
     return {"username": body.username.strip(), "role": body.role}
@@ -301,10 +299,9 @@ async def update_user(
     if body.password is not None:
         if len(body.password) < 4:
             raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
-        salt = secrets.token_hex(16)
-        new_hash = _hash_password(body.password, salt)
+        new_hash = hash_password_bcrypt(body.password)
         if user_id is not None:
-            auth_db.update_user_password(target["username"], new_hash, salt, "hmac_sha256")
+            auth_db.update_user_password(target["username"], new_hash, "", "bcrypt")
     # Return the final state.
     refreshed = auth_db.get_user_by_username(target["username"]) or {}
     return {

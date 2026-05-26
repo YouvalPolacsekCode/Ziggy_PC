@@ -171,25 +171,25 @@ def _migrate_users_to_db():
 
 def _bootstrap_cloud_admin():
     """On first boot of a provisioned cloud home, create the initial admin user."""
-    import os, hashlib, hmac, secrets as _secrets
+    import os
+    from services import auth_db
+    from services.auth_hashing import hash_password_bcrypt
     email = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
     password = os.getenv("INITIAL_ADMIN_PASSWORD", "").strip()
     if not email or not password:
         return
-    users = settings.get("users", [])
-    if any(u.get("username", "").lower() == email for u in users):
+    # auth.db is the source of truth post-S1; settings.yaml strips users[]
+    # on write so an in-memory yaml append alone never survives a restart.
+    if auth_db.get_user_by_username(email):
         return  # already set up
-    salt = _secrets.token_hex(16)
-    pw_hash = hmac.new(salt.encode(), password.encode(), hashlib.sha256).hexdigest()
-    settings.setdefault("users", []).append({
-        "username":    email,
-        "password_hash": pw_hash,
-        "salt":        salt,
-        "role":        "super_admin",
-        "session_tokens": [],
-    })
-    from core.settings_loader import save_settings
-    save_settings(settings)
+    pw_hash = hash_password_bcrypt(password)
+    auth_db.create_user(
+        username=email,
+        password_hash=pw_hash,
+        salt="",
+        role="super_admin",
+        hash_algo="bcrypt",
+    )
     log_info(f"[Cloud] Initial admin created for {email}")
 
 

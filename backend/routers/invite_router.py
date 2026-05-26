@@ -15,6 +15,7 @@ from backend.routers.auth_deps import get_current_user, require_role, ROLE_ORDER
 from core.logger_module import log_info
 from core.settings_loader import settings, save_settings
 from services import auth_db
+from services.auth_hashing import hash_password_bcrypt
 
 router = APIRouter()
 
@@ -243,10 +244,7 @@ async def accept_invite(token: str, body: AcceptInviteBody):
     if any(u.get("username", "").lower() == email for u in users):
         raise HTTPException(409, "An account with this email already exists.")
 
-    import hashlib
-    import hmac
-    salt  = secrets.token_hex(16)
-    phash = hmac.new(salt.encode(), body.password.encode(), hashlib.sha256).hexdigest()
+    phash = hash_password_bcrypt(body.password)
     tok   = secrets.token_hex(32)
 
     # Persist in auth.db (source of truth post-migration). Also append to
@@ -255,16 +253,16 @@ async def accept_invite(token: str, body: AcceptInviteBody):
     user_id = auth_db.create_user(
         username=email,
         password_hash=phash,
-        salt=salt,
+        salt="",
         role=inv["role"],
-        hash_algo="hmac_sha256",
+        hash_algo="bcrypt",
     )
     auth_db.add_session(user_id, tok)
 
     new_user = {
         "username":      email,
         "password_hash": phash,
-        "salt":          salt,
+        "salt":          "",
         "session_token": tok,
         "role":          inv["role"],
     }
