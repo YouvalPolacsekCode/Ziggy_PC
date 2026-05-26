@@ -99,7 +99,7 @@ Every value below appeared in tracked `config/settings.yaml` and is preserved in
 
 1. **Rotate every external service key.** OpenAI, HA token, Telegram, MQTT, SerpAPI, Gmail SMTP app password, Azure speech key. Generate new values in each provider's dashboard. Update `.env` (or `config/secrets.yaml`). Restart Ziggy. Confirm features.
 2. **`git filter-repo`** to scrub `config/settings.yaml` from full history. Force-push. See `SECRETS_ROTATION_2026-05.md` for the exact command and recovery plan.
-3. **Deploy new relay** to `ziggy-relay.fly.dev`. **Edge agent must ship first** — old agents against the new relay return 401 on register-hub.
+3. **Deploy new relay** to `ziggy-relay.fly.dev`. Order is not strict: the edge agent ships the new shape AND the legacy `relay_secret` body field, so it works against both old and new relays. Old agents against the new relay still get 401 because they don't sign — coordinate that cutover or ship the new agent first to be safe.
 4. **Approve the HA service allowlist.** Default in `backend/routers/ha_router.py:152-160`. `remote` was added on top of the prompt's list to keep IR/RF blasters working.
 5. **Schedule the 90-day forced-reset sweep** for any relay users who never log in (target date: 2026-08-22). Script not implemented; runbook entry only.
 

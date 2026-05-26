@@ -222,9 +222,11 @@ async def _register_with_relay():
     # Use 5s timeout — Fly.io cold starts can be slow but we won't wait forever.
     await asyncio.sleep(2)
 
-    # Step 1: if we're still holding the legacy shared secret, rotate to a
-    # per-home secret before doing anything else. Persist immediately so a
-    # crash mid-startup doesn't leave us with a secret only the relay knows.
+    # Step 1: if we're still holding the legacy shared secret, try to rotate
+    # to a per-home secret. The /rotate-hub-secret endpoint only exists on
+    # Task-2-or-newer relays; against an older deployed relay this returns
+    # 405 and we just continue with the legacy secret — register-hub still
+    # works via the backwards-compat body field below.
     if relay_secret == LEGACY_SHARED_SECRET:
         new_secret = await _rotate_relay_secret(relay_url, relay_secret, home_id)
         if new_secret:
@@ -236,16 +238,28 @@ async def _register_with_relay():
             relay_secret = new_secret
             log_info(f"[Relay] Rotated legacy secret for '{home_id}'")
         else:
-            log_info(f"[Relay] Rotation failed — register-hub will likely 401 until resolved")
+            log_info(
+                f"[Relay] Rotation endpoint unavailable — staying on legacy "
+                f"secret. Will rotate once the relay is upgraded."
+            )
 
-    # Step 2: sign + post register-hub. Serialize once so the bytes we hash
-    # equal the bytes httpx puts on the wire.
+    # Step 2: sign + post register-hub.
+    #
+    # The body intentionally carries BOTH the new-style fields and the
+    # legacy `relay_secret` field. A Task-2-or-newer relay ignores the
+    # extra field and authenticates via X-Ziggy-Signature; an older
+    # relay validates relay_secret in the body and ignores the unknown
+    # header. Once every deployed relay has been upgraded, the
+    # relay_secret field here can be removed.
+    #
+    # Serialize once so the bytes we hash equal the bytes httpx posts.
     try:
         import httpx
         body = json.dumps({
-            "home_id":    home_id,
-            "name":       home_name,
-            "tunnel_url": tunnel_url,
+            "home_id":      home_id,
+            "name":         home_name,
+            "tunnel_url":   tunnel_url,
+            "relay_secret": relay_secret,
         }).encode("utf-8")
         signature = sign(relay_secret, body)
         async with httpx.AsyncClient(timeout=5) as client:
