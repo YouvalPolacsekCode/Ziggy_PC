@@ -186,7 +186,7 @@ Documented as **accepted risk** for v1. Full mitigation requires either a C exte
 ### Bucket
 
 - **Name:** `ziggy-backups-prod` (single bucket for all homes)
-- **Region:** `us-east-005` (closest to Fly.io relay; not customer-facing latency-sensitive)
+- **Region:** `eu-central-003` (Amsterdam). **EU data residency is a binding commitment** — privacy policy guarantees all customer data lives in the EU, and the Fly.io relay is already deployed in Amsterdam for the same reason. Amsterdam B2 + Amsterdam relay also minimizes intra-EU latency for the relay-side DB backup pipeline (§13 Chunk #8). Do not migrate to a US region without first revising the privacy policy.
 - **Versioning:** Enabled (B2 native; supports lifecycle deletion)
 - **Default encryption:** SSE-B2 (B2-managed AES). This is **belt-and-suspenders** on top of our envelope encryption — we never trust it for confidentiality.
 - **Lifecycle rules:** See §9.

@@ -51,7 +51,11 @@ backup:
   # Backblaze B2 endpoint + bucket. The bucket is shared across all homes;
   # per-home isolation is enforced by per-home application keys that are
   # prefix-restricted to {home_id}/ (see DESIGN_BACKUP_DR.md §5).
-  b2_endpoint: https://s3.us-east-005.backblazeb2.com
+  # EU residency: bucket lives in Backblaze B2 eu-central (Amsterdam).
+  # All customer data stays in the EU — same rationale as the Fly.io relay
+  # being deployed in Amsterdam. Do NOT switch to a US region without first
+  # updating the privacy policy.
+  b2_endpoint: https://s3.eu-central-003.backblazeb2.com
   b2_bucket: ziggy-backups-prod
 
   # Per-home B2 application key + key_id are resolved from environment
