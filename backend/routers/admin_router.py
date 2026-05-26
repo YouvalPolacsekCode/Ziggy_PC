@@ -84,13 +84,21 @@ class IntegrationsPatch(BaseModel):
 @router.patch("/integrations")
 async def patch_integrations(patch: IntegrationsPatch, _: dict = Depends(require_role("super_admin"))):
     data = patch.model_dump(exclude_none=True)
+    # All three are secrets — persist to config/secrets.yaml so they never
+    # round-trip through the tracked settings.yaml. The in-memory settings
+    # dict still mirrors the value for the running process.
+    secrets_update: dict = {}
     if "openai_key" in data:
         settings.setdefault("openai", {})["api_key"] = data["openai_key"]
+        secrets_update.setdefault("openai", {})["api_key"] = data["openai_key"]
     if "serpapi_key" in data:
         settings.setdefault("serpapi", {})["api_key"] = data["serpapi_key"]
+        secrets_update.setdefault("serpapi", {})["api_key"] = data["serpapi_key"]
     if "ifttt_key" in data:
         settings.setdefault("ifttt", {})["webhook_key"] = data["ifttt_key"]
-    save_settings(settings)
+        secrets_update.setdefault("ifttt", {})["webhook_key"] = data["ifttt_key"]
+    if secrets_update:
+        save_secrets(secrets_update)
     return {"ok": True}
 
 
