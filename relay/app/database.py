@@ -68,6 +68,15 @@ async def init_db():
     os.makedirs(os.path.dirname(DATABASE_URL), exist_ok=True)
     async with aiosqlite.connect(DATABASE_URL) as db:
         await db.executescript(SCHEMA)
+        # Idempotent column addition for pre-Task-4 deployments. CREATE TABLE
+        # IF NOT EXISTS leaves an existing users table alone, so the column
+        # must be added by a conditional ALTER.
+        rows = await db.execute_fetchall("PRAGMA table_info(users)")
+        cols = {r[1] for r in rows}
+        if "hash_algo" not in cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN hash_algo TEXT NOT NULL DEFAULT 'hmac_sha256'"
+            )
         await db.commit()
 
 
