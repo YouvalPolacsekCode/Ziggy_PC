@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 
+from ..audit import log_event, verify as verify_signature
 from ..auth import require_role, current_user, new_id, new_token
 from ..database import get_db
 
@@ -19,33 +20,73 @@ ROLE_ADMIN = require_role("relay_admin")
 # ---------------------------------------------------------------------------
 
 class RegisterHubBody(BaseModel):
-    home_id:      str
-    name:         str
-    tunnel_url:   str
-    relay_secret: str
+    home_id:    str
+    name:       str
+    tunnel_url: str
+
+
+def _client_ip(request: Request) -> str:
+    return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else ""))
 
 
 @router.post("/register-hub")
-async def register_hub(body: RegisterHubBody):
-    """Ziggy hub calls this on startup to register or update its tunnel URL."""
+async def register_hub(request: Request):
+    """Ziggy hub calls this on startup to register or update its tunnel URL.
+
+    Authenticated by HMAC-SHA256 signature over the raw body, verified against
+    the per-home relay_secret stored at provisioning time. Pre-existing hubs
+    that still hold the legacy shared secret can rotate via /rotate-hub-secret
+    before calling this endpoint.
+    """
+    raw = await request.body()
+    src_ip = _client_ip(request)
+    sig_header = request.headers.get("X-Ziggy-Signature", "")
+
+    # Parse body manually so we have raw bytes for the signature *and* the
+    # decoded fields. FastAPI's BaseModel-as-arg path would consume the body
+    # internally and re-encode it for our hash, which is fragile.
+    import json as _json
+    try:
+        payload = _json.loads(raw.decode("utf-8")) if raw else {}
+        body = RegisterHubBody(**payload)
+    except Exception as e:
+        await log_event(
+            "register_hub", source_ip=src_ip, ok=False,
+            detail=f"bad_body: {type(e).__name__}",
+        )
+        raise HTTPException(400, "Malformed register-hub body.")
+
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT id FROM homes WHERE id=?", (body.home_id,)
+            "SELECT id, relay_secret FROM homes WHERE id=?", (body.home_id,)
         )
-        if rows:
-            await db.execute(
-                "UPDATE homes SET tunnel_url=?, relay_secret=?, status='active' WHERE id=?",
-                (body.tunnel_url.rstrip("/"), body.relay_secret, body.home_id),
+        if not rows:
+            await log_event(
+                "register_hub", home_id=body.home_id, source_ip=src_ip,
+                ok=False, detail="unknown_home_id",
             )
-        else:
-            await db.execute(
-                """INSERT INTO homes (id, name, type, tunnel_url, status, relay_secret, created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (body.home_id, body.name, "hub",
-                 body.tunnel_url.rstrip("/"), "active",
-                 body.relay_secret, datetime.now(timezone.utc).isoformat()),
+            raise HTTPException(404, "Home not provisioned.")
+
+        stored_secret = rows[0]["relay_secret"]
+        ok, reason = verify_signature(stored_secret, raw, sig_header)
+        if not ok:
+            await log_event(
+                "register_hub", home_id=body.home_id, source_ip=src_ip,
+                ok=False, detail=f"signature: {reason}",
             )
+            raise HTTPException(401, "Invalid signature.")
+
+        await db.execute(
+            "UPDATE homes SET tunnel_url=?, status='active' WHERE id=?",
+            (body.tunnel_url.rstrip("/"), body.home_id),
+        )
         await db.commit()
+
+    await log_event(
+        "register_hub", home_id=body.home_id, source_ip=src_ip, ok=True,
+        detail=f"tunnel_url_updated",
+    )
     return {"ok": True}
 
 
