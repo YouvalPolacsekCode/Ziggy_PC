@@ -66,6 +66,14 @@ aiosqlite>=0.19.0
 passlib[bcrypt]==1.7.4
 bcrypt<4.1
 
+# Backup & DR — encrypted daily hub backups to Backblaze B2.
+# cryptography: AES-256-GCM + HKDF-SHA256 for envelope encryption per
+#   DESIGN_BACKUP_DR.md §4 (per-home data_key wraps file-specific subkeys).
+# boto3: B2's S3-compatible API. Used by services/backup_storage.py
+#   (lands in Chunk #3) for upload/download/list/copy.
+cryptography>=42.0.0
+boto3>=1.34.0
+
 # IR blaster direct access (used alongside HA — enables continuous IR receive)
 broadlink>=0.18.0
 

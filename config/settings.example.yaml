@@ -38,6 +38,46 @@ auth:
   session_token: REPLACE_WITH_SESSION_TOKEN
   username: admin@example.com
 
+backup:
+  # Daily encrypted backup of HA config + Ziggy state + Zigbee coordinator
+  # to Backblaze B2. Full design in DESIGN_BACKUP_DR.md.
+  #
+  # v1 ships with backup OFF by default. Flip enabled: true only after the
+  # factory imaging script has sealed a per-home data_key + B2 credentials
+  # into the relay DB. The exact seal call is documented in
+  # docs/SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md (lands in Chunk #10).
+  enabled: false
+
+  # Backblaze B2 endpoint + bucket. The bucket is shared across all homes;
+  # per-home isolation is enforced by per-home application keys that are
+  # prefix-restricted to {home_id}/ (see DESIGN_BACKUP_DR.md §5).
+  b2_endpoint: https://s3.us-east-005.backblazeb2.com
+  b2_bucket: ziggy-backups-prod
+
+  # Per-home B2 application key + key_id are resolved from environment
+  # variables at runtime — NEVER stored in plain settings.yaml. The imaging
+  # script writes the live credentials to b2_credentials_path (below) and
+  # exports the matching env vars on the hub. The names here are env-var
+  # NAMES, not the secret values.
+  b2_key_id_env: ZIGGY_B2_KEY_ID
+  b2_app_key_env: ZIGGY_B2_APP_KEY
+
+  # Daily run time in hub-local time. NTP sync is verified before each run
+  # (skipped if clock skew > 60s, see DESIGN_BACKUP_DR.md §6 pre-flight).
+  schedule_hour: 2
+  schedule_minute: 0
+
+  # Tier-2 oversize threshold for the HA recorder DB. If the file exceeds
+  # this size at backup time, it is skipped and tagged 'optional_skipped'
+  # in the manifest. See DESIGN_BACKUP_DR.md §3.
+  recorder_skip_threshold_mb: 500
+
+  # Runtime key material on the hub. Both files are mode 0600 (root-only)
+  # and NEVER included in the backup bundle itself — including them would
+  # create a circular dependency on restore.
+  data_key_path: /etc/ziggy/data_key
+  b2_credentials_path: /etc/ziggy/b2_credentials
+
 calendar:
   birthdays: calendar.birthdays
   holidays: calendar.holidays_in_israel
