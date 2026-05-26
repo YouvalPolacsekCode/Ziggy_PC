@@ -332,9 +332,22 @@ class EmailPatch(BaseModel):
 @router.patch("/email")
 async def patch_email_settings(patch: EmailPatch, _: dict = Depends(require_role("super_admin"))):
     em = settings.setdefault("email", {})
-    for field, val in patch.model_dump(exclude_none=True).items():
-        em[field] = val
-    save_settings(settings)
+    data = patch.model_dump(exclude_none=True)
+
+    # Everything except password is non-secret — settings.yaml.
+    non_secret_changed = False
+    for field in ("enabled", "host", "port", "username", "from_address", "from_name"):
+        if field in data:
+            em[field] = data[field]
+            non_secret_changed = True
+    if non_secret_changed:
+        save_settings(settings)
+
+    # SMTP password is the secret.
+    if "password" in data:
+        em["password"] = data["password"]
+        save_secrets({"email": {"password": data["password"]}})
+
     return {"ok": True}
 
 
