@@ -176,14 +176,69 @@ def load_settings() -> dict:
 
 
 _save_lock = threading.Lock()
+_secrets_lock = threading.Lock()
+
+# Keys that must NEVER be written to the tracked settings.yaml. The in-memory
+# `settings` dict keeps them (so callers reading e.g. settings["openai"]["api_key"]
+# still work for the running process), but save_settings() strips them on disk.
+# Persistence path for these keys is config/secrets.yaml via save_secrets().
+_SECRET_PATHS: list[tuple[str, ...]] = [
+    ("home_assistant", "token"),
+    ("openai", "api_key"),
+    ("telegram", "token"),
+    ("mqtt", "password"),
+    ("serpapi", "api_key"),
+    ("email", "password"),
+    ("voice", "azure", "speech_key"),
+    ("ifttt", "webhook_key"),
+    ("relay", "secret"),
+]
+
+
+def _strip_secret_paths(data: dict) -> dict:
+    # Deep-copy + remove every _SECRET_PATHS entry. Used right before persisting
+    # to settings.yaml so secrets never round-trip through tracked config.
+    import copy
+    out = copy.deepcopy(data)
+    for path in _SECRET_PATHS:
+        node = out
+        for key in path[:-1]:
+            if not isinstance(node, dict):
+                node = None
+                break
+            node = node.get(key)
+            if node is None:
+                break
+        if isinstance(node, dict):
+            node.pop(path[-1], None)
+    return out
 
 
 def save_settings(settings_data: dict) -> None:
     path = _config_path()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    safe = _strip_secret_paths(settings_data)
     with _save_lock:
         with open(path, 'w', encoding='utf-8') as f:
-            yaml.dump(settings_data, f, allow_unicode=True, default_flow_style=False)
+            yaml.dump(safe, f, allow_unicode=True, default_flow_style=False)
+
+
+def save_secrets(updates: dict) -> None:
+    # Merge `updates` into config/secrets.yaml (untracked). The on-disk file
+    # is created if missing. Used by the admin UI to persist credentials
+    # without ever touching settings.yaml.
+    os.makedirs(os.path.dirname(os.path.abspath(_SECRETS_FILE)), exist_ok=True)
+    with _secrets_lock:
+        existing: dict = {}
+        if os.path.exists(_SECRETS_FILE):
+            try:
+                with open(_SECRETS_FILE, 'r', encoding='utf-8') as f:
+                    existing = yaml.safe_load(f) or {}
+            except Exception:
+                existing = {}
+        _deep_merge(existing, updates or {})
+        with open(_SECRETS_FILE, 'w', encoding='utf-8') as f:
+            yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
 
 
 settings = load_settings()
