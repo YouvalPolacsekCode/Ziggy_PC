@@ -58,6 +58,14 @@ python-multipart>=0.0.6
 websockets>=11.0
 aiosqlite>=0.19.0
 
+# Password hashing — bcrypt for the auth.db user store. Pinned to match the
+# relay (relay/requirements.txt) so both surfaces ship identical hash output.
+# bcrypt is pinned to <4.1 because passlib 1.7.4 (last upstream release, 2020)
+# reads bcrypt.__about__ which was removed in bcrypt 4.1; bcrypt 5.0 also added
+# a 72-byte length check that breaks passlib's startup self-test.
+passlib[bcrypt]==1.7.4
+bcrypt<4.1
+
 # IR blaster direct access (used alongside HA — enables continuous IR receive)
 broadlink>=0.18.0
 
