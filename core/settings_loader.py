@@ -194,10 +194,20 @@ _SECRET_PATHS: list[tuple[str, ...]] = [
     ("relay", "secret"),
 ]
 
+# Top-level sections that are dropped entirely on save. Their persistent
+# home is no longer settings.yaml:
+#   users  — password hashes + session tokens now live in user_files/auth.db
+#   auth   — legacy single-user shape (predates the users[] list); superseded
+#            by users → auth.db. The in-memory dict still keeps it during
+#            transition so any straggling read paths don't NPE, but the
+#            on-disk YAML stops persisting it as of this commit.
+_SECRET_TOPLEVEL_KEYS: list[str] = ["users", "auth"]
+
 
 def _strip_secret_paths(data: dict) -> dict:
-    # Deep-copy + remove every _SECRET_PATHS entry. Used right before persisting
-    # to settings.yaml so secrets never round-trip through tracked config.
+    # Deep-copy + remove every _SECRET_PATHS entry plus every entry in
+    # _SECRET_TOPLEVEL_KEYS. Used right before persisting to settings.yaml
+    # so secrets never round-trip through tracked config.
     import copy
     out = copy.deepcopy(data)
     for path in _SECRET_PATHS:
@@ -211,6 +221,8 @@ def _strip_secret_paths(data: dict) -> dict:
                 break
         if isinstance(node, dict):
             node.pop(path[-1], None)
+    for key in _SECRET_TOPLEVEL_KEYS:
+        out.pop(key, None)
     return out
 
 
