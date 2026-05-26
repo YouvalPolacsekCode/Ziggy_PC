@@ -8,14 +8,60 @@ from datetime import datetime, timezone, timedelta
 
 import jwt
 from fastapi import HTTPException, Request
+from passlib.context import CryptContext
 
 JWT_SECRET  = os.getenv("RELAY_JWT_SECRET", secrets.token_hex(32))
 JWT_ALG     = "HS256"
 JWT_EXPIRE_HOURS = 720  # 30 days
 
+# Single bcrypt context for new/rotated passwords. Cost 12 is the OWASP-2023
+# baseline — ~250 ms per hash on a modest VPS, slow enough that the leaked
+# DB doesn't yield to a single GPU-day, fast enough not to add visible
+# login latency. Schemes list contains only bcrypt; legacy HMAC verification
+# stays in this module under its own helper so it can be removed later.
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+
 
 def hash_password(password: str, salt: str) -> str:
+    """Legacy HMAC-SHA256 hash, kept for backward-compat verification only.
+
+    DO NOT use for new passwords — call hash_password_bcrypt() instead. The
+    /login path verifies a legacy row with this function and immediately
+    re-hashes it with bcrypt on success (transparent migration).
+    """
     return hmac.new(salt.encode(), password.encode(), hashlib.sha256).hexdigest()
+
+
+def hash_password_bcrypt(password: str) -> str:
+    """Bcrypt hash for new/rotated passwords. Cost 12; embedded salt."""
+    return _pwd_ctx.hash(password)
+
+
+def verify_password(
+    password: str,
+    stored_hash: str,
+    salt: str,
+    hash_algo: str,
+) -> bool:
+    """Constant-time verification across both algorithms.
+
+    Returns True iff `password` matches the stored hash under the given
+    algorithm. Unknown algorithms return False — never raise into the
+    request handler.
+    """
+    if not stored_hash:
+        return False
+    if hash_algo == "bcrypt":
+        try:
+            return _pwd_ctx.verify(password, stored_hash)
+        except Exception:
+            return False
+    # Legacy HMAC-SHA256. Same as hash_password() above but defensive against
+    # missing salt rows.
+    if not salt:
+        return False
+    expected = hmac.new(salt.encode(), password.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, stored_hash)
 
 
 def new_salt() -> str:

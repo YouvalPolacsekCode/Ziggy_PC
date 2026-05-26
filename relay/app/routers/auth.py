@@ -7,7 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import (
-    hash_password, new_salt, new_token, new_id,
+    hash_password, hash_password_bcrypt, verify_password,
+    new_salt, new_token, new_id,
     issue_jwt, current_user, require_role,
 )
 from ..database import get_db
@@ -28,14 +29,15 @@ async def ensure_relay_admin():
         )
         if row:
             return
-        salt = new_salt()
+        # Bcrypt embeds its own salt; we still set the salt column for table
+        # compatibility but it's unused for bcrypt rows.
         await db.execute(
             """INSERT OR IGNORE INTO users
-               (id, email, password_hash, salt, role, home_id, created_at)
-               VALUES (?,?,?,?,?,NULL,?)""",
+               (id, email, password_hash, salt, role, home_id, hash_algo, created_at)
+               VALUES (?,?,?,?,?,NULL,?,?)""",
             (new_id(), RELAY_ADMIN_EMAIL,
-             hash_password(RELAY_ADMIN_PASSWORD, salt),
-             salt, "relay_admin",
+             hash_password_bcrypt(RELAY_ADMIN_PASSWORD),
+             "", "relay_admin", "bcrypt",
              datetime.now(timezone.utc).isoformat()),
         )
         await db.commit()
@@ -65,9 +67,25 @@ async def login(body: LoginBody):
         if not rows:
             raise HTTPException(401, "Invalid email or password.")
         u = dict(rows[0])
-        expected = hash_password(body.password, u["salt"])
-        if expected != u["password_hash"]:
+        # Fallback default for rows that predate the hash_algo migration.
+        algo = u.get("hash_algo") or "hmac_sha256"
+
+        if not verify_password(body.password, u["password_hash"], u.get("salt", ""), algo):
             raise HTTPException(401, "Invalid email or password.")
+
+        # Transparent rehash: a successful login on a legacy HMAC row
+        # immediately rotates the stored hash to bcrypt and clears the now-
+        # unused salt. Wrapped in a single transaction so a crash mid-flight
+        # leaves the row internally consistent.
+        if algo != "bcrypt":
+            await db.execute(
+                """UPDATE users
+                   SET password_hash = ?, salt = '', hash_algo = 'bcrypt'
+                   WHERE id = ?""",
+                (hash_password_bcrypt(body.password), u["id"]),
+            )
+            await db.commit()
+
         token = issue_jwt(u["id"], u["email"], u["role"], u["home_id"])
         return {"token": token, "role": u["role"], "home_id": u["home_id"], "email": u["email"]}
 
@@ -97,7 +115,6 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
         if len(body.password) < 6:
             raise HTTPException(400, "Password must be at least 6 characters.")
 
-        salt = new_salt()
         uid  = new_id()
 
         # For home invites: create a placeholder home record so it appears in
@@ -116,10 +133,10 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
         token = issue_jwt(uid, email, inv["role"], home_id)
 
         await db.execute(
-            """INSERT INTO users (id, email, password_hash, salt, role, home_id, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
-            (uid, email, hash_password(body.password, salt),
-             salt, inv["role"], home_id, now.isoformat()),
+            """INSERT INTO users (id, email, password_hash, salt, role, home_id, hash_algo, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (uid, email, hash_password_bcrypt(body.password),
+             "", inv["role"], home_id, "bcrypt", now.isoformat()),
         )
         await db.execute(
             "UPDATE invites SET accepted=1, accepted_at=?, accepted_by=? WHERE token=?",
