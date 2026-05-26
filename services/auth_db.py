@@ -249,3 +249,71 @@ def compare_session_token(stored: str, presented: str) -> bool:
     if not stored or not presented:
         return False
     return hmac.compare_digest(stored, presented)
+
+
+# ---------------------------------------------------------------------------
+# One-time migration from settings.yaml users[]
+# ---------------------------------------------------------------------------
+
+def migrate_from_yaml(yaml_users: list[dict]) -> dict:
+    """Copy users[] from settings.yaml into auth.db.
+
+    Idempotent — a user already present in the DB (by username, NOCASE) is
+    skipped. Returns counts: {migrated_users, migrated_sessions, skipped_users}.
+
+    Designed to be called on every boot. The first boot of the patched agent
+    does the actual copy; subsequent boots are a few cheap SELECTs.
+    """
+    init()
+    out = {"migrated_users": 0, "migrated_sessions": 0, "skipped_users": 0}
+    if not yaml_users:
+        return out
+    with _connect() as db:
+        for u in yaml_users:
+            username = (u.get("username") or "").strip()
+            if not username:
+                out["skipped_users"] += 1
+                continue
+            existing = db.execute(
+                "SELECT id FROM users WHERE username = ? COLLATE NOCASE",
+                (username,),
+            ).fetchone()
+            if existing:
+                out["skipped_users"] += 1
+                continue
+            password_hash = u.get("password_hash") or ""
+            if not password_hash:
+                # No hash → nothing meaningful to migrate. Skip.
+                out["skipped_users"] += 1
+                continue
+            salt = u.get("salt") or ""
+            role = u.get("role") or "user"
+            cur = db.execute(
+                """INSERT INTO users
+                   (username, role, password_hash, salt, hash_algo, created_at)
+                   VALUES (?, ?, ?, ?, 'hmac_sha256', ?)""",
+                (username, role, password_hash, salt, _now()),
+            )
+            user_id = cur.lastrowid
+            out["migrated_users"] += 1
+
+            # Carry over every active session token so logged-in devices stay
+            # logged in across the upgrade.
+            tokens: list[str] = list(u.get("session_tokens") or [])
+            single = u.get("session_token") or ""
+            if single and single not in tokens:
+                tokens.append(single)
+            for tok in tokens:
+                if not tok:
+                    continue
+                try:
+                    db.execute(
+                        "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+                        (tok, user_id, _now()),
+                    )
+                    out["migrated_sessions"] += 1
+                except sqlite3.IntegrityError:
+                    # Token already exists (e.g. shared between yaml entries).
+                    pass
+        db.commit()
+    return out

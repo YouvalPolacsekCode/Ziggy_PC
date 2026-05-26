@@ -95,6 +95,9 @@ async def _startup():
     _bootstrap_cloud_admin()
     _phase("cloud-admin bootstrap")
 
+    _migrate_users_to_db()
+    _phase("auth.db migration")
+
     # dr_init is now phase-1 only: persistent JSON + IR merge. The HA-REST
     # reconciliation that used to run inline (two synchronous /api/states
     # round-trips that could add 200-600 ms to startup on a healthy LAN and
@@ -143,6 +146,27 @@ async def _start_ir_listener():
         log_info("[IR] python-broadlink not installed — IR receive disabled. pip install broadlink to enable.")
     except Exception as e:
         log_info(f"[IR] Listener startup error: {e}")
+
+
+def _migrate_users_to_db():
+    """Copy settings.yaml users[] into user_files/auth.db (idempotent).
+
+    Designed to be safe at every boot — on the first run after the upgrade
+    it actually moves the rows; on every subsequent run it short-circuits
+    because each user already exists in the DB.
+    """
+    try:
+        from services.auth_db import migrate_from_yaml
+        result = migrate_from_yaml(settings.get("users") or [])
+        if result["migrated_users"] or result["migrated_sessions"]:
+            log_info(
+                f"[Auth] Migrated to auth.db: "
+                f"{result['migrated_users']} users, "
+                f"{result['migrated_sessions']} sessions, "
+                f"{result['skipped_users']} skipped."
+            )
+    except Exception as e:
+        log_info(f"[Auth] auth.db migration error: {e}")
 
 
 def _bootstrap_cloud_admin():
