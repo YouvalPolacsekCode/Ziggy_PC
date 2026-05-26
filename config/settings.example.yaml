@@ -1,0 +1,324 @@
+# Ziggy — example configuration
+# ------------------------------------------------------------------
+# Copy this file to config/settings.yaml on a fresh install. The real
+# settings.yaml is git-ignored (or should be — see AUDIT §S1 / §6).
+#
+# Every secret in this file is a placeholder. Replace them with real
+# values from a secrets manager or the .env file. NEVER commit a real
+# settings.yaml with these fields populated.
+#
+# Sections that point at Home Assistant entity_ids (device_map,
+# target_registry, sensor_alerts, calendar, global_sensors) are
+# deployment-specific. The values below are illustrative — adjust
+# per home.
+# ------------------------------------------------------------------
+
+anomaly_engine:
+  anom02_empty_minutes: 30
+  anom03_door_open_minutes: 60
+  anom06_runtime_hours: 4
+  enabled: true
+  exemptions:
+  - switch.nas
+  - switch.router
+  quiet_hour_end: 7
+  quiet_hour_start: 23
+
+audio:
+  ffplay_path: ''        # path to ffplay binary; e.g. /usr/bin/ffplay on Linux
+  input_device: null     # null = system default
+  output_device: null
+
+auth:
+  # Legacy single-user auth fields. Kept for backward-compat reads from
+  # existing deployments only. New installs persist user + session records
+  # in user_files/auth.db (SQLite) — see services/auth_db.py.
+  password_hash: REPLACE_WITH_PASSWORD_HASH
+  salt: REPLACE_WITH_SALT
+  session_token: REPLACE_WITH_SESSION_TOKEN
+  username: admin@example.com
+
+calendar:
+  birthdays: calendar.birthdays
+  holidays: calendar.holidays_in_israel
+  personal: calendar.user_personal
+
+contacts:
+  # Optional address book used by comm_handler. Each entry is keyed by short name.
+  example_person:
+    email: person@example.com
+    telegram: '@telegram_handle'
+    whatsapp: '+15551234567'
+
+database:
+  name: ziggy_web
+  url: mongodb://localhost:27017
+
+debug:
+  enable_dashboard: true
+  level: basic          # off | basic | verbose | trace
+  scopes: []
+  verbose: false
+  verbose_logging: true
+
+device_aliases_he:
+  # Hebrew → English normalization map used by core/intent_parser.py.
+  # Keep populated; intent parsing in Hebrew depends on these mappings.
+  אור: light
+  התאורה: the lights
+  טלוויזיה: TV
+  מאוורר: fan
+  מזגן: AC
+  מנעול: lock
+  רמקול: speaker
+  תאורה: lights
+
+device_map:
+  # Per-room canonical entity assignments. Used by light/climate/sensor
+  # handlers to pick the right HA entity_id for an utterance like
+  # "turn on the bedroom light". `null` means no entity assigned.
+  bedroom:
+    illuminance: null
+    light: null
+    motion: null
+    temperature: null
+  kitchen:
+    illuminance: null
+    light: null
+    motion: null
+  living_room:
+    light: null
+    motion: null
+    temperature: null
+    tv: null
+  office:
+    light: null
+
+devices: {}              # reserved for future per-device overrides
+
+email:
+  enabled: false
+  from_address: ziggyhome.notifications@example.com
+  from_name: Ziggy
+  host: smtp.gmail.com
+  password: REPLACE_WITH_SMTP_APP_PASSWORD
+  port: 587
+  username: ziggyhome.notifications@example.com
+
+entity_filter:
+  extra_hidden_domains: []
+  extra_hidden_patterns: []
+
+features:
+  buddy_mode: true
+  file_management: true
+  home_map: false
+  ifttt: false
+  local_storage: true
+  rouge: false
+  scenes: false
+  smart_home: true
+  task_tracking: false
+  telegram: false
+  voice: true
+  zigbee_support: true
+
+global_sensors:
+  # Cross-room sensors that handlers refer to by purpose, not by room.
+  internet_status: null
+  person_home: null
+  sun_dawn: sensor.sun_next_dawn
+  sun_dusk: sensor.sun_next_dusk
+  sun_rising: sensor.sun_next_rising
+  sun_setting: sensor.sun_next_setting
+
+home:
+  id: home-example-primary
+  name: Home
+  type: hub              # hub (local mini PC) | cloud (per-home VM)
+
+home_assistant:
+  # Long-lived HA access token. Generate at HA → Profile → Long-lived tokens.
+  token: REPLACE_WITH_HA_LONG_LIVED_TOKEN
+  url: http://homeassistant.local:8123/
+
+home_zone:
+  # Coordinates of the home for presence calculations.
+  lat: 0.0
+  lon: 0.0
+  radius_m: 100.0
+
+ifttt:
+  triggers:
+  - light_on
+  - light_off
+  - send_notification
+  webhook_key: YOUR_IFTTT_WEBHOOK_KEY
+
+ir_blasters:
+- ha_entity_id: remote.ir_blaster
+  id: blaster_living_room
+  name: Living Room IR Blaster
+  room: living_room
+
+language: en
+
+media:
+  camera_map: {}
+  default_cast_device: null
+  default_speaker: null
+  default_volume: 0.35
+  device_map: {}
+
+mqtt:
+  base_topic: ziggy
+  host: 127.0.0.1
+  password: REPLACE_WITH_MQTT_PASSWORD
+  port: 1883
+  username: ziggy
+
+news:
+  rss_sources:
+  - https://feeds.bbci.co.uk/news/rss.xml
+
+ollama:
+  base_url: http://localhost:11434/v1
+  model: qwen2.5:3b
+  timeout: 30
+
+openai:
+  api_key: REPLACE_WITH_OPENAI_API_KEY
+
+paths:
+  file_store: files/
+  logs: logs/
+  memory_log: memory/memory_log.json
+  task_log: memory/task_log.json
+
+pattern_learning:
+  analysis_hour: 20
+  enabled: true
+  llm_synthesis: true
+  lookback_days: 25
+  max_pending_suggestions: 3
+  min_occurrences: 5
+  sequence_gap_minutes: 5
+  time_window_minutes: 45
+
+presence:
+  away_radius_m: 200.0
+  cooldown_seconds: 600
+  dwell_seconds: 60
+  history_size: 20
+  home_radius_m: 100.0
+  max_accuracy_m: 150.0
+  stale_away_minutes: 30
+  stale_home_hours: 8
+  stale_ping_seconds: 90
+
+relay:
+  # Per-home secret used to authenticate hub → relay traffic. Rotate per
+  # PROMPT_SECURITY_HARDENING. The cloud provisioner generates this when
+  # the home is created; for a self-hosted hub, set it once and store in env.
+  secret: REPLACE_WITH_RELAY_SECRET
+  tunnel_url: https://example.cfargotunnel.com
+  url: https://ziggy-relay.fly.dev
+
+roles:
+  guests: []
+  superadmin: []
+  trusted_users: []
+
+room_aliases:
+  # Spoken aliases that resolve to canonical room keys.
+  bath room: bathroom
+  bathroom: bathroom
+  bedroom: bedroom
+  kitchen: kitchen
+  living room: living_room
+  master bedroom: master_bedroom
+  office: office
+
+room_aliases_he:
+  אמבטיה: bathroom
+  חדר שינה: bedroom
+  מטבח: kitchen
+  משרד: office
+  סלון: living_room
+
+sensor_alerts:
+  cooldown_minutes: 10
+  enabled: false
+  poll_interval_s: 20
+  sensors: []
+  # Each sensor: { entity_id: ..., label: ..., conditions: { ... } }
+
+serpapi:
+  api_key: REPLACE_WITH_SERPAPI_KEY
+
+system:
+  language: en
+  timezone: UTC
+
+target_registry: {}
+  # Per-deployment registry of speakable targets (TVs, speakers, streamers).
+  # Each entry: { ha_entity, name, room, aliases: [...], supports_audio,
+  # supports_images, supports_video, type }.
+
+telegram:
+  allowed_users: []
+  default_chat_id: 0
+  enabled: false
+  token: REPLACE_WITH_TELEGRAM_BOT_TOKEN
+
+todo:
+  shopping_list: todo.shopping_list
+
+users: []
+# From v1.1 onward, user records and session tokens live in
+# user_files/auth.db (SQLite). The block above is shown for documentation
+# only. A one-shot migration copies any pre-existing users[] entries from
+# settings.yaml into the DB on first boot of the updated agent.
+#
+# Reference shape of a single user row in auth.db (and the legacy YAML
+# format for migration):
+#   - username:       admin@example.com
+#     role:           super_admin
+#     password_hash:  <hex digest>
+#     salt:           <hex>
+#     session_tokens: [<token>, ...]   # capped at 20
+
+voice:
+  active_timeout_s: 90
+  azure:
+    speech_key: REPLACE_WITH_AZURE_SPEECH_KEY
+    speech_region: eastus
+    voice_en: en-US-JennyNeural
+    voice_he: he-IL-HilaNeural
+  enabled: true
+  hebrew_model: ivrit-ai/whisper-large-v3-turbo-ct2
+  language: en
+  sensitivity: 0.5
+  speed: 1.0
+  stt_language: auto
+  # ---- TTS ----
+  # v1 ships with TTS OFF. Voice responses are delivered via push notification
+  # + in-app text only. tts_engine + the Azure key stay configured so v1.1
+  # can re-enable as a cloud-gated paid feature. See docs/RUNBOOK_VOICE.md.
+  tts_enabled: false
+  tts_engine: azure       # azure | piper (Piper Hebrew voice is not bundled)
+  tts_language: en
+  # ---- Wake word ----
+  # v1 ships PUSH-TO-TALK ONLY. Wake-word inference is experimental and
+  # quarantined. See oww_data/README.md before flipping wakeword_enabled.
+  wakeword_cooldown_ms: 1200
+  wakeword_enabled: false
+  wakeword_engine: oww    # oww | porcupine
+  wakeword_hits: 3
+  wakeword_model: hey_mycroft
+  wakeword_threshold: 0.65
+
+web_interface:
+  backend_port: 8001
+  enabled: true
+  frontend_port: 3000
