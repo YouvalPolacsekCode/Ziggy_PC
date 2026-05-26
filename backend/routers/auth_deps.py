@@ -12,6 +12,18 @@ ROLE_ORDER: dict[str, int] = {"guest": 0, "user": 1, "admin": 2, "super_admin": 
 def find_user_by_token(token: str) -> dict | None:
     if not token:
         return None
+    # Primary: SQLite auth.db (post-migration, every user lives here).
+    try:
+        from services.auth_db import get_user_by_session_token
+        u = get_user_by_session_token(token)
+        if u:
+            return u
+    except Exception:
+        # Defensive: if the DB is unreadable for any reason, fall through to
+        # yaml so existing sessions never lock out the user mid-incident.
+        pass
+    # Fallback: legacy settings.yaml users[] block. Kept during the transition
+    # so any pre-migration session token still resolves.
     for user in settings.get("users", []):
         # Check multi-session list first, fall back to legacy single token
         for stored in user.get("session_tokens", []):

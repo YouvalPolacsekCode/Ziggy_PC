@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from core.logger_module import log_info
 from core.settings_loader import save_settings, settings
+from services import auth_db
 from .auth_deps import ROLE_ORDER, find_user_by_token, get_current_user, require_role
 
 router = APIRouter()
@@ -36,6 +37,27 @@ def _find_user(username: str) -> dict | None:
 
 def _hash_password(password: str, salt: str) -> str:
     return hmac.new(salt.encode(), password.encode(), hashlib.sha256).hexdigest()
+
+
+def _ensure_user_in_db(yaml_user: dict) -> Optional[int]:
+    """Lazily migrate a yaml-only user into auth.db on first successful login.
+    Returns the user_id, or None if migration was skipped (no password_hash).
+    """
+    username = (yaml_user.get("username") or "").strip()
+    if not username:
+        return None
+    existing = auth_db.get_user_by_username(username)
+    if existing:
+        return existing["id"]
+    if not yaml_user.get("password_hash"):
+        return None
+    return auth_db.create_user(
+        username,
+        yaml_user["password_hash"],
+        yaml_user.get("salt", ""),
+        yaml_user.get("role", "user"),
+        "hmac_sha256",
+    )
 
 
 def _migrate_legacy() -> None:
@@ -96,18 +118,23 @@ class UpdateUserBody(BaseModel):
 
 @router.get("/api/auth/status")
 async def auth_status(request: Request):
-    users = _get_users()
-    configured = any(u.get("password_hash") for u in users)
+    # DB is the source of truth post-migration; yaml fallback covers a fresh
+    # boot where the migration hasn't run yet.
+    db_users = auth_db.list_users()
+    yaml_users = _get_users()
+    configured = bool(db_users) or any(u.get("password_hash") for u in yaml_users)
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip()
     user = find_user_by_token(token)
-    # If a token was supplied but doesn't match any user, tell the frontend to
-    # clear its session — avoids the "authenticated but role=null" stuck state.
     if token and not user and configured:
         raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+    fallback_username = (
+        db_users[0]["username"] if db_users
+        else (yaml_users[0].get("username") if yaml_users else None)
+    )
     return {
         "configured": configured,
-        "username": user.get("username") if user else (users[0].get("username") if users else None),
+        "username": user.get("username") if user else fallback_username,
         "role": user.get("role") if user else None,
     }
 
@@ -115,8 +142,7 @@ async def auth_status(request: Request):
 @router.post("/api/auth/setup")
 async def setup(body: SetupBody):
     """First-time account setup — creates the super_admin owner account."""
-    users = _get_users()
-    if any(u.get("password_hash") for u in users):
+    if auth_db.has_any_user() or any(u.get("password_hash") for u in _get_users()):
         raise HTTPException(status_code=409, detail="Account already exists.")
     if not body.username.strip():
         raise HTTPException(status_code=400, detail="Username required.")
@@ -124,26 +150,30 @@ async def setup(body: SetupBody):
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
     salt = secrets.token_hex(16)
     token = secrets.token_hex(32)
-    user = {
-        "username": body.username.strip(),
-        "password_hash": _hash_password(body.password, salt),
-        "salt": salt,
-        "session_token": token,
-        "role": "super_admin",
-    }
-    _save_users([user])
+    user_id = auth_db.create_user(
+        username=body.username.strip(),
+        password_hash=_hash_password(body.password, salt),
+        salt=salt,
+        role="super_admin",
+        hash_algo="hmac_sha256",
+    )
+    auth_db.add_session(user_id, token)
     log_info(f"[Auth] Account created for '{body.username}' (super_admin).")
     return {"token": token, "role": "super_admin"}
 
 
 @router.post("/api/auth/login")
 async def login(body: LoginBody):
-    users = _get_users()
-    if not users:
+    # Empty-fleet first-boot UX: return a placeholder token so the FE can
+    # immediately call /api/auth/setup without a separate prompt.
+    if not auth_db.has_any_user() and not _get_users():
         token = secrets.token_hex(32)
         return {"token": token, "role": "super_admin"}
 
-    user = _find_user(body.username)
+    # Find user: DB first (post-migration source of truth), yaml fallback.
+    db_user = auth_db.get_user_by_username(body.username)
+    yaml_user = None if db_user else _find_user(body.username)
+    user = db_user or yaml_user
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
@@ -151,16 +181,14 @@ async def login(body: LoginBody):
     if not hmac.compare_digest(expected, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
+    # Lazy-migrate any yaml-only user so subsequent sessions live in DB.
+    user_id = user.get("id")
+    if user_id is None:
+        user_id = _ensure_user_in_db(user)
+
     token = secrets.token_hex(32)
-    # Keep a list of active session tokens so multiple devices stay logged in.
-    # Cap at 20 to prevent unbounded growth; drop the oldest when full.
-    tokens = user.get("session_tokens", [])
-    if user.get("session_token") and user["session_token"] not in tokens:
-        tokens.append(user["session_token"])  # migrate legacy single token
-    tokens.append(token)
-    user["session_tokens"] = tokens[-20:]
-    user["session_token"] = token  # most recent, kept for backward compat
-    _save_users(users)
+    if user_id is not None:
+        auth_db.add_session(user_id, token)
     role = user.get("role", "user")
     log_info(f"[Auth] Login: {body.username} ({role})")
     return {"token": token, "role": role}
@@ -174,20 +202,27 @@ async def login(body: LoginBody):
 async def change_password(body: ChangePasswordBody, current: dict = Depends(get_current_user)):
     if len(body.password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
-    users = _get_users()
     target_name = body.username.strip()
     if current["username"].lower() != target_name.lower():
         if ROLE_ORDER.get(current.get("role", "user"), 0) < ROLE_ORDER["super_admin"]:
             raise HTTPException(status_code=403, detail="Cannot change another user's password.")
-    target = _find_user(target_name)
+
+    target = auth_db.get_user_by_username(target_name) or _find_user(target_name)
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
-    salt = target.get("salt") or secrets.token_hex(16)
-    target["salt"] = salt
-    target["password_hash"] = _hash_password(body.password, salt)
+
+    # Lazy-migrate yaml-only target so the new password lives in DB.
+    user_id = target.get("id")
+    if user_id is None:
+        user_id = _ensure_user_in_db(target)
+
+    salt = secrets.token_hex(16)
+    new_hash = _hash_password(body.password, salt)
     token = secrets.token_hex(32)
-    target["session_token"] = token
-    _save_users(users)
+
+    if user_id is not None:
+        auth_db.update_user_password(target_name, new_hash, salt, "hmac_sha256")
+        auth_db.add_session(user_id, token)
     log_info(f"[Auth] Password changed for '{target_name}'.")
     return {"token": token}
 
@@ -196,14 +231,8 @@ async def change_password(body: ChangePasswordBody, current: dict = Depends(get_
 async def logout(request: Request):
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip()
-    user = find_user_by_token(token)
-    if user:
-        users = _get_users()
-        # Remove only this device's token — other sessions stay valid
-        user["session_tokens"] = [t for t in user.get("session_tokens", []) if t != token]
-        if user.get("session_token") == token:
-            user["session_token"] = user["session_tokens"][-1] if user["session_tokens"] else secrets.token_hex(32)
-        _save_users(users)
+    if token:
+        auth_db.remove_session(token)
     return {"ok": True}
 
 
@@ -213,6 +242,10 @@ async def logout(request: Request):
 
 @router.get("/api/auth/users")
 async def list_users(_: dict = Depends(require_role("super_admin"))):
+    db_rows = auth_db.list_users()
+    if db_rows:
+        return [{"username": r["username"], "role": r.get("role", "user")} for r in db_rows]
+    # Pre-migration fallback only.
     return [
         {"username": u["username"], "role": u.get("role", "user")}
         for u in _get_users()
@@ -221,8 +254,7 @@ async def list_users(_: dict = Depends(require_role("super_admin"))):
 
 @router.post("/api/auth/users")
 async def create_user(body: CreateUserBody, current: dict = Depends(require_role("super_admin"))):
-    users = _get_users()
-    if _find_user(body.username):
+    if auth_db.get_user_by_username(body.username) or _find_user(body.username):
         raise HTTPException(status_code=409, detail="Username already exists.")
     if not body.username.strip():
         raise HTTPException(status_code=400, detail="Username required.")
@@ -233,17 +265,15 @@ async def create_user(body: CreateUserBody, current: dict = Depends(require_role
     if body.role == "super_admin" and current.get("role") != "super_admin":
         raise HTTPException(status_code=403, detail="Only super_admin can create super_admin accounts.")
     salt = secrets.token_hex(16)
-    user = {
-        "username": body.username.strip(),
-        "password_hash": _hash_password(body.password, salt),
-        "salt": salt,
-        "session_token": secrets.token_hex(32),
-        "role": body.role,
-    }
-    users.append(user)
-    _save_users(users)
+    auth_db.create_user(
+        username=body.username.strip(),
+        password_hash=_hash_password(body.password, salt),
+        salt=salt,
+        role=body.role,
+        hash_algo="hmac_sha256",
+    )
     log_info(f"[Auth] User created: '{body.username}' role={body.role}")
-    return {"username": user["username"], "role": user["role"]}
+    return {"username": body.username.strip(), "role": body.role}
 
 
 @router.patch("/api/auth/users/{username}")
@@ -252,35 +282,46 @@ async def update_user(
     body: UpdateUserBody,
     current: dict = Depends(require_role("super_admin")),
 ):
-    users = _get_users()
-    target = _find_user(username)
+    target = auth_db.get_user_by_username(username) or _find_user(username)
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
+
+    # Lazy-migrate yaml-only target so changes land in DB.
+    user_id = target.get("id")
+    if user_id is None:
+        user_id = _ensure_user_in_db(target)
+
     if body.role is not None:
         if body.role not in ROLE_ORDER:
             raise HTTPException(status_code=400, detail=f"Invalid role.")
         if target["username"].lower() == current["username"].lower():
             raise HTTPException(status_code=400, detail="Cannot change your own role.")
-        target["role"] = body.role
+        if user_id is not None:
+            auth_db.update_user_role(target["username"], body.role)
     if body.password is not None:
         if len(body.password) < 4:
             raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
-        salt = target.get("salt") or secrets.token_hex(16)
-        target["salt"] = salt
-        target["password_hash"] = _hash_password(body.password, salt)
-        target["session_token"] = secrets.token_hex(32)
-    _save_users(users)
-    return {"username": target["username"], "role": target.get("role")}
+        salt = secrets.token_hex(16)
+        new_hash = _hash_password(body.password, salt)
+        if user_id is not None:
+            auth_db.update_user_password(target["username"], new_hash, salt, "hmac_sha256")
+    # Return the final state.
+    refreshed = auth_db.get_user_by_username(target["username"]) or {}
+    return {
+        "username": refreshed.get("username", target["username"]),
+        "role":     refreshed.get("role", body.role or target.get("role")),
+    }
 
 
 @router.delete("/api/auth/users/{username}")
 async def delete_user(username: str, current: dict = Depends(require_role("super_admin"))):
-    users = _get_users()
     if current["username"].lower() == username.lower():
         raise HTTPException(status_code=400, detail="Cannot delete your own account.")
-    new_users = [u for u in users if u.get("username", "").lower() != username.lower()]
-    if len(new_users) == len(users):
-        raise HTTPException(status_code=404, detail="User not found.")
-    _save_users(new_users)
+    deleted = auth_db.delete_user(username)
+    if not deleted:
+        # Fall back: was the user only in yaml? Treat as not-found to match prior
+        # 404 behavior — yaml-only writes are no longer supported here.
+        if not _find_user(username):
+            raise HTTPException(status_code=404, detail="User not found.")
     log_info(f"[Auth] User deleted: '{username}'")
     return {"ok": True}
