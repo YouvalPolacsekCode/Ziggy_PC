@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { WifiOff, Pencil } from 'lucide-react'
 import { getMapRoomsSummary } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 const HomeMapCanvas = lazy(() =>
   import('./HomeMapCanvas').then((m) => ({ default: m.HomeMapCanvas }))
@@ -16,6 +17,7 @@ const HomeMapCanvas = lazy(() =>
 const POLL_INTERVAL = 5000
 
 export default function HomeMap() {
+  const t = useT()
   const navigate = useNavigate()
   const [rooms, setRooms]     = useState([])
   const [loading, setLoading] = useState(true)
@@ -48,20 +50,20 @@ export default function HomeMap() {
           animate={{ opacity: 1, y: 0 }}
           className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100"
         >
-          Home Map
+          {t('homeMap.title')}
         </motion.h1>
         <button
           onClick={() => navigate('/map/build')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
         >
-          <Pencil size={12} /> Edit Layout
+          <Pencil size={12} /> {t('homeMap.editLayout')}
         </button>
       </div>
 
       {haError && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-medium mb-4">
           <WifiOff size={13} />
-          Lost connection to Home Assistant — showing last known state.
+          {t('homeMap.lostConnection')}
         </div>
       )}
 
@@ -69,7 +71,7 @@ export default function HomeMap() {
         <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" style={{ height: 480 }} />
       ) : (
         <Suspense fallback={
-          <div className="flex items-center justify-center h-48 text-zinc-400 dark:text-zinc-600 text-sm">Loading map…</div>
+          <div className="flex items-center justify-center h-48 text-zinc-400 dark:text-zinc-600 text-sm">{t('homeMap.loadingMap')}</div>
         }>
           <HomeMapCanvas rooms={rooms} viewOnly={true} />
         </Suspense>

@@ -6,6 +6,7 @@ import { IntentParamForm, validateIntentParams } from '../components/ui/IntentPa
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { sendDirectIntent } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 // Curated list of useful intents — unchanged
 const INTENT_OPTIONS = [
@@ -83,6 +84,7 @@ const KIND_LABEL = (intent) => {
 
 // ── Quick ask form ────────────────────────────────────────────────────────────
 function QuickAskForm({ initial, onSave, onCancel, saving }) {
+  const t = useT()
   const [form,        setForm]        = useState(initial || EMPTY_FORM)
   const [paramsError, setParamsError] = useState(null)
 
@@ -94,7 +96,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
   const validateAndSave = () => {
     const missing = validateIntentParams(form.intent, form.params || {})
     if (missing.length > 0) {
-      setParamsError(`Required: ${missing.join(', ')}`)
+      setParamsError(t('quickAsks.requiredField', { fields: missing.join(', ') }))
       return
     }
     setParamsError(null)
@@ -103,11 +105,11 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Input label="Label" placeholder="e.g. Turn off all lights" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} autoFocus />
+      <Input label={t('quickAsks.labelField')} placeholder={t('quickAsks.labelPlaceholder')} value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} autoFocus />
 
       {/* Icon picker */}
       <div>
-        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Icon</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('quickAsks.icon')}</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {EMOJI_OPTIONS.map(e => (
             <button
@@ -127,7 +129,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 
       {/* Intent picker */}
       <div>
-        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Intent</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>{t('quickAsks.intent')}</p>
         <select
           value={form.intent}
           onChange={handleIntentChange}
@@ -145,7 +147,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 
       {/* Params — structured form driven by intentParamSchema */}
       <div>
-        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Parameters</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('quickAsks.parameters')}</p>
         <IntentParamForm
           intent={form.intent}
           value={form.params || {}}
@@ -156,9 +158,9 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
       </div>
 
       <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-        <button onClick={onCancel} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+        <button onClick={onCancel} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
         <button onClick={validateAndSave} disabled={!form.label.trim() || saving} className="z-btn-primary" style={{ flex: 1 }}>
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? t('common.saving') : t('common.save')}
         </button>
       </div>
     </div>
@@ -167,6 +169,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function QuickAsks({ embedded = false }) {
+  const t = useT()
   const { items, loading, fetch, create, update, remove } = useQuickAskStore()
   const { addToast } = useUIStore()
   const [showCreate, setShowCreate] = useState(false)
@@ -177,23 +180,23 @@ export default function QuickAsks({ embedded = false }) {
 
   const handleCreate = async (data) => {
     setSaving(true)
-    try { await create(data); addToast('Quick ask added', 'success'); setShowCreate(false) }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+    try { await create(data); addToast(t('quickAsks.added'), 'success'); setShowCreate(false) }
+    catch (e) { addToast(e.message || t('common.failed'), 'error') }
     finally { setSaving(false) }
   }
   const handleUpdate = async (data) => {
     setSaving(true)
-    try { await update(editing.id, data); addToast('Updated', 'success'); setEditing(null) }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+    try { await update(editing.id, data); addToast(t('quickAsks.updated'), 'success'); setEditing(null) }
+    catch (e) { addToast(e.message || t('common.failed'), 'error') }
     finally { setSaving(false) }
   }
   const handleDelete = async (id) => {
-    try { await remove(id); addToast('Deleted', 'success') }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+    try { await remove(id); addToast(t('quickAsks.deleted'), 'success') }
+    catch (e) { addToast(e.message || t('common.failed'), 'error') }
   }
   const handleFire = async (qa) => {
     try { await sendDirectIntent(qa.intent, qa.params || {}); addToast(qa.label, 'success') }
-    catch (e) { addToast(e.message || 'Failed to fire', 'error') }
+    catch (e) { addToast(e.message || t('quickAsks.failedFire'), 'error') }
   }
 
   return (
@@ -201,25 +204,25 @@ export default function QuickAsks({ embedded = false }) {
       {/* Header — hidden when embedded in Settings */}
       {!embedded && (<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Saved phrases that fire instantly</p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Quick Asks</h1>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>Dispatch exact intents with one tap — no AI guessing</p>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('quickAsks.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('quickAsks.title')}</h1>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>{t('quickAsks.tagline')}</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          Add
+          {t('common.add')}
         </button>
       </div>)}
 
       {/* Embedded add button */}
       {embedded && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>+ Add</button>
+          <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>+ {t('common.add')}</button>
         </div>
       )}
 
-      {/* Loading */}
-      {loading && (
+      {/* Loading — skeleton only on cold start; otherwise keep cached grid */}
+      {loading && items.length === 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
           {[1,2,3,4].map(i => <div key={i} style={{ height: 100, borderRadius: 13, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
@@ -229,9 +232,9 @@ export default function QuickAsks({ embedded = false }) {
       {!loading && items.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
           <p style={{ fontSize: 32, marginBottom: 12 }}>⚡</p>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No quick asks yet</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Add one to get started</p>
-          <button onClick={() => setShowCreate(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>Add first quick ask</button>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('quickAsks.noneTitle')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('quickAsks.noneHint')}</p>
+          <button onClick={() => setShowCreate(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('quickAsks.addFirst')}</button>
         </div>
       )}
 
@@ -288,10 +291,10 @@ export default function QuickAsks({ embedded = false }) {
         </AnimatePresence>
       </div>
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New quick ask">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title={t('quickAsks.newTitle')}>
         <QuickAskForm onSave={handleCreate} onCancel={() => setShowCreate(false)} saving={saving} />
       </Modal>
-      <Modal open={!!editing} onClose={() => setEditing(null)} title="Edit quick ask">
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={t('quickAsks.editTitle')}>
         {editing && <QuickAskForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} saving={saving} />}
       </Modal>
     </div>

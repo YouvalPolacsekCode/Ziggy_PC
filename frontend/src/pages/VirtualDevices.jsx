@@ -16,9 +16,11 @@ import {
   patchVirtualDevice, deleteVirtualDevice, triggerVirtualDevice,
   getEntities,
 } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 // Dropdown that fetches HA entities and stores friendly_name.toLowerCase() as value
 function EntityHintSelect({ label, domain, value, onChange }) {
+  const t = useT()
   const [options, setOptions] = useState([])
 
   useEffect(() => {
@@ -40,7 +42,7 @@ function EntityHintSelect({ label, domain, value, onChange }) {
       label={label}
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value)}
-      options={[{ value: '', label: '— pick one —' }, ...options]}
+      options={[{ value: '', label: t('virtual.pickOne') }, ...options]}
     />
   )
 }
@@ -103,23 +105,25 @@ function ParamField({ schema, value, onChange }) {
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value)}
       placeholder={schema.placeholder ?? (schema.default != null ? String(schema.default) : '')}
+      dir="auto"
     />
   )
 }
 
 // ── Wizard ────────────────────────────────────────────────────────────────────
 
-const WIZARD_STEPS = ['Capability', 'Configure', 'Assign']
+const WIZARD_STEP_KEYS = ['stepCapability', 'stepConfigure', 'stepAssign']
+const WIZARD_STEP_COUNT = WIZARD_STEP_KEYS.length
 
 function StepIndicator({ current }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
-      {WIZARD_STEPS.map((s, i) => (
+      {WIZARD_STEP_KEYS.map((s, i) => (
         <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: i < current ? 'var(--ink)' : i === current ? `color-mix(in srgb, var(--ink) 12%, var(--surface))` : 'var(--bg-2)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-faint)', border: i === current ? '1.5px solid var(--ink)' : '0.5px solid var(--line)' }}>
             {i < current ? '✓' : i + 1}
           </div>
-          {i < WIZARD_STEPS.length - 1 && <div style={{ width: 24, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />}
+          {i < WIZARD_STEP_COUNT - 1 && <div style={{ width: 24, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />}
         </div>
       ))}
     </div>
@@ -127,6 +131,7 @@ function StepIndicator({ current }) {
 }
 
 function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabilities }) {
+  const t = useT()
   const [step, setStep] = useState(0)
   const [selectedCap, setSelectedCap] = useState(null)
   const [name, setName] = useState('')
@@ -193,7 +198,7 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
           {step === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                <button onClick={() => setFilterCat('all')} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>All</button>
+                <button onClick={() => setFilterCat('all')} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>{t('virtual.allCats')}</button>
                 {categories.map(cat => (
                   <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === cat.id ? 'var(--ink)' : 'var(--surface)', color: filterCat === cat.id ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === cat.id ? 'none' : '0.5px solid var(--line)' }}>
                     {cat.icon} {cat.label}
@@ -209,8 +214,8 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
                   }}>
                     <span style={{ fontSize: 20, flexShrink: 0 }}>{cap.icon}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cap.name}</p>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cap.description}</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.name}</p>
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.description}</p>
                     </div>
                     {selectedCap?.id === cap.id && <span style={{ color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
                   </button>
@@ -223,10 +228,11 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
           {step === 1 && selectedCap && (
             <div className="flex flex-col gap-4">
               <Input
-                label="Device name *"
+                label={t('virtual.deviceName')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
+                dir="auto"
               />
 
               {configParams.map(([key, schema]) => (
@@ -240,14 +246,14 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
 
               {configParams.length === 0 && (
                 <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-2">
-                  No configuration needed for this capability.
+                  {t('virtual.noConfig')}
                 </p>
               )}
 
               {/* Inform user about runtime params */}
               {runtimeParams.length > 0 && (
                 <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 px-4 py-3 mt-1">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Provided at runtime by voice or automation:</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t('virtual.runtimeIntro')}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {runtimeParams.map(([key, schema]) => (
                       <span key={key} className="text-[11px] text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-700 px-2 py-0.5 rounded-full">
@@ -264,11 +270,11 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
           {step === 2 && (
             <div className="flex flex-col gap-4">
               <Select
-                label="Assign to room (optional)"
+                label={t('virtual.assignRoom')}
                 value={room}
                 onChange={(e) => setRoom(e.target.value)}
                 options={[
-                  { value: '', label: '— No room —' },
+                  { value: '', label: t('virtual.noRoom') },
                   ...rooms.map((r) => ({ value: r.id, label: r.name })),
                 ]}
               />
@@ -276,8 +282,8 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-2xl">{selectedCap?.icon}</span>
                   <div>
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-100">{name}</p>
-                    <p className="text-xs text-zinc-400">{selectedCap?.description}</p>
+                    <p className="font-semibold text-zinc-900 dark:text-zinc-100" dir="auto">{name}</p>
+                    <p className="text-xs text-zinc-400" dir="auto">{selectedCap?.description}</p>
                   </div>
                 </div>
                 {Object.keys(params).filter((k) => params[k] != null && params[k] !== '').length > 0 && (
@@ -296,10 +302,10 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
       </AnimatePresence>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>Back</button>}
-        {step < WIZARD_STEPS.length - 1
-          ? <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>Next</button>
-          : <button onClick={handleSave} disabled={saving || !canNext()} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : 'Add device'}</button>
+        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>{t('virtual.back')}</button>}
+        {step < WIZARD_STEP_COUNT - 1
+          ? <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>{t('virtual.next')}</button>
+          : <button onClick={handleSave} disabled={saving || !canNext()} className="z-btn-primary" style={{ flex: 1 }}>{saving ? t('virtual.saving') : t('virtual.addDevice')}</button>
         }
       </div>
     </div>
@@ -309,6 +315,7 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
 // ── Runtime params trigger modal ──────────────────────────────────────────────
 
 function TriggerModal({ device, capability, onConfirm, onClose }) {
+  const t = useT()
   const runtimeEntries = filterParams(capability?.params_schema, 'runtime')
   const [values, setValues] = useState({})
   const [running, setRunning] = useState(false)
@@ -327,8 +334,8 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
       <div className="flex items-center gap-3 mb-1">
         <span className="text-2xl">{device.icon}</span>
         <div>
-          <p className="font-semibold text-zinc-900 dark:text-zinc-100">{device.name}</p>
-          <p className="text-xs text-zinc-400">{capability?.description}</p>
+          <p className="font-semibold text-zinc-900 dark:text-zinc-100" dir="auto">{device.name}</p>
+          <p className="text-xs text-zinc-400" dir="auto">{capability?.description}</p>
         </div>
       </div>
 
@@ -342,8 +349,8 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
       ))}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
-        <button onClick={handleRun} disabled={running} className="z-btn-primary" style={{ flex: 1 }}>{running ? 'Running…' : 'Run'}</button>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('virtual.cancel')}</button>
+        <button onClick={handleRun} disabled={running} className="z-btn-primary" style={{ flex: 1 }}>{running ? t('virtual.running') : t('virtual.run')}</button>
       </div>
     </div>
   )
@@ -352,6 +359,7 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
 // ── Device card ───────────────────────────────────────────────────────────────
 
 function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, triggering }) {
+  const t = useT()
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
       <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -359,14 +367,14 @@ function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, trig
           {device.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{device.name}</p>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
             {device.category && (
               <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{device.category}</span>
             )}
             {device.room && <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>📍 {device.room}</span>}
-            {device.last_triggered && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>last run {device.last_triggered}</span>}
+            {device.last_triggered && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('virtual.lastRun', { when: device.last_triggered })}</span>}
           </div>
           {Object.keys(device.default_params || {}).length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
@@ -382,11 +390,11 @@ function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, trig
           <Toggle checked={device.enabled} onCheckedChange={() => onToggle(device)} />
           <div style={{ display: 'flex', gap: 2 }}>
             {[
-              { onClick: () => onTrigger(device), color: triggering === device.id ? 'var(--ink-faint)' : 'var(--ok)', disabled: triggering === device.id, title: 'Run now', path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
-              { onClick: () => onEdit(device), color: 'var(--ink-faint)', title: 'Edit', path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
-              { onClick: () => onDelete(device), color: 'var(--accent)', title: 'Delete', path: <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/> },
+              { onClick: () => onTrigger(device), color: triggering === device.id ? 'var(--ink-faint)' : 'var(--ok)', disabled: triggering === device.id, title: t('virtual.runNow'), path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
+              { onClick: () => onEdit(device), color: 'var(--ink-faint)', title: t('virtual.editTitle'), path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
+              { onClick: () => onDelete(device), color: 'var(--accent)', title: t('virtual.deleteTitle'), path: <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/> },
             ].map(({ onClick, color, disabled, title, path }) => (
-              <button key={title} onClick={onClick} disabled={disabled} title={title} style={{ background: 'none', border: 'none', cursor: disabled ? 'default' : 'pointer', color, padding: 4, opacity: disabled ? 0.4 : 1 }}>
+              <button key={title} onClick={onClick} disabled={disabled} title={title} aria-label={title} style={{ background: 'none', border: 'none', cursor: disabled ? 'default' : 'pointer', color, padding: 4, opacity: disabled ? 0.4 : 1 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
               </button>
             ))}
@@ -400,6 +408,7 @@ function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, trig
 // ── Edit modal ────────────────────────────────────────────────────────────────
 
 function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
+  const t = useT()
   const [name, setName] = useState(device.name)
   const [room, setRoom] = useState(device.room || '')
   const [enabled, setEnabled] = useState(device.enabled)
@@ -418,28 +427,28 @@ function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Input label="Device name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      <Input label={t('virtual.deviceName').replace(' *', '')} value={name} onChange={(e) => setName(e.target.value)} autoFocus dir="auto" />
 
       {configParams.map(([key, schema]) => (
         <ParamField key={key} schema={schema} value={params[key]} onChange={(v) => setParam(key, v)} />
       ))}
 
       <Select
-        label="Room"
+        label={t('virtual.room')}
         value={room}
         onChange={(e) => setRoom(e.target.value)}
         options={[
-          { value: '', label: '— No room —' },
+          { value: '', label: t('virtual.noRoom') },
           ...rooms.map((r) => ({ value: r.id, label: r.name })),
         ]}
       />
       <label className="flex items-center gap-3 cursor-pointer">
         <Toggle checked={enabled} onCheckedChange={setEnabled} />
-        <span className="text-sm text-zinc-700 dark:text-zinc-300">Enabled</span>
+        <span className="text-sm text-zinc-700 dark:text-zinc-300">{t('virtual.enabled')}</span>
       </label>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
-        <button onClick={handleSave} disabled={saving || !name.trim()} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('virtual.cancel')}</button>
+        <button onClick={handleSave} disabled={saving || !name.trim()} className="z-btn-primary" style={{ flex: 1 }}>{saving ? t('virtual.saving') : t('common.save')}</button>
       </div>
     </div>
   )
@@ -448,6 +457,7 @@ function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function VirtualDevices({ embedded = false }) {
+  const t = useT()
   const { addToast } = useUIStore()
   const { getRooms } = useDeviceStore()
   const [devices, setDevices] = useState([])
@@ -473,7 +483,7 @@ export default function VirtualDevices({ embedded = false }) {
       const data = await getVirtualDevices()
       setDevices(data.devices || [])
     } catch {
-      addToast('Failed to load virtual devices', 'error')
+      addToast(t('virtual.toastFailedLoad'), 'error')
     }
   }, [])
 
@@ -492,9 +502,9 @@ export default function VirtualDevices({ embedded = false }) {
     try {
       const res = await createVirtualDevice(data)
       setDevices((prev) => [...prev, res.device])
-      addToast(`"${res.device.name}" added`, 'success')
+      addToast(t('virtual.toastAdded', { name: res.device.name }), 'success')
     } catch (e) {
-      addToast(e.message || 'Failed to create device', 'error')
+      addToast(e.message || t('virtual.toastFailedCreate'), 'error')
       throw e
     }
   }
@@ -503,9 +513,9 @@ export default function VirtualDevices({ embedded = false }) {
     try {
       const updated = await patchVirtualDevice(id, updates)
       setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)))
-      addToast('Device updated', 'success')
+      addToast(t('virtual.toastUpdated'), 'success')
     } catch (e) {
-      addToast(e.message || 'Failed to update', 'error')
+      addToast(e.message || t('virtual.toastFailedUpdate'), 'error')
     }
   }
 
@@ -515,9 +525,9 @@ export default function VirtualDevices({ embedded = false }) {
     try {
       await deleteVirtualDevice(device.id)
       setDevices((prev) => prev.filter((d) => d.id !== device.id))
-      addToast(`"${device.name}" deleted`, 'success')
+      addToast(t('virtual.toastDeleted', { name: device.name }), 'success')
     } catch {
-      addToast('Failed to delete', 'error')
+      addToast(t('virtual.toastFailedDelete'), 'error')
     }
   }
 
@@ -536,12 +546,12 @@ export default function VirtualDevices({ embedded = false }) {
     try {
       const result = await triggerVirtualDevice(device.id, runtimeParams)
       addToast(
-        result.ok ? `✓ ${device.name}: ${result.message || 'Done'}` : `✗ ${result.message || 'Failed'}`,
+        result.ok ? `✓ ${device.name}: ${result.message || t('common.done')}` : `✗ ${result.message || t('common.failed')}`,
         result.ok ? 'success' : 'error',
       )
       fetchDevices()
     } catch (e) {
-      addToast(e.message || 'Trigger failed', 'error')
+      addToast(e.message || t('virtual.toastTriggerFailed'), 'error')
     } finally {
       setTriggering(null)
     }
@@ -559,21 +569,21 @@ export default function VirtualDevices({ embedded = false }) {
       {!embedded && (
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <p className="z-eyebrow" style={{ marginBottom: 4 }}>Software-only devices</p>
-            <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Capabilities</h1>
+            <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('virtual.softwareOnly')}</p>
+            <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('virtual.heading')}</h1>
             <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
-              {devices.filter(d => d.enabled).length} active · {devices.length} total
+              {t('virtual.statusCounts', { active: devices.filter(d => d.enabled).length, total: devices.length })}
             </p>
           </div>
           <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-            <Plus size={13} /> Add capability
+            <Plus size={13} /> {t('virtual.addCapability')}
           </button>
         </div>
       )}
       {embedded && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
           <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-            <Plus size={12} /> Add capability
+            <Plus size={12} /> {t('virtual.addCapability')}
           </button>
         </div>
       )}
@@ -582,7 +592,7 @@ export default function VirtualDevices({ embedded = false }) {
       {devices.length > 0 && (
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 18 }}>
           <button onClick={() => setFilterCat('all')} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>
-            All ({devices.length})
+            {t('virtual.allFilter', { n: devices.length })}
           </button>
           {categories.filter(c => catCounts[c.id] > 0).map(cat => (
             <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === cat.id ? 'var(--ink)' : 'var(--surface)', color: filterCat === cat.id ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === cat.id ? 'none' : '0.5px solid var(--line)' }}>
@@ -602,10 +612,10 @@ export default function VirtualDevices({ embedded = false }) {
       {/* Empty state */}
       {!loading && devices.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No capabilities configured yet</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Add YouTube, Spotify, weather, email readers, and more</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('virtual.emptyTitle')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('virtual.emptyHelp')}</p>
           <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={13} /> Add first capability
+            <Plus size={13} /> {t('virtual.addFirst')}
           </button>
         </div>
       )}
@@ -627,7 +637,7 @@ export default function VirtualDevices({ embedded = false }) {
       </AnimatePresence>
 
       {/* Add wizard */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Capability">
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={t('virtual.modalAdd')}>
         <AddVirtualDeviceWizard
           onSave={handleCreate}
           onClose={() => setShowAdd(false)}
@@ -638,7 +648,7 @@ export default function VirtualDevices({ embedded = false }) {
       </Modal>
 
       {/* Edit modal */}
-      <Modal open={!!editDevice} onClose={() => setEditDevice(null)} title="Edit Capability">
+      <Modal open={!!editDevice} onClose={() => setEditDevice(null)} title={t('virtual.modalEdit')}>
         {editDevice && (
           <EditVirtualDevice
             device={editDevice}
@@ -654,7 +664,7 @@ export default function VirtualDevices({ embedded = false }) {
       <Modal
         open={!!triggerDevice}
         onClose={() => setTriggerDevice(null)}
-        title={`Run: ${triggerDevice?.name}`}
+        title={triggerDevice ? t('virtual.modalRun', { name: triggerDevice.name }) : ''}
       >
         {triggerDevice && (
           <TriggerModal

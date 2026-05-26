@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { sendChat, sendVoice, sendDirectIntent } from '../lib/api'
+import { sendChat, sendVoiceTranscribe, sendDirectIntent } from '../lib/api'
+import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
@@ -9,11 +10,13 @@ import { useVoiceStore } from '../stores/voiceStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { formatTime, isHebrew } from '../lib/utils'
+import { useT } from '../lib/i18n'
 
-// Detect Web Speech API support at module level — evaluated once, not per render.
-const SR = (typeof window !== 'undefined')
-  ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
-  : null
+// Hold-to-talk uses MediaRecorder exclusively. The Web Speech API was
+// previously the "fast path" but its auto-end behavior (even with
+// continuous: true) made the press/release contract non-deterministic in some
+// browsers. MediaRecorder records strictly until WE call .stop(), which is the
+// behavior the product needs. The backend transcribes via /api/voice (Whisper).
 
 // ── Voice wave ────────────────────────────────────────────────────────────────
 function VoiceWave({ active, size = 22 }) {
@@ -35,6 +38,7 @@ function VoiceWave({ active, size = 22 }) {
 
 // ── Pattern detected card ─────────────────────────────────────────────────────
 function PatternCard({ msg, onSaveRoutine }) {
+  const t = useT()
   const [saved, setSaved] = useState(false)
   return (
     <motion.div
@@ -47,10 +51,10 @@ function PatternCard({ msg, onSaveRoutine }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
-          <span className="z-mono" style={{ fontSize: 10, color: 'var(--accent)', letterSpacing: '0.12em', fontWeight: 600 }}>PATTERN DETECTED</span>
+          <span className="z-mono" style={{ fontSize: 10, color: 'var(--accent)', letterSpacing: '0.12em', fontWeight: 600 }}>{t('chat.patternDetected')}</span>
         </div>
         <div style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 10, lineHeight: 1.45 }}>
-          {msg.text} Save as a routine called <strong>"{msg.patternLabel}"</strong>?
+          {msg.text} {t('chat.saveRoutinePrompt', { name: msg.patternLabel })}
         </div>
         {!saved ? (
           <div style={{ display: 'flex', gap: 6 }}>
@@ -58,18 +62,18 @@ function PatternCard({ msg, onSaveRoutine }) {
               onClick={() => setSaved(true)}
               style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
             >
-              Save routine
+              {t('chat.saveRoutine')}
             </button>
             <button
               style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
             >
-              Not now
+              {t('dashboard.notNow')}
             </button>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ok)' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
-            Routine saved!
+            {t('chat.routineSaved')}
           </div>
         )}
       </div>
@@ -79,6 +83,7 @@ function PatternCard({ msg, onSaveRoutine }) {
 
 // ── Message bubble (Chat-A) ───────────────────────────────────────────────────
 function Message({ msg }) {
+  const t = useT()
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
   const rtl     = isHebrew(msg.text)
@@ -100,7 +105,7 @@ function Message({ msg }) {
       }}
     >
       {!isUser && (
-        <p className="z-eyebrow" style={{ marginBottom: 2 }}>Ziggy</p>
+        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
       )}
       <div
         dir={rtl ? 'rtl' : 'ltr'}
@@ -147,9 +152,10 @@ function Message({ msg }) {
 
 // ── Thinking bubble ───────────────────────────────────────────────────────────
 function ThinkingBubble() {
+  const t = useT()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}>
-      <p className="z-eyebrow" style={{ marginBottom: 2 }}>Ziggy</p>
+      <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
       <div style={{
         padding: '10px 14px', borderRadius: 18, borderEndStartRadius: 4,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
@@ -170,6 +176,7 @@ function ThinkingBubble() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AIChat() {
+  const t = useT()
   const location  = useLocation()
   const navigate  = useNavigate()
   const { addToast }                              = useUIStore()
@@ -202,7 +209,10 @@ export default function AIChat() {
   const inputRef       = useRef(null)
   const sentPrefillRef = useRef(false)
   const containerRef   = useRef(null)
-  const recognitionRef = useRef(null)   // Web Speech API instance
+  // Source of truth for "the user is currently holding the mic button".
+  // Set on pointerdown, cleared on pointerup/cancel. Used to abort if
+  // getUserMedia resolves after the user has already released.
+  const intentRef      = useRef(false)
 
   useEffect(() => { fetchQuickAsks() }, [])
   useEffect(() => { fetchVoiceStatus() }, [])
@@ -211,19 +221,18 @@ export default function AIChat() {
     try {
       await setMicEnabled(!micEnabled)
     } catch (e) {
-      addToast(e?.message || 'Failed to toggle wake-word', 'error')
+      addToast(e?.message || t('chat.failedWake'), 'error')
     }
   }
 
-  // Release any open mic/speech-recognition resources if the user navigates away
-  // mid-recording. Without this, MediaRecorder + its MediaStreamTracks linger
-  // until GC, leaving the browser mic indicator on.
+  // Release any open mic resources if the user navigates away mid-recording.
+  // Without this, MediaRecorder + its MediaStreamTracks linger until GC,
+  // leaving the browser mic indicator on.
   useEffect(() => {
     return () => {
-      try { recognitionRef.current?.stop() } catch {}
+      intentRef.current = false
       try { mediaRef.current?.stop() } catch {}
       try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
-      recognitionRef.current = null
       mediaRef.current = null
     }
   }, [])
@@ -308,6 +317,11 @@ export default function AIChat() {
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.text,
     }))
+    logger.action('chat_send', {
+      length: t.length,
+      from: fromInput ? 'input' : 'suggestion',
+      history_turns: historyForApi.length,
+    })
     addMessage('user', t)
     // Defer clearing the input until sendChat() succeeds so a network blip
     // doesn't make the user re-type a long question.
@@ -325,17 +339,19 @@ export default function AIChat() {
       addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
       // Pattern suggestion card
       if (res.pattern_suggestion) {
-        addMessage('pattern', res.pattern_suggestion.message || 'Pattern detected', true, {
-          patternLabel: res.pattern_suggestion.suggested_name || 'Routine',
+        addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
+          patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
           isPattern: true,
         })
       }
       setOrbState('speaking')
-      setTimeout(() => setOrbState('idle'), 2500)
+      // Don't clobber a fresh 'listening' state if the user starts another
+      // hold-to-talk before this 2.5 s timer fires.
+      setTimeout(() => setOrbState(prev => prev === 'speaking' ? 'idle' : prev), 2500)
     } catch (e) {
       const msg = e?.message && !e.message.startsWith('HTTP')
         ? e.message
-        : 'Something went wrong. Please try again.'
+        : t('chat.somethingWrong')
       addMessage('assistant', msg, false)
       setOrbState('idle')
     } finally { setThinking(false) }
@@ -349,111 +365,175 @@ export default function AIChat() {
       const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
       addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
       setOrbState('speaking')
-      setTimeout(() => setOrbState('idle'), 2500)
+      // Don't clobber a fresh 'listening' state if the user starts another
+      // hold-to-talk before this 2.5 s timer fires.
+      setTimeout(() => setOrbState(prev => prev === 'speaking' ? 'idle' : prev), 2500)
     } catch (e) {
       const msg = e?.message && !e.message.startsWith('HTTP')
         ? e.message
-        : 'Something went wrong. Please try again.'
+        : t('chat.somethingWrong')
       addMessage('assistant', msg, false)
       setOrbState('idle')
     } finally { setThinking(false) }
   }
 
-  // ── Web Speech fast path (Chrome/Edge — returns text in ~0.3-0.5s, no upload) ──
-  const _startSpeechRecognition = () => {
-    const rec = new SR()
-    // he-IL handles both Hebrew and mixed Hebrew/English commands well.
-    // Falls back to English when Hebrew isn't detected.
-    rec.lang = 'he-IL'
-    rec.continuous = false
-    rec.interimResults = false
-    recognitionRef.current = rec
-
-    rec.onresult = (event) => {
-      const transcript = (event.results[0][0].transcript || '').trim()
-      if (!transcript) { setRecording(false); setOrbState('idle'); return }
-      // Route through the text chat pipeline — faster and avoids audio upload.
-      const historyForApi = messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
-      addMessage('user', transcript)
-      setThinking(true); setOrbState('thinking')
-      sendChat(transcript, historyForApi)
-        .then((res) => {
-          addMessage('assistant', res.reply || '…', res.ok !== false)
-          setOrbState('speaking'); setTimeout(() => setOrbState('idle'), 2500)
-        })
-        .catch((e) => {
-          const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : 'Something went wrong.'
-          addMessage('assistant', msg, false); setOrbState('idle')
-        })
-        .finally(() => { setThinking(false) })
-    }
-
-    rec.onerror = (event) => {
-      recognitionRef.current = null
-      if (event.error === 'no-speech') { setRecording(false); setOrbState('idle'); return }
-      // Any other error (not-allowed, audio-capture, network) → fall back to MediaRecorder.
-      console.warn('[Voice] Web Speech error:', event.error, '— falling back to upload')
-      _startMediaRecorder()
-    }
-
-    rec.onend = () => {
-      recognitionRef.current = null
-      // onresult may not have fired (empty speech) — reset state if still listening.
-      setRecording((prev) => { if (prev) setOrbState('idle'); return false })
-    }
-
-    rec.start()
-    setRecording(true); setOrbState('listening')
-  }
-
-  // ── MediaRecorder fallback (all browsers — uploads audio to Whisper API ~1-4s) ──
-  const _startMediaRecorder = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream)
-      mediaRef.current = mr; chunksRef.current = []
-      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        try {
-          setThinking(true); setOrbState('thinking')
-          const res = await sendVoice(blob)
-          if (res.transcription) addMessage('user', res.transcription)
-          if (res.reply) { addMessage('assistant', res.reply, res.ok !== false); setOrbState('speaking'); setTimeout(() => setOrbState('idle'), 2500) }
-          else setOrbState('idle')
-        } catch (e) { addToast(e?.message || 'Voice processing failed', 'error'); setOrbState('idle') }
-        finally { setThinking(false) }
-      }
-      mr.start(); setRecording(true); setOrbState('listening')
-    } catch { addToast('Microphone access denied', 'error') }
-  }
+  // ── Hold-to-talk recording (MediaRecorder only) ──
+  //
+  // Contract: recording starts on pointerdown and ends on pointerup/cancel.
+  // Nothing else stops it — no silence detection, no engine watchdog, no
+  // network fallback path. This is what makes the press/release feel
+  // deterministic to the user.
+  //
+  // Race safety: getUserMedia is async (browser permission prompt can take
+  // many seconds the first time). `intentRef` is the source of truth for
+  // "the user's finger is still down." If they release before the stream
+  // resolves, we release the tracks and never start MediaRecorder.
 
   const startRecording = async () => {
-    if (SR) _startSpeechRecognition()
-    else await _startMediaRecorder()
+    if (intentRef.current) return  // already holding
+    intentRef.current = true
+    setRecording(true); setOrbState('listening')
+
+    let stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (e) {
+      intentRef.current = false
+      setRecording(false); setOrbState('idle')
+      addToast(t('chat.micDenied'), 'error')
+      return
+    }
+
+    // User released before the permission prompt / hardware came back. Abort.
+    if (!intentRef.current) {
+      stream.getTracks().forEach(t => t.stop())
+      setRecording(false); setOrbState('idle')
+      return
+    }
+
+    const mr = new MediaRecorder(stream)
+    mediaRef.current = mr
+    chunksRef.current = []
+    mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      mediaRef.current = null
+      setRecording(false)
+
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+      // Misfire guard: too-quick taps. Empirically anything under ~1.5 KB of
+      // webm/opus is well under ~150 ms of audio — almost certainly a
+      // mis-tap and the backend would just return an empty transcript
+      // (and burn a Whisper API call). Silently drop.
+      if (blob.size < 1500) { setOrbState('idle'); return }
+
+      // Two phases, so the user's words land on screen the moment Whisper
+      // returns — *before* the chat-reply pipeline runs:
+      //   Phase 1: /api/voice/transcribe → addMessage('user', transcript)
+      //   Phase 2: sendChat(transcript)   → addMessage('assistant', reply)
+      // Restores the old "release → I see what I said" feel that the
+      // client-side SR path used to give us.
+      setOrbState('transcribing')
+      let transcription = ''
+      try {
+        const tr = await sendVoiceTranscribe(blob)
+        transcription = (tr?.transcription || '').trim()
+      } catch (e) {
+        addToast(e?.message || t('chat.transcribeFailed'), 'error')
+        setOrbState('idle')
+        return
+      }
+      if (!transcription) { setOrbState('idle'); return }
+
+      // History = previous messages only. Backend appends transcription as
+      // the final user turn (matches the text-input handleSend flow).
+      const historyForApi = messages.map((m) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }))
+      addMessage('user', transcription)
+
+      setThinking(true); setOrbState('thinking')
+      try {
+        const res = await sendChat(transcription, historyForApi)
+        const actions = res.actions?.map(a => {
+          if (typeof a === 'string') return a
+          if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
+          if (a.label) return a.label
+          return String(a)
+        }) || []
+        addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+        if (res.pattern_suggestion) {
+          addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
+            patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
+            isPattern: true,
+          })
+        }
+        setOrbState('speaking')
+        setTimeout(() => setOrbState(prev => prev === 'speaking' ? 'idle' : prev), 2500)
+      } catch (e) {
+        const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : t('chat.somethingWrongShort')
+        addMessage('assistant', msg, false)
+        setOrbState('idle')
+      } finally {
+        setThinking(false)
+      }
+    }
+    // 100 ms timeslice → ondataavailable fires steadily so the final blob
+    // has all chunks even if stop() fires very quickly after start().
+    mr.start(100)
   }
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop() // triggers rec.onresult then rec.onend
+    if (!intentRef.current) return
+    intentRef.current = false
+    const mr = mediaRef.current
+    if (mr && mr.state === 'recording') {
+      try { mr.stop() } catch {}
+      // onstop will clear `recording` and route through transcription.
     } else {
-      mediaRef.current?.stop()
+      // No MR active yet — user released while getUserMedia was still
+      // resolving. Reset UI here since onstop will never fire.
+      setRecording(false); setOrbState('idle')
     }
-    setRecording(false); setOrbState('thinking')
   }
 
+  // Pointer handlers. Capture so up follows the finger off the button;
+  // cancel covers system gesture interruptions.
   const handleMicPointerDown = (e) => {
     e.preventDefault()
-    e.currentTarget.setPointerCapture(e.pointerId) // keep tracking even if finger slides off
-    if (orbState === 'idle') startRecording()
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
+    startRecording()
   }
-  const handleMicPointerUp = () => { if (recording) stopRecording() }
+  const handleMicPointerEnd = (e) => {
+    try { e.currentTarget?.releasePointerCapture?.(e.pointerId) } catch {}
+    stopRecording()
+  }
+
+  // Window-level fail-safe: if the in-button pointerup never fires (rare
+  // mobile browser bugs, page swipe, etc.), a window-level pointerup still
+  // stops the recording. capture-phase so we win even if something else
+  // stops propagation.
+  useEffect(() => {
+    if (!recording) return
+    const onAnyEnd = () => stopRecording()
+    window.addEventListener('pointerup', onAnyEnd, { capture: true })
+    window.addEventListener('pointercancel', onAnyEnd, { capture: true })
+    // Tab/app backgrounded → stop. macOS/iOS will pause MR otherwise.
+    const onVisChange = () => { if (document.hidden) stopRecording() }
+    document.addEventListener('visibilitychange', onVisChange)
+    return () => {
+      window.removeEventListener('pointerup', onAnyEnd, { capture: true })
+      window.removeEventListener('pointercancel', onAnyEnd, { capture: true })
+      document.removeEventListener('visibilitychange', onVisChange)
+    }
+  }, [recording])
 
   const hasMessages = messages.length > 0
-  const listening   = orbState === 'listening'
-  const speaking    = orbState === 'speaking'
-  const busy        = orbState === 'thinking' || speaking
+  const listening    = orbState === 'listening'
+  const transcribing = orbState === 'transcribing'
+  const speaking     = orbState === 'speaking'
+  const busy         = transcribing || orbState === 'thinking' || speaking
 
   return (
     <div
@@ -476,12 +556,14 @@ export default function AIChat() {
         flexShrink: 0,
       }}>
         <div>
-          <p className="z-eyebrow">Ziggy AI</p>
-          <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>Chat</h1>
+          <p className="z-eyebrow">{t('chat.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>{t('chat.headerTitle')}</h1>
           {knownDevices > 0 && (
             <p className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
-              knows {knownDevices} device{knownDevices !== 1 ? 's' : ''} · {knownRooms} room{knownRooms !== 1 ? 's' : ''}
-              {knownRoutines > 0 ? ` · ${knownRoutines} routine${knownRoutines !== 1 ? 's' : ''}` : ''}
+              {knownDevices === 1 ? t('chat.knowsDevicesOne', { n: knownDevices }) : t('chat.knowsDevicesMany', { n: knownDevices })}
+              {' · '}
+              {knownRooms === 1 ? t('chat.roomsOne', { n: knownRooms }) : t('chat.roomsMany', { n: knownRooms })}
+              {knownRoutines > 0 ? ` · ${knownRoutines === 1 ? t('chat.routinesOne', { n: knownRoutines }) : t('chat.routinesMany', { n: knownRoutines })}` : ''}
             </p>
           )}
         </div>
@@ -493,8 +575,8 @@ export default function AIChat() {
             <button
               onClick={onToggleMic}
               title={micEnabled
-                ? 'Ziggy is listening for the wake word. Click to mute.'
-                : 'Wake-word listening is muted. Click to enable.'}
+                ? t('chat.wakeOnTitle')
+                : t('chat.wakeOffTitle')}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '4px 10px', borderRadius: 999,
@@ -513,7 +595,7 @@ export default function AIChat() {
                 width: 6, height: 6, borderRadius: '50%',
                 background: micEnabled ? 'var(--accent)' : 'var(--ink-faint)',
               }} />
-              {micEnabled ? 'Wake-word ON' : 'Muted'}
+              {micEnabled ? t('chat.wakeOn') : t('chat.muted')}
             </button>
           )}
 
@@ -525,8 +607,12 @@ export default function AIChat() {
               background: 'var(--surface)', border: '0.5px solid var(--line)',
               fontSize: 11, color: 'var(--ink-mute)',
             }}>
-              {listening && <><VoiceWave active size={14} /><span>Listening…</span></>}
-              {busy && !listening && <span style={{ fontFamily: '"IBM Plex Mono", monospace' }}>{orbState === 'thinking' ? 'Thinking…' : 'Speaking…'}</span>}
+              {listening && <><VoiceWave active size={14} /><span>{t('chat.listening')}</span></>}
+              {busy && !listening && (
+                <span style={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {transcribing ? t('chat.transcribing') : orbState === 'thinking' ? t('chat.thinking') : t('chat.speaking')}
+                </span>
+              )}
             </span>
           )}
           {hasMessages && (
@@ -539,7 +625,7 @@ export default function AIChat() {
                 fontFamily: 'inherit',
               }}
             >
-              New chat
+              {t('chat.newChat')}
             </button>
           )}
         </div>
@@ -569,10 +655,10 @@ export default function AIChat() {
                 </svg>
               </div>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, letterSpacing: '-0.01em' }}>
-                {listening ? 'Listening…' : 'What can I do for you?'}
+                {listening ? t('chat.listening') : t('chat.whatCanIDo')}
               </p>
               <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, textAlign: 'center', maxWidth: 280 }}>
-                Try one below, or tap and hold the mic in the composer to speak.
+                {t('chat.tryOneBelow')}
               </p>
             </div>
 
@@ -599,7 +685,7 @@ export default function AIChat() {
             )}
             {!quickAsks.length && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 380 }}>
-                {['Goodnight', 'Movie time', 'Who is home?', 'Good morning'].map(s => (
+                {[t('chat.suggestGoodnight'), t('chat.suggestMovie'), t('chat.suggestWhoHome'), t('chat.suggestMorning')].map(s => (
                   <button key={s} onClick={() => handleSend(s)} style={{
                     padding: '7px 14px', borderRadius: 999,
                     background: 'var(--surface)', border: '0.5px solid var(--line)',
@@ -637,16 +723,41 @@ export default function AIChat() {
               {qa.label}
             </div>
           ))}
-          {!quickAsks.length && ['Goodnight', 'Movie time', 'Who is home?'].map(s => (
+          {!quickAsks.length && [t('chat.suggestGoodnight'), t('chat.suggestMovie'), t('chat.suggestWhoHome')].map(s => (
             <div key={s} onClick={() => handleSend(s)} style={{ padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer', background: 'var(--surface)', border: '0.5px solid var(--line)', fontSize: 11, color: 'var(--ink-2)', fontWeight: 500 }}>{s}</div>
           ))}
         </div>
       )}
 
+      {/* ── Hold-to-talk banner — only visible while recording ── */}
+      <AnimatePresence>
+        {recording && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            style={{
+              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              padding: '8px 16px',
+              borderTop: '0.5px solid color-mix(in srgb, var(--accent) 35%, var(--line))',
+              background: 'color-mix(in srgb, var(--accent) 10%, var(--surface))',
+              color: 'var(--accent)',
+              fontSize: 12, fontWeight: 500, letterSpacing: '0.01em',
+            }}
+            aria-live="polite"
+          >
+            <VoiceWave active size={14} />
+            <span>{t('chat.releaseToSend')}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Composer ── */}
       <div style={{
         padding: '10px 16px 18px',
-        borderTop: '0.5px solid var(--line)',
+        borderTop: recording ? 'none' : '0.5px solid var(--line)',
         display: 'flex', alignItems: 'center', gap: 10,
         flexShrink: 0,
       }}>
@@ -664,7 +775,7 @@ export default function AIChat() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder={`Try: "open shades and start coffee"`}
+            placeholder={t('chat.composerPlaceholder')}
             dir={isHebrew(input) ? 'rtl' : 'ltr'}
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
@@ -673,31 +784,63 @@ export default function AIChat() {
           />
         </div>
 
-        {/* Send / mic */}
-        <motion.button
-          onClick={input.trim() ? () => handleSend() : undefined}
-          onPointerDown={!input.trim() ? handleMicPointerDown : undefined}
-          onPointerUp={!input.trim() ? handleMicPointerUp : undefined}
-          whileTap={{ scale: 0.9 }}
-          style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: input.trim() ? 'var(--ink)' : 'var(--accent)',
-            color: '#fff',
-            border: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', flexShrink: 0,
-            touchAction: 'none', userSelect: 'none',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          {input.trim() ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          ) : listening ? (
-            <VoiceWave active size={18} />
-          ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        {/* Send (when there's text) / hold-to-talk mic (when empty).
+            Wrapper carries the pulsing ring overlay while held so the button
+            itself stays a clean 44px hit target. */}
+        <div style={{ position: 'relative', width: 44, height: 44, flexShrink: 0 }}>
+          {recording && (
+            <motion.span
+              aria-hidden="true"
+              initial={{ scale: 1, opacity: 0.55 }}
+              animate={{ scale: 1.55, opacity: 0 }}
+              transition={{ duration: 1.2, ease: 'easeOut', repeat: Infinity }}
+              style={{
+                position: 'absolute', inset: 0, borderRadius: '50%',
+                background: 'color-mix(in srgb, var(--accent) 35%, transparent)',
+                pointerEvents: 'none',
+              }}
+            />
           )}
-        </motion.button>
+          <motion.button
+            type="button"
+            onClick={input.trim() ? () => handleSend() : undefined}
+            onPointerDown={!input.trim() ? handleMicPointerDown : undefined}
+            onPointerUp={!input.trim() ? handleMicPointerEnd : undefined}
+            onPointerCancel={!input.trim() ? handleMicPointerEnd : undefined}
+            onContextMenu={!input.trim() ? (e) => e.preventDefault() : undefined}
+            aria-label={input.trim() ? t('chat.sendMessage') : (recording ? t('chat.releaseToSendAria') : t('chat.holdToSpeak'))}
+            title={input.trim() ? t('chat.sendTitle') : t('chat.holdToSpeakTitle')}
+            whileTap={input.trim() ? { scale: 0.9 } : undefined}
+            style={{
+              position: 'relative', zIndex: 1,
+              width: 44, height: 44, borderRadius: '50%',
+              background: input.trim()
+                ? 'var(--ink)'
+                : recording
+                  ? 'color-mix(in srgb, var(--accent) 80%, var(--ink))'
+                  : 'var(--accent)',
+              color: '#fff',
+              border: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+              boxShadow: recording
+                ? '0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent), var(--shadow-md)'
+                : 'var(--shadow-md)',
+              transform: recording ? 'scale(1.06)' : 'scale(1)',
+              transition: 'transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease',
+            }}
+          >
+            {input.trim() ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            ) : recording ? (
+              <VoiceWave active size={18} />
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            )}
+          </motion.button>
+        </div>
       </div>
     </div>
   )

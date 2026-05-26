@@ -16,6 +16,7 @@ import { Modal } from './ui/Modal'
 import { EntitySelect } from './ui/EntitySelect'
 import { useDeviceStore, QUICK_CONTROLS_MAX } from '../stores/deviceStore'
 import { deviceFacts } from '../lib/devices'
+import { useT } from '../lib/i18n'
 
 // Domains worth pinning as "quick controls". Sensors are filtered out — they
 // have nothing to tap.
@@ -28,6 +29,7 @@ const ALLOWED_DOMAINS = new Set([
 ])
 
 export function QuickControlsPicker({ open, onClose }) {
+  const t = useT()
   const { entities, quickControlIds, setQuickControlIds } = useDeviceStore()
   const [draft, setDraft] = useState(quickControlIds)
   const [editingSlot, setEditingSlot] = useState(null)  // index or null
@@ -76,9 +78,9 @@ export function QuickControlsPicker({ open, onClose }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit quick controls">
+    <Modal open={open} onClose={onClose} title={t('quickControls.editTitle')}>
       <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14, lineHeight: 1.5 }}>
-        Pin up to {QUICK_CONTROLS_MAX} devices to the Dashboard. Tap to toggle from anywhere.
+        {t('quickControls.help', { n: QUICK_CONTROLS_MAX })}
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -97,10 +99,10 @@ export function QuickControlsPicker({ open, onClose }) {
                     value={id || ''}
                     onChange={(v) => setSlot(idx, v)}
                     allowedDomains={ALLOWED_DOMAINS}
-                    placeholder="Pick a device…"
+                    placeholder={t('quickControls.pickPlaceholder')}
                   />
                 </div>
-                <button onClick={() => setEditingSlot(null)} style={iconBtn} aria-label="Cancel">
+                <button onClick={() => setEditingSlot(null)} style={iconBtn} aria-label={t('common.cancel')}>
                   <X size={14} />
                 </button>
               </div>
@@ -123,7 +125,7 @@ export function QuickControlsPicker({ open, onClose }) {
               >
                 <span className="z-eyebrow" style={{ minWidth: 16 }}>{idx + 1}</span>
                 <Plus size={14} />
-                <span style={{ fontSize: 12.5, fontWeight: 500 }}>Add a device</span>
+                <span style={{ fontSize: 12.5, fontWeight: 500 }}>{t('quickControls.addDevice')}</span>
               </button>
             )
           }
@@ -144,16 +146,16 @@ export function QuickControlsPicker({ open, onClose }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 2 }}>
-                <button onClick={() => moveSlot(idx, -1)} disabled={idx === 0} style={iconBtn} aria-label="Move up">
+                <button onClick={() => moveSlot(idx, -1)} disabled={idx === 0} style={iconBtn} aria-label={t('quickControls.moveUp')}>
                   <ArrowUp size={13} />
                 </button>
-                <button onClick={() => moveSlot(idx, 1)} disabled={idx === draft.length - 1} style={iconBtn} aria-label="Move down">
+                <button onClick={() => moveSlot(idx, 1)} disabled={idx === draft.length - 1} style={iconBtn} aria-label={t('quickControls.moveDown')}>
                   <ArrowDown size={13} />
                 </button>
-                <button onClick={() => setEditingSlot(idx)} style={iconBtn} aria-label="Change">
+                <button onClick={() => setEditingSlot(idx)} style={iconBtn} aria-label={t('quickControls.change')}>
                   <ChevronRight size={13} />
                 </button>
-                <button onClick={() => clearSlot(idx)} style={iconBtn} aria-label="Remove">
+                <button onClick={() => clearSlot(idx)} style={iconBtn} aria-label={t('common.remove')}>
                   <X size={13} />
                 </button>
               </div>
@@ -164,10 +166,10 @@ export function QuickControlsPicker({ open, onClose }) {
 
       <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
         <button onClick={handleResetAuto} className="z-btn-secondary" style={{ flex: 1 }}>
-          Auto-pick
+          {t('quickControls.autoPick')}
         </button>
         <button onClick={handleSave} className="z-btn-primary" style={{ flex: 1 }}>
-          Save
+          {t('common.save')}
         </button>
       </div>
     </Modal>

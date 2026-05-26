@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { getIrDevices } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 const selectStyle = {
   width: '100%', height: 38, padding: '0 12px',
@@ -16,6 +17,7 @@ const selectStyle = {
 }
 
 export default function IRDeviceSelect({ value, onChange }) {
+  const t = useT()
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -35,22 +37,22 @@ export default function IRDeviceSelect({ value, onChange }) {
     set({ ir_device_id: id, ir_device_name: dev?.name || '', ir_command: '', ir_sequence: '', ir_temperature: undefined, ir_mode: undefined })
   }
 
-  if (loading) return <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '6px 0' }}>Loading IR devices…</p>
+  if (loading) return <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '6px 0' }}>{t('irDeviceSelect.loading')}</p>
   if (!devices.length) return (
-    <p style={{ fontSize: 12, color: 'var(--ink-mute)', padding: '6px 0' }}>No IR devices configured. Add one in Devices.</p>
+    <p style={{ fontSize: 12, color: 'var(--ink-mute)', padding: '6px 0' }}>{t('irDeviceSelect.noneConfigured')}</p>
   )
 
   const modeOptions = [
-    { id: 'command',     label: 'Command' },
-    ...(sequences.length ? [{ id: 'sequence', label: 'Sequence' }] : []),
-    ...(isAC ? [{ id: 'temperature', label: 'Temperature' }] : []),
+    { id: 'command',     label: t('irDeviceSelect.command') },
+    ...(sequences.length ? [{ id: 'sequence', label: t('irDeviceSelect.sequence') }] : []),
+    ...(isAC ? [{ id: 'temperature', label: t('irDeviceSelect.temperature') }] : []),
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
       {/* Device picker */}
       <select style={selectStyle} value={value?.ir_device_id || ''} onChange={e => handleDeviceChange(e.target.value)}>
-        <option value="">— select IR device —</option>
+        <option value="">{t('irDeviceSelect.selectIrDevice')}</option>
         {devices.map(d => (
           <option key={d.id} value={d.id}>{d.name}{d.room ? ` (${d.room.replace(/_/g, ' ')})` : ''}</option>
         ))}
@@ -92,9 +94,9 @@ export default function IRDeviceSelect({ value, onChange }) {
           {/* Command picker */}
           {!value?.ir_sequence && value?.ir_temperature == null && (
             <select style={selectStyle} value={value?.ir_command || ''} onChange={e => set({ ir_command: e.target.value, ir_sequence: undefined })}>
-              <option value="">— select command —</option>
+              <option value="">{t('irDeviceSelect.selectCommand')}</option>
               {(learned.length > 0 ? learned : Object.keys(selectedDevice.commands || {})).map(c => (
-                <option key={c} value={c}>{c.replace(/_/g, ' ')}{!learned.includes(c) ? ' (not learned)' : ''}</option>
+                <option key={c} value={c}>{c.replace(/_/g, ' ')}{!learned.includes(c) ? t('irDeviceSelect.notLearnedSuffix') : ''}</option>
               ))}
             </select>
           )}
@@ -102,7 +104,7 @@ export default function IRDeviceSelect({ value, onChange }) {
           {/* Sequence picker */}
           {value?.ir_sequence !== undefined && sequences.length > 0 && (
             <select style={selectStyle} value={value?.ir_sequence || ''} onChange={e => set({ ir_sequence: e.target.value, ir_command: '' })}>
-              <option value="">— select sequence —</option>
+              <option value="">{t('irDeviceSelect.selectSequence')}</option>
               {sequences.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
           )}
@@ -118,7 +120,7 @@ export default function IRDeviceSelect({ value, onChange }) {
                 placeholder="22"
               />
               <select style={selectStyle} value={value?.ir_mode || ''} onChange={e => set({ ir_mode: e.target.value || undefined })}>
-                <option value="">— mode (optional) —</option>
+                <option value="">{t('irDeviceSelect.modeOptional')}</option>
                 {['cool', 'heat', 'fan', 'auto', 'dry'].map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>

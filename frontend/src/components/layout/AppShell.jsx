@@ -1,40 +1,9 @@
-import { Component } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useLocation, Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { ToastContainer } from '../ui/Toast'
-
-class PageErrorBoundary extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { error: null }
-  }
-  static getDerivedStateFromError(error) { return { error } }
-  componentDidCatch(error, info) { console.error('[PageErrorBoundary]', error, info?.componentStack) }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          minHeight: 240, gap: 12, padding: 24, textAlign: 'center',
-        }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Something went wrong</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', maxWidth: 360 }}>
-            {this.state.error?.message || 'Unknown error'}
-          </p>
-          <button
-            style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-            onClick={() => this.setState({ error: null })}
-          >
-            Try again
-          </button>
-        </div>
-      )
-    }
-    return this.props.children
-  }
-}
+import { ErrorBoundary } from '../ui/ErrorBoundary'
+import { ConnectionStatus } from '../ui/ConnectionStatus'
 
 export function AppShell({ connected }) {
   const location = useLocation()
@@ -59,30 +28,29 @@ export function AppShell({ connected }) {
           paddingTop: 'var(--safe-top)',
         }}
       >
-        {/* Disconnected banner */}
-        {connected === false && (
-          <div style={{
-            position: 'sticky', top: 0, zIndex: 10,
-            background: 'var(--err)', color: '#fff',
-            fontSize: 12, fontWeight: 500, textAlign: 'center', padding: '4px 0',
-          }}>
-            Offline — reconnecting…
-          </div>
-        )}
+        {/* Connection banner — owns its own debounce + offline/connecting
+            split. Used to be an inline debounced 'Offline — reconnecting…'
+            banner; ConnectionStatus is the unified component now, fed by
+            useNetworkStatus (navigator.onLine + WS). */}
+        <ConnectionStatus />
 
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, x: 8 }}
-            animate={{ opacity: 1, x: 0, transition: { duration: 0.15 } }}
-            exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            style={{ minHeight: '100%' }}
-          >
-            <PageErrorBoundary key={location.pathname}>
-              <Outlet />
-            </PageErrorBoundary>
-          </motion.div>
-        </AnimatePresence>
+        {/* No page-transition wrapper.
+            Two prior attempts at a transition both failed:
+              - mode="wait" + motion.div: AnimatePresence's exit→enter
+                handshake can be dropped if the parent re-renders mid-
+                transition (WS connect/disconnect, store updates fanning out,
+                sibling ToastContainer animating). Result: new motion.div
+                mounts stuck at `opacity: 0`, page goes black.
+              - No mode="wait" + motion.div: both old and new motion.divs
+                render simultaneously as siblings in normal flow, stacking
+                vertically. The new page lands below the viewport, the old
+                fades out, and the visible area goes blank.
+            Pages just snap in — 0.15s of animation isn't worth a recurring
+            black-screen failure mode. ErrorBoundary keyed on pathname still
+            resets per-route. */}
+        <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       <BottomNav connected={connected} />

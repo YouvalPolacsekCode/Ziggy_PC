@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
+import { useT } from '../lib/i18n'
 
 function ToolCard({ title, badge, description, bullets, path, onOpen }) {
+  const t = useT()
   return (
     <button
       onClick={onOpen}
@@ -33,7 +35,7 @@ function ToolCard({ title, badge, description, bullets, path, onOpen }) {
         }}>
           {badge}
         </span>
-        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500 }}>Open →</span>
+        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500 }}>{t('adminConsole.open')}</span>
       </div>
       <div>
         <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>{title}</p>
@@ -54,6 +56,7 @@ function ToolCard({ title, badge, description, bullets, path, onOpen }) {
 export default function AdminConsole() {
   const navigate = useNavigate()
   const { role } = useAuthStore()
+  const t = useT()
 
   useEffect(() => {
     document.title = 'Ziggy Admin'
@@ -63,12 +66,12 @@ export default function AdminConsole() {
   if (role !== 'super_admin') {
     return (
       <div style={{ padding: 48, textAlign: 'center' }}>
-        <p style={{ color: 'var(--ink-faint)', fontSize: 14 }}>Access restricted to super admins.</p>
+        <p style={{ color: 'var(--ink-faint)', fontSize: 14 }}>{t('adminConsole.restricted')}</p>
         <button
           onClick={() => navigate('/')}
           style={{ marginTop: 16, fontSize: 13, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
         >
-          ← Back to Ziggy
+          ← {t('adminConsole.backToZiggy')}
         </button>
       </div>
     )
@@ -106,7 +109,7 @@ export default function AdminConsole() {
         <span style={{ color: 'var(--line)', fontSize: 16 }}>/</span>
 
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>
-          Admin Console
+          {t('adminConsole.title')}
         </span>
 
         <span style={{
@@ -117,7 +120,7 @@ export default function AdminConsole() {
           padding: '2px 7px', borderRadius: 4,
           textTransform: 'uppercase',
         }}>
-          super admin
+          {t('adminConsole.superAdminBadge')}
         </span>
       </header>
 
@@ -136,10 +139,10 @@ export default function AdminConsole() {
             color: 'var(--ink)', marginBottom: 8,
             letterSpacing: '-0.01em',
           }}>
-            Ziggy Admin Console
+            {t('adminConsole.heading')}
           </h1>
           <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.6 }}>
-            Technical tools and system administration. Not visible to regular users or guests.
+            {t('adminConsole.intro')}
           </p>
         </div>
 
@@ -149,39 +152,50 @@ export default function AdminConsole() {
           gap: 16,
         }}>
           <ToolCard
-            badge="dev tools"
-            title="Debug Console"
-            description="Live structured event tracing across every Ziggy subsystem. Correlate requests end-to-end, inspect HA calls, simulate commands without execution."
+            badge={t('adminConsole.devToolsBadge')}
+            title={t('adminConsole.debugTitle')}
+            description={t('adminConsole.debugDesc')}
             bullets={[
-              'Real-time event feed with scope and level filters',
-              'Request correlation IDs across intent → HA → IR',
-              'Dry-run simulation — parse without executing',
-              'Export full debug report as JSON',
+              t('adminConsole.debugBullet1'),
+              t('adminConsole.debugBullet2'),
+              t('adminConsole.debugBullet3'),
+              t('adminConsole.debugBullet4'),
             ]}
             onOpen={() => navigate('/ops/debug')}
           />
           <ToolCard
-            badge="administration"
-            title="Cloud Administration"
-            description="Manage users, roles, invitations, relay configuration, and cloud home provisioning."
+            badge={t('adminConsole.adminBadge')}
+            title={t('adminConsole.cloudTitle')}
+            description={t('adminConsole.cloudDesc')}
             bullets={[
-              'User management and role assignment',
-              'Invite links with configurable expiry',
-              'Relay connection and home provisioning',
-              'Deprovision cloud homes',
+              t('adminConsole.cloudBullet1'),
+              t('adminConsole.cloudBullet2'),
+              t('adminConsole.cloudBullet3'),
+              t('adminConsole.cloudBullet4'),
             ]}
             onOpen={() => navigate('/ops/cloud')}
           />
           <ToolCard
-            badge="home assistant"
-            title="HA Update Checker"
-            description="Detect available Home Assistant updates and see which breaking changes actually affect your Ziggy setup before updating."
+            badge={t('adminConsole.systemBadge')}
+            title={t('adminConsole.featuresTitle')}
+            description={t('adminConsole.featuresDesc')}
             bullets={[
-              'Current vs latest version comparison',
-              'Risk level: safe / low / medium / high / unknown',
-              'Breaking changes matched against your live HA setup',
-              'Web push + Telegram notification for risky updates',
-              'Backup reminder and link to official release notes',
+              t('adminConsole.featuresBullet1'),
+              t('adminConsole.featuresBullet2'),
+              t('adminConsole.featuresBullet3'),
+            ]}
+            onOpen={() => navigate('/ops/features')}
+          />
+          <ToolCard
+            badge={t('adminConsole.haBadge')}
+            title={t('adminConsole.haUpdateTitle')}
+            description={t('adminConsole.haUpdateDesc')}
+            bullets={[
+              t('adminConsole.haBullet1'),
+              t('adminConsole.haBullet2'),
+              t('adminConsole.haBullet3'),
+              t('adminConsole.haBullet4'),
+              t('adminConsole.haBullet5'),
             ]}
             onOpen={() => navigate('/ops/ha-update')}
           />

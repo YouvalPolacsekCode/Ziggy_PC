@@ -1,18 +1,19 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { Modal } from '../components/ui/Modal'
 import { Toggle } from '../components/ui/Toggle'
 import { Input, Textarea } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
-import { EntitySelect, getActionsForDomain } from '../components/ui/EntitySelect'
+import { EntitySelect, getActionsForDomain, getActionLabel } from '../components/ui/EntitySelect'
 import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { CONTROLLABLE_DOMAINS } from '../lib/domainRegistry'
-import { getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates } from '../lib/api'
+import { getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates, getDeviceCommands } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
 import { RoutinesListPanel } from './Routines'
+import { useT, t as tStatic } from '../lib/i18n'
 
 // Module-level cache so the Recommended-by-Ziggy block doesn't re-flash empty
 // every time the user navigates away and back. SuggestedTemplates lives in
@@ -24,116 +25,142 @@ function formatRelativeTime(iso) {
   if (!iso) return null
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)
-  if (mins < 1)  return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1)  return tStatic('automations.time.justNow')
+  if (mins < 60) return tStatic('automations.time.mAgo', { n: mins })
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24)  return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
+  if (hrs < 24)  return tStatic('automations.time.hAgo', { n: hrs })
+  return tStatic('automations.time.dAgo', { n: Math.floor(hrs / 24) })
 }
 
-const TRIGGER_TYPES = [
-  { value: 'time',    label: 'Time' },
-  { value: 'state',   label: 'Device State' },
-  { value: 'zone',    label: 'Zone Entry / Exit' },
-  { value: 'sunrise', label: 'Sunrise' },
-  { value: 'sunset',  label: 'Sunset' },
-  { value: 'webhook', label: 'Webhook' },
-]
+function getTriggerTypes() {
+  return [
+    { value: 'time',    label: tStatic('automations.triggerTime') },
+    { value: 'state',   label: tStatic('automations.triggerState') },
+    { value: 'zone',    label: tStatic('automations.triggerZone') },
+    { value: 'sunrise', label: tStatic('automations.triggerSunrise') },
+    { value: 'sunset',  label: tStatic('automations.triggerSunset') },
+    { value: 'webhook', label: tStatic('automations.triggerWebhook') },
+  ]
+}
 
-const TRACKER_TRIGGER_STATES = [
-  { value: 'home',     label: 'Arrives home' },
-  { value: 'not_home', label: 'Leaves / goes away' },
-]
+function getTrackerTriggerStates() {
+  return [
+    { value: 'home',     label: tStatic('automations.trackerArrives') },
+    { value: 'not_home', label: tStatic('automations.trackerLeaves') },
+  ]
+}
 
 // `ziggy_intent` (Ziggy capabilities) is intentionally omitted here — it'll
 // come back behind a feature flag as part of the broader capabilities project.
-const ACTION_TYPES = [
-  { value: 'call_service', label: 'Control Device' },
-  { value: 'ir_command',   label: 'IR Command' },
-  { value: 'send_intent',  label: 'Send Command' },
-  { value: 'delay',        label: 'Wait' },
-  { value: 'notify',       label: 'Notify' },
-]
+function getActionTypes() {
+  return [
+    { value: 'call_service',    label: tStatic('automations.actionCall') },
+    { value: 'device_command',  label: tStatic('automations.actionCommand') },
+    { value: 'ir_command',      label: tStatic('automations.actionIR') },
+    { value: 'send_intent',     label: tStatic('automations.actionSendIntent') },
+    { value: 'delay',           label: tStatic('automations.actionDelay') },
+    { value: 'notify',          label: tStatic('automations.actionNotify') },
+  ]
+}
 
-const SEND_INTENT_TEMPLATES = [
-  { group: 'Lights', items: ['Turn off all lights', 'Turn on the lights in [room]', 'Set brightness in [room] to 50%', 'Set lights in [room] to warm white'] },
-  { group: 'Climate', items: ['Set AC in [room] to 22 degrees', 'Turn on AC in [room]', 'Turn off AC in [room]', 'Set AC mode to cool in [room]'] },
-  { group: 'TV & Media', items: ['Turn on the TV in [room]', 'Turn off the TV in [room]', 'Set volume to 30 on TV in [room]'] },
-  { group: 'Covers', items: ['Open the blinds in [room]', 'Close the blinds in [room]'] },
-  { group: 'General', items: ['Turn off everything', 'Good night', 'Good morning'] },
+// Keys to identify groups; localized labels resolved at render time
+const SEND_INTENT_GROUPS = [
+  { key: 'gLights',  items: ['Turn off all lights', 'Turn on the lights in [room]', 'Set brightness in [room] to 50%', 'Set lights in [room] to warm white'] },
+  { key: 'gClimate', items: ['Set AC in [room] to 22 degrees', 'Turn on AC in [room]', 'Turn off AC in [room]', 'Set AC mode to cool in [room]'] },
+  { key: 'gTvMedia', items: ['Turn on the TV in [room]', 'Turn off the TV in [room]', 'Set volume to 30 on TV in [room]'] },
+  { key: 'gCovers',  items: ['Open the blinds in [room]', 'Close the blinds in [room]'] },
+  { key: 'gGeneral', items: ['Turn off everything', 'Good night', 'Good morning'] },
 ]
 
 const SENSOR_DOMAINS  = new Set(['sensor', 'binary_sensor'])
 const TRACKER_DOMAINS = new Set(['person', 'device_tracker'])
 
-const BINARY_SENSOR_TRIGGER_STATES = {
-  door:        [{ value: 'on', label: 'Opens' },            { value: 'off', label: 'Closes' }],
-  window:      [{ value: 'on', label: 'Opens' },            { value: 'off', label: 'Closes' }],
-  opening:     [{ value: 'on', label: 'Opens' },            { value: 'off', label: 'Closes' }],
-  motion:      [{ value: 'on', label: 'Detects motion' },   { value: 'off', label: 'Clears' }],
-  occupancy:   [{ value: 'on', label: 'Becomes occupied' }, { value: 'off', label: 'Becomes vacant' }],
-  presence:    [{ value: 'on', label: 'Detects presence' }, { value: 'off', label: 'Clears' }],
-  moisture:    [{ value: 'on', label: 'Detects leak' },     { value: 'off', label: 'Clears (dry)' }],
-  smoke:       [{ value: 'on', label: 'Detects smoke' },    { value: 'off', label: 'Clears' }],
-  gas:         [{ value: 'on', label: 'Detects gas' },      { value: 'off', label: 'Clears' }],
-  vibration:   [{ value: 'on', label: 'Detects vibration' },{ value: 'off', label: 'Stops' }],
-  connectivity:[{ value: 'on', label: 'Connects' },         { value: 'off', label: 'Disconnects' }],
-  lock:        [{ value: 'on', label: 'Locks' },            { value: 'off', label: 'Unlocks' }],
+function getBinarySensorTriggerStates() {
+  return {
+    door:        [{ value: 'on', label: tStatic('automations.bin.openTrigger') },     { value: 'off', label: tStatic('automations.bin.closeTrigger') }],
+    window:      [{ value: 'on', label: tStatic('automations.bin.openTrigger') },     { value: 'off', label: tStatic('automations.bin.closeTrigger') }],
+    opening:     [{ value: 'on', label: tStatic('automations.bin.openTrigger') },     { value: 'off', label: tStatic('automations.bin.closeTrigger') }],
+    motion:      [{ value: 'on', label: tStatic('automations.bin.motionTrigger') },   { value: 'off', label: tStatic('automations.bin.motionClear') }],
+    occupancy:   [{ value: 'on', label: tStatic('automations.bin.occupied') },        { value: 'off', label: tStatic('automations.bin.vacant') }],
+    presence:    [{ value: 'on', label: tStatic('automations.bin.presenceTrigger') }, { value: 'off', label: tStatic('automations.bin.motionClear') }],
+    moisture:    [{ value: 'on', label: tStatic('automations.bin.leakTrigger') },     { value: 'off', label: tStatic('automations.bin.leakClear') }],
+    smoke:       [{ value: 'on', label: tStatic('automations.bin.smokeTrigger') },    { value: 'off', label: tStatic('automations.bin.motionClear') }],
+    gas:         [{ value: 'on', label: tStatic('automations.bin.gasTrigger') },      { value: 'off', label: tStatic('automations.bin.motionClear') }],
+    vibration:   [{ value: 'on', label: tStatic('automations.bin.vibrationTrigger') },{ value: 'off', label: tStatic('automations.bin.vibrationStops') }],
+    connectivity:[{ value: 'on', label: tStatic('automations.bin.connects') },        { value: 'off', label: tStatic('automations.bin.disconnects') }],
+    lock:        [{ value: 'on', label: tStatic('automations.bin.locksTrigger') },    { value: 'off', label: tStatic('automations.bin.unlocksTrigger') }],
+  }
 }
 
-const BINARY_SENSOR_CONDITION_STATES = {
-  door:        [{ value: 'on', label: 'Open' },            { value: 'off', label: 'Closed' }],
-  window:      [{ value: 'on', label: 'Open' },            { value: 'off', label: 'Closed' }],
-  opening:     [{ value: 'on', label: 'Open' },            { value: 'off', label: 'Closed' }],
-  motion:      [{ value: 'on', label: 'Motion detected' }, { value: 'off', label: 'No motion' }],
-  occupancy:   [{ value: 'on', label: 'Occupied' },        { value: 'off', label: 'Vacant' }],
-  presence:    [{ value: 'on', label: 'Present' },         { value: 'off', label: 'Not present' }],
-  moisture:    [{ value: 'on', label: 'Leak detected' },   { value: 'off', label: 'Clear' }],
-  smoke:       [{ value: 'on', label: 'Smoke detected' },  { value: 'off', label: 'Clear' }],
-  gas:         [{ value: 'on', label: 'Gas detected' },    { value: 'off', label: 'Clear' }],
-  vibration:   [{ value: 'on', label: 'Vibrating' },       { value: 'off', label: 'Still' }],
-  connectivity:[{ value: 'on', label: 'Connected' },       { value: 'off', label: 'Disconnected' }],
-  lock:        [{ value: 'on', label: 'Locked' },          { value: 'off', label: 'Unlocked' }],
+function getBinarySensorConditionStates() {
+  return {
+    door:        [{ value: 'on', label: tStatic('automations.bin.open') },           { value: 'off', label: tStatic('automations.bin.closed') }],
+    window:      [{ value: 'on', label: tStatic('automations.bin.open') },           { value: 'off', label: tStatic('automations.bin.closed') }],
+    opening:     [{ value: 'on', label: tStatic('automations.bin.open') },           { value: 'off', label: tStatic('automations.bin.closed') }],
+    motion:      [{ value: 'on', label: tStatic('automations.bin.motionDetected') }, { value: 'off', label: tStatic('automations.bin.noMotion') }],
+    occupancy:   [{ value: 'on', label: tStatic('automations.bin.occupiedNow') },    { value: 'off', label: tStatic('automations.bin.vacantNow') }],
+    presence:    [{ value: 'on', label: tStatic('automations.bin.present') },        { value: 'off', label: tStatic('automations.bin.notPresent') }],
+    moisture:    [{ value: 'on', label: tStatic('automations.bin.leakDetected') },   { value: 'off', label: tStatic('automations.bin.clear') }],
+    smoke:       [{ value: 'on', label: tStatic('automations.bin.smokeDetected') },  { value: 'off', label: tStatic('automations.bin.clear') }],
+    gas:         [{ value: 'on', label: tStatic('automations.bin.gasDetected') },    { value: 'off', label: tStatic('automations.bin.clear') }],
+    vibration:   [{ value: 'on', label: tStatic('automations.bin.vibrating') },      { value: 'off', label: tStatic('automations.bin.still') }],
+    connectivity:[{ value: 'on', label: tStatic('automations.bin.connected') },      { value: 'off', label: tStatic('automations.bin.disconnected') }],
+    lock:        [{ value: 'on', label: tStatic('automations.bin.locked') },         { value: 'off', label: tStatic('automations.bin.unlocked') }],
+  }
 }
 
-const DEFAULT_BINARY_TRIGGER   = [{ value: 'on', label: 'Turns on' }, { value: 'off', label: 'Turns off' }]
-const DEFAULT_BINARY_CONDITION = [{ value: 'on', label: 'On' },       { value: 'off', label: 'Off' }]
+function getDefaultBinaryTrigger() {
+  return [{ value: 'on', label: tStatic('automations.bin.turnsOn') }, { value: 'off', label: tStatic('automations.bin.turnsOff') }]
+}
+function getDefaultBinaryCondition() {
+  return [{ value: 'on', label: tStatic('automations.bin.on') }, { value: 'off', label: tStatic('automations.bin.off') }]
+}
 
 function triggerSummary(trigger) {
-  if (!trigger?.type) return 'No trigger set'
+  if (!trigger?.type) return tStatic('automations.summary.noTrigger')
   switch (trigger.type) {
-    case 'time':    return trigger.time ? `Every day at ${trigger.time.slice(0, 5)}` : 'Time trigger (no time set)'
+    case 'time':    return trigger.time
+      ? tStatic('automations.summary.everyDayAt', { time: trigger.time.slice(0, 5) })
+      : tStatic('automations.summary.timeNoTime')
     case 'state': {
-      let s = `When ${trigger.entity_id || 'device'} becomes ${trigger.state || 'on/off'}`
-      if (trigger.for_minutes) s += ` for ${trigger.for_minutes} min`
+      let s = tStatic('automations.summary.whenBecomes', { entity: trigger.entity_id || tStatic('automations.summary.unknownDevice'), state: trigger.state || 'on/off' })
+      if (trigger.for_minutes) s += ' ' + tStatic('automations.summary.forMinutes', { n: trigger.for_minutes })
       return s
     }
     case 'numeric_state': {
       const ent = trigger.entity_id || 'sensor'
-      if (trigger.above !== undefined && trigger.above !== '') return `When ${ent} rises above ${trigger.above}`
-      if (trigger.below !== undefined && trigger.below !== '') return `When ${ent} drops below ${trigger.below}`
-      return `When ${ent} crosses a threshold`
+      if (trigger.above !== undefined && trigger.above !== '') return tStatic('automations.summary.risesAbove', { entity: ent, value: trigger.above })
+      if (trigger.below !== undefined && trigger.below !== '') return tStatic('automations.summary.dropsBelow', { entity: ent, value: trigger.below })
+      return tStatic('automations.summary.crossesThreshold', { entity: ent })
     }
     case 'zone': {
       const who  = trigger.entity_id || 'person'
       const zone = (trigger.zone || 'zone.home').replace('zone.', '')
-      const evt  = trigger.event === 'leave' ? 'leaves' : 'enters'
-      return `When ${who} ${evt} ${zone}`
+      return tStatic(trigger.event === 'leave' ? 'automations.summary.zoneLeaves' : 'automations.summary.zoneEnters', { who, zone })
     }
-    case 'sunrise': return trigger.offset ? `Sunrise ${trigger.offset}` : 'At sunrise'
-    case 'sunset':  return trigger.offset ? `Sunset ${trigger.offset}` : 'At sunset'
-    case 'webhook': return `Webhook: ${trigger.webhook_id || '(no id)'}`
+    case 'sunrise': return trigger.offset
+      ? tStatic('automations.summary.sunriseOffset', { offset: trigger.offset })
+      : tStatic('automations.summary.atSunrise')
+    case 'sunset':  return trigger.offset
+      ? tStatic('automations.summary.sunsetOffset', { offset: trigger.offset })
+      : tStatic('automations.summary.atSunset')
+    case 'webhook': return tStatic('automations.summary.webhook', { id: trigger.webhook_id || tStatic('automations.summary.noWebhookId') })
     default:        return trigger.type
   }
 }
 
 function actionSummary(action) {
+  const unk = tStatic('automations.summary.unknownDevice')
   switch (action.type) {
-    case 'call_service': return `${(action.service_value || action.service?.split('.')[1] || 'control').replace(/_/g, ' ')} ${action.entity_id || '?'}`
-    case 'ir_command':   return `${action.ir_device_name || 'IR device'} → ${action.ir_sequence || action.ir_command || '?'}`
-    case 'send_intent':  return `Command: "${action.text || '?'}"`
-    case 'delay':        return `Wait ${action.seconds || '?'} seconds`
-    case 'notify':       return `Notify: "${action.message || '?'}"`
+    case 'call_service': return `${(action.service_value || action.service?.split('.')[1] || tStatic('automations.summary.control')).replace(/_/g, ' ')} ${action.entity_id || unk}`
+    case 'device_command': {
+      const svc = (action.command_id || '').split('.').slice(-1)[0] || tStatic('automations.summary.command')
+      return `${svc.replace(/_/g, ' ')} ${action.entity_id || unk}`
+    }
+    case 'ir_command':   return `${action.ir_device_name || tStatic('automations.summary.irDevice')} → ${action.ir_sequence || action.ir_command || unk}`
+    case 'send_intent':  return tStatic('automations.summary.commandLabel', { text: action.text || unk })
+    case 'delay':        return tStatic('automations.summary.waitSeconds', { n: action.seconds || unk })
+    case 'notify':       return tStatic('automations.summary.notifyLabel', { message: action.message || unk })
     default:             return action.type
   }
 }
@@ -141,22 +168,25 @@ function actionSummary(action) {
 function conditionSummary(c) {
   if (c.type === 'time') {
     const parts = []
-    if (c.after)  parts.push(`after ${c.after}`)
-    if (c.before) parts.push(`before ${c.before}`)
-    return parts.length ? `Time window: ${parts.join(' and ')}` : 'Time window'
+    if (c.after)  parts.push(tStatic('automations.summary.after',  { time: c.after  }))
+    if (c.before) parts.push(tStatic('automations.summary.before', { time: c.before }))
+    return parts.length
+      ? tStatic('automations.summary.timeWindowParts', { parts: parts.join(' ' + tStatic('automations.summary.andJoin') + ' ') })
+      : tStatic('automations.summary.timeWindow')
   }
-  if (!c.entity_id) return 'Incomplete condition'
+  if (!c.entity_id) return tStatic('automations.summary.incomplete')
   const name = c.entity_id.split('.')[1]?.replace(/_/g, ' ') || c.entity_id
+  const val = c.value || 'on'
   switch (c.operator) {
-    case 'is':     return `${name} is ${c.value || 'on'}`
-    case 'is_not': return `${name} is not ${c.value || 'on'}`
-    case 'above':  return `${name} > ${c.value}`
-    case 'below':  return `${name} < ${c.value}`
+    case 'is':     return tStatic('automations.summary.cond.is',    { name, value: val })
+    case 'is_not': return tStatic('automations.summary.cond.isNot', { name, value: val })
+    case 'above':  return tStatic('automations.summary.cond.above', { name, value: c.value })
+    case 'below':  return tStatic('automations.summary.cond.below', { name, value: c.value })
     default:       return c.entity_id
   }
 }
 
-const ACTION_TYPE_ICON = { call_service: '⚙', ir_command: '📡', send_intent: '💬', delay: '⏱', notify: '📣' }
+const ACTION_TYPE_ICON = { call_service: '⚙', device_command: '✨', ir_command: '📡', send_intent: '💬', delay: '⏱', notify: '📣' }
 
 const selectStyle = {
   width: '100%', height: 38, padding: '0 28px 0 10px',
@@ -169,15 +199,17 @@ const selectStyle = {
 
 // ── SendIntentEditor ──────────────────────────────────────────────────────────
 function SendIntentEditor({ value, onChange }) {
+  const t = useT()
   const [showTemplates, setShowTemplates] = useState(false)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', gap: 6 }}>
         <Input
-          placeholder="e.g. set bedroom lights to 50% brightness"
+          placeholder={t('automations.sendIntent.placeholder')}
           value={value}
           onChange={e => onChange(e.target.value)}
           style={{ flex: 1 }}
+          dir="auto"
         />
         <button onClick={() => setShowTemplates(v => !v)} style={{
           padding: '0 10px', borderRadius: 9,
@@ -187,9 +219,9 @@ function SendIntentEditor({ value, onChange }) {
       </div>
       {showTemplates && (
         <div style={{ borderRadius: 11, border: '0.5px solid var(--line)', overflow: 'hidden', background: 'var(--surface)' }}>
-          {SEND_INTENT_TEMPLATES.map(({ group, items }) => (
-            <div key={group}>
-              <p className="z-eyebrow" style={{ padding: '8px 10px 4px' }}>{group}</p>
+          {SEND_INTENT_GROUPS.map(({ key, items }) => (
+            <div key={key}>
+              <p className="z-eyebrow" style={{ padding: '8px 10px 4px' }}>{t(`automations.sendIntent.${key}`)}</p>
               {items.map(tpl => (
                 <button key={tpl} onClick={() => { onChange(tpl); setShowTemplates(false) }}
                   style={{
@@ -206,7 +238,7 @@ function SendIntentEditor({ value, onChange }) {
         </div>
       )}
       <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-        Replace [room] with the actual room name.
+        {t('automations.sendIntent.replaceHint')}
       </p>
     </div>
   )
@@ -214,6 +246,7 @@ function SendIntentEditor({ value, onChange }) {
 
 // ── NeedsInputFields ──────────────────────────────────────────────────────────
 function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }) {
+  const t = useT()
   const [attrs, setAttrs] = useState({})
   useEffect(() => {
     if (!entityId || !fields.some(f => f.fetchKey)) return
@@ -227,23 +260,24 @@ function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }
         <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</label>
           <select style={selectStyle} value={currentVal} onChange={e => onChangeServiceData({ ...(serviceData || {}), [key]: e.target.value })}>
-            <option value="">— Pick {label} —</option>
+            <option value="">{t('automations.needs.pickLabel', { label })}</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </select>
         </div>
       )
     }
     if (fetchKey && !entityId) return (
-      <p key={key} style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>Select an entity above to see {label.toLowerCase()} options.</p>
+      <p key={key} style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('automations.needs.entityHint', { label: label.toLowerCase() })}</p>
     )
     return (
       <Input
         key={key}
         label={label}
-        placeholder={fetchKey && entityId ? 'Loading…' : placeholder}
+        placeholder={fetchKey && entityId ? t('automations.needs.loading') : placeholder}
         type={isNumber ? 'number' : 'text'}
         value={currentVal}
         onChange={e => { const v = isNumber ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value; onChangeServiceData({ ...(serviceData || {}), [key]: v }) }}
+        dir={isNumber ? undefined : 'auto'}
       />
     )
   })
@@ -251,6 +285,7 @@ function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }
 
 // ── MergedActionPicker ────────────────────────────────────────────────────────
 function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIrCommand }) {
+  const t = useT()
   const learned = new Set(irDevice?.learned_commands || [])
   const cmds    = irDevice?.commands || {}
   const irList  = Object.keys(cmds).filter(c => cmds[c] && learned.has(c))
@@ -263,39 +298,42 @@ function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIr
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Action</label>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{t('automations.action.label')}</label>
       <select style={selectStyle} value={haValue} onChange={handleChange}>
-        <optgroup label="⚙ Wi-Fi / HA">
-          {haActions.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+        <optgroup label={t('automations.action.haGroup')}>
+          {haActions.map(a => <option key={a.value} value={a.value}>{getActionLabel(a, t)}</option>)}
         </optgroup>
         {irList.length > 0 && (
-          <optgroup label={`📡 IR Blaster · ${irDevice?.name}`}>
+          <optgroup label={t('automations.action.irGroup', { name: irDevice?.name })}>
             {irList.map(cmd => <option key={cmd} value={`__ir__:${cmd}`}>{cmd.replace(/_/g, ' ')}</option>)}
           </optgroup>
         )}
       </select>
-      {irList.length > 0 && <p style={{ fontSize: 10, color: 'var(--ink-faint)' }}>Choosing an IR option converts this step to an IR command.</p>}
+      {irList.length > 0 && <p style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('automations.action.irConvertHint')}</p>}
     </div>
   )
 }
 
 // ── Step indicator ────────────────────────────────────────────────────────────
-const STEPS = ['Name', 'Trigger', 'Conditions', 'Actions', 'Review']
+const STEP_KEYS = ['stepName', 'stepTrigger', 'stepConditions', 'stepActions', 'stepReview']
+const STEP_COUNT = STEP_KEYS.length
 
-function StepIndicator({ current, onJump, maxReached = STEPS.length - 1 }) {
+function StepIndicator({ current, onJump, maxReached = STEP_COUNT - 1 }) {
+  const t = useT()
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
-      {STEPS.map((s, i) => {
+      {STEP_KEYS.map((sKey, i) => {
+        const s = t(`automations.wizard.${sKey}`)
         const enabled = onJump && i <= maxReached
         const isCurrent = i === current
         const isDone = i < current
         return (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div key={sKey} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               type="button"
               onClick={() => enabled && onJump(i)}
               disabled={!enabled}
-              title={enabled ? `Go to ${s}` : `Complete the previous steps first`}
+              title={enabled ? t('automations.wizard.goTo', { step: s }) : t('automations.wizard.completePrev')}
               style={{
                 width: 24, height: 24, borderRadius: '50%', padding: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -308,7 +346,7 @@ function StepIndicator({ current, onJump, maxReached = STEPS.length - 1 }) {
             >
               {isDone ? '✓' : i + 1}
             </button>
-            {i < STEPS.length - 1 && (
+            {i < STEP_COUNT - 1 && (
               <div style={{ width: 20, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />
             )}
           </div>
@@ -320,6 +358,7 @@ function StepIndicator({ current, onJump, maxReached = STEPS.length - 1 }) {
 
 // ── ZoneTriggerEditor ─────────────────────────────────────────────────────────
 function ZoneTriggerEditor({ trigger, onChange }) {
+  const t = useT()
   const [zones, setZones] = useState([])
   useEffect(() => {
     getEntities('zone').then(r => {
@@ -334,7 +373,7 @@ function ZoneTriggerEditor({ trigger, onChange }) {
     label: (z.attributes?.friendly_name || z.entity_id.replace('zone.', '')).replace(/_/g, ' '),
   }))
   const zoneOptions = [
-    { value: 'zone.home', label: 'Home zone' },
+    { value: 'zone.home', label: t('automations.editor.zoneHome') },
     ...extraZones,
   ]
 
@@ -345,29 +384,29 @@ function ZoneTriggerEditor({ trigger, onChange }) {
   }, [])
 
   const eventOptions = [
-    { value: 'enter', label: 'Enters zone' },
-    { value: 'leave', label: 'Leaves zone' },
+    { value: 'enter', label: t('automations.editor.zoneEnter') },
+    { value: 'leave', label: t('automations.editor.zoneLeave') },
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <EntitySelect
-        label="Person or device to track"
+        label={t('automations.editor.zoneTrackLabel')}
         value={trigger.entity_id || ''}
         onChange={v => onChange({ ...trigger, entity_id: v })}
         allowedDomains={TRACKER_DOMAINS}
-        placeholder="Select person or device tracker…"
+        placeholder={t('automations.editor.zoneTrackPh')}
       />
       {/* Zone is always shown — even with only Home available — so users
           discover they can add more zones in HA (the tip below explains how). */}
       <Select
-        label="Zone"
+        label={t('automations.editor.zoneLabel')}
         options={zoneOptions}
         value={trigger.zone || 'zone.home'}
         onChange={e => onChange({ ...trigger, zone: e.target.value })}
       />
       <Select
-        label="When"
+        label={t('automations.editor.stateWhen')}
         options={eventOptions}
         value={trigger.event || 'enter'}
         onChange={e => onChange({ ...trigger, event: e.target.value })}
@@ -380,10 +419,10 @@ function ZoneTriggerEditor({ trigger, onChange }) {
         border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
       }}>
         <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--info)', marginBottom: 4 }}>
-          Triggering BEFORE you arrive
+          {t('automations.editor.zoneBeforeTitle')}
         </p>
         <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
-          The Home zone fires when you physically reach home. For a head-start (e.g. turn on AC while still 5 minutes away), create a second zone in Home Assistant with a larger radius — a "Near Home" zone at 2–3 km, for example. Once that zone exists you'll be able to pick it here.
+          {t('automations.editor.zoneBeforeBody')}
         </p>
       </div>
     </div>
@@ -401,6 +440,7 @@ function FieldHint({ children }) {
 
 // ── TriggerEditor ─────────────────────────────────────────────────────────────
 function TriggerEditor({ trigger, onChange }) {
+  const t = useT()
   const { entities } = useDeviceStore()
   // `numeric_state` is presented to the user as a sensor-aware variant of "Device
   // State" — same picker, but the controls swap to above/below + threshold when
@@ -411,8 +451,10 @@ function TriggerEditor({ trigger, onChange }) {
   const triggerEntity = trigger.entity_id ? entities.find(e => e.entity_id === trigger.entity_id) : null
   const isTracker     = triggerDomain === 'person' || triggerDomain === 'device_tracker'
   const isNumericSensor = triggerDomain === 'sensor'
+  const BINARY_SENSOR_TRIGGER_STATES = getBinarySensorTriggerStates()
+  const DEFAULT_BINARY_TRIGGER = getDefaultBinaryTrigger()
   const stateOptions  = isTracker
-    ? TRACKER_TRIGGER_STATES
+    ? getTrackerTriggerStates()
     : (triggerDomain === 'binary_sensor' && triggerEntity?.device_class)
       ? (BINARY_SENSOR_TRIGGER_STATES[triggerEntity.device_class] || DEFAULT_BINARY_TRIGGER)
       : DEFAULT_BINARY_TRIGGER
@@ -430,11 +472,11 @@ function TriggerEditor({ trigger, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Select label="Trigger type" options={TRIGGER_TYPES} value={uiType} onChange={handleTypeChange} />
+      <Select label={t('automations.triggerType')} options={getTriggerTypes()} value={uiType} onChange={handleTypeChange} />
 
       {uiType === 'time' && (
         <Input
-          label="Time (HH:MM)"
+          label={t('automations.editor.timeLabel')}
           type="time"
           // HA stores time as "HH:MM:SS"; <input type="time"> needs "HH:MM".
           // Slice defensively so edit-existing always shows the value.
@@ -446,7 +488,7 @@ function TriggerEditor({ trigger, onChange }) {
       {uiType === 'state' && (
         <>
           <EntitySelect
-            label="Entity"
+            label={t('automations.editor.entity')}
             value={trigger.entity_id || ''}
             onChange={v => {
               const dom = v?.split('.')?.[0]
@@ -463,10 +505,10 @@ function TriggerEditor({ trigger, onChange }) {
           {trigger.entity_id && isNumericSensor && (
             <>
               <Select
-                label="Trigger when"
+                label={t('automations.editor.triggerWhen')}
                 options={[
-                  { value: 'above', label: 'Reading rises above' },
-                  { value: 'below', label: 'Reading drops below' },
+                  { value: 'above', label: t('automations.editor.risesAboveOpt') },
+                  { value: 'below', label: t('automations.editor.dropsBelowOpt') },
                 ]}
                 value={trigger.below !== undefined && trigger.below !== '' && (trigger.above === undefined || trigger.above === '') ? 'below' : 'above'}
                 onChange={e => {
@@ -479,9 +521,9 @@ function TriggerEditor({ trigger, onChange }) {
                 }}
               />
               <Input
-                label={unitHint ? `Threshold (${unitHint})` : 'Threshold'}
+                label={unitHint ? t('automations.editor.thresholdUnit', { unit: unitHint }) : t('automations.editor.threshold')}
                 type="number"
-                placeholder="e.g. 24"
+                placeholder={t('automations.editor.placeholderThreshold')}
                 value={trigger.above ?? trigger.below ?? ''}
                 onChange={e => {
                   const v = e.target.value === '' ? '' : Number(e.target.value)
@@ -490,21 +532,21 @@ function TriggerEditor({ trigger, onChange }) {
                   else            onChange({ type: 'numeric_state', entity_id: trigger.entity_id, above: v, below: undefined })
                 }}
               />
-              <FieldHint>Fires once each time the reading crosses the threshold.</FieldHint>
+              <FieldHint>{t('automations.editor.thresholdHint')}</FieldHint>
             </>
           )}
           {trigger.entity_id && !isNumericSensor && (
             <>
               <Select
-                label={isTracker ? 'When' : 'New state'}
+                label={isTracker ? t('automations.editor.stateWhen') : t('automations.editor.newState')}
                 options={stateOptions}
                 value={trigger.state || (isTracker ? 'home' : 'on')}
                 onChange={e => onChange({ ...trigger, type: 'state', state: e.target.value })}
               />
               <Input
-                label="Must stay in this state for (minutes, optional)"
+                label={t('automations.editor.stayForLabel')}
                 type="number"
-                placeholder="e.g. 30 — leave empty to trigger instantly"
+                placeholder={t('automations.editor.stayForPh')}
                 value={trigger.for_minutes || ''}
                 onChange={e => {
                   const v = e.target.value
@@ -522,18 +564,18 @@ function TriggerEditor({ trigger, onChange }) {
 
       {(uiType === 'sunrise' || uiType === 'sunset') && (
         <>
-          <Input label="Offset (e.g. +00:30 or -00:15)" placeholder="+00:00" value={trigger.offset || ''} onChange={e => onChange({ ...trigger, offset: e.target.value })} />
+          <Input label={t('automations.editor.offsetLabel')} placeholder={t('automations.editor.offsetPh')} value={trigger.offset || ''} onChange={e => onChange({ ...trigger, offset: e.target.value })} />
           <FieldHint>
-            Offset shifts the trigger relative to actual {uiType}. <strong>+00:30</strong> fires 30 minutes after, <strong>-00:15</strong> fires 15 minutes before.
+            {uiType === 'sunrise' ? t('automations.editor.offsetHintSunrise') : t('automations.editor.offsetHintSunset')}
           </FieldHint>
         </>
       )}
 
       {uiType === 'webhook' && (
         <>
-          <Input label="Webhook ID" placeholder="my_webhook_id" value={trigger.webhook_id || ''} onChange={e => onChange({ ...trigger, webhook_id: e.target.value })} />
+          <Input label={t('automations.editor.webhookId')} placeholder={t('automations.editor.webhookPh')} value={trigger.webhook_id || ''} onChange={e => onChange({ ...trigger, webhook_id: e.target.value })} dir="auto" />
           <FieldHint>
-            External services can fire this automation by POSTing to <code>/api/webhook/&lt;id&gt;</code>. Use it to bridge IFTTT, shortcuts, or custom scripts to Ziggy.
+            {t('automations.editor.webhookHint')}
           </FieldHint>
         </>
       )}
@@ -541,33 +583,39 @@ function TriggerEditor({ trigger, onChange }) {
   )
 }
 
-const CONDITION_TYPES = [
-  { value: 'entity', label: 'Entity state' },
-  { value: 'time',   label: 'Time window' },
-]
+function getConditionTypes() {
+  return [
+    { value: 'entity', label: tStatic('automations.cond.entityType') },
+    { value: 'time',   label: tStatic('automations.cond.timeType') },
+  ]
+}
 
 // State options for "controllable" non-binary entities (lights, switches, TVs, etc.)
 // when used as a condition. Kept short — most users want simple is/is-not on/off.
-const CONTROLLABLE_CONDITION_STATES = {
-  light:        [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
-  switch:       [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
-  fan:          [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
-  input_boolean:[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
-  media_player: [
-    { value: 'playing', label: 'Playing' },
-    { value: 'paused',  label: 'Paused' },
-    { value: 'idle',    label: 'Idle' },
-    { value: 'off',     label: 'Off' },
-    { value: 'on',      label: 'On' },
-  ],
-  climate:      [
-    { value: 'cool', label: 'Cooling' },
-    { value: 'heat', label: 'Heating' },
-    { value: 'auto', label: 'Auto' },
-    { value: 'off',  label: 'Off' },
-  ],
-  cover:        [{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }],
-  lock:         [{ value: 'locked', label: 'Locked' }, { value: 'unlocked', label: 'Unlocked' }],
+function getControllableConditionStates() {
+  const on  = tStatic('automations.bin.on')
+  const off = tStatic('automations.bin.off')
+  return {
+    light:        [{ value: 'on', label: on }, { value: 'off', label: off }],
+    switch:       [{ value: 'on', label: on }, { value: 'off', label: off }],
+    fan:          [{ value: 'on', label: on }, { value: 'off', label: off }],
+    input_boolean:[{ value: 'on', label: on }, { value: 'off', label: off }],
+    media_player: [
+      { value: 'playing', label: tStatic('automations.state.playing') },
+      { value: 'paused',  label: tStatic('automations.state.paused') },
+      { value: 'idle',    label: tStatic('automations.state.idle') },
+      { value: 'off',     label: off },
+      { value: 'on',      label: on },
+    ],
+    climate:      [
+      { value: 'cool', label: tStatic('automations.state.cooling') },
+      { value: 'heat', label: tStatic('automations.state.heating') },
+      { value: 'auto', label: tStatic('automations.state.auto') },
+      { value: 'off',  label: off },
+    ],
+    cover:        [{ value: 'open',   label: tStatic('automations.bin.open') },   { value: 'closed',   label: tStatic('automations.bin.closed') }],
+    lock:         [{ value: 'locked', label: tStatic('automations.bin.locked') }, { value: 'unlocked', label: tStatic('automations.bin.unlocked') }],
+  }
 }
 
 // ── ConditionRow ──────────────────────────────────────────────────────────────
@@ -575,6 +623,7 @@ const CONTROLLABLE_CONDITION_STATES = {
 // and 3 of the wizard feel like the same form. A small AND chip is drawn above
 // each condition (except the first) to make "all of these must be true" explicit.
 function ConditionRow({ condition, onChange, onRemove }) {
+  const t = useT()
   const { entities } = useDeviceStore()
   const condType    = condition.type || 'entity'
   const domain      = condition.entity_id?.split('.')?.[0] || null
@@ -585,9 +634,11 @@ function ConditionRow({ condition, onChange, onRemove }) {
   const isTracker   = domain === 'person' || domain === 'device_tracker'
   // Controllable domains use a state dropdown (no operator), since "is not on"
   // is rarely what users want and adds noise.
-  const controllableStates = CONTROLLABLE_CONDITION_STATES[domain] || null
+  const controllableStates = getControllableConditionStates()[domain] || null
   const isSimpleControllable = !!controllableStates
   const unitHint = entity?.unit_of_measurement || ''
+  const BINARY_SENSOR_CONDITION_STATES = getBinarySensorConditionStates()
+  const DEFAULT_BINARY_CONDITION = getDefaultBinaryCondition()
 
   // For binary sensors / trackers we collapse operator+value into a single Select.
   // "Motion detected" / "No motion" already implies the operator, so showing
@@ -596,21 +647,21 @@ function ConditionRow({ condition, onChange, onRemove }) {
     ? (BINARY_SENSOR_CONDITION_STATES[deviceClass] || DEFAULT_BINARY_CONDITION)
     : []
   const trackerStateOptions = [
-    { value: 'home',     label: 'Is home' },
-    { value: 'not_home', label: 'Is away' },
+    { value: 'home',     label: t('automations.cond.isHome') },
+    { value: 'not_home', label: t('automations.cond.isAway') },
   ]
 
   const sharedWrapper = (children) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <p className="z-eyebrow">Only if…</p>
-        <button onClick={onRemove} title="Remove condition" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
+        <p className="z-eyebrow">{t('automations.cond.title')}</p>
+        <button onClick={onRemove} title={t('automations.cond.remove')} aria-label={t('automations.cond.remove')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
         </button>
       </div>
       <Select
-        label="Condition type"
-        options={CONDITION_TYPES}
+        label={t('automations.cond.type')}
+        options={getConditionTypes()}
         value={condType}
         onChange={e => {
           const next = e.target.value
@@ -627,18 +678,18 @@ function ConditionRow({ condition, onChange, onRemove }) {
     return sharedWrapper(
       <>
         <Input
-          label="After (HH:MM)"
+          label={t('automations.cond.afterLabel')}
           type="time"
           value={(condition.after || '').slice(0, 5)}
           onChange={e => onChange({ ...condition, after: e.target.value })}
         />
         <Input
-          label="Before (HH:MM)"
+          label={t('automations.cond.beforeLabel')}
           type="time"
           value={(condition.before || '').slice(0, 5)}
           onChange={e => onChange({ ...condition, before: e.target.value })}
         />
-        <FieldHint>Overnight ranges work — e.g. after 21:00, before 07:00.</FieldHint>
+        <FieldHint>{t('automations.cond.overnightHint')}</FieldHint>
       </>
     )
   }
@@ -647,7 +698,7 @@ function ConditionRow({ condition, onChange, onRemove }) {
   return sharedWrapper(
     <>
       <EntitySelect
-        label="Entity"
+        label={t('automations.editor.entity')}
         value={condition.entity_id || ''}
         onChange={v => {
           const dom = v?.split('.')?.[0]
@@ -661,20 +712,20 @@ function ConditionRow({ condition, onChange, onRemove }) {
             value: isT ? 'home' : (isN ? '' : 'on'),
           })
         }}
-        placeholder="Select entity…"
+        placeholder={t('automations.cond.selectEntity')}
       />
       {condition.entity_id && (
         isNumericSensor ? (
           <>
             <Select
-              options={[{ value: 'above', label: 'Is above' }, { value: 'below', label: 'Is below' }]}
+              options={[{ value: 'above', label: t('automations.cond.isAbove') }, { value: 'below', label: t('automations.cond.isBelow') }]}
               value={condition.operator || 'above'}
               onChange={e => onChange({ ...condition, operator: e.target.value })}
             />
             <Input
-              label={unitHint ? `Threshold (${unitHint})` : 'Threshold'}
+              label={unitHint ? t('automations.editor.thresholdUnit', { unit: unitHint }) : t('automations.editor.threshold')}
               type="number"
-              placeholder="e.g. 25"
+              placeholder={t('automations.editor.placeholderThreshold25')}
               value={condition.value ?? ''}
               onChange={e => onChange({ ...condition, value: e.target.value })}
             />
@@ -683,14 +734,14 @@ function ConditionRow({ condition, onChange, onRemove }) {
           // Binary sensors: a single Select that already implies is/is_not.
           // We always store operator: 'is' and let value carry the meaning.
           <Select
-            label="State"
+            label={t('automations.cond.stateLabel')}
             options={binaryStateOptions}
             value={condition.value || 'on'}
             onChange={e => onChange({ ...condition, operator: 'is', value: e.target.value })}
           />
         ) : isTracker ? (
           <Select
-            label="State"
+            label={t('automations.cond.stateLabel')}
             options={trackerStateOptions}
             value={condition.value || 'home'}
             onChange={e => onChange({ ...condition, operator: 'is', value: e.target.value })}
@@ -698,12 +749,12 @@ function ConditionRow({ condition, onChange, onRemove }) {
         ) : isSimpleControllable ? (
           <>
             <Select
-              options={[{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is not' }]}
+              options={[{ value: 'is', label: t('automations.cond.is') }, { value: 'is_not', label: t('automations.cond.isNot') }]}
               value={condition.operator || 'is'}
               onChange={e => onChange({ ...condition, operator: e.target.value })}
             />
             <Select
-              label="State"
+              label={t('automations.cond.stateLabel')}
               options={controllableStates}
               value={condition.value || controllableStates[0].value}
               onChange={e => onChange({ ...condition, value: e.target.value })}
@@ -713,15 +764,16 @@ function ConditionRow({ condition, onChange, onRemove }) {
           // Fallback for unknown domains: free-form text value with operator.
           <>
             <Select
-              options={[{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is not' }]}
+              options={[{ value: 'is', label: t('automations.cond.is') }, { value: 'is_not', label: t('automations.cond.isNot') }]}
               value={condition.operator || 'is'}
               onChange={e => onChange({ ...condition, operator: e.target.value })}
             />
             <Input
-              label="State value"
-              placeholder="e.g. on / home / open"
+              label={t('automations.cond.stateValueLabel')}
+              placeholder={t('automations.cond.stateValuePh')}
               value={condition.value ?? ''}
               onChange={e => onChange({ ...condition, value: e.target.value })}
+              dir="auto"
             />
           </>
         )
@@ -733,6 +785,7 @@ function ConditionRow({ condition, onChange, onRemove }) {
 // Small AND chip drawn between consecutive conditions to make the implicit
 // "all of these must be true" relationship visible.
 function AndConnector() {
+  const t = useT()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
       <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
@@ -740,17 +793,109 @@ function AndConnector() {
         fontSize: 9, padding: '2px 8px', borderRadius: 999,
         background: 'var(--surface-2)', color: 'var(--ink-faint)',
         fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700, letterSpacing: '0.08em',
-      }}>AND</span>
+      }}>{t('automations.cond.and')}</span>
       <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
     </div>
   )
 }
 
 // ── ActionRow ─────────────────────────────────────────────────────────────────
+// Renders the full HA service catalog for a chosen entity. Backed by
+// services/ha_capabilities (services/ha_capabilities.py) so every command
+// HA exposes for the device becomes selectable in automations / routines —
+// not just the curated `call_service` shortlist.
+function DeviceCommandEditor({ value, onChange }) {
+  const t = useT()
+  const [commands, setCommands] = useState([])
+  const [loading, setLoading] = useState(false)
+  const entityId = value.entity_id || ''
+  const commandId = value.command_id || ''
+  const params = value.params || {}
+
+  useEffect(() => {
+    let cancelled = false
+    if (!entityId) { setCommands([]); return }
+    setLoading(true)
+    getDeviceCommands(entityId)
+      .then(r => { if (!cancelled) setCommands(r?.commands || []) })
+      .catch(() => { if (!cancelled) setCommands([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [entityId])
+
+  const selectedCmd = commands.find(c => c.id === commandId)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <EntitySelect
+        value={entityId}
+        onChange={v => onChange({ entity_id: v, command_id: '', params: {} })}
+        placeholder={t('automations.action.selectDevice')}
+        allowedDomains={CONTROLLABLE_DOMAINS}
+      />
+      {entityId && (
+        <Select
+          value={commandId}
+          onChange={e => onChange({ command_id: e.target.value, params: {} })}
+          options={[
+            { value: '', label: loading ? t('automations.action.loadingCommands') : t('automations.action.chooseCommand') },
+            ...commands.map(c => ({
+              value: c.id,
+              label: c.source === 'ir' ? t('automations.action.commandIRSuffix', { label: c.label }) : c.label,
+            })),
+          ]}
+        />
+      )}
+      {selectedCmd && (selectedCmd.fields || []).map(f => (
+        <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+            {f.label}{f.required ? ' *' : ''}
+          </span>
+          {f.kind === 'number' ? (
+            <Input
+              type="number" min={f.min} max={f.max} step={f.step}
+              value={params[f.name] ?? f.default ?? ''}
+              placeholder={f.description || f.label}
+              onChange={e => onChange({ params: { ...params, [f.name]: e.target.value === '' ? null : Number(e.target.value) } })}
+            />
+          ) : f.kind === 'select' ? (
+            <Select
+              value={params[f.name] ?? f.default ?? ''}
+              onChange={e => onChange({ params: { ...params, [f.name]: e.target.value } })}
+              options={[{ value: '', label: t('automations.action.selectPlaceholder') }, ...((f.options || []).map(o => {
+                const v = typeof o === 'object' ? (o.value ?? o.label) : o
+                const l = typeof o === 'object' ? (o.label ?? o.value) : o
+                return { value: v, label: l }
+              }))]}
+            />
+          ) : f.kind === 'boolean' ? (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={Boolean(params[f.name] ?? f.default ?? false)}
+                onChange={e => onChange({ params: { ...params, [f.name]: e.target.checked } })}
+              />
+              <span style={{ fontSize: 12 }}>{f.label}</span>
+            </label>
+          ) : (
+            <Input
+              value={params[f.name] ?? f.default ?? ''}
+              placeholder={f.description || f.label}
+              onChange={e => onChange({ params: { ...params, [f.name]: e.target.value } })}
+              dir="auto"
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleCollapse, dragHandleProps }) {
+  const t = useT()
   const { entities } = useDeviceStore()
   const domain = action.entity_id?.split('.')?.[0] || null
-  const availableActions = domain ? getActionsForDomain(domain) : [{ value: 'turn_on', label: 'Turn On' }, { value: 'turn_off', label: 'Turn Off' }, { value: 'toggle', label: 'Toggle' }]
+  const availableActions = domain ? getActionsForDomain(domain) : [{ value: 'turn_on', label: t('automations.fallback.turnOn') }, { value: 'turn_off', label: t('automations.fallback.turnOff') }, { value: 'toggle', label: t('automations.fallback.toggle') }]
   const linkedIr = entities.find(e => e.entity_id === action.entity_id)?._linkedIr || null
 
   // Neutral look matching the Trigger / Conditions steps — no info tint, plain
@@ -798,23 +943,23 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
           <span style={{ color: 'var(--ink-faint)', cursor: 'grab', touchAction: 'none' }} {...dragHandleProps}>
             <svg width="12" height="16" viewBox="0 0 9 13" fill="currentColor"><circle cx="2" cy="2" r="1.1"/><circle cx="7" cy="2" r="1.1"/><circle cx="2" cy="6.5" r="1.1"/><circle cx="7" cy="6.5" r="1.1"/><circle cx="2" cy="11" r="1.1"/><circle cx="7" cy="11" r="1.1"/></svg>
           </span>
-          <p className="z-eyebrow">Action {index + 1}</p>
+          <p className="z-eyebrow">{t('automations.wizard.actionLabel', { n: index + 1 })}</p>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 7 }}>Collapse</button>
-          <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
+          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 7 }}>{t('automations.wizard.collapse')}</button>
+          <button onClick={onRemove} aria-label={t('automations.removeStep')} title={t('automations.removeStep')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
           </button>
         </div>
       </div>
 
-      <Select options={ACTION_TYPES} value={action.type || 'call_service'} onChange={e => onChange({ type: e.target.value, entity_id: '', service: '' })} />
+      <Select options={getActionTypes()} value={action.type || 'call_service'} onChange={e => onChange({ type: e.target.value, entity_id: '', service: '' })} />
 
       {action.type === 'ir_command' && <IRDeviceSelect value={action} onChange={patch => onChange({ ...action, ...patch })} />}
 
       {action.type === 'call_service' && (
         <>
-          <EntitySelect value={action.entity_id || ''} onChange={v => onChange({ ...action, entity_id: v, service: 'homeassistant.turn_on', service_value: 'turn_on', service_data: undefined })} placeholder="Select entity…" allowedDomains={CONTROLLABLE_DOMAINS} />
+          <EntitySelect value={action.entity_id || ''} onChange={v => onChange({ ...action, entity_id: v, service: 'homeassistant.turn_on', service_value: 'turn_on', service_data: undefined })} placeholder={t('automations.action.selectEntity')} allowedDomains={CONTROLLABLE_DOMAINS} />
           {linkedIr && action.entity_id ? (
             <MergedActionPicker
               haActions={availableActions}
@@ -825,7 +970,7 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
             />
           ) : (
             <Select
-              options={availableActions}
+              options={availableActions.map(a => ({ ...a, label: getActionLabel(a, t) }))}
               value={action.service_value || action.service?.split('.')[1] || 'turn_on'}
               onChange={e => { const sel = e.target.value; const def = availableActions.find(a => a.value === sel) || {}; onChange({ ...action, service_value: sel, service: `homeassistant.${def.haService || sel}`, service_data: def.serviceData || undefined }) }}
             />
@@ -841,8 +986,9 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
       )}
 
       {action.type === 'send_intent' && <SendIntentEditor value={action.text || ''} onChange={text => onChange({ ...action, text })} />}
-      {action.type === 'delay'       && <Input type="number" placeholder="Seconds" value={action.seconds || ''} onChange={e => onChange({ ...action, seconds: parseInt(e.target.value) })} />}
-      {action.type === 'notify'      && <Input placeholder="Message" value={action.message || ''} onChange={e => onChange({ ...action, message: e.target.value })} />}
+      {action.type === 'delay'       && <Input type="number" placeholder={t('automations.action.secondsPh')} value={action.seconds || ''} onChange={e => onChange({ ...action, seconds: parseInt(e.target.value) })} />}
+      {action.type === 'notify'      && <Input placeholder={t('automations.action.messagePh')} value={action.message || ''} onChange={e => onChange({ ...action, message: e.target.value })} dir="auto" />}
+      {action.type === 'device_command' && <DeviceCommandEditor value={action} onChange={patch => onChange({ ...action, ...patch })} />}
     </div>
   )
 }
@@ -866,15 +1012,17 @@ function isCompleteCondition(c) {
 
 // ── ReviewPanel ───────────────────────────────────────────────────────────────
 function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
+  const t = useT()
   const completeConditions = conditions.filter(isCompleteCondition)
   const triggerType = trigger?.type || 'time'
   // numeric_state is presented as the "Device State" trigger family.
-  const triggerLabel = TRIGGER_TYPES.find(t => t.value === (triggerType === 'numeric_state' ? 'state' : triggerType))?.label
+  const triggerLabel = getTriggerTypes().find(tt => tt.value === (triggerType === 'numeric_state' ? 'state' : triggerType))?.label
+  const actionTypes = getActionTypes()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
-        <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15, marginBottom: 4 }}>{name || '(no name)'}</p>
-        {description && <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{description}</p>}
+        <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15, marginBottom: 4 }} dir="auto">{name || t('automations.wizard.noName')}</p>
+        {description && <p style={{ fontSize: 13, color: 'var(--ink-mute)' }} dir="auto">{description}</p>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           <span style={{
             fontSize: 10, padding: '2px 8px', borderRadius: 999,
@@ -888,7 +1036,7 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
       </div>
       {completeConditions.length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Conditions ({completeConditions.length})</p>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.summary.conditionsCount', { n: completeConditions.length })}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {completeConditions.map((c, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, border: `0.5px solid var(--line)`, background: 'var(--surface)' }}>
@@ -900,15 +1048,15 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
         </div>
       )}
       {actions.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--ink-faint)', textAlign: 'center', padding: '12px 0', fontStyle: 'italic' }}>No actions added</p>
+        <p style={{ fontSize: 13, color: 'var(--ink-faint)', textAlign: 'center', padding: '12px 0', fontStyle: 'italic' }}>{t('automations.action.noActions')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <p className="z-eyebrow">{actions.length} action{actions.length !== 1 ? 's' : ''}</p>
+          <p className="z-eyebrow">{t(actions.length === 1 ? 'automations.action.actionsHeadingOne' : 'automations.action.actionsHeading', { n: actions.length })}</p>
           {actions.map((a, i) => (
             <div key={a._key || i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
               <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
               <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{ACTION_TYPES.find(t => t.value === a.type)?.label || a.type}</p>
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{actionTypes.find(at => at.value === a.type)?.label || a.type}</p>
                 <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: '"IBM Plex Mono", monospace' }}>{actionSummary(a)}</p>
               </div>
             </div>
@@ -921,6 +1069,7 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
 
 // ── AutomationWizard ──────────────────────────────────────────────────────────
 function AutomationWizard({ initial, onSave, onClose }) {
+  const t = useT()
   const [step,             setStep]           = useState(0)
   const [name,             setName]           = useState(initial?.name || '')
   const [description,      setDescription]    = useState(initial?.description || '')
@@ -963,7 +1112,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
   // forward-jumping past unfilled gates isn't (e.g. you can't skip Name → Review
   // without first completing the trigger). When editing an existing automation,
   // every step is unlocked because the data is already filled in.
-  const [maxReached, setMaxReached] = useState(initial ? STEPS.length - 1 : 0)
+  const [maxReached, setMaxReached] = useState(initial ? STEP_COUNT - 1 : 0)
   useEffect(() => { if (step > maxReached) setMaxReached(step) }, [step])
 
   return (
@@ -977,11 +1126,11 @@ function AutomationWizard({ initial, onSave, onClose }) {
         <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.15 }}>
           {step === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Input label="Automation name" placeholder="e.g. Morning AC" value={name} onChange={e => setName(e.target.value)} />
-              <Textarea label="Description (optional)" placeholder="What does this automation do?" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+              <Input label={t('automations.namePlaceholder')} placeholder={t('automations.wizard.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} dir="auto" />
+              <Textarea label={t('automations.wizard.descriptionLabel')} placeholder={t('automations.wizard.descriptionPlaceholder')} value={description} onChange={e => setDescription(e.target.value)} rows={3} dir="auto" />
               {availableRooms.length > 0 && (
                 <div>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Rooms (optional)</p>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>{t('automations.wizard.roomsLabel')}</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {availableRooms.map(r => {
                       const sel = selectedRooms.includes(r.id)
@@ -1004,7 +1153,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 2 }}>
-                Optional. All conditions must be true at trigger time for actions to run.
+                {t('automations.wizard.conditionsHint')}
               </p>
               {conditions.map((cond, i) => (
                 <div key={cond._key} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1022,7 +1171,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                {conditions.length === 0 ? 'Add condition' : 'Add another condition'}
+                {conditions.length === 0 ? t('automations.wizard.addCondition') : t('automations.wizard.addAnotherCondition')}
               </button>
             </div>
           )}
@@ -1035,7 +1184,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
               </Reorder.Group>
               <button onClick={addAction} className="z-btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Add action
+                {t('automations.wizard.addAction')}
               </button>
             </div>
           )}
@@ -1043,10 +1192,10 @@ function AutomationWizard({ initial, onSave, onClose }) {
         </motion.div>
       </AnimatePresence>
       <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>Back</button>}
-        {step < STEPS.length - 1
-          ? <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>Next</button>
-          : <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Create automation'}</button>
+        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.back')}</button>}
+        {step < STEP_COUNT - 1
+          ? <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>{t('common.next')}</button>
+          : <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ flex: 1 }}>{saving ? t('automations.wizard.saving') : initial ? t('automations.wizard.saveChanges') : t('automations.wizard.create')}</button>
         }
       </div>
     </div>
@@ -1055,13 +1204,15 @@ function AutomationWizard({ initial, onSave, onClose }) {
 
 // ── AutomationViewModal ───────────────────────────────────────────────────────
 function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClose }) {
+  const t = useT()
   if (!automation) return null
   const lastRun = formatRelativeTime(automation.last_triggered)
   // numeric_state belongs to the "Device State" trigger family in the UI.
   const tType = automation.trigger?.type
-  const triggerTypeLabel = TRIGGER_TYPES.find(t => t.value === (tType === 'numeric_state' ? 'state' : tType))?.label || 'Unknown'
+  const triggerTypeLabel = getTriggerTypes().find(tt => tt.value === (tType === 'numeric_state' ? 'state' : tType))?.label || t('common.unknown')
   const completeConditions = (automation.conditions || []).filter(isCompleteCondition)
   const actions = automation.actions || []
+  const actionTypes = getActionTypes()
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1071,14 +1222,14 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }}>{automation.name}</p>
-          {automation.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{automation.description}</p>}
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{automation.name}</p>
+          {automation.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">{automation.description}</p>}
         </div>
       </div>
 
       {/* Trigger */}
       <div style={{ padding: '12px 14px', borderRadius: 11, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
-        <p className="z-eyebrow" style={{ marginBottom: 6 }}>Trigger</p>
+        <p className="z-eyebrow" style={{ marginBottom: 6 }}>{t('automations.triggerLabel')}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace' }}>
             {triggerTypeLabel}
@@ -1092,7 +1243,7 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
       {completeConditions.length > 0 && (
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 8 }}>
-            Conditions ({completeConditions.length}) — all must be true
+            {t('automations.view.conditionsAll', { n: completeConditions.length })}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {completeConditions.map((c, i) => (
@@ -1110,9 +1261,9 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
 
       {/* Steps */}
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>Steps ({actions.length})</p>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.view.stepsCount', { n: actions.length })}</p>
         {actions.length === 0
-          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>No steps configured — this automation will do nothing when it fires.</p>
+          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('automations.view.noSteps')}</p>
           : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {actions.map((a, i) => (
@@ -1120,7 +1271,7 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
                   <span style={{ width: 20, height: 20, borderRadius: '50%', background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
-                      {ACTION_TYPE_ICON[a.type] || '•'} {ACTION_TYPES.find(t => t.value === a.type)?.label || a.type}
+                      {ACTION_TYPE_ICON[a.type] || '•'} {actionTypes.find(at => at.value === a.type)?.label || a.type}
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{actionSummary(a)}</p>
                   </div>
@@ -1133,7 +1284,7 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
       {/* Rooms */}
       {(automation.rooms || []).length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 6 }}>Rooms</p>
+          <p className="z-eyebrow" style={{ marginBottom: 6 }}>{t('automations.view.rooms')}</p>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {automation.rooms.map(r => (
               <span key={r} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 10%, var(--surface))`, color: 'var(--info)', border: '0.5px solid var(--line)' }}>
@@ -1147,13 +1298,13 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
       {/* Status footer */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--ok)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--ok)' : 'var(--ink-mute)' }}>
-          {automation.enabled ? 'ENABLED' : 'DISABLED'}
+          {automation.enabled ? t('automations.view.enabled') : t('automations.view.disabled')}
         </span>
         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: 'var(--bg-2)', color: 'var(--ink-faint)' }}>
-          {automation.source === 'ziggy' ? 'Local scheduler' : 'HA-triggered'}
+          {automation.source === 'ziggy' ? t('automations.view.localScheduler') : t('automations.view.haTriggered')}
         </span>
         <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto', fontFamily: '"IBM Plex Mono", monospace' }}>
-          {lastRun ? `last ran ${lastRun}` : 'never run'}
+          {lastRun ? t('automations.view.lastRan', { when: lastRun }) : t('automations.view.neverRun')}
         </span>
       </div>
 
@@ -1163,12 +1314,12 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
           {onTrigger && (
             <button onClick={() => { onTrigger(automation.id); onClose?.() }} className="z-btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
-              Run now
+              {t('automations.view.runNow')}
             </button>
           )}
           {onEdit && (
             <button onClick={() => { onEdit(automation); onClose?.() }} className="z-btn-primary" style={{ flex: 1 }}>
-              Edit
+              {t('common.edit')}
             </button>
           )}
         </div>
@@ -1178,17 +1329,24 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
 }
 
 // ── AutomationCard ────────────────────────────────────────────────────────────
-function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrigger }) {
-  const triggerLabel = TRIGGER_TYPES.find(t => t.value === automation.trigger?.type)?.label
+// React.memo'd so a state_changed WS bump that doesn't touch this card's
+// action entities can't drag it through a re-render. With 100+ automations
+// on the page that was the dominant cost on every device toggle.
+const AutomationCard = React.memo(function AutomationCard({
+  automation, offlineEntityIds, onToggle, onView, onEdit, onDelete, onTrigger,
+}) {
+  const t = useT()
+  const triggerLabel = getTriggerTypes().find(tt => tt.value === automation.trigger?.type)?.label
 
-  // Check if any action entity is currently unavailable
-  const { entities } = useDeviceStore()
-  const offlineEntities = (() => {
-    const offlineSet = new Set(entities.filter(e => e.state === 'unavailable' || e.state === 'unknown').map(e => e.entity_id))
+  // Check if any action entity is currently unavailable. offlineEntityIds is
+  // built once at the page level and shared across rows — used to be rebuilt
+  // here per card per render (N cards × M entities every WS tick).
+  const offlineEntities = useMemo(() => {
+    if (!offlineEntityIds || offlineEntityIds.size === 0) return []
     return (automation.actions || [])
-      .filter(a => a.entity_id && offlineSet.has(a.entity_id))
+      .filter(a => a.entity_id && offlineEntityIds.has(a.entity_id))
       .map(a => a.entity_id)
-  })()
+  }, [automation.actions, offlineEntityIds])
   const hasOfflineDep = automation.enabled && offlineEntities.length > 0
 
   return (
@@ -1215,8 +1373,8 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
           )
         })()}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.name}</p>
-          {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.description}</p>}
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automation.name}</p>
+          {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automation.description}</p>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
             {triggerLabel && (
               <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--info)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--info)' : 'var(--ink-faint)' }}>
@@ -1224,15 +1382,13 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
               </span>
             )}
             {automation.trigger?.time && <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{automation.trigger.time}</span>}
-            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{automation.actions?.length || 0} step{automation.actions?.length !== 1 ? 's' : ''}</span>
-            {(automation.rooms || []).length > 0 && <span style={{ fontSize: 10.5, color: 'var(--ink-mute)' }}>{(automation.rooms || []).length} room{(automation.rooms || []).length !== 1 ? 's' : ''}</span>}
+            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('automations.card.stepsCount', { n: automation.actions?.length || 0 })}</span>
+            {(automation.rooms || []).length > 0 && <span style={{ fontSize: 10.5, color: 'var(--ink-mute)' }}>{t('automations.card.roomsCount', { n: (automation.rooms || []).length })}</span>}
           </div>
           {hasOfflineDep && (
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--warn)', fontFamily: '"IBM Plex Mono", monospace' }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              {offlineEntities.length === 1
-                ? `device offline — may not run`
-                : `${offlineEntities.length} devices offline — may not run`}
+              {t(offlineEntities.length === 1 ? 'automations.suggested.offlineDepsOne' : 'automations.suggested.offlineDeps', { n: offlineEntities.length })}
             </div>
           )}
         </div>
@@ -1240,12 +1396,12 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
           <Toggle checked={automation.enabled} onCheckedChange={() => onToggle(automation.id)} />
           <div style={{ display: 'flex', gap: 2 }}>
             {[
-              { onClick: () => onTrigger(automation.id), color: 'var(--ok)', title: 'Run now', path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
-              { onClick: () => onView(automation),       color: 'var(--ink-mute)', title: 'View',    path: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></> },
-              { onClick: () => onEdit(automation),       color: 'var(--ink-mute)', title: 'Edit',    path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
-              { onClick: () => onDelete(automation.id),  color: 'var(--accent)',   title: 'Delete',  path: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></> },
+              { onClick: () => onTrigger(automation.id), color: 'var(--ok)', title: t('automations.view.runNow'), path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
+              { onClick: () => onView(automation),       color: 'var(--ink-mute)', title: t('automations.card.view'), path: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></> },
+              { onClick: () => onEdit(automation),       color: 'var(--ink-mute)', title: t('common.edit'),    path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
+              { onClick: () => onDelete(automation.id),  color: 'var(--accent)',   title: t('common.delete'),  path: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></> },
             ].map(({ onClick, color, title, path }) => (
-              <button key={title} onClick={onClick} title={title} style={{ background: 'none', border: 'none', cursor: 'pointer', color, padding: 4 }}>
+              <button key={title} onClick={onClick} title={title} aria-label={title} style={{ background: 'none', border: 'none', cursor: 'pointer', color, padding: 4 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
               </button>
             ))}
@@ -1254,16 +1410,17 @@ function AutomationCard({ automation, onToggle, onView, onEdit, onDelete, onTrig
       </div>
     </motion.div>
   )
-}
+})
 
 // ── TemplateCard ──────────────────────────────────────────────────────────────
 const TIER_STYLE = {
-  ready:       { border: 'color-mix(in srgb, var(--ok)   30%, var(--line))', bg: 'color-mix(in srgb, var(--ok)   4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--ok)   14%, transparent)', badgeColor: 'var(--ok)',      badgeText: 'READY' },
-  partial:     { border: 'color-mix(in srgb, var(--warn) 40%, var(--line))', bg: 'color-mix(in srgb, var(--warn) 4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--warn) 14%, transparent)', badgeColor: 'var(--warn)',    badgeText: 'INCOMPLETE' },
-  unavailable: { border: 'var(--line)',                                       bg: 'var(--surface)',                                      badgeBg: 'var(--bg-2)',                                       badgeColor: 'var(--ink-faint)', badgeText: 'NOT AVAILABLE' },
+  ready:       { border: 'color-mix(in srgb, var(--ok)   30%, var(--line))', bg: 'color-mix(in srgb, var(--ok)   4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--ok)   14%, transparent)', badgeColor: 'var(--ok)',      badgeKey: 'ready' },
+  partial:     { border: 'color-mix(in srgb, var(--warn) 40%, var(--line))', bg: 'color-mix(in srgb, var(--warn) 4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--warn) 14%, transparent)', badgeColor: 'var(--warn)',    badgeKey: 'incomplete' },
+  unavailable: { border: 'var(--line)',                                       bg: 'var(--surface)',                                      badgeBg: 'var(--bg-2)',                                       badgeColor: 'var(--ink-faint)', badgeKey: 'notAvailable' },
 }
 
 function TemplateCard({ template, onConfigure }) {
+  const t = useT()
   const tier        = template.tier || (template.can_run ? 'ready' : 'unavailable')
   const ts          = TIER_STYLE[tier] || TIER_STYLE.unavailable
   const matched     = template.matched_labels || []
@@ -1290,18 +1447,18 @@ function TemplateCard({ template, onConfigure }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Name row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }}>{template.name}</p>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }} dir="auto">{template.name}</p>
           <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 700, fontFamily: '"IBM Plex Mono", monospace', background: ts.badgeBg, color: ts.badgeColor }}>
-            {ts.badgeText}
+            {t(ts.badgeKey === 'ready' ? 'automations.template.ready' : ts.badgeKey === 'incomplete' ? 'automations.template.incomplete' : 'automations.template.notAvailable')}
           </span>
           {template.already_exists && (
             <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, var(--ok) 14%, transparent)`, color: 'var(--ok)' }}>
-              ACTIVE
+              {t('automations.template.active')}
             </span>
           )}
         </div>
 
-        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8, lineHeight: 1.4 }}>{template.description}</p>
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8, lineHeight: 1.4 }} dir="auto">{template.description}</p>
 
         {/* Device chips */}
         <button
@@ -1310,10 +1467,10 @@ function TemplateCard({ template, onConfigure }) {
         >
           <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
           {tier === 'ready'
-            ? `${matched.length} device${matched.length !== 1 ? 's' : ''} ready`
+            ? t(matched.length === 1 ? 'automations.template.deviceReadyOne' : 'automations.template.devicesReady', { n: matched.length })
             : tier === 'partial'
-            ? `${matched.length} of ${matched.length + missReq.length} required devices found`
-            : `${missReq.length} device${missReq.length !== 1 ? 's' : ''} needed`
+            ? t('automations.template.partialFound', { matched: matched.length, total: matched.length + missReq.length })
+            : t(missReq.length === 1 ? 'automations.template.deviceNeededOne' : 'automations.template.devicesNeeded', { n: missReq.length })
           }
         </button>
 
@@ -1332,14 +1489,14 @@ function TemplateCard({ template, onConfigure }) {
                   <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: 'var(--warn)', fontSize: 11, flexShrink: 0 }}>✗</span>
                     <span style={{ fontSize: 11, color: 'var(--warn)' }}>{m.label}</span>
-                    <span style={{ fontSize: 10, color: 'var(--warn)', fontFamily: '"IBM Plex Mono", monospace', opacity: 0.7 }}>required</span>
+                    <span style={{ fontSize: 10, color: 'var(--warn)', fontFamily: '"IBM Plex Mono", monospace', opacity: 0.7 }}>{t('automations.template.required')}</span>
                   </div>
                 ))}
                 {missOpt.map(m => (
                   <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: 'var(--ink-faint)', fontSize: 11, flexShrink: 0 }}>○</span>
                     <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{m.label}</span>
-                    <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>optional</span>
+                    <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('automations.template.optional')}</span>
                   </div>
                 ))}
               </div>
@@ -1355,7 +1512,7 @@ function TemplateCard({ template, onConfigure }) {
           className={tier === 'ready' ? 'z-btn-primary' : 'z-btn-secondary'}
           style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, whiteSpace: 'nowrap', opacity: canConfigure ? 1 : 0.35 }}
         >
-          {tier === 'ready' ? 'Configure' : tier === 'partial' ? 'Configure' : 'Add devices'}
+          {tier === 'ready' ? t('automations.template.configure') : tier === 'partial' ? t('automations.template.configure') : t('automations.template.addDevices')}
         </button>
       </div>
     </div>
@@ -1364,6 +1521,7 @@ function TemplateCard({ template, onConfigure }) {
 
 // ── LibraryModal ──────────────────────────────────────────────────────────────
 function LibraryModal({ open, onClose, onConfigure }) {
+  const t = useT()
   const [templates, setTemplates] = useState([])
   const [loading,   setLoading]   = useState(false)
   const [search,    setSearch]    = useState('')
@@ -1411,18 +1569,19 @@ function LibraryModal({ open, onClose, onConfigure }) {
         <div style={{ padding: '18px 20px 12px', borderBottom: '0.5px solid var(--line)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div>
-              <p className="z-eyebrow" style={{ marginBottom: 2 }}>Curated automations</p>
-              <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>Automation Library</h2>
+              <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('automations.libraryEyebrow')}</p>
+              <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>{t('automations.libraryTitle')}</h2>
             </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--ink-mute)' }}>
+            <button onClick={onClose} aria-label={t('common.close')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--ink-mute)' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
           <input
             type="text"
-            placeholder="Search templates…"
+            placeholder={t('automations.libraryRunSearch')}
             value={search}
             onChange={e => setSearch(e.target.value)}
+            dir="auto"
             style={{
               width: '100%', height: 36, padding: '0 12px', borderRadius: 9,
               background: 'var(--surface)', border: '0.5px solid var(--line)',
@@ -1438,7 +1597,7 @@ function LibraryModal({ open, onClose, onConfigure }) {
                 border: category === cat ? 'none' : '0.5px solid var(--line)',
                 cursor: 'pointer', fontFamily: 'inherit',
               }}>
-                {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                {cat === 'all' ? t('automations.libraryAll') : cat.charAt(0).toUpperCase() + cat.slice(1)}
               </button>
             ))}
           </div>
@@ -1455,33 +1614,33 @@ function LibraryModal({ open, onClose, onConfigure }) {
             <>
               {ready.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
-                  <p className="z-eyebrow" style={{ marginBottom: 10, color: 'var(--ok)' }}>Ready to configure ({ready.length})</p>
+                  <p className="z-eyebrow" style={{ marginBottom: 10, color: 'var(--ok)' }}>{t('automations.libraryReady', { n: ready.length })}</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {ready.map(t => <TemplateCard key={t.id} template={t} onConfigure={tmpl => { onConfigure(tmpl); onClose() }} />)}
+                    {ready.map(tpl => <TemplateCard key={tpl.id} template={tpl} onConfigure={cfg => { onConfigure(cfg); onClose() }} />)}
                   </div>
                 </div>
               )}
               {partial.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
-                  <p className="z-eyebrow" style={{ marginBottom: 6, color: 'var(--warn)' }}>Add devices to unlock ({partial.length})</p>
+                  <p className="z-eyebrow" style={{ marginBottom: 6, color: 'var(--warn)' }}>{t('automations.libraryPartial', { n: partial.length })}</p>
                   <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 10, lineHeight: 1.4 }}>
-                    You have some required devices. Add the missing ones, then reload to see these move to Ready.
+                    {t('automations.libraryPartialHint')}
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {partial.map(t => <TemplateCard key={t.id} template={t} onConfigure={tmpl => { onConfigure(tmpl); onClose() }} />)}
+                    {partial.map(tpl => <TemplateCard key={tpl.id} template={tpl} onConfigure={cfg => { onConfigure(cfg); onClose() }} />)}
                   </div>
                 </div>
               )}
               {unavailable.length > 0 && (
                 <div>
-                  <p className="z-eyebrow" style={{ marginBottom: 10, color: 'var(--ink-faint)' }}>Not available ({unavailable.length})</p>
+                  <p className="z-eyebrow" style={{ marginBottom: 10, color: 'var(--ink-faint)' }}>{t('automations.libraryUnavailable', { n: unavailable.length })}</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {unavailable.map(t => <TemplateCard key={t.id} template={t} onConfigure={tmpl => { onConfigure(tmpl); onClose() }} />)}
+                    {unavailable.map(tpl => <TemplateCard key={tpl.id} template={tpl} onConfigure={cfg => { onConfigure(cfg); onClose() }} />)}
                   </div>
                 </div>
               )}
               {filtered.length === 0 && (
-                <p style={{ textAlign: 'center', padding: '32px 0', fontSize: 13, color: 'var(--ink-faint)' }}>No templates match your search.</p>
+                <p style={{ textAlign: 'center', padding: '32px 0', fontSize: 13, color: 'var(--ink-faint)' }}>{t('automations.libraryNoMatch')}</p>
               )}
             </>
           )}
@@ -1506,22 +1665,29 @@ function ConfidenceMeter({ value }) {
   )
 }
 
-const PATTERN_TYPE_META = {
-  time_based: { label: 'Time pattern', tint: 'var(--info)' },
-  sequence:   { label: 'Routine',      tint: 'var(--ok)' },
-  group:      { label: 'Group',        tint: 'var(--warn)' },
+function getPatternTypeMeta() {
+  return {
+    time_based: { label: tStatic('automations.pattern.timePattern'), tint: 'var(--info)' },
+    sequence:   { label: tStatic('automations.pattern.routine'),     tint: 'var(--ok)' },
+    group:      { label: tStatic('automations.pattern.group'),       tint: 'var(--warn)' },
+  }
 }
-const SUGGESTION_STATUS_META = {
-  accepted:    { label: 'Accepted',  tint: 'var(--ok)' },
-  rejected:    { label: 'Dismissed', tint: 'var(--err)' },
-  snoozed:     { label: 'Snoozed',   tint: 'var(--warn)' },
-  implemented: { label: 'Active',    tint: 'var(--ok)' },
+function getSuggestionStatusMeta() {
+  return {
+    accepted:    { label: tStatic('automations.suggestionStatus.accepted'),    tint: 'var(--ok)' },
+    rejected:    { label: tStatic('automations.suggestionStatus.rejected'),    tint: 'var(--err)' },
+    snoozed:     { label: tStatic('automations.suggestionStatus.snoozed'),     tint: 'var(--warn)' },
+    implemented: { label: tStatic('automations.suggestionStatus.implemented'), tint: 'var(--ok)' },
+  }
 }
 
 function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const [acting,   setActing]   = useState(null)
   const isPending = suggestion.status === 'pending'
+  const PATTERN_TYPE_META = getPatternTypeMeta()
+  const SUGGESTION_STATUS_META = getSuggestionStatusMeta()
   const meta = PATTERN_TYPE_META[suggestion.pattern_type] || PATTERN_TYPE_META.time_based
   const act = async (fn, label) => { setActing(label); try { await fn() } finally { setActing(null) } }
 
@@ -1539,22 +1705,22 @@ function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
           </span>
         )}
       </div>
-      <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, color: 'var(--ink)', marginBottom: 8 }}>{suggestion.user_message}</p>
+      <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, color: 'var(--ink)', marginBottom: 8 }} dir="auto">{suggestion.user_message}</p>
       {(suggestion.trigger || suggestion.actions?.length > 0) && (
         <div style={{ padding: '8px 10px', borderRadius: 9, background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 10 : 0 }}>
-          {suggestion.trigger?.type && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>WHEN  {suggestion.trigger.type}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}</span>}
-          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>DO    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}</span>)}
+          {suggestion.trigger?.type && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('automations.suggested.tagWhen', { desc: `${suggestion.trigger.type}${suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}` })}</span>}
+          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('automations.suggested.tagDo', { desc: `${a.intent?.replace(/_/g, ' ')}${a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}` })}</span>)}
         </div>
       )}
       {isPending && (
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={() => act(onConfigure, 'configure')} disabled={!!acting} style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 13, fontWeight: 600, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
-            {acting === 'configure' ? 'Opening…' : 'Configure'}
+            {acting === 'configure' ? t('automations.suggested.openingDots') : t('automations.suggested.configure')}
           </button>
           <button onClick={() => act(() => onSnooze(3), 'snooze')} disabled={!!acting} style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 13, fontWeight: 500, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
-            {acting === 'snooze' ? '…' : 'Later'}
+            {acting === 'snooze' ? '…' : t('automations.suggested.later')}
           </button>
-          <button onClick={() => act(onReject, 'reject')} disabled={!!acting} style={{ padding: '10px', borderRadius: 10, background: 'transparent', color: 'var(--ink-faint)', border: '0.5px solid var(--line)', fontSize: 13, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>✕</button>
+          <button onClick={() => act(onReject, 'reject')} disabled={!!acting} aria-label={t('common.delete')} style={{ padding: '10px', borderRadius: 10, background: 'transparent', color: 'var(--ink-faint)', border: '0.5px solid var(--line)', fontSize: 13, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>✕</button>
         </div>
       )}
     </motion.div>
@@ -1574,17 +1740,17 @@ function suggestionToWizardData(suggestion) {
 
   const actionToText = (a) => {
     const intent = (a.intent || '').replace(/_/g, ' ')
-    const room   = a.params?.room ? ` in the ${a.params.room.replace(/_/g, ' ')}` : ''
+    const room   = a.params?.room ? tStatic('automations.suggestion.inRoomFmt', { room: a.params.room.replace(/_/g, ' ') }) : ''
     const onOff  = a.params?.turn_on === true ? ' on' : a.params?.turn_on === false ? ' off' : ''
     return `${intent}${onOff}${room}`.trim()
   }
   const actions = (suggestion.actions || []).map(a => ({
     type: 'send_intent',
-    text: actionToText(a) || (a.intent || 'do something'),
+    text: actionToText(a) || (a.intent || tStatic('automations.suggestion.doSomething')),
   }))
 
   return {
-    name: suggestion.user_message?.slice(0, 60) || 'Suggested automation',
+    name: suggestion.user_message?.slice(0, 60) || tStatic('automations.suggestion.defaultName'),
     description: suggestion.reasoning || suggestion.user_message || '',
     trigger,
     conditions: [],
@@ -1594,6 +1760,7 @@ function suggestionToWizardData(suggestion) {
 }
 
 function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, onSnooze, onAnalyze }) {
+  const t = useT()
   const [subtab, setSubtab] = useState('pending')
   const pending = suggestions.filter(s => s.status === 'pending')
   const history = suggestions.filter(s => s.status !== 'pending')
@@ -1603,16 +1770,16 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 6 }}>
-          {[{ id: 'pending', label: 'Pending', count: pending.length }, { id: 'history', label: 'History' }].map(t => (
-            <button key={t.id} onClick={() => setSubtab(t.id)} style={{ padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: subtab === t.id ? 'var(--ink)' : 'var(--surface-2)', color: subtab === t.id ? 'var(--bg)' : 'var(--ink-mute)', border: subtab === t.id ? 'none' : '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 5 }}>
-              {t.label}
-              {t.count > 0 && <span style={{ background: subtab === t.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700 }}>{t.count}</span>}
+          {[{ id: 'pending', label: t('automations.suggested.pending'), count: pending.length }, { id: 'history', label: t('automations.suggested.history') }].map(tab => (
+            <button key={tab.id} onClick={() => setSubtab(tab.id)} style={{ padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: subtab === tab.id ? 'var(--ink)' : 'var(--surface-2)', color: subtab === tab.id ? 'var(--bg)' : 'var(--ink-mute)', border: subtab === tab.id ? 'none' : '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              {tab.label}
+              {tab.count > 0 && <span style={{ background: subtab === tab.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700 }}>{tab.count}</span>}
             </button>
           ))}
         </div>
         <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, flexShrink: 0 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: analyzing ? 'spin 1s linear infinite' : 'none' }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-          {analyzing ? 'Analyzing…' : 'Analyze'}
+          {analyzing ? t('automations.suggested.analyzing') : t('automations.suggested.analyze')}
         </button>
       </div>
 
@@ -1620,9 +1787,9 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
 
       {!loading && displayed.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{subtab === 'pending' ? 'No pending suggestions' : 'No history yet'}</p>
-          {subtab === 'pending' && <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto 16px' }}>Ziggy learns from your daily actions. Patterns appear here after a few days of use.</p>}
-          {subtab === 'pending' && <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{analyzing ? 'Analyzing…' : 'Run analysis now'}</button>}
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{subtab === 'pending' ? t('automations.suggested.noPending') : t('automations.suggested.noHistory')}</p>
+          {subtab === 'pending' && <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto 16px' }}>{t('automations.suggested.learnsHint')}</p>}
+          {subtab === 'pending' && <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{analyzing ? t('automations.suggested.analyzing') : t('automations.suggested.runAnalysis')}</button>}
         </div>
       )}
 
@@ -1641,10 +1808,25 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
+  const t = useT()
   const { automations, routines, loading, fetchAutomations, fetchRoutines, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
   const { suggestions, loading: sugLoading, fetch: fetchSuggestions, accept, reject, snooze, runAnalysis, analyzing, pendingCount } = useSuggestionStore()
   const { addToast } = useUIStore()
-  const { ziggyRooms } = useDeviceStore()
+  // Per-field selectors — pulling the whole deviceStore here would re-render
+  // the page (and every automation card under it) on every WS tick.
+  const ziggyRooms = useDeviceStore(s => s.ziggyRooms)
+  const entities   = useDeviceStore(s => s.entities)
+
+  // Compute the offline-entity set ONCE per page render, share it with every
+  // AutomationCard via prop. Each card used to rebuild this set itself on
+  // every WS-driven re-render — N × M work for no reason.
+  const offlineEntityIds = useMemo(() => {
+    const s = new Set()
+    for (const e of entities) {
+      if (e.state === 'unavailable' || e.state === 'unknown') s.add(e.entity_id)
+    }
+    return s
+  }, [entities])
   const [tab,               setTab]               = useState('active')
   const [showWizard,        setShowWizard]        = useState(false)
   const [editTarget,        setEditTarget]        = useState(null)
@@ -1697,7 +1879,7 @@ export default function Automations() {
   const handleSave = async (data) => {
     try {
       await addAutomation({ ...data, id: editTarget?.id })
-      addToast(editTarget ? 'Automation saved' : 'Automation saved', 'success')
+      addToast(t('automations.saved'), 'success')
       if (editTarget?._fromSuggestion) {
         try { await accept(editTarget._fromSuggestion) } catch {}
       }
@@ -1710,11 +1892,11 @@ export default function Automations() {
         suggestedTemplatesCache = arr
         setSuggestedTemplates(arr)
       } catch {}
-    } catch { addToast('Failed to save automation', 'error') }
+    } catch { addToast(t('automations.failedToSave'), 'error') }
   }
   const handleDelete = async (id) => {
-    try { await removeAutomation(id); addToast('Automation deleted', 'success') }
-    catch { addToast('Failed to delete', 'error') }
+    try { await removeAutomation(id); addToast(t('automations.deleted'), 'success') }
+    catch { addToast(t('automations.failedToDelete'), 'error') }
   }
   const handleEdit = async (automation) => {
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
@@ -1733,20 +1915,20 @@ export default function Automations() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>React to events automatically</p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Automations</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('automations.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('automations.title')}</h1>
           <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
-            {enabled} enabled · {automations.length} total
+            {t('automations.countSummary', { enabled, total: automations.length })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={() => setShowLibrary(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            Library
+            {t('automations.library')}
           </button>
           <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Automation
+            {t('automations.headerAdd')}
           </button>
         </div>
       </div>
@@ -1754,21 +1936,21 @@ export default function Automations() {
       {/* Tab switcher — segmented pill style */}
       <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20 }}>
         {[
-          { id: 'active',    label: 'Active',    count: automations.filter(a => a.enabled).length },
-          { id: 'suggested', label: 'Suggested', count: pendingSuggestions.length },
-          { id: 'routines',  label: 'Routines',  count: routines.length },
-        ].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
+          { id: 'active',    label: t('automations.tabActive'),    count: automations.filter(a => a.enabled).length },
+          { id: 'suggested', label: t('automations.tabSuggested'), count: pendingSuggestions.length },
+          { id: 'routines',  label: t('automations.tabRoutines'),  count: routines.length },
+        ].map(tabDef => (
+          <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
             flex: 1, padding: '8px 0', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
-            background: tab === t.id ? 'var(--surface)' : 'transparent',
+            background: tab === tabDef.id ? 'var(--surface)' : 'transparent',
             border: 'none', fontSize: 13, fontWeight: 600,
-            color: tab === t.id ? 'var(--ink)' : 'var(--ink-mute)',
+            color: tab === tabDef.id ? 'var(--ink)' : 'var(--ink-mute)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+            boxShadow: tab === tabDef.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
             transition: 'background 0.15s',
           }}>
-            {t.label}
-            {t.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t.count}</span>}
+            {tabDef.label}
+            {tabDef.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{tabDef.count}</span>}
           </button>
         ))}
       </div>
@@ -1794,10 +1976,10 @@ export default function Automations() {
             of having to find them behind a collapsed chip. ─────────────── */}
       {(() => {
         // Hide templates the user has already created — they belong in Active.
-        const recommended = suggestedTemplates.filter(t => !t.already_exists)
+        const recommended = suggestedTemplates.filter(tpl => !tpl.already_exists)
         if (recommended.length === 0) return null
-        const readyCount = recommended.filter(t => t.tier === 'ready').length
-        const partialCount = recommended.filter(t => t.tier === 'partial').length
+        const readyCount = recommended.filter(tpl => tpl.tier === 'ready').length
+        const partialCount = recommended.filter(tpl => tpl.tier === 'partial').length
         return (
           <div style={{
             marginBottom: 20,
@@ -1815,13 +1997,13 @@ export default function Automations() {
                   <span style={{ fontSize: 18 }}>✨</span>
                   <div style={{ minWidth: 0 }}>
                     <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
-                      Recommended by Ziggy
+                      {t('automations.recommended')}
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 1 }}>
-                      {readyCount > 0 && <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{readyCount} ready to set up</span>}
+                      {readyCount > 0 && <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{t('automations.recommendedReady', { n: readyCount })}</span>}
                       {readyCount > 0 && partialCount > 0 && <span style={{ color: 'var(--ink-faint)' }}> · </span>}
-                      {partialCount > 0 && <span style={{ color: 'var(--warn)', fontWeight: 600 }}>{partialCount} need a device</span>}
-                      {readyCount === 0 && partialCount === 0 && <span>Curated suggestions for your home</span>}
+                      {partialCount > 0 && <span style={{ color: 'var(--warn)', fontWeight: 600 }}>{t('automations.recommendedNeed', { n: partialCount })}</span>}
+                      {readyCount === 0 && partialCount === 0 && <span>{t('automations.recommendedSubtitle')}</span>}
                     </p>
                   </div>
                 </div>
@@ -1832,12 +2014,12 @@ export default function Automations() {
               {suggestionsOpen && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
                   <div style={{ padding: '0 12px 12px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {recommended.slice(0, 5).map(t => (
-                      <TemplateCard key={t.id} template={t} onConfigure={handleConfigureTemplate} />
+                    {recommended.slice(0, 5).map(tpl => (
+                      <TemplateCard key={tpl.id} template={tpl} onConfigure={handleConfigureTemplate} />
                     ))}
                     {recommended.length > 5 && (
                       <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
-                        +{recommended.length - 5} more in Library →
+                        {t('automations.moreInLibrary', { n: recommended.length - 5 })}
                       </button>
                     )}
                   </div>
@@ -1853,9 +2035,9 @@ export default function Automations() {
         loading={sugLoading}
         analyzing={analyzing}
         onConfigure={handleConfigureSuggestion}
-        onReject={async id => { try { await reject(id); addToast('Dismissed', 'success') } catch { addToast('Failed', 'error') } }}
-        onSnooze={async (id, days) => { try { await snooze(id, days); addToast(`Snoozed ${days}d`, 'success') } catch { addToast('Failed', 'error') } }}
-        onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? `Found ${r.new_count} new suggestion${r.new_count > 1 ? 's' : ''}` : 'No new patterns yet', 'success') } catch { addToast('Analysis failed', 'error') } }}
+        onReject={async id => { try { await reject(id); addToast(t('automations.suggested.dismissed'), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+        onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+        onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? t(r.new_count === 1 ? 'automations.suggested.foundNewOne' : 'automations.suggested.foundNew', { n: r.new_count }) : t('automations.suggested.noNewPatterns'), 'success') } catch { addToast(t('automations.suggested.analysisFailed'), 'error') } }}
       />
         </motion.div>
       )}
@@ -1884,7 +2066,7 @@ export default function Automations() {
         >
 
       {/* ── My Automations ───────────────────────────────────────────────── */}
-      {automations.length > 0 && <p className="z-eyebrow" style={{ marginBottom: 10 }}>My Automations</p>}
+      {automations.length > 0 && <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.myAutomations')}</p>}
 
       {loading && automations.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1894,17 +2076,18 @@ export default function Automations() {
 
       {!loading && automations.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No automations yet</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Create one to automate your home</p>
-          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>Create automation</button>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('automations.empty')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('automations.emptyHint')}</p>
+          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.createAutomation')}</button>
         </div>
       )}
 
       <AnimatePresence mode="popLayout">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {automations.map(a => (
-            <AutomationCard key={a.id} automation={a} onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
-              onTrigger={async id => { try { await triggerAutomation(id); addToast('Triggered', 'success') } catch { addToast('Failed to trigger', 'error') } }} />
+            <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
+              onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
+              onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }} />
           ))}
         </div>
       </AnimatePresence>
@@ -1923,19 +2106,19 @@ export default function Automations() {
       />
 
       <Modal open={showWizard} onClose={handleClose} title={
-        editTarget?._fromSuggestion ? `Review: ${editTarget.name}` :
-        editTarget?._isTemplate ? `Configure: ${editTarget.name}` :
-        editTarget ? `Edit: ${editTarget.name}` : 'New Custom Automation'
+        editTarget?._fromSuggestion ? t('automations.reviewTitle', { name: editTarget.name }) :
+        editTarget?._isTemplate ? t('automations.configureTitle', { name: editTarget.name }) :
+        editTarget ? t('automations.editTitle', { name: editTarget.name }) : t('automations.newCustom')
       }>
         <AutomationWizard key={editTarget?.id || '__new__'} initial={editTarget} onSave={handleSave} onClose={handleClose} />
       </Modal>
 
-      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Automation details">
+      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title={t('automations.detailsTitle')}>
         <AutomationViewModal
           automation={viewTarget}
           roomNameMap={roomNameMap}
           onEdit={(automation) => { setViewTarget(null); handleEdit(automation) }}
-          onTrigger={async (id) => { try { await triggerAutomation(id); addToast('Triggered', 'success') } catch { addToast('Failed to trigger', 'error') } }}
+          onTrigger={async (id) => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }}
           onClose={() => setViewTarget(null)}
         />
       </Modal>

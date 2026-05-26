@@ -20,16 +20,18 @@ import {
   getIrCatalog, getIrUnassignedSignals, assignIrUnassignedSignal,
 } from '../lib/api'
 import { cn } from '../lib/utils'
+import { useT } from '../lib/i18n'
 import logger from '../lib/logger'
 
+// Device type ids — labels resolved via t() in the component.
 const DEVICE_TYPES = [
-  { id: 'tv',        label: 'TV',        Icon: Radio },
-  { id: 'ac',        label: 'AC',        Icon: Thermometer },
-  { id: 'fan',       label: 'Fan',       Icon: Wind },
-  { id: 'soundbar',  label: 'Soundbar',  Icon: Volume2 },
-  { id: 'receiver',  label: 'Receiver',  Icon: Volume2 },
-  { id: 'projector', label: 'Projector', Icon: MonitorPlay },
-  { id: 'custom',    label: 'Custom',    Icon: Zap },
+  { id: 'tv',        Icon: Radio },
+  { id: 'ac',        Icon: Thermometer },
+  { id: 'fan',       Icon: Wind },
+  { id: 'soundbar',  Icon: Volume2 },
+  { id: 'receiver',  Icon: Volume2 },
+  { id: 'projector', Icon: MonitorPlay },
+  { id: 'custom',    Icon: Zap },
 ]
 
 const LEARN_DURATION = 20  // seconds
@@ -57,6 +59,7 @@ function StepIndicator({ step, total }) {
 // ---------------------------------------------------------------------------
 
 function StepSelectBlaster({ selected, onSelect }) {
+  const t = useT()
   const [discovered, setDiscovered]   = useState([])
   const [discovering, setDiscovering] = useState(false)
   const [manualIp, setManualIp]       = useState('')
@@ -78,11 +81,11 @@ function StepSelectBlaster({ selected, onSelect }) {
   const handleManualIp = () => {
     const ip = manualIp.trim()
     if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
-      setManualError('Enter a valid IP address, e.g. 192.168.1.45')
+      setManualError(t('wizard.ir.invalidIp'))
       return
     }
     setManualError('')
-    selectDirect(ip, `Broadlink at ${ip}`)
+    selectDirect(ip, t('wizard.ir.broadlinkAt', { ip }))
   }
 
   return (
@@ -91,7 +94,7 @@ function StepSelectBlaster({ selected, onSelect }) {
       {/* Auto-discover results */}
       {discovering ? (
         <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Scanning network…
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('wizard.ir.scanning')}
         </div>
       ) : discovered.length > 0 ? (
         <div className="space-y-2">
@@ -110,30 +113,31 @@ function StepSelectBlaster({ selected, onSelect }) {
               >
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{d.name || d.type}</p>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 font-medium">IR receive</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 font-medium">{t('wizard.ir.irReceiveBadge')}</span>
                 </div>
                 <p className="text-xs text-zinc-400 mt-0.5">{d.host}</p>
               </button>
             )
           })}
-          <button onClick={runDiscover} className="text-xs text-zinc-400 hover:text-zinc-500">Scan again</button>
+          <button onClick={runDiscover} className="text-xs text-zinc-400 hover:text-zinc-500">{t('wizard.scanAgain')}</button>
         </div>
       ) : null}
 
       {/* Manual IP — always visible, primary path when discovery fails */}
       <div>
         <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
-          {discovered.length > 0 ? 'Or enter IP manually' : 'Enter your Broadlink IP address'}
+          {discovered.length > 0 ? t('wizard.ir.enterIpManual') : t('wizard.ir.enterIpHint')}
         </p>
         <p className="text-[11px] text-zinc-400 mb-2">
-          Find it in your router's device list, or in HA → Settings → Integrations → Broadlink → Configure.
+          {t('wizard.ir.ipFindHint')}
         </p>
         <div className="flex gap-2">
           <input
             value={manualIp}
             onChange={(e) => { setManualIp(e.target.value); setManualError('') }}
             onKeyDown={(e) => e.key === 'Enter' && handleManualIp()}
-            placeholder="192.168.1.x"
+            placeholder={t('wizard.ir.ipPlaceholder')}
+            dir="auto"
             className={cn(
               'flex-1 h-9 px-3 rounded-xl text-sm border font-mono',
               'bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100',
@@ -150,13 +154,13 @@ function StepSelectBlaster({ selected, onSelect }) {
             disabled={!manualIp.trim()}
             className="px-3 h-9 rounded-xl text-xs font-medium bg-violet-500 text-white disabled:opacity-40 hover:bg-violet-600 transition-colors"
           >
-            Use this IP
+            {t('wizard.useThisIp')}
           </button>
         </div>
         {manualError && <p className="text-xs text-red-400 mt-1">{manualError}</p>}
         {selected?.blaster_host && !selected?.entity_id && (
           <p className="text-xs text-violet-500 mt-1.5">
-            Selected: {selected.blaster_host} — IR receive enabled
+            {t('wizard.selected', { host: selected.blaster_host })}
           </p>
         )}
       </div>
@@ -170,7 +174,21 @@ function StepSelectBlaster({ selected, onSelect }) {
 // ---------------------------------------------------------------------------
 
 function StepDeviceDetails({ details, onChange }) {
+  const t = useT()
   const [rooms, setRooms] = useState([])
+
+  const typeLabel = (id) => {
+    const map = {
+      tv:        t('wizard.ir.typeTv'),
+      ac:        t('wizard.ir.typeAc'),
+      fan:       t('wizard.ir.typeFan'),
+      soundbar:  t('wizard.ir.typeSoundbar'),
+      receiver:  t('wizard.ir.typeReceiver'),
+      projector: t('wizard.ir.typeProjector'),
+      custom:    t('wizard.ir.typeCustom'),
+    }
+    return map[id] || id
+  }
 
   useEffect(() => {
     getRooms().then((r) => setRooms(Array.isArray(r) ? r : r.areas ?? r.rooms ?? [])).catch(() => {})
@@ -179,18 +197,19 @@ function StepDeviceDetails({ details, onChange }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs text-zinc-500 mb-1">Device name *</label>
+        <label className="block text-xs text-zinc-500 mb-1">{t('wizard.ir.deviceName')}</label>
         <Input
           value={details.name}
           onChange={(e) => onChange({ ...details, name: e.target.value })}
-          placeholder="Living Room TV"
+          placeholder={t('wizard.ir.deviceNamePh')}
+          dir="auto"
         />
       </div>
 
       <div>
-        <label className="block text-xs text-zinc-500 mb-1.5">Device type *</label>
+        <label className="block text-xs text-zinc-500 mb-1.5">{t('wizard.ir.deviceTypeRequired')}</label>
         <div className="grid grid-cols-3 gap-2">
-          {DEVICE_TYPES.map(({ id, label, Icon }) => (
+          {DEVICE_TYPES.map(({ id, Icon }) => (
             <button
               key={id}
               onClick={() => onChange({ ...details, device_type: id })}
@@ -202,14 +221,14 @@ function StepDeviceDetails({ details, onChange }) {
               )}
             >
               <Icon className="w-4 h-4" />
-              {label}
+              {typeLabel(id)}
             </button>
           ))}
         </div>
       </div>
 
       <div>
-        <label className="block text-xs text-zinc-500 mb-1">Room</label>
+        <label className="block text-xs text-zinc-500 mb-1">{t('wizard.ir.room')}</label>
         <select
           value={details.room}
           onChange={(e) => onChange({ ...details, room: e.target.value })}
@@ -221,7 +240,7 @@ function StepDeviceDetails({ details, onChange }) {
             'focus:outline-none focus:ring-2 focus:ring-violet-500/50',
           )}
         >
-          <option value="">— select room —</option>
+          <option value="">{t('wizard.ir.selectRoom')}</option>
           {rooms.map((r) => (
             <option key={r.id ?? r.area_id ?? r.name} value={r.id ?? r.area_id ?? r.name}>
               {r.name}
@@ -231,11 +250,12 @@ function StepDeviceDetails({ details, onChange }) {
       </div>
 
       <div>
-        <label className="block text-xs text-zinc-500 mb-1">Brand (optional)</label>
+        <label className="block text-xs text-zinc-500 mb-1">{t('wizard.ir.brandOptional')}</label>
         <Input
           value={details.brand}
           onChange={(e) => onChange({ ...details, brand: e.target.value })}
-          placeholder="Samsung, LG, Daikin…"
+          placeholder={t('wizard.ir.brandPh')}
+          dir="auto"
         />
       </div>
     </div>
@@ -249,6 +269,7 @@ function StepDeviceDetails({ details, onChange }) {
 // ---------------------------------------------------------------------------
 
 function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal }) {
+  const t = useT()
   const [status, setStatus]   = useState(learnedNow ? 'learned' : 'idle')
   const [countdown, setCountdown] = useState(0)
   const timerRef = useRef(null)
@@ -316,8 +337,8 @@ function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal 
       {recentSignal && status !== 'learned' && status !== 'learning' && (
         <button onClick={bindRecent}
           className="text-[10px] text-violet-400 hover:text-violet-600 whitespace-nowrap"
-          title="Bind the IR signal we just captured">
-          ⚡ bind
+          title={t('wizard.unassignedSignals.bindRecent')}>
+          {t('wizard.ir.bind')}
         </button>
       )}
 
@@ -329,9 +350,9 @@ function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal 
           variant={status === 'learned' ? 'ghost' : 'secondary'}
           onClick={startLearning}
           className="w-14 text-xs"
-          title="Learn a new code from your remote"
+          title={t('wizard.unassignedSignals.learnNew')}
         >
-          {status === 'learned' ? <Check className="w-3 h-3 text-green-400" /> : 'Learn'}
+          {status === 'learned' ? <Check className="w-3 h-3 text-green-400" /> : t('wizard.ir.learn')}
         </Button>
       )}
 
@@ -341,9 +362,9 @@ function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal 
         onClick={testCommand}
         disabled={!deviceId || status === 'learning' || status !== 'learned'}
         className="text-xs w-10"
-        title="Fire the command. Useful for verifying."
+        title={t('wizard.unassignedSignals.fireToVerify')}
       >
-        Test
+        {t('wizard.ir.test')}
       </Button>
     </div>
   )
@@ -356,6 +377,7 @@ function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal 
 // ---------------------------------------------------------------------------
 
 function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }) {
+  const t = useT()
   const [catalog, setCatalog] = useState(null)
   useEffect(() => {
     if (!deviceType) return
@@ -382,7 +404,7 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
   })
 
   if (!catalog) {
-    return <p className="text-xs text-zinc-400 py-4">Loading commands…</p>
+    return <p className="text-xs text-zinc-400 py-4">{t('wizard.ir.loadingCommands')}</p>
   }
 
   const groups = catalog.groups || []
@@ -390,7 +412,7 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
   return (
     <div>
       <p className="text-xs text-zinc-500 mb-3">
-        Core commands are listed first. Tap <strong className="text-zinc-700 dark:text-zinc-300">Learn</strong> then press the button on your physical remote within 20 seconds — or press the button first and tap <strong className="text-zinc-700 dark:text-zinc-300">⚡ bind</strong>. Optional buttons (sleep, eco, etc.) live behind each group's expand link.
+        {t('wizard.ir.coreHint')}
       </p>
 
       <div className="max-h-[60vh] overflow-y-auto pr-1">
@@ -406,7 +428,9 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
                 {extras.length > 0 && (
                   <button onClick={() => toggleGroup(g.id)}
                     className="text-[10px] text-violet-400 hover:text-violet-600">
-                    {isOpen ? `Hide optional (${extras.length})` : `+ ${extras.length} optional${learnedExtras.length ? ` · ${learnedExtras.length} learned` : ''}`}
+                    {isOpen
+                      ? t('wizard.ir.hideOptional', { n: extras.length })
+                      : `${t('wizard.ir.showOptional', { n: extras.length })}${learnedExtras.length ? t('wizard.ir.optionalLearned', { n: learnedExtras.length }) : ''}`}
                   </button>
                 )}
               </div>
@@ -431,7 +455,7 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
           )
         })}
         {groups.length === 0 && (
-          <p className="text-xs text-zinc-400 py-2">No commands available for this device type.</p>
+          <p className="text-xs text-zinc-400 py-2">{t('wizard.ir.noCommandsForType')}</p>
         )}
       </div>
     </div>
@@ -443,20 +467,20 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
 // ---------------------------------------------------------------------------
 
 function StepDone({ deviceName }) {
+  const t = useT()
   return (
     <div className="flex flex-col items-center py-8 gap-4">
       <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center">
         <Check className="w-7 h-7 text-green-400" />
       </div>
-      <p className="text-zinc-900 dark:text-zinc-100 font-medium">{deviceName} is ready!</p>
+      <p className="text-zinc-900 dark:text-zinc-100 font-medium">{t('wizard.ir.deviceReady', { name: deviceName })}</p>
       <p className="text-sm text-zinc-500 text-center">
-        You can now control it with voice commands or from the Devices page.
-        Add more commands any time by editing the device.
+        {t('wizard.ir.doneBody')}
       </p>
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-200 dark:border-violet-800">
         <Wifi className="w-4 h-4 text-violet-500 shrink-0" />
         <p className="text-xs text-violet-700 dark:text-violet-300">
-          Physical remote detection is active. Ziggy will update device state when someone uses the original remote.
+          {t('wizard.ir.physicalDetect')}
         </p>
       </div>
     </div>
@@ -470,6 +494,7 @@ function StepDone({ deviceName }) {
 const TOTAL_STEPS = 4
 
 export default function IRWizard({ onClose, onCreated }) {
+  const t = useT()
   const [step, setStep]               = useState(1)
   const [blaster, setBlaster]         = useState(null)
   const [details, setDetails]         = useState({ name: '', device_type: 'tv', room: '', brand: '' })
@@ -538,7 +563,7 @@ export default function IRWizard({ onClose, onCreated }) {
         setStep(3)
       } catch (e) {
         logger.error('ir_wizard_create_failed', e, { device_type: details.device_type })
-        setSaveError(e.message || 'Failed to create device.')
+        setSaveError(e.message || t('wizard.ir.failedCreate'))
       } finally {
         setSaving(false)
       }
@@ -558,10 +583,10 @@ export default function IRWizard({ onClose, onCreated }) {
   const handleBack = () => setStep((s) => Math.max(s - 1, 1))
 
   const titles = [
-    'Select IR Blaster',
-    'Device Details',
-    'Learn Commands',
-    'All Done',
+    t('wizard.ir.titleStep1'),
+    t('wizard.ir.titleStep2'),
+    t('wizard.ir.titleStep3'),
+    t('wizard.ir.titleStep4'),
   ]
 
   return (
@@ -599,7 +624,7 @@ export default function IRWizard({ onClose, onCreated }) {
       <div className="flex items-center justify-between mt-6">
         {step > 1 && step < 4 ? (
           <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1">
-            <ChevronLeft className="w-4 h-4" /> Back
+            <ChevronLeft className="w-4 h-4" /> {t('wizard.back')}
           </Button>
         ) : <div />}
 
@@ -612,13 +637,13 @@ export default function IRWizard({ onClose, onCreated }) {
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (
               <>
-                {step === 2 ? 'Save & Continue' : 'Next'}
+                {step === 2 ? t('wizard.saveContinue') : t('wizard.next')}
                 <ChevronRight className="w-4 h-4" />
               </>
             )}
           </Button>
         ) : (
-          <Button size="sm" onClick={onClose}>Close</Button>
+          <Button size="sm" onClick={onClose}>{t('wizard.close')}</Button>
         )}
       </div>
     </Modal>

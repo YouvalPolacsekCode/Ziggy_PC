@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getUpdateStatus, forceUpdateCheck, dismissUpdate } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 function Icon({ name, size = 16 }) {
@@ -24,14 +25,15 @@ function Icon({ name, size = 16 }) {
 
 // ── Risk level config ─────────────────────────────────────────────────────────
 const RISK_CONFIG = {
-  safe:    { color: '#22c55e', bg: 'color-mix(in srgb, #22c55e 10%, var(--surface))', border: 'color-mix(in srgb, #22c55e 30%, transparent)', label: 'Safe',         icon: 'check'  },
-  low:     { color: '#f59e0b', bg: 'color-mix(in srgb, #f59e0b 10%, var(--surface))', border: 'color-mix(in srgb, #f59e0b 30%, transparent)', label: 'Low risk',    icon: 'info'   },
-  medium:  { color: '#f97316', bg: 'color-mix(in srgb, #f97316 10%, var(--surface))', border: 'color-mix(in srgb, #f97316 30%, transparent)', label: 'Medium risk', icon: 'warn'   },
-  high:    { color: '#ef4444', bg: 'color-mix(in srgb, #ef4444 10%, var(--surface))', border: 'color-mix(in srgb, #ef4444 30%, transparent)', label: 'High risk',   icon: 'alert'  },
-  unknown: { color: '#6b7280', bg: 'color-mix(in srgb, #6b7280 10%, var(--surface))', border: 'color-mix(in srgb, #6b7280 30%, transparent)', label: 'Unknown risk', icon: 'info' },
+  safe:    { color: '#22c55e', bg: 'color-mix(in srgb, #22c55e 10%, var(--surface))', border: 'color-mix(in srgb, #22c55e 30%, transparent)', labelKey: 'haUpdate.riskSafe',    icon: 'check'  },
+  low:     { color: '#f59e0b', bg: 'color-mix(in srgb, #f59e0b 10%, var(--surface))', border: 'color-mix(in srgb, #f59e0b 30%, transparent)', labelKey: 'haUpdate.riskLow',     icon: 'info'   },
+  medium:  { color: '#f97316', bg: 'color-mix(in srgb, #f97316 10%, var(--surface))', border: 'color-mix(in srgb, #f97316 30%, transparent)', labelKey: 'haUpdate.riskMedium',  icon: 'warn'   },
+  high:    { color: '#ef4444', bg: 'color-mix(in srgb, #ef4444 10%, var(--surface))', border: 'color-mix(in srgb, #ef4444 30%, transparent)', labelKey: 'haUpdate.riskHigh',    icon: 'alert'  },
+  unknown: { color: '#6b7280', bg: 'color-mix(in srgb, #6b7280 10%, var(--surface))', border: 'color-mix(in srgb, #6b7280 30%, transparent)', labelKey: 'haUpdate.riskUnknown', icon: 'info' },
 }
 
 function RiskBadge({ level, size = 'md' }) {
+  const t = useT()
   const cfg = RISK_CONFIG[level] || RISK_CONFIG.unknown
   const pad = size === 'sm' ? '3px 9px' : '6px 14px'
   const fs  = size === 'sm' ? 11 : 13
@@ -42,13 +44,14 @@ function RiskBadge({ level, size = 'md' }) {
       color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`,
     }}>
       <Icon name={cfg.icon} size={size === 'sm' ? 12 : 14} />
-      {cfg.label}
+      {t(cfg.labelKey)}
     </span>
   )
 }
 
 // ── Risk item card ────────────────────────────────────────────────────────────
 function RiskCard({ risk }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const weightColor = risk.weight >= 3 ? '#ef4444' : risk.weight >= 2 ? '#f97316' : '#f59e0b'
 
@@ -64,7 +67,7 @@ function RiskCard({ risk }) {
           <p style={{ fontSize: 11, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: open ? 'normal' : 'nowrap' }}>{risk.message}</p>
         </div>
         {!risk.verifiable && (
-          <span style={{ fontSize: 10, color: 'var(--ink-faint)', border: '0.5px solid var(--line)', borderRadius: 6, padding: '2px 6px', flexShrink: 0 }}>unverified</span>
+          <span style={{ fontSize: 10, color: 'var(--ink-faint)', border: '0.5px solid var(--line)', borderRadius: 6, padding: '2px 6px', flexShrink: 0 }}>{t('haUpdate.unverified')}</span>
         )}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
           style={{ transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>
@@ -77,7 +80,7 @@ function RiskCard({ risk }) {
           <div style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {risk.triggered_by?.length > 0 && (
               <div>
-                <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>From release notes</p>
+                <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{t('haUpdate.fromNotes')}</p>
                 {risk.triggered_by.map((line, i) => (
                   <p key={i} style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace', padding: '4px 8px', background: 'var(--bg-2)', borderRadius: 6, marginBottom: 4 }}>
                     {line.replace(/^[-*•]+\s*/, '')}
@@ -98,6 +101,7 @@ function RiskCard({ risk }) {
 
 // ── History item ──────────────────────────────────────────────────────────────
 function HistoryItem({ entry }) {
+  const t = useT()
   const cfg = RISK_CONFIG[entry.risk_level] || RISK_CONFIG.unknown
   const date = new Date(entry.detected_at)
   const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -113,13 +117,14 @@ function HistoryItem({ entry }) {
         <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>{dateStr}</p>
       </div>
       <RiskBadge level={entry.risk_level} size="sm" />
-      {entry.dismissed && <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>dismissed</span>}
+      {entry.dismissed && <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('haUpdate.dismissedTag')}</span>}
     </div>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function HAUpdate() {
+  const t = useT()
   const [status,   setStatus]   = useState(null)
   const [history,  setHistory]  = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -170,17 +175,17 @@ export default function HAUpdate() {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingBottom: 14, borderBottom: '0.5px solid var(--line)' }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 3 }}>Home Assistant</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', lineHeight: 1.1 }}>Update Checker</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 3 }}>{t('haUpdate.eyebrow')}</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', lineHeight: 1.1 }}>{t('haUpdate.title')}</h1>
         </div>
         <div style={{ flex: 1 }} />
         <button
           onClick={() => setShowHistory(v => !v)}
-          title="View history"
+          title={t('haUpdate.viewHistoryTitle')}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, background: 'none', border: '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--ink-mute)' }}
         >
           <Icon name="history" size={13} />
-          History
+          {t('haUpdate.history')}
         </button>
         <button
           onClick={handleCheck}
@@ -188,12 +193,12 @@ export default function HAUpdate() {
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 8, background: 'var(--ink)', color: 'var(--bg)', border: 'none', cursor: checking ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, opacity: checking ? 0.6 : 1 }}
         >
           <Icon name="refresh" size={13} />
-          {checking ? 'Checking…' : 'Check now'}
+          {checking ? t('haUpdate.checking') : t('haUpdate.checkNow')}
         </button>
       </div>
 
       {loading && (
-        <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>Checking for updates…</div>
+        <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>{t('haUpdate.loadingMsg')}</div>
       )}
 
       {!loading && status && (
@@ -207,21 +212,21 @@ export default function HAUpdate() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
                   <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', margin: 0 }}>
-                    {status.update_available ? 'Update Available' : 'Up to Date'}
+                    {status.update_available ? t('haUpdate.updateAvailable') : t('haUpdate.upToDate')}
                   </h2>
                   <RiskBadge level={status.risk_level} />
                 </div>
 
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
                   <div>
-                    <p style={{ fontSize: 10, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current</p>
+                    <p style={{ fontSize: 10, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('haUpdate.current')}</p>
                     <p style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>{status.current_version || '—'}</p>
                   </div>
                   {status.update_available && (
                     <>
                       <div style={{ color: 'var(--ink-faint)', fontSize: 18, lineHeight: '2.2', alignSelf: 'flex-end' }}>→</div>
                       <div>
-                        <p style={{ fontSize: 10, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>New version</p>
+                        <p style={{ fontSize: 10, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('haUpdate.newVersion')}</p>
                         <p style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 13, color: cfg.color, fontWeight: 700 }}>{status.latest_version}</p>
                       </div>
                     </>
@@ -233,7 +238,7 @@ export default function HAUpdate() {
                 )}
 
                 {checkedStr && (
-                  <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 6 }}>Last checked {checkedStr}</p>
+                  <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 6 }}>{t('haUpdate.lastChecked', { when: checkedStr })}</p>
                 )}
               </div>
             </div>
@@ -248,7 +253,7 @@ export default function HAUpdate() {
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 8, background: 'var(--ink)', color: 'var(--bg)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
                   >
                     <Icon name="external" size={12} />
-                    Release notes
+                    {t('haUpdate.releaseNotes')}
                   </a>
                 )}
                 {status.backup_url && (
@@ -259,7 +264,7 @@ export default function HAUpdate() {
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 8, background: 'none', color: 'var(--ink)', border: '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
                   >
                     <Icon name="backup" size={12} />
-                    Backup guide
+                    {t('haUpdate.backupGuide')}
                   </a>
                 )}
                 <button
@@ -267,12 +272,12 @@ export default function HAUpdate() {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'none', color: 'var(--ink-faint)', border: '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 }}
                 >
                   <Icon name="dismiss" size={12} />
-                  Dismiss
+                  {t('haUpdate.dismiss')}
                 </button>
               </div>
             )}
             {dismissed && (
-              <p style={{ marginTop: 10, fontSize: 11, color: 'var(--ink-faint)' }}>Warning dismissed. You'll still be notified on next restart.</p>
+              <p style={{ marginTop: 10, fontSize: 11, color: 'var(--ink-faint)' }}>{t('haUpdate.dismissed')}</p>
             )}
           </div>
 
@@ -280,8 +285,8 @@ export default function HAUpdate() {
           {status.update_available && status.backup_reminder && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #f59e0b 8%, var(--surface))', border: '0.5px solid color-mix(in srgb, #f59e0b 25%, transparent)', fontSize: 12 }}>
               <Icon name="backup" size={14} />
-              <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Back up Home Assistant before updating.</span>
-              <span style={{ color: 'var(--ink-mute)' }}>Use Settings → System → Backups in your HA instance.</span>
+              <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{t('haUpdate.backupBefore')}</span>
+              <span style={{ color: 'var(--ink-mute)' }}>{t('haUpdate.backupWhere')}</span>
             </div>
           )}
 
@@ -289,15 +294,15 @@ export default function HAUpdate() {
           {status.update_available && (
             <div style={card}>
               <div style={{ marginBottom: status.risks?.length ? 12 : 0 }}>
-                <p className="z-eyebrow" style={{ marginBottom: 3 }}>What may break in your home</p>
+                <p className="z-eyebrow" style={{ marginBottom: 3 }}>{t('haUpdate.whatMayBreak')}</p>
                 {!status.release_notes_available && (
                   <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 4 }}>
-                    Release notes were not available from GitHub for this version. Risk cannot be fully assessed — treat as unknown.
+                    {t('haUpdate.notesUnavailable')}
                   </p>
                 )}
                 {status.release_notes_available && status.risks?.length === 0 && (
                   <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>
-                    No breaking changes were matched against your Ziggy setup. Looks safe, but always back up first.
+                    {t('haUpdate.noBreaking')}
                   </p>
                 )}
               </div>
@@ -313,39 +318,39 @@ export default function HAUpdate() {
           {/* ── Your setup profile ── */}
           {status.update_available && status.profile && (
             <div style={card}>
-              <p className="z-eyebrow" style={{ marginBottom: 10 }}>Your HA setup profile</p>
+              <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('haUpdate.setupProfile')}</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
                 {[
-                  { key: 'light_count',        label: 'Lights' },
-                  { key: 'climate_count',       label: 'Climate' },
-                  { key: 'media_player_count',  label: 'Media players' },
-                  { key: 'fan_count',           label: 'Fans' },
-                  { key: 'cover_count',         label: 'Covers' },
-                  { key: 'script_count',        label: 'Scripts' },
-                  { key: 'automation_count',    label: 'Automations' },
-                  { key: 'person_count',        label: 'Persons' },
-                  { key: 'zha_device_count',    label: 'ZHA devices' },
-                ].map(({ key, label }) => {
+                  { key: 'light_count',        labelKey: 'haUpdate.profileLights' },
+                  { key: 'climate_count',       labelKey: 'haUpdate.profileClimate' },
+                  { key: 'media_player_count',  labelKey: 'haUpdate.profileMedia' },
+                  { key: 'fan_count',           labelKey: 'haUpdate.profileFans' },
+                  { key: 'cover_count',         labelKey: 'haUpdate.profileCovers' },
+                  { key: 'script_count',        labelKey: 'haUpdate.profileScripts' },
+                  { key: 'automation_count',    labelKey: 'haUpdate.profileAutomations' },
+                  { key: 'person_count',        labelKey: 'haUpdate.profilePersons' },
+                  { key: 'zha_device_count',    labelKey: 'haUpdate.profileZha' },
+                ].map(({ key, labelKey }) => {
                   const val = status.profile[key]
                   if (val === undefined) return null
                   return (
                     <div key={key} style={{ padding: '9px 11px', borderRadius: 8, background: 'var(--bg)', border: '0.5px solid var(--line)' }}>
                       <p style={{ fontSize: 18, fontWeight: 700, fontFamily: '"IBM Plex Mono", monospace', color: val > 0 ? 'var(--ink)' : 'var(--ink-faint)' }}>{val}</p>
-                      <p style={{ fontSize: 10, color: 'var(--ink-mute)', marginTop: 2 }}>{label}</p>
+                      <p style={{ fontSize: 10, color: 'var(--ink-mute)', marginTop: 2 }}>{t(labelKey)}</p>
                     </div>
                   )
                 })}
                 {[
-                  { key: 'mqtt_enabled', label: 'MQTT / Z2M' },
-                  { key: 'has_zwave',    label: 'Z-Wave' },
-                  { key: 'has_todo',     label: 'Shopping list' },
-                ].map(({ key, label }) => {
+                  { key: 'mqtt_enabled', labelKey: 'haUpdate.profileMqtt' },
+                  { key: 'has_zwave',    labelKey: 'haUpdate.profileZwave' },
+                  { key: 'has_todo',     labelKey: 'haUpdate.profileTodo' },
+                ].map(({ key, labelKey }) => {
                   const val = status.profile[key]
                   if (!val) return null
                   return (
                     <div key={key} style={{ padding: '9px 11px', borderRadius: 8, background: 'var(--bg)', border: '0.5px solid var(--line)' }}>
                       <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--ok)' }}>✓</p>
-                      <p style={{ fontSize: 10, color: 'var(--ink-mute)', marginTop: 2 }}>{label}</p>
+                      <p style={{ fontSize: 10, color: 'var(--ink-mute)', marginTop: 2 }}>{t(labelKey)}</p>
                     </div>
                   )
                 })}
@@ -360,7 +365,7 @@ export default function HAUpdate() {
                 onClick={() => setShowRaw(v => !v)}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
               >
-                <p className="z-eyebrow" style={{ margin: 0 }}>Raw breaking changes from release notes</p>
+                <p className="z-eyebrow" style={{ margin: 0 }}>{t('haUpdate.rawBreaking')}</p>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                   style={{ transition: 'transform 0.15s', transform: showRaw ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>
                   <path d="M9 18l6-6-6-6"/>
@@ -383,9 +388,9 @@ export default function HAUpdate() {
       {/* ── History panel ── */}
       {showHistory && (
         <div style={card}>
-          <p className="z-eyebrow" style={{ marginBottom: 10 }}>Update history</p>
+          <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('haUpdate.updateHistory')}</p>
           {history.length === 0
-            ? <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>No update history yet.</p>
+            ? <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{t('haUpdate.noUpdateHistory')}</p>
             : <div>{history.slice(0, 20).map((e, i) => <HistoryItem key={i} entry={e} />)}</div>
           }
         </div>
@@ -393,8 +398,7 @@ export default function HAUpdate() {
 
       {/* ── Safety note ── */}
       <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--bg)', border: '0.5px solid var(--line)', fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.6 }}>
-        <strong style={{ color: 'var(--ink-faint)' }}>Safety:</strong> Ziggy never auto-updates Home Assistant and never modifies HA config.
-        Update decisions are always yours. Risk assessment is based on keyword matching in release notes — always read the official notes before updating.
+        <strong style={{ color: 'var(--ink-faint)' }}>{t('haUpdate.safetyLabel')}</strong> {t('haUpdate.safetyText')}
       </div>
     </div>
   )

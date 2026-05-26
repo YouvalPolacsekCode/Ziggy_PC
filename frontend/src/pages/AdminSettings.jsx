@@ -11,12 +11,12 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
+import { useT } from '../lib/i18n'
 import {
   getIntegrationsSettings, patchIntegrationsSettings,
   testPushNotification, getPushPreferences, patchPushPreferences, getPushDevices, revokePushDevice,
   getEmailSettings, patchEmailSettings, testEmail,
   getMqttSettings, patchMqttSettings,
-  getFeaturesSettings, patchFeaturesSettings,
   getOllamaSettings, patchOllamaSettings,
   getPatternLearningSettings, patchPatternLearningSettings,
   patchSensorAlertsSettings,
@@ -27,6 +27,7 @@ import { cn } from '../lib/utils'
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
 function SectionTitle({ icon: Icon, children, restart }) {
+  const t = useT()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
       {Icon && <Icon size={13} style={{ color: 'var(--ink-faint)' }} />}
@@ -34,7 +35,7 @@ function SectionTitle({ icon: Icon, children, restart }) {
       {restart && (
         <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 3 }}>
           <AlertTriangle size={10} />
-          Restart required
+          {t('adminSettings.restartRequired')}
         </span>
       )}
     </div>
@@ -56,6 +57,7 @@ function SettingRow({ label, subtitle, children }) {
 // ─── Secret field — masked display + inline edit ──────────────────────────────
 
 function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, placeholder }) {
+  const t = useT()
   const { addToast } = useUIStore()
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
@@ -67,11 +69,11 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
     setSaving(true)
     try {
       await onSave(trimmed)
-      addToast('Saved', 'success')
+      addToast(t('adminSettings.saved'), 'success')
       onRefresh?.()
       setEditing(false)
       setValue('')
-    } catch { addToast('Failed to save', 'error') }
+    } catch { addToast(t('adminSettings.failedSave'), 'error') }
     finally { setSaving(false) }
   }
 
@@ -85,9 +87,9 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{label}</p>
         <div style={{ display: 'flex', gap: 6 }}>
-          <input autoFocus type="password" placeholder={placeholder || 'Enter new value…'} value={value} onChange={e => setValue(e.target.value)} onKeyDown={handleKeyDown} className="z-input" style={{ flex: 1, height: 36, padding: '0 12px', fontSize: 13 }} />
-          <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ padding: '0 12px', borderRadius: 9, height: 36, fontSize: 12 }}>{saving ? '…' : 'Save'}</button>
-          <button onClick={() => { setEditing(false); setValue('') }} className="z-btn-secondary" style={{ padding: '0 10px', borderRadius: 9, height: 36, fontSize: 12 }}>Cancel</button>
+          <input autoFocus type="password" placeholder={placeholder || t('adminSettings.enterNew')} value={value} onChange={e => setValue(e.target.value)} onKeyDown={handleKeyDown} dir="auto" className="z-input" style={{ flex: 1, height: 36, padding: '0 12px', fontSize: 13 }} />
+          <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ padding: '0 12px', borderRadius: 9, height: 36, fontSize: 12 }}>{saving ? '…' : t('adminSettings.save')}</button>
+          <button onClick={() => { setEditing(false); setValue('') }} className="z-btn-secondary" style={{ padding: '0 10px', borderRadius: 9, height: 36, fontSize: 12 }}>{t('adminSettings.cancel')}</button>
         </div>
       </div>
     )
@@ -99,12 +101,12 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
         <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
         {configured
           ? <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{masked}</p>
-          : <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{subtitle || 'Not configured'}</p>}
+          : <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{subtitle || t('adminSettings.notConfigured')}</p>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         {configured && <Check size={12} style={{ color: 'var(--ok)' }} />}
         <button onClick={() => setEditing(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
-          {configured ? 'Update' : 'Set'}
+          {configured ? t('adminSettings.update') : t('adminSettings.set')}
         </button>
       </div>
     </div>
@@ -134,6 +136,7 @@ function parseOS(ua) {
 }
 
 function PushPreferenceCenter() {
+  const t = useT()
   const { addToast } = useUIStore()
   const [categories,  setCategories]  = useState([])
   const [quietHours,  setQuietHours]  = useState({ enabled: false, start: '23:00', end: '07:00' })
@@ -169,14 +172,14 @@ function PushPreferenceCenter() {
     const next = !cat.enabled
     setCategories(cs => cs.map(c => c.id === catId ? { ...c, enabled: next } : c))
     try { await patchPushPreferences({ categories: { [catId]: next } }) }
-    catch { addToast('Failed to save', 'error') }
+    catch { addToast(t('adminSettings.failedSave'), 'error') }
   }
 
   const saveQuietHours = async (qh) => {
     try {
       await patchPushPreferences({ quiet_hours: qh })
       setQuietHours(qh)
-    } catch { addToast('Failed to save', 'error') }
+    } catch { addToast(t('adminSettings.failedSave'), 'error') }
   }
 
   const updateSensorCondition = async (catId, entityId, condPatch) => {
@@ -197,15 +200,15 @@ function PushPreferenceCenter() {
         conditions: c.id === catId ? merged : (c.conditions || {}),
       }))
       await patchSensorAlertsSettings({ sensors: allSensors.map(s => s) })
-    } catch { addToast('Failed to save', 'error') }
+    } catch { addToast(t('adminSettings.failedSave'), 'error') }
   }
 
   const handleRevoke = async (ep) => {
     try {
       await revokePushDevice(ep)
       setDevices(d => d.filter(x => x.endpoint !== ep))
-      addToast('Device removed', 'success')
-    } catch { addToast('Failed to remove', 'error') }
+      addToast(t('adminSettings.deviceRemoved'), 'success')
+    } catch { addToast(t('adminSettings.failedRemove'), 'error') }
   }
 
   const systemCats = categories.filter(c => c.type === 'system')
@@ -213,9 +216,9 @@ function PushPreferenceCenter() {
   const qh         = quietHours
 
   const SEV_PRESENCE_OPTS = [
-    { value: 'always', label: 'Always' },
-    { value: 'home',   label: 'When home' },
-    { value: 'away',   label: 'When away' },
+    { value: 'always', label: t('adminSettings.alwaysOpt') },
+    { value: 'home',   label: t('adminSettings.whenHome') },
+    { value: 'away',   label: t('adminSettings.whenAway') },
   ]
 
   return (
@@ -225,26 +228,26 @@ function PushPreferenceCenter() {
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>This browser</p>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.thisBrowser')}</p>
             <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
               {'Notification' in window
-                ? Notification.permission === 'granted' ? 'Subscribed — will receive notifications'
-                : Notification.permission === 'denied'  ? 'Blocked — enable in browser settings'
-                : 'Permission not yet granted'
-                : 'Push not supported in this browser'}
+                ? Notification.permission === 'granted' ? t('adminSettings.subscribed')
+                : Notification.permission === 'denied'  ? t('adminSettings.blocked')
+                : t('adminSettings.permNotYet')
+                : t('adminSettings.pushNotSupported')}
             </p>
           </div>
           <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: Notification.permission === 'granted' ? 'var(--ok)' : 'var(--ink-faint)' }}>
-            {'Notification' in window ? Notification.permission : 'unsupported'}
+            {'Notification' in window ? Notification.permission : t('adminSettings.unsupported')}
           </span>
         </div>
         <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Send a test to verify this device is working.</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('adminSettings.sendTestDesc')}</p>
           <button
-            onClick={async () => { try { await testPushNotification(); addToast('Test sent', 'success') } catch { addToast('Not subscribed on this device', 'error') } }}
+            onClick={async () => { try { await testPushNotification(); addToast(t('adminSettings.testSent'), 'success') } catch { addToast(t('adminSettings.notSubscribed'), 'error') } }}
             className="z-btn-secondary"
             style={{ padding: '5px 11px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
-          >Send test</button>
+          >{t('adminSettings.sendTest')}</button>
         </div>
       </div>
 
@@ -252,16 +255,16 @@ function PushPreferenceCenter() {
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: qh.enabled ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Quiet hours</p>
-            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>Suppress non-critical notifications. Also defines "night" for anomaly detection.</p>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.quietHours')}</p>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{t('adminSettings.quietHoursDesc')}</p>
           </div>
           <button className="z-toggle" aria-checked={qh.enabled} onClick={() => saveQuietHours({ ...qh, enabled: !qh.enabled })} />
         </div>
         {qh.enabled && (
           <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <p style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0 }}>From</p>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('adminSettings.from')}</p>
             <input type="time" value={qh.start} onChange={e => saveQuietHours({ ...qh, start: e.target.value })} className="z-input" style={{ width: 100, height: 32, padding: '0 8px', fontSize: 12 }} />
-            <p style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0 }}>to</p>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('adminSettings.to')}</p>
             <input type="time" value={qh.end}   onChange={e => saveQuietHours({ ...qh, end:   e.target.value })} className="z-input" style={{ width: 100, height: 32, padding: '0 8px', fontSize: 12 }} />
           </div>
         )}
@@ -271,14 +274,14 @@ function PushPreferenceCenter() {
       {!loadingCats && systemCats.length > 0 && (
         <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
           <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
-            <p className="z-eyebrow">What reaches your phone</p>
+            <p className="z-eyebrow">{t('adminSettings.whatReaches')}</p>
           </div>
           {systemCats.map((cat, i) => (
             <div key={cat.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: i < systemCats.length - 1 ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {cat.label}
-                  {cat.bypass_quiet_hours && <span style={{ fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>always</span>}
+                  {cat.bypass_quiet_hours && <span style={{ fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>{t('adminSettings.always')}</span>}
                 </p>
                 <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{cat.description}</p>
               </div>
@@ -292,7 +295,7 @@ function PushPreferenceCenter() {
       {!loadingCats && sensorCats.length > 0 && (
         <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
           <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
-            <p className="z-eyebrow">Sensor alerts</p>
+            <p className="z-eyebrow">{t('adminSettings.sensorAlerts')}</p>
           </div>
           {sensorCats.map((cat, i) => {
             const cond        = cat.conditions || {}
@@ -310,7 +313,7 @@ function PushPreferenceCenter() {
                 {cat.enabled && (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <p style={{ fontSize: 11, color: 'var(--ink-mute)', width: 68, flexShrink: 0 }}>Alert when</p>
+                      <p style={{ fontSize: 11, color: 'var(--ink-mute)', width: 68, flexShrink: 0 }}>{t('adminSettings.alertWhen')}</p>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {SEV_PRESENCE_OPTS.map(opt => (
                           <button key={opt.value} onClick={() => updateSensorCondition(cat.id, cat.entity_id, { presence: opt.value })}
@@ -323,7 +326,7 @@ function PushPreferenceCenter() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <p style={{ fontSize: 11, color: 'var(--ink-mute)', width: 68, flexShrink: 0 }}>Time</p>
+                      <p style={{ fontSize: 11, color: 'var(--ink-mute)', width: 68, flexShrink: 0 }}>{t('adminSettings.time')}</p>
                       <button className="z-toggle" aria-checked={timeEnabled}
                         onClick={() => updateSensorCondition(cat.id, cat.entity_id,
                           timeEnabled ? { time_start: null, time_end: null } : { time_start: '22:00', time_end: '06:00' }
@@ -331,7 +334,7 @@ function PushPreferenceCenter() {
                       {timeEnabled && (
                         <>
                           <input type="time" value={cond.time_start || '22:00'} onChange={e => updateSensorCondition(cat.id, cat.entity_id, { time_start: e.target.value })} className="z-input" style={{ width: 90, height: 28, padding: '0 8px', fontSize: 12 }} />
-                          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>to</p>
+                          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('adminSettings.to')}</p>
                           <input type="time" value={cond.time_end || '06:00'} onChange={e => updateSensorCondition(cat.id, cat.entity_id, { time_end: e.target.value })} className="z-input" style={{ width: 90, height: 28, padding: '0 8px', fontSize: 12 }} />
                         </>
                       )}
@@ -347,28 +350,28 @@ function PushPreferenceCenter() {
       {/* Subscribed devices */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ padding: '8px 16px 6px', borderBottom: devices.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
-          <p className="z-eyebrow">Subscribed devices</p>
+          <p className="z-eyebrow">{t('adminSettings.subscribedDevices')}</p>
         </div>
         {devices.length === 0 ? (
-          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '14px 16px' }}>No devices subscribed yet.</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '14px 16px' }}>{t('adminSettings.noDevicesSubbed')}</p>
         ) : (
           devices.map((d, i) => {
             const browser   = parseBrowser(d.user_agent)
             const os        = parseOS(d.user_agent)
             const isCurrent = d.endpoint === currentEp
             const ago = d.subscribed_at
-              ? (() => { const diff = Math.floor((Date.now() - new Date(d.subscribed_at)) / 86400000); return diff === 0 ? 'today' : diff === 1 ? 'yesterday' : `${diff}d ago` })()
+              ? (() => { const diff = Math.floor((Date.now() - new Date(d.subscribed_at)) / 86400000); return diff === 0 ? t('adminSettings.today') : diff === 1 ? t('adminSettings.yesterday') : t('adminSettings.daysAgo', { n: diff }) })()
               : ''
             return (
               <div key={d.endpoint} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: i < devices.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     {browser}{os ? ` · ${os}` : ''}
-                    {isCurrent && <span style={{ fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>this device</span>}
+                    {isCurrent && <span style={{ fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>{t('adminSettings.thisDevice')}</span>}
                   </p>
-                  {ago && <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>subscribed {ago}</p>}
+                  {ago && <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>{t('adminSettings.subscribed_ago', { when: ago })}</p>}
                 </div>
-                <button onClick={() => handleRevoke(d.endpoint)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title="Revoke">
+                <button onClick={() => handleRevoke(d.endpoint)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title={t('adminSettings.revokeTitle')}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -384,6 +387,7 @@ function PushPreferenceCenter() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AdminSettings() {
+  const t = useT()
   const { addToast } = useUIStore()
   const { role: myRole } = useAuthStore()
   const isSuperAdmin = myRole === 'super_admin'
@@ -392,7 +396,6 @@ export default function AdminSettings() {
 
   const [integrations,   setIntegrations]   = useState({})
   const [mqtt,           setMqtt]           = useState({ host: '', port: 1883, username: '', password: '', password_configured: false })
-  const [features,       setFeatures]       = useState({})
   const [ollama,         setOllama]         = useState({ base_url: '', model: '', timeout: 30 })
   const [patternLearning, setPatternLearning] = useState({})
   const [email,          setEmail]          = useState({ enabled: false, host: '', port: 587, username: '', password_configured: false, password_masked: '', from_address: '', from_name: 'Ziggy' })
@@ -403,7 +406,6 @@ export default function AdminSettings() {
   const loadAll = () => {
     getIntegrationsSettings().then(setIntegrations).catch(() => {})
     getMqttSettings().then(mq => setMqtt({ ...mq, password: '' })).catch(() => {})
-    getFeaturesSettings().then(setFeatures).catch(() => {})
     getOllamaSettings().then(setOllama).catch(() => {})
     getPatternLearningSettings().then(pl => setPatternLearning({
       enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30,
@@ -425,68 +427,56 @@ export default function AdminSettings() {
 
   const save = async (key, apiFn, payload) => {
     setSav(key, true)
-    try { await apiFn(payload); addToast('Saved', 'success') }
-    catch { addToast('Failed to save', 'error') }
+    try { await apiFn(payload); addToast(t('adminSettings.saved'), 'success') }
+    catch { addToast(t('adminSettings.failedSave'), 'error') }
     finally { setSav(key, false) }
-  }
-
-  const FEATURE_LABELS = {
-    smart_home:     { label: 'Smart home',       subtitle: 'Device control & HA integration' },
-    voice:          { label: 'Voice assistant',   subtitle: 'Microphone, wake word & TTS' },
-    task_tracking:  { label: 'Task tracking',     subtitle: 'Tasks & reminders' },
-    file_management:{ label: 'File management',   subtitle: 'Create & manage local files' },
-    home_map:       { label: 'Home Map',          subtitle: 'Interactive floor plan in Rooms tab (experimental)' },
-    buddy_mode:     { label: 'Buddy mode',        subtitle: 'Conversational AI personality' },
-    ifttt:          { label: 'IFTTT',             subtitle: 'Webhook triggers' },
-    local_storage:  { label: 'Local storage',     subtitle: 'SQLite / local DB' },
-    zigbee_support: { label: 'Zigbee support',    subtitle: 'ZHA device pairing' },
   }
 
   return (
     <div>
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Some changes require restarting Ziggy.</p>
-        <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('adminSettings.restartHint')}</p>
+        <button onClick={handleRefresh} disabled={refreshing} title={t('adminSettings.refresh')} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
           <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
         </button>
       </div>
 
       {/* ── Notifications ──────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Bot}>Notifications</SectionTitle>
+        <SectionTitle icon={Bot}>{t('adminSettings.sectionNotifications')}</SectionTitle>
         <PushPreferenceCenter />
       </div>
 
       {/* ── API Keys ───────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Key}>API Keys</SectionTitle>
+        <SectionTitle icon={Key}>{t('adminSettings.sectionApiKeys')}</SectionTitle>
         <Card>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             <SecretField
-              label="OpenAI"
-              subtitle="Used for intent parsing & AI responses"
+              label={t('adminSettings.openai')}
+              subtitle={t('adminSettings.openaiDesc')}
               masked={integrations.openai_key_masked}
               configured={integrations.openai_configured}
-              placeholder="sk-proj-…"
+              placeholder={t('adminSettings.openaiPh')}
               onSave={(v) => patchIntegrationsSettings({ openai_key: v })}
               onRefresh={() => getIntegrationsSettings().then(setIntegrations)}
             />
             <SecretField
-              label="SerpAPI"
-              subtitle="Web search capability"
+              label={t('adminSettings.serpapi')}
+              subtitle={t('adminSettings.serpapiDesc')}
               masked={integrations.serpapi_key_masked}
               configured={integrations.serpapi_configured}
-              placeholder="67b5c8e5…"
+              placeholder={t('adminSettings.serpapiPh')}
               onSave={(v) => patchIntegrationsSettings({ serpapi_key: v })}
               onRefresh={() => getIntegrationsSettings().then(setIntegrations)}
             />
             <SecretField
-              label="IFTTT"
-              subtitle="Webhook triggers"
+              label={t('adminSettings.ifttt')}
+              subtitle={t('adminSettings.iftttDesc')}
               masked={integrations.ifttt_key_masked}
               configured={integrations.ifttt_configured}
-              placeholder="Webhook key…"
+              placeholder={t('adminSettings.iftttPh')}
               onSave={(v) => patchIntegrationsSettings({ ifttt_key: v })}
               onRefresh={() => getIntegrationsSettings().then(setIntegrations)}
             />
@@ -497,10 +487,10 @@ export default function AdminSettings() {
       {/* ── Email (SMTP) — super_admin only ────────────────────────────────────── */}
       {isSuperAdmin && (
         <div style={{ marginBottom: 22 }}>
-          <SectionTitle icon={Mail}>Email (SMTP)</SectionTitle>
+          <SectionTitle icon={Mail}>{t('adminSettings.sectionEmail')}</SectionTitle>
           <Card>
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              <SettingRow label="Enable email sending" subtitle="Required for invite emails">
+              <SettingRow label={t('adminSettings.enableEmail')} subtitle={t('adminSettings.emailReq')}>
                 <Toggle
                   checked={!!email.enabled}
                   onCheckedChange={(v) => {
@@ -514,41 +504,41 @@ export default function AdminSettings() {
                   <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <div style={{ flex: 2 }}>
-                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>SMTP host</p>
-                        <input value={email.host} onChange={e => setEmail(s => ({ ...s, host: e.target.value }))} placeholder="smtp.gmail.com" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.smtpHost')}</p>
+                        <input value={email.host} onChange={e => setEmail(s => ({ ...s, host: e.target.value }))} placeholder={t('adminSettings.smtpHostPh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
                       </div>
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Port</p>
-                        <input type="number" value={email.port} onChange={e => setEmail(s => ({ ...s, port: parseInt(e.target.value) || 587 }))} className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.port')}</p>
+                        <input type="number" value={email.port} onChange={e => setEmail(s => ({ ...s, port: parseInt(e.target.value) || 587 }))} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
                       </div>
                     </div>
                     <div>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Username (your email)</p>
-                      <input type="email" value={email.username} onChange={e => setEmail(s => ({ ...s, username: e.target.value }))} placeholder="you@gmail.com" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.smtpUsername')}</p>
+                      <input type="email" value={email.username} onChange={e => setEmail(s => ({ ...s, username: e.target.value }))} placeholder={t('adminSettings.smtpUserPh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
                     </div>
                     <div>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>From name</p>
-                      <input value={email.from_name} onChange={e => setEmail(s => ({ ...s, from_name: e.target.value }))} placeholder="Ziggy" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.fromName')}</p>
+                      <input value={email.from_name} onChange={e => setEmail(s => ({ ...s, from_name: e.target.value }))} placeholder={t('adminSettings.fromNamePh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
                     </div>
                     <Button variant="primary" onClick={() => save('email-smtp', patchEmailSettings, { host: email.host, port: email.port, username: email.username, from_name: email.from_name, from_address: email.username })} disabled={saving['email-smtp']} className="w-full">
-                      {saving['email-smtp'] ? 'Saving…' : 'Save SMTP settings'}
+                      {saving['email-smtp'] ? t('adminSettings.saving') : t('adminSettings.saveSmtp')}
                     </Button>
                   </div>
                   <SecretField
-                    label="App password"
-                    subtitle="Gmail: Settings → Security → App passwords"
+                    label={t('adminSettings.appPassword')}
+                    subtitle={t('adminSettings.appPasswordDesc')}
                     masked={email.password_masked}
                     configured={email.password_configured}
-                    placeholder="Gmail app password…"
+                    placeholder={t('adminSettings.appPasswordPh')}
                     onSave={(v) => patchEmailSettings({ password: v })}
                     onRefresh={() => getEmailSettings().then(setEmail)}
                   />
                   <div style={{ padding: '12px 16px' }}>
                     <Button variant="secondary" onClick={async () => {
-                      try { await testEmail(); addToast('Test email sent — check your inbox', 'success') }
-                      catch (e) { addToast(e.message || 'Test failed', 'error') }
+                      try { await testEmail(); addToast(t('adminSettings.testEmailSent'), 'success') }
+                      catch (e) { addToast(e.message || t('adminSettings.testFailed'), 'error') }
                     }} className="w-full">
-                      Send test email to yourself
+                      {t('adminSettings.sendTestEmail')}
                     </Button>
                   </div>
                 </>
@@ -560,40 +550,42 @@ export default function AdminSettings() {
 
       {/* ── MQTT ───────────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Wifi} restart>MQTT</SectionTitle>
+        <SectionTitle icon={Wifi} restart>{t('adminSettings.sectionMqtt')}</SectionTitle>
         <Card>
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <p className="text-xs text-zinc-500 mb-1.5">Host</p>
+                <p className="text-xs text-zinc-500 mb-1.5">{t('adminSettings.host')}</p>
                 <input
                   value={mqtt.host}
                   onChange={e => setMqtt(s => ({ ...s, host: e.target.value }))}
-                  placeholder="10.100.102.21"
+                  placeholder={t('adminSettings.mqttHostPh')}
+                  dir="auto"
                   className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-zinc-50 dark:bg-zinc-800', 'border border-zinc-200 dark:border-zinc-700', 'text-zinc-900 dark:text-zinc-100', 'placeholder:text-zinc-400', 'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent')}
                 />
               </div>
               <div>
-                <p className="text-xs text-zinc-500 mb-1.5">Port</p>
+                <p className="text-xs text-zinc-500 mb-1.5">{t('adminSettings.port')}</p>
                 <input
                   type="number"
                   value={mqtt.port}
                   onChange={e => setMqtt(s => ({ ...s, port: parseInt(e.target.value) || 1883 }))}
+                  dir="auto"
                   className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-zinc-50 dark:bg-zinc-800', 'border border-zinc-200 dark:border-zinc-700', 'text-zinc-900 dark:text-zinc-100', 'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent')}
                 />
               </div>
             </div>
-            <Input label="Username" placeholder="ziggy" value={mqtt.username} onChange={e => setMqtt(s => ({ ...s, username: e.target.value }))} />
+            <Input label={t('adminSettings.username')} placeholder={t('adminSettings.mqttUserPh')} value={mqtt.username} onChange={e => setMqtt(s => ({ ...s, username: e.target.value }))} dir="auto" />
             <Button variant="primary" onClick={() => save('mqtt', patchMqttSettings, { host: mqtt.host, port: mqtt.port, username: mqtt.username })} disabled={saving['mqtt']} className="w-full">
-              {saving['mqtt'] ? 'Saving…' : 'Save connection'}
+              {saving['mqtt'] ? t('adminSettings.saving') : t('adminSettings.saveConnection')}
             </Button>
           </div>
           <div className="border-t border-zinc-100 dark:border-zinc-800">
             <SecretField
-              label="Password"
+              label={t('adminSettings.password')}
               masked={mqtt.password_masked}
               configured={mqtt.password_configured}
-              placeholder="MQTT password…"
+              placeholder={t('adminSettings.mqttPasswordPh')}
               onSave={(v) => patchMqttSettings({ password: v })}
               onRefresh={() => getMqttSettings().then(m => setMqtt({ ...m, password: '' }))}
             />
@@ -601,37 +593,17 @@ export default function AdminSettings() {
         </Card>
       </div>
 
-      {/* ── Feature Flags ──────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Sliders} restart>Feature Flags</SectionTitle>
-        <Card>
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {Object.entries(FEATURE_LABELS).map(([key, { label, subtitle }]) => (
-              <SettingRow key={key} label={label} subtitle={subtitle}>
-                <Toggle
-                  checked={!!features[key]}
-                  onCheckedChange={(v) => {
-                    setFeatures(s => ({ ...s, [key]: v }))
-                    patchFeaturesSettings({ [key]: v }).catch(() => {})
-                  }}
-                />
-              </SettingRow>
-            ))}
-          </div>
-        </Card>
-      </div>
-
       {/* ── Developer Tools ─────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Sliders}>Developer Tools</SectionTitle>
+        <SectionTitle icon={Sliders}>{t('adminSettings.sectionDevTools')}</SectionTitle>
         <Card>
           <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div>
-              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Admin Console</p>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>Debug tools, cloud administration, diagnostics</p>
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.devToolsLabel')}</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{t('adminSettings.devToolsDesc')}</p>
             </div>
             <a href="/ops" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500, textDecoration: 'none', flexShrink: 0 }}>
-              Open →
+              {t('adminSettings.openLink')}
             </a>
           </div>
         </Card>
@@ -639,22 +611,23 @@ export default function AdminSettings() {
 
       {/* ── Ollama ─────────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Brain}>Ollama (Local LLM)</SectionTitle>
+        <SectionTitle icon={Brain}>{t('adminSettings.sectionOllama')}</SectionTitle>
         <Card>
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Input label="Base URL" placeholder="http://localhost:11434/v1" value={ollama.base_url || ''} onChange={e => setOllama(s => ({ ...s, base_url: e.target.value }))} />
-            <Input label="Model" placeholder="qwen2.5:3b" value={ollama.model || ''} onChange={e => setOllama(s => ({ ...s, model: e.target.value }))} />
+            <Input label={t('adminSettings.baseUrl')} placeholder={t('adminSettings.ollamaBaseUrlPh')} value={ollama.base_url || ''} onChange={e => setOllama(s => ({ ...s, base_url: e.target.value }))} dir="auto" />
+            <Input label={t('adminSettings.model')} placeholder={t('adminSettings.ollamaModelPh')} value={ollama.model || ''} onChange={e => setOllama(s => ({ ...s, model: e.target.value }))} dir="auto" />
             <div>
-              <p className="text-xs text-zinc-500 mb-1.5">Timeout (seconds)</p>
+              <p className="text-xs text-zinc-500 mb-1.5">{t('adminSettings.timeoutSec')}</p>
               <input
                 type="number" min={5} max={300}
                 value={ollama.timeout || 30}
                 onChange={e => setOllama(s => ({ ...s, timeout: parseInt(e.target.value) || 30 }))}
+                dir="auto"
                 className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-zinc-50 dark:bg-zinc-800', 'border border-zinc-200 dark:border-zinc-700', 'text-zinc-900 dark:text-zinc-100', 'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent')}
               />
             </div>
             <Button variant="primary" onClick={() => save('ollama', patchOllamaSettings, ollama)} disabled={saving['ollama']} className="w-full">
-              {saving['ollama'] ? 'Saving…' : 'Save'}
+              {saving['ollama'] ? t('adminSettings.saving') : t('adminSettings.save')}
             </Button>
           </div>
         </Card>
@@ -662,70 +635,70 @@ export default function AdminSettings() {
 
       {/* ── Pattern Learning ───────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Sliders}>Pattern Learning</SectionTitle>
+        <SectionTitle icon={Sliders}>{t('adminSettings.sectionPattern')}</SectionTitle>
         <Card>
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Enabled</p>
-                <p className="text-xs text-zinc-400">Detect behavioral patterns from events</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('adminSettings.plEnabled')}</p>
+                <p className="text-xs text-zinc-400">{t('adminSettings.plEnabledDesc')}</p>
               </div>
               <Toggle checked={!!patternLearning.enabled} onCheckedChange={(v) => setPatternLearning(s => ({ ...s, enabled: v }))} />
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">LLM synthesis</p>
-                <p className="text-xs text-zinc-400">Use AI to generate suggestions from patterns</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('adminSettings.plLLM')}</p>
+                <p className="text-xs text-zinc-400">{t('adminSettings.plLLMDesc')}</p>
               </div>
               <Toggle checked={!!patternLearning.llm_synthesis} onCheckedChange={(v) => setPatternLearning(s => ({ ...s, llm_synthesis: v }))} />
             </div>
             <div className="pt-1 border-t border-zinc-100 dark:divide-zinc-800">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Analysis hour</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plAnalysisHour')}</p>
                 <span className="text-xs font-semibold text-zinc-500">{patternLearning.analysis_hour ?? 9}:00</span>
               </div>
               <Slider value={patternLearning.analysis_hour ?? 9} onValueChange={(v) => setPatternLearning(s => ({ ...s, analysis_hour: v }))} min={0} max={23} />
-              <p className="text-[10px] text-zinc-400 mt-1">Daily analysis runs at this hour</p>
+              <p className="text-[10px] text-zinc-400 mt-1">{t('adminSettings.plAnalysisHourDesc')}</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Lookback days</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plLookback')}</p>
                 <span className="text-xs font-semibold text-zinc-500">{patternLearning.lookback_days ?? 30}d</span>
               </div>
               <Slider value={patternLearning.lookback_days ?? 30} onValueChange={(v) => setPatternLearning(s => ({ ...s, lookback_days: v }))} min={7} max={90} />
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Min occurrences</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plMinOccur')}</p>
                 <span className="text-xs font-semibold text-zinc-500">{patternLearning.min_occurrences ?? 5}×</span>
               </div>
               <Slider value={patternLearning.min_occurrences ?? 5} onValueChange={(v) => setPatternLearning(s => ({ ...s, min_occurrences: v }))} min={2} max={20} />
-              <p className="text-[10px] text-zinc-400 mt-1">Minimum times a pattern must repeat</p>
+              <p className="text-[10px] text-zinc-400 mt-1">{t('adminSettings.plMinOccurDesc')}</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Max pending suggestions</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plMaxPending')}</p>
                 <span className="text-xs font-semibold text-zinc-500">{patternLearning.max_pending_suggestions ?? 3}</span>
               </div>
               <Slider value={patternLearning.max_pending_suggestions ?? 3} onValueChange={(v) => setPatternLearning(s => ({ ...s, max_pending_suggestions: v }))} min={1} max={10} />
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Time window</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plTimeWindow')}</p>
                 <span className="text-xs font-semibold text-zinc-500">{patternLearning.time_window_minutes ?? 45}min</span>
               </div>
               <Slider value={patternLearning.time_window_minutes ?? 45} onValueChange={(v) => setPatternLearning(s => ({ ...s, time_window_minutes: v }))} min={15} max={120} />
-              <p className="text-[10px] text-zinc-400 mt-1">Events within this window are grouped</p>
+              <p className="text-[10px] text-zinc-400 mt-1">{t('adminSettings.plTimeWindowDesc')}</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Sequence gap</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plSeqGap')}</p>
                 <span className="text-xs font-semibold text-zinc-500">{patternLearning.sequence_gap_minutes ?? 5}min</span>
               </div>
               <Slider value={patternLearning.sequence_gap_minutes ?? 5} onValueChange={(v) => setPatternLearning(s => ({ ...s, sequence_gap_minutes: v }))} min={1} max={60} />
             </div>
             <Button variant="primary" onClick={() => save('pl', patchPatternLearningSettings, patternLearning)} disabled={saving['pl']} className="w-full">
-              {saving['pl'] ? 'Saving…' : 'Save'}
+              {saving['pl'] ? t('adminSettings.saving') : t('adminSettings.save')}
             </Button>
           </div>
         </Card>

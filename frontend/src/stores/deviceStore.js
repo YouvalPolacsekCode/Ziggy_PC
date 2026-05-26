@@ -476,7 +476,8 @@ export const useDeviceStore = create((set, get) => ({
         lastUpdated: Date.now(),
       })
     } catch (e) {
-      set({ loading: false, error: e.message })
+      // Preserve the full error so consumers can describe it via describeError.
+      set({ loading: false, error: e })
     } finally {
       set({ _inflightFetch: null })
     }

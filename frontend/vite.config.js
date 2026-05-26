@@ -14,9 +14,22 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // Disable VitePWA's own SW injection — we manage our own sw.js which
-      // handles push notifications. VitePWA's auto-generated SW would conflict.
+      // We ship our own SW from public/sw.js — push notifications only, no
+      // precaching. The previously-generated workbox SW precached the hashed
+      // JS bundle and served stale index.html that pointed at long-deleted
+      // asset hashes after every rebuild, breaking mobile clients with a
+      // bare-HTML page. `strategies: 'injectManifest'` makes VitePWA leave
+      // our public/sw.js alone (we ignore the injection point) while still
+      // emitting the webmanifest + install metadata.
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw.js',
       injectRegister: false,
+      injectManifest: {
+        // We don't reference self.__WB_MANIFEST in our SW, so VitePWA
+        // would warn about a missing injection point — disable that check.
+        injectionPoint: undefined,
+      },
       selfDestroying: false,
       includeAssets: ['icons/*.png', 'icons/*.svg'],
       manifest: {
@@ -49,20 +62,8 @@ export default defineConfig({
           { src: '/icons/icon.svg',     sizes: 'any',      type: 'image/svg+xml', purpose: 'any' },
         ],
       },
-      workbox: {
-        // Auto-claim clients so the new SW activates immediately on install
-        // (no need to close all tabs), and skip the waiting phase.
-        clientsClaim: true,
-        skipWaiting: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\//,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'api-cache', networkTimeoutSeconds: 5 },
-          },
-        ],
-      },
+      // No `workbox` block — injectManifest mode reads the SW source from
+      // public/sw.js as-is.
     }),
   ],
   css: {
@@ -87,6 +88,38 @@ export default defineConfig({
       '/api':      'http://localhost:8001',
       '/presence': 'http://localhost:8001',
       '/ws':       { target: 'ws://localhost:8001', ws: true },
+    },
+  },
+  build: {
+    // Modern target — every browser that runs Ziggy supports ES2020 natively
+    // (mobile PWA users are evergreen, desktop dev is Chrome/Firefox/Safari
+    // current). Skipping the legacy-friendly transpile saves ~10–15 KB and
+    // lets Vite keep async/await + optional chaining as-is.
+    target: 'es2020',
+    // No sourcemaps in prod — saves ~3-5 MB of asset disk + faster builds.
+    // Re-enable temporarily if production debugging needs them.
+    sourcemap: false,
+    // Smaller chunk size warnings to keep the bundle honest.
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // Manual vendor chunks: keeps third-party code in stable file hashes
+        // so a Ziggy code change doesn't bust the user's cached vendor JS.
+        // konva/react-konva are HEAVY (~250 KB minified) and only used by
+        // Rooms' HomeMapCanvas — keep them in their own chunk that lazy-loads
+        // alongside the Rooms page.
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'ui-vendor':    ['framer-motion', 'lucide-react', 'clsx', 'tailwind-merge'],
+          'radix-vendor': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-slider',
+            '@radix-ui/react-switch',
+          ],
+          'konva-vendor': ['konva', 'react-konva'],
+          'state-vendor': ['zustand'],
+        },
+      },
     },
   },
 })

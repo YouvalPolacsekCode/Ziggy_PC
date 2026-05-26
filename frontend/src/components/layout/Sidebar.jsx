@@ -2,24 +2,28 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { Sun, Moon, Wifi, WifiOff, Home, Grid2x2, Cpu, Zap, MessageCircle, Bell, CheckSquare, Settings, ShieldAlert } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
+import { useFeature } from '../../stores/featuresStore'
+import { useT } from '../../lib/i18n'
 
 const ROLE_ORDER = ['user', 'admin', 'super_admin']
 function hasRole(userRole, minRole) {
   return ROLE_ORDER.indexOf(userRole) >= ROLE_ORDER.indexOf(minRole)
 }
 
+// `labelKey` instead of literal — resolved inside Sidebar() so label switches
+// when the user flips language without us needing to memo/rebuild.
 const PRIMARY = [
-  { to: '/',            Icon: Home,           label: 'Home' },
-  { to: '/rooms',       Icon: Grid2x2,        label: 'Rooms' },
-  { to: '/chat',        Icon: MessageCircle,  label: 'Ask Ziggy' },
-  { to: '/devices',     Icon: Cpu,            label: 'Devices' },
-  { to: '/automations', Icon: Zap,            label: 'Automations' },
+  { to: '/',            Icon: Home,           labelKey: 'nav.home' },
+  { to: '/rooms',       Icon: Grid2x2,        labelKey: 'nav.rooms' },
+  { to: '/chat',        Icon: MessageCircle,  labelKey: 'nav.askZiggy' },
+  { to: '/devices',     Icon: Cpu,            labelKey: 'nav.devices' },
+  { to: '/automations', Icon: Zap,            labelKey: 'nav.automations' },
 ]
 
-const SECONDARY = [
-  { to: '/alerts',   Icon: Bell,        label: 'Alerts' },
-  { to: '/tasks',    Icon: CheckSquare, label: 'Tasks' },
-  { to: '/settings', Icon: Settings,    label: 'Settings' },
+const SECONDARY_BASE = [
+  { to: '/alerts',   Icon: Bell,        labelKey: 'nav.alerts' },
+  { to: '/tasks',    Icon: CheckSquare, labelKey: 'nav.tasks',    feature: 'task_tracking' },
+  { to: '/settings', Icon: Settings,    labelKey: 'nav.settings' },
 ]
 
 function NavItem({ to, Icon, label }) {
@@ -40,7 +44,12 @@ function NavItem({ to, Icon, label }) {
 export function Sidebar({ connected }) {
   const { theme, toggleTheme } = useUIStore()
   const { role } = useAuthStore()
+  const t = useT()
   const isSuperAdmin = hasRole(role, 'super_admin')
+  const taskTrackingEnabled = useFeature('task_tracking')
+  const SECONDARY = SECONDARY_BASE.filter(item =>
+    !item.feature || (item.feature === 'task_tracking' && taskTrackingEnabled),
+  )
 
   return (
     <aside
@@ -77,7 +86,7 @@ export function Sidebar({ connected }) {
 
       {/* Primary nav */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {PRIMARY.map(p => <NavItem key={p.to} {...p} />)}
+        {PRIMARY.map(p => <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} />)}
       </nav>
 
       {/* Divider */}
@@ -85,7 +94,7 @@ export function Sidebar({ connected }) {
 
       {/* Secondary nav */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {SECONDARY.map(p => <NavItem key={p.to} {...p} />)}
+        {SECONDARY.map(p => <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} />)}
       </nav>
 
       {/* Spacer */}
@@ -94,13 +103,13 @@ export function Sidebar({ connected }) {
       {/* Footer */}
       <div style={{ paddingTop: 12, borderTop: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {isSuperAdmin && (
-          <NavItem to="/ops" Icon={ShieldAlert} label="Ops Console" />
+          <NavItem to="/ops" Icon={ShieldAlert} label={t('nav.opsConsole')} />
         )}
         <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px' }}>
           <button
             onClick={toggleTheme}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 0, display: 'flex', alignItems: 'center', borderRadius: 6 }}
-            title="Toggle theme"
+            title={t('common.toggleTheme')}
           >
             {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
           </button>

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useUIStore } from '../stores/uiStore'
+import { useT } from '../lib/i18n'
 import {
   getUsers, updateUser, deleteUser,
   listInvites, createInvite, revokeInvite,
@@ -15,10 +16,12 @@ import {
 } from '../lib/api'
 
 const ROLE_ORDER = ['super_admin', 'admin', 'user', 'guest']
-const ROLE_LABEL = { super_admin: 'Owner', admin: 'Admin', user: 'Member', guest: 'Guest' }
+const ROLE_LABEL_KEY = { super_admin: 'roles.owner', admin: 'roles.admin', user: 'roles.member', guest: 'roles.guest' }
 const ROLE_COLOR = { super_admin: '#7c3aed', admin: '#2563eb', user: '#16a34a', guest: '#6b7280' }
 
 function RoleBadge({ role }) {
+  const t = useT()
+  const labelKey = ROLE_LABEL_KEY[role]
   return (
     <span style={{
       fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
@@ -26,7 +29,7 @@ function RoleBadge({ role }) {
       color: ROLE_COLOR[role] || '#6b7280',
       border: `0.5px solid ${(ROLE_COLOR[role] || '#6b7280')}40`,
     }}>
-      {ROLE_LABEL[role] || role}
+      {labelKey ? t(labelKey) : role}
     </span>
   )
 }
@@ -34,6 +37,7 @@ function RoleBadge({ role }) {
 // ── Invite modal — context-aware (user invite OR new home) ───────────────────
 function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
   // mode: 'user' | 'home'
+  const t = useT()
   const { addToast } = useUIStore()
   const [email,  setEmail]  = useState('')
   const [role,   setRole]   = useState(mode === 'home' ? 'super_admin' : 'user')
@@ -50,7 +54,7 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
   const handleClose = () => { reset(); onClose() }
 
   const handleCreate = async () => {
-    if (!email.trim() && mode === 'user') { addToast('Email required', 'error'); return }
+    if (!email.trim() && mode === 'user') { addToast(t('cloud.emailRequired'), 'error'); return }
     setSaving(true)
     try {
       let url
@@ -83,11 +87,11 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
         setEmailSent(res.email_sent ?? false); setEmailError(res.email_error ?? null)
       }
       setLink(url); onCreated()
-    } catch (e) { addToast(e.message || 'Failed', 'error') }
+    } catch (e) { addToast(e.message || t('cloud.failed'), 'error') }
     finally { setSaving(false) }
   }
 
-  const copyLink = () => { navigator.clipboard.writeText(link).catch(() => {}); addToast('Link copied', 'success') }
+  const copyLink = () => { navigator.clipboard.writeText(link).catch(() => {}); addToast(t('cloud.linkCopied'), 'success') }
 
   if (!open) return null
 
@@ -97,7 +101,9 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
       <div style={{ background: 'var(--surface)', borderRadius: 20, border: '0.5px solid var(--line)', width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
         <div style={{ padding: '20px 20px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
-            {link ? (mode === 'home' ? 'New home invite created' : 'User invited') : (mode === 'home' ? 'Set up a new home' : `Invite user to ${homeName || 'this home'}`)}
+            {link
+              ? (mode === 'home' ? t('cloud.modalNewHomeInvite') : t('cloud.modalUserInvited'))
+              : (mode === 'home' ? t('cloud.modalSetUpHome') : t('cloud.modalInviteUserTo', { home: homeName || t('cloud.modalFallbackHome') }))}
           </p>
         </div>
 
@@ -108,7 +114,7 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
                 <div style={{ display: 'flex', gap: 10, background: 'var(--ok)10', border: '0.5px solid var(--ok)30', borderRadius: 10, padding: '12px 14px' }}>
                   <CheckCircle size={15} style={{ color: 'var(--ok)', flexShrink: 0 }} />
                   <p style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>
-                    {mode === 'home' ? 'Setup email sent' : 'Invite email sent'} to <strong>{email}</strong>
+                    {mode === 'home' ? t('cloud.setupEmailSent') : t('cloud.inviteEmailSent')} {t('cloud.emailToStrong')} <strong>{email}</strong>
                   </p>
                 </div>
               )}
@@ -116,63 +122,61 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
                 <div style={{ display: 'flex', gap: 10, background: 'var(--warn)10', border: '0.5px solid var(--warn)30', borderRadius: 10, padding: '12px 14px' }}>
                   <XCircle size={15} style={{ color: 'var(--warn)', flexShrink: 0 }} />
                   <div>
-                    <p style={{ fontSize: 12, color: 'var(--warn)', fontWeight: 600, marginBottom: 2 }}>Email not sent</p>
+                    <p style={{ fontSize: 12, color: 'var(--warn)', fontWeight: 600, marginBottom: 2 }}>{t('cloud.emailNotSent')}</p>
                     <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{emailError}</p>
                   </div>
                 </div>
               )}
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>Share this link — expires in 72h, single use:</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>{t('cloud.linkExpires')}</p>
               <div style={{ background: 'var(--bg-2)', borderRadius: 10, padding: '10px 12px', fontFamily: '"IBM Plex Mono", monospace', fontSize: 10.5, color: 'var(--ink)', wordBreak: 'break-all', lineHeight: 1.5 }}>
                 {link}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={copyLink} className="z-btn-secondary" style={{ flex: 1, height: 36, borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <Copy size={12} /> Copy link
+                  <Copy size={12} /> {t('cloud.copyLink')}
                 </button>
-                <button onClick={handleClose} className="z-btn-primary" style={{ height: 36, borderRadius: 10, fontSize: 12, padding: '0 16px' }}>Done</button>
+                <button onClick={handleClose} className="z-btn-primary" style={{ height: 36, borderRadius: 10, fontSize: 12, padding: '0 16px' }}>{t('cloud.doneBtn')}</button>
               </div>
             </>
           ) : (
             <>
               <div>
                 <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>
-                  Email {mode === 'home' ? <span style={{ fontWeight: 400 }}>(optional)</span> : ''}
+                  {t('cloud.emailLabel')} {mode === 'home' ? <span style={{ fontWeight: 400 }}>{t('cloud.emailOptional')}</span> : ''}
                 </p>
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder={mode === 'home' ? 'owner@example.com (optional)' : 'user@example.com'}
-                  autoFocus className="z-input"
+                  placeholder={mode === 'home' ? t('cloud.emailPhHome') : t('cloud.emailPhUser')}
+                  autoFocus dir="auto" className="z-input"
                   style={{ width: '100%', height: 38, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }} />
                 <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 4 }}>
-                  {mode === 'home'
-                    ? "We'll send a setup email if provided. They'll create their account and set up their home."
-                    : "We'll send an invite email. They set their own password."}
+                  {mode === 'home' ? t('cloud.helpHome') : t('cloud.helpUser')}
                 </p>
               </div>
 
               <div>
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Role</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloud.role')}</p>
                 <select value={role} onChange={e => setRole(e.target.value)} disabled={mode === 'home'}
                   style={{ width: '100%', height: 38, padding: '0 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, cursor: 'pointer' }}>
                   {(mode === 'home' ? ['super_admin', 'admin'] : ROLE_ORDER).map(r => (
-                    <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+                    <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>
                   ))}
                 </select>
               </div>
 
               {mode === 'home' && (
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Home name <span style={{ fontWeight: 400 }}>(optional)</span></p>
-                  <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Adi's apartment"
-                    className="z-input" style={{ width: '100%', height: 38, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }} />
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloud.homeName')} <span style={{ fontWeight: 400 }}>{t('cloud.optional')}</span></p>
+                  <input value={note} onChange={e => setNote(e.target.value)} placeholder={t('cloud.homeNamePh')}
+                    dir="auto" className="z-input" style={{ width: '100%', height: 38, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }} />
                 </div>
               )}
 
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1, height: 38, borderRadius: 10, fontSize: 12 }}>Cancel</button>
+                <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1, height: 38, borderRadius: 10, fontSize: 12 }}>{t('common.cancel')}</button>
                 <button onClick={handleCreate} disabled={saving} className="z-btn-primary" style={{ flex: 2, height: 38, borderRadius: 10, fontSize: 12 }}>
-                  {saving ? 'Sending…' : email.trim()
-                    ? mode === 'home' ? 'Send setup email' : 'Send invite email'
-                    : mode === 'home' ? 'Create invite link' : 'Create invite link'}
+                  {saving ? t('cloud.sending') : email.trim()
+                    ? mode === 'home' ? t('cloud.sendSetupEmail') : t('cloud.sendInviteEmail')
+                    : t('cloud.createInviteLink')}
                 </button>
               </div>
             </>
@@ -185,6 +189,7 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
 
 // ── Per-home card with expandable users ───────────────────────────────────────
 function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeInvite, onInviteUser, onDeprovision, isLocal }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(isLocal)
   // Only show user invites under a home — home-type invites are for provisioning
   // new homes and should never appear as pending members of an existing home.
@@ -208,14 +213,14 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
               background: home.haConnected !== false ? 'var(--ok)18' : 'var(--warn)18',
               color: home.haConnected !== false ? 'var(--ok)' : 'var(--warn)',
             }}>
-              {isLocal ? (home.haConnected ? 'HA online' : 'HA offline') : (home.status || 'unknown')}
+              {isLocal ? (home.haConnected ? t('cloud.haOnline') : t('cloud.haOffline')) : (home.status || t('cloud.unknown'))}
             </span>
             <span style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'var(--bg-2)', padding: '1px 7px', borderRadius: 999 }}>
-              {home.type || 'hub'}
+              {home.type || t('cloud.hub')}
             </span>
           </div>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {users.length} user{users.length !== 1 ? 's' : ''}{pending.length > 0 ? ` · ${pending.length} pending invite${pending.length !== 1 ? 's' : ''}` : ''}
+            {users.length} {users.length !== 1 ? t('cloud.usersWordPlural') : t('cloud.usersWord')}{pending.length > 0 ? ` · ${pending.length} ${pending.length !== 1 ? t('cloud.pendingInviteWordPlural') : t('cloud.pendingInviteWord')}` : ''}
             {home.haUrl ? ` · ${home.haUrl}` : home.tunnel_url ? ` · ${home.tunnel_url}` : ''}
           </p>
         </div>
@@ -243,7 +248,7 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
               {onRoleChange ? (
                 <select value={u.role} onChange={e => onRoleChange(u.username, e.target.value)}
                   style={{ fontSize: 11, padding: '2px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLOR[u.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}>
-                  {ROLE_ORDER.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                  {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
                 </select>
               ) : <RoleBadge role={u.role} />}
               {onDeleteUser && (
@@ -259,9 +264,9 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
             <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', borderBottom: '0.5px solid var(--line)', opacity: 0.7 }}>
               <Clock size={13} style={{ color: 'var(--warn)', flexShrink: 0 }} />
               <span style={{ flex: 1, fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {inv.email || '(open invite)'} · {ROLE_LABEL[inv.role] || inv.role}
+                {inv.email || t('cloud.openInviteShort')} · {ROLE_LABEL_KEY[inv.role] ? t(ROLE_LABEL_KEY[inv.role]) : inv.role}
               </span>
-              <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '1px 6px', borderRadius: 6, flexShrink: 0 }}>pending</span>
+              <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '1px 6px', borderRadius: 6, flexShrink: 0 }}>{t('cloud.tagPending')}</span>
               {onRevokeInvite && (
                 <button onClick={() => onRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
                   <Trash2 size={11} />
@@ -273,7 +278,7 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
           {/* Invite button */}
           <div style={{ padding: '12px 20px' }}>
             <button onClick={onInviteUser} className="z-btn-secondary" style={{ width: '100%', height: 34, borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              <Plus size={13} /> Invite user to this home
+              <Plus size={13} /> {t('cloud.inviteUser')}
             </button>
           </div>
         </div>
@@ -284,6 +289,7 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
 
 // ── main page ─────────────────────────────────────────────────────────────────
 export default function CloudAdmin() {
+  const t = useT()
   const { addToast } = useUIStore()
   const [users,       setUsers]       = useState([])
   const [invites,     setInvites]     = useState([])
@@ -305,8 +311,8 @@ export default function CloudAdmin() {
       setUsers(u)
       setInvites(i)
       setHome({
-        name: 'This home', type: 'hub',
-        haUrl: ha.url || 'Not configured',
+        name: t('cloud.thisHome'), type: 'hub',
+        haUrl: ha.url || t('cloud.notConfiguredHa'),
         haConnected: health.ha_connected ?? false,
         offlineCount: health.offline_count ?? 0,
       })
@@ -328,29 +334,29 @@ export default function CloudAdmin() {
       const res = await relayLogin({ email: relayInput.email, password: relayInput.password })
       if (!res.token) throw new Error('No token returned')
       setRelayToken(res.token); setRelayOnline(true)
-      await load(); addToast('Connected to relay', 'success')
-    } catch (e) { addToast(e.message || 'Failed to connect', 'error') }
+      await load(); addToast(t('cloud.connected'), 'success')
+    } catch (e) { addToast(e.message || t('cloud.failedConnect'), 'error') }
     finally { setRelayConnecting(false) }
   }
 
   // Local home handlers
-  const handleRoleChange = async (username, role) => {
-    try { await updateUser(username, { role }); setUsers(prev => prev.map(u => u.username === username ? { ...u, role } : u)); addToast('Role updated', 'success') }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+  const handleRoleChange = async (username, tok) => {
+    try { await updateUser(username, { role: tok }); setUsers(prev => prev.map(u => u.username === username ? { ...u, role: tok } : u)); addToast(t('cloud.roleUpdated'), 'success') }
+    catch (e) { addToast(e.message || t('cloud.failed'), 'error') }
   }
   const handleDeleteUser = async (username) => {
-    if (!window.confirm(`Remove "${username}"?`)) return
-    try { await deleteUser(username); setUsers(prev => prev.filter(u => u.username !== username)); addToast('User removed', 'success') }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+    if (!window.confirm(t('cloud.removeUserConfirm', { name: username }))) return
+    try { await deleteUser(username); setUsers(prev => prev.filter(u => u.username !== username)); addToast(t('cloud.userRemoved'), 'success') }
+    catch (e) { addToast(e.message || t('cloud.failed'), 'error') }
   }
-  const handleRevoke = async (token) => {
-    try { await revokeInvite(token); setInvites(prev => prev.filter(i => i.token !== token)); addToast('Invite revoked', 'success') }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+  const handleRevoke = async (tok) => {
+    try { await revokeInvite(tok); setInvites(prev => prev.filter(i => i.token !== tok)); addToast(t('cloud.inviteRevoked'), 'success') }
+    catch (e) { addToast(e.message || t('cloud.failed'), 'error') }
   }
   const handleDeprovision = async (homeId, name) => {
-    if (!window.confirm(`Deprovision "${name}"? This stops all containers and deletes all data.`)) return
-    try { await relayDeprovision(homeId); await load(); addToast(`"${name}" deprovisioned`, 'success') }
-    catch (e) { addToast(e.message || 'Failed', 'error') }
+    if (!window.confirm(t('cloud.deprovisionConfirm', { name }))) return
+    try { await relayDeprovision(homeId); await load(); addToast(t('cloud.deprovisioned', { name }), 'success') }
+    catch (e) { addToast(e.message || t('cloud.failed'), 'error') }
   }
 
   if (loading) return (
@@ -366,9 +372,9 @@ export default function CloudAdmin() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Shield size={16} style={{ color: 'var(--accent)' }} />
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Cloud Admin</h1>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.02em' }}>{t('cloud.title')}</h1>
           </div>
-          <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Manage homes, users, and access — super admin only</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{t('cloud.subtitle')}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={load} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
@@ -376,7 +382,7 @@ export default function CloudAdmin() {
           </button>
           <button onClick={() => setModal({ mode: 'home', homeId: null, homeName: null })} className="z-btn-primary"
             style={{ height: 34, padding: '0 14px', borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={13} /> New home
+            <Plus size={13} /> {t('cloud.newHome')}
           </button>
         </div>
       </div>
@@ -385,12 +391,12 @@ export default function CloudAdmin() {
       {isRelayConfigured() && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 14px', background: 'var(--bg-2)', borderRadius: 10, border: '0.5px solid var(--line)' }}>
           {relayOnline
-            ? <><CheckCircle size={12} style={{ color: 'var(--ok)' }} /><span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>Relay online</span></>
-            : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>Relay offline</span></>}
+            ? <><CheckCircle size={12} style={{ color: 'var(--ok)' }} /><span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
+            : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
           <button onClick={() => { localStorage.removeItem('ziggy_relay_url'); localStorage.removeItem('ziggy_relay_token'); window.location.reload() }}
             style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-            Disconnect
+            {t('cloud.disconnectBtn')}
           </button>
         </div>
       )}
@@ -398,19 +404,19 @@ export default function CloudAdmin() {
       {/* Connect relay panel — shown above homes when not yet connected */}
       {!isRelayConfigured() && (
         <div style={{ marginBottom: 20, padding: '16px 20px', background: 'var(--bg-2)', border: '0.5px solid var(--line)', borderRadius: 14 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>Connect relay service</p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('cloud.connectRelay')}</p>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 12, lineHeight: 1.5 }}>
-            Connect to manage multiple homes and provision new cloud homes. Deploy the relay first — see <code>relay/fly.toml</code>.
+            {t('cloud.connectIntro')} {t('cloud.deployHint')} <code>relay/fly.toml</code>.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input value={relayInput.url} onChange={e => setRelayInput(s => ({ ...s, url: e.target.value }))} placeholder="https://ziggy-relay.fly.dev" className="z-input" style={{ height: 34, padding: '0 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
+            <input value={relayInput.url} onChange={e => setRelayInput(s => ({ ...s, url: e.target.value }))} placeholder={t('cloud.relayUrlPh')} dir="auto" className="z-input" style={{ height: 34, padding: '0 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={relayInput.email} onChange={e => setRelayInput(s => ({ ...s, email: e.target.value }))} placeholder="Admin email" type="email" className="z-input" style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }} />
-              <input value={relayInput.password} onChange={e => setRelayInput(s => ({ ...s, password: e.target.value }))} placeholder="Password" type="password" className="z-input" style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }} />
+              <input value={relayInput.email} onChange={e => setRelayInput(s => ({ ...s, email: e.target.value }))} placeholder={t('cloud.adminEmail')} type="email" dir="auto" className="z-input" style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }} />
+              <input value={relayInput.password} onChange={e => setRelayInput(s => ({ ...s, password: e.target.value }))} placeholder={t('cloud.password')} type="password" dir="auto" className="z-input" style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }} />
               <button onClick={connectRelay} disabled={relayConnecting || !relayInput.url || !relayInput.email} className="z-btn-primary"
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {relayConnecting ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Wifi size={12} />}
-                {relayConnecting ? 'Connecting…' : 'Connect'}
+                {relayConnecting ? t('cloud.connecting') : t('cloud.connect')}
               </button>
             </div>
           </div>
@@ -422,7 +428,7 @@ export default function CloudAdmin() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Home size={13} style={{ color: 'var(--ink-faint)' }} />
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Homes ({1 + relayHomes.length})
+            {t('cloud.homesHeader', { n: 1 + relayHomes.length })}
           </p>
         </div>
 

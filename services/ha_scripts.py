@@ -3,6 +3,8 @@ HA Scripts — CRUD via HA REST config API.
 Ziggy routines map directly to HA scripts (manual sequences of actions).
 """
 from __future__ import annotations
+import json
+import os
 import re
 import uuid
 from typing import Optional
@@ -15,10 +17,53 @@ HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
 HA_TOKEN: str = settings["home_assistant"]["token"]
 HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
 
+# ── Routine-only sidecar metadata ─────────────────────────────────────────────
+# HA scripts have no `icon` field, so the user's icon choice would otherwise be
+# dropped on save and forced back to "⚡" on every reload. Kept in its own file
+# (not automation_meta.json) so a routine and an automation that slug to the
+# same id can't collide.
+_ROUTINE_META_FILE = "user_files/routine_meta.json"
+
 
 def _slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     return s or uuid.uuid4().hex
+
+
+def _load_routine_meta() -> dict:
+    if not os.path.exists(_ROUTINE_META_FILE):
+        return {}
+    try:
+        with open(_ROUTINE_META_FILE, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception as e:
+        log_error(f"[HA Scripts] load routine_meta: {e}")
+        return {}
+
+
+def _save_routine_meta(data: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(_ROUTINE_META_FILE), exist_ok=True)
+        with open(_ROUTINE_META_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        log_error(f"[HA Scripts] save routine_meta: {e}")
+
+
+def _set_routine_meta(script_id: str, fields: dict) -> None:
+    store = _load_routine_meta()
+    store[script_id] = {**store.get(script_id, {}), **fields}
+    _save_routine_meta(store)
+
+
+def _get_routine_meta(script_id: str) -> dict:
+    return _load_routine_meta().get(script_id, {})
+
+
+def _delete_routine_meta(script_id: str) -> None:
+    store = _load_routine_meta()
+    if store.pop(script_id, None) is not None:
+        _save_routine_meta(store)
 
 
 # ── Ziggy → HA ────────────────────────────────────────────────────────────────
@@ -97,6 +142,7 @@ def list_scripts() -> list:
         resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
         if resp.status_code != 200:
             return []
+        meta_store = _load_routine_meta()
         result = []
         for s in resp.json():
             eid = s.get("entity_id", "")
@@ -104,12 +150,13 @@ def list_scripts() -> list:
                 continue
             script_id = eid[len("script."):]
             attrs = s.get("attributes", {})
+            meta = meta_store.get(script_id, {})
             result.append({
                 "id": script_id,
                 "entity_id": eid,
                 "name": attrs.get("friendly_name", script_id),
                 "description": attrs.get("description", ""),
-                "icon": "⚡",
+                "icon": meta.get("icon") or "⚡",
                 "enabled": True,
                 "schedule": {"type": "manual"},
                 "steps": [],
@@ -132,11 +179,12 @@ def get_script_for_ui(script_id: str) -> Optional[dict]:
             sequence = [sequence]
         from services.local_automation_actions import get_all_saved_actions
         saved_steps = get_all_saved_actions(script_id)
+        meta = _get_routine_meta(script_id)
         return {
             "id": script_id,
             "name": cfg.get("alias", script_id),
             "description": cfg.get("description", ""),
-            "icon": "⚡",
+            "icon": meta.get("icon") or "⚡",
             "enabled": True,
             "schedule": {"type": "manual"},
             "steps": saved_steps if saved_steps else [_ha_step_to_ziggy(s) for s in sequence],
@@ -161,6 +209,11 @@ def save_script(data: dict, script_id: Optional[str] = None) -> dict:
         resp = requests.post(f"{HA_URL}/api/config/script/config/{script_id}",
                              headers=HEADERS, json=ha_cfg, timeout=10)
         if resp.status_code in (200, 201):
+            # HA has no icon field on scripts — persist it in our own sidecar
+            # so the user's wizard pick survives reload. Stored even when
+            # equal to the default "⚡" so deletes (below) work cleanly.
+            icon = data.get("icon") or "⚡"
+            _set_routine_meta(script_id, {"icon": icon})
             return {"ok": True, "id": script_id}
         return {"ok": False, "error": f"HA {resp.status_code}: {resp.text}"}
     except Exception as e:
@@ -171,7 +224,10 @@ def delete_script(script_id: str) -> bool:
     try:
         resp = requests.delete(f"{HA_URL}/api/config/script/config/{script_id}",
                                headers=HEADERS, timeout=10)
-        return resp.status_code in (200, 204)
+        ok = resp.status_code in (200, 204)
+        if ok:
+            _delete_routine_meta(script_id)
+        return ok
     except Exception as e:
         log_error(f"[HA Scripts] delete {script_id}: {e}")
         return False

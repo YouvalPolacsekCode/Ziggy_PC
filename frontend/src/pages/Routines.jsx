@@ -1,24 +1,51 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../components/ui/Modal'
 import { Input, Textarea } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
-import { EntitySelect, getActionsForDomain } from '../components/ui/EntitySelect'
+import { EntitySelect, getActionsForDomain, getActionLabel } from '../components/ui/EntitySelect'
 import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { getEntityState } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
+import { useT } from '../lib/i18n'
 
 const ICONS = ['⚡', '☀️', '🌙', '🏠', '🎬', '🏋️', '🛏️', '☕', '🌿', '🔒', '💡', '🎵']
+
+// Stable per-step uid so React keys survive reorder/delete. Without this,
+// deleting step N caused steps below to inherit the deleted row's component
+// state (in-flight attribute fetches, transient inputs), surfacing as stale
+// dropdown options on the wrong step.
+let _stepUidCounter = 0
+const newStepUid = () => `s_${Date.now().toString(36)}_${(_stepUidCounter++).toString(36)}`
+const ensureStepUid = (step) => (step && step._uid ? step : { ...step, _uid: newStepUid() })
+
+// Per-step type, the minimum fields required for a routine step to actually do
+// anything when executed. Wizard blocks Save until every step satisfies its
+// validator — otherwise the backend silently persists broken steps (empty
+// entity_id → HA call with no target, etc.).
+// Returns a translation key (or null) so the message stays localized.
+const validateStep = (step) => {
+  switch (step.type) {
+    case 'device':     return step.entity_id ? null : 'routines.validate.device'
+    case 'ir_command': return (step.ir_device_id && (step.ir_command || step.ir_sequence)) ? null : 'routines.validate.ir'
+    case 'automation': return step.automation_id ? null : 'routines.validate.automation'
+    case 'delay':      return (Number(step.delay_seconds) > 0) ? null : 'routines.validate.delay'
+    case 'notify':     return step.message ? null : 'routines.validate.notify'
+    case 'message':    return (step.text && step.text.trim()) ? null : 'routines.validate.message'
+    default:           return null
+  }
+}
 const DAYS  = [{ id: 'mon', label: 'M' }, { id: 'tue', label: 'T' }, { id: 'wed', label: 'W' }, { id: 'thu', label: 'T' }, { id: 'fri', label: 'F' }, { id: 'sat', label: 'S' }, { id: 'sun', label: 'S' }]
+// Step type list — labels are translation keys, resolved at render time.
 const STEP_TYPES = [
-  { value: 'device',     label: 'Device control' },
-  { value: 'automation', label: 'Run automation' },
-  { value: 'ir_command', label: 'IR Command' },
-  { value: 'delay',      label: 'Wait' },
-  { value: 'notify',     label: 'Notify' },
-  { value: 'message',    label: 'Send command' },
+  { value: 'device',     labelKey: 'routines.stepType.device' },
+  { value: 'automation', labelKey: 'routines.stepType.automation' },
+  { value: 'ir_command', labelKey: 'routines.stepType.ir_command' },
+  { value: 'delay',      labelKey: 'routines.stepType.delay' },
+  { value: 'notify',     labelKey: 'routines.stepType.notify' },
+  { value: 'message',    labelKey: 'routines.stepType.message' },
 ]
 
 const selectStyle = {
@@ -32,11 +59,12 @@ const selectStyle = {
 
 // ── AutomationPicker ──────────────────────────────────────────────────────────
 function AutomationPicker({ value, onChange }) {
+  const t = useT()
   const { automations, fetchAutomations } = useAutomationStore()
   useEffect(() => { if (automations.length === 0) fetchAutomations() }, [])
   return (
     <Select
-      label="Automation to run"
+      label={t('routines.field.automationToRun')}
       value={value || ''}
       onChange={e => {
         const id = e.target.value
@@ -44,7 +72,7 @@ function AutomationPicker({ value, onChange }) {
         onChange({ automation_id: id, automation_name: auto?.name || id })
       }}
       options={[
-        { value: '', label: automations.length ? '— Pick an automation —' : '— No automations yet —' },
+        { value: '', label: automations.length ? t('routines.field.pickAutomation') : t('routines.field.noAutomations') },
         ...automations.map(a => ({ value: a.id, label: a.name })),
       ]}
     />
@@ -52,26 +80,29 @@ function AutomationPicker({ value, onChange }) {
 }
 
 // ── SendIntentEditor ──────────────────────────────────────────────────────────
+// Group label is a translation key; the items themselves stay in English because
+// they double as the natural-language phrase sent to Ziggy's intent parser.
 const SEND_TEMPLATES = [
-  { group: 'Lights', items: ['Turn off all lights', 'Turn on the lights in [room]', 'Set brightness in [room] to 50%'] },
-  { group: 'Climate', items: ['Set AC in [room] to 22 degrees', 'Turn on AC in [room]', 'Set AC mode to cool in [room]'] },
-  { group: 'TV & Media', items: ['Turn on the TV in [room]', 'Turn off the TV in [room]'] },
-  { group: 'General', items: ['Turn off everything', 'Good night', 'Good morning'] },
+  { groupKey: 'automations.sendIntent.gLights',  items: ['Turn off all lights', 'Turn on the lights in [room]', 'Set brightness in [room] to 50%'] },
+  { groupKey: 'automations.sendIntent.gClimate', items: ['Set AC in [room] to 22 degrees', 'Turn on AC in [room]', 'Set AC mode to cool in [room]'] },
+  { groupKey: 'automations.sendIntent.gTvMedia', items: ['Turn on the TV in [room]', 'Turn off the TV in [room]'] },
+  { groupKey: 'automations.sendIntent.gGeneral', items: ['Turn off everything', 'Good night', 'Good morning'] },
 ]
 
 function SendIntentEditor({ value, onChange }) {
+  const t = useT()
   const [showT, setShowT] = useState(false)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', gap: 6 }}>
-        <Input placeholder="e.g. set bedroom lights to 50% brightness" value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} />
+        <Input placeholder={t('automations.sendIntent.placeholder')} value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} dir="auto" />
         <button onClick={() => setShowT(v => !v)} style={{ padding: '0 10px', borderRadius: 9, background: 'var(--bg-2)', border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>📝</button>
       </div>
       {showT && (
         <div style={{ borderRadius: 11, border: '0.5px solid var(--line)', overflow: 'hidden', background: 'var(--surface)' }}>
-          {SEND_TEMPLATES.map(({ group, items }) => (
-            <div key={group}>
-              <p className="z-eyebrow" style={{ padding: '8px 10px 4px' }}>{group}</p>
+          {SEND_TEMPLATES.map(({ groupKey, items }) => (
+            <div key={groupKey}>
+              <p className="z-eyebrow" style={{ padding: '8px 10px 4px' }}>{t(groupKey)}</p>
               {items.map(tpl => (
                 <button key={tpl} onClick={() => { onChange(tpl); setShowT(false) }} style={{ display: 'block', width: '100%', padding: '6px 10px', background: 'none', border: 'none', textAlign: 'left', fontSize: 12, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
@@ -82,13 +113,14 @@ function SendIntentEditor({ value, onChange }) {
           ))}
         </div>
       )}
-      <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>Replace [room] with the actual room name.</p>
+      <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('automations.sendIntent.replaceHint')}</p>
     </div>
   )
 }
 
 // ── NeedsInputFields ──────────────────────────────────────────────────────────
 function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }) {
+  const t = useT()
   const [attrs, setAttrs] = useState({})
   useEffect(() => {
     if (!entityId || !fields.some(f => f.fetchKey)) return
@@ -101,38 +133,40 @@ function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }
       <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</label>
         <select style={selectStyle} value={currentVal} onChange={e => onChangeServiceData({ ...(serviceData || {}), [key]: e.target.value })}>
-          <option value="">— Pick {label} —</option>
+          <option value="">{t('automations.needs.pickLabel', { label })}</option>
           {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
       </div>
     )
-    if (fetchKey && !entityId) return <p key={key} style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>Select an entity above to see options.</p>
-    return <Input key={key} label={label} placeholder={fetchKey && entityId ? 'Loading…' : placeholder} type={isNumber ? 'number' : 'text'} value={currentVal} onChange={e => { const v = isNumber ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value; onChangeServiceData({ ...(serviceData || {}), [key]: v }) }} />
+    if (fetchKey && !entityId) return <p key={key} style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('automations.needs.entityHint', { label: (label || '').toLowerCase() })}</p>
+    return <Input key={key} label={label} placeholder={fetchKey && entityId ? t('automations.needs.loading') : placeholder} type={isNumber ? 'number' : 'text'} value={currentVal} onChange={e => { const v = isNumber ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value; onChangeServiceData({ ...(serviceData || {}), [key]: v }) }} dir="auto" />
   })
 }
 
 // ── MergedActionPicker ────────────────────────────────────────────────────────
 function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIrCommand }) {
+  const t = useT()
   const learned = new Set(irDevice?.learned_commands || [])
   const irList  = Object.keys(irDevice?.commands || {}).filter(c => irDevice.commands[c] && learned.has(c))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Action</label>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{t('automations.action.label')}</label>
       <select style={selectStyle} value={haValue} onChange={e => { const v = e.target.value; if (v.startsWith('__ir__:')) onPickIrCommand(v.slice(7)); else onChangeHa(v) }}>
-        <optgroup label="⚙ Wi-Fi / HA">{haActions.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</optgroup>
-        {irList.length > 0 && <optgroup label={`📡 IR · ${irDevice?.name}`}>{irList.map(cmd => <option key={cmd} value={`__ir__:${cmd}`}>{cmd.replace(/_/g, ' ')}</option>)}</optgroup>}
+        <optgroup label={t('automations.action.haGroup')}>{haActions.map(a => <option key={a.value} value={a.value}>{getActionLabel(a, t)}</option>)}</optgroup>
+        {irList.length > 0 && <optgroup label={t('automations.action.irGroup', { name: irDevice?.name || '' })}>{irList.map(cmd => <option key={cmd} value={`__ir__:${cmd}`}>{cmd.replace(/_/g, ' ')}</option>)}</optgroup>}
       </select>
     </div>
   )
 }
 
 // ── StepRow ───────────────────────────────────────────────────────────────────
-function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse }) {
+function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse, validationError }) {
+  const t = useT()
   const { entities } = useDeviceStore()
   const domain = step.entity_id?.split('.')?.[0] || null
-  const availableActions = (step.type === 'device' && domain) ? getActionsForDomain(domain) : [{ value: 'turn_on', label: 'Turn On' }, { value: 'turn_off', label: 'Turn Off' }, { value: 'toggle', label: 'Toggle' }]
+  const availableActions = (step.type === 'device' && domain) ? getActionsForDomain(domain) : [{ value: 'turn_on', labelKey: 'entitySelect.action.turnOn', label: 'Turn On' }, { value: 'turn_off', labelKey: 'entitySelect.action.turnOff', label: 'Turn Off' }, { value: 'toggle', labelKey: 'entitySelect.action.toggle', label: 'Toggle' }]
   const linkedIr = entities.find(e => e.entity_id === step.entity_id)?._linkedIr || null
-  const stepLabel = step.type === 'device' ? `${availableActions.find(a => a.value === step.action)?.label || 'Control'} · ${step.entity_id || '?'}`
+  const stepLabel = step.type === 'device' ? `${getActionLabel(availableActions.find(a => a.value === step.action), t) || 'Control'} · ${step.entity_id || '?'}`
     : step.type === 'ir_command' ? `📡 ${step.ir_device_name || 'IR'} → ${step.ir_sequence || step.ir_command || '?'}`
     : step.type === 'automation' ? `▶ ${step.automation_name || step.automation_id || 'Automation'}`
     : step.type === 'delay' ? `Wait ${step.delay_seconds || '?'}s`
@@ -164,7 +198,17 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
           </button>
         </div>
       </div>
-      <Select options={STEP_TYPES} value={step.type || 'device'} onChange={e => onChange({ type: e.target.value })} />
+      {/* Spread step into the patch — otherwise switching type would wipe the
+          step entirely (the new {type:'x'} object replaces step, dropping
+          entity_id / action / service_data / etc.). Clear only fields that
+          don't make sense for the new type at execute time; the validator
+          will gate Save if anything else is missing. */}
+      <Select options={STEP_TYPES} value={step.type || 'device'} onChange={e => onChange({ ...step, type: e.target.value })} />
+      {validationError && (
+        <p style={{ fontSize: 11, color: 'var(--err)', margin: '-4px 0 0', fontFamily: '"IBM Plex Mono", monospace' }}>
+          ⚠ {validationError}
+        </p>
+      )}
       {step.type === 'ir_command' && <IRDeviceSelect value={step} onChange={patch => onChange({ ...step, ...patch })} />}
       {step.type === 'automation' && (
         <AutomationPicker
@@ -182,7 +226,7 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse 
               onPickIrCommand={cmd => onChange({ ...step, type: 'ir_command', ir_device_id: linkedIr.id, ir_device_name: linkedIr.name, ir_command: cmd, ir_sequence: undefined, action: undefined, ha_service: undefined, service_data: undefined })}
             />
           ) : (
-            <Select options={availableActions} value={step.action || 'turn_on'} onChange={e => { const sel = e.target.value; const def = availableActions.find(a => a.value === sel) || {}; onChange({ ...step, action: sel, ha_service: def.haService || sel, service_data: def.serviceData || undefined }) }} />
+            <Select options={availableActions.map(a => ({ ...a, label: getActionLabel(a, t) }))} value={step.action || 'turn_on'} onChange={e => { const sel = e.target.value; const def = availableActions.find(a => a.value === sel) || {}; onChange({ ...step, action: sel, ha_service: def.haService || sel, service_data: def.serviceData || undefined }) }} />
           )}
           {(() => {
             const def = availableActions.find(a => a.value === (step.action || 'turn_on'))
@@ -226,23 +270,52 @@ export function RoutineWizard({ initial, onSave, onClose }) {
   const [name,           setName]          = useState(initial?.name || '')
   const [description,    setDescription]   = useState(initial?.description || '')
   const [icon,           setIcon]          = useState(initial?.icon || '⚡')
-  const [steps,          setSteps]         = useState(initial?.steps || [])
-  const [collapsedSteps, setCollapsedSteps] = useState(new Set())
+  // Backfill _uid on every step from `initial` so editing existing routines
+  // gets stable React keys too (the backend doesn't round-trip _uid).
+  const [steps,          setSteps]         = useState(() => (initial?.steps || []).map(ensureStepUid))
+  // Track collapsed state by step uid, NOT array index — index-keyed Sets
+  // get scrambled by reorder/delete and surface as "wrong step collapsed".
+  const [collapsedUids,  setCollapsedUids] = useState(new Set())
   const [saving,         setSaving]        = useState(false)
+  const [showErrors,     setShowErrors]    = useState(false)
+
+  const stepErrors = useMemo(() => steps.map(validateStep), [steps])
+  const firstInvalidIdx = stepErrors.findIndex(e => e !== null)
 
   const addStep = () => {
-    setCollapsedSteps(prev => { const next = new Set(prev); steps.forEach((_, i) => next.add(i)); return next })
-    setSteps(s => [...s, { type: 'device', entity_id: '', action: 'turn_on' }])
+    setCollapsedUids(prev => { const next = new Set(prev); steps.forEach(s => next.add(s._uid)); return next })
+    setSteps(s => [...s, { _uid: newStepUid(), type: 'device', entity_id: '', action: 'turn_on' }])
   }
-  const updateStep         = (i, val) => setSteps(s => s.map((x, j) => j === i ? val : x))
-  const removeStep         = (i) => { setSteps(s => s.filter((_, j) => j !== i)); setCollapsedSteps(prev => { const next = new Set(); prev.forEach(idx => { if (idx < i) next.add(idx); else if (idx > i) next.add(idx - 1) }); return next }) }
-  const toggleCollapseStep = (i) => setCollapsedSteps(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
-  const canNext = () => wizardStep === 0 ? name.trim().length > 0 : true
+  const updateStep         = (i, val) => setSteps(s => s.map((x, j) => j === i ? { ...val, _uid: x._uid } : x))
+  const removeStep         = (i) => setSteps(s => s.filter((_, j) => j !== i))
+  const toggleCollapseStep = (uid) => setCollapsedUids(prev => { const next = new Set(prev); next.has(uid) ? next.delete(uid) : next.add(uid); return next })
+  const canNext = () => {
+    if (wizardStep === 0) return name.trim().length > 0
+    if (wizardStep === 1) return firstInvalidIdx === -1
+    return true
+  }
 
   const handleSave = async () => {
+    if (firstInvalidIdx !== -1) {
+      // Bounce the user back to the Steps page with errors visible — saving
+      // an invalid step would silently persist a broken routine.
+      setShowErrors(true)
+      setWizardStep(1)
+      // Expand the first invalid step so the error is immediately visible.
+      setCollapsedUids(prev => { const next = new Set(prev); next.delete(steps[firstInvalidIdx]._uid); return next })
+      return
+    }
     setSaving(true)
-    await onSave({ name, description, icon, schedule: { type: 'manual' }, steps })
-    setSaving(false); onClose()
+    try {
+      // Strip the FE-only _uid before persisting; pass through the id so the
+      // backend updates in place instead of slugify-on-name (which would orphan
+      // the old script on rename and append a duplicate card on the UI side).
+      const cleanSteps = steps.map(({ _uid, ...rest }) => rest)
+      await onSave({ id: initial?.id, name, description, icon, schedule: { type: 'manual' }, steps: cleanSteps })
+    } finally {
+      setSaving(false)
+      onClose()
+    }
   }
 
   return (
@@ -272,11 +345,27 @@ export function RoutineWizard({ initial, onSave, onClose }) {
           )}
           {wizardStep === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {steps.map((step, i) => <StepRow key={i} step={step} index={i} onChange={v => updateStep(i, v)} onRemove={() => removeStep(i)} collapsed={collapsedSteps.has(i)} onToggleCollapse={() => toggleCollapseStep(i)} />)}
+              {steps.map((step, i) => (
+                <StepRow
+                  key={step._uid}
+                  step={step}
+                  index={i}
+                  onChange={v => updateStep(i, v)}
+                  onRemove={() => removeStep(i)}
+                  collapsed={collapsedUids.has(step._uid)}
+                  onToggleCollapse={() => toggleCollapseStep(step._uid)}
+                  validationError={showErrors ? stepErrors[i] : null}
+                />
+              ))}
               <button onClick={addStep} className="z-btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Add step
               </button>
+              {showErrors && firstInvalidIdx !== -1 && (
+                <p style={{ fontSize: 11.5, color: 'var(--err)', textAlign: 'center', marginTop: 4 }}>
+                  Step {firstInvalidIdx + 1} needs to be completed before saving.
+                </p>
+              )}
             </div>
           )}
           {wizardStep === 2 && (
@@ -305,7 +394,22 @@ export function RoutineWizard({ initial, onSave, onClose }) {
       <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
         {wizardStep > 0 && <button onClick={() => setWizardStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>Back</button>}
         {wizardStep < STEPS_WIZARD.length - 1
-          ? <button onClick={() => setWizardStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>Next</button>
+          ? (
+              <button
+                onClick={() => {
+                  // On Steps page, reveal validation errors if the user tries to
+                  // proceed with an invalid step rather than silently no-op'ing
+                  // a disabled button.
+                  if (wizardStep === 1 && firstInvalidIdx !== -1) { setShowErrors(true); return }
+                  setWizardStep(s => s + 1)
+                }}
+                disabled={!canNext()}
+                className="z-btn-primary"
+                style={{ flex: 1 }}
+              >
+                Next
+              </button>
+            )
           : <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Create routine'}</button>
         }
       </div>
@@ -318,7 +422,9 @@ export function RoutineWizard({ initial, onSave, onClose }) {
 // the left, name + description + meta pills in the middle, right-side icon
 // buttons (Run · View · Edit · Delete). No toggle because routines are always
 // manual-run; no expand-on-click because the View modal now owns that role.
-function RoutineCard({ routine, onView, onEdit, onDelete, onRun }) {
+// React.memo so a parent re-render (WS bumps, sibling state) doesn't drag
+// every row in the list through an unnecessary render.
+const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, onDelete, onRun }) {
   const stepCount = (routine.steps || []).length
   // Use the same tint family AutomationCard uses for the most prominent state
   // (ok/green): routines are "ready, manual, on-demand".
@@ -384,7 +490,7 @@ function RoutineCard({ routine, onView, onEdit, onDelete, onRun }) {
       </div>
     </motion.div>
   )
-}
+})
 
 // ── RoutineViewModal ──────────────────────────────────────────────────────────
 // Read-only view of a routine. Mirrors AutomationViewModal's structure so
@@ -458,7 +564,7 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
  * tab body inside the Automations page.
  */
 export function RoutinesListPanel() {
-  const { routines, loading, fetchRoutines, addRoutine, removeRoutine, runRoutine, loadRoutineConfig } = useAutomationStore()
+  const { routines, loading, fetchRoutines, saveRoutine, removeRoutine, runRoutine, loadRoutineConfig } = useAutomationStore()
   const { addToast } = useUIStore()
   const [showWizard, setShowWizard] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
@@ -468,10 +574,29 @@ export function RoutinesListPanel() {
   // in the store, which flashes skeletons mid-tab-transition and looks jumpy.
   useEffect(() => { if (routines.length === 0) fetchRoutines() }, [])
 
-  const handleSave   = async data => { try { await addRoutine(data); addToast('Routine saved', 'success') } catch { addToast('Failed to save routine', 'error') } }
+  // saveRoutine handles both create AND update (id present = update in place).
+  // Without this, edits would slugify-on-name → orphan the original script
+  // and append a duplicate card to the UI list.
+  const handleSave   = async data => { try { await saveRoutine(data); addToast(data.id ? 'Routine updated' : 'Routine saved', 'success') } catch { addToast('Failed to save routine', 'error') } }
   const handleDelete = async id => { try { await removeRoutine(id); addToast('Deleted', 'success') } catch { addToast('Failed to delete', 'error') } }
-  const handleRun    = async r => { try { await runRoutine(r.id); addToast(`Running "${r.name}"`, 'success') } catch { addToast('Failed to run', 'error') } }
+  // No optimistic "Running…" toast — App.jsx's WS execution_result handler
+  // surfaces the actual outcome (success step count or failure detail). Two
+  // toasts would either be redundant ("Running" + "completed") or contradict
+  // each other ("Running" green then "failed" red).
+  const handleRun    = async r => { try { await runRoutine(r.id) } catch { addToast('Failed to run', 'error') } }
   const handleEdit   = async r => {
+    // If steps are already loaded (view→edit path), open immediately so the
+    // modal transition doesn't visibly break. Otherwise (Edit button on a
+    // list-shape card with steps:[]) fetch first — opening with empty steps
+    // and then remounting on resolve would lose any in-progress edits the
+    // user makes in the first ~200ms.
+    if (Array.isArray(r.steps) && r.steps.length > 0) {
+      setEditTarget(r); setShowWizard(true)
+      // Refresh from server in the background to pick up any out-of-band
+      // changes; safe because we don't remount the wizard.
+      loadRoutineConfig(r.id).catch(() => {})
+      return
+    }
     try { const config = await loadRoutineConfig(r.id); setEditTarget(config || r) } catch { setEditTarget(r) }
     setShowWizard(true)
   }
@@ -527,7 +652,14 @@ export function RoutinesListPanel() {
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Routine details">
         <RoutineViewModal
           routine={viewTarget}
-          onEdit={(r) => { setViewTarget(null); handleEdit(r) }}
+          onEdit={(r) => {
+            // viewTarget already holds the full config (handleView fetched it),
+            // so we can open the wizard in the same tick we close the view —
+            // no await-blank-await race. handleEdit will short-circuit its
+            // fetch since r.steps is populated.
+            setViewTarget(null)
+            handleEdit(r)
+          }}
           onRun={(r) => handleRun(r)}
           onClose={() => setViewTarget(null)}
         />

@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUIStore } from '../stores/uiStore'
-import { useWebSocket } from '../hooks/useWebSocket'
+import { useDeviceStore } from '../stores/deviceStore'
+import { useWsMessages } from '../hooks/useWebSocket'
+import { useT } from '../lib/i18n'
 import {
   getActiveAnomalies, getAnomalyHistory,
   snoozeMapAnomaly, executeAnomalyAction,
@@ -343,6 +345,7 @@ function AnomalyCard({ anomaly, roomId, variant = 'active', onChange }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Anomalies() {
+  const t = useT()
   const { addToast } = useUIStore()
   const [tab,     setTab]     = useState('active')
   const [active,  setActive]  = useState({})   // { room_id: [anomaly, …] }
@@ -352,6 +355,9 @@ export default function Anomalies() {
 
   const [rules, setRules] = useState(null)
   const [engineEnabled, setEngineEnabled] = useState(true)
+  const [exemptions, setExemptions] = useState([])
+  const entities = useDeviceStore(s => s.entities)
+  const { fetch: fetchEntities } = useDeviceStore()
 
   const loadActive = useCallback(async () => {
     try {
@@ -381,6 +387,7 @@ export default function Anomalies() {
       const r = await getAnomalyRules()
       setRules(r.rules ?? [])
       setEngineEnabled(r.engine_enabled ?? true)
+      setExemptions(r.exemptions ?? [])
     } catch {}
   }, [])
 
@@ -393,13 +400,17 @@ export default function Anomalies() {
   }, [tab])
 
   useEffect(() => {
-    if (tab === 'rules') loadRules()
+    if (tab === 'rules') {
+      loadRules()
+      // Need the entity list to render the exemption picker.
+      if (!entities || entities.length === 0) fetchEntities?.()
+    }
   }, [tab])
 
   // Live updates: the engine broadcasts {type:'anomaly_active'|'anomaly_cleared'}
   // on every fire/clear. Refresh whichever tab is open when one arrives.
   // We track the last message ts we've reacted to so re-renders don't re-trigger.
-  const { messages } = useWebSocket()
+  const messages = useWsMessages()
   const lastSeenWsTs = useRef(0)
   useEffect(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -431,6 +442,29 @@ export default function Anomalies() {
     } catch { addToast('Failed to save', 'error') }
   }
 
+  const saveExemptions = async (next) => {
+    setExemptions(next)
+    try {
+      await patchAnomalyRules({ exemptions: next })
+    } catch { addToast('Failed to save', 'error') }
+  }
+
+  // Pool the user can pick from for "Device left on" exemptions — must match
+  // ANOM-06's scope (switch/light/plug). Already-exempt entities are filtered out.
+  const exemptionPool = useMemo(() => {
+    const exempt = new Set(exemptions)
+    return (entities || [])
+      .filter(e => ['switch', 'light'].includes(e.domain) || e.entity_id?.startsWith('plug.'))
+      .filter(e => !exempt.has(e.entity_id))
+      .sort((a, b) => (a.display_name || a.entity_id).localeCompare(b.display_name || b.entity_id))
+  }, [entities, exemptions])
+
+  // Friendly label for a chip — prefer display name, fall back to slug.
+  const entityLabel = useCallback((eid) => {
+    const e = entities?.find(x => x.entity_id === eid)
+    return e?.display_name || e?.friendly_name || eid
+  }, [entities])
+
   // Flatten active anomalies to a list with roomId attached, sorted by severity
   const activeList = Object.entries(active)
     .flatMap(([roomId, items]) => items.map(a => ({ ...a, _roomId: roomId })))
@@ -443,9 +477,9 @@ export default function Anomalies() {
   const warningCount  = activeList.filter(a => a.severity === 'warning').length
 
   const tabs = [
-    { id: 'active',  label: `All · ${activeList.length || 0}` },
-    { id: 'history', label: 'History' },
-    { id: 'rules',   label: 'Rules' },
+    { id: 'active',  label: t('anomaliesPage.tabAll', { n: activeList.length || 0 }) },
+    { id: 'history', label: t('anomaliesPage.tabHistory') },
+    { id: 'rules',   label: t('anomaliesPage.tabRules') },
   ]
 
   return (
@@ -455,16 +489,16 @@ export default function Anomalies() {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>
-            Today{criticalCount + warningCount > 0 ? ` · ${criticalCount + warningCount} need attention` : ''}
+            {t('anomaliesPage.today')}{criticalCount + warningCount > 0 ? t('anomaliesPage.needAttentionCount', { n: criticalCount + warningCount }) : ''}
           </p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Alerts</h1>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('alerts.title')}</h1>
         </div>
         <button
           onClick={() => { loadActive(); if (tab === 'history') loadHistory() }}
           className="z-btn-secondary"
           style={{ padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 500, flexShrink: 0 }}
         >
-          Refresh
+          {t('common.refresh')}
         </button>
       </div>
 
@@ -487,7 +521,9 @@ export default function Anomalies() {
       {/* ── Active tab ── */}
       {tab === 'active' && (
         <>
-          {loading && (
+          {/* Skeleton only on a cold start. Cached anomalies stay visible
+              while a background refresh is in flight. */}
+          {loading && activeList.length === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[1, 2].map(i => (
                 <div key={i} style={{ height: 100, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.5 }} />
@@ -498,21 +534,21 @@ export default function Anomalies() {
           {!loading && activeList.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '52px 16px' }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>All clear</p>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{t('anomaliesPage.allClear')}</p>
               <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>
-                No active anomalies right now. Ziggy is watching.
+                {t('anomaliesPage.allClearHelp')}
               </p>
             </motion.div>
           )}
 
-          {!loading && activeList.length > 0 && (() => {
+          {activeList.length > 0 && (() => {
             const needsAttention = activeList.filter(a => a.severity === 'critical' || a.severity === 'warning')
             const info           = activeList.filter(a => a.severity === 'info')
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {needsAttention.length > 0 && (
                   <>
-                    <p className="z-eyebrow" style={{ marginBottom: 4 }}>Needs attention</p>
+                    <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('anomaliesPage.needsAttention')}</p>
                     <AnimatePresence mode="popLayout">
                       {needsAttention.map(a => (
                         <AnomalyCard
@@ -528,7 +564,7 @@ export default function Anomalies() {
                 )}
                 {info.length > 0 && (
                   <>
-                    <p className="z-eyebrow" style={{ marginBottom: 4, marginTop: needsAttention.length > 0 ? 8 : 0 }}>Earlier today</p>
+                    <p className="z-eyebrow" style={{ marginBottom: 4, marginTop: needsAttention.length > 0 ? 8 : 0 }}>{t('anomaliesPage.earlierToday')}</p>
                     <AnimatePresence mode="popLayout">
                       {info.map(a => (
                         <AnomalyCard
@@ -561,9 +597,9 @@ export default function Anomalies() {
 
           {!histLoading && history.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '52px 16px' }}>
-              <p className="z-eyebrow">No history yet</p>
+              <p className="z-eyebrow">{t('anomaliesPage.noHistory')}</p>
               <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 8 }}>
-                Anomaly events will appear here as they are detected.
+                {t('anomaliesPage.noHistoryHelp')}
               </p>
             </motion.div>
           )}
@@ -659,6 +695,68 @@ export default function Anomalies() {
                     </div>
                   )
                 })}
+              </div>
+
+              {/* ── Exemptions for "Device left on" (ANOM-06) ──
+                  Without this, fridges, routers, NAS plugs etc. trigger
+                  warnings as soon as their on-time exceeds the threshold.
+                  Editing happens here, persisted under
+                  anomaly_engine.exemptions in settings.yaml. */}
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: '12px 16px' }}>
+                <div style={{ marginBottom: 10 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Always-on devices</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
+                    Fridges, routers, NAS — devices that are supposed to stay on. Excluded from "Device left on" alerts.
+                  </p>
+                </div>
+
+                {exemptions.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {exemptions.map(eid => (
+                      <span key={eid} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        fontSize: 11, color: 'var(--ink-2)',
+                        padding: '4px 8px 4px 10px', borderRadius: 999,
+                        background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+                      }}>
+                        {entityLabel(eid)}
+                        <button
+                          aria-label={`Remove ${eid}`}
+                          onClick={() => saveExemptions(exemptions.filter(x => x !== eid))}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            padding: 0, color: 'var(--ink-faint)', fontSize: 14,
+                            lineHeight: 1, fontFamily: 'inherit',
+                          }}
+                        >×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <select
+                  value=""
+                  onChange={e => {
+                    const eid = e.target.value
+                    if (eid && !exemptions.includes(eid)) {
+                      saveExemptions([...exemptions, eid].sort())
+                    }
+                  }}
+                  className="z-input"
+                  style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12 }}
+                >
+                  <option value="">+ Add exemption…</option>
+                  {exemptionPool.map(e => (
+                    <option key={e.entity_id} value={e.entity_id}>
+                      {e.display_name || e.friendly_name || e.entity_id} · {e.entity_id}
+                    </option>
+                  ))}
+                </select>
+                {exemptionPool.length === 0 && exemptions.length === 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6 }}>
+                    No eligible switches or lights found.
+                  </p>
+                )}
               </div>
             </div>
           )}

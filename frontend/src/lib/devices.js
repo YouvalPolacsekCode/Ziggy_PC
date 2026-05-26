@@ -13,7 +13,7 @@
  * NOT the HA domain. This is what every renderer should switch on.
  */
 
-import { callHaService, irSend, irSendChannel, controlDevice } from './api'
+import { callHaService, irSend, irSendChannel, irSetAcTemperature, irRunSequence, controlDevice } from './api'
 import { DOMAIN_REGISTRY } from './domainRegistry'
 import { lightRgb } from './utils'
 
@@ -30,6 +30,7 @@ export const KIND = {
   PLUG:         'plug',
   TV:           'tv',
   SOUNDBAR:     'soundbar',
+  RECEIVER:     'receiver',
   PROJECTOR:    'projector',
   AC:           'ac',
   FAN:          'fan',
@@ -57,37 +58,53 @@ export const KIND = {
   UNKNOWN:      'unknown',
 }
 
+// Icon design notes (KEEP THIS NEXT TO THE TABLE):
+//
+//   - Every kind needs an icon that's visually distinct from its neighbours
+//     in a dense grid. `switch` and `plug` used to share 🔌 — you couldn't
+//     tell a wall switch from a smart plug in a room view. `humidifier`,
+//     `leak`, and `humidity` all used water-blue glyphs and merged into a
+//     single blob. Cleaned up below.
+//
+//   - Reserved emoji (don't use here, they collide with app chrome):
+//       ⚡  — Routines default + Quick Asks
+//       ✦   — Pinned shortcuts default
+//       ⚙️  — Settings menu
+//       🏠  — Sidebar Home + room photos fallback
+//     `power_meter` lost ⚡ because the activity feed mixes routine fires
+//     with sensor entries and they read as the same thing.
 const KIND_META = {
   light:        { label: 'Light',      tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '💡' },
-  switch:       { label: 'Switch',     tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },
+  switch:       { label: 'Switch',     tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🎛️' },
   plug:         { label: 'Plug',       tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },
   tv:           { label: 'TV',         tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📺' },
   soundbar:     { label: 'Soundbar',   tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🔊' },
+  receiver:     { label: 'Receiver',   tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🎚️' },
   projector:    { label: 'Projector',  tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📽️' },
   ac:           { label: 'AC',         tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '❄️' },
   fan:          { label: 'Fan',        tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '💨' },
   cover:        { label: 'Blind',      tint: 'var(--ink-mute)', group: 'cover',  toggle: false, controllable: true,  icon: '🪟' },
   lock:         { label: 'Lock',       tint: 'var(--warn)',   group: 'security', toggle: false, controllable: true,  icon: '🔒' },
-  alarm:        { label: 'Alarm',      tint: 'var(--err)',    group: 'security', toggle: false, controllable: true,  icon: '🚨' },
+  alarm:        { label: 'Alarm',      tint: 'var(--err)',    group: 'security', toggle: false, controllable: true,  icon: '🛡️' },
   vacuum:       { label: 'Vacuum',     tint: 'var(--ink-mute)', group: 'other',  toggle: false, controllable: true,  icon: '🤖' },
   humidifier:   { label: 'Humidifier', tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '💧' },
   water_heater: { label: 'Heater',     tint: 'var(--err)',    group: 'water',    toggle: true,  controllable: true,  icon: '🔥' },
   valve:        { label: 'Valve',      tint: 'var(--info)',   group: 'water',    toggle: false, controllable: true,  icon: '🚰' },
   lawn_mower:   { label: 'Mower',      tint: 'var(--ok)',     group: 'other',    toggle: false, controllable: true,  icon: '🌿' },
   camera:       { label: 'Camera',     tint: 'var(--info)',   group: 'security', toggle: false, controllable: false, icon: '📷' },
-  sensor:       { label: 'Sensor',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '📊' },
+  sensor:       { label: 'Sensor',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '📡' },
   motion:       { label: 'Motion',     tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '🚶' },
   door:         { label: 'Door',       tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '🚪' },
   window:       { label: 'Window',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '🪟' },
-  leak:         { label: 'Leak',       tint: 'var(--err)',    group: 'sensors',  toggle: false, controllable: false, icon: '💦' },
-  occupancy:    { label: 'Presence',   tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '🏠' },
+  leak:         { label: 'Leak',       tint: 'var(--err)',    group: 'sensors',  toggle: false, controllable: false, icon: '🚱' },
+  occupancy:    { label: 'Presence',   tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '👥' },
   smoke:        { label: 'Smoke',      tint: 'var(--err)',    group: 'sensors',  toggle: false, controllable: false, icon: '🚨' },
   temperature:  { label: 'Temp',       tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '🌡️' },
   humidity:     { label: 'Humidity',   tint: 'var(--info)',   group: 'sensors',  toggle: false, controllable: false, icon: '💧' },
-  power_meter:  { label: 'Power',      tint: 'var(--warn)',   group: 'sensors',  toggle: false, controllable: false, icon: '⚡' },
-  binary:       { label: 'Binary',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '🔍' },
+  power_meter:  { label: 'Power',      tint: 'var(--warn)',   group: 'sensors',  toggle: false, controllable: false, icon: '🔋' },
+  binary:       { label: 'Binary',     tint: 'var(--ink-mute)', group: 'sensors',toggle: false, controllable: false, icon: '⚪' },
   person:       { label: 'Person',     tint: 'var(--info)',   group: 'other',    toggle: false, controllable: false, icon: '👤' },
-  unknown:      { label: 'Device',     tint: 'var(--ink-mute)', group: 'other',  toggle: false, controllable: false, icon: '⚙️' },
+  unknown:      { label: 'Device',     tint: 'var(--ink-mute)', group: 'other',  toggle: false, controllable: false, icon: '📦' },
 }
 
 export function kindMeta(kind) { return KIND_META[kind] || KIND_META.unknown }
@@ -97,6 +114,7 @@ export function kindMeta(kind) { return KIND_META[kind] || KIND_META.unknown }
 const IR_TYPE_TO_KIND = {
   tv:        KIND.TV,
   soundbar:  KIND.SOUNDBAR,
+  receiver:  KIND.RECEIVER,
   projector: KIND.PROJECTOR,
   ac:        KIND.AC,
   fan:       KIND.FAN,
@@ -126,12 +144,92 @@ const SENSOR_CLASS_TO_KIND = {
   illuminance: KIND.SENSOR,
 }
 
+// Vendor heuristic: Switcher Touch / Heater / V2-V4 boiler models register
+// as `switch.*` entities in HA but are functionally boilers with a timer
+// affordance. Route them to KIND.WATER_HEATER so BoilerRemote (with timer
+// presets) and the 🔥 icon render instead of the generic SwitchRemote + 🔌.
+//
+// Previously only matched `switch.switcher_touch*` / `switch.switcher_heater*`
+// by entity_id prefix — anyone who renamed their entity in HA (or owns a
+// boiler-flavoured Switcher model with a different default ID) saw it
+// classified as a plain switch, with mismatched icons between the Devices
+// list (🔌) and the detail page (🔥).
+//
+// Now also matches:
+//   - other Switcher boiler models by entity_id (v2/v4 water-heater variants)
+//   - friendly_name keywords (boiler / water heater / geyser, EN + Hebrew)
+// Switcher product names that explicitly mean "boiler/water heater" — used as
+// keywords in BOTH entity_id slugs and friendly names. Mini Plug / Power Plug
+// / Breeze (AC) / Runner (blinds) are intentionally NOT here.
+const _SWITCHER_BOILER_KEYWORDS = [
+  'switcher_touch', 'switcher_heater', 'switcher_water',
+  'switcher_v2', 'switcher_v4',
+  'switcher touch', 'switcher heater', 'switcher water', 'switcher v2', 'switcher v4',
+]
+const _SWITCHER_NON_BOILER_KEYWORDS = [
+  'switcher_mini', 'switcher_power_plug', 'switcher_breeze', 'switcher_runner',
+  'switcher mini', 'switcher power plug', 'switcher breeze', 'switcher runner',
+]
+
+function _matchesAny(haystack, needles) {
+  for (const n of needles) {
+    if (haystack.includes(n)) return true
+  }
+  return false
+}
+
+function _isWaterHeaterEntity(entity) {
+  const eid  = (entity?.entity_id || '').toLowerCase()
+  // Pull every plausible name source — backend enrichment doesn't always
+  // populate friendly_name (especially when Ziggy has a custom display name
+  // or when HA exposes the entity without a friendly_name attribute).
+  const name = [
+    entity?.friendly_name,
+    entity?.display_name,
+    entity?.name,
+    entity?.attributes?.friendly_name,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (!eid.startsWith('switch.')) return false
+
+  // Combine both signals into one haystack — covers entity_ids that were
+  // slugged from the HA device name (where the boiler keyword ends up in
+  // the slug) AND entities whose ID is a generic `switch.switcher_kis_*`
+  // but whose friendly_name carries the product line.
+  const haystack = `${eid} ${name}`
+
+  // Disqualify known non-boiler Switcher models first so a "Switcher Mini"
+  // smart plug doesn't get the boiler icon.
+  if (_matchesAny(haystack, _SWITCHER_NON_BOILER_KEYWORDS)) return false
+
+  // Positive matches — explicit boiler product lines.
+  if (_matchesAny(haystack, _SWITCHER_BOILER_KEYWORDS)) return true
+
+  // Generic keywords (any vendor, any switch entity).
+  if (/\b(boiler|water[\s_-]?heater|geyser|water boiler)\b/.test(name)) return true
+  // Hebrew (Israeli market — primary Switcher install base). דוד = boiler.
+  if (name.includes('דוד') || name.includes('מחמם מים')) return true
+
+  // Last-resort fallback: a generic Switcher entity (`switcher_kis_*` etc.)
+  // with no further hints — Switcher's flagship product in the Israeli
+  // market IS the boiler, so default to water_heater rather than plain switch.
+  // The non-boiler keyword list above already excluded Mini Plug / Power
+  // Plug / Breeze AC / Runner.
+  if (haystack.includes('switcher')) return true
+
+  return false
+}
+
 export function getKind(entity) {
   if (!entity) return KIND.UNKNOWN
   if (entity._ir && entity._irDevice) {
     return IR_TYPE_TO_KIND[entity._irDevice.type] || KIND.SWITCH
   }
-  const domain = entity.domain || entity.entity_id?.split('.')[0]
+  if (_isWaterHeaterEntity(entity)) {
+    return KIND.WATER_HEATER
+  }
+  const eid = entity.entity_id || ''
+  const domain = entity.domain || eid.split('.')[0]
   switch (domain) {
     case 'light':               return KIND.LIGHT
     case 'switch':              return KIND.SWITCH
@@ -248,6 +346,117 @@ function linkedIrHasCommand(entity, cmd) {
   if (!ir) return false
   const learned = new Set(ir.learned_commands || [])
   return learned.has(cmd)
+}
+
+/**
+ * Strict check — has this exact raw IR command name been learned on this
+ * entity (pure-IR OR linked IR)?
+ *
+ * Different from `commandAvailable`, which resolves a logical command
+ * through IR_COMMAND_MAP and accepts any of the candidates as "available".
+ * Use this when you need to know whether a specific code is learned —
+ * e.g. should the discrete "Turn on" button render alongside the toggle.
+ */
+export function irLearned(entity, irCommandName) {
+  if (!entity || !irCommandName) return false
+  if (irHasCommand(entity, irCommandName)) return true
+  if (linkedIrHasCommand(entity, irCommandName)) return true
+  return false
+}
+
+/**
+ * Return the user-defined custom commands on a device (or its linked IR),
+ * in display order. Used by remotes to render the Extras chip row.
+ */
+export function customIrCommands(entity) {
+  const ir = entity?._irDevice || entity?._linkedIr
+  if (!ir) return []
+  const list = Array.isArray(ir.custom_commands) ? ir.custom_commands : []
+  return list.map((c) => ({
+    id: c.id,
+    label: c.label || (c.id || '').replace(/_/g, ' ').replace(/^\w/, (s) => s.toUpperCase()),
+    learned: (ir.learned_commands || []).includes(c.id),
+  }))
+}
+
+/**
+ * Return the user-defined sequences (macros) on a device, as
+ * { name, steps[] } objects. Used by remotes to render macro chips.
+ */
+export function irSequences(entity) {
+  const ir = entity?._irDevice || entity?._linkedIr
+  if (!ir || !ir.sequences) return []
+  return Object.entries(ir.sequences).map(([name, steps]) => ({
+    name,
+    label: name.replace(/_/g, ' ').replace(/^\w/, (s) => s.toUpperCase()),
+    steps: Array.isArray(steps) ? steps : [],
+  }))
+}
+
+/**
+ * Learned IR commands NOT already represented by a built-in remote control.
+ * Pass `consumeSet` — the Set of raw IR command names the remote renders
+ * natively (e.g. for ACRemote: power, mode_*, fan_*, swing_*, temp_*).
+ * Returned entries use the custom_commands label if defined, else a
+ * humanised version of the id. The remote shows these as an Extras chip row.
+ */
+export function extrasForRemote(entity, consumeSet) {
+  const ir = entity?._irDevice || entity?._linkedIr
+  if (!ir) return []
+  const customLabels = {}
+  for (const c of (ir.custom_commands || [])) customLabels[c.id] = c.label || c.id
+  return (ir.learned_commands || [])
+    .filter((c) => !consumeSet.has(c))
+    .map((id) => ({
+      id,
+      label: customLabels[id] || id.replace(/_/g, ' ').replace(/^\w/, (s) => s.toUpperCase()),
+    }))
+}
+
+/**
+ * Is a logical command dispatchable on this entity right now?
+ *
+ *   - HA entity:           true if the entity is available (no IR codes needed).
+ *   - Pure IR / linked IR: true only if the underlying raw IR command has been
+ *                          learned. Used to grey out buttons whose code is missing.
+ *
+ * For commands whose IR mapping varies by params (set_hvac_mode/cool vs
+ * /heat, set_fan_mode/low vs /high…), pass the relevant params so the
+ * right raw command is checked.
+ */
+export function commandAvailable(entity, command, params = {}) {
+  if (!entity) return false
+  if (entity.state === 'unavailable') return false
+  const kind = getKind(entity)
+  const isIr = !!entity._ir
+
+  // Toggle expands to power_on / power_off — both use the same IR `power` code
+  // in practice, so check that one if learned.
+  const probe = command === 'toggle' ? 'power_on' : command
+
+  // HA path: always available unless we've ruled it out above.
+  if (!isIr) {
+    // If HA can't natively serve it but a linked IR provides the fallback,
+    // require the linked IR command to be learned.
+    const domain = entity.domain || entity.entity_id?.split('.')[0]
+    const haSpec = HA_SERVICE_BY_DOMAIN[domain]?.[probe]
+    if (haSpec) return true
+    // Special HA computed paths (e.g. temp_up/temp_down on climate) — these
+    // always work as long as HA reports a target temp.
+    if ((probe === 'temp_up' || probe === 'temp_down') && kind === KIND.AC) return true
+    // Fall through to linked-IR check below.
+    if (entity._linkedIr) {
+      const candidates = resolveIrCommandName(kind, probe, params)
+      if (!candidates) return false
+      return candidates.some((c) => linkedIrHasCommand(entity, c))
+    }
+    return false
+  }
+
+  // Pure IR path.
+  const candidates = resolveIrCommandName(kind, probe, params)
+  if (!candidates) return false
+  return candidates.some((c) => irHasCommand(entity, c))
 }
 
 /**
@@ -470,6 +679,9 @@ export function deviceFacts(entity) {
   const labelFn = KIND_STATE_LABEL[kind] || KIND_STATE_LABEL.unknown
   const isOnState = isOn(entity)
   return {
+    // Reference to the original entity — so downstream components can call
+    // commandAvailable(facts.entity, ...) without re-threading the prop.
+    entity,
     id:           entity.entity_id,
     irId:         linkedIr?.id || null,
     name:         entity.display_name || entity.friendly_name || (entity.entity_id || '').split('.')[1]?.replace(/_/g, ' ') || 'Device',
@@ -584,6 +796,7 @@ const HA_SERVICE_BY_DOMAIN = {
     next_track:     { service: 'media_next_track', data: () => ({}) },
     prev_track:     { service: 'media_previous_track', data: () => ({}) },
     set_volume:     { service: 'volume_set',       data: (p) => ({ volume_level: p.value / 100 }) },
+    media_seek:     { service: 'media_seek',       data: (p) => ({ seek_position: p.position }) },
     volume_up:      { service: 'volume_up',        data: () => ({}) },
     volume_down:    { service: 'volume_down',      data: () => ({}) },
     mute_toggle:    { service: 'volume_mute',      data: (p) => ({ is_volume_muted: p.muted }) },
@@ -631,15 +844,19 @@ const HA_SERVICE_BY_DOMAIN = {
   },
 }
 
-// IR command vocabulary for each kind. Maps logical `command` → IR command
-// name(s) to try in order. The first one the device has learned wins.
+// IR command vocabulary for each kind. Maps logical `command` → list of IR
+// command names to try in order. The first one the device has learned wins.
+//
+// Discrete power_on/power_off list themselves FIRST so a learned discrete
+// code wins over the toggle. Falls back to 'power' (toggle) when the
+// discrete code isn't learned — handles both common remote types.
 const IR_COMMAND_MAP = {
   ac: {
-    power_on:  ['power'],
-    power_off: ['power'],
+    power_on:  ['power_on', 'power'],
+    power_off: ['power_off', 'power'],
     toggle:    ['power'],
-    temp_up:   ['temperature_up', 'temp_up'],
-    temp_down: ['temperature_down', 'temp_down'],
+    temp_up:   ['temp_up', 'temperature_up'],
+    temp_down: ['temp_down', 'temperature_down'],
     set_hvac_mode: {
       cool:     ['mode_cool'],
       heat:     ['mode_heat'],
@@ -652,15 +869,18 @@ const IR_COMMAND_MAP = {
       medium: ['fan_medium'],
       high:   ['fan_high'],
       auto:   ['fan_auto'],
+      turbo:  ['fan_turbo'],
     },
     set_swing_mode: {
-      on:  ['swing_on'],
-      off: ['swing_off'],
+      on:         ['swing_on'],
+      off:        ['swing_off'],
+      vertical:   ['swing_vertical'],
+      horizontal: ['swing_horizontal'],
     },
   },
   tv: {
-    power_on:    ['power'],
-    power_off:   ['power'],
+    power_on:    ['power_on', 'power'],
+    power_off:   ['power_off', 'power'],
     toggle:      ['power'],
     volume_up:   ['volume_up'],
     volume_down: ['volume_down'],
@@ -673,6 +893,9 @@ const IR_COMMAND_MAP = {
     stop:        ['stop'],
     next_track:  ['next', 'next_track'],
     prev_track:  ['previous', 'prev_track'],
+    rewind:      ['rewind'],
+    fast_forward:['fast_forward'],
+    record:      ['record'],
     nav_up:      ['nav_up'],
     nav_down:    ['nav_down'],
     nav_left:    ['nav_left'],
@@ -681,10 +904,14 @@ const IR_COMMAND_MAP = {
     back:        ['back'],
     home:        ['home'],
     menu:        ['menu'],
+    exit:        ['exit'],
+    info:        ['info'],
+    settings:    ['settings'],
+    guide:       ['guide'],
   },
   soundbar: {
-    power_on:    ['power'],
-    power_off:   ['power'],
+    power_on:    ['power_on', 'power'],
+    power_off:   ['power_off', 'power'],
     toggle:      ['power'],
     volume_up:   ['volume_up'],
     volume_down: ['volume_down'],
@@ -692,16 +919,39 @@ const IR_COMMAND_MAP = {
     next_track:  ['next'],
     prev_track:  ['previous'],
   },
-  projector: {
-    power_on:    ['power'],
-    power_off:   ['power'],
+  receiver: {
+    power_on:    ['power_on', 'power'],
+    power_off:   ['power_off', 'power'],
     toggle:      ['power'],
+    volume_up:   ['volume_up'],
+    volume_down: ['volume_down'],
+    mute_toggle: ['mute'],
+    nav_up:      ['nav_up'],
+    nav_down:    ['nav_down'],
+    nav_left:    ['nav_left'],
+    nav_right:   ['nav_right'],
+    nav_ok:      ['nav_ok'],
+    back:        ['back'],
+    menu:        ['menu'],
+    info:        ['info'],
+  },
+  projector: {
+    power_on:    ['power_on', 'power'],
+    power_off:   ['power_off', 'power'],
+    toggle:      ['power'],
+    nav_up:      ['nav_up'],
+    nav_down:    ['nav_down'],
+    nav_left:    ['nav_left'],
+    nav_right:   ['nav_right'],
+    nav_ok:      ['nav_ok'],
+    back:        ['back'],
+    menu:        ['menu'],
   },
   fan: {
-    power_on:    ['power'],
-    power_off:   ['power'],
+    power_on:    ['power_on', 'power'],
+    power_off:   ['power_off', 'power'],
     toggle:      ['power'],
-    speed_step:  ['speed_step'],
+    speed_step:  ['speed_up', 'speed_step'],
     set_speed_preset: {
       low:    ['speed_low'],
       medium: ['speed_medium'],
@@ -709,8 +959,8 @@ const IR_COMMAND_MAP = {
     },
   },
   switch: {
-    power_on:  ['power'],
-    power_off: ['power'],
+    power_on:  ['power_on', 'power'],
+    power_off: ['power_off', 'power'],
     toggle:    ['power'],
   },
 }
@@ -760,9 +1010,40 @@ export async function sendDeviceCommand(entity, command, params = {}) {
     return irSendChannel(ir.id, params.channel)
   }
 
+  // Run a named macro sequence (e.g. "netflix"). IR-only feature.
+  if (command === 'run_sequence') {
+    const ir = isIr ? entity._irDevice : linked
+    if (!ir) throw new Error('Sequences require an IR device')
+    return irRunSequence(ir.id, params.name)
+  }
+
+  // Fire a specific learned IR code by name. Used by remotes to render the
+  // Extras row of custom user-defined commands; bypasses IR_COMMAND_MAP.
+  if (command === 'ir_raw') {
+    const ir = isIr ? entity._irDevice : linked
+    if (!ir) throw new Error('Custom commands require an IR device')
+    return irSend(ir.id, params.name)
+  }
+
+  // Normalize HA-flavored aliases to Ziggy's canonical command vocabulary so
+  // every caller (curated remotes, dynamic UI, automation paths) reaches the
+  // same dispatch. Without this, `sendDeviceCommand(entity, 'turn_on')` from
+  // any new component throws "HA domain X doesn't support command turn_on"
+  // since HA_SERVICE_BY_DOMAIN keys on `power_on`/`power_off` only.
+  if (command === 'turn_on')  command = 'power_on'
+  if (command === 'turn_off') command = 'power_off'
+
   // Toggle expands to power_on or power_off based on current state
   if (command === 'toggle') {
     command = isOn(entity) ? 'power_off' : 'power_on'
+  }
+
+  // IR AC set_temp — backend picks discrete vs step path based on what the
+  // user has learned (temp_<N> vs temp_up/temp_down).
+  if (command === 'set_temp' && isIr && kind === KIND.AC) {
+    const ir = entity._irDevice
+    if (!ir) throw new Error('Temperature requires an IR device')
+    return irSetAcTemperature(ir.id, Math.round(params.value), params.mode)
   }
 
   // HA climate has no native temp_up/temp_down — compute next target from
@@ -812,10 +1093,12 @@ export async function sendDeviceCommand(entity, command, params = {}) {
     const map    = HA_SERVICE_BY_DOMAIN[domain]
     const spec   = map?.[command]
     if (spec) {
-      // Power on/off → use controlDevice for pattern-logged on/off (only for
-      // toggleable kinds where 'turn_on'/'turn_off' is the canonical action)
-      if ((command === 'power_on' || command === 'power_off') &&
-          (kind === KIND.LIGHT || kind === KIND.SWITCH || kind === KIND.PLUG)) {
+      // Power on/off → use controlDevice. That endpoint is fire-and-forget
+      // + optimistic WS broadcast, so the store updates immediately and
+      // every device card / remote across the app reflects the new state
+      // without waiting for HA's 1-3s ack on Wi-Fi devices (Switcher etc.).
+      // Pattern logging happens in the background task on the backend.
+      if (command === 'power_on' || command === 'power_off') {
         return controlDevice(entity.entity_id, command === 'power_on' ? 'turn_on' : 'turn_off', 'ui')
       }
       const data = { entity_id: entity.entity_id, ...spec.data(params) }
@@ -857,6 +1140,40 @@ const KIND_PRIORITY = {
 }
 
 export function kindSortKey(kind) { return KIND_PRIORITY[kind] || 99 }
+
+// ─── Room sensor lookup ─────────────────────────────────────────────────────
+//
+// Find a sensor reading (by device_class) within a room's device list.
+// Falls back to a sibling reading absorbed into a multi-entity device's
+// `_group.metrics` — without this, a multi-sensor node (Roni Room Sensor:
+// temp + humidity + battery) loses its humidity chip on the room tile
+// because grouping collapsed humidity into a metric pill on the temperature
+// primary. The return shape is compatible with the existing callers that
+// read `.state`, `.unit_of_measurement`, or `.attributes.unit_of_measurement`.
+const _BAD_SENSOR_STATES = new Set(['unavailable', 'unknown', null, undefined])
+export function findRoomMetric(roomDevices, deviceClass, entityMap) {
+  if (!Array.isArray(roomDevices)) return null
+  // 1. A full entity in the room whose own device_class matches.
+  for (const d of roomDevices) {
+    const e = entityMap?.[d.entity_id]
+    if (e && e.device_class === deviceClass && !_BAD_SENSOR_STATES.has(e.state)) {
+      return e
+    }
+    // Some surfaces pass spread-shape rows (entity_id, state, domain, device_class,
+    // …) without going through entityMap. Fall back to the row itself.
+    if (!e && d.device_class === deviceClass && !_BAD_SENSOR_STATES.has(d.state)) {
+      return d
+    }
+  }
+  // 2. A metric pill on any group in the room — sibling that grouping absorbed.
+  for (const d of roomDevices) {
+    const m = (d._group?.metrics || []).find((p) => p.device_class === deviceClass)
+    if (m && !_BAD_SENSOR_STATES.has(m.state)) {
+      return { state: m.state, unit_of_measurement: m.unit, device_class: deviceClass }
+    }
+  }
+  return null
+}
 
 // Sort an entity list by kind, then by name within kind.
 export function sortByKind(entities) {

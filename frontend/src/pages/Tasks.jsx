@@ -6,6 +6,7 @@ import { Select } from '../components/ui/Select'
 import { useTaskStore } from '../stores/taskStore'
 import { useUIStore } from '../stores/uiStore'
 import { formatDate, isHebrew } from '../lib/utils'
+import { useT } from '../lib/i18n'
 
 const PRIORITY_COLOR = { high: 'var(--accent)', medium: 'var(--warn)', low: 'var(--line-2)' }
 
@@ -185,6 +186,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
 
 // ── Task form (shared by add + edit) ─────────────────────────────────────────
 function TaskForm({ values, onChange }) {
+  const t = useT()
   const { taskText, description, due, priority, itemInput, items } = values
   const addItem = () => {
     const text = itemInput.trim()
@@ -196,24 +198,24 @@ function TaskForm({ values, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Input label="Task" placeholder="What needs to be done?" value={taskText} onChange={e => onChange({ taskText: e.target.value })} dir="auto" autoFocus onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
-      <Textarea label="Description (optional)" placeholder="Add details or notes…" value={description} onChange={e => onChange({ description: e.target.value })} dir="auto" rows={2} />
-      <Input label="Due date (optional)" type="datetime-local" value={due} onChange={e => onChange({ due: e.target.value })} />
-      <Select label="Priority" value={priority} onChange={e => onChange({ priority: e.target.value })} options={[{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }]} />
+      <Input label={t('tasks.taskLabel')} placeholder={t('tasks.taskPlaceholder')} value={taskText} onChange={e => onChange({ taskText: e.target.value })} dir="auto" autoFocus onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
+      <Textarea label={t('tasks.descriptionLabel')} placeholder={t('tasks.descriptionPlaceholder')} value={description} onChange={e => onChange({ description: e.target.value })} dir="auto" rows={2} />
+      <Input label={t('tasks.dueDateOptional')} type="datetime-local" value={due} onChange={e => onChange({ due: e.target.value })} />
+      <Select label={t('tasks.priorityLabel')} value={priority} onChange={e => onChange({ priority: e.target.value })} options={[{ value: 'high', label: t('tasks.priorityHigh') }, { value: 'medium', label: t('tasks.priorityMedium') }, { value: 'low', label: t('tasks.priorityLow') }]} />
 
       <div>
-        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Checklist items</p>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>{t('tasks.checklistItems')}</p>
         <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
           <input
             value={itemInput}
             onChange={e => onChange({ itemInput: e.target.value })}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
-            placeholder="Add an item…"
+            placeholder={t('tasks.addItemPlaceholder')}
             dir="auto"
             className="z-input"
             style={{ height: 36, padding: '0 12px', fontSize: 13 }}
           />
-          <button onClick={addItem} className="z-btn-secondary" style={{ padding: '0 14px', borderRadius: 9, height: 36, whiteSpace: 'nowrap' }}>Add</button>
+          <button onClick={addItem} className="z-btn-secondary" style={{ padding: '0 14px', borderRadius: 9, height: 36, whiteSpace: 'nowrap' }}>{t('tasks.addBtn')}</button>
         </div>
         {items.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
@@ -237,6 +239,7 @@ function TaskForm({ values, onChange }) {
 
 // ── Add modal ─────────────────────────────────────────────────────────────────
 function AddTaskModal({ open, onClose, onAdd }) {
+  const t = useT()
   const [vals, setVals] = useState({ taskText: '', description: '', due: '', priority: 'medium', itemInput: '', items: [] })
   const [saving, setSaving] = useState(false)
   const change = (p) => setVals(v => ({ ...v, ...p }))
@@ -248,10 +251,10 @@ function AddTaskModal({ open, onClose, onAdd }) {
     setSaving(false); reset(); onClose()
   }
   return (
-    <Modal open={open} onClose={() => { reset(); onClose() }} title="New Task">
+    <Modal open={open} onClose={() => { reset(); onClose() }} title={t('tasks.newTaskTitle')}>
       <TaskForm values={vals} onChange={change} />
       <button className="z-btn-primary" onClick={handle} disabled={!vals.taskText.trim() || saving} style={{ width: '100%', marginTop: 16 }}>
-        {saving ? 'Adding…' : 'Add task'}
+        {saving ? t('tasks.adding') : t('tasks.add')}
       </button>
     </Modal>
   )
@@ -259,6 +262,7 @@ function AddTaskModal({ open, onClose, onAdd }) {
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
 function EditTaskModal({ open, onClose, onSave, task }) {
+  const t = useT()
   const [vals, setVals] = useState({ taskText: '', description: '', due: '', priority: 'medium', itemInput: '', items: [] })
   const [saving, setSaving] = useState(false)
   const change = (p) => setVals(v => ({ ...v, ...p }))
@@ -272,10 +276,10 @@ function EditTaskModal({ open, onClose, onSave, task }) {
     setSaving(false); onClose()
   }
   return (
-    <Modal open={open} onClose={onClose} title="Edit Task">
+    <Modal open={open} onClose={onClose} title={t('tasks.editTaskTitle')}>
       <TaskForm values={vals} onChange={change} />
       <button className="z-btn-primary" onClick={handle} disabled={!vals.taskText.trim() || saving} style={{ width: '100%', marginTop: 16 }}>
-        {saving ? 'Saving…' : 'Save changes'}
+        {saving ? t('tasks.savingShort') : t('tasks.saveChanges')}
       </button>
     </Modal>
   )
@@ -301,27 +305,28 @@ function TaskGroup({ label, count, tint, tasks, ...rowProps }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-const FILTERS = [
-  { id: 'pending', label: 'Pending' },
-  { id: 'all',     label: 'All' },
-  { id: 'high',    label: 'High priority' },
-  { id: 'done',    label: 'Done' },
-]
-
 export default function Tasks() {
+  const t = useT()
   const { tasks, loading, fetch, add, update, remove } = useTaskStore()
   const { addToast } = useUIStore()
   const [filter,   setFilter]   = useState('pending')
   const [showAdd,  setShowAdd]  = useState(false)
   const [editTask, setEditTask] = useState(null)
 
+  const FILTERS = [
+    { id: 'pending', label: t('tasks.filterPending') },
+    { id: 'all',     label: t('tasks.filterAll') },
+    { id: 'high',    label: t('tasks.filterHigh') },
+    { id: 'done',    label: t('tasks.filterDone') },
+  ]
+
   useEffect(() => { fetch() }, [])
 
-  const handleToggle      = async (task) => { try { await update(task.id, { done: !(task.done || task.completed) }) } catch { addToast('Failed to update task', 'error') } }
-  const handleUpdateItems = async (id, items) => { try { await update(id, { items }) } catch { addToast('Failed to update', 'error') } }
-  const handleDelete      = async (id) => { try { await remove(id); addToast('Task deleted', 'success') } catch { addToast('Failed to delete', 'error') } }
-  const handleAdd         = async (data) => { try { await add(data); addToast('Task added', 'success') } catch { addToast('Failed to add task', 'error') } }
-  const handleEdit        = async (id, data) => { try { await update(id, data); addToast('Task updated', 'success'); setEditTask(null) } catch { addToast('Failed to update task', 'error') } }
+  const handleToggle      = async (task) => { try { await update(task.id, { done: !(task.done || task.completed) }) } catch { addToast(t('tasks.failedToUpdate'), 'error') } }
+  const handleUpdateItems = async (id, items) => { try { await update(id, { items }) } catch { addToast(t('tasks.failedToUpdateShort'), 'error') } }
+  const handleDelete      = async (id) => { try { await remove(id); addToast(t('tasks.taskDeleted'), 'success') } catch { addToast(t('tasks.failedToDeleteShort'), 'error') } }
+  const handleAdd         = async (data) => { try { await add(data); addToast(t('tasks.taskAdded'), 'success') } catch { addToast(t('tasks.failedToAddShort'), 'error') } }
+  const handleEdit        = async (id, data) => { try { await update(id, data); addToast(t('tasks.taskUpdated'), 'success'); setEditTask(null) } catch { addToast(t('tasks.failedToUpdate'), 'error') } }
 
   const now = new Date()
   const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999)
@@ -354,12 +359,12 @@ export default function Tasks() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Tasks</p>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('tasks.eyebrow')}</p>
           <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>
-            {pendingCount > 0 ? `${pendingCount} pending` : 'All clear'}
+            {pendingCount > 0 ? t('tasks.pendingHeader', { n: pendingCount }) : t('tasks.allClear')}
           </h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
-            {tasks.length} total
+            {t('tasks.totalCount', { n: tasks.length })}
           </p>
         </div>
         <button
@@ -368,7 +373,7 @@ export default function Tasks() {
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10 }}
         >
           <ZIcon name="plus" size={14} />
-          New task
+          {t('tasks.newTask')}
         </button>
       </div>
 
@@ -401,7 +406,7 @@ export default function Tasks() {
       {!loading && filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--ink-faint)' }}>
           <p className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>
-            {filter === 'pending' ? 'All caught up' : 'Nothing here'}
+            {filter === 'pending' ? t('tasks.allCaughtUp') : t('tasks.nothingHere')}
           </p>
         </div>
       )}
@@ -411,9 +416,9 @@ export default function Tasks() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
           {(todayTasks.length > 0 || weekTasks.length > 0 || laterTasks.length > 0) ? (
             <>
-              <TaskGroup label="Today" count={todayTasks.length} tint="var(--accent)" tasks={todayTasks} {...rowProps} />
-              <TaskGroup label="This week" count={weekTasks.length} tint="var(--warn)" tasks={weekTasks} {...rowProps} />
-              <TaskGroup label="Later / no date" count={laterTasks.length} tint="var(--line-2)" tasks={laterTasks} {...rowProps} />
+              <TaskGroup label={t('tasks.today')} count={todayTasks.length} tint="var(--accent)" tasks={todayTasks} {...rowProps} />
+              <TaskGroup label={t('tasks.thisWeek')} count={weekTasks.length} tint="var(--warn)" tasks={weekTasks} {...rowProps} />
+              <TaskGroup label={t('tasks.laterNoDate')} count={laterTasks.length} tint="var(--line-2)" tasks={laterTasks} {...rowProps} />
             </>
           ) : (
             filtered.length > 0 && (

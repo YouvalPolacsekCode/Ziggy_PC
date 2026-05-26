@@ -3,6 +3,8 @@ Home Assistant service helpers and device utilities.
 """
 from __future__ import annotations
 
+import threading
+import time as _t
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
@@ -13,6 +15,26 @@ from core.logger_module import log_info, log_error
 from core.debug_bus import bus, BASIC, VERBOSE, TRACE
 
 DEFAULT_TIMEOUT: int = 10
+
+# ---------------------------------------------------------------------------
+# resolve_entity() cache
+# ---------------------------------------------------------------------------
+#
+# Voice + automation paths chain through resolve_entity() repeatedly:
+# the same (room, sensor_type) is asked for during intent resolution, then
+# again inside the action body, then again by anomaly/automation lookups
+# that touch the same device. Each call walks the device registry and may
+# spin up an HA-areas fallback. Cache hits stay correct unless rooms are
+# remapped or a device is rewired — both are control-plane events and rare.
+_RESOLVE_TTL_S = 300.0
+_resolve_cache_lock = threading.Lock()
+_resolve_cache: dict[tuple[str, str], tuple[float, Optional[str]]] = {}
+
+
+def invalidate_resolve_entity_cache() -> None:
+    """Bust the resolve_entity cache after device-map or area changes."""
+    with _resolve_cache_lock:
+        _resolve_cache.clear()
 
 # Shared session: keeps a TCP/TLS connection pool open to HA so successive
 # calls (e.g. resolve-entity → set-state → read-state) reuse the same socket.
@@ -203,10 +225,22 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
       1. DeviceRegistry in-memory table (built from HomeConfig + YAML seed + IR devices)
       2. HA areas fallback: find an entity in the matching HA area by domain
       3. None — callers should surface a clear "not configured" message
+
+    Results are cached for _RESOLVE_TTL_S; the mapping only changes on user
+    edits or HA area renames — both invalidate via invalidate_resolve_entity_cache().
     """
     room_key = (room or "").lower().replace("_", " ").strip()
     normalized_room = _resolve_room(room_key)
     normalized_type = (sensor_type or "").lower()
+
+    cache_key = (normalized_room, normalized_type)
+    now = _t.monotonic()
+    with _resolve_cache_lock:
+        hit = _resolve_cache.get(cache_key)
+        if hit and (now - hit[0]) < _RESOLVE_TTL_S:
+            return hit[1]
+
+    resolved: Optional[str] = None
 
     # --- Path 1: DeviceRegistry ---
     try:
@@ -214,32 +248,40 @@ def resolve_entity(room: str, sensor_type: str) -> Optional[str]:
         if _initialized:
             entity_id = get_entity(normalized_room, normalized_type)
             if entity_id:
-                return entity_id
+                resolved = entity_id
     except Exception as e:
         log_error(f"[HA] DeviceRegistry lookup failed: {e}")
 
     # --- Path 2: HA areas fallback (sync wrapper around async get_areas) ---
-    try:
-        import asyncio
-        from services.ha_areas import get_areas
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Can't await in sync context — skip gracefully
-            pass
-        else:
-            areas = loop.run_until_complete(get_areas())
-            for area in areas:
-                area_name_norm = area["name"].lower().replace(" ", "_")
-                if area_name_norm == normalized_room:
-                    for eid in area["entities"]:
-                        if eid.startswith(f"{normalized_type}.") or eid.split(".")[0] == normalized_type:
-                            log_info(f"[HA] Resolved via HA area fallback: {eid}")
-                            return eid
-    except Exception as e:
-        log_error(f"[HA] HA areas fallback failed: {e}")
+    if resolved is None:
+        try:
+            import asyncio
+            from services.ha_areas import get_areas
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Can't await in sync context — skip gracefully
+                pass
+            else:
+                areas = loop.run_until_complete(get_areas())
+                for area in areas:
+                    area_name_norm = area["name"].lower().replace(" ", "_")
+                    if area_name_norm == normalized_room:
+                        for eid in area["entities"]:
+                            if eid.startswith(f"{normalized_type}.") or eid.split(".")[0] == normalized_type:
+                                log_info(f"[HA] Resolved via HA area fallback: {eid}")
+                                resolved = eid
+                                break
+                    if resolved:
+                        break
+        except Exception as e:
+            log_error(f"[HA] HA areas fallback failed: {e}")
 
-    log_info(f"[HA] Entity not found: {normalized_room} + {normalized_type}")
-    return None
+    if resolved is None:
+        log_info(f"[HA] Entity not found: {normalized_room} + {normalized_type}")
+
+    with _resolve_cache_lock:
+        _resolve_cache[cache_key] = (now, resolved)
+    return resolved
 
 
 def get_all_light_entities_in_room(room: str) -> List[str]:

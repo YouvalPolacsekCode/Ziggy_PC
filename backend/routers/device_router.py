@@ -1,20 +1,98 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+import time as _time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 
+from core.errors import ErrorCode, ZiggyError, ha_unavailable
 from core.logger_module import log_info
+from core.debug_bus import bus as _bus, BASIC as _BASIC, VERBOSE as _VERBOSE
 from core.settings_loader import save_settings, settings
 from services.ha_areas import (
     get_areas, create_area, delete_area, rename_area,
     assign_entity_to_area, assign_device_to_area, sync_device_area_to_ha,
-    _ws,
+    invalidate_registry_cache, _ws,
 )
 from services.home_automation import get_all_states, get_state
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# /api/devices enrichment cache
+# ---------------------------------------------------------------------------
+#
+# Dashboard, Devices page and Rooms page all hit /api/devices on focus and
+# every WS bump. Without a cache, each hit triggers a full HA REST snapshot
+# (get_all_states ~150-300 ms) plus an IR-device file walk. With a small
+# TTL — long enough to coalesce a burst of concurrent fetches, short enough
+# that the UI still feels live — we save those round-trips entirely.
+#
+# Live state still flows over WebSocket via state_changed events; the cache
+# only governs how often a fresh enriched LIST is rebuilt for the REST
+# fallback. 1.5 s gives the Dashboard ~6 cache misses/minute instead of one
+# per fetch.
+_ENRICH_TTL_S = 1.5
+_enrich_lock = threading.Lock()
+_enrich_cache: dict = {"ts": 0.0, "data": None, "key": None}
+
+
+def _enrich_cache_key() -> tuple:
+    """Cheap dependency signature so we can bust the cache on registry edits
+    without timing them. Uses len() of the registry and the IR device count;
+    any add/remove on either side will produce a different key."""
+    try:
+        import services.device_registry as dr
+        registry_len = len(dr._registry) if dr._initialized else 0
+    except Exception:
+        registry_len = 0
+    try:
+        from services.ir_manager import list_ir_devices as _list_ir
+        ir_len = len(_list_ir(enabled_only=False))
+    except Exception:
+        ir_len = 0
+    return (registry_len, ir_len)
+
+
+def _invalidate_enrich_cache() -> None:
+    with _enrich_lock:
+        _enrich_cache["ts"] = 0.0
+        _enrich_cache["data"] = None
+        _enrich_cache["key"] = None
+
+
+def _get_enriched_devices() -> list[dict]:
+    """Cached gateway to _enrich_devices_with_ha_state(dr.get_all()).
+
+    Returns the same enriched list to every caller within the TTL window.
+    Previously /api/devices, /api/devices/grouped and /api/rooms/devices each
+    paid the full enrichment cost (state-map build + IR cross-index) — three
+    independent rebuilds on every Dashboard fetchAll(). The cache key picks
+    up registry/IR mutations; explicit mutations (upsert, area assign, etc.)
+    also call _invalidate_enrich_cache().
+    """
+    import services.device_registry as dr
+    if not dr._initialized:
+        dr.init()
+    now = _time.monotonic()
+    key = _enrich_cache_key()
+    with _enrich_lock:
+        cached = _enrich_cache["data"]
+        cached_key = _enrich_cache["key"]
+        cached_ts = _enrich_cache["ts"]
+        if cached is not None and cached_key == key and (now - cached_ts) < _ENRICH_TTL_S:
+            return cached
+    # Build outside the lock — concurrent misses may overlap on the work,
+    # but the cost is bounded and the result is idempotent.
+    enriched = _enrich_devices_with_ha_state(dr.get_all())
+    with _enrich_lock:
+        _enrich_cache["data"] = enriched
+        _enrich_cache["key"] = key
+        _enrich_cache["ts"] = _time.monotonic()
+    return enriched
 
 
 # ---------------------------------------------------------------------------
@@ -24,6 +102,7 @@ router = APIRouter()
 _IR_TYPE_TO_DOMAIN: dict[str, str] = {
     "tv":        "media_player",
     "soundbar":  "media_player",
+    "receiver":  "media_player",
     "projector": "media_player",
     "ac":        "climate",
     "fan":       "fan",
@@ -32,9 +111,17 @@ _IR_TYPE_TO_DOMAIN: dict[str, str] = {
 
 
 def _enrich_devices_with_ha_state(devices: list[dict]) -> list[dict]:
+    # WS-fed cache from ha_subscriber is continuously fresh — no need to pay
+    # the 150-300 ms /api/states REST round-trip just to enrich device cards.
+    # Fall back to the REST snapshot only when the WS cache hasn't populated
+    # yet (the very first second of a cold boot).
     try:
-        states = get_all_states()
-        state_map = {s["entity_id"]: s for s in states}
+        from services.ha_subscriber import state_cache
+        if state_cache:
+            state_map = state_cache
+        else:
+            states = get_all_states()
+            state_map = {s["entity_id"]: s for s in states}
     except Exception:
         state_map = {}
 
@@ -132,10 +219,10 @@ def _enrich_devices_with_ha_state(devices: list[dict]) -> list[dict]:
 def _refresh_device_registry():
     try:
         from services.device_registry import refresh
-        import threading
         threading.Thread(target=refresh, daemon=True).start()
     except Exception:
         pass
+    _invalidate_enrich_cache()
 
 
 async def _sync_device_to_registry_room(device_id: str, area_id: str | None) -> None:
@@ -278,7 +365,12 @@ async def debug_registry():
             rooms[r] = rooms.get(r, 0) + 1
         return {"initialized": dr._initialized, "total": len(devs), "by_room": rooms}
     except Exception as e:
-        return {"error": str(e), "initialized": dr._initialized}
+        raise ZiggyError(
+            code=ErrorCode.INTERNAL_ERROR,
+            log_message=f"debug_registry failed: {type(e).__name__}: {e}",
+            details={"initialized": dr._initialized, "cause": repr(e)},
+            cause=e,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -295,10 +387,7 @@ class DeviceUpsert(BaseModel):
 @router.get("/api/devices")
 async def get_devices():
     try:
-        import services.device_registry as dr
-        if not dr._initialized:
-            dr.init()
-        return {"devices": _enrich_devices_with_ha_state(dr.get_all())}
+        return {"devices": _get_enriched_devices()}
     except Exception:
         pass
     return {"devices": [
@@ -307,6 +396,31 @@ async def get_devices():
         for dtype, eid in (dtypes or {}).items()
         if eid
     ]}
+
+
+@router.get("/api/devices/grouped")
+async def get_devices_grouped():
+    """Return devices grouped by HA device_id (one card per physical device).
+
+    Each group surfaces a primary entity that drives the card's main state +
+    controls, with the remaining sibling entities exposed as `entities[]`
+    (metric / secondary / diagnostic). The flat /api/devices endpoint is
+    untouched and remains the source for legacy/external consumers.
+
+    Failure modes:
+      - HA WS down → registry cache empty → every row becomes a "solo" group
+        (matches the old card-per-entity behaviour for that fetch).
+      - device_registry not initialised → triggered here, same as /api/devices.
+    """
+    from services.device_groups import build_groups, get_cached_registry_async
+
+    # Shared enrichment cache with /api/devices and /api/rooms/devices —
+    # Dashboard fetchAll() used to fire two parallel enrichment passes
+    # (this endpoint + /api/rooms/devices) on every mount.
+    enriched = _get_enriched_devices()
+    registry = await get_cached_registry_async()
+    groups = build_groups(enriched, registry)
+    return {"groups": groups}
 
 
 @router.post("/api/devices")
@@ -323,6 +437,8 @@ async def upsert_device(device: DeviceUpsert):
     dm.setdefault(room, {})[dtype] = device.entity_id
     save_settings(settings)
     log_info(f"[API] Device saved: {room}.{dtype} = {device.entity_id}")
+    _bus.emit("settings", _BASIC, "device_map_updated",
+              room=room, type=dtype, entity_id=device.entity_id, result="ok")
 
     ha_sync = {"ok": True}
     if device.entity_id:
@@ -330,6 +446,7 @@ async def upsert_device(device: DeviceUpsert):
         if not ha_sync.get("ok"):
             log_info(f"[API] HA area sync skipped: {ha_sync.get('error')}")
 
+    _invalidate_enrich_cache()
     return {"ok": True, "message": f"Saved {room}.{dtype} → {device.entity_id}", "ha_sync": ha_sync}
 
 
@@ -366,7 +483,12 @@ async def validate_device_map():
             "summary": {"total": len(valid) + len(missing), "valid": len(valid), "missing": len(missing)},
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise ZiggyError(
+            code=ErrorCode.INTERNAL_ERROR,
+            log_message=f"device-registry validate failed: {type(e).__name__}: {e}",
+            details={"cause": repr(e)},
+            cause=e,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +505,7 @@ async def get_rooms():
         rooms = await get_areas()
         return {"rooms": rooms}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise ha_unavailable(e)
 
 
 @router.get("/api/rooms/all")
@@ -524,10 +646,6 @@ def _norm_room_key(name: str) -> str:
 
 @router.get("/api/rooms/devices")
 async def get_rooms_with_devices():
-    import services.device_registry as dr
-    if not dr._initialized:
-        dr.init()
-
     try:
         ha_rooms = await get_areas()
     except Exception:
@@ -540,8 +658,8 @@ async def get_rooms_with_devices():
         area_by_norm[_norm_room_key(a["name"])] = a
         area_by_id[a["id"]] = a
 
-    devices_raw = dr.get_all()
-    devices = _enrich_devices_with_ha_state(devices_raw)
+    # Shared enrichment cache with /api/devices and /api/devices/grouped.
+    devices = _get_enriched_devices()
 
     room_devices: dict[str, list] = {}
     unclaimed = []   # status=UNCLAIMED — new HA entities not yet placed in Ziggy
@@ -611,6 +729,112 @@ async def patch_device_area(device_id: str, body: DeviceAreaPatch):
     return result
 
 
+@router.delete("/api/ha/entity/{entity_id:path}")
+async def delete_ha_entity(entity_id: str, delete_device: bool = False):
+    """Remove an entity from Home Assistant (and clean up Ziggy's registry).
+
+    Maps to HA's "Delete" affordance in its UI. Useful for one-shot cleanup
+    of a paired Zigbee/Z-Wave/etc. entity the user no longer wants — without
+    having to flip between Ziggy and HA.
+
+    When `delete_device=true` AND the entity's parent device has no remaining
+    entities after this removal, the parent device's config entry is also
+    removed (the HA equivalent of removing the device from the hub). The
+    physical device itself is NOT unpaired from the radio — for Zigbee, the
+    user should still re-pair / press the reset button if they want to use
+    it elsewhere.
+
+    Always also drops the entity from Ziggy's device registry so it doesn't
+    re-appear as a ghost after the next refresh.
+    """
+    # 1) Look up the HA device_id (for the optional device-level removal).
+    device_id: str | None = None
+    try:
+        ent_res, = await _ws({"type": "config/entity_registry/list"})
+        entity_entries = ent_res.get("result") or []
+        match = next((e for e in entity_entries if e.get("entity_id") == entity_id), None)
+        if not match:
+            # Entity wasn't in HA to begin with — fall through to local cleanup.
+            log_info(f"[API] delete_ha_entity: {entity_id} not in HA registry (already gone)")
+        else:
+            device_id = match.get("device_id")
+    except Exception as e:
+        log_info(f"[API] delete_ha_entity: HA registry lookup failed for {entity_id}: {e}")
+
+    ha_removed = False
+    ha_device_removed = False
+
+    # 2) Remove the entity from HA's entity registry.
+    try:
+        res, = await _ws({"type": "config/entity_registry/remove", "entity_id": entity_id})
+        if res.get("success"):
+            ha_removed = True
+        else:
+            err = (res.get("error") or {}).get("message", "")
+            # "not_found" is fine — the entity may have been removed already.
+            if "not_found" not in err.lower() and "not found" not in err.lower():
+                log_info(f"[API] delete_ha_entity: HA refused removal of {entity_id}: {err}")
+    except Exception as e:
+        log_info(f"[API] delete_ha_entity: WS remove failed for {entity_id}: {e}")
+
+    # 3) Optionally remove the parent device when it has no remaining entities.
+    if delete_device and device_id:
+        try:
+            # Re-list entity registry to see what's left after the removal.
+            ent_after, = await _ws({"type": "config/entity_registry/list"})
+            remaining = [
+                e for e in (ent_after.get("result") or [])
+                if e.get("device_id") == device_id
+            ]
+            if not remaining:
+                # Find the device's config_entries and remove from each.
+                dev_res, = await _ws({"type": "config/device_registry/list"})
+                target = next((d for d in (dev_res.get("result") or []) if d.get("id") == device_id), None)
+                config_entries = (target or {}).get("config_entries") or []
+                for ce in config_entries:
+                    try:
+                        await _ws({
+                            "type": "config/device_registry/remove_config_entry",
+                            "device_id": device_id,
+                            "config_entry_id": ce,
+                        })
+                        ha_device_removed = True
+                    except Exception as ce_err:
+                        log_info(f"[API] delete_ha_entity: remove_config_entry failed ({device_id}/{ce}): {ce_err}")
+        except Exception as e:
+            log_info(f"[API] delete_ha_entity: device cleanup failed for {device_id}: {e}")
+
+    # 4) Always drop the Ziggy registry row — even if HA refused (the user
+    # asked to be rid of it, so don't strand them with a half-stuck device).
+    try:
+        import services.device_registry as dr
+        if not dr._initialized:
+            dr.init()
+        with dr._lock:
+            before = len(dr._registry)
+            dr._registry[:] = [d for d in dr._registry if d.get("entity_id") != entity_id]
+            if before != len(dr._registry):
+                dr._save_persistent(dr._registry)
+    except Exception as e:
+        log_info(f"[API] delete_ha_entity: registry cleanup failed for {entity_id}: {e}")
+
+    # 5) Strip from settings.yaml too. _seed_from_yaml re-adds anything
+    # listed in device_map on every Ziggy restart, so leaving the YAML
+    # entry behind would resurrect the device on the next boot.
+    try:
+        _strip_entity_from_yaml_device_map(entity_id)
+    except Exception as e:
+        log_info(f"[API] delete_ha_entity: YAML cleanup failed for {entity_id}: {e}")
+
+    # Bust the registry-snapshot cache so the next /api/rooms etc. fetches
+    # see the updated HA state instead of serving stale data for up to 15s.
+    if ha_removed or ha_device_removed:
+        invalidate_registry_cache()
+    _refresh_device_registry()
+    log_info(f"[API] delete_ha_entity: {entity_id} done (ha={ha_removed}, device={ha_device_removed})")
+    return {"ok": True, "ha_removed": ha_removed, "ha_device_removed": ha_device_removed}
+
+
 # ---------------------------------------------------------------------------
 # Ziggy-native room assignment (device registry, no HA sync needed)
 # ---------------------------------------------------------------------------
@@ -658,6 +882,64 @@ async def patch_registry_entity_room(entity_id: str, body: ZiggyRoomPatch):
     return {"ok": True}
 
 
+def _strip_entity_from_yaml_device_map(entity_id: str) -> int:
+    """Remove an entity_id from settings.yaml's `device_map`.
+
+    Without this, every Ziggy restart re-seeds the entity from YAML via
+    services.device_registry._seed_from_yaml — so the ghost the user just
+    cleaned up comes back to haunt them on the next boot. Returns the
+    number of (room, dtype) entries removed.
+    """
+    dm = settings.get("device_map") or {}
+    removed = 0
+    empty_rooms: list[str] = []
+    for room, dtypes in dm.items():
+        if not isinstance(dtypes, dict):
+            continue
+        for dtype, eid in list(dtypes.items()):
+            if eid == entity_id:
+                del dtypes[dtype]
+                removed += 1
+        if not dtypes:
+            empty_rooms.append(room)
+    for r in empty_rooms:
+        del dm[r]
+    if removed:
+        settings["device_map"] = dm
+        save_settings(settings)
+        log_info(f"[API] Stripped {entity_id} from settings.yaml device_map ({removed} entries)")
+    return removed
+
+
+@router.delete("/api/registry/entity/{entity_id:path}")
+async def delete_registry_entity(entity_id: str):
+    """Drop an entity from the Ziggy device registry.
+
+    Intended use: the entity was deleted directly in Home Assistant, so
+    Ziggy is holding a ghost row that no longer has live state. The detail
+    page surfaces a "Remove from Ziggy" button that hits this endpoint to
+    clean up the stale entry. No HA roundtrip — registry is authoritative
+    for Ziggy-side membership.
+
+    Also strips the entity from settings.yaml's `device_map` so the next
+    Ziggy restart doesn't reseed it.
+
+    Always returns ok=true; a missing entity is treated as success (idempotent).
+    """
+    import services.device_registry as dr
+    if not dr._initialized:
+        dr.init()
+    with dr._lock:
+        before = len(dr._registry)
+        dr._registry[:] = [d for d in dr._registry if d.get("entity_id") != entity_id]
+        removed = before - len(dr._registry)
+        if removed:
+            dr._save_persistent(dr._registry)
+    yaml_removed = _strip_entity_from_yaml_device_map(entity_id)
+    log_info(f"[API] Registry entry deleted: {entity_id} (registry={removed}, yaml={yaml_removed})")
+    return {"ok": True, "removed": removed, "yaml_removed": yaml_removed}
+
+
 # ---------------------------------------------------------------------------
 # Per-entity detail (device info, diagnostics, siblings, automations)
 # ---------------------------------------------------------------------------
@@ -669,6 +951,50 @@ _DETAIL_SKIP_DOMAINS = frozenset({
     "input_select", "input_number", "input_text", "input_datetime", "input_button",
     "group", "zone", "sun", "stt", "tts", "conversation",
 })
+
+
+def _ghost_payload_from_registry(entity_id: str) -> dict | None:
+    """Build a details-shaped payload from the Ziggy device registry for an
+    entity that no longer exists in HA. Returns None when the entity isn't
+    in the registry either (true 404).
+
+    Goal: deleting a device directly in HA leaves Ziggy with a registry
+    entry but no live HA state. Without this hook, the frontend hung on a
+    blank details fetch. Now it gets a well-formed payload it can render as
+    "Removed from Home Assistant" with a Clean-up action.
+    """
+    try:
+        import services.device_registry as dr
+        if not dr._initialized:
+            dr.init()
+        with dr._lock:
+            entry = next(
+                (d for d in dr._registry if d.get("entity_id") == entity_id),
+                None,
+            )
+        if not entry:
+            return None
+        return {
+            "entity_id":        entity_id,
+            "domain":           entity_id.split(".", 1)[0] if "." in entity_id else entry.get("device_type"),
+            "state":            "unavailable",
+            "attributes":       {"friendly_name": entry.get("name") or entity_id},
+            "last_changed":     None,
+            "last_updated":     None,
+            "domain_meta":      {},
+            "ha_device":        {},
+            "diagnostics":      {},
+            "sibling_entities": [],
+            "automations_using": [],
+            "ghost":            True,
+            "ghost_reason":     "removed_from_ha",
+            "ghost_status":     entry.get("status") or "lost",
+            "ghost_room":       entry.get("room"),
+            "ghost_name":       entry.get("name") or entity_id,
+        }
+    except Exception as e:
+        log_info(f"[EntityDetails] _ghost_payload_from_registry failed for {entity_id}: {e}")
+        return None
 
 
 @router.get("/api/ha/entity/{entity_id}/details")
@@ -685,32 +1011,58 @@ async def entity_details(entity_id: str):
     Note: entity_id must be passed URL-encoded when it contains dots
     (e.g. light.office → /api/ha/entity/light.office/details).
     No :path modifier is used because HA entity IDs never contain slashes.
+
+    Perf: every call reads cached state from ha_subscriber.state_cache first
+    (continuously updated via WS) — only the entity/device registry needs a
+    live HA round-trip. The sibling-states fan-out now reads from the same
+    cache instead of the full /api/states REST endpoint (was pulling 500+
+    entities to look up <20).
     """
-    import requests as _req
-    from services.home_automation import _ha_endpoint, _headers, DEFAULT_TIMEOUT
+    import time as _time
+    from services.ha_subscriber import state_cache
 
-    # ── 1. Fetch raw HA state (includes last_changed / last_updated) ───────────
-    try:
-        resp = _req.get(
-            _ha_endpoint(f"/api/states/{entity_id}"),
-            headers=_headers(),
-            timeout=DEFAULT_TIMEOUT,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"HA unreachable: {e}")
+    t0 = _time.perf_counter()
 
-    if resp.status_code == 404:
-        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found in HA.")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"HA returned {resp.status_code}")
+    # ── 1. Read state from the WS cache (continuously updated). Fall back to
+    #       one REST hit ONLY if the cache is cold for this entity — handles
+    #       the brief window before the subscriber's snapshot completes on
+    #       boot. Using the thread pool so even the fallback doesn't block
+    #       the event loop. ────────────────────────────────────────────────
+    cached = state_cache.get(entity_id)
+    if cached is None:
+        from services.home_automation import get_state
+        rest = await asyncio.to_thread(get_state, entity_id)
+        if not rest.get("ok"):
+            msg = (rest.get("message") or "")
+            is_404 = "404" in msg or "not_found" in msg.lower()
+            # Ghost path: when HA doesn't have this entity but Ziggy's device
+            # registry still does, return a 200 payload that flags it as
+            # `ghost: true`. The frontend then renders a clear "removed from
+            # HA" page with a Clean-up button, instead of hanging on a
+            # silent fetch failure (which is what happens if the user deletes
+            # a device directly in HA without touching Ziggy first).
+            if is_404:
+                ghost = _ghost_payload_from_registry(entity_id)
+                if ghost:
+                    elapsed_ms = round((_time.perf_counter() - t0) * 1000, 1)
+                    log_info(f"[EntityDetails] {entity_id} is a ghost (in registry, not in HA) — returned in {elapsed_ms} ms")
+                    return ghost
+                raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found in HA.")
+            raise HTTPException(status_code=502, detail=msg or "HA unreachable")
+        cached = {
+            "state":        (rest["data"] or {}).get("state"),
+            "attributes":   (rest["data"] or {}).get("attributes") or {},
+            "last_changed": None,
+        }
 
-    raw = resp.json()
-    attrs: dict = raw.get("attributes") or {}
-    state_val: str = raw.get("state", "unknown")
-    last_changed: Optional[str] = raw.get("last_changed")
-    last_updated: Optional[str] = raw.get("last_updated")
+    attrs: dict = cached.get("attributes") or {}
+    state_val: str = cached.get("state", "unknown")
+    last_changed: Optional[str] = cached.get("last_changed")
+    last_updated: Optional[str] = cached.get("last_updated") or cached.get("last_changed")
 
-    # ── 2. Entity & device registry via WebSocket ─────────────────────────────
+    # ── 2. Entity & device registry via WebSocket. The WS round trip
+    #       dominates this endpoint's latency — keep the two registry calls in
+    #       one batch so we pay one connection setup, not two. ──────────────
     ha_device: dict = {}
     sibling_ids: list[str] = []
     try:
@@ -743,26 +1095,24 @@ async def entity_details(entity_id: str):
     except Exception as e:
         log_info(f"[EntityDetails] WS registry fetch failed for {entity_id}: {e}")
 
-    # ── 3. Sibling entity states ───────────────────────────────────────────────
+    # ── 3. Sibling entity states — read from the WS cache directly, NOT
+    #       through get_all_states() (which pulls 500+ entities over REST just
+    #       to filter down to <20 siblings). The cache is at least as fresh. ──
     sibling_states: list[dict] = []
-    if sibling_ids:
-        try:
-            all_states = {s["entity_id"]: s for s in get_all_states()}
-            for sid in sibling_ids[:20]:   # cap to avoid large payloads
-                if sid in all_states:
-                    s = all_states[sid]
-                    sa = s.get("attributes") or {}
-                    sibling_states.append({
-                        "entity_id": sid,
-                        "domain": sid.split(".")[0],
-                        "state": s.get("state"),
-                        "device_class": sa.get("device_class"),
-                        "unit": sa.get("unit_of_measurement"),
-                        "friendly_name": sa.get("friendly_name") or sid,
-                        "last_changed": s.get("last_changed"),
-                    })
-        except Exception as e:
-            log_info(f"[EntityDetails] Sibling states failed: {e}")
+    for sid in sibling_ids[:20]:
+        s = state_cache.get(sid)
+        if not s:
+            continue
+        sa = s.get("attributes") or {}
+        sibling_states.append({
+            "entity_id":     sid,
+            "domain":        sid.split(".")[0],
+            "state":         s.get("state"),
+            "device_class":  sa.get("device_class"),
+            "unit":          sa.get("unit_of_measurement"),
+            "friendly_name": sa.get("friendly_name") or sid,
+            "last_changed":  s.get("last_changed"),
+        })
 
     # ── 4. Diagnostics — from attrs + siblings ─────────────────────────────────
     battery: Optional[int] = None
@@ -821,11 +1171,14 @@ async def entity_details(entity_id: str):
         "firmware": ha_device.get("sw_version") or attrs.get("sw_version") or attrs.get("firmware"),
     }
 
-    # ── 5. Automations referencing this entity ────────────────────────────────
+    # ── 5. Automations referencing this entity. list_automations() does a
+    #       sync `requests.get("/api/states")` against HA — wrap it in
+    #       to_thread so the event loop stays responsive while HA replies. ──
     automations_using: list[dict] = []
     try:
         from services.ha_automations import list_automations
-        for auto in list_automations():
+        autos = await asyncio.wait_for(asyncio.to_thread(list_automations), timeout=3.0)
+        for auto in autos:
             actions = auto.get("actions") or []
             if any(a.get("entity_id") == entity_id for a in actions):
                 automations_using.append({
@@ -834,6 +1187,7 @@ async def entity_details(entity_id: str):
                     "enabled": auto.get("enabled", True),
                 })
     except Exception:
+        # Soft-fail: empty list is better than blocking the page on HA hiccups.
         pass
 
     # ── 6. Domain metadata ────────────────────────────────────────────────────
@@ -853,6 +1207,12 @@ async def entity_details(entity_id: str):
     except Exception:
         pass
 
+    # Lightweight perf log so we can spot regressions in the wild — slow
+    # responses (>500 ms) almost always mean HA WS is slow, not Ziggy itself.
+    elapsed_ms = round((_time.perf_counter() - t0) * 1000, 1)
+    if elapsed_ms > 500:
+        log_info(f"[EntityDetails] {entity_id} took {elapsed_ms} ms (slow — HA WS?)")
+
     return {
         "entity_id":        entity_id,
         "domain":           domain,
@@ -866,3 +1226,231 @@ async def entity_details(entity_id: str):
         "sibling_entities": sibling_states,
         "automations_using":automations_using,
     }
+
+
+# ---------------------------------------------------------------------------
+# Dynamic command catalog — every HA command an entity supports, Ziggy-shaped.
+# Used by the "More controls" panel on the device detail page and by the
+# automation/routine builder when picking a device command action.
+# ---------------------------------------------------------------------------
+
+@router.get("/api/devices/{entity_id:path}/commands")
+async def device_commands(entity_id: str):
+    """Return the per-entity command catalog. See services/ha_capabilities.
+
+    For hybrid devices (entity_id + ir_device_id linked), the IR codeset's
+    learned commands are merged in so the FE can offer them alongside HA
+    commands in one unified list.
+    """
+    from services.ha_capabilities import commands_for_entity, ensure_catalog_async
+    # MUST warm via the async path. _ensure_catalog (sync) silently bails
+    # when called inside a running event loop, leaving the catalog empty
+    # and the response a useless [] — which is why "More Commands" panels
+    # were vanishing for everyone.
+    await ensure_catalog_async()
+    cmds = commands_for_entity(entity_id)
+
+    # Merge IR commands for hybrid devices — they appear as a separate "ir."
+    # synthetic namespace so the executor can tell them apart.
+    try:
+        from services.device_registry import get_device_info
+        from services.ir_manager import get_ir_device
+        entry = get_device_info(entity_id) or {}
+        ir_id = entry.get("ir_device_id")
+        if ir_id:
+            ir_dev = get_ir_device(ir_id) or {}
+            ir_cmds = (ir_dev.get("commands") or {})
+            for cmd_name in ir_cmds.keys():
+                cmds.append({
+                    "id":            f"ir.{cmd_name}",
+                    "domain":        "ir",
+                    "service":       cmd_name,
+                    "label":         cmd_name.replace("_", " ").title(),
+                    "description":   "IR command",
+                    "fields":        [],
+                    "target_domain": entity_id.split(".")[0],
+                    "source":        "ir",
+                })
+    except Exception:
+        pass
+
+    return {"entity_id": entity_id, "commands": cmds}
+
+
+class DeviceCommandBody(BaseModel):
+    command_id: str       # "<domain>.<service>" or "ir.<command>"
+    params: dict = {}
+    prefer_source: Optional[str] = None  # "wifi" | "ir" — optional one-shot override
+
+
+@router.post("/api/devices/{entity_id:path}/commands")
+async def execute_device_command(
+    entity_id: str,
+    body: DeviceCommandBody,
+    background_tasks: BackgroundTasks,
+    request: Request,
+):
+    """Execute a dynamic command on an entity.
+
+    Routing:
+      - "ir.<cmd>" → IR blaster via services.ir_manager (requires linked IR device)
+      - "<domain>.<service>" → HA service call (entity_id auto-bound to payload)
+
+    HA calls for Wi-Fi devices (Switcher, Shelly, …) block until the device
+    acks — 1-3s typical. We return immediately and run the actual call in
+    the background; the real state arrives via the WS state_changed event.
+    """
+    import time as _time
+    from services.device_registry import get_device_info
+
+    # Inherit the request_id from the HTTP middleware so the click → API →
+    # background HA call → state_changed ack all share one correlation id.
+    req_id = getattr(request.state, "request_id", None)
+
+    cmd_id = body.command_id or ""
+    _bus.emit("device", _BASIC, "device_command_received",
+              request_id=req_id,
+              entity_id=entity_id, command_id=cmd_id,
+              params=body.params, prefer_source=body.prefer_source)
+
+    if not cmd_id:
+        _bus.emit("device", _BASIC, "device_command_invalid",
+                  request_id=req_id, entity_id=entity_id,
+                  result="error", error="command_id missing")
+        raise HTTPException(status_code=422, detail="command_id is required")
+
+    # IR-namespaced command — route directly to the blaster (also fast).
+    if cmd_id.startswith("ir."):
+        from services.command_router import resolve_hybrid_entry
+        base = get_device_info(entity_id) or {}
+        entry = resolve_hybrid_entry(entity_id, base)
+        ir_id = entry.get("ir_device_id")
+        if not ir_id:
+            _bus.emit("device", _BASIC, "device_command_no_ir_link",
+                      request_id=req_id, entity_id=entity_id, command_id=cmd_id,
+                      result="not_found",
+                      suggestion="Link an IR codeset to this device or pick a Wi-Fi command.")
+            raise HTTPException(status_code=404, detail="No IR codeset linked to this device.")
+
+        ir_cmd = cmd_id[3:]
+        _bus.emit("device", _VERBOSE, "device_command_routed",
+                  request_id=req_id, entity_id=entity_id,
+                  via="ir", ir_device=ir_id, ir_command=ir_cmd)
+
+        def _ir_bg():
+            from services.ir_manager import send_ir_command
+            t0 = _time.perf_counter()
+            try:
+                res = send_ir_command(ir_id, ir_cmd)
+                dur = round((_time.perf_counter() - t0) * 1000, 1)
+                _bus.emit("device", _BASIC, "device_command_completed",
+                          request_id=req_id, entity_id=entity_id,
+                          via="ir", ir_device=ir_id, ir_command=ir_cmd,
+                          duration_ms=dur,
+                          result="ok" if (res or {}).get("ok") else "error",
+                          message=(res or {}).get("message"))
+            except Exception as e:
+                dur = round((_time.perf_counter() - t0) * 1000, 1)
+                _bus.emit("device", _BASIC, "device_command_failed",
+                          request_id=req_id, entity_id=entity_id,
+                          via="ir", duration_ms=dur,
+                          error=str(e), error_type=type(e).__name__,
+                          result="exception")
+        background_tasks.add_task(_ir_bg)
+        return {"ok": True, "_routed_via": "ir", "queued": True}
+
+    # HA service command.
+    if "." not in cmd_id:
+        _bus.emit("device", _BASIC, "device_command_invalid",
+                  request_id=req_id, entity_id=entity_id, command_id=cmd_id,
+                  result="error", error="malformed command_id")
+        raise HTTPException(status_code=422, detail=f"Invalid command_id '{cmd_id}'")
+    domain, service = cmd_id.split(".", 1)
+    payload = dict(body.params or {})
+    payload["entity_id"] = entity_id
+
+    _bus.emit("device", _VERBOSE, "device_command_routed",
+              request_id=req_id, entity_id=entity_id,
+              via="ha", domain=domain, service=service, payload=payload)
+
+    def _ha_bg():
+        from services.home_automation import call_service
+        t0 = _time.perf_counter()
+        try:
+            res = call_service(domain, service, payload)
+            dur = round((_time.perf_counter() - t0) * 1000, 1)
+            _bus.emit("device", _BASIC, "device_command_completed",
+                      request_id=req_id, entity_id=entity_id,
+                      via="ha", domain=domain, service=service,
+                      duration_ms=dur,
+                      result="ok" if (res or {}).get("ok") else "error",
+                      message=(res or {}).get("message"))
+        except Exception as e:
+            dur = round((_time.perf_counter() - t0) * 1000, 1)
+            _bus.emit("device", _BASIC, "device_command_failed",
+                      request_id=req_id, entity_id=entity_id,
+                      via="ha", duration_ms=dur,
+                      error=str(e), error_type=type(e).__name__,
+                      result="exception")
+    background_tasks.add_task(_ha_bg)
+    return {"ok": True, "queued": True}
+
+
+# ---------------------------------------------------------------------------
+# Historical state for a single entity (used by the sensor chart on
+# DeviceDetail). Wraps HA's /api/history/period/ endpoint and filters to
+# numeric states only — non-numeric points (e.g. "unavailable") are dropped
+# so the FE chart can render a clean line without per-point guards.
+# ---------------------------------------------------------------------------
+
+@router.get("/api/devices/{entity_id:path}/history")
+async def entity_history(entity_id: str, hours: int = 24):
+    import requests
+    from datetime import datetime, timedelta, timezone
+    from core.logger_module import log_error
+
+    ha_url = settings.get("home_assistant", {}).get("url", "").rstrip("/")
+    ha_tok = settings.get("home_assistant", {}).get("token", "")
+    if not ha_url or not ha_tok:
+        return {"points": [], "unit": None}
+
+    # Clamp the window — protects against a misbehaving client asking for
+    # weeks of data (HA history is expensive on the recorder DB).
+    hours = max(1, min(int(hours or 24), 168))
+    start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+    try:
+        resp = requests.get(
+            f"{ha_url}/api/history/period/{start}",
+            headers={"Authorization": f"Bearer {ha_tok}"},
+            params={
+                "filter_entity_id": entity_id,
+                "minimal_response": "true",
+                "no_attributes": "false",
+            },
+            timeout=15,
+        )
+        if not resp.ok:
+            return {"points": [], "unit": None}
+        data = resp.json() or []
+        series = data[0] if data else []
+        points = []
+        unit = None
+        for item in series:
+            try:
+                v = float(item.get("state"))
+            except (TypeError, ValueError):
+                continue  # "unavailable", "unknown", strings — skip
+            t = item.get("last_changed") or item.get("last_updated")
+            if not t:
+                continue
+            points.append({"t": t, "v": v})
+            attrs = item.get("attributes") or {}
+            u = attrs.get("unit_of_measurement")
+            if u:
+                unit = u
+        return {"points": points, "unit": unit}
+    except Exception as e:
+        log_error(f"[device_router] entity_history({entity_id}): {e}")
+        return {"points": [], "unit": None}
+

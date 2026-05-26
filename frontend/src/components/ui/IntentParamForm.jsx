@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { getRooms } from '../../lib/api'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { INTENT_PARAM_SCHEMA } from '../../lib/intentParamSchema'
+import { useT } from '../../lib/i18n'
 
 // ── JSON textarea fallback (for intents not yet in the schema) ────────────────
 function JsonFallback({ value, onChange, onError }) {
+  const t = useT()
   const stringify = (v) =>
     typeof v === 'string' ? v : JSON.stringify(v || {}, null, 2)
 
@@ -24,16 +26,17 @@ function JsonFallback({ value, onChange, onError }) {
       onError?.(null)
       onChange(parsed)
     } catch {
-      setErr('Invalid JSON')
-      onError?.('Invalid JSON')
+      const msg = t('intentForm.invalidJson')
+      setErr(msg)
+      onError?.(msg)
     }
   }
 
   return (
     <div>
       <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
-        Params{' '}
-        <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>(JSON — leave as {'{}'} if none needed)</span>
+        {t('intentForm.params')}{' '}
+        <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>{t('intentForm.paramsHint')}</span>
       </p>
       <textarea
         value={raw}
@@ -55,13 +58,14 @@ function JsonFallback({ value, onChange, onError }) {
 
 // ── Single param field ────────────────────────────────────────────────────────
 function ParamField({ param, value, onChange, rooms, entities, allValues }) {
+  const t = useT()
   const { key, label, type, options, required, placeholder, min, max, step, unit, source, domainFilter, dependsOn } = param
 
   const Label = () => (
     <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
       {label}
       {!required && (
-        <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}> (optional)</span>
+        <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}> ({t('intentForm.optional')})</span>
       )}
     </p>
   )
@@ -69,8 +73,8 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
   // Two-chip toggle: Turn On / Turn Off or custom pair
   if (type === 'boolean_select') {
     const opts = options || [
-      { value: true,  label: 'Turn On' },
-      { value: false, label: 'Turn Off' },
+      { value: true,  label: t('intentForm.turnOn') },
+      { value: false, label: t('intentForm.turnOff') },
     ]
     return (
       <div>
@@ -142,7 +146,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
         >
           {!required && <option value="">—</option>}
           {required && !value && (
-            <option value="" disabled>Select {label.toLowerCase()}…</option>
+            <option value="" disabled>{t('intentForm.selectPlaceholder', { label: label.toLowerCase() })}</option>
           )}
           {options.map((opt) => (
             <option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>
@@ -171,7 +175,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
           <div style={{ opacity: 0.45 }}>
             <Label />
             <select disabled className="z-input" style={{ height: 40, padding: '0 12px', width: '100%' }}>
-              <option>Select a room first</option>
+              <option>{t('intentForm.selectRoomFirst')}</option>
             </select>
           </div>
         )
@@ -201,7 +205,9 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
           {!required && <option value="">{placeholder || '—'}</option>}
           {required && !value && (
             <option value="" disabled>
-              {loading ? `Loading ${label.toLowerCase()}…` : `Select ${label.toLowerCase()}…`}
+              {loading
+                ? t('intentForm.loadingLabel', { label: label.toLowerCase() })
+                : t('intentForm.selectPlaceholder', { label: label.toLowerCase() })}
             </option>
           )}
           {opts.map((opt) => (
@@ -275,6 +281,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
  *   onError  — called with an error string (or null) for validation feedback
  */
 export function IntentParamForm({ intent, value = {}, onChange, onError }) {
+  const t = useT()
   const schema = INTENT_PARAM_SCHEMA[intent]
   const [rooms, setRooms] = useState([])
   const entities      = useDeviceStore((s) => s.entities)
@@ -303,7 +310,7 @@ export function IntentParamForm({ intent, value = {}, onChange, onError }) {
   if (params.length === 0) {
     return (
       <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '4px 0' }}>
-        No parameters needed — this intent fires immediately.
+        {t('intentForm.noParams')}
       </p>
     )
   }

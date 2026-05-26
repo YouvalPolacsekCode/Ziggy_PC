@@ -37,6 +37,10 @@ from core.response_templates import get_response
 # ===== Settings / Config =====
 VOICE_CFG = settings.get("voice", {})
 HEBREW_MODEL_ID = VOICE_CFG.get("hebrew_model", "ivrit-ai/whisper-large-v3-turbo-ct2")
+# v1 ships with TTS off — responses are push + on-screen text only. The TTS
+# code paths below stay in place under this flag so v1.1 can re-enable as a
+# cloud-gated paid feature. Default False so absent config keeps v1 behavior.
+TTS_ENABLED = bool(VOICE_CFG.get("tts_enabled", False))
 WAKEWORD_ENABLED = bool(VOICE_CFG.get("wakeword_enabled", False))
 WAKEWORD_ENGINE = str(VOICE_CFG.get("wakeword_engine", "oww")).lower()
 WAKEWORD_MODEL_NAME = VOICE_CFG.get("wakeword_model", "hey_mycroft")
@@ -786,6 +790,13 @@ def _clean_for_tts(text: str, lang: str) -> str:
 
 def speak(text: str, lang: str = "en"):
     global _tts_guard_until
+    # v1 kill switch — return silently when TTS is disabled. The voice loop
+    # still calls speak() at the same points; the text response is delivered
+    # via the existing push + on-screen text path. See docs/RUNBOOK_VOICE.md.
+    if not TTS_ENABLED:
+        if is_verbose():
+            print(f"[Voice] TTS disabled (tts_enabled=false); skipping speak({lang}): {text}")
+        return
     try:
         text = _clean_for_tts(text, lang)
         if is_verbose():
@@ -885,6 +896,27 @@ try:
     PORCUPINE_AVAILABLE = True
 except Exception:
     pass
+
+# v1 quarantine: a custom wake-word model (e.g. "hey_ziggy") must exist on disk
+# before we honor wakeword_enabled=true. Prevents booting with the flag flipped
+# but no compiled .onnx, which would silently fall through to PTT in confusing
+# ways. Bundled OWW models like "hey_mycroft" ship inside the openwakeword
+# package, so they bypass this check. See oww_data/README.md.
+if WAKEWORD_ENABLED and WAKEWORD_ENGINE == "oww":
+    _model_str = str(WAKEWORD_MODEL_NAME)
+    _looks_like_path = (
+        _model_str.endswith(".onnx")
+        or _model_str.endswith(".tflite")
+        or os.sep in _model_str
+        or "/" in _model_str
+    )
+    if _looks_like_path and not os.path.exists(_model_str):
+        print(
+            f"[Voice] WAKE-WORD DISABLED: wakeword_model='{_model_str}' "
+            f"looks like a custom file path but does not exist. "
+            f"Falling back to push-to-talk. See oww_data/README.md."
+        )
+        WAKEWORD_ENABLED = False
 
 if WAKEWORD_ENABLED:
     if WAKEWORD_ENGINE == "oww" and OWW_AVAILABLE:

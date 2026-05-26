@@ -1,4 +1,5 @@
-import { createContext, createElement, useContext, useEffect, useRef, useState, useCallback } from 'react'
+import { createContext, createElement, useContext, useEffect, useMemo, useState } from 'react'
+import logger from '../lib/logger'
 
 function getWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -12,117 +13,183 @@ function getWsUrl() {
   return `${proto}//${host}/ws`
 }
 
-const WS_URL        = getWsUrl()
-const MIN_RETRY_MS  = 3_000
-const MAX_RETRY_MS  = 30_000
-const PING_INTERVAL = 20_000   // send a ping every 20s to keep tunnel alive
+const WS_URL = getWsUrl()
 
-// Buffer size: every consumer of useWebSocket() re-renders when this array
-// changes. 50 covers the deepest look-back any current consumer does (the
+// Reconnect cadence. Ziggy's backend takes ~10-15s to fully boot (many
+// threads + Whisper model warmup), so a classic exponential backoff lands
+// you in a long wait window right around the time the server actually
+// comes back up. Linear-then-capped instead:
+//   - attempts 1-5: 750ms apart (covers most restart windows)
+//   - attempts 6+: 3s apart (gentle on a truly-down server)
+const FAST_RETRY_MS    = 750
+const FAST_RETRY_LIMIT = 5
+const SLOW_RETRY_MS    = 3_000
+const PING_INTERVAL    = 20_000
+
+// Buffer size: 50 covers the deepest look-back any current consumer does (the
 // Dashboard walks newest-to-oldest until it hits a seen ts) without keeping
 // hundreds of state_changed payloads (~1–2 KB each) live in React state.
 const MESSAGE_BUFFER_SIZE = 50
 
-const WebSocketContext = createContext({ messages: [], connected: false })
+// ─── Module-level singleton ─────────────────────────────────────────────────
+// Why: a previous version tied the WebSocket's lifecycle to a React
+// component (WebSocketProvider). Three things kept knocking it loose:
+//   1. React StrictMode (dev) double-mounts the Provider on first paint
+//      → close + reopen, briefly flipping `connected` and triggering the
+//      offline banner.
+//   2. Vite HMR re-evaluates the module on every edit → the Provider's
+//      cleanup runs and closes the socket. Showed up as endless
+//      "WebSocket connected/disconnected" pairs in the backend logs.
+//   3. Auth/route changes that remount any ancestor would cycle the WS.
+// Owning the connection at module scope decouples it from React: the
+// component only *subscribes* to state changes. The socket survives any
+// React reconciliation, including StrictMode + HMR.
+let _socket             = null
+let _retryCount         = 0
+let _reconnectTimer     = null
+let _pingTimer          = null
+let _messages           = []
+let _connected          = false
+const _listeners        = new Set()   // () => void — fired on any state change
 
-// Single shared WS connection. Mount once near the root of the tree (see main.jsx).
-// Every useWebSocket() call reads from the same Context, so adding new consumers
-// (Anomalies page, Dashboard alert card, …) never opens additional sockets.
-export function WebSocketProvider({ children }) {
-  const ws             = useRef(null)
-  const retryCount     = useRef(0)
-  const reconnectTimer = useRef(null)
-  const pingTimer      = useRef(null)
-  const [messages,  setMessages]  = useState([])
-  const [connected, setConnected] = useState(false)
+function _retryDelay(attempt) {
+  return attempt < FAST_RETRY_LIMIT ? FAST_RETRY_MS : SLOW_RETRY_MS
+}
 
-  const clearTimers = () => {
-    clearTimeout(reconnectTimer.current)
-    clearInterval(pingTimer.current)
+function _emit() {
+  for (const fn of _listeners) {
+    try { fn() } catch { /* swallow */ }
+  }
+}
+
+function _clearTimers() {
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
+  if (_pingTimer)      { clearInterval(_pingTimer);     _pingTimer = null }
+}
+
+function _connect() {
+  // Already open or in-flight — don't open another socket.
+  if (_socket?.readyState === WebSocket.OPEN ||
+      _socket?.readyState === WebSocket.CONNECTING) return
+
+  // Don't connect when the tab is hidden — visibilitychange retries on focus.
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+
+  const socket = new WebSocket(WS_URL)
+  _socket = socket
+
+  socket.onopen = () => {
+    _connected = true
+    _retryCount = 0
+    if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
+    logger.ws('ws_open', { url: WS_URL })
+    _pingTimer = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'ping' }))
+      }
+    }, PING_INTERVAL)
+    _emit()
   }
 
-  const connect = useCallback(() => {
-    // Don't open a new socket if one is already open or connecting
-    if (ws.current?.readyState === WebSocket.OPEN ||
-        ws.current?.readyState === WebSocket.CONNECTING) return
+  socket.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data)
+      if (data.type === 'pong') return
+      if (data.type !== 'debug_event') {
+        logger.ws('ws_message', { type: data.type })
+      }
+      // New array reference so React subscribers see the change.
+      _messages = _messages.length >= MESSAGE_BUFFER_SIZE
+        ? [..._messages.slice(-(MESSAGE_BUFFER_SIZE - 1)), { ...data, ts: Date.now() }]
+        : [..._messages, { ...data, ts: Date.now() }]
+      _emit()
+    } catch { /* ignore non-JSON frames */ }
+  }
 
-    // Don't try to connect when the page is hidden (mobile backgrounded).
-    // We'll reconnect on visibilitychange instead.
-    if (document.visibilityState === 'hidden') return
+  socket.onclose = (evt) => {
+    if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null }
+    _connected = false
+    logger.ws('ws_close', {
+      code: evt?.code, reason: evt?.reason || undefined,
+      retry_count: _retryCount,
+    })
+    _emit()
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    const delay = _retryDelay(_retryCount)
+    _retryCount = Math.min(_retryCount + 1, 6)
+    logger.ws('ws_reconnect_scheduled', { delay_ms: delay, attempt: _retryCount })
+    _reconnectTimer = setTimeout(_connect, delay)
+  }
 
-    const socket = new WebSocket(WS_URL)
-    ws.current = socket
+  // Don't manually call socket.close() on error — let the browser handle it.
+  socket.onerror = () => { logger.ws('ws_error') }
+}
 
-    socket.onopen = () => {
-      setConnected(true)
-      retryCount.current = 0
-      clearTimeout(reconnectTimer.current)
+// Visibility handler — register exactly once at module load so it's not
+// tied to any React component lifecycle.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
+    _retryCount = 0
+    _connect()
+  })
+}
 
-      // Keepalive ping — prevents Cloudflare Tunnel from closing idle WS.
-      // Server ignores non-JSON or unknown message types gracefully.
-      pingTimer.current = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'ping' }))
-        }
-      }, PING_INTERVAL)
+// Kick off the first connection at module-eval time. Vite HMR may re-import
+// this module — the readyState guard inside _connect() prevents a duplicate
+// socket in that case.
+_connect()
+
+// ─── React-facing API ──────────────────────────────────────────────────────
+// Split contexts so consumers subscribe only to what they need. Before:
+// a single { messages, connected } context made every WS message re-render
+// every consumer including AppShell, Sidebar, and every page on the route.
+
+const MessagesContext  = createContext(_messages)
+const ConnectedContext = createContext(_connected)
+
+export function WebSocketProvider({ children }) {
+  const [messages,  setMessages]  = useState(_messages)
+  const [connected, setConnected] = useState(_connected)
+
+  useEffect(() => {
+    // Subscribe to module-level events; sync initial state once.
+    const listener = () => {
+      setMessages(_messages)
+      setConnected(_connected)
     }
-
-    socket.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data)
-        if (data.type === 'pong') return  // ignore server pong responses
-        setMessages(prev => [...prev.slice(-(MESSAGE_BUFFER_SIZE - 1)), { ...data, ts: Date.now() }])
-      } catch { /* ignore non-JSON frames */ }
-    }
-
-    socket.onclose = () => {
-      clearInterval(pingTimer.current)
-      setConnected(false)
-
-      // Don't schedule a reconnect if the page is hidden — wait for
-      // visibilitychange to trigger it when the user comes back.
-      if (document.visibilityState === 'hidden') return
-
-      const delay = Math.min(MIN_RETRY_MS * 2 ** retryCount.current, MAX_RETRY_MS)
-      retryCount.current = Math.min(retryCount.current + 1, 6)
-      reconnectTimer.current = setTimeout(connect, delay)
-    }
-
-    // Don't manually call socket.close() on error — let the browser clean up
-    // naturally. Calling close() here triggers onclose BEFORE the socket is
-    // actually closed, which then schedules a reconnect that races the cleanup.
-    socket.onerror = () => { /* handled by onclose */ }
+    _listeners.add(listener)
+    listener()   // catch any state change between module load and mount
+    return () => { _listeners.delete(listener) }
   }, [])
 
-  // Initial connection
-  useEffect(() => {
-    connect()
-    return () => {
-      clearTimers()
-      ws.current?.close()
-    }
-  }, [connect])
-
-  // Reconnect when the page becomes visible (phone came back from background)
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        clearTimeout(reconnectTimer.current)
-        retryCount.current = 0
-        connect()
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [connect])
-
   return createElement(
-    WebSocketContext.Provider,
-    { value: { messages, connected } },
-    children,
+    ConnectedContext.Provider,
+    { value: connected },
+    createElement(
+      MessagesContext.Provider,
+      { value: messages },
+      children,
+    ),
   )
 }
 
+// Compatibility shim — existing callers `const { connected, messages } = useWebSocket()`
+// keep working. Prefer the split hooks in new code so re-renders track only
+// the data you read.
 export function useWebSocket() {
-  return useContext(WebSocketContext)
+  const messages  = useContext(MessagesContext)
+  const connected = useContext(ConnectedContext)
+  return useMemo(() => ({ messages, connected }), [messages, connected])
+}
+
+// Subscribe to messages only. Re-renders on every WS push.
+export function useWsMessages() {
+  return useContext(MessagesContext)
+}
+
+// Subscribe to connection state only. Re-renders ONLY on connect/disconnect.
+export function useWsConnected() {
+  return useContext(ConnectedContext)
 }

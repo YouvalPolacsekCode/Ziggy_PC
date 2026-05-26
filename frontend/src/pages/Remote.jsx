@@ -18,6 +18,7 @@ import { deviceFacts } from '../lib/devices'
 import { getIrDevice, getEntityDetails } from '../lib/api'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
+import { useT, t as i18nT } from '../lib/i18n'
 
 function parseTarget(id) {
   if (!id) return { kind: 'unknown' }
@@ -74,7 +75,7 @@ function IrPath({ irId, navigate }) {
     setLoading(true)
     getIrDevice(irId)
       .then(d => { if (!cancelled) setIrDevice(d) })
-      .catch(e => { if (!cancelled) setError(e.message || 'Failed to load') })
+      .catch(e => { if (!cancelled) setError(e.message || i18nT('remote.failedLoad')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [irId])
@@ -96,7 +97,7 @@ function HaPath({ entityId, navigate }) {
     setLoading(true)
     getEntityDetails(entityId)
       .then(d => { if (!cancelled) setDetails(d) })
-      .catch(e => { if (!cancelled) setError(e.message || 'Failed to load') })
+      .catch(e => { if (!cancelled) setError(e.message || i18nT('remote.failedLoad')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [entityId])
@@ -109,12 +110,12 @@ function HaPath({ entityId, navigate }) {
 }
 
 function Body({ entity, loading, error, navigate }) {
-  if (loading) return <Header title="Loading…" onBack={() => navigate(-1)} />
+  if (loading) return <Header title={i18nT('common.loading')} onBack={() => navigate(-1)} />
   if (error || !entity) {
     return (
       <>
-        <Header title="Remote" onBack={() => navigate(-1)} />
-        <Empty text={error || 'Device not found'} />
+        <Header title={i18nT('remote.title')} onBack={() => navigate(-1)} />
+        <Empty text={error || i18nT('remote.notFound')} />
       </>
     )
   }
@@ -140,7 +141,7 @@ function Header({ title, subtitle, onBack }) {
         <ArrowLeft size={16} />
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p className="z-eyebrow" style={{ marginBottom: 2 }}>Remote</p>
+        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{i18nT('remote.title')}</p>
         <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
@@ -168,8 +169,8 @@ function Empty({ text }) {
 function NotFound({ navigate }) {
   return (
     <>
-      <Header title="Remote" onBack={() => navigate(-1)} />
-      <Empty text="Invalid remote target" />
+      <Header title={i18nT('remote.title')} onBack={() => navigate(-1)} />
+      <Empty text={i18nT('remote.invalidTarget')} />
     </>
   )
 }

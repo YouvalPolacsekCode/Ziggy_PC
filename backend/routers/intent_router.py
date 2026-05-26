@@ -215,6 +215,84 @@ async def process_chat(req: ChatRequest):
     }
 
 
+def _validate_voice_upload(file: UploadFile, request_id: str) -> tuple[str, str]:
+    """Shared content-type validation. Returns (temp file suffix, normalised ctype)."""
+    ctype = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if ctype and ctype not in _VOICE_ALLOWED_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported audio content-type: {ctype}")
+    suffix = ".wav" if "wav" in ctype else ".webm"
+    return suffix, ctype
+
+
+async def _write_voice_tmpfile(file: UploadFile, suffix: str) -> tuple[str, int]:
+    """Read upload into a temp file, enforcing the size cap."""
+    data = await file.read()
+    if len(data) > _VOICE_MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio upload too large ({len(data)} > {_VOICE_MAX_UPLOAD_BYTES} bytes).",
+        )
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(data)
+        return tmp.name, len(data)
+
+
+def _emit_transcript_events(request_id: str, transcription: str, lang: str) -> None:
+    """Privacy: at VERBOSE expose only metadata; raw transcripts gated to TRACE."""
+    bus.emit("voice", VERBOSE, "voice_transcribed",
+             request_id=request_id,
+             length=len(transcription),
+             language=lang,
+             empty=not transcription.strip())
+    bus.emit("voice", TRACE, "voice_transcribed_full",
+             request_id=request_id,
+             transcription=transcription,
+             language=lang)
+
+
+@router.post("/api/voice/transcribe")
+async def transcribe_voice(request: Request, file: UploadFile = File(...)):
+    """Transcribe audio to text. No intent handling, no reply generation.
+
+    The chat UI uses this for hold-to-talk so the user's words can be shown on
+    screen the moment Whisper returns — before the (slower) chat reply pipeline
+    runs. The frontend follows this with a regular POST /api/chat using the
+    returned transcription.
+    """
+    _voice_rate_check(request)
+    request_id = _new_request_id()
+    suffix, ctype = _validate_voice_upload(file, request_id)
+    tmp_path = None
+    try:
+        tmp_path, byte_len = await _write_voice_tmpfile(file, suffix)
+        bus.emit("voice", BASIC, "voice_received",
+                 request_id=request_id, content_type=ctype, bytes=byte_len,
+                 endpoint="/api/voice/transcribe")
+
+        from interfaces.voice_interface import transcribe_web
+        transcription, lang = transcribe_web(tmp_path)
+        _emit_transcript_events(request_id, transcription, lang)
+
+        return {
+            "transcription": transcription,
+            "lang": lang,
+            "ok": bool(transcription.strip()),
+            "request_id": request_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(f"[API] Voice transcribe error: {e}")
+        bus.emit("voice", BASIC, "voice_error",
+                 request_id=request_id, error=str(e),
+                 error_type=type(e).__name__, result="exception")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if tmp_path:
+            try: os.unlink(tmp_path)
+            except Exception: pass
+
+
 @router.post("/api/voice")
 async def process_voice(request: Request, file: UploadFile = File(...)):
     _voice_rate_check(request)

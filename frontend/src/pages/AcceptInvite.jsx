@@ -2,13 +2,20 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getInvite, acceptInvite } from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
-
-const ROLE_LABEL = { super_admin: 'Owner', admin: 'Admin', user: 'Member', guest: 'Guest' }
+import { useT } from '../lib/i18n'
 
 export default function AcceptInvite() {
   const { token } = useParams()
   const navigate  = useNavigate()
   const { setToken } = useAuthStore()
+  const t = useT()
+
+  const ROLE_LABEL = {
+    super_admin: t('roles.owner'),
+    admin:       t('roles.admin'),
+    user:        t('roles.member'),
+    guest:       t('roles.guest'),
+  }
 
   // Relay invites embed ?relay=https://relay-url so AcceptInvite knows to call
   // the relay API instead of the local Ziggy API. No localStorage is touched —
@@ -33,15 +40,15 @@ export default function AcceptInvite() {
 
     fetchInvite()
       .then(inv => { setInvite(inv); setEmail(inv.email || '') })
-      .catch(e  => setError(e.message || 'Invite not found or expired.'))
+      .catch(e  => setError(e.message || t('invite.notFound')))
       .finally(() => setLoading(false))
   }, [token, relayBase])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!email.trim()) return setError('Email is required.')
-    if (password.length < 6) return setError('Password must be at least 6 characters.')
-    if (password !== confirm) return setError('Passwords do not match.')
+    if (!email.trim()) return setError(t('invite.emailRequired'))
+    if (password.length < 6) return setError(t('invite.passwordMin'))
+    if (password !== confirm) return setError(t('invite.passwordsMismatch'))
     setSaving(true)
     setError(null)
     try {
@@ -72,7 +79,7 @@ export default function AcceptInvite() {
         setTimeout(() => navigate('/'), 1800)
       }
     } catch (e) {
-      setError(e.message || 'Failed to accept invite.')
+      setError(e.message || t('invite.acceptFailed'))
     } finally {
       setSaving(false)
     }
@@ -99,13 +106,13 @@ export default function AcceptInvite() {
           <p style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.025em', color: 'var(--ink)', marginBottom: 4 }}>
             ziggy<span style={{ color: 'var(--accent)' }}>.</span>
           </p>
-          <p className="z-eyebrow" style={{ marginBottom: 24 }}>Smart home intelligence</p>
+          <p className="z-eyebrow" style={{ marginBottom: 24 }}>{t('invite.tagline')}</p>
         </div>
 
         <div style={{ padding: '0 28px 28px' }}>
           {loading && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-faint)', fontSize: 13 }}>
-              Validating invite…
+              {t('invite.validating')}
             </div>
           )}
 
@@ -113,7 +120,7 @@ export default function AcceptInvite() {
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <p style={{ fontSize: 28, marginBottom: 12 }}>🔗</p>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                Invite unavailable
+                {t('invite.unavailable')}
               </p>
               <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>{error}</p>
             </div>
@@ -125,21 +132,21 @@ export default function AcceptInvite() {
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>🏠</p>
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                    Account created!
+                    {t('invite.accountCreated')}
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
-                    Your new Ziggy home is being set up.
-                    <br />You'll receive an email when it's ready to use.
+                    {t('invite.newHomeSetup1')}
+                    <br />{t('invite.newHomeSetup2')}
                   </p>
                 </>
               ) : homeUrl ? (
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                    Welcome to {invite?.home_name || 'Ziggy'}!
+                    {t('invite.welcomeTo', { name: invite?.home_name || 'Ziggy' })}
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 16 }}>
-                    Your account is ready. Open your home to log in.
+                    {t('invite.accountReady')}
                   </p>
                   <a
                     href={homeUrl}
@@ -150,19 +157,19 @@ export default function AcceptInvite() {
                       fontSize: 13, fontWeight: 600, textDecoration: 'none',
                     }}
                   >
-                    Go to my home →
+                    {t('invite.goToHome')}
                   </a>
                 </>
               ) : (
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                    {relayBase ? 'Account created!' : `Welcome to ${invite?.home_name || 'Ziggy'}!`}
+                    {relayBase ? t('invite.accountCreated') : t('invite.welcomeTo', { name: invite?.home_name || 'Ziggy' })}
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
                     {relayBase
-                      ? 'Your home admin will share your home\'s access URL with you.'
-                      : 'Taking you to the dashboard…'}
+                      ? t('invite.adminWillShare')
+                      : t('invite.takingToDashboard')}
                   </p>
                 </>
               )}
@@ -177,18 +184,18 @@ export default function AcceptInvite() {
                 padding: '14px 16px', marginBottom: 20,
               }}>
                 <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 4 }}>
-                  You've been invited by <strong style={{ color: 'var(--ink)' }}>{invite.invited_by}</strong>
+                  {t('invite.invitedByLabel')} <strong style={{ color: 'var(--ink)' }}>{invite.invited_by}</strong>
                 </p>
                 <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
                   {invite.type === 'home'
-                    ? `Set up ${invite.home_name || 'your new home'}`
+                    ? t('invite.setUpHome', { name: invite.home_name || t('invite.yourNewHome') })
                     : invite.home_name}
                   <span style={{
                     marginLeft: 8, fontSize: 10, fontWeight: 600,
                     background: 'var(--accent)', color: '#fff',
                     padding: '2px 8px', borderRadius: 999,
                   }}>
-                    {invite.type === 'home' ? 'New home' : (ROLE_LABEL[invite.role] || invite.role)}
+                    {invite.type === 'home' ? t('invite.newHomeBadge') : (ROLE_LABEL[invite.role] || invite.role)}
                   </span>
                 </p>
               </div>
@@ -196,7 +203,7 @@ export default function AcceptInvite() {
               {/* Fields */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Email</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('invite.email')}</p>
                   <input
                     type="email"
                     value={email}
@@ -209,24 +216,24 @@ export default function AcceptInvite() {
                   />
                 </div>
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Password</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('common.password')}</p>
                   <input
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="At least 6 characters"
+                    placeholder={t('invite.passwordPlaceholder')}
                     required
                     className="z-input"
                     style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }}
                   />
                 </div>
                 <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>Confirm password</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('common.confirmPassword')}</p>
                   <input
                     type="password"
                     value={confirm}
                     onChange={e => setConfirm(e.target.value)}
-                    placeholder="Repeat password"
+                    placeholder={t('invite.confirmPlaceholder')}
                     required
                     className="z-input"
                     style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }}
@@ -251,7 +258,7 @@ export default function AcceptInvite() {
                   opacity: saving ? 0.7 : 1,
                 }}
               >
-                {saving ? 'Creating account…' : (invite.type === 'home' ? 'Create my account' : 'Create account & join')}
+                {saving ? t('invite.creating') : (invite.type === 'home' ? t('invite.createMyAccount') : t('invite.createAndJoin'))}
               </button>
             </form>
           )}

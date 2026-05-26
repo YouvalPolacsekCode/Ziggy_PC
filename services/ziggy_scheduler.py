@@ -62,7 +62,11 @@ async def _fire_presence_automation(trigger_type: str, name: str) -> None:
                        automation_id=auto["id"], name=auto.get("name", auto["id"]),
                        trigger_type=trigger_type, person=name)
             try:
-                await execute_ziggy_actions(auto["id"])
+                await execute_ziggy_actions(
+                    auto["id"],
+                    label=auto.get("name", auto["id"]),
+                    trigger_reason=f"presence:{trigger_type}:{name}",
+                )
             except Exception as exc:
                 log_error(f"[Scheduler] Automation {auto['id']} failed: {exc}")
                 _dbus.emit("presence", BASIC, "presence_automation_failed",
@@ -105,7 +109,11 @@ async def run_scheduler() -> None:
                            automation_id=auto_id, name=auto_name,
                            trigger_time=current_time)
                 try:
-                    await execute_ziggy_actions(auto_id)
+                    await execute_ziggy_actions(
+                        auto_id,
+                        label=auto_name,
+                        trigger_reason=f"scheduler-time:{current_time}",
+                    )
                 except Exception as exc:
                     log_error(f"[Scheduler] Execution failed for {auto_id}: {exc}")
                     _dbus.emit("scheduler", BASIC, "scheduled_automation_failed",

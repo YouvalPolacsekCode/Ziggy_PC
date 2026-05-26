@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useWebSocket } from '../hooks/useWebSocket'
+import { useWsMessages } from '../hooks/useWebSocket'
 import { useAuthStore } from '../stores/authStore'
 import { useUIStore } from '../stores/uiStore'
 import {
@@ -7,6 +7,8 @@ import {
   clearDebugEvents, exportDebugReport, getDebugStatus,
   simulateIntent, getRequestTrace, debugSelfTest,
 } from '../lib/api'
+import feLogger from '../lib/logger'
+import { useT } from '../lib/i18n'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -27,6 +29,10 @@ const SCOPE_COLORS = {
   ws:         '#6366f1',
   voice:      '#ec4899',
   scheduler:  '#84cc16',
+  api:        '#22d3ee',
+  device:     '#a855f7',
+  frontend:   '#f43f5e',
+  settings:   '#eab308',
   general:    'var(--ink-mute)',
 }
 const RESULT_COLOR = {
@@ -40,7 +46,10 @@ const RESULT_COLOR = {
   partial_failure: '#f59e0b',
 }
 
-const ALL_SCOPES = ['intent','ha','ir','automation','sensor','presence','ws','voice','scheduler']
+const ALL_SCOPES = [
+  'intent','ha','ir','automation','sensor','presence','ws','voice','scheduler',
+  'api','device','frontend','settings',
+]
 const ALL_LEVELS = ['off','basic','verbose','trace']
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -103,6 +112,7 @@ function ResultDot({ result }) {
 }
 
 function EventRow({ event, onSelect, selected, onFilterReqId }) {
+  const t = useT()
   const data = event.data || {}
   const result = data.result
   const isSelected = selected?.id === event.id
@@ -135,7 +145,7 @@ function EventRow({ event, onSelect, selected, onFilterReqId }) {
         {event.request_id && (
           <span
             onClick={e => { e.stopPropagation(); onFilterReqId(event.request_id) }}
-            title={`Filter to ${event.request_id}`}
+            title={t('debug.filterTo', { id: event.request_id })}
             style={{
               marginLeft: 8, fontSize: 9, color: 'var(--ink-faint)',
               fontFamily: '"IBM Plex Mono", monospace',
@@ -152,6 +162,7 @@ function EventRow({ event, onSelect, selected, onFilterReqId }) {
 }
 
 function EventDetail({ event, onClose }) {
+  const t = useT()
   if (!event) return null
   const data = event.data || {}
 
@@ -172,14 +183,14 @@ function EventDetail({ event, onClose }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-        <Row label="Time"       value={fmtTime(event.ts)} />
-        <Row label="Request ID" value={event.request_id} mono />
-        <Row label="Event ID"   value={event.id} mono />
+        <Row label={t('debug.detailTime')}       value={fmtTime(event.ts)} />
+        <Row label={t('debug.detailRequestId')} value={event.request_id} mono />
+        <Row label={t('debug.detailEventId')}   value={event.id} mono />
 
         {data.result && (
           <div style={{ margin: '12px 0', padding: '8px 12px', borderRadius: 8, background: (RESULT_COLOR[data.result] || 'var(--ink-faint)') + '18', border: `1px solid ${(RESULT_COLOR[data.result] || 'var(--ink-faint)')}33` }}>
             <p style={{ fontSize: 11, fontWeight: 700, color: RESULT_COLOR[data.result] || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase' }}>
-              Result: {data.result}
+              {t('debug.detailResult', { result: data.result })}
             </p>
             {data.message && <p style={{ fontSize: 12, color: 'var(--ink)', marginTop: 4 }}>{data.message}</p>}
           </div>
@@ -187,20 +198,20 @@ function EventDetail({ event, onClose }) {
 
         {data.suggestion && (
           <div style={{ margin: '8px 0', padding: '8px 12px', borderRadius: 8, background: '#3b82f618', border: '1px solid #3b82f633' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', marginBottom: 4 }}>SUGGESTION</p>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', marginBottom: 4 }}>{t('debug.detailSuggestion')}</p>
             <p style={{ fontSize: 12, color: 'var(--ink)' }}>{data.suggestion}</p>
           </div>
         )}
 
         {data.error && (
           <div style={{ margin: '8px 0', padding: '8px 12px', borderRadius: 8, background: '#ef444418', border: '1px solid #ef444433' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>ERROR — {data.error_type}</p>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>{t('debug.detailErrorLabel', { type: data.error_type })}</p>
             <p style={{ fontSize: 11, color: '#ef4444', fontFamily: '"IBM Plex Mono", monospace', wordBreak: 'break-all' }}>{data.error}</p>
           </div>
         )}
 
         <div style={{ marginTop: 12 }}>
-          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Data</p>
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t('debug.detailData')}</p>
           <pre style={{
             fontSize: 10, color: 'var(--ink)', background: 'var(--bg-2)',
             padding: 10, borderRadius: 8, overflow: 'auto',
@@ -227,6 +238,7 @@ function Row({ label, value, mono }) {
 }
 
 function SimulatePanel({ onClose }) {
+  const t = useT()
   const { addToast } = useUIStore()
   const [input, setInput] = useState('')
   const [result, setResult] = useState(null)
@@ -240,7 +252,7 @@ function SimulatePanel({ onClose }) {
       const r = await simulateIntent({ text: input.trim() })
       setResult(r)
     } catch (e) {
-      addToast(e.message || 'Simulate failed', 'error')
+      addToast(e.message || t('debug.failedSimulate'), 'error')
     } finally {
       setLoading(false)
     }
@@ -254,19 +266,20 @@ function SimulatePanel({ onClose }) {
       boxShadow: '-8px 0 32px rgba(0,0,0,0.15)',
     }}>
       <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Simulate Intent (Dry Run)</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('debug.simTitle')}</span>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 18 }}>×</button>
       </div>
       <div style={{ padding: 16, flex: 1, overflow: 'auto' }}>
         <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 12 }}>
-          Enter a natural language command. Ziggy will parse and trace it without executing any action.
+          {t('debug.simHelp')}
         </p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && run()}
-            placeholder="e.g. turn on the living room light"
+            placeholder={t('debug.simPlaceholder')}
+            dir="auto"
             className="z-input"
             style={{ flex: 1, height: 36, padding: '0 12px', fontSize: 13 }}
           />
@@ -276,14 +289,14 @@ function SimulatePanel({ onClose }) {
             className="z-btn-primary"
             style={{ padding: '0 16px', height: 36, fontSize: 13, borderRadius: 9 }}
           >
-            {loading ? '…' : 'Run'}
+            {loading ? '…' : t('debug.simRun')}
           </button>
         </div>
 
         {result && (
           <div>
             <div style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', marginBottom: 12 }}>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>PARSED INTENT</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('debug.simParsed')}</p>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace' }}>{result.parsed_intent}</p>
               <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 4 }}>{result.reply}</p>
               {result.params && Object.keys(result.params).length > 0 && (
@@ -295,7 +308,7 @@ function SimulatePanel({ onClose }) {
 
             {result.events?.length > 0 && (
               <div>
-                <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase' }}>Trace ({result.events.length} events)</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase' }}>{t('debug.simTrace', { n: result.events.length })}</p>
                 {result.events.map(ev => (
                   <div key={ev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 0', borderBottom: '0.5px solid var(--line)' }}>
                     <ScopeBadge scope={ev.scope} />
@@ -315,9 +328,10 @@ function SimulatePanel({ onClose }) {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function DebugPage() {
+  const t = useT()
   const { role } = useAuthStore()
   const { addToast } = useUIStore()
-  const { messages } = useWebSocket()
+  const messages = useWsMessages()
 
   const [config, setConfig] = useState(null)
   const [events, setEvents] = useState([])
@@ -338,7 +352,7 @@ export default function DebugPage() {
   if (role !== 'super_admin') {
     return (
       <div style={{ padding: 32, textAlign: 'center' }}>
-        <p style={{ color: 'var(--ink-faint)' }}>Debug mode is only available to super admins.</p>
+        <p style={{ color: 'var(--ink-faint)' }}>{t('debug.notAvailable')}</p>
       </div>
     )
   }
@@ -349,6 +363,10 @@ export default function DebugPage() {
       setConfig(c)
       setPendingLevel(c.level)
       setPendingScopes(c.scopes)
+      // First-visit sync: bring the FE logger up to whatever the backend bus
+      // is set to. Without this, opening Debug for the first time shows the
+      // backend at "verbose" but the FE logger is still "off" from default.
+      if (feLogger.getLevel() !== c.level) feLogger.setLevel(c.level)
     } catch {}
   }, [])
 
@@ -402,10 +420,13 @@ export default function DebugPage() {
     setConfigSaving(true)
     try {
       await setDebugConfig({ level: pendingLevel, scopes: pendingScopes })
+      // Mirror the chosen level on the frontend logger too — otherwise clicks
+      // never leave the browser even when the user picked verbose/trace.
+      feLogger.setLevel(pendingLevel)
       await loadConfig()
-      addToast('Debug config saved', 'success')
+      addToast(t('debug.savedToast'), 'success')
     } catch (e) {
-      addToast(e.message || 'Failed to save', 'error')
+      addToast(e.message || t('debug.failedSave'), 'error')
     } finally {
       setConfigSaving(false)
     }
@@ -417,9 +438,9 @@ export default function DebugPage() {
       setLiveEvents([])
       setEvents([])
       setSelectedEvent(null)
-      addToast('Events cleared', 'success')
+      addToast(t('debug.eventsCleared'), 'success')
     } catch (e) {
-      addToast(e.message || 'Clear failed', 'error')
+      addToast(e.message || t('debug.failedClear'), 'error')
     }
   }
 
@@ -434,7 +455,7 @@ export default function DebugPage() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      addToast(e.message || 'Export failed', 'error')
+      addToast(e.message || t('debug.failedExport'), 'error')
     }
   }
 
@@ -462,7 +483,7 @@ export default function DebugPage() {
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Debug Mode</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{t('debug.title')}</span>
             {config && (
               <span style={{
                 fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
@@ -471,12 +492,12 @@ export default function DebugPage() {
                 border: `1px solid ${isActive ? '#10b98144' : 'var(--line)'}`,
                 fontFamily: '"IBM Plex Mono", monospace',
               }}>
-                {isActive ? `● ${config.level.toUpperCase()}` : '○ OFF'}
+                {isActive ? `● ${config.level.toUpperCase()}` : t('debug.statusOff')}
               </span>
             )}
           </div>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
-            {filtered.length} events{liveMode ? ' (live)' : ''} · req_id tracks full flow end-to-end
+            {t('debug.subtitle', { n: filtered.length, live: liveMode ? t('debug.liveTag') : '' })}
           </p>
         </div>
 
@@ -486,30 +507,36 @@ export default function DebugPage() {
               const r = await debugSelfTest()
               setSelfTestResult(r)
             } catch (e) {
-              setSelfTestResult({ error: e.message })
+              // This is the admin Debug page — show the normalized error code
+              // + sanitized message + request_id so the operator can correlate
+              // with backend logs. Raw e.message used to be raw HTTP/HA text.
+              const code  = e?.code || 'unknown'
+              const msg   = e?.userMessage || e?.message || 'request failed'
+              const refId = e?.requestId ? ` (ref ${e.requestId})` : ''
+              setSelfTestResult({ error: `${msg} [${code}]${refId}` })
             }
           }}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
         >
-          Self-Test
+          {t('debug.selfTest')}
         </button>
         <button
           onClick={() => setShowSimulate(true)}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
         >
-          Simulate
+          {t('debug.simulate')}
         </button>
         <button
           onClick={exportReport}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
         >
-          Export
+          {t('debug.export')}
         </button>
         <button
           onClick={clearEvents}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: '#ef4444' }}
         >
-          Clear
+          {t('debug.clear')}
         </button>
       </div>
 
@@ -524,17 +551,17 @@ export default function DebugPage() {
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: selfTestResult.error ? '#ef4444' : (selfTestResult.ws_callback_wired ? '#10b981' : '#ef4444') }}>
               {selfTestResult.error
-                ? `Error: ${selfTestResult.error}`
+                ? t('debug.errorPrefix', { msg: selfTestResult.error })
                 : selfTestResult.diagnosis}
             </p>
             {selfTestResult.ws_callback_wired === false && (
               <p style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>
-                WS callback not wired — server was not restarted after code changes. Restart ziggy_main.py.
+                {t('debug.wsNotWired')}
               </p>
             )}
             {selfTestResult.ws_callback_wired && !selfTestResult.was_active_before && (
               <p style={{ fontSize: 11, color: '#e0a020', marginTop: 4 }}>
-                Bus is wired but debug level was off when you hit Self-Test. Set level and click Apply first.
+                {t('debug.busNotActive')}
               </p>
             )}
             {selfTestResult.ws_callback_wired && (
@@ -555,7 +582,7 @@ export default function DebugPage() {
         }}>
           {/* Level selector */}
           <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-            Debug Level
+            {t('debug.debugLevel')}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 14 }}>
             {ALL_LEVELS.map(lvl => (
@@ -577,7 +604,7 @@ export default function DebugPage() {
 
           {/* Scopes */}
           <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-            Scopes {(pendingScopes?.length ?? 0) === 0 ? '(all)' : `(${pendingScopes.length})`}
+            {t('debug.scopes')} {(pendingScopes?.length ?? 0) === 0 ? t('debug.scopesAll') : `(${pendingScopes.length})`}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 14 }}>
             {ALL_SCOPES.map(scope => {
@@ -603,7 +630,7 @@ export default function DebugPage() {
               onClick={() => setPendingScopes([])}
               style={{ textAlign: 'left', padding: '4px 8px', borderRadius: 7, cursor: 'pointer', border: '1px solid transparent', background: 'transparent', color: 'var(--ink-faint)', fontSize: 10 }}
             >
-              ↺ all scopes
+              {t('debug.allScopes')}
             </button>
           </div>
 
@@ -613,12 +640,12 @@ export default function DebugPage() {
             className="z-btn-primary"
             style={{ width: '100%', height: 34, fontSize: 12, borderRadius: 8, marginBottom: 16 }}
           >
-            {configSaving ? '…' : 'Apply'}
+            {configSaving ? '…' : t('debug.apply')}
           </button>
 
           {/* Filters */}
           <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-            Filter Events
+            {t('debug.filterEvents')}
           </p>
           <select
             value={filterScope}
@@ -626,7 +653,7 @@ export default function DebugPage() {
             className="z-input"
             style={{ width: '100%', height: 32, fontSize: 11, marginBottom: 6 }}
           >
-            <option value="">All scopes</option>
+            <option value="">{t('debug.allScopesOpt')}</option>
             {ALL_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select
@@ -635,13 +662,14 @@ export default function DebugPage() {
             className="z-input"
             style={{ width: '100%', height: 32, fontSize: 11, marginBottom: 6 }}
           >
-            <option value="">All results</option>
+            <option value="">{t('debug.allResults')}</option>
             {['ok','error','exception','not_found','unrecognized','skipped'].map(r => <option key={r} value={r}>{r}</option>)}
           </select>
           <input
             value={filterReqId}
             onChange={e => setFilterReqId(e.target.value)}
-            placeholder="Filter by request_id…"
+            placeholder={t('debug.filterReqIdPh')}
+            dir="auto"
             className="z-input"
             style={{ width: '100%', height: 32, fontSize: 11, marginBottom: 12 }}
           />
@@ -657,7 +685,7 @@ export default function DebugPage() {
                 border: '0.5px solid var(--line)',
               }}
             >
-              Live
+              {t('debug.live')}
             </button>
             <button
               onClick={() => { setLiveMode(false); loadEvents() }}
@@ -668,7 +696,7 @@ export default function DebugPage() {
                 border: '0.5px solid var(--line)',
               }}
             >
-              Buffered
+              {t('debug.buffered')}
             </button>
           </div>
         </div>
@@ -682,10 +710,10 @@ export default function DebugPage() {
             fontSize: 9, fontWeight: 700, color: 'var(--ink-faint)',
             textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0,
           }}>
-            <span>Time</span>
-            <span>Scope</span>
-            <span>Level</span>
-            <span>Step / Details</span>
+            <span>{t('debug.colTime')}</span>
+            <span>{t('debug.colScope')}</span>
+            <span>{t('debug.colLevel')}</span>
+            <span>{t('debug.colStep')}</span>
             <span></span>
           </div>
 
@@ -697,20 +725,20 @@ export default function DebugPage() {
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 <span style={{ fontSize: 11, color: '#3b82f6', fontFamily: '"IBM Plex Mono", monospace', flex: 1 }}>
-                  Tracing: {filterReqId}
+                  {t('debug.tracing', { id: filterReqId })}
                 </span>
                 <button
                   onClick={() => setFilterReqId('')}
                   style={{ fontSize: 10, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
-                  × clear
+                  {t('debug.clearFilter')}
                 </button>
               </div>
             )}
             {filtered.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center' }}>
                 <p style={{ color: 'var(--ink-faint)', fontSize: 13 }}>
-                  {isActive ? (liveMode ? 'Waiting for events…' : 'No events in buffer.') : 'Debug is off. Set a level and press Apply.'}
+                  {isActive ? (liveMode ? t('debug.waitingEvents') : t('debug.noEvents')) : t('debug.debugOff')}
                 </p>
               </div>
             ) : (

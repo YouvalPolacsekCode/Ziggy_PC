@@ -5,7 +5,10 @@ import {
   Sun, Moon, User, Lock, LogOut, RefreshCw,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
+  Smartphone,
 } from 'lucide-react'
+import { PairWithPhone } from '../components/PairWithPhone'
+import { MobileDevicesList } from '../components/MobileDevicesList'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
@@ -23,11 +26,13 @@ import {
   getPresencePersons, createPresencePerson, deletePresencePerson,
   getPresenceZone, savePresenceZone, getPresenceDebug, setPresenceLanHost,
   pingMePresence, getMyPresencePerson,
+  listPresenceZones, createPresenceZone, updatePresenceZone, deletePresenceZone,
 } from '../lib/api'
 import AdminSettings from './AdminSettings'
 import { MemoryPanel } from './Memory'
 import QuickAsks from './QuickAsks'
 import VirtualDevices from './VirtualDevices'
+import { useT, setLang as setI18nLang, LANGS } from '../lib/i18n'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -36,10 +41,7 @@ const TIMEZONES = [
   'Europe/Berlin', 'America/New_York', 'America/Chicago',
   'America/Los_Angeles', 'Asia/Tokyo', 'Australia/Sydney',
 ]
-const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'he', label: 'עברית (Hebrew)' },
-]
+const LANGUAGES = LANGS
 const ROLE_LABELS = {
   super_admin: { label: 'Super Admin', color: 'var(--accent)' },
   admin:       { label: 'Admin',       color: '#8b5cf6'       },
@@ -326,6 +328,12 @@ function PresenceSection() {
   const [debugOpen,  setDebugOpen] = useState(false)
   const [debug,      setDebug]     = useState(null)
   const [myPersonId, setMyPersonId] = useState(null)
+  const [extraZones, setExtraZones] = useState([])
+  const [zoneAdding,  setZoneAdding]  = useState(false)
+  const [zoneNewName, setZoneNewName] = useState('')
+  const [zoneNewRadius, setZoneNewRadius] = useState('500')
+  const [editingZoneId, setEditingZoneId] = useState(null)
+  const [zoneEditDraft, setZoneEditDraft] = useState({ name: '', lat: '', lon: '', radius_m: '' })
   const [editingTrackerId, setEditingTrackerId] = useState(null)
   const [trackerDraft, setTrackerDraft] = useState('')
   const [trackerSaving, setTrackerSaving] = useState(false)
@@ -354,10 +362,13 @@ function PresenceSection() {
       return
     }
     if (!('geolocation' in navigator)) {
-      setTrackMeStatus('error: geolocation unavailable')
+      // Use a short status code rather than building an error string with
+      // raw exception text. The render step (see below) maps these codes
+      // to user-friendly labels — no leakage of raw err.message into the UI.
+      setTrackMeStatus('unavailable')
       return
     }
-    setTrackMeStatus('requesting permission')
+    setTrackMeStatus('requesting')
     const MIN_INTERVAL_MS = 20 * 1000
     const sendPing = async (pos) => {
       const now = Date.now()
@@ -368,13 +379,15 @@ function PresenceSection() {
         setTrackMeStatus(r.state === 'home' ? 'home' : r.state === 'not_home' ? 'away' : 'pinging')
         setTrackMePerson(r.person)
         load()  // refresh the people list in the UI
-      } catch (e) {
-        setTrackMeStatus(`error: ${e.message || 'ping failed'}`)
+      } catch {
+        // Network / backend errors all collapse to a generic state — the
+        // render step shows "Connection issue", not raw HTTP text.
+        setTrackMeStatus('error')
       }
     }
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => sendPing(pos),
-      (err) => setTrackMeStatus(err.code === 1 ? 'permission denied' : `error: ${err.message}`),
+      (err) => setTrackMeStatus(err.code === 1 ? 'permission_denied' : 'error'),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
     )
     return stopWatch
@@ -414,7 +427,62 @@ function PresenceSection() {
       const me = await getMyPresencePerson()
       setMyPersonId(me?.person?.id ?? null)
     } catch { setMyPersonId(null) }
+    try {
+      const z = await listPresenceZones()
+      setExtraZones(z.zones ?? [])
+    } catch { setExtraZones([]) }
     finally { setLoading(false) }
+  }
+
+  const addZone = async () => {
+    const name = zoneNewName.trim()
+    if (!name) { addToast('Name is required', 'error'); return }
+    if (!navigator.geolocation) { addToast('Geolocation not available — open this in Ziggy on a device', 'error'); return }
+    setZoneAdding(true)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await createPresenceZone({
+            name,
+            lat:      parseFloat(pos.coords.latitude.toFixed(6)),
+            lon:      parseFloat(pos.coords.longitude.toFixed(6)),
+            radius_m: parseFloat(zoneNewRadius) || 200,
+          })
+          setZoneNewName('')
+          await load()
+          addToast(`Zone '${name}' created at your current location`, 'success')
+        } catch (e) { addToast(e.message || 'Failed to create zone', 'error') }
+        finally { setZoneAdding(false) }
+      },
+      () => { addToast('Could not get current location — set lat/lon manually after creating', 'error'); setZoneAdding(false) },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+
+  const beginEditZone = (z) => {
+    setEditingZoneId(z.id)
+    setZoneEditDraft({ name: z.name, lat: z.lat, lon: z.lon, radius_m: z.radius_m })
+  }
+  const saveZoneEdit = async (z) => {
+    try {
+      await updatePresenceZone(z.id, {
+        name:     zoneEditDraft.name.trim() || z.name,
+        lat:      parseFloat(zoneEditDraft.lat),
+        lon:      parseFloat(zoneEditDraft.lon),
+        radius_m: parseFloat(zoneEditDraft.radius_m) || z.radius_m,
+      })
+      setEditingZoneId(null)
+      await load()
+      addToast(`Zone '${z.name}' updated`, 'success')
+    } catch (e) { addToast(e.message || 'Failed to update', 'error') }
+  }
+  const removeZone = async (z) => {
+    if (!window.confirm(`Delete zone '${z.name}'?`)) return
+    try {
+      await deletePresenceZone(z.id)
+      await load()
+      addToast(`Zone '${z.name}' deleted`, 'success')
+    } catch (e) { addToast(e.message || 'Failed to delete', 'error') }
   }
 
   const loadDebug = async () => {
@@ -504,11 +572,16 @@ function PresenceSection() {
               {trackMe
                 ? (trackMeStatus === 'home'  ? `Active · home${trackMePerson ? ' · ' + trackMePerson.name : ''}`
                   : trackMeStatus === 'away'  ? `Active · away${trackMePerson ? ' · ' + trackMePerson.name : ''}`
+                  : trackMeStatus === 'permission_denied' ? 'Location permission denied'
+                  : trackMeStatus === 'unavailable'      ? 'Location unavailable on this device'
+                  : trackMeStatus === 'error'            ? 'Connection issue — will retry'
+                  : trackMeStatus === 'requesting'       ? 'Requesting permission…'
+                  : trackMeStatus === 'pinging'          ? 'Updating location…'
                   : `Active · ${trackMeStatus}`)
                 : 'Off — turn on to let this device report its GPS to Ziggy'}
             </p>
           </div>
-          <Toggle checked={trackMe} onChange={toggleTrackMe} />
+          <Toggle checked={trackMe} onCheckedChange={toggleTrackMe} />
         </div>
       </div>
 
@@ -521,7 +594,7 @@ function PresenceSection() {
               {zone?.configured
                 ? `${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)} · ${zone.radius}m radius`
                 : zone?.lat != null
-                  ? `Using HA location (${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)}) — save to confirm`
+                  ? `Using detected location (${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)}) — save to confirm`
                   : 'Not configured — set your home location'}
             </p>
           </div>
@@ -564,10 +637,71 @@ function PresenceSection() {
               Tip: click "Use my location" while at home to auto-fill. 100 m radius is the default; the engine adds GPS-jitter hysteresis on top.
             </p>
             <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5, paddingTop: 4, borderTop: '0.5px solid var(--line)', marginTop: 4 }}>
-              <strong style={{ color: 'var(--ink-mute)' }}>Want a head-start automation?</strong> The Home zone fires when you physically reach home. For automations that should run while you're still on the way (e.g. turn on the AC while you're 5 minutes out), create a second zone in Home Assistant with a larger radius — a "Near Home" zone at 2–3 km, for example. Once that zone exists, it'll be selectable when you build a zone-entry automation.
+              <strong style={{ color: 'var(--ink-mute)' }}>Want a head-start automation?</strong> Add a second zone below — e.g. a "Near Home" zone at 2–3 km — and Ziggy will track entry/exit for that zone alongside the primary Home zone.
             </p>
           </div>
         )}
+      </div>
+
+      {/* Additional zones card */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ padding: '11px 16px', borderBottom: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Additional zones</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
+            Extra named zones for automations (e.g. "Near Home", "Work").
+          </p>
+        </div>
+        {extraZones.map((z, i) => (
+          <div key={z.id} style={{ padding: '10px 16px', borderBottom: i < extraZones.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+            {editingZoneId === z.id ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))}
+                       className="z-input" placeholder="Name" style={{ height: 28, padding: '0 8px', fontSize: 12 }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input value={zoneEditDraft.lat} onChange={e => setZoneEditDraft(d => ({ ...d, lat: e.target.value }))}
+                         className="z-input" placeholder="Latitude" style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
+                  <input value={zoneEditDraft.lon} onChange={e => setZoneEditDraft(d => ({ ...d, lon: e.target.value }))}
+                         className="z-input" placeholder="Longitude" style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
+                  <input type="number" value={zoneEditDraft.radius_m} onChange={e => setZoneEditDraft(d => ({ ...d, radius_m: e.target.value }))}
+                         className="z-input" placeholder="Radius (m)" style={{ width: 100, height: 28, padding: '0 8px', fontSize: 12 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => saveZoneEdit(z)} className="z-btn-primary" style={{ height: 28, padding: '0 12px', borderRadius: 7, fontSize: 12 }}>Save</button>
+                  <button onClick={() => setEditingZoneId(null)} className="z-btn-secondary" style={{ height: 28, padding: '0 10px', borderRadius: 7, fontSize: 12 }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>{z.name}</p>
+                  <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                    {z.lat?.toFixed(4)}, {z.lon?.toFixed(4)} · {z.radius_m}m
+                  </p>
+                </div>
+                <button onClick={() => beginEditZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 11, padding: '4px 8px' }}>edit</button>
+                <button onClick={() => removeZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }} title="Delete">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input value={zoneNewName} onChange={e => setZoneNewName(e.target.value)}
+                   onKeyDown={e => e.key === 'Enter' && addZone()}
+                   className="z-input" placeholder="Zone name (e.g. Near Home, Work)" style={{ flex: 1, height: 32, padding: '0 10px', fontSize: 12 }} />
+            <input type="number" min={50} max={50000} value={zoneNewRadius} onChange={e => setZoneNewRadius(e.target.value)}
+                   className="z-input" placeholder="Radius (m)" style={{ width: 100, height: 32, padding: '0 10px', fontSize: 12 }} />
+            <button onClick={addZone} disabled={zoneAdding || !zoneNewName.trim()} className="z-btn-primary"
+                    style={{ height: 32, padding: '0 12px', borderRadius: 8, fontSize: 12 }}>
+              {zoneAdding ? '…' : 'Add at current location'}
+            </button>
+          </div>
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+            Adds a zone centred on this device's GPS. Edit lat/lon afterwards if you need a different centre.
+          </p>
+        </div>
       </div>
 
       {/* People card */}
@@ -897,6 +1031,7 @@ function TabBar({ tabs, active, onChange }) {
 export default function Settings() {
   const { theme, toggleTheme, addToast } = useUIStore()
   const { logout, role, setRole } = useAuthStore()
+  const t = useT()
 
   const [activeTab,    setActiveTab]    = useState('general')
   const [refreshing,   setRefreshing]   = useState(false)
@@ -912,13 +1047,15 @@ export default function Settings() {
   const isSuperAdmin = hasRole(role, 'super_admin')
 
   const TABS = [
-    { id: 'general', label: 'General' },
-    ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
+    { id: 'general', label: t('settings.tabGeneral') },
+    ...(isAdmin ? [{ id: 'admin', label: t('settings.tabAdmin'), icon: Shield }] : []),
   ]
 
+  // Drives <html dir>/<html lang> AND swaps the in-memory i18n dictionary.
+  // The selector below calls this immediately on change so the UI flips before
+  // we even round-trip to the server.
   const applyLanguage = (lang) => {
-    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr'
-    document.documentElement.lang = lang === 'he' ? 'he' : 'en'
+    setI18nLang(lang)
   }
 
   const loadAll = () => {
@@ -947,24 +1084,24 @@ export default function Settings() {
     try {
       await patchGeneralSettings(general)
       applyLanguage(general.language)
-      addToast('Saved', 'success')
+      addToast(t('common.saved'), 'success')
     }
-    catch { addToast('Failed to save', 'error') }
+    catch { addToast(t('common.failedToSave'), 'error') }
     finally { setSavingGeneral(false) }
   }
 
   const handleChangePassword = async () => {
-    if (!pwForm.username.trim()) { setPwError('Username is required'); return }
-    if (pwForm.password.length < 4) { setPwError('At least 4 characters required'); return }
-    if (pwForm.password !== pwForm.confirm) { setPwError("Passwords don't match"); return }
+    if (!pwForm.username.trim()) { setPwError(t('settings.usernameRequired')); return }
+    if (pwForm.password.length < 4) { setPwError(t('settings.passwordMinLen')); return }
+    if (pwForm.password !== pwForm.confirm) { setPwError(t('settings.passwordsMismatch')); return }
     setSavingPw(true)
     try {
       await changePassword({ username: pwForm.username, password: pwForm.password })
-      addToast('Password updated', 'success')
+      addToast(t('settings.passwordUpdated'), 'success')
       setShowChangePw(false)
       setPwForm(f => ({ ...f, password: '', confirm: '' }))
       setPwError('')
-    } catch (e) { setPwError(e.message || 'Failed to update password') }
+    } catch (e) { setPwError(e.message || t('common.failedToSave')) }
     finally { setSavingPw(false) }
   }
 
@@ -974,8 +1111,8 @@ export default function Settings() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>System · local</p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Settings</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('settings.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('settings.title')}</h1>
         </div>
         {activeTab === 'general' && (
           <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
@@ -991,9 +1128,9 @@ export default function Settings() {
         <>
           {/* Appearance */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Appearance</SectionTitle>
+            <SectionTitle>{t('settings.appearance')}</SectionTitle>
             <Card>
-              <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? 'Dark mode' : 'Light mode'} subtitle="Switch app theme">
+              <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
                 <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
               </SettingRow>
             </Card>
@@ -1001,13 +1138,25 @@ export default function Settings() {
 
           {/* Language & Region */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Language & Region</SectionTitle>
+            <SectionTitle>{t('settings.languageRegion')}</SectionTitle>
             <Card>
               <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <Select label="Language" value={general.language} onChange={e => setGeneral(s => ({ ...s, language: e.target.value }))} options={LANGUAGES} />
-                <Select label="Timezone" value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
+                <Select
+                  label={t('settings.language')}
+                  value={general.language}
+                  onChange={e => {
+                    const v = e.target.value
+                    setGeneral(s => ({ ...s, language: v }))
+                    // Flip the in-memory dict immediately — don't wait for Save.
+                    // The persisted store keeps it across reloads even if the
+                    // user navigates away without hitting Save.
+                    applyLanguage(v)
+                  }}
+                  options={LANGUAGES}
+                />
+                <Select label={t('settings.timezone')} value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
                 <button onClick={saveGeneral} disabled={savingGeneral} className="z-btn-primary" style={{ width: '100%' }}>
-                  {savingGeneral ? 'Saving…' : 'Save'}
+                  {savingGeneral ? t('common.saving') : t('common.save')}
                 </button>
               </div>
             </Card>
@@ -1015,10 +1164,10 @@ export default function Settings() {
 
           {/* Account */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Account</SectionTitle>
+            <SectionTitle>{t('settings.account')}</SectionTitle>
             <Card>
               <div>
-                <SettingRow icon={User} label="Signed in" subtitle={username || 'Local account'}>
+                <SettingRow icon={User} label={t('settings.profile')} subtitle={username || t('settings.account')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {role && (
                       <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: ROLE_LABELS[role]?.color || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
@@ -1036,7 +1185,7 @@ export default function Settings() {
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <Lock size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-                      <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Change password</p>
+                      <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
                     </div>
                     <span style={{ color: 'var(--ink-faint)', transform: showChangePw ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -1046,11 +1195,11 @@ export default function Settings() {
                     {showChangePw && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
                         <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          <Input label="Username" placeholder="your username" value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
-                          <Input label="New password" type="password" placeholder="••••••••" value={pwForm.password} onChange={e => setPwForm(s => ({ ...s, password: e.target.value }))} />
-                          <Input label="Confirm password" type="password" placeholder="••••••••" value={pwForm.confirm} onChange={e => setPwForm(s => ({ ...s, confirm: e.target.value }))} error={pwError} />
+                          <Input label={t('common.username')} placeholder={t('common.username')} value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
+                          <Input label={t('settings.newPassword')} type="password" placeholder="••••••••" value={pwForm.password} onChange={e => setPwForm(s => ({ ...s, password: e.target.value }))} />
+                          <Input label={t('common.confirmPassword')} type="password" placeholder="••••••••" value={pwForm.confirm} onChange={e => setPwForm(s => ({ ...s, confirm: e.target.value }))} error={pwError} />
                           <button onClick={handleChangePassword} disabled={savingPw} className="z-btn-primary" style={{ width: '100%' }}>
-                            {savingPw ? 'Saving…' : 'Update password'}
+                            {savingPw ? t('common.saving') : t('settings.changePassword')}
                           </button>
                         </div>
                       </motion.div>
@@ -1061,7 +1210,7 @@ export default function Settings() {
                 <div style={{ borderTop: '0.5px solid var(--line)' }}>
                   <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--accent)' }}>
                     <LogOut size={16} style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>Sign out</span>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{t('common.signOut')}</span>
                   </button>
                 </div>
               </div>
@@ -1078,6 +1227,15 @@ export default function Settings() {
           <div style={{ marginBottom: 22 }}>
             <SectionTitle icon={MapPin}>Presence tracking</SectionTitle>
             <PresenceSection />
+          </div>
+
+          {/* Ziggy Home (mobile app) */}
+          <div style={{ marginBottom: 22 }}>
+            <SectionTitle icon={Smartphone}>Ziggy Home (mobile)</SectionTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <PairWithPhone />
+              <MobileDevicesList />
+            </div>
           </div>
 
           {/* Zigbee Bridge */}

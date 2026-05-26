@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
+import { useT } from '../lib/i18n'
 
 // ── Confidence meter ──────────────────────────────────────────────────────────
 function ConfidenceMeter({ value }) {
@@ -20,24 +21,26 @@ function ConfidenceMeter({ value }) {
   )
 }
 
-const PATTERN_TYPE_META = {
-  time_based: { label: 'Time pattern', tint: 'var(--info)' },
-  sequence:   { label: 'Routine',      tint: 'var(--ok)' },
-  group:      { label: 'Group',        tint: 'var(--warn)' },
+const PATTERN_TYPE_KEYS = {
+  time_based: { key: 'suggestions.patternTime',    tint: 'var(--info)' },
+  sequence:   { key: 'suggestions.patternRoutine', tint: 'var(--ok)' },
+  group:      { key: 'suggestions.patternGroup',   tint: 'var(--warn)' },
 }
-const STATUS_META = {
-  accepted:    { label: 'Accepted',  tint: 'var(--ok)' },
-  rejected:    { label: 'Dismissed', tint: 'var(--accent)' },
-  snoozed:     { label: 'Snoozed',   tint: 'var(--warn)' },
-  implemented: { label: 'Active',    tint: 'var(--ok)' },
+const STATUS_KEYS = {
+  accepted:    { key: 'suggestions.statusAccepted',  tint: 'var(--ok)' },
+  rejected:    { key: 'suggestions.statusDismissed', tint: 'var(--accent)' },
+  snoozed:     { key: 'suggestions.statusSnoozed',   tint: 'var(--warn)' },
+  implemented: { key: 'suggestions.statusActive',    tint: 'var(--ok)' },
 }
 
 // ── Suggestion card (Inbox-A variant) ─────────────────────────────────────────
 function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const [acting,   setActing]   = useState(null)
   const isPending = suggestion.status === 'pending'
-  const meta = PATTERN_TYPE_META[suggestion.pattern_type] || PATTERN_TYPE_META.time_based
+  const meta = PATTERN_TYPE_KEYS[suggestion.pattern_type] || PATTERN_TYPE_KEYS.time_based
+  const statusMeta = STATUS_KEYS[suggestion.status]
 
   const act = async (fn, label) => {
     setActing(label)
@@ -58,17 +61,17 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
     >
       {/* Type + confidence row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <p className="z-eyebrow" style={{ color: meta.tint }}>{meta.label}</p>
+        <p className="z-eyebrow" style={{ color: meta.tint }}>{t(meta.key)}</p>
         <div style={{ flex: 1 }} />
         <ConfidenceMeter value={suggestion.confidence} />
         {!isPending && (
           <span style={{
             fontSize: 9, padding: '2px 7px', borderRadius: 5,
-            background: `color-mix(in srgb, ${STATUS_META[suggestion.status]?.tint || 'var(--info)'} 14%, transparent)`,
-            color: STATUS_META[suggestion.status]?.tint || 'var(--info)',
+            background: `color-mix(in srgb, ${statusMeta?.tint || 'var(--info)'} 14%, transparent)`,
+            color: statusMeta?.tint || 'var(--info)',
             fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
           }}>
-            {STATUS_META[suggestion.status]?.label || suggestion.status}
+            {statusMeta ? t(statusMeta.key) : suggestion.status}
           </span>
         )}
       </div>
@@ -86,12 +89,12 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
         }}>
           {suggestion.trigger?.type && (
             <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-              WHEN  {suggestion.trigger.type}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}
+              {t('suggestions.actionWhen')}  {suggestion.trigger.type}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}
             </span>
           )}
           {suggestion.actions?.slice(0, 2).map((a, i) => (
             <span key={i} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-              DO    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}
+              {t('suggestions.actionDo')}    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}
             </span>
           ))}
         </div>
@@ -105,7 +108,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', padding: 0 }}
           >
             <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
-            Why did Ziggy suggest this?
+            {t('suggestions.whyExpand')}
           </button>
           <AnimatePresence>
             {expanded && (
@@ -120,18 +123,18 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {/* Counts row */}
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                          <span style={chip}>{es.occurrences}× observed</span>
-                          <span style={chip}>{es.unique_weeks} week{es.unique_weeks !== 1 ? 's' : ''}</span>
-                          {es.last_seen && <span style={chip}>last {es.last_seen}</span>}
+                          <span style={chip}>{t('suggestions.observed', { n: es.occurrences })}</span>
+                          <span style={chip}>{t(es.unique_weeks === 1 ? 'suggestions.week' : 'suggestions.weeks', { n: es.unique_weeks })}</span>
+                          {es.last_seen && <span style={chip}>{t('suggestions.lastSeen', { when: es.last_seen })}</span>}
                           {es.reversal_rate > 0 && (
                             <span style={{ ...chip, color: 'var(--warn)' }}>
-                              {Math.round(es.reversal_rate * 100)}% reversed
+                              {t('suggestions.reversed', { pct: Math.round(es.reversal_rate * 100) })}
                             </span>
                           )}
                         </div>
                         {/* Time window (time_based patterns) */}
                         {es.time_window && (
-                          <span style={chip}>{es.time_window}  avg {es.avg_time}</span>
+                          <span style={chip}>{t('suggestions.timeWindowLine', { window: es.time_window, avg: es.avg_time })}</span>
                         )}
                         {/* Active days */}
                         {es.active_day_names?.length > 0 && (
@@ -169,7 +172,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
               opacity: acting ? 0.6 : 1, fontFamily: 'inherit',
             }}
           >
-            {acting === 'accept' ? 'Creating…' : 'Yes, create'}
+            {acting === 'accept' ? t('suggestions.creating') : t('suggestions.yesCreate')}
           </button>
           <button
             onClick={() => act(() => onSnooze(3), 'snooze')}
@@ -181,7 +184,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
               opacity: acting ? 0.6 : 1, fontFamily: 'inherit',
             }}
           >
-            {acting === 'snooze' ? '…' : 'Later'}
+            {acting === 'snooze' ? '…' : t('suggestions.later')}
           </button>
           <button
             onClick={() => act(onReject, 'reject')}
@@ -203,6 +206,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Suggestions() {
+  const t = useT()
   const { suggestions, loading, analyzing, fetch, accept, reject, snooze, runAnalysis } = useSuggestionStore()
   const { addToast } = useUIStore()
   const [tab, setTab] = useState('pending')
@@ -212,14 +216,17 @@ export default function Suggestions() {
   const pending = suggestions.filter(s => s.status === 'pending')
   const history = suggestions.filter(s => s.status !== 'pending')
 
-  const handleAccept  = async (id) => { try { await accept(id);     addToast('Suggestion accepted', 'success') } catch { addToast('Failed', 'error') } }
-  const handleReject  = async (id) => { try { await reject(id);     addToast('Dismissed', 'success')          } catch { addToast('Failed', 'error') } }
-  const handleSnooze  = async (id, days) => { try { await snooze(id, days); addToast(`Snoozed ${days}d`, 'success') } catch { addToast('Failed', 'error') } }
+  const handleAccept  = async (id) => { try { await accept(id);     addToast(t('suggestions.toastAccepted'), 'success') } catch { addToast(t('suggestions.toastFailed'), 'error') } }
+  const handleReject  = async (id) => { try { await reject(id);     addToast(t('suggestions.toastDismissed'), 'success')          } catch { addToast(t('suggestions.toastFailed'), 'error') } }
+  const handleSnooze  = async (id, days) => { try { await snooze(id, days); addToast(t('suggestions.toastSnoozed', { n: days }), 'success') } catch { addToast(t('suggestions.toastFailed'), 'error') } }
   const handleAnalyze = async () => {
     try {
       const r = await runAnalysis()
-      addToast(r?.new_count > 0 ? `Found ${r.new_count} new suggestion${r.new_count > 1 ? 's' : ''}` : 'Analysis complete — no new patterns yet', 'success')
-    } catch { addToast('Analysis failed', 'error') }
+      const msg = r?.new_count > 0
+        ? (r.new_count === 1 ? t('suggestions.toastNewOne', { n: r.new_count }) : t('suggestions.toastNew', { n: r.new_count }))
+        : t('suggestions.toastNoNew')
+      addToast(msg, 'success')
+    } catch { addToast(t('suggestions.toastAnalysisFailed'), 'error') }
   }
 
   const displayed = tab === 'pending' ? pending : history
@@ -230,12 +237,12 @@ export default function Suggestions() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Pattern-learned proposals</p>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('suggestions.eyebrow')}</p>
           <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0, lineHeight: 1 }}>
-            Suggestions
+            {t('suggestions.title')}
           </h1>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 6, lineHeight: 1.5, maxWidth: 440 }}>
-            Things Ziggy noticed from your habits. Approve to create an automation. Reject removes permanently.
+            {t('suggestions.subtitle')}
           </p>
         </div>
         <button
@@ -291,8 +298,9 @@ export default function Suggestions() {
         ))}
       </div>
 
-      {/* Loading */}
-      {loading && (
+      {/* Loading — stale-while-revalidate: skeleton only on true cold start.
+          During a background refresh, keep cached cards visible below. */}
+      {loading && suggestions.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 120, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
@@ -317,7 +325,7 @@ export default function Suggestions() {
       )}
 
       {/* Cards */}
-      {!loading && (
+      {displayed.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <AnimatePresence mode="popLayout">
             {displayed.map(s => (
@@ -341,7 +349,7 @@ export default function Suggestions() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
                 'Ziggy silently logs every action you take',
-                'Every day at 9 AM it scans for repeated patterns',
+                'Once a day it scans for repeated patterns',
                 'Patterns become automation suggestions',
                 'You review and approve — nothing is created silently',
               ].map((text, i) => (

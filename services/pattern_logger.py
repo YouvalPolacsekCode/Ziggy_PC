@@ -21,7 +21,9 @@ from pathlib import Path
 
 EVENTS_FILE = Path("user_files/events.jsonl")
 
-# Intents that are meta/system — never log
+# Intents that are meta/system — never log. These represent user interactions
+# with Ziggy itself (browsing, managing, asking) — they aren't habits Ziggy can
+# turn into automations, so they have no business in the pattern store.
 _SKIP_INTENTS = {
     "ziggy_identity", "ziggy_help", "ziggy_status", "ziggy_chat",
     "get_time", "get_date", "get_day_of_week",
@@ -33,6 +35,20 @@ _SKIP_INTENTS = {
     "snooze_suggestion", "explain_suggestion",
     "ping_test",
     "debug_mode",
+    # Failed parses — not a behavior, just noise
+    "unrecognized_command", "unknown_intent",
+    # Listing / browsing — queries about Ziggy state, not habits
+    "list_rooms", "list_devices", "list_active_devices",
+    "list_automations", "list_routines",
+    "list_tasks", "list_notes", "list_reminders",
+    # Automation / routine management — meta actions on Ziggy
+    "create_automation", "update_automation", "delete_automation",
+    "trigger_automation", "toggle_automation",
+    "create_routine", "delete_routine",
+    # Tasks / notes / reminders — separate subsystem, not home-automation habits
+    "add_task", "update_task", "delete_task", "complete_task",
+    "save_note", "read_note", "delete_note",
+    "add_reminder", "delete_reminder",
 }
 
 # Intents that read state — log them but mark automatable=false so the detector skips them

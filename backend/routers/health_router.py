@@ -19,6 +19,8 @@ import asyncio
 
 from fastapi import APIRouter
 
+from core.errors import ErrorCode, ZiggyError
+
 router = APIRouter()
 
 # Supported Zigbee coordinator integration domains, in preference order.
@@ -103,9 +105,48 @@ async def get_health():
         batt_threshold = _BATTERY_THRESHOLD_DEFAULT
         ha_url = ""
 
+    # Apply the same extra filters the Devices page uses, otherwise the
+    # Dashboard's "13 offline" claim mismatches the 7 the user can actually
+    # see and act on. Build the lazy filter set once outside the loop.
+    try:
+        from services.entity_filter import filter_entities
+        ef = settings.get("entity_filter", {}) or {}
+        _ef_extra_hidden = (ef.get("extra_hidden_domains") or [],
+                            ef.get("extra_hidden_patterns") or [])
+        # filter_entities expects entity records, so we'll apply it once
+        # over the candidate offline set below rather than per-entity here.
+    except Exception:
+        filter_entities = None
+        _ef_extra_hidden = ([], [])
+
+    # ── Group collapse: count physical devices, not entities. A Switcher
+    #    boiler exposes 4 entities (switch + 3 sensors); if all four are
+    #    unavailable, that's ONE offline device on the Devices page card —
+    #    not four. Use the same grouping the FE renders from.
+    primary_by_eid: dict[str, str] = {}   # eid → its group's primary_entity_id
+    try:
+        from services.device_groups import build_groups, get_cached_registry_async
+        import services.device_registry as _dr
+        if not _dr._initialized:
+            _dr.init()
+        from backend.routers.device_router import _enrich_devices_with_ha_state
+        enriched = _enrich_devices_with_ha_state(_dr.get_all())
+        registry = await get_cached_registry_async()
+        for g in build_groups(enriched, registry):
+            primary = g.get("primary_entity_id")
+            if not primary:
+                continue
+            for ge in (g.get("entities") or []):
+                eid = ge.get("entity_id")
+                if eid:
+                    primary_by_eid[eid] = primary
+    except Exception:
+        pass
+
     offline_all:       list[dict] = []
     offline_with_deps: list[dict] = []
     battery_warnings:  list[dict] = []
+    _offline_primaries_seen: set[str] = set()   # dedupe groups → one count per physical device
 
     for eid, entry in state_cache.items():
         if _entity_should_hide(eid):
@@ -117,6 +158,24 @@ async def get_health():
 
         # ── Offline detection ────────────────────────────────────────────────
         if state in ("unavailable", "unknown"):
+            # When this entity belongs to a multi-entity group, attribute
+            # the offline status to the group's primary so the count
+            # matches the one-card-per-device rendering. If the primary is
+            # itself online, we still surface the sibling so the user can
+            # see WHICH sub-sensor is down on the Info tab.
+            primary = primary_by_eid.get(eid, eid)
+            is_primary_row = primary == eid
+            if is_primary_row:
+                if primary in _offline_primaries_seen:
+                    continue   # already counted via a sibling that hit us first
+                _offline_primaries_seen.add(primary)
+            else:
+                # Sibling offline. Only count it ONCE per group, regardless
+                # of how many siblings are unavailable.
+                if primary in _offline_primaries_seen:
+                    continue
+                _offline_primaries_seen.add(primary)
+
             auto_names = deps.get(eid, [])
             record = {
                 "entity_id":       eid,
@@ -150,6 +209,22 @@ async def get_health():
                 "name":      name,
                 "battery":   battery,
             })
+
+    # Last filter pass: drop anything the user has configured to hide on the
+    # Devices page (extra_hidden_domains / patterns). _should_hide() above
+    # only knows about built-in patterns; this matches the Devices fetch.
+    if filter_entities is not None and (_ef_extra_hidden[0] or _ef_extra_hidden[1]):
+        try:
+            kept = filter_entities(
+                [{"entity_id": r["entity_id"]} for r in offline_all],
+                extra_hidden_domains=_ef_extra_hidden[0],
+                extra_hidden_patterns=_ef_extra_hidden[1],
+            )
+            kept_ids = {e["entity_id"] for e in kept}
+            offline_all       = [r for r in offline_all       if r["entity_id"] in kept_ids]
+            offline_with_deps = [r for r in offline_with_deps if r["entity_id"] in kept_ids]
+        except Exception:
+            pass
 
     coordinator_warning = len(offline_all) >= 3
 
@@ -188,13 +263,14 @@ async def reload_zigbee():
     coord = await _discover_coordinator_entry()
 
     if not coord:
-        return {
-            "ok": False,
-            "error": (
-                "No Zigbee coordinator integration found in Home Assistant. "
-                "Devices may be offline or not paired — check Home Assistant."
+        raise ZiggyError(
+            code=ErrorCode.NOT_CONFIGURED,
+            message=(
+                "No Zigbee coordinator was found in the home hub. "
+                "Devices may be offline or pairing isn't set up yet."
             ),
-        }
+            log_message="reload_zigbee: no coordinator entry discovered",
+        )
 
     entry_id = coord["entry_id"]
     title    = coord["title"]
@@ -206,9 +282,21 @@ async def reload_zigbee():
             from core.logger_module import log_info
             log_info(f"[Health] Coordinator reload triggered for entry '{entry_id}' ({title})")
             return {"ok": True, "message": "Reconnecting devices. This may take a moment."}
-        return {"ok": False, "error": result.get("message", "HA returned an error during reload.")}
+        raise ZiggyError(
+            code=ErrorCode.HA_SERVICE_FAILED,
+            message="The home hub couldn't reload the Zigbee coordinator.",
+            log_message=f"reload_zigbee: HA returned error: {result.get('message')}",
+            details={"entry_id": entry_id, "upstream_message": result.get("message")},
+        )
+    except ZiggyError:
+        raise
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        raise ZiggyError(
+            code=ErrorCode.HA_UNAVAILABLE,
+            log_message=f"reload_zigbee unexpected failure: {type(e).__name__}: {e}",
+            details={"entry_id": entry_id, "cause": repr(e)},
+            cause=e,
+        )
 
 
 @router.get("/api/health/debug-coordinator")

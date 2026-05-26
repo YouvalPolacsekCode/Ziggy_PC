@@ -81,26 +81,99 @@ def _extract_client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-def _is_local_ip(ip: str) -> bool:
-    """True if `ip` is RFC-1918 / loopback. Only meaningful for direct-LAN access;
-    when the request comes through the relay this returns False."""
+# Only these three RFC-1918 ranges count as a real home LAN. Python's
+# `ip.is_private` is broader — it includes loopback (proxy peer),
+# 100.64/10 (CGNAT used by T-Mobile/Verizon), link-local, and various
+# documentation networks. Any of those falsely flagged people as "home".
+_HOME_LAN_NETS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+
+
+def _is_private_ip(ip: str) -> bool:
+    """True only for the three RFC-1918 LAN ranges — never loopback, CGNAT,
+    link-local, or TEST-NET. Anything outside those three counts as "not on
+    the home LAN" for presence purposes."""
+    if not ip:
+        return False
     try:
         addr = ipaddress.ip_address(ip)
-        return addr.is_private or addr.is_loopback
+        return any(addr in net for net in _HOME_LAN_NETS)
     except Exception:
         return False
+
+
+def _client_is_on_home_lan(request: Request) -> bool:
+    """Return True only when we have strong evidence the request originated
+    on the home LAN (phone on home Wi-Fi).
+
+    The historical `_is_local_ip` returned True for loopback too, which
+    silently flipped to "wifi_home_hint=true" whenever the request came
+    through a Cloudflare / Fly / Nginx tunnel (the TCP peer is then 127.0.0.1).
+    That bug forced people to be reported "home" even when GPS clearly placed
+    them elsewhere — confirmed end-to-end repro: open PWA from cellular while
+    away → request peer = 127.0.0.1 → loopback ⇒ "home" override ⇒ stays home.
+
+    The new rule:
+      * If the originating client IP (XFF[0] or X-Real-IP) is RFC-1918 private,
+        that's a LAN client → trust it.
+      * Otherwise (public IP, missing, loopback peer), DO NOT trust as home.
+    """
+    xff = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if xff:
+        return _is_private_ip(xff)
+    xri = request.headers.get("X-Real-IP", "").strip()
+    if xri:
+        return _is_private_ip(xri)
+    host = request.client.host if request.client else ""
+    # Loopback peer (= behind a tunnel) is meaningless as a presence signal.
+    return _is_private_ip(host)
+
+
+# Backwards-compat alias — old callers may still import this; the safe
+# semantics are in `_client_is_on_home_lan`.
+def _is_local_ip(ip: str) -> bool:
+    return _is_private_ip(ip)
 
 
 # Side-effect fanout (push + automation) is shared with the HA bridge — see
 # services/presence_side_effects.py. Both ingestion paths go through that
 # module so behaviour is identical regardless of signal source.
-from services.presence_side_effects import schedule_side_effects
+from services.presence_side_effects import schedule_side_effects, schedule_zone_side_effects
 
 
 def _handle_decision(decision: Decision) -> None:
-    """Log every decision; schedule side effects only when the engine fires."""
+    """Log every decision; schedule side effects for the primary state and any
+    extra-zone transitions carried on this decision."""
+    from core.debug_bus import bus as _bus, BASIC as _BASIC, VERBOSE as _VERBOSE
     presence_engine.log_decision(decision)
+    # A state transition is news (basic). A ping that just re-confirmed the
+    # existing state is heartbeat noise (verbose). Zone enter/leave events
+    # are always interesting because they drive zone-based automations.
+    fired = bool(decision.fired_transition)
+    zone_count = len(decision.zone_transitions or [])
+    level = _BASIC if (fired or zone_count) else _VERBOSE
+    _bus.emit(
+        "presence",
+        level,
+        "presence_decision",
+        person_id=decision.person_id,
+        person_name=decision.person_name,
+        source=decision.source,
+        raw_state=decision.raw_state,
+        prev_state=decision.prev_confirmed,
+        new_state=decision.new_confirmed,
+        result=decision.result,
+        reason=decision.reason,
+        distance_m=decision.distance_m,
+        accuracy_m=decision.accuracy_m,
+        fired_transition=fired,
+        zone_transitions=zone_count,
+    )
     schedule_side_effects(decision)
+    schedule_zone_side_effects(decision)
 
 
 # ── models ────────────────────────────────────────────────────────────────────
@@ -282,6 +355,68 @@ async def save_zone(body: ZonePatch, _=Depends(require_role("admin"))):
     return {"ok": True, **settings["home_zone"]}
 
 
+# ── extra zones (everything beyond the primary Home zone) ────────────────────
+#
+# Used for head-start automations ("Turn AC on when I'm 5 minutes from home")
+# and location categorisation ("at Work", "at School"). The primary Home zone
+# still lives in settings.yaml; these extras live in user_files/zones.json.
+
+class ZoneCreate(BaseModel):
+    name:     str
+    lat:      float
+    lon:      float
+    radius_m: float = 200.0
+
+
+class ZoneUpdate(BaseModel):
+    name:     Optional[str]   = None
+    lat:      Optional[float] = None
+    lon:      Optional[float] = None
+    radius_m: Optional[float] = None
+
+
+@router.get("/api/presence/zones")
+async def list_zones(_user=Depends(get_current_user)):
+    from services import zones_registry
+    return {"zones": zones_registry.list_zones()}
+
+
+@router.post("/api/presence/zones")
+async def create_zone(body: ZoneCreate, _=Depends(require_role("admin"))):
+    from services import zones_registry
+    try:
+        zone = zones_registry.create_zone(body.name, body.lat, body.lon, body.radius_m)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"zone": zone}
+
+
+@router.patch("/api/presence/zones/{zone_id}")
+async def update_zone(zone_id: str, body: ZoneUpdate, _=Depends(require_role("admin"))):
+    from services import zones_registry
+    try:
+        zone = zones_registry.update_zone(
+            zone_id,
+            name     = body.name,
+            lat      = body.lat,
+            lon      = body.lon,
+            radius_m = body.radius_m,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Zone not found.")
+    return {"zone": zone}
+
+
+@router.delete("/api/presence/zones/{zone_id}")
+async def delete_zone(zone_id: str, _=Depends(require_role("admin"))):
+    from services import zones_registry
+    if not zones_registry.delete_zone(zone_id):
+        raise HTTPException(status_code=404, detail="Zone not found.")
+    return {"ok": True}
+
+
 # ── authenticated self-tracking (logged-in Ziggy user, no invite needed) ────
 
 def _resolve_or_create_my_person(user: dict) -> dict:
@@ -375,7 +510,12 @@ async def ping_me(body: MePingBody, request: Request, user=Depends(get_current_u
     # doesn't stall the event loop for other handlers.
     person    = await asyncio.to_thread(_resolve_or_create_my_person, user)
     client_ts = _client_ts_from_body(body.ts)
-    wifi_hint = _is_local_ip(_extract_client_ip(request))
+    wifi_hint = _client_is_on_home_lan(request)
+    if wifi_hint:
+        log_info(
+            f"[Presence] wifi_home_hint=True for {person['name']} "
+            f"(client_ip={_extract_client_ip(request)!r})"
+        )
 
     decision = presence_engine.ingest_ping_for_person_id(
         person_id     = person["id"],
@@ -401,7 +541,9 @@ async def ping_me(body: MePingBody, request: Request, user=Depends(get_current_u
 @router.post("/api/presence/ping")
 async def ping(body: PingBody, request: Request):
     client_ts = _client_ts_from_body(body.ts)
-    wifi_hint = _is_local_ip(_extract_client_ip(request))
+    wifi_hint = _client_is_on_home_lan(request)
+    if wifi_hint:
+        log_info(f"[Presence] wifi_home_hint=True for token-ping (client_ip={_extract_client_ip(request)!r})")
 
     decision = presence_engine.ingest_ping(
         token         = body.token,

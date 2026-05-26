@@ -27,6 +27,9 @@ async def get_current_user(request: Request) -> dict:
     # Relay-authenticated request — trust injected user from middleware
     relay_user = getattr(request.state, "relay_user", None)
     if relay_user:
+        # Mirror to request.state.user so the global error handler can read
+        # role/permissions without needing to re-resolve the dependency.
+        request.state.user = relay_user
         return relay_user
 
     auth = request.headers.get("Authorization", "")
@@ -34,6 +37,9 @@ async def get_current_user(request: Request) -> dict:
     user = find_user_by_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated.")
+    # Stash on request.state so the error handler can gate admin-debug detail
+    # without re-running token lookup.
+    request.state.user = user
     return user
 
 

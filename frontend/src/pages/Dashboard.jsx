@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceStore, applyRoomsOrder } from '../stores/deviceStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
-import { useWebSocket } from '../hooks/useWebSocket'
+import { useFeature } from '../stores/featuresStore'
+import { useWsMessages } from '../hooks/useWebSocket'
 import { greetingByTime } from '../lib/utils'
 import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, getUpdateStatus, sendDirectIntent } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
 import { DeviceCard } from '../components/device/DeviceCard'
+import { findRoomMetric } from '../lib/devices'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { Modal } from '../components/ui/Modal'
 import { Pencil, Play, Sparkles, Check } from 'lucide-react'
+import { useT, t as tt } from '../lib/i18n'
+import { describeError } from '../lib/errors'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
@@ -28,45 +32,63 @@ function buildRoomSummary(room, entityMap) {
   const fans       = devices.filter(d => d.domain === 'fan' && d.ha_state === 'on')
   const switches   = devices.filter(d => ['switch', 'input_boolean'].includes(d.domain) && d.ha_state === 'on')
   const vacuums    = devices.filter(d => d.domain === 'vacuum' && d.ha_state === 'cleaning')
-  const hasMotion  = devices.some(d => { const e = ent(d); return e?.domain === 'binary_sensor' && ['motion', 'occupancy', 'presence'].includes(e.device_class) && e.state === 'on' })
-  const sensors    = devices.map(d => ent(d)).filter(e => e?.domain === 'sensor' && !['unavailable', 'unknown'].includes(e.state))
-  const tempSensor = sensors.find(e => e.device_class === 'temperature')
-  const humSensor  = sensors.find(e => e.device_class === 'humidity')
+  // Motion detection: the binary_sensor may now be the PRIMARY of a grouped
+  // device (its illuminance sibling no longer appears as a separate row), so
+  // check both the direct entity and the entity behind any primary entry.
+  const hasMotion  = devices.some(d => {
+    const e = ent(d)
+    return e?.domain === 'binary_sensor'
+      && ['motion', 'occupancy', 'presence'].includes(e.device_class)
+      && e.state === 'on'
+  })
+  // findRoomMetric also walks each device's _group.metrics so a multi-sensor
+  // node (Roni Room Sensor: temp + humidity + battery) keeps surfacing
+  // humidity as a Dashboard chip even though grouping absorbed humidity into
+  // the temperature primary's siblings.
+  const tempSensor = findRoomMetric(devices, 'temperature', entityMap)
+  const humSensor  = findRoomMetric(devices, 'humidity',    entityMap)
   const offlineCount = devices.filter(d => d.ha_state === 'unavailable' || d.ha_state === 'unknown').length
   const activeCount  = lights.length + media.length + climate.length + fans.length + switches.length + vacuums.length
 
   const parts = []
-  if (lights.length === 1) parts.push(`${lights[0].display_name || 'Light'} on`)
-  else if (lights.length > 1) parts.push(`${lights.length} lights on`)
-  for (const m of media.slice(0, 1)) parts.push(`${m.display_name || 'Media'} ${m.ha_state === 'playing' ? 'playing' : 'on'}`)
-  for (const c of climate) { const t = c.ha_attributes?.temperature; parts.push(t ? `${c.ha_state} · ${t}°` : c.ha_state) }
-  if (fans.length) parts.push('fan on')
-  if (vacuums.length) parts.push('vacuum')
-  if (switches.length === 1) parts.push(`${switches[0].display_name || 'Switch'} on`)
-  else if (switches.length > 1) parts.push(`${switches.length} switches on`)
+  if (lights.length === 1) parts.push(tt('dashboard.lightOn', { name: lights[0].display_name || tt('dashboard.light') }))
+  else if (lights.length > 1) parts.push(tt('dashboard.lightsOnN', { n: lights.length }))
+  for (const m of media.slice(0, 1)) {
+    const name = m.display_name || tt('dashboard.media')
+    parts.push(m.ha_state === 'playing' ? tt('dashboard.mediaPlaying', { name }) : tt('dashboard.mediaOn', { name }))
+  }
+  for (const c of climate) { const tmp = c.ha_attributes?.temperature; parts.push(tmp ? `${c.ha_state} · ${tmp}°` : c.ha_state) }
+  if (fans.length) parts.push(tt('dashboard.fanOn'))
+  if (vacuums.length) parts.push(tt('dashboard.vacuum'))
+  if (switches.length === 1) parts.push(tt('dashboard.switchOn', { name: switches[0].display_name || tt('dashboard.switchLabel') }))
+  else if (switches.length > 1) parts.push(tt('dashboard.switchesOnN', { n: switches.length }))
 
   return { id: room.id, name: room.name, activeCount, offlineCount, parts, tempSensor, humSensor, hasMotion }
 }
 
 // ── Activity formatter ────────────────────────────────────────────────────────
-const INTENT_LABELS = {
-  toggle_device:        'Device',
-  control_device:       'Device',
-  control_tv:           'TV',
-  ir_send_command:      'IR',
-  create_automation:    'Automation created',
-  create_task:          'Task created',
-  unrecognized_command: 'Unrecognized command',
-  get_temperature:      'Checked temperature',
-  get_humidity:         'Checked humidity',
-  get_sensor:           'Checked sensor',
-  get_room_summary:     'Room summary',
-  list_devices:         'Listed devices',
-  list_active_devices:  'Listed active devices',
-  get_device_state:     'Checked device state',
-  is_someone_home:      'Checked presence',
-  get_presence:         'Checked presence',
+// Maps intent ids to i18n keys. Looked up dynamically through `tt()` so the
+// activity log re-localizes when the user flips language without needing a
+// re-render of this constant.
+const INTENT_KEYS = {
+  toggle_device:        'activity.device',
+  control_device:       'activity.device',
+  control_tv:           'activity.tv',
+  ir_send_command:      'activity.ir',
+  create_automation:    'activity.createAutomation',
+  create_task:          'activity.createTask',
+  unrecognized_command: 'activity.unrecognizedCommand',
+  get_temperature:      'activity.checkedTemperature',
+  get_humidity:         'activity.checkedHumidity',
+  get_sensor:           'activity.checkedSensor',
+  get_room_summary:     'activity.roomSummary',
+  list_devices:         'activity.listedDevices',
+  list_active_devices:  'activity.listedActiveDevices',
+  get_device_state:     'activity.checkedDeviceState',
+  is_someone_home:      'activity.checkedPresence',
+  get_presence:         'activity.checkedPresence',
 }
+const intentLabel = (intent) => INTENT_KEYS[intent] ? tt(INTENT_KEYS[intent]) : null
 function prettifyIntent(intent) {
   const words = intent.replace(/_/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
@@ -74,22 +96,22 @@ function prettifyIntent(intent) {
 function formatActivity(entry, entityMap) {
   const ts   = new Date(entry.ts)
   const diff = Math.floor((Date.now() - ts) / 60000)
-  const timeStr = diff < 1 ? 'now' : diff < 60 ? `${diff}m` : diff < 1440 ? `${Math.floor(diff / 60)}h` : ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const timeStr = diff < 1 ? tt('common.now') : diff < 60 ? `${diff}m` : diff < 1440 ? `${Math.floor(diff / 60)}h` : ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const { intent, action, room, entity_id } = entry
   const ent = entity_id ? entityMap?.[entity_id] : null
   const entName = ent?.display_name || ent?.friendly_name || (entity_id ? entity_id.split('.').slice(-1)[0].replace(/_/g, ' ') : null)
+  const head = intentLabel(intent)
 
   let label
   if (intent === 'create_automation' || intent === 'create_task') {
-    label = INTENT_LABELS[intent]
+    label = head
   } else if (intent === 'toggle_device' || intent === 'control_device') {
-    const head = entName || INTENT_LABELS[intent]
-    label = action ? `${head} · ${action}${room ? ` · ${room}` : ''}` : head
+    const h = entName || head
+    label = action ? `${h} · ${action}${room ? ` · ${room}` : ''}` : h
   } else if (intent === 'control_tv' || intent === 'ir_send_command') {
-    const head = INTENT_LABELS[intent]
     label = `${head} ${action}${room ? ` · ${room}` : ''}`
-  } else if (INTENT_LABELS[intent]) {
-    label = room ? `${INTENT_LABELS[intent]} · ${room}` : INTENT_LABELS[intent]
+  } else if (head) {
+    label = room ? `${head} · ${room}` : head
   } else {
     label = prettifyIntent(intent) + (action && action !== intent ? ` · ${action}` : '')
   }
@@ -137,6 +159,7 @@ const C_GAP = 14    // gap between tiles
 const C_PAD = 20    // horizontal padding inside scroll container
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
+  const t = useT()
   const navigate  = useNavigate()
   const scrollRef = useRef(null)
   const tileRefs  = useRef([])
@@ -167,7 +190,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
 
   return (
     <div>
-      <p className="z-eyebrow" style={{ marginBottom: 10 }}>Rooms</p>
+      <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('dashboard.rooms')}</p>
       {/* outer clips left/right overflow.
           The `.z-carousel-bleed` class extends the carousel beyond the page
           padding on phones/tablets so tiles scroll to the screen edges
@@ -276,10 +299,10 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                     {/* Same condition as the dot and greeting count: a room with
                         motion but zero on-devices is still "active" to the user. */}
                     {summary.activeCount > 0
-                      ? `${summary.activeCount} active`
+                      ? t('dashboard.activeShort', { n: summary.activeCount })
                       : summary.hasMotion
-                        ? 'motion'
-                        : 'idle'}
+                        ? t('dashboard.motion')
+                        : t('dashboard.idle')}
                     {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
                   </p>
                 </div>
@@ -299,6 +322,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
 // Trailing row is left sparse when count is 5/6/7 — iOS home-screen pattern,
 // no awkward centering attempts.
 function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFireAsk, onEdit }) {
+  const t = useT()
   if (pinnedShortcuts.length === 0) return null
 
   // Resolve each pin to its live record. Drop stale pins silently.
@@ -315,7 +339,7 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-        <p className="z-eyebrow">Shortcuts</p>
+        <p className="z-eyebrow">{t('dashboard.shortcuts')}</p>
         <button
           onClick={onEdit}
           style={{
@@ -324,7 +348,7 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
             fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit', padding: '2px 4px',
           }}
         >
-          <Pencil size={11} /> Edit
+          <Pencil size={11} /> {t('dashboard.shortcutsEdit')}
         </button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
@@ -383,14 +407,20 @@ function ShortcutTile({ type, record, onFire }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 15,
       }}>{icon}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.01em',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div style={{ minWidth: 0 }}>
+        {/* 2-line name only. Dropped the ROUTINE/ASK kind label — the tile's
+            tinted background already encodes type (green = routine, peach =
+            ask), and on a 74×74 Galaxy tile the icon + 2 lines of name +
+            kind label overflowed the content area. Removing the kind label
+            recovers the ~13px needed for the 2-line name to fit cleanly.
+            Smaller font + tighter letter-spacing matches the device tile so
+            longer labels like "Turn Off Lights" actually pack onto 2 lines
+            instead of truncating on line 2. */}
+        <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.025em',
+          overflow: 'hidden',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          wordBreak: 'break-word' }}>
           {label}
-        </div>
-        {/* Type cue stays small + neutral — tile color already encodes the type. */}
-        <div className="z-mono" style={{ fontSize: 9, color: 'var(--ink-faint)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          {kind}
         </div>
       </div>
     </button>
@@ -398,6 +428,7 @@ function ShortcutTile({ type, record, onFire }) {
 }
 
 function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, togglePinnedShortcut }) {
+  const t = useT()
   const SHORTCUTS_MAX = 8
   const pinnedSet = new Set(pinnedShortcuts.map(s => `${s.type}:${s.id}`))
   const isFull    = pinnedShortcuts.length >= SHORTCUTS_MAX
@@ -432,21 +463,21 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit shortcuts">
+    <Modal open={open} onClose={onClose} title={t('dashboard.editShortcutsTitle')}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', margin: 0 }}>
-          {pinnedShortcuts.length} / {SHORTCUTS_MAX} pinned · tap to add or remove
+          {t('dashboard.pinnedSlash', { n: pinnedShortcuts.length, max: SHORTCUTS_MAX })}
         </p>
 
         {/* Routines */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <Play size={11} style={{ color: 'var(--ok)' }} />
-            <p className="z-eyebrow" style={{ margin: 0 }}>Routines</p>
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.routines')}</p>
             <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{routines.length}</span>
           </div>
           {routines.length === 0 ? (
-            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>No routines yet — create one from the Automations page.</p>
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>{t('dashboard.routinesEmpty')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {routines.map(r => renderRow('routine', r))}
@@ -458,11 +489,11 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <Sparkles size={11} style={{ color: 'var(--accent)' }} />
-            <p className="z-eyebrow" style={{ margin: 0 }}>Quick Asks</p>
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.quickAsks')}</p>
             <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{asks.length}</span>
           </div>
           {asks.length === 0 ? (
-            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>No quick asks yet — create one from Settings → Quick Asks.</p>
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>{t('dashboard.asksEmpty')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {asks.map(a => renderRow('ask', a))}
@@ -471,7 +502,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
         </div>
 
         <button onClick={onClose} className="z-btn-primary" style={{ width: '100%', padding: '10px', borderRadius: 10 }}>
-          Done
+          {t('dashboard.done')}
         </button>
       </div>
     </Modal>
@@ -480,6 +511,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const t = useT()
   const navigate = useNavigate()
   // Per-field selectors keep this component out of the "re-render when
   // anything in deviceStore changes" club. The destructure form previously
@@ -487,6 +519,7 @@ export default function Dashboard() {
   // even when none of the entities the Dashboard cares about changed.
   const entities                = useDeviceStore(s => s.entities)
   const ziggyRooms              = useDeviceStore(s => s.ziggyRooms)
+  const roomsOrder              = useDeviceStore(s => s.roomsOrder)
   const quickControlIds         = useDeviceStore(s => s.quickControlIds)
   const pinnedShortcuts         = useDeviceStore(s => s.pinnedShortcuts)
   const fetchAll                = useDeviceStore(s => s.fetchAll)
@@ -500,6 +533,7 @@ export default function Dashboard() {
   const { addToast }                                  = useUIStore()
   const role                                          = useAuthStore(s => s.role)
   const isSuperAdmin                                  = role === 'super_admin'
+  const taskTrackingEnabled                           = useFeature('task_tracking')
 
   const [activity,          setActivity]          = useState([])
   const [anomalies,         setAnomalies]         = useState([])
@@ -519,7 +553,12 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    fetchAll(); fetchTasks(); fetchAutomations(); fetchRoutines(); fetchSuggestions(); fetchQuickAsks()
+    fetchAll({ maxAge: 120_000 })
+    if (taskTrackingEnabled) fetchTasks()
+    fetchAutomations({ maxAge: 60_000 })
+    fetchRoutines({ maxAge: 60_000 })
+    fetchSuggestions()
+    fetchQuickAsks()
     getActivity(15).then(r => setActivity(r.activity ?? [])).catch(() => {})
     loadAnomalies()
     getHealth().then(setHealth).catch(() => {})
@@ -528,6 +567,37 @@ export default function Dashboard() {
       getUpdateStatus().then(setHaUpdateStatus).catch(() => {})
     }
   }, [isSuperAdmin])
+
+  // Re-poll health on a slow interval. /api/health captures `ha_connected` from
+  // services.ha_subscriber, which flips false→true after the WS auth handshake
+  // completes. If the Dashboard happened to mount during the few-second window
+  // between backend boot and that handshake, the "HA offline" banner gets
+  // latched and never clears until full page reload. A 20 s poll auto-clears
+  // it once HA comes back without being expensive.
+  useEffect(() => {
+    // Pause polling while the tab is hidden — PWA in background was still
+    // hitting /api/health every 20s and waking the mobile radio for no
+    // visible benefit. We refresh once on tab visible to catch up.
+    let id
+    const start = () => {
+      if (id) return
+      id = setInterval(() => {
+        getHealth().then(setHealth).catch(() => {})
+      }, 20_000)
+    }
+    const stop = () => { if (id) { clearInterval(id); id = null } }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        getHealth().then(setHealth).catch(() => {})
+        start()
+      } else {
+        stop()
+      }
+    }
+    start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [])
 
   // Presence updates are pushed by the backend on every confirmed transition
   // (see services/presence_side_effects.py). The 30 s polling fallback used
@@ -538,7 +608,7 @@ export default function Dashboard() {
   //   - anomaly_active / anomaly_cleared → reload anomalies
   //   - presence_transition → reload presence persons
   // Walk newest-to-oldest until we hit a message we've already processed.
-  const { messages } = useWebSocket()
+  const messages = useWsMessages()
   const lastSeenWsTs = useRef(0)
   useEffect(() => {
     let refreshAnomalies = false
@@ -575,9 +645,28 @@ export default function Dashboard() {
     () => ziggyRooms.map(r => buildRoomSummary(r, entityMap)),
     [ziggyRooms, entityMap],
   )
+  // Apply the user-defined room order first, THEN stably sort by activity.
+  // Array.prototype.sort is stable per spec (ES2019+), so within each bucket
+  // (active / idle) rooms keep the user-defined order. Result: active rooms
+  // float to the front of the carousel as they always have, but the user
+  // gets to decide the order of idle rooms (and of multiple active rooms
+  // when more than one is active at the same time).
+  //
+  // Wrapped in try/catch so a malformed roomsOrder (stale IDs after a fetch,
+  // server returning unexpected types, etc.) can never crash the Dashboard
+  // — worst case the carousel falls back to roomSummaries in natural order.
   const sortedRooms = useMemo(
-    () => [...roomSummaries].sort((a, b) => ((b.activeCount > 0 || b.hasMotion ? 1 : 0) - (a.activeCount > 0 || a.hasMotion ? 1 : 0))),
-    [roomSummaries],
+    () => {
+      try {
+        const ordered = applyRoomsOrder(roomSummaries, roomsOrder)
+        const arr = Array.isArray(ordered) ? ordered.slice() : []
+        return arr.sort((a, b) => ((b.activeCount > 0 || b.hasMotion ? 1 : 0) - (a.activeCount > 0 || a.hasMotion ? 1 : 0)))
+      } catch (e) {
+        console.error('[Dashboard] room sort failed', e)
+        return Array.isArray(roomSummaries) ? roomSummaries.slice() : []
+      }
+    },
+    [roomSummaries, roomsOrder],
   )
   const activeRooms = useMemo(
     () => roomSummaries.filter(r => r.activeCount > 0 || r.hasMotion),
@@ -592,6 +681,26 @@ export default function Dashboard() {
     () => anomalies.filter(a => a.severity === 'warning'),
     [anomalies],
   )
+
+  // Quick-controls pinned tiles. Previously this was an IIFE in render that
+  // rebuilt entityMap (already memoized above) + re-filtered live entities on
+  // every Dashboard render — including every state_changed WS bump. Pull it
+  // into a useMemo so it only recomputes when the underlying data actually
+  // changes.
+  const quickControlPicks = useMemo(() => {
+    if (quickControlIds.length > 0) {
+      return quickControlIds.map(id => entityMap[id]).filter(Boolean)
+    }
+    const live = entities.filter(e => !['unavailable','unknown'].includes(e.state))
+    const pickKind = (pred) =>
+      live.find(e => pred(e) && e.state === 'on') || live.find(pred)
+    return [
+      pickKind(e => e.domain === 'light'),
+      pickKind(e => e.domain === 'climate' || (e._ir && e._irDevice?.type === 'ac')),
+      pickKind(e => e.domain === 'media_player' || (e._ir && ['tv', 'soundbar', 'projector'].includes(e._irDevice?.type))),
+      pickKind(e => e.domain === 'lock'),
+    ].filter(Boolean)
+  }, [entities, entityMap, quickControlIds])
   const haOffline    = health !== null && health.ha_connected === false
   const coordWarning = health?.coordinator_warning && !haOffline
 
@@ -599,17 +708,17 @@ export default function Dashboard() {
   const haUpdateSev  = haUpdateRisk === 'high' ? 'critical' : haUpdateRisk === 'medium' ? 'warn' : haUpdateRisk ? 'info' : null
 
   const alerts = [
-    ...(haOffline ? [{ id: 'ha-offline', sev: 'critical', text: 'Home Assistant offline', to: '/settings' }] : []),
-    ...(criticalAnomalies.length > 0 ? [{ id: 'anom-crit', sev: 'critical', text: `${criticalAnomalies.length} critical alert${criticalAnomalies.length > 1 ? 's' : ''}`, to: '/alerts' }] : []),
-    ...(warningAnomalies.length  > 0 ? [{ id: 'anom-warn', sev: 'warn',     text: `${warningAnomalies.length} anomal${warningAnomalies.length > 1 ? 'ies' : 'y'}`,          to: '/alerts' }] : []),
-    ...(haUpdateSev ? [{ id: 'ha-update', sev: haUpdateSev, text: `HA ${haUpdateStatus.latest_version} · ${haUpdateRisk} risk`, to: '/ops/ha-update' }] : []),
-    ...(pendingCount() > 0 ? [{ id: 'sug', sev: 'info', text: `${pendingCount()} suggestion${pendingCount() > 1 ? 's' : ''} ready`, to: '/automations' }] : []),
-    ...(overdueTasks.length > 0 ? [{ id: 'tasks', sev: 'warn', text: `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`, to: '/tasks' }] : []),
+    ...(haOffline ? [{ id: 'ha-offline', sev: 'critical', text: t('dashboard.haOffline'), to: '/settings' }] : []),
+    ...(criticalAnomalies.length > 0 ? [{ id: 'anom-crit', sev: 'critical', text: criticalAnomalies.length === 1 ? t('dashboard.criticalAlertsOne', { n: criticalAnomalies.length }) : t('dashboard.criticalAlertsMany', { n: criticalAnomalies.length }), to: '/alerts' }] : []),
+    ...(warningAnomalies.length  > 0 ? [{ id: 'anom-warn', sev: 'warn',     text: warningAnomalies.length === 1 ? t('dashboard.anomaliesOne', { n: warningAnomalies.length }) : t('dashboard.anomaliesMany', { n: warningAnomalies.length }), to: '/alerts' }] : []),
+    ...(haUpdateSev ? [{ id: 'ha-update', sev: haUpdateSev, text: t('dashboard.haUpdateBadge', { version: haUpdateStatus.latest_version, risk: haUpdateRisk }), to: '/ops/ha-update' }] : []),
+    ...(pendingCount() > 0 ? [{ id: 'sug', sev: 'info', text: pendingCount() === 1 ? t('dashboard.suggestionsReadyOne', { n: pendingCount() }) : t('dashboard.suggestionsReadyMany', { n: pendingCount() }), to: '/automations' }] : []),
+    ...(taskTrackingEnabled && overdueTasks.length > 0 ? [{ id: 'tasks', sev: 'warn', text: overdueTasks.length === 1 ? t('dashboard.overdueTasksOne', { n: overdueTasks.length }) : t('dashboard.overdueTasksMany', { n: overdueTasks.length }), to: '/tasks' }] : []),
   ]
 
   const statusText = activeRooms.length > 0
-    ? `${activeRooms.length} room${activeRooms.length > 1 ? 's' : ''} active`
-    : 'Home is calm'
+    ? (activeRooms.length === 1 ? t('dashboard.roomsActiveOne', { n: activeRooms.length }) : t('dashboard.roomsActiveMany', { n: activeRooms.length }))
+    : t('dashboard.homeCalm')
 
   const homePersons = presencePersons.filter(p => (p.effective_state ?? p.state) === 'home')
 
@@ -617,20 +726,26 @@ export default function Dashboard() {
     setReloading(true); setReloadMsg(null)
     try {
       const r = await reloadZigbee()
-      setReloadMsg(r.ok ? { ok: true, text: r.message } : { ok: false, text: r.error })
-    } catch (e) { setReloadMsg({ ok: false, text: e.message }) }
-    finally { setReloading(false) }
+      // Backend returns a localized success message in r.message. If the
+      // shape is missing it (unexpected), still render the localized
+      // "action didn't complete" instead of "undefined".
+      setReloadMsg({ ok: true, text: r?.message || tt('common.success') })
+    } catch (e) {
+      // describeError filters raw exception/HTTP text — user sees a friendly
+      // localized string regardless of what the backend or network coughed up.
+      setReloadMsg({ ok: false, text: describeError(e).message })
+    } finally { setReloading(false) }
   }
 
   // Presence string: "Maya & kids home" style
   const homeNames = homePersons.map(p => p.name)
   const presenceStr = homeNames.length === 0
-    ? 'Nobody home'
+    ? t('dashboard.nobodyHome')
     : homeNames.length === 1
-      ? `${homeNames[0]} home`
+      ? t('dashboard.personHome', { name: homeNames[0] })
       : homeNames.length === 2
-        ? `${homeNames[0]} & ${homeNames[1]} home`
-        : `${homeNames.slice(0, -1).join(', ')} & ${homeNames[homeNames.length - 1]} home`
+        ? t('dashboard.twoPeopleHome', { a: homeNames[0], b: homeNames[1] })
+        : t('dashboard.manyPeopleHome', { list: homeNames.slice(0, -1).join(', '), last: homeNames[homeNames.length - 1] })
 
   // Top pending suggestion for the right-rail "Suggested" card.
   // Picking just the first one matches the design mockup — surface ONE concrete
@@ -658,7 +773,23 @@ export default function Dashboard() {
           {homePersons.length > 0 && (
             <>
               <span style={{ color: 'var(--ink-ghost)', fontSize: 12 }}>·</span>
-              <span style={{ fontSize: 12, color: 'var(--ink-mute)', textTransform: 'capitalize' }}>{presenceStr}</span>
+              {homePersons.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => navigate('/settings#presence')}
+                  title={`${p.name} is home`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px',
+                    borderRadius: 999, fontSize: 11, fontWeight: 500,
+                    background: 'color-mix(in srgb, var(--ok) 8%, var(--surface))',
+                    border: '0.5px solid color-mix(in srgb, var(--ok) 30%, transparent)',
+                    cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink)',
+                  }}
+                >
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--ok)', flexShrink: 0 }} />
+                  {p.name}
+                </button>
+              ))}
             </>
           )}
           {/* Alert chips inline — mobile/tablet only. On lg+ the full Alerts
@@ -694,7 +825,7 @@ export default function Dashboard() {
       {coordWarning && coordDismissedAt !== health?.offline_count && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--err) 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--err) 30%, transparent)', fontSize: 12, color: 'var(--ink)' }}>
           <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
-          <span style={{ fontWeight: 600 }}>{health.offline_count} devices offline.</span>
+          <span style={{ fontWeight: 600 }}>{health.offline_count} device{health.offline_count === 1 ? '' : 's'} offline.</span>
           <span style={{ color: 'var(--ink-mute)', flex: 1 }}>Some devices may be unreachable.</span>
           <button onClick={handleReloadZigbee} disabled={reloading} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--err)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}>
             {reloading ? 'Reconnecting…' : 'Reconnect'}
@@ -716,7 +847,12 @@ export default function Dashboard() {
         routines={routines}
         asks={quickAsks}
         onFireRoutine={async (r) => {
-          try { await runRoutine(r.id); addToast(`Running "${r.name}"`, 'success') }
+          // No optimistic "Running…" toast — App.jsx's WS execution_result
+          // handler surfaces the real outcome (step count or failure detail).
+          // Two toasts were either redundant or contradictory (green Running
+          // followed by red Failed). Run errors here only fire if the HTTP
+          // POST itself fails (backend unreachable).
+          try { await runRoutine(r.id) }
           catch { addToast('Failed to run', 'error') }
         }}
         onFireAsk={async (qa) => {
@@ -744,62 +880,41 @@ export default function Dashboard() {
       )}
 
       {/* ── 4. Quick controls — user-pinned, up to 4. Falls back to auto-pick ── */}
-      {(() => {
-        const live = entities.filter(e => !['unavailable','unknown'].includes(e.state))
-        const entityMap = Object.fromEntries(entities.map(e => [e.entity_id, e]))
-
-        // User pinned list takes priority (drop ids that no longer exist).
-        let picks = quickControlIds.map(id => entityMap[id]).filter(Boolean)
-
-        // Backfill with auto-pick only when the user hasn't customised yet.
-        if (quickControlIds.length === 0) {
-          const pickKind = (pred) => live.find(e => pred(e) && e.state === 'on') || live.find(pred)
-          picks = [
-            pickKind(e => e.domain === 'light'),
-            pickKind(e => e.domain === 'climate' || (e._ir && e._irDevice?.type === 'ac')),
-            pickKind(e => e.domain === 'media_player' || (e._ir && ['tv', 'soundbar', 'projector'].includes(e._irDevice?.type))),
-            pickKind(e => e.domain === 'lock'),
-          ].filter(Boolean)
-        }
-
-        return (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-              <p className="z-eyebrow">Pinned devices</p>
-              <button
-                onClick={() => setShowQuickPicker(true)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit',
-                  padding: '2px 4px',
-                }}
-              >
-                <Pencil size={11} /> Edit
-              </button>
-            </div>
-            {picks.length === 0 ? (
-              <button
-                onClick={() => setShowQuickPicker(true)}
-                style={{
-                  width: '100%', padding: '18px 12px', borderRadius: 14,
-                  background: 'var(--surface-2)', border: '0.5px dashed var(--line-2)',
-                  color: 'var(--ink-mute)', cursor: 'pointer',
-                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-                }}
-              >
-                + Pin up to 4 devices
-              </button>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
-                {picks.map(entity => (
-                  <DeviceCard key={entity.entity_id} entity={entity} variant="tile" dense />
-                ))}
-              </div>
-            )}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+          <p className="z-eyebrow">Pinned devices</p>
+          <button
+            onClick={() => setShowQuickPicker(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit',
+              padding: '2px 4px',
+            }}
+          >
+            <Pencil size={11} /> Edit
+          </button>
+        </div>
+        {quickControlPicks.length === 0 ? (
+          <button
+            onClick={() => setShowQuickPicker(true)}
+            style={{
+              width: '100%', padding: '18px 12px', borderRadius: 14,
+              background: 'var(--surface-2)', border: '0.5px dashed var(--line-2)',
+              color: 'var(--ink-mute)', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+            }}
+          >
+            + Pin up to 4 devices
+          </button>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+            {quickControlPicks.map(entity => (
+              <DeviceCard key={entity.entity_id} entity={entity} variant="tile" dense />
+            ))}
           </div>
-        )
-      })()}
+        )}
+      </div>
 
       <QuickControlsPicker open={showQuickPicker} onClose={() => setShowQuickPicker(false)} />
 
@@ -857,7 +972,7 @@ export default function Dashboard() {
       )}
 
       {/* ── 5. Tasks peek ── */}
-      {pendingTasks.length > 0 && (
+      {taskTrackingEnabled && pendingTasks.length > 0 && (
         <button
           onClick={() => navigate('/tasks')}
           style={{

@@ -11,69 +11,45 @@ import {
   zhaPermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, getConfigFlows,
 } from '../lib/api'
+import SwitcherPairingFlow from './SwitcherPairingFlow'
 import { useDeviceStore } from '../stores/deviceStore'
 import { cn } from '../lib/utils'
+import { useT } from '../lib/i18n'
+import logger from '../lib/logger'
 
 const ZIGBEE_DURATION = 60
 const ZWAVE_DURATION  = 120
 
+// Static protocol descriptors — labels/descriptions resolved via t() in the component.
 const PROTOCOLS = [
-  {
-    id: 'zigbee',
-    label: 'Zigbee',
-    Icon: Radio,
-    description: 'IKEA, Aqara, Sonoff, Philips Hue, most sensors & bulbs',
-  },
-  {
-    id: 'zwave',
-    label: 'Z-Wave',
-    Icon: Waves,
-    description: 'Fibaro, Aeotec, Yale locks, Zooz, Leviton switches',
-  },
-  {
-    id: 'matter',
-    label: 'Matter',
-    Icon: Sparkles,
-    description: 'Eve, Nanoleaf, newer IKEA & Philips, Apple Home compatible',
-  },
-  {
-    id: 'ir_device',
-    label: 'IR Device',
-    Icon: Zap,
-    description: 'TV, AC, fan, soundbar — controlled by IR blaster (Broadlink RM)',
-    immediate: true,  // handled instantly by parent — no HA pairing flow
-  },
-  {
-    id: 'broadlink',
-    label: 'IR Blaster (Broadlink)',
-    Icon: Tv2,
-    description: 'RM4 Mini / Pro infrastructure — add the blaster hardware to HA first',
-  },
-  {
-    id: 'wifi',
-    label: 'Wi-Fi',
-    Icon: Wifi,
-    description: 'Shelly, Tuya, TP-Link Kasa, ESPHome, Govee, Meross',
-  },
+  { id: 'zigbee',    Icon: Radio,    immediate: false },
+  { id: 'zwave',     Icon: Waves,    immediate: false },
+  { id: 'matter',    Icon: Sparkles, immediate: false },
+  { id: 'ir_device', Icon: Zap,      immediate: true  },  // handled by parent — no HA pairing flow
+  { id: 'broadlink', Icon: Tv2,      immediate: false },
+  { id: 'wifi',      Icon: Wifi,     immediate: false },
+  { id: 'switcher',  Icon: Home,     immediate: true  },  // dedicated native flow
 ]
 
-const STEPS = [
-  { id: 'idle',    label: 'Ready'   },
-  { id: 'pairing', label: 'Pairing' },
-  { id: 'found',   label: 'Configure' },
-]
+const STEP_IDS = ['idle', 'pairing', 'found']
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 function StepDots({ current }) {
+  const t = useT()
+  const labels = {
+    idle:    t('wizard.pairing.stepReady'),
+    pairing: t('wizard.pairing.stepPairing'),
+    found:   t('wizard.pairing.stepFound'),
+  }
   return (
     <div className="flex items-center justify-center gap-2 mb-6">
-      {STEPS.map((s, i) => {
-        const idx = STEPS.findIndex((x) => x.id === current)
+      {STEP_IDS.map((id, i) => {
+        const idx = STEP_IDS.indexOf(current)
         const done   = i < idx
-        const active = s.id === current
+        const active = id === current
         return (
-          <div key={s.id} className="flex items-center gap-2">
+          <div key={id} className="flex items-center gap-2">
             <div className={cn(
               'flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold transition-all duration-300',
               done   ? 'bg-emerald-500 text-white' :
@@ -86,9 +62,9 @@ function StepDots({ current }) {
               'text-xs font-medium',
               active ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-600'
             )}>
-              {s.label}
+              {labels[id]}
             </span>
-            {i < STEPS.length - 1 && (
+            {i < STEP_IDS.length - 1 && (
               <div className={cn(
                 'w-8 h-px transition-colors duration-300',
                 done ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'
@@ -117,6 +93,7 @@ function CountdownRing({ value, max }) {
 }
 
 function RoomPicker({ rooms, value, onChange }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const selected = rooms.find((r) => r.id === value)
@@ -140,7 +117,7 @@ function RoomPicker({ rooms, value, onChange }) {
         )}
       >
         <span className={selected || value === null ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}>
-          {value === null ? 'No room' : selected ? selected.name : 'Select a room…'}
+          {value === null ? t('wizard.pairing.noRoom') : selected ? selected.name : t('wizard.pairing.selectRoom')}
         </span>
         <ChevronDown size={14} className={cn('text-zinc-400 transition-transform', open && 'rotate-180')} />
       </button>
@@ -162,7 +139,7 @@ function RoomPicker({ rooms, value, onChange }) {
                 value === null && 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300'
               )}
             >
-              <Home size={13} className="shrink-0 text-zinc-400" /> No room
+              <Home size={13} className="shrink-0 text-zinc-400" /> {t('wizard.pairing.noRoom')}
             </button>
             {rooms.map((r) => (
               <button
@@ -187,7 +164,19 @@ function RoomPicker({ rooms, value, onChange }) {
 // ── Main component ──────────────────────────────────────────────────────────
 
 export function PairingWizard({ open, onClose, onAddIrDevice }) {
+  const t = useT()
   const { rooms, fetchAll } = useDeviceStore()
+
+  // Resolved per-protocol metadata (labels, descriptions, instruction steps).
+  const protoMeta = (id) => ({
+    zigbee:    { label: t('wizard.pairing.protoZigbeeLabel'),    description: t('wizard.pairing.protoZigbeeDesc'),    integration: t('wizard.pairing.requiresZha') },
+    zwave:     { label: t('wizard.pairing.protoZwaveLabel'),     description: t('wizard.pairing.protoZwaveDesc'),     integration: t('wizard.pairing.requiresZwave') },
+    matter:    { label: t('wizard.pairing.protoMatterLabel'),    description: t('wizard.pairing.protoMatterDesc'),    integration: t('wizard.pairing.requiresMatter') },
+    ir_device: { label: t('wizard.pairing.protoIrLabel'),        description: t('wizard.pairing.protoIrDesc'),        integration: '' },
+    broadlink: { label: t('wizard.pairing.protoBroadlinkLabel'), description: t('wizard.pairing.protoBroadlinkDesc'), integration: t('wizard.pairing.requiresBroadlink') },
+    wifi:      { label: t('wizard.pairing.protoWifiLabel'),      description: t('wizard.pairing.protoWifiDesc'),      integration: t('wizard.pairing.requiresNetwork') },
+    switcher:  { label: t('wizard.pairing.protoSwitcherLabel'),  description: t('wizard.pairing.protoSwitcherDesc'),  integration: '' },
+  }[id] || { label: id, description: '', integration: '' })
 
   const [step,        setStep]        = useState('select')
   const [protocol,    setProtocol]    = useState(null)
@@ -271,16 +260,20 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
   // ── Protocol-specific start handlers ──
 
   const startZigbee = async () => {
+    logger.action('pairing_start', { protocol: 'zigbee', duration_s: ZIGBEE_DURATION })
     await snapshotDevices()
     try {
       const res = await zhaPermit(ZIGBEE_DURATION)
       if (!res.ok) {
-        setErrorMsg(res.error || 'Failed to start pairing mode')
+        logger.error('pairing_permit_failed', new Error(res.error || 'permit failed'),
+                     { protocol: 'zigbee' })
+        setErrorMsg(res.error || t('wizard.pairing.permitFailed'))
         setStep('error')
         return
       }
     } catch (e) {
-      setErrorMsg(e.message || 'Could not reach Home Assistant')
+      logger.error('pairing_permit_failed', e, { protocol: 'zigbee' })
+      setErrorMsg(e.message || t('wizard.pairing.couldNotReach'))
       setStep('error')
       return
     }
@@ -294,12 +287,12 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
     try {
       const res = await zwaveInclude()
       if (!res.ok) {
-        setErrorMsg(res.error || 'Failed to start Z-Wave inclusion')
+        setErrorMsg(res.error || t('wizard.pairing.zwaveIncludeFailed'))
         setStep('error')
         return
       }
     } catch (e) {
-      setErrorMsg(e.message || 'Could not reach Home Assistant')
+      setErrorMsg(e.message || t('wizard.pairing.couldNotReach'))
       setStep('error')
       return
     }
@@ -318,12 +311,12 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
     try {
       const res = await matterCommission(matterCode.trim())
       if (!res.ok) {
-        setErrorMsg(res.error || 'Matter commissioning failed')
+        setErrorMsg(res.error || t('wizard.pairing.matterFailed'))
         setStep('error')
         return
       }
     } catch (e) {
-      setErrorMsg(e.message || 'Could not reach Home Assistant')
+      setErrorMsg(e.message || t('wizard.pairing.couldNotReach'))
       setStep('error')
       return
     }
@@ -363,6 +356,10 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
       onClose()
       onAddIrDevice?.()
     }
+    else if (protocol === 'switcher') {
+      // Switcher uses a dedicated multi-step native flow rendered below.
+      setStep('switcher_flow')
+    }
   }
 
   const handleCancel = async () => {
@@ -399,7 +396,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
       await fetchAll()
       onClose()
     } catch (e) {
-      setErrorMsg(e.message || 'Failed to save')
+      setErrorMsg(e.message || t('wizard.pairing.savingFailed'))
     } finally {
       setSaving(false)
     }
@@ -407,10 +404,11 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
 
   const allRooms = rooms.map((r) => ({ id: r.id, name: r.name }))
   const currentProto = PROTOCOLS.find((p) => p.id === protocol)
+  const currentMeta = protocol ? protoMeta(protocol) : null
   const pairDuration = protocol === 'zwave' ? ZWAVE_DURATION : ZIGBEE_DURATION
 
   return (
-    <Modal open={open} fullScreen onClose={onClose} title="Pair new device">
+    <Modal open={open} fullScreen onClose={onClose} title={t('wizard.pairing.modalTitle')}>
       {['idle', 'pairing', 'found'].includes(step) && <StepDots current={step} />}
 
       <AnimatePresence mode="wait">
@@ -424,28 +422,31 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
             className="flex flex-col gap-2"
           >
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-              What type of device are you adding?
+              {t('wizard.pairing.questionType')}
             </p>
-            {PROTOCOLS.map(({ id, label, Icon, description }) => (
-              <button
-                key={id}
-                onClick={() => { setProtocol(id); setStep('idle') }}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all',
-                  'border border-zinc-200 dark:border-zinc-700',
-                  'hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20',
-                  'focus:outline-none focus:ring-2 focus:ring-violet-500'
-                )}
-              >
-                <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                  <Icon size={18} className="text-violet-500" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{label}</p>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500 truncate">{description}</p>
-                </div>
-              </button>
-            ))}
+            {PROTOCOLS.map(({ id, Icon }) => {
+              const meta = protoMeta(id)
+              return (
+                <button
+                  key={id}
+                  onClick={() => { setProtocol(id); setStep('idle') }}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all',
+                    'border border-zinc-200 dark:border-zinc-700',
+                    'hover:border-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20',
+                    'focus:outline-none focus:ring-2 focus:ring-violet-500'
+                  )}
+                >
+                  <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                    <Icon size={18} className="text-violet-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{meta.label}</p>
+                    <p className="text-xs text-zinc-400 dark:text-zinc-500 truncate">{meta.description}</p>
+                  </div>
+                </button>
+              )
+            })}
           </motion.div>
         )}
 
@@ -463,25 +464,25 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
 
             <div>
               <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-                Add a {currentProto.label} device
+                {t('wizard.pairing.readyTitle', { label: currentMeta?.label || '' })}
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                {protocol === 'zigbee' && 'Opens a 60-second pairing window on your Zigbee network.'}
-                {protocol === 'zwave'  && 'Puts your Z-Wave network into inclusion mode for 2 minutes.'}
-                {protocol === 'matter' && 'Enter the setup code from the device label or its companion app.'}
-                {protocol === 'ir_device'  && 'Configure your IR device — name it, select the blaster, and teach it the remote codes.'}
-              {protocol === 'broadlink' && 'Make sure your Broadlink device is powered on and connected to Wi-Fi. Home Assistant auto-discovers it.'}
-                {protocol === 'wifi'  && 'Make sure the device is powered on and connected to your network. Home Assistant will discover it via mDNS.'}
+                {protocol === 'zigbee'    && t('wizard.pairing.zigbeeDesc')}
+                {protocol === 'zwave'     && t('wizard.pairing.zwaveDesc')}
+                {protocol === 'matter'    && t('wizard.pairing.matterDesc')}
+                {protocol === 'ir_device' && t('wizard.pairing.irDesc')}
+                {protocol === 'broadlink' && t('wizard.pairing.broadlinkDesc')}
+                {protocol === 'wifi'      && t('wizard.pairing.wifiDesc')}
               </p>
             </div>
 
             {/* Matter code input — shown in the idle step */}
             {protocol === 'matter' && (
               <Input
-                label="Setup code"
+                label={t('wizard.pairing.matterCodeLabel')}
                 value={matterCode}
                 onChange={(e) => setMatterCode(e.target.value)}
-                placeholder="e.g. MT:Y.K90SO5 or 1234-5678"
+                placeholder={t('wizard.pairing.matterCodePh')}
                 className="w-full"
               />
             )}
@@ -490,59 +491,55 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
             {protocol !== 'matter' && (
               <div className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4 text-left space-y-2">
                 {protocol === 'zigbee' && [
-                  '1. Click "Start pairing" below',
-                  '2. Put your device in pairing mode (hold reset button until LED blinks)',
-                  '3. Wait — Ziggy will detect it automatically',
-                ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
+                  t('wizard.pairing.zigbeeStep1'),
+                  t('wizard.pairing.zigbeeStep2'),
+                  t('wizard.pairing.zigbeeStep3'),
+                ].map((line) => <p key={line} className="text-xs text-zinc-600 dark:text-zinc-400">{line}</p>)}
 
                 {protocol === 'zwave' && [
-                  '1. Click "Start pairing" below',
-                  '2. Press the inclusion button on your Z-Wave device',
-                  '3. Wait — Ziggy will detect it automatically',
-                ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
+                  t('wizard.pairing.zwaveStep1'),
+                  t('wizard.pairing.zwaveStep2'),
+                  t('wizard.pairing.zwaveStep3'),
+                ].map((line) => <p key={line} className="text-xs text-zinc-600 dark:text-zinc-400">{line}</p>)}
 
                 {protocol === 'ir_device' && [
-                  '1. Click "Set up IR device" below',
-                  '2. Name the device and choose your blaster',
-                  '3. Point your remote at the blaster and teach each button',
-                ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
+                  t('wizard.pairing.irStep1'),
+                  t('wizard.pairing.irStep2'),
+                  t('wizard.pairing.irStep3'),
+                ].map((line) => <p key={line} className="text-xs text-zinc-600 dark:text-zinc-400">{line}</p>)}
 
-              {protocol === 'broadlink' && [
-                  '1. Power on your Broadlink device',
-                  '2. Connect it to your Wi-Fi using the Broadlink app',
-                  '3. Click "Scan" — Ziggy will show devices HA has discovered',
-                ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
+                {protocol === 'broadlink' && [
+                  t('wizard.pairing.broadlinkStep1'),
+                  t('wizard.pairing.broadlinkStep2'),
+                  t('wizard.pairing.broadlinkStep3'),
+                ].map((line) => <p key={line} className="text-xs text-zinc-600 dark:text-zinc-400">{line}</p>)}
 
                 {protocol === 'wifi' && [
-                  '1. Power on your device and connect it to your Wi-Fi',
-                  '2. Click "Scan" — Ziggy will show devices HA has discovered',
-                  '3. Complete the setup and Ziggy will detect when it\'s added',
-                ].map((t) => <p key={t} className="text-xs text-zinc-600 dark:text-zinc-400">{t}</p>)}
+                  t('wizard.pairing.wifiStep1'),
+                  t('wizard.pairing.wifiStep2'),
+                  t('wizard.pairing.wifiStep3'),
+                ].map((line) => <p key={line} className="text-xs text-zinc-600 dark:text-zinc-400">{line}</p>)}
               </div>
             )}
 
             <div className="flex gap-2 w-full">
               <Button variant="secondary" onClick={() => setStep('select')} className="flex-none px-4">
-                Back
+                {t('wizard.back')}
               </Button>
               <Button
                 onClick={handleStart}
                 disabled={protocol === 'matter' && !matterCode.trim()}
                 className="flex-1"
               >
-                {protocol === 'matter'                  ? 'Commission'        :
-                 protocol === 'ir_device'               ? 'Set up IR device'  :
-                 protocol === 'broadlink' || protocol === 'wifi' ? 'Scan'     :
-                 'Start pairing'}
+                {protocol === 'matter'                          ? t('wizard.pairing.startBtnCommission') :
+                 protocol === 'ir_device'                       ? t('wizard.pairing.startBtnIr')         :
+                 protocol === 'broadlink' || protocol === 'wifi'? t('wizard.pairing.startBtnScan')       :
+                 t('wizard.pairing.startBtnStart')}
               </Button>
             </div>
 
             <p className="text-[10px] text-zinc-400">
-              {protocol === 'zigbee'    && 'Requires ZHA integration in Home Assistant'}
-              {protocol === 'zwave'     && 'Requires Z-Wave JS integration in Home Assistant'}
-              {protocol === 'matter'    && 'Requires Matter integration in Home Assistant'}
-              {protocol === 'broadlink' && 'Requires Broadlink integration in Home Assistant'}
-              {protocol === 'wifi'      && 'Device must be on the same network as Home Assistant'}
+              {currentMeta?.integration}
             </p>
           </motion.div>
         )}
@@ -568,7 +565,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
                   <span className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
                     {countdown}
                   </span>
-                  <span className="text-[10px] text-zinc-400">sec</span>
+                  <span className="text-[10px] text-zinc-400">{t('wizard.pairing.sec')}</span>
                 </div>
               </div>
             )}
@@ -599,7 +596,9 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
                 ) : configFlows.length > 0 ? (
                   <div className="space-y-2 text-left">
                     <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                      {configFlows.length} device{configFlows.length > 1 ? 's' : ''} discovered by Home Assistant:
+                      {configFlows.length === 1
+                        ? t('wizard.pairing.discoveredHaOne', { n: configFlows.length })
+                        : t('wizard.pairing.discoveredHa', { n: configFlows.length })}
                     </p>
                     {configFlows.map((flow) => (
                       <div
@@ -619,28 +618,28 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
                             rel="noreferrer"
                             className="flex items-center gap-1 text-xs text-violet-500 hover:text-violet-600 shrink-0"
                           >
-                            Configure <ExternalLink size={11} />
+                            {t('wizard.pairing.configure')} <ExternalLink size={11} />
                           </a>
                         )}
                       </div>
                     ))}
                     <p className="text-xs text-zinc-400 mt-2">
-                      Complete setup in Home Assistant — Ziggy will detect the device automatically once added.
+                      {t('wizard.pairing.completeInHa')}
                     </p>
                   </div>
                 ) : (
                   <div className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4 text-left space-y-2">
                     <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                      No devices discovered yet
+                      {t('wizard.pairing.noneDiscovered')}
                     </p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      Make sure your device is powered on and connected to the same network as Home Assistant, then click Refresh.
+                      {t('wizard.pairing.noneDiscoveredHint')}
                     </p>
                     <button
                       onClick={handleRefreshFlows}
                       className="flex items-center gap-1.5 text-xs text-violet-500 hover:text-violet-600 mt-1"
                     >
-                      <RotateCcw size={12} /> Refresh
+                      <RotateCcw size={12} /> {t('wizard.refresh')}
                     </button>
                   </div>
                 )}
@@ -649,20 +648,20 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
 
             <div>
               <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-                {protocol === 'matter'               ? 'Commissioning…'      :
-                 protocol === 'broadlink' || protocol === 'wifi' ? 'Waiting for device…' :
-                 'Pairing mode active'}
+                {protocol === 'matter'                          ? t('wizard.pairing.commissioning')      :
+                 protocol === 'broadlink' || protocol === 'wifi'? t('wizard.pairing.waitingForDevice')  :
+                 t('wizard.pairing.pairingActive')}
               </p>
               {(protocol === 'zigbee' || protocol === 'zwave') && (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   {protocol === 'zigbee'
-                    ? 'Put your device in pairing mode — plug it in or hold its reset button until it blinks.'
-                    : 'Press the inclusion button on your Z-Wave device now.'}
+                    ? t('wizard.pairing.zigbeeSubtext')
+                    : t('wizard.pairing.zwaveSubtext')}
                 </p>
               )}
               {protocol === 'matter' && (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Home Assistant is commissioning your device. This may take up to a minute.
+                  {t('wizard.pairing.matterSubtext')}
                 </p>
               )}
             </div>
@@ -674,7 +673,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
                   transition={{ duration: 1.2, repeat: Infinity }}
                   className="w-2 h-2 rounded-full bg-violet-500"
                 />
-                Scanning for devices…
+                {t('wizard.pairing.scanningForDevices')}
               </div>
             )}
 
@@ -682,7 +681,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
               onClick={handleCancel}
               className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
             >
-              Cancel
+              {t('wizard.cancel')}
             </button>
           </motion.div>
         )}
@@ -698,7 +697,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
             <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
               <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Device found!</p>
+                <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{t('wizard.pairing.deviceFound')}</p>
                 {(foundDevice.manufacturer || foundDevice.model) && (
                   <p className="text-xs text-emerald-600 dark:text-emerald-500 truncate">
                     {[foundDevice.manufacturer, foundDevice.model].filter(Boolean).join(' · ')}
@@ -708,15 +707,15 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
             </div>
 
             <Input
-              label="Device name"
+              label={t('wizard.pairing.deviceName')}
               value={deviceName}
               onChange={(e) => setDeviceName(e.target.value)}
-              placeholder="e.g. Living Room IR Blaster"
+              placeholder={t('wizard.pairing.deviceNamePh')}
             />
 
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Assign to room <span className="text-zinc-400 font-normal">(optional)</span>
+                {t('wizard.pairing.assignToRoomOpt')} <span className="text-zinc-400 font-normal">{t('wizard.pairing.optional')}</span>
               </label>
               <RoomPicker rooms={allRooms} value={roomId} onChange={setRoomId} />
             </div>
@@ -724,7 +723,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
             {errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
 
             <Button onClick={handleSave} disabled={saving} className="w-full">
-              {saving ? 'Saving…' : 'Save device'}
+              {saving ? t('wizard.pairing.saving') : t('wizard.pairing.saveDevice')}
             </Button>
           </motion.div>
         )}
@@ -740,32 +739,32 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
               <RefreshCw size={26} className="text-amber-500" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">No device detected</p>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">{t('wizard.pairing.noDeviceDetected')}</p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                The pairing window expired without finding a new device. Make sure your device is in pairing mode and try again.
+                {t('wizard.pairing.expiredHint')}
               </p>
             </div>
             <div className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 text-left space-y-1.5">
-              <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Tips:</p>
-              {protocol === 'matter' ? [
-                'Check that the setup code was entered correctly',
-                'Make sure the device is in commissioning mode (usually a button hold)',
-                'Ensure the Matter integration is configured in HA',
+              <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{t('wizard.pairing.tips')}</p>
+              {(protocol === 'matter' ? [
+                t('wizard.pairing.tipMatter1'),
+                t('wizard.pairing.tipMatter2'),
+                t('wizard.pairing.tipMatter3'),
               ] : protocol === 'zwave' ? [
-                'Press the inclusion button on the device within the 2-minute window',
-                'Stay within range of your Z-Wave controller',
-                'Some devices require a factory reset before inclusion',
+                t('wizard.pairing.tipZwave1'),
+                t('wizard.pairing.tipZwave2'),
+                t('wizard.pairing.tipZwave3'),
               ] : [
-                'Hold the reset button until the LED blinks rapidly',
-                'Some devices need to be powered on during pairing',
-                'Stay within range of your coordinator',
-              ].map((t) => (
-                <p key={t} className="text-xs text-zinc-500 dark:text-zinc-400">· {t}</p>
+                t('wizard.pairing.tipDefault1'),
+                t('wizard.pairing.tipDefault2'),
+                t('wizard.pairing.tipDefault3'),
+              ]).map((line) => (
+                <p key={line} className="text-xs text-zinc-500 dark:text-zinc-400">· {line}</p>
               ))}
             </div>
             <div className="flex gap-2 w-full">
-              <Button variant="secondary" onClick={onClose} className="flex-1">Close</Button>
-              <Button onClick={() => setStep('idle')} className="flex-1">Try again</Button>
+              <Button variant="secondary" onClick={onClose} className="flex-1">{t('wizard.close')}</Button>
+              <Button onClick={() => setStep('idle')} className="flex-1">{t('wizard.pairing.tryAgain')}</Button>
             </div>
           </motion.div>
         )}
@@ -782,26 +781,40 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
             </div>
             <div>
               <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-                Could not start pairing
+                {t('wizard.pairing.couldNotStart')}
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">{errorMsg}</p>
             </div>
             <div className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 text-left">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Make sure the{' '}
-                <strong className="text-zinc-700 dark:text-zinc-300">
-                  {protocol === 'zigbee'    ? 'ZHA' :
-                   protocol === 'zwave'     ? 'Z-Wave JS' :
-                   protocol === 'matter'    ? 'Matter' :
-                   protocol === 'broadlink' ? 'Broadlink' : 'required'}
-                </strong>{' '}
-                integration is installed and running in Home Assistant (Settings → Integrations).
+                {t('wizard.pairing.errorHelp', {
+                  name: protocol === 'zigbee'    ? 'ZHA' :
+                        protocol === 'zwave'     ? 'Z-Wave JS' :
+                        protocol === 'matter'    ? 'Matter' :
+                        protocol === 'broadlink' ? 'Broadlink' : t('wizard.pairing.errorIntegrationDefault'),
+                })}
               </p>
             </div>
             <div className="flex gap-2 w-full">
-              <Button variant="secondary" onClick={onClose} className="flex-1">Close</Button>
-              <Button onClick={() => setStep('idle')} className="flex-1">Try again</Button>
+              <Button variant="secondary" onClick={onClose} className="flex-1">{t('wizard.close')}</Button>
+              <Button onClick={() => setStep('idle')} className="flex-1">{t('wizard.pairing.tryAgain')}</Button>
             </div>
+          </motion.div>
+        )}
+
+        {/* ── Switcher native pairing flow ──────────────────── */}
+        {step === 'switcher_flow' && (
+          <motion.div
+            key="switcher_flow"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          >
+            <SwitcherPairingFlow
+              onDone={async () => {
+                await fetchAll()
+                onClose()
+              }}
+              onCancel={() => setStep('idle')}
+            />
           </motion.div>
         )}
 

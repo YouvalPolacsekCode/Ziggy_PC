@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/debug")
 _VALID_SCOPES = {
     "intent", "ha", "ir", "automation", "sensor",
     "presence", "ws", "voice", "scheduler", "general",
+    "api", "device", "frontend", "settings",
 }
 
 _VALID_LEVELS = {"off", "basic", "verbose", "trace"}
@@ -52,6 +53,10 @@ async def set_debug_config(body: DebugConfigBody, _: dict = Depends(require_role
         if body.level not in _VALID_LEVELS:
             raise HTTPException(400, f"Invalid level '{body.level}'. Must be one of: {sorted(_VALID_LEVELS)}")
         bus.set_level(body.level)
+        # Keep the on-disk log file in lock-step with the bus level so users
+        # who flip to "trace" actually see trace lines in logs/ziggy.log.
+        from core.logger_module import apply_log_level
+        apply_log_level(body.level)
 
     if body.scopes is not None:
         invalid = set(body.scopes) - _VALID_SCOPES - {""}
@@ -216,6 +221,53 @@ async def simulate_intent(body: SimulateBody, _: dict = Depends(require_role("su
     finally:
         # Restore previous debug level
         bus.set_level(prev_level)
+
+
+# ─── Frontend event ingestion ─────────────────────────────────────────────────
+#
+# The React app keeps its own ring buffer so the Debug page works offline, but
+# any event at basic-or-louder is also POSTed here. That way the backend trace
+# (which already has the request_id) and the click/UI trace land in the same
+# timeline — selecting a request_id on the Debug page shows the click that
+# started it, the HTTP request it spawned, the HA call, and the state ack.
+
+class FrontendEvent(BaseModel):
+    scope:      str               = "frontend"   # always "frontend" today; kept flexible
+    level:      str               = "basic"      # off | basic | verbose | trace
+    step:       str
+    request_id: Optional[str]     = None
+    data:       Optional[dict]    = None
+
+
+class FrontendEventBatch(BaseModel):
+    events: List[FrontendEvent]
+
+
+_FE_LEVEL_INT = {"off": 0, "basic": BASIC, "verbose": VERBOSE, "trace": TRACE}
+
+
+@router.post("/frontend-event")
+async def ingest_frontend_event(
+    batch: FrontendEventBatch,
+    _: dict = Depends(require_role("super_admin")),
+):
+    """Append a batch of FE-side events to the shared bus.
+
+    Level-gating still applies — if the bus is off or below the event's level,
+    the event is dropped. The FE filters before sending too, but we re-check
+    here so a misconfigured client can't flood the buffer.
+    """
+    accepted = 0
+    for ev in batch.events:
+        scope = ev.scope or "frontend"
+        if scope not in _VALID_SCOPES:
+            scope = "frontend"
+        lvl_int = _FE_LEVEL_INT.get(ev.level, BASIC)
+        if bus.emit(scope, lvl_int, ev.step,
+                    request_id=ev.request_id,
+                    **(ev.data or {})):
+            accepted += 1
+    return {"ok": True, "accepted": accepted, "received": len(batch.events)}
 
 
 # ─── Quick diagnostics ────────────────────────────────────────────────────────

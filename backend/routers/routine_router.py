@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -16,6 +17,9 @@ router = APIRouter()
 
 
 class RoutineBody(BaseModel):
+    # `id` present → update existing script in place (no slugify-on-name).
+    # Absent → backend slugs the name to produce a new id, as before.
+    id: Optional[str] = None
     name: str
     description: Optional[str] = ""
     icon: Optional[str] = "⚡"
@@ -24,7 +28,10 @@ class RoutineBody(BaseModel):
 
 @router.get("/api/routines")
 async def get_routines():
-    return {"routines": list_scripts()}
+    # list_scripts() does a sync `requests.get` against HA — wrap so the
+    # FastAPI event loop stays responsive while HA replies (10s timeout).
+    routines = await asyncio.to_thread(list_scripts)
+    return {"routines": routines}
 
 
 @router.get("/api/routines/{script_id}")
@@ -38,7 +45,10 @@ async def get_routine_by_id(script_id: str):
 @router.post("/api/routines")
 async def create_routine_endpoint(body: RoutineBody):
     data = body.model_dump()
-    result = save_script(data)
+    # Thread the id through so updates land on the same HA script. Without
+    # this, save_script() would re-slug from the name on every save — orphaning
+    # the original script whenever the user renamed a routine.
+    result = save_script(data, script_id=data.get("id") or None)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     script_id = result["id"]

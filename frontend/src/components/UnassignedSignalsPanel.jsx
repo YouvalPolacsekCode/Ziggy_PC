@@ -9,6 +9,7 @@ import {
   getIrDevices,
 } from '../lib/api'
 import { useUIStore } from '../stores/uiStore'
+import { useT, t as i18nT } from '../lib/i18n'
 
 function _fmtAgo(iso) {
   if (!iso) return ''
@@ -22,6 +23,7 @@ function _fmtAgo(iso) {
 }
 
 function SignalRow({ signal, devices, onAssigned, onDismissed }) {
+  const t = useT()
   const [deviceId, setDeviceId] = useState('')
   const [commandName, setCommandName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -33,16 +35,16 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
 
   const handleAssign = async () => {
     if (!deviceId || !commandName.trim()) {
-      addToast('Pick a device and a command name', 'error')
+      addToast(t('unassignedSig.pickDeviceAndCmd'), 'error')
       return
     }
     setBusy(true)
     try {
       await assignIrUnassignedSignal(signal.id, deviceId, commandName.trim())
-      addToast(`Bound to ${device?.name} → ${commandName}`, 'success')
+      addToast(t('unassignedSig.boundTo', { device: device?.name, cmd: commandName }), 'success')
       onAssigned()
     } catch (e) {
-      addToast(e.message || 'Assign failed', 'error')
+      addToast(e.message || t('unassignedSig.assignFailed'), 'error')
     } finally {
       setBusy(false)
     }
@@ -54,7 +56,7 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
       await dismissIrUnassignedSignal(signal.id)
       onDismissed()
     } catch (e) {
-      addToast(e.message || 'Dismiss failed', 'error')
+      addToast(e.message || t('unassignedSig.dismissFailed'), 'error')
     } finally {
       setBusy(false)
     }
@@ -76,7 +78,7 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>
-            Unknown signal {signal.count > 1 ? `×${signal.count}` : ''}
+            {t('unassignedSig.unknownSignal')} {signal.count > 1 ? `×${signal.count}` : ''}
           </p>
           <p className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', margin: 0 }}>
             {_fmtAgo(signal.last_seen_at || signal.received_at)}
@@ -88,7 +90,7 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
         <button
           onClick={handleDismiss}
           disabled={busy}
-          title="Dismiss this signal"
+          title={t('unassignedSig.dismissTitle')}
           style={{
             width: 28, height: 28, borderRadius: 8,
             background: 'transparent', border: '0.5px solid var(--line)',
@@ -112,7 +114,7 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
             color: 'var(--ink)',
           }}
         >
-          <option value="">Pick device...</option>
+          <option value="">{t('unassignedSig.pickDevice')}</option>
           {devices.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name} {d.room ? `· ${d.room.replace(/_/g, ' ')}` : ''}
@@ -124,7 +126,7 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
           list={`cmd-${signal.id}`}
           value={commandName}
           onChange={(e) => setCommandName(e.target.value)}
-          placeholder="command..."
+          placeholder={t('unassignedSig.commandPlaceholder')}
           disabled={!deviceId}
           style={{
             flex: '1 1 120px', minWidth: 0,
@@ -162,6 +164,7 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
 }
 
 export default function UnassignedSignalsPanel({ open, onClose, refreshSignal }) {
+  const t = useT()
   const [signals, setSignals] = useState([])
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(false)
@@ -177,7 +180,7 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
       setSignals(Array.isArray(sigs) ? sigs : [])
       setDevices(Array.isArray(devs) ? devs : [])
     } catch (e) {
-      addToast(e.message || 'Failed to load signals', 'error')
+      addToast(e.message || t('unassignedSig.failedLoad'), 'error')
     } finally {
       setLoading(false)
     }
@@ -188,19 +191,17 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
   const handleClearAll = async () => {
     try {
       const r = await clearIrUnassignedSignals()
-      addToast(`Cleared ${r.removed ?? 0} signals`, 'success')
+      addToast(t('unassignedSig.cleared', { n: r.removed ?? 0 }), 'success')
       refresh()
     } catch (e) {
-      addToast(e.message || 'Clear failed', 'error')
+      addToast(e.message || t('unassignedSig.clearFailed'), 'error')
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Unassigned IR signals" maxWidth={560}>
+    <Modal open={open} onClose={onClose} title={t('unassignedSig.title')} maxWidth={560}>
       <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14, lineHeight: 1.5 }}>
-        Physical-remote presses that Ziggy heard but couldn't match to any device.
-        Bind a signal to (device, command) and future presses of that button will
-        update the device state automatically.
+        {t('unassignedSig.help')}
       </p>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -215,7 +216,7 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
           }}
         >
           <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
-          Refresh
+          {t('common.refresh')}
         </button>
         {signals.length > 0 && (
           <button
@@ -227,23 +228,23 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
               color: 'var(--warn)', cursor: 'pointer',
             }}
           >
-            Clear all
+            {t('unassignedSig.clearAll')}
           </button>
         )}
       </div>
 
       {loading && signals.length === 0 && (
         <p style={{ fontSize: 12, color: 'var(--ink-faint)', textAlign: 'center', padding: 20 }}>
-          Loading...
+          {t('common.loading')}
         </p>
       )}
 
       {!loading && signals.length === 0 && (
         <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--ink-faint)' }}>
           <Radio size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
-          <p style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600 }}>No unknown signals</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600 }}>{t('unassignedSig.noneTitle')}</p>
           <p style={{ fontSize: 11, marginTop: 4 }}>
-            Press a button on a physical remote near a Broadlink blaster - the capture will appear here.
+            {t('unassignedSig.noneHint')}
           </p>
         </div>
       )}

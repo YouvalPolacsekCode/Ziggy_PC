@@ -155,15 +155,57 @@ async def _process_event(event: dict) -> None:
     prev_s = old_state.get("state", "")
     new_s = new_state.get("state", "unknown")
 
+    attrs = new_state.get("attributes", {})
     state_cache[entity_id] = {
         "state": new_s,
-        "attributes": new_state.get("attributes", {}),
+        "attributes": attrs,
         "last_changed": new_state.get("last_changed", ""),
     }
+
+    # Broadcast to frontend FIRST — this is the user-perceived latency path
+    # for "click → tile reflects HA's confirmed state". Every other operation
+    # below (manual-override mark, command_router learning, restore check,
+    # anomaly evaluate) is internal bookkeeping that doesn't affect the
+    # broadcast payload, and used to sit BEFORE it, adding their cost to
+    # what users see as the round-trip. None of them mutate `attrs` or
+    # `new_s`, so reordering is functionally identical.
+    try:
+        from backend.ws_manager import manager
+        await manager.broadcast({
+            "type": "state_changed",
+            "entity_id": entity_id,
+            "new_state": new_s,
+            "attributes": attrs,
+        })
+    except Exception as e:
+        log_error(f"[HASubscriber] broadcast failed: {e}")
+
+    # Manual-override detection — if the user (or another system) just changed
+    # a controllable entity and Ziggy did NOT initiate the change, mark it as
+    # manually overridden for the default window. The executor will skip steps
+    # targeting overridden entities to avoid fighting the user.
+    try:
+        from services.manual_overrides import (
+            was_ziggy_initiated, mark_manual, CONTROLLABLE_DOMAINS,
+        )
+        if prev_s and new_s and prev_s != new_s:
+            domain = entity_id.split(".", 1)[0]
+            if domain in CONTROLLABLE_DOMAINS and not was_ziggy_initiated(entity_id):
+                mark_manual(entity_id)
+    except Exception:
+        pass
 
     # TRACE-level: emit every HA state change (very noisy — only in trace mode)
     _dbus.emit("ha", TRACE, "ha_state_changed",
                entity_id=entity_id, prev_state=prev_s, new_state=new_s)
+
+    # Hybrid-routing learning: track last meaningful state per entity, and learn
+    # wifi_dies_when_off on hybrid devices that go off → unavailable.
+    try:
+        from services.command_router import observe_state_transition
+        observe_state_transition(entity_id, prev_s, new_s)
+    except Exception:
+        pass
 
     # Restore last intentional settings when a device regains power.
     # Trigger: unavailable/unknown → on (physical switch restored / brief outage).
@@ -179,19 +221,8 @@ async def _process_event(event: dict) -> None:
         if domain in _eligible:
             asyncio.create_task(_restore_entity_state(entity_id))
 
-    # Broadcast to frontend via the shared ws_manager
-    try:
-        from backend.ws_manager import manager
-        await manager.broadcast({
-            "type": "state_changed",
-            "entity_id": entity_id,
-            "new_state": new_s,
-            "attributes": new_state.get("attributes", {}),
-        })
-    except Exception as e:
-        log_error(f"[HASubscriber] broadcast failed: {e}")
-
-    # Drive anomaly evaluation on every state change
+    # Drive anomaly evaluation on every state change (already debounced to
+    # ~250 ms so this no longer blocks the event handler measurably).
     try:
         from services.anomaly_engine import evaluate
         await evaluate(entity_id, state_cache, active_anomalies)

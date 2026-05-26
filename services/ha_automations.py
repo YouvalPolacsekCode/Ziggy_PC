@@ -203,29 +203,62 @@ def list_automations() -> list:
     ha_result: list = []
     ha_ids: set = set()
 
+    # Prefer the WS-fed state cache. ha_subscriber keeps it continuously
+    # current via state_changed events, so it's at least as fresh as a REST
+    # snapshot — and skips a 100-300 ms HA round-trip that used to fire on
+    # every Dashboard mount + Automations page mount. Fall back to REST only
+    # when the cache is empty (early boot, before the subscriber's first
+    # snapshot completes).
     try:
-        resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
-        if resp.status_code == 200:
-            for s in resp.json():
-                eid = s.get("entity_id", "")
+        from services.ha_subscriber import state_cache
+        cache_items = list(state_cache.items()) if state_cache else None
+    except Exception:
+        cache_items = None
+
+    try:
+        if cache_items is not None:
+            for eid, entry in cache_items:
                 if not eid.startswith("automation."):
                     continue
                 auto_id = eid[len("automation."):]
                 ha_ids.add(auto_id)
-                attrs = s.get("attributes", {})
+                attrs = entry.get("attributes", {}) or {}
                 meta = get_automation_meta(auto_id)
                 ha_result.append({
                     "id": auto_id,
                     "entity_id": eid,
                     "name": meta.get("name") or attrs.get("friendly_name", auto_id),
                     "description": meta.get("description", ""),
-                    "enabled": s.get("state") != "off",
+                    "enabled": entry.get("state") != "off",
                     "last_triggered": attrs.get("last_triggered"),
                     "trigger": meta.get("trigger", {}),
                     "actions": get_all_saved_actions(auto_id),
                     "rooms": meta.get("rooms", []),
                     "source": "ha",
                 })
+        else:
+            resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
+            if resp.status_code == 200:
+                for s in resp.json():
+                    eid = s.get("entity_id", "")
+                    if not eid.startswith("automation."):
+                        continue
+                    auto_id = eid[len("automation."):]
+                    ha_ids.add(auto_id)
+                    attrs = s.get("attributes", {})
+                    meta = get_automation_meta(auto_id)
+                    ha_result.append({
+                        "id": auto_id,
+                        "entity_id": eid,
+                        "name": meta.get("name") or attrs.get("friendly_name", auto_id),
+                        "description": meta.get("description", ""),
+                        "enabled": s.get("state") != "off",
+                        "last_triggered": attrs.get("last_triggered"),
+                        "trigger": meta.get("trigger", {}),
+                        "actions": get_all_saved_actions(auto_id),
+                        "rooms": meta.get("rooms", []),
+                        "source": "ha",
+                    })
     except Exception as e:
         log_error(f"[HA Automations] list: {e}")
 

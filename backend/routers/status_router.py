@@ -126,25 +126,9 @@ async def voice_status(_: dict = Depends(get_current_user)):
     }
 
 
-# ---------------------------------------------------------------------------
-# Feature flags — Super Admin only
-# ---------------------------------------------------------------------------
-
-@router.get("/api/settings/features")
-async def get_features():
-    return settings.get("features", {})
-
-
-class FeaturesPatch(BaseModel):
-    scenes: Optional[bool] = None
-
-
-@router.patch("/api/settings/features")
-async def patch_features(patch: FeaturesPatch, _: dict = Depends(get_current_user)):
-    feats = settings.setdefault("features", {})
-    for field, val in patch.model_dump(exclude_none=True).items():
-        feats[field] = val
-    save_settings(settings)
-    return {"ok": True, "features": feats}
+# Feature-flag GET/PATCH live on admin_router (/api/settings/features).
+# A stale typed-Pydantic duplicate used to live here and silently dropped
+# every field except `scenes`, so FF toggles in the UI 200-OK'd but never
+# actually persisted. Removed — do not re-add.
 
 

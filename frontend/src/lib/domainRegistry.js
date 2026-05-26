@@ -31,7 +31,10 @@ export const DOMAIN_REGISTRY = {
 
   // ── Switches ──────────────────────────────────────────────────────────────
   switch: {
-    label: 'Switch', icon: '🔌', group: 'switches',
+    // 🎛️ (control knobs) — distinct from 🔌 used for plug-like switches.
+    // Aligns with KIND_META.switch in lib/devices.js so a switch entity's
+    // sibling chip on the device-detail page matches the parent card.
+    label: 'Switch', icon: '🎛️', group: 'switches',
     controllable: true, toggleable: true,
     activeStates: ['on'],
     restoreOnReconnect: true, safetyLevel: 'none',
@@ -331,26 +334,77 @@ export const DOMAIN_GROUPS = _buildDomainGroups()
 // Icon helper
 // ---------------------------------------------------------------------------
 
+// Aligned with KIND_META icons in lib/devices.js. Reserved emoji that we
+// deliberately avoid here:
+//   ⚡  — Routines default + Quick Asks chip icon
+//   ⚙️  — Settings menu (so we don't reuse it as a generic fallback)
+//   🏠  — Sidebar Home + room photos fallback
 const SENSOR_CLASS_ICONS = {
   temperature: '🌡️', humidity: '💧', pressure: '🔵', illuminance: '☀️',
-  motion: '🚶', door: '🚪', window: '🪟', smoke: '🚨', moisture: '💦',
-  gas: '⚠️', battery: '🔋', power: '⚡', energy: '⚡', voltage: '🔌',
+  motion: '🚶', door: '🚪', window: '🪟', smoke: '🚨', moisture: '🚱',
+  gas: '⚠️', battery: '🔋', power: '🔋', energy: '🔋', voltage: '🔌',
   current: '🔌', co2: '🌫️', co: '🌫️', pm25: '🌫️', pm10: '🌫️',
-  sound: '🔊', vibration: '📳', connectivity: '📶', occupancy: '🏠',
-  plug: '🔌', lock: '🔒', opening: '🚪', presence: '🏠', timestamp: '🕐',
+  sound: '🔊', vibration: '📳', connectivity: '📶', occupancy: '👥',
+  plug: '🔌', lock: '🔒', opening: '🚪', presence: '👥', timestamp: '🕐',
 }
 
 export function domainIcon(domain, deviceClass) {
   if (deviceClass && (domain === 'sensor' || domain === 'binary_sensor')) {
-    return SENSOR_CLASS_ICONS[deviceClass] || '📊'
+    return SENSOR_CLASS_ICONS[deviceClass] || '📡'
   }
-  return DOMAIN_REGISTRY[domain]?.icon || '⚙️'
+  return DOMAIN_REGISTRY[domain]?.icon || '📦'
+}
+
+// ─── Switcher boiler heuristic ──────────────────────────────────────────────
+// Mirrors `_isWaterHeaterEntity` in lib/devices.js. Duplicated here (instead
+// of imported) to avoid a circular module dependency — devices.js already
+// imports DOMAIN_REGISTRY from this file. The two MUST agree; if you edit
+// one, edit the other.
+const _SWITCHER_BOILER_KEYWORDS = [
+  'switcher_touch', 'switcher_heater', 'switcher_water',
+  'switcher_v2', 'switcher_v4',
+  'switcher touch', 'switcher heater', 'switcher water', 'switcher v2', 'switcher v4',
+]
+const _SWITCHER_NON_BOILER_KEYWORDS = [
+  'switcher_mini', 'switcher_power_plug', 'switcher_breeze', 'switcher_runner',
+  'switcher mini', 'switcher power plug', 'switcher breeze', 'switcher runner',
+]
+function _entityLooksLikeWaterHeater(entity) {
+  const eid  = (entity?.entity_id || '').toLowerCase()
+  if (!eid.startsWith('switch.')) return false
+  const name = [
+    entity?.friendly_name,
+    entity?.display_name,
+    entity?.name,
+    entity?.attributes?.friendly_name,
+  ].filter(Boolean).join(' ').toLowerCase()
+  const haystack = `${eid} ${name}`
+  if (_SWITCHER_NON_BOILER_KEYWORDS.some(k => haystack.includes(k))) return false
+  if (_SWITCHER_BOILER_KEYWORDS.some(k => haystack.includes(k))) return true
+  if (/\b(boiler|water[\s_-]?heater|geyser|water boiler)\b/.test(name)) return true
+  if (name.includes('דוד') || name.includes('מחמם מים')) return true
+  // Last-resort: a Switcher entity with no other classifying hints. The
+  // non-boiler keyword list above already excluded Mini Plug, Power Plug,
+  // Breeze AC, and Runner blinds.
+  if (haystack.includes('switcher')) return true
+  return false
 }
 
 // Returns the group id for an entity.
+//
+// The raw HA `domain` is a poor proxy for "what category does the user think
+// this device belongs in". Two overrides:
+//   - A Switcher Touch boiler registers as `switch.*` but belongs in Water,
+//     not Switches. Otherwise the by-type view on Devices files it next to
+//     the wall switches and reads as "this is just a switch".
+//   - A temperature/humidity sensor registers as `sensor.*` but belongs in
+//     Climate.
 export function domainGroup(entity) {
   if (entity.domain === 'sensor' && ['temperature', 'humidity'].includes(entity.device_class)) {
     return 'climate'
+  }
+  if (entity.domain === 'switch' && _entityLooksLikeWaterHeater(entity)) {
+    return 'water'
   }
   return DOMAIN_REGISTRY[entity.domain]?.group || 'other'
 }

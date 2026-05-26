@@ -17,6 +17,11 @@ Scopes — enable per-feature granularity:
   ws          — WebSocket connection events
   voice       — voice interface
   scheduler   — scheduled tasks
+  api         — HTTP request lifecycle (request_received → request_completed)
+  device      — device command dispatch and result confirmation
+  frontend    — events emitted by the React app (clicks, navigation, FE API calls)
+  settings    — user-visible configuration changes
+  general     — anything that does not fit a more specific scope
 
 Usage:
   from core.debug_bus import bus, BASIC, VERBOSE, TRACE

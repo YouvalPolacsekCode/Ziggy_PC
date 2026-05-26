@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
-from services.pattern_logger import load_events
+from services.pattern_logger import load_events, _SKIP_INTENTS
 from core.settings_loader import settings
 
 CANDIDATES_FILE = Path("user_files/pattern_candidates.json")
@@ -136,7 +136,8 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
     cfg = _cfg()
     window = cfg.get("time_window_minutes", 45)
 
-    # Bucket: (intent, room, action) → list of (date_str, week_str, minute_of_day, weekday)
+    # Bucket: (intent, room, action) → list of
+    #   (date_str, week_str, minute_of_day, weekday, ts_str, entity_id)
     buckets: dict[str, list[tuple]] = defaultdict(list)
     for ev in events:
         key = f"{ev['intent']}|{ev.get('room') or 'global'}|{ev.get('action') or ''}"
@@ -148,6 +149,7 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
             minute_of_day,
             ts.weekday(),
             ts.isoformat(timespec="seconds"),
+            ev.get("entity_id"),
         ))
 
     for bucket_key, occurrences_data in buckets.items():
@@ -176,15 +178,18 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
             weeks = {d[1] for d in cluster_data}
             times_of_day = [d[2] for d in cluster_data]
             last_seen = max(d[4] for d in cluster_data)
+            entity_ids_in_cluster = [d[5] for d in cluster_data if d[5]]
 
             if existing:
                 # Merge: extend sets, keep history
                 existing_dates = set(existing["evidence"].get("occurrence_dates", []))
                 existing_weeks = set(existing["evidence"].get("occurrence_weeks", []))
                 existing_times = existing["evidence"].get("times_of_day_minutes", [])
+                existing_entities = existing["evidence"].get("entity_ids", [])
                 all_dates = existing_dates | dates
                 all_weeks = existing_weeks | weeks
                 all_times = (existing_times + times_of_day)[-120:]  # cap at 120 values
+                all_entities = (existing_entities + entity_ids_in_cluster)[-120:]
                 existing["evidence"].update({
                     "occurrences": len(all_dates),
                     "unique_days": len(all_dates),
@@ -192,6 +197,7 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
                     "occurrence_dates": sorted(all_dates),
                     "occurrence_weeks": sorted(all_weeks),
                     "times_of_day_minutes": all_times,
+                    "entity_ids": all_entities,
                     "last_seen": max(existing["evidence"].get("last_seen", ""), last_seen),
                 })
             else:
@@ -205,6 +211,7 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
                         "occurrence_dates": sorted(dates),
                         "occurrence_weeks": sorted(weeks),
                         "times_of_day_minutes": times_of_day,
+                        "entity_ids": entity_ids_in_cluster,
                         "reversal_count": 0,
                         "first_seen": min(d[4] for d in cluster_data),
                         "last_seen": last_seen,
@@ -212,11 +219,14 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
                     extra={"avg_hour": avg_min // 60, "avg_minute": avg_min % 60},
                 )
 
-            # Always refresh avg_time from current data
+            # Always refresh avg_time + dominant entity from current data
             all_times = candidates[ckey]["evidence"]["times_of_day_minutes"]
             avg_min = int(sum(all_times) / len(all_times))
             candidates[ckey]["details"]["avg_hour"] = avg_min // 60
             candidates[ckey]["details"]["avg_minute"] = avg_min % 60
+            candidates[ckey]["details"]["dominant_entity_id"] = _dominant_entity_id(
+                candidates[ckey]["evidence"].get("entity_ids", [])
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +261,8 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
                 ts_dt.strftime("%Y-W%W"),
                 ts_dt.weekday(),
                 ev_a["ts"],
+                ev_a.get("entity_id"),
+                ev_b.get("entity_id"),
             ))
 
     for pair_key, occ_data in pair_occurrences.items():
@@ -275,10 +287,14 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
         dates = {d[0] for d in occ_data}
         weeks = {d[1] for d in occ_data}
         last_seen = max(d[3] for d in occ_data)
+        a_entities = [d[4] for d in occ_data if d[4]]
+        b_entities = [d[5] for d in occ_data if d[5]]
 
         if existing:
             existing_dates = set(existing["evidence"].get("occurrence_dates", []))
             existing_weeks = set(existing["evidence"].get("occurrence_weeks", []))
+            existing_a = existing["evidence"].get("entity_ids", [])
+            existing_b = existing["evidence"].get("b_entity_ids", [])
             all_dates = existing_dates | dates
             all_weeks = existing_weeks | weeks
             existing["evidence"].update({
@@ -287,6 +303,8 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
                 "unique_weeks": len(all_weeks),
                 "occurrence_dates": sorted(all_dates),
                 "occurrence_weeks": sorted(all_weeks),
+                "entity_ids": (existing_a + a_entities)[-120:],
+                "b_entity_ids": (existing_b + b_entities)[-120:],
                 "last_seen": max(existing["evidence"].get("last_seen", ""), last_seen),
             })
         else:
@@ -299,6 +317,8 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
                     "occurrence_dates": sorted(dates),
                     "occurrence_weeks": sorted(weeks),
                     "times_of_day_minutes": [],
+                    "entity_ids": a_entities,
+                    "b_entity_ids": b_entities,
                     "reversal_count": 0,
                     "first_seen": min(d[3] for d in occ_data),
                     "last_seen": last_seen,
@@ -310,6 +330,13 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
                 },
             )
 
+        candidates[ckey]["details"]["dominant_entity_id"] = _dominant_entity_id(
+            candidates[ckey]["evidence"].get("entity_ids", [])
+        )
+        candidates[ckey]["details"]["b_dominant_entity_id"] = _dominant_entity_id(
+            candidates[ckey]["evidence"].get("b_entity_ids", [])
+        )
+
 
 # ---------------------------------------------------------------------------
 # Qualification: evidence gate + confidence scoring
@@ -320,6 +347,14 @@ def _qualify(candidates: dict) -> list[QualifiedCandidate]:
 
     for ckey, cand in candidates.items():
         if cand.get("status") == "suppressed":
+            continue
+
+        # Defense in depth: even if a non-automatable intent slipped into the
+        # candidate store from older logs (before _SKIP_INTENTS was tightened),
+        # never let it surface as a suggestion.
+        if cand.get("intent") in _SKIP_INTENTS:
+            continue
+        if cand.get("pattern_type") == "sequence" and cand.get("details", {}).get("b_intent") in _SKIP_INTENTS:
             continue
 
         scores = _compute_scores(cand)
@@ -561,62 +596,244 @@ def _new_candidate(
 # Message drafting
 # ---------------------------------------------------------------------------
 
+_DAY_PHRASE = {
+    "weekday": "on weekdays",
+    "weekend": "on weekends",
+    "any": "",
+}
+
+
+def _dominant_entity_id(entity_ids: list[str]) -> str | None:
+    """Return the entity_id that contributed at least half of the occurrences,
+    or None if the cluster is split across multiple devices.
+    """
+    if not entity_ids:
+        return None
+    from collections import Counter
+    counts = Counter(eid for eid in entity_ids if eid)
+    if not counts:
+        return None
+    top, top_count = counts.most_common(1)[0]
+    if top_count / len(entity_ids) < 0.5:
+        return None
+    return top
+
+
+def _device_phrase(entity_id: str | None) -> tuple[str | None, str | None]:
+    """Resolve an entity_id to (human phrase, room) via the device registry.
+
+    Returns ('the office light', 'office') when a registry entry exists,
+    or (None, None) when the entity is unknown / unclaimed. The phrase is
+    designed to slot directly into "turn on X" / "turn off X" verbs.
+    """
+    if not entity_id:
+        return None, None
+    try:
+        from services.device_registry import get_device_info
+        info = get_device_info(entity_id)
+    except Exception:
+        return None, None
+    if not info:
+        return None, None
+
+    room = info.get("room")
+    # Prefer the registry's friendly name when present — it's already curated.
+    name = info.get("name")
+    if name:
+        return f"the {name.lower()}", room
+
+    device_type = (info.get("device_type") or "device").replace("_", " ")
+    if room and room != "global":
+        room_clean = room.replace("_", " ")
+        return f"the {room_clean} {device_type}", room
+    return f"the {device_type}", None
+
+
+def _time_of_day(hour: int) -> str:
+    """Bucket an hour into a friendly time-of-day word."""
+    if 5 <= hour < 12:
+        return "morning"
+    if 12 <= hour < 14:
+        return "midday"
+    if 14 <= hour < 18:
+        return "afternoon"
+    if 18 <= hour < 22:
+        return "evening"
+    return "night"
+
+
+def _join_clauses(*parts: str) -> str:
+    """Join non-empty clauses with single spaces, collapsing whitespace."""
+    return " ".join(p for p in (p.strip() for p in parts) if p)
+
+
+def _verb_phrase(intent: str, action: str, entity_id: str | None, fallback_room: str | None) -> str:
+    """Build the verb clause, preferring a specific device when we have one.
+
+    If we know which device caused this pattern, "turn on the office light"
+    reads naturally and doesn't need a separate room clause. Otherwise we
+    fall back to the generic verb + room composition.
+    """
+    device_phrase, device_room = _device_phrase(entity_id)
+    on_off = action if action in ("on", "off") else None
+
+    if device_phrase and on_off:
+        return f"turn {on_off} {device_phrase}"
+
+    base = _action_phrase(intent, action)
+    room = device_room or fallback_room
+    room_str = _room_phrase(room)
+    return _join_clauses(base, room_str)
+
+
 def _draft_message(cand: dict, details: dict) -> str:
     intent = cand["intent"]
     room = cand.get("room")
     action = cand["action"]
     day_class = cand["day_class"]
     pattern_type = cand["pattern_type"]
-    occ = cand["evidence"]["occurrences"]
+    day_str = _DAY_PHRASE.get(day_class, "")
 
-    action_str = _action_phrase(intent, action)
-    room_str = _room_phrase(room)
-    day_str = {"weekday": "on weekdays", "weekend": "on weekends", "any": ""}.get(day_class, "")
+    entity_id = details.get("dominant_entity_id")
+    verb_clause = _verb_phrase(intent, action, entity_id, room)
 
     if pattern_type == "time_based":
         h = details.get("avg_hour", 0)
         m = details.get("avg_minute", 0)
         time_str = f"{h:02d}:{m:02d}"
-        return (
-            f"You {action_str} {room_str} around {time_str} {day_str}".strip()
-            + f" — {occ} times so far. Want me to automate that?"
-        )
+        tod = _time_of_day(h)
+
+        # Lead with temporal context — "Most evenings around 19:48 on weekdays,
+        # you turn off the bedroom light." Drops the raw occurrence count from
+        # the headline (it's already in the evidence drawer) and frames as
+        # observation, not assertion.
+        when = _join_clauses(f"Most {tod}s around {time_str}", day_str)
+        return f"{when}, you {verb_clause}. Want me to schedule it?"
 
     if pattern_type == "sequence":
         b_intent = details.get("b_intent", "")
         b_room = details.get("b_room")
         b_action = details.get("b_action", "")
-        b_str = f"{_action_phrase(b_intent, b_action)} {_room_phrase(b_room)}".strip()
+        b_entity_id = details.get("b_dominant_entity_id")
+        b_verb_clause = _verb_phrase(b_intent, b_action, b_entity_id, b_room)
+
+        tail = f" {day_str}" if day_str else ""
         return (
-            f"After you {action_str} {room_str}, you often {b_str} {day_str}".strip()
-            + f" — {occ} times. Should I combine these into a routine?"
+            f"When you {verb_clause}, you usually {b_verb_clause} shortly after{tail}."
+            f" Want me to combine them into one routine?"
         )
 
-    return f"You often {action_str} {room_str} {day_str}".strip() + f" ({occ} times)."
+    # Fallback (group / unknown pattern types)
+    body = _join_clauses(f"You often {verb_clause}", day_str)
+    return f"{body}."
 
 
 def _room_phrase(room: str | None) -> str:
+    """Render the room as 'in the X' or empty when unknown.
+
+    The old fallback "in your home" lied: it implied location knowledge we
+    didn't have, and read oddly when the action itself wasn't location-bound.
+    Better to drop the clause entirely than to fill it with filler.
+    """
     if not room or room == "global":
-        return "in your home"
+        return ""
     return f"in the {room.replace('_', ' ')}"
 
 
 def _action_phrase(intent: str, action: str) -> str:
-    if "light" in intent or "toggle_light" in intent:
-        return "turn on the lights" if action == "on" else (
-            "turn off the lights" if action == "off" else "control the lights"
-        )
-    if "ac" in intent or "climate" in intent:
-        return "turn on the AC" if action == "on" else (
-            "turn off the AC" if action == "off" else "adjust the AC"
-        )
-    if "tv" in intent or "control_tv" in intent:
-        return "turn on the TV" if action == "on" else (
-            "turn off the TV" if action == "off" else "control the TV"
-        )
+    """Map an (intent, action) pair to a natural verb phrase.
+
+    Goal: never let a raw `intent.replace('_', ' ')` slip through to the user
+    — every shape of Ziggy intent should produce something a non-technical
+    person would actually say.
+    """
+    on_off = action if action in ("on", "off") else None
+
+    # Bulk / whole-home actions
+    if intent == "turn_off_everything":
+        return "turn everything off"
+    if intent == "turn_off_all_lights":
+        return "turn all the lights off"
+    if intent == "turn_on_all_lights":
+        return "turn all the lights on"
+
+    # Lights (including toggle_light, set_brightness, set_light_color, etc.)
+    if "light" in intent:
+        if on_off == "on":
+            return "turn the light on"
+        if on_off == "off":
+            return "turn the light off"
+        if "brightness" in intent:
+            return "adjust the brightness"
+        if "color" in intent:
+            return "change the light color"
+        return "use the light"
+
+    # Generic device / switch toggles — the Ziggy UI fires these for
+    # arbitrary entities that aren't classified yet. Keep the wording vague
+    # but human: "turn something on" beats "toggle device".
+    if intent in ("toggle_device", "toggle_switch", "switch_device", "control_device"):
+        if on_off == "on":
+            return "turn something on"
+        if on_off == "off":
+            return "turn something off"
+        return "use a device"
+
+    # Climate / AC
+    if "ac" in intent or "climate" in intent or "hvac" in intent:
+        if on_off == "on":
+            return "turn the AC on"
+        if on_off == "off":
+            return "turn the AC off"
+        if "temperature" in intent:
+            return "change the temperature"
+        if "fan" in intent:
+            return "change the fan setting"
+        return "adjust the AC"
+
+    # TV / media
+    if "tv" in intent:
+        if on_off == "on":
+            return "turn the TV on"
+        if on_off == "off":
+            return "turn the TV off"
+        return "control the TV"
+    if intent.startswith("play_") or intent == "media_play":
+        return "start playback"
+    if intent.startswith("pause_") or intent == "media_pause":
+        return "pause playback"
+
+    # IR — action carries the command name
     if "ir_send" in intent:
-        return f"send IR command ({action})"
-    return intent.replace("_", " ")
+        if action and action not in ("on", "off", "ir_send"):
+            return f"send the {action.replace('_', ' ')} command"
+        return "send an IR command"
+
+    # Common set_* intents that don't fit a domain bucket above
+    if intent == "set_temperature":
+        return "change the temperature"
+    if intent == "set_brightness":
+        return "adjust the brightness"
+    if intent == "set_volume":
+        return "change the volume"
+    if intent == "set_color" or intent == "set_color_temp":
+        return "change the color"
+
+    # Covers / locks / scenes
+    if "open" in intent:
+        return "open the cover"
+    if "close" in intent:
+        return "close the cover"
+    if "lock" in intent and "unlock" not in intent:
+        return "lock the door"
+    if "unlock" in intent:
+        return "unlock the door"
+    if "scene" in intent or intent.startswith("activate_"):
+        return "activate a scene"
+
+    # Fallback: humanize the intent name; keep it short and singular.
+    cleaned = intent.replace("_", " ").strip()
+    return cleaned or "use a device"
 
 
 # ---------------------------------------------------------------------------

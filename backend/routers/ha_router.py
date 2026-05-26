@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
 from backend.ws_manager import manager
+from core.errors import ErrorCode, ZiggyError, entity_not_found, ha_unavailable
 from core.logger_module import log_info
 from core.settings_loader import save_settings, settings
 from services.entity_filter import filter_entities
@@ -32,6 +33,11 @@ _DOMAIN_ATTRS: dict[str, list[str]] = {
         "source", "source_list", "app_name", "app_list",
         "shuffle", "repeat", "sound_mode", "sound_mode_list",
         "media_content_type", "supported_features",
+        # Vendor-detection hints for the FE remote — `sound_output` is
+        # LG webOS-specific (lets us route nav buttons through
+        # `webostv.button`); `device_class` separates real TVs from
+        # speakers/receivers/etc.
+        "sound_output", "device_class",
     ],
     "cover":        ["current_position", "current_tilt_position", "supported_features"],
     "fan":          ["percentage", "preset_mode", "preset_modes", "oscillating", "direction", "supported_features"],
@@ -47,9 +53,27 @@ _DOMAIN_ATTRS: dict[str, list[str]] = {
 @router.get("/api/ha/entities")
 async def ha_entities(domain: Optional[str] = None, all: bool = False):
     try:
-        raw_states = get_all_states()
+        # Prefer the WS-fed state cache — it's continuously updated by
+        # ha_subscriber on every state_changed event. Saves a 100-300 ms
+        # /api/states REST round-trip per call. Frontend's fetchAll fires
+        # this on every Dashboard / Devices mount, so the saved cost is
+        # multiplied across navigations. Fall back to REST only when the
+        # cache is cold (first second after subscriber connect).
+        from services.ha_subscriber import state_cache
+        if state_cache:
+            raw_states = [
+                {
+                    "entity_id":   eid,
+                    "state":       entry.get("state"),
+                    "attributes":  entry.get("attributes", {}),
+                    "last_changed": entry.get("last_changed"),
+                }
+                for eid, entry in state_cache.items()
+            ]
+        else:
+            raw_states = get_all_states()
         if not raw_states and not all:
-            raise HTTPException(status_code=502, detail="HA returned no entities")
+            raise ha_unavailable()
 
         raw: list[dict] = []
         for e in raw_states:
@@ -87,17 +111,17 @@ async def ha_entities(domain: Optional[str] = None, all: bool = False):
                 e["display_name"] = custom_names[e["entity_id"]]
 
         return {"entities": filtered, "count": len(filtered)}
-    except HTTPException:
+    except (HTTPException, ZiggyError):
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise ha_unavailable(e)
 
 
 @router.get("/api/ha/state/{entity_id:path}")
 async def ha_state(entity_id: str):
     result = get_state(entity_id)
     if not result.get("ok"):
-        raise HTTPException(status_code=404, detail=result.get("message"))
+        raise entity_not_found(entity_id)
     return result["data"]
 
 
@@ -132,13 +156,37 @@ class HaServiceCall(BaseModel):
 
 @router.post("/api/ha/service")
 async def ha_call_service(body: HaServiceCall):
-    result = call_service(body.domain, body.service, body.data)
+    import asyncio as _asyncio
+    import time as _t
+    # call_service is sync (requests.post) — running it inline on an async
+    # endpoint blocks the event loop for the full HA round-trip (100-300 ms
+    # typical, up to several seconds on a slow tunnel or unresponsive
+    # Wi-Fi device). Other concurrent requests stall behind it. to_thread
+    # frees the loop to keep serving traffic while HA processes the call.
+    _t0 = _t.perf_counter()
+    result = await _asyncio.to_thread(call_service, body.domain, body.service, body.data)
+    _ha_ms = round((_t.perf_counter() - _t0) * 1000, 1)
     if not result.get("ok"):
-        raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
+        # Keep the HA upstream message in `details` for admin debug but never
+        # forward it as the public message — it can include raw integration
+        # exception text. The default DEVICE_COMMAND_FAILED message is the
+        # user-facing fallback.
+        raise ZiggyError(
+            code=ErrorCode.HA_SERVICE_FAILED,
+            log_message=f"HA service call failed: {body.domain}.{body.service} -> {result.get('message')}",
+            details={
+                "domain": body.domain,
+                "service": body.service,
+                "upstream_message": result.get("message"),
+            },
+        )
     entity_id = body.data.get("entity_id", "")
     if entity_id:
         from services.state_memory import record_service_call
         record_service_call(entity_id, body.service, body.data)
+    # Surface the HA round-trip in the response so the FE can log
+    # click → ack latency without needing matching trace IDs.
+    result["_ha_ms"] = _ha_ms
     return result
 
 
@@ -149,39 +197,100 @@ class HaControlBody(BaseModel):
 
 
 @router.post("/api/ha/control")
-async def ha_control(body: HaControlBody):
+async def ha_control(body: HaControlBody, background_tasks: BackgroundTasks):
+    """Fire-and-forget device control.
+
+    HA's `switch.turn_on` for Switcher (and many Wi-Fi devices) blocks until
+    the device acks — 1-3s typical. The FE already updates optimistically,
+    so there's no value in blocking the FE on the HA round-trip. We return
+    immediately and run the actual service call in a background task. The
+    real state change arrives via the WS state_changed broadcast.
+    """
     if body.action not in ("turn_on", "turn_off"):
         raise HTTPException(status_code=422, detail="action must be 'turn_on' or 'turn_off'")
 
-    domain = body.entity_id.split(".")[0]
-    result = call_service(domain, body.action, {"entity_id": body.entity_id})
-    if not result.get("ok"):
-        raise HTTPException(status_code=502, detail=result.get("message", "HA error"))
-
-    from services.state_memory import record_service_call
-    record_service_call(body.entity_id, body.action, {"entity_id": body.entity_id})
-
     new_state = "on" if body.action == "turn_on" else "off"
 
+    # Optimistic broadcast — FE clients update before HA confirms. Shape
+    # must match ha_subscriber's state_changed events (type/new_state/attrs)
+    # so App.jsx's WS handler treats them identically.
     await manager.broadcast({
-        "type": "entity_state_changed",
+        "type": "state_changed",
         "entity_id": body.entity_id,
-        "state": new_state,
-        "source": body.source,
+        "new_state": new_state,
+        "attributes": {},
     })
 
-    try:
-        from services.pattern_logger import log_event
-        log_event(
-            intent="toggle_device",
-            params={"entity_id": body.entity_id, "turn_on": body.action == "turn_on", "action": body.action},
-            result=result,
-            source=body.source,
-        )
-    except Exception:
-        pass
+    async def _run_in_background():
+        import asyncio as _asyncio
+        loop = _asyncio.get_running_loop()
+        result: dict = {"ok": False, "message": "not attempted"}
+        try:
+            from services.device_registry import get_device_info
+            from services.command_router import route_command, resolve_hybrid_entry
+            base = get_device_info(body.entity_id) or {}
+            # Resolve hybrid entry — works even before registry merge.
+            entry = resolve_hybrid_entry(body.entity_id, base)
+            if entry.get("ir_device_id"):
+                result = await loop.run_in_executor(None, route_command, entry, body.action)
+            else:
+                domain = body.entity_id.split(".")[0]
+                result = await loop.run_in_executor(
+                    None, call_service, domain, body.action,
+                    {"entity_id": body.entity_id},
+                )
+        except Exception as e:
+            try:
+                domain = body.entity_id.split(".")[0]
+                result = await loop.run_in_executor(
+                    None, call_service, domain, body.action,
+                    {"entity_id": body.entity_id},
+                )
+            except Exception:
+                result = {"ok": False, "message": str(e)}
 
-    return {"ok": True, "entity_id": body.entity_id, "state": new_state}
+        # If the actual HA call failed, broadcast a corrective state_changed
+        # so the FE reverts the optimistic update, and a command_failed event
+        # so the FE can surface a toast. Without these, the user's tile sits
+        # in the wrong state forever (HA's state never broadcasts a change
+        # because the device never acknowledged the command).
+        if not result.get("ok"):
+            prev_state = "off" if body.action == "turn_on" else "on"
+            try:
+                await manager.broadcast({
+                    "type": "state_changed",
+                    "entity_id": body.entity_id,
+                    "new_state": prev_state,
+                    "attributes": {},
+                })
+                await manager.broadcast({
+                    "type": "command_failed",
+                    "entity_id": body.entity_id,
+                    "action": body.action,
+                    "message": result.get("message", "Device did not respond"),
+                })
+            except Exception:
+                pass
+
+        try:
+            from services.state_memory import record_service_call
+            record_service_call(body.entity_id, body.action, {"entity_id": body.entity_id})
+        except Exception:
+            pass
+
+        try:
+            from services.pattern_logger import log_event
+            log_event(
+                intent="toggle_device",
+                params={"entity_id": body.entity_id, "turn_on": body.action == "turn_on", "action": body.action},
+                result=result,
+                source=body.source,
+            )
+        except Exception:
+            pass
+
+    background_tasks.add_task(_run_in_background)
+    return {"ok": True, "entity_id": body.entity_id, "state": new_state, "routed_via": None, "queued": True}
 
 
 @router.get("/api/ha/entity-protocols")
@@ -227,4 +336,4 @@ async def ha_entity_protocols():
 
         return {"protocols": result}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise ha_unavailable(exc)

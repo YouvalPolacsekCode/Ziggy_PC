@@ -1,12 +1,13 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Zap, ChevronRight, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen } from 'lucide-react'
+import { ArrowLeft, Zap, ChevronRight, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
 import { TOGGLEABLE_DOMAINS, isEntityOn } from '../components/ui/DeviceControls'
 import { DeviceRemote } from '../components/device/DeviceRemote'
+import SensorHistoryChart from '../components/device/SensorHistoryChart'
 import { deviceFacts, getKind, KIND, sendDeviceCommand } from '../lib/devices'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
@@ -15,9 +16,10 @@ import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY } from '../lib/domainRegistry'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
+import { useT } from '../lib/i18n'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,39 +75,181 @@ function DiagRow({ label, value, children }) {
 }
 
 function TimeAgo({ iso }) {
+  const t = useT()
   if (!iso) return null
   const d = new Date(iso)
   const diffMs = Date.now() - d.getTime()
   const diffMin = Math.round(diffMs / 60000)
-  if (diffMin < 1) return 'Just now'
-  if (diffMin < 60) return `${diffMin}m ago`
-  if (diffMin < 1440) return `${Math.round(diffMin / 60)}h ago`
+  if (diffMin < 1) return t('deviceDetail.justNow')
+  if (diffMin < 60) return t('deviceDetail.minutesAgo', { n: diffMin })
+  if (diffMin < 1440) return t('deviceDetail.hoursAgo', { n: Math.round(diffMin / 60) })
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+// ── Ghost device page ────────────────────────────────────────────────────────
+// Shown when the entity was deleted directly in Home Assistant but Ziggy's
+// device registry still has a row pointing at it. Without this dedicated UI
+// the page hung on a silent fetch failure (controls would render against a
+// non-existent entity). The user just needs a clean way to drop the stale
+// row — no controls, no diagnostics.
+
+function GhostDevicePage({ details, entityId, navigate, addToast }) {
+  const t = useT()
+  const [removing, setRemoving] = useState(false)
+  const name = details?.ghost_name || details?.attributes?.friendly_name || entityId
+  const room = details?.ghost_room
+  const status = details?.ghost_status || 'lost'
+
+  const handleRemove = async () => {
+    setRemoving(true)
+    try {
+      await removeRegistryEntity(entityId)
+      addToast(t('deviceDetail.ghost.removed'), 'success')
+      // Best-effort store refresh so room/devices pages drop the stale row
+      // without a manual reload.
+      // Refresh the store, but let the in-flight dedupe absorb rapid
+      // repeat clicks. Using `force: true` previously meant N taps fired
+      // N parallel backend fan-outs, each opening fresh HA WebSocket
+      // handshakes — enough to overload HA and knock the long-lived
+      // ha_subscriber WS off the air for a few seconds.
+      try { await useDeviceStore.getState().fetchAll() } catch {}
+      navigate('/devices')
+    } catch (e) {
+      addToast(e.message || t('deviceDetail.ghost.failed'), 'error')
+      setRemoving(false)
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <button onClick={() => navigate(-1)} className="z-icon-btn"
+          style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }} aria-label={t('deviceDetail.back')}>
+          <ArrowLeft size={16} />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="z-eyebrow" style={{ color: 'var(--warn)' }}>{t('deviceDetail.ghost.eyebrow')}</p>
+          <h1 dir="auto" style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }} className="truncate">
+            {name}
+          </h1>
+        </div>
+      </div>
+
+      <div className="z-card" style={{ padding: 18, marginBottom: 14, borderRadius: 18 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 10 }}>
+          {t('deviceDetail.ghost.description')}
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 6, fontSize: 12, marginTop: 12 }}>
+          <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.entityId')}</span>
+          <span className="z-mono" style={{ color: 'var(--ink)' }}>{entityId}</span>
+          {room && (<>
+            <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.room')}</span>
+            <span style={{ color: 'var(--ink)' }}>{room.replace(/_/g, ' ')}</span>
+          </>)}
+          <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.status')}</span>
+          <span style={{ color: 'var(--warn)' }}>{status}</span>
+        </div>
+      </div>
+
+      <button
+        onClick={handleRemove}
+        disabled={removing}
+        className="z-btn-primary"
+        style={{
+          width: '100%', height: 48, fontSize: 14, letterSpacing: '0.02em',
+          background: 'var(--err)', color: 'var(--bg)', border: 'none',
+          opacity: removing ? 0.6 : 1, cursor: removing ? 'default' : 'pointer',
+        }}
+      >
+        {removing ? t('deviceDetail.ghost.removing') : t('deviceDetail.ghost.remove')}
+      </button>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)', textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
+        {t('deviceDetail.ghost.hint')}
+      </p>
+    </div>
+  )
+}
+
+
 // ── Rename modal ──────────────────────────────────────────────────────────────
 
+// ── Delete-device confirmation modal ────────────────────────────────────────
+// Two-step intent: "delete entity" vs "delete the whole physical device".
+// Most users want the latter — they unpaired the device in real life and
+// want it gone from HA too. Default the checkbox to true when there is a
+// known parent HA device, but always let them tap through to single-entity
+// removal in case the device has multiple useful entities.
+
+function DeleteDeviceModal({ open, deviceName, hasParentDevice, isIr, deleting, onClose, onConfirm }) {
+  const t = useT()
+  const [alsoDeleteDevice, setAlsoDeleteDevice] = useState(true)
+  useEffect(() => { if (open) setAlsoDeleteDevice(true) }, [open])
+  return (
+    <Modal open={open} onClose={onClose} title={t('deviceDetail.deleteTitle')}>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 14 }}>
+        {isIr
+          ? t('deviceDetail.deleteIrDescription', { name: deviceName })
+          : t('deviceDetail.deleteHaDescription', { name: deviceName })
+        }
+      </p>
+      {hasParentDevice && (
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', cursor: 'pointer', marginBottom: 14 }}>
+          <input
+            type="checkbox"
+            checked={alsoDeleteDevice}
+            onChange={(e) => setAlsoDeleteDevice(e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceDetail.alsoRemoveDevice')}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
+              {t('deviceDetail.alsoRemoveHint')}
+            </div>
+          </div>
+        </label>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onClose} disabled={deleting} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
+        <button
+          onClick={() => onConfirm(alsoDeleteDevice)}
+          disabled={deleting}
+          style={{
+            flex: 1, height: 40, borderRadius: 10, border: 'none', cursor: deleting ? 'default' : 'pointer',
+            background: 'var(--err)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+            opacity: deleting ? 0.6 : 1,
+          }}
+        >
+          {deleting ? t('deviceDetail.deleting') : t('common.delete')}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+
 function RenameModal({ open, currentName, onClose, onSave }) {
+  const t = useT()
   const [name, setName] = useState(currentName)
   useEffect(() => { setName(currentName) }, [currentName, open])
   return (
-    <Modal open={open} onClose={onClose} title="Rename device">
+    <Modal open={open} onClose={onClose} title={t('deviceDetail.renameTitle')}>
       <Input
         value={name}
         onChange={e => setName(e.target.value)}
-        placeholder="Device name"
+        placeholder={t('deviceDetail.deviceNamePlaceholder')}
         onKeyDown={e => e.key === 'Enter' && name.trim() && onSave(name.trim())}
         autoFocus
+        dir="auto"
       />
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
         <button
           onClick={() => name.trim() && onSave(name.trim())}
           disabled={!name.trim() || name.trim() === currentName}
           className="z-btn-primary"
           style={{ flex: 1, opacity: (!name.trim() || name.trim() === currentName) ? 0.4 : 1 }}
         >
-          Save
+          {t('common.save')}
         </button>
       </div>
     </Modal>
@@ -115,6 +259,7 @@ function RenameModal({ open, currentName, onClose, onSave }) {
 // ── Camera panel — snapshot + go-live button ──────────────────────────────────
 
 function CameraPanel({ entityId, navigate }) {
+  const t = useT()
   const [tick, setTick]     = useState(0)
   const [live, setLive]     = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -138,7 +283,7 @@ function CameraPanel({ entityId, navigate }) {
   return (
     <Card className="p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Camera</p>
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{t('deviceDetail.camera')}</p>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setLive(v => !v)}
@@ -148,13 +293,13 @@ function CameraPanel({ entityId, navigate }) {
               border: 'none', cursor: 'pointer', fontFamily: 'inherit',
             }}
           >
-            {live ? '■ Stop' : '▶ Live'}
+            {live ? t('deviceDetail.cameraStop') : t('deviceDetail.cameraLive')}
           </button>
           <button
             onClick={() => navigate('/cameras')}
             style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            Full view →
+            {t('deviceDetail.cameraFullView')}
           </button>
         </div>
       </div>
@@ -165,14 +310,14 @@ function CameraPanel({ entityId, navigate }) {
           <img
             ref={imgRef}
             src={cameraStreamUrl(entityId)}
-            alt="Live feed"
+            alt={t('deviceDetail.liveFeedAlt')}
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         ) : (
           <img
             key={tick}
             src={`${cameraSnapshotUrl(entityId)}?t=${tick}`}
-            alt="Snapshot"
+            alt={t('deviceDetail.snapshotAlt')}
             onLoad={() => setLoaded(true)}
             style={{
               width: '100%', height: '100%', objectFit: 'cover', display: 'block',
@@ -187,7 +332,7 @@ function CameraPanel({ entityId, navigate }) {
             background: 'rgba(239,68,68,0.85)', color: '#fff',
             fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
           }}>
-            LIVE
+            {t('deviceDetail.cameraLiveBadge')}
           </div>
         )}
       </div>
@@ -195,10 +340,12 @@ function CameraPanel({ entityId, navigate }) {
       {/* Recent motion */}
       {camMotion.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Recent motion</p>
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{t('deviceDetail.recentMotion')}</p>
           {camMotion.map((ev, i) => {
             const diff = Math.floor((Date.now() - new Date(ev.timestamp)) / 1000)
-            const ago = diff < 60 ? `${diff}s ago` : diff < 3600 ? `${Math.floor(diff / 60)}m ago` : `${Math.floor(diff / 3600)}h ago`
+            const ago = diff < 60 ? t('deviceDetail.secondsAgo', { n: diff })
+              : diff < 3600 ? t('deviceDetail.minutesAgo', { n: Math.floor(diff / 60) })
+              : t('deviceDetail.hoursAgo', { n: Math.floor(diff / 3600) })
             return (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < camMotion.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--err)', flexShrink: 0 }} />
@@ -218,68 +365,119 @@ function CameraPanel({ entityId, navigate }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function DeviceDetail() {
+  const t = useT()
   const { entityId } = useParams()
   const navigate = useNavigate()
-  const { entities, updateEntityState, hideEntity, unhideEntity, hiddenEntities } = useDeviceStore()
-  const { addToast } = useUIStore()
-  const { suggestions, fetch: fetchSuggestions } = useSuggestionStore()
+  // Subscribe ONLY to the entity for this page, not the whole entities
+  // array. Before, a media_player ticking media_position (or any unrelated
+  // light flicker) re-rendered this page — and re-rendering this page for
+  // a media_player with 100+ source apps cost serious time per pass.
+  // With the targeted selector, we re-render only when *this* entity's
+  // reference changes (which the optimized updateEntityState only does
+  // when state or a tracked attr actually moved).
+  const liveEntity     = useDeviceStore(s => s.entities.find(e => e.entity_id === entityId) ?? null)
+  const storeRooms     = useDeviceStore(s => s.rooms)
+  const hiddenEntities = useDeviceStore(s => s.hiddenEntities)
+  const hideEntity     = useDeviceStore(s => s.hideEntity)
+  const unhideEntity   = useDeviceStore(s => s.unhideEntity)
+  // Narrow selectors for uiStore + suggestionStore — destructuring would
+  // re-render on every toast spawn / suggestion fetch flip.
+  const addToast        = useUIStore(s => s.addToast)
+  const suggestions     = useSuggestionStore(s => s.suggestions)
+  const fetchSuggestions = useSuggestionStore(s => s.fetch)
   useEffect(() => { if (suggestions.length === 0) fetchSuggestions() }, [])
 
   const [details, setDetails] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [rooms, setRooms] = useState([])
+  const [detailsLoadFailed, setDetailsLoadFailed] = useState(false)
+  const [allRooms, setAllRooms] = useState(null)   // lazy: only fetched when user opens edit-room
   const [showRename, setShowRename] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('controls')
   const [editingRoom, setEditingRoom] = useState(false)
+  const [showDelete, setShowDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
-  // Live entity from store — gives real-time state without re-fetching details
-  const liveEntity = entities.find(e => e.entity_id === entityId) ?? null
+  // (liveEntity is already pulled via the narrow selector above.)
+
+  // Physical-device group this entity belongs to (if any). When the entity is
+  // a non-primary sibling (e.g. sensor.switcher_boiler_power), the group's
+  // name and primary entity drive the device-level identity surfaced at the
+  // top of the page — "Switcher Boiler" instead of "Switcher Boiler Power".
+  // Direct field subscription so this re-renders on group fetches.
+  const groupByEntityId = useDeviceStore(s => s.groupByEntityId)
+  const groupById       = useDeviceStore(s => s.groupById)
+  const group           = groupById[groupByEntityId[entityId]] || null
+  const isGroupPrimary  = group ? group.primary_entity_id === entityId : false
+  const isSiblingView   = !!(group && !isGroupPrimary)
 
   // IR entities (ir.<id>) don't have HA-side details — synthesize from the
   // store entity so the page renders rather than 404-ing.
   const isIrTarget = entityId?.startsWith('ir.')
 
-  const load = async () => {
-    setLoading(true)
+  // Background details fetch — does NOT block first paint. The Controls tab
+  // renders from `liveEntity` immediately; details only feed the Info tab and
+  // the secondary widgets (diagnostics, siblings, automations) which were
+  // previously gating the entire page on a 3+ HA-round-trip backend call.
+  const load = async ({ background = true } = {}) => {
     try {
-      const fetchDetails = isIrTarget
-        ? Promise.resolve(null)
-        : getEntityDetails(entityId).catch(() => null)
-      const [d, r] = await Promise.all([
-        fetchDetails,
-        getAllRooms().catch(() => ({ rooms: [] })),
-      ])
+      if (isIrTarget) {
+        // IR-only: synthesize a details-shaped object so the Info tab can render.
+        if (liveEntity) {
+          const ir = liveEntity._irDevice
+          setDetails({
+            state: liveEntity.state,
+            last_changed: liveEntity.last_changed,
+            attributes: { friendly_name: liveEntity.friendly_name || liveEntity.display_name },
+            domain_meta: {},
+            diagnostics: {},
+            sibling_entities: [],
+            automations_using: [],
+            ha_device: ir ? { manufacturer: ir.brand || null, model: ir.type } : null,
+          })
+        }
+        return
+      }
+      const d = await getEntityDetails(entityId).catch(() => null)
       if (d) {
         setDetails(d)
-      } else if (liveEntity) {
-        // Synthesize a details-shaped object from the live store entity so the
-        // Info tab renders something useful for IR-only devices.
-        const ir = liveEntity._irDevice
-        setDetails({
-          state: liveEntity.state,
-          last_changed: liveEntity.last_changed,
-          attributes: { friendly_name: liveEntity.friendly_name || liveEntity.display_name },
-          domain_meta: {},
-          diagnostics: {},
-          sibling_entities: [],
-          automations_using: [],
-          ha_device: ir ? { manufacturer: ir.brand || null, model: ir.type } : null,
-        })
+        setDetailsLoadFailed(false)
+      } else {
+        // Backend returned 404/502 — record the failure so the render below
+        // can show a "Couldn't load this device" page instead of an endless
+        // skeleton when there's no liveEntity to fall back on either.
+        setDetailsLoadFailed(true)
       }
-      setRooms(Array.isArray(r) ? r : r.rooms ?? [])
     } catch (e) {
-      addToast(e.message || 'Failed to load device details', 'error')
-    } finally {
-      setLoading(false)
+      setDetailsLoadFailed(true)
+      if (!background) addToast(e.message || t('deviceDetail.failedToLoad'), 'error')
     }
   }
 
-  useEffect(() => { load() }, [entityId])
+  // Fire details fetch in the background. No await, no setLoading gate —
+  // the page renders immediately from the live store entity. When details
+  // arrive, the Info tab and diagnostics panels fill in.
+  useEffect(() => {
+    setDetails(null)
+    setDetailsLoadFailed(false)
+    load({ background: true })
+  }, [entityId])
+
+  // Rooms list — read from the deviceStore (already loaded by Dashboard /
+  // fetchAll). Only fall back to a network fetch when the user opens the
+  // edit-room mode and the store happens to be empty. This drops one HA WS
+  // round-trip from every device page mount.
+  const rooms = allRooms ?? storeRooms ?? []
+  useEffect(() => {
+    if (editingRoom && allRooms == null && (!storeRooms || storeRooms.length === 0)) {
+      getAllRooms()
+        .then(r => setAllRooms(Array.isArray(r) ? r : r.rooms ?? []))
+        .catch(() => setAllRooms([]))
+    }
+  }, [editingRoom, allRooms, storeRooms])
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await load()
+    await load({ background: false })
     setRefreshing(false)
   }
 
@@ -287,22 +485,22 @@ export default function DeviceDetail() {
     if (!liveEntity) return
     try {
       await sendDeviceCommand(liveEntity, 'toggle')
-    } catch (e) { addToast(e.message || 'Control failed', 'error') }
+    } catch (e) { addToast(e.message || t('deviceDetail.controlFailed'), 'error') }
   }
 
   const handleService = async (service, data) => {
     if (!liveEntity) return
     try {
       await callHaService(liveEntity.domain, service, { entity_id: entityId, ...data })
-    } catch { addToast('Control failed', 'error') }
+    } catch { addToast(t('deviceDetail.controlFailed'), 'error') }
   }
 
   const handleAssignRoom = async (roomId) => {
     try {
       await assignEntityToArea(entityId, roomId)
-      addToast(roomId ? 'Room assigned' : 'Removed from room', 'success')
-      await load()
-    } catch (e) { addToast(e.message || 'Failed', 'error') }
+      addToast(roomId ? t('deviceDetail.roomAssigned') : t('deviceDetail.removedFromRoom'), 'success')
+      load({ background: true })   // refresh details in background, don't block UI
+    } catch (e) { addToast(e.message || t('common.failed'), 'error') }
   }
 
   const isHidden = hiddenEntities.has(entityId)
@@ -310,10 +508,47 @@ export default function DeviceDetail() {
   const handleToggleHide = () => {
     if (isHidden) {
       unhideEntity(entityId)
-      addToast('Device visible again', 'success')
+      addToast(t('deviceDetail.deviceVisibleAgain'), 'success')
     } else {
       hideEntity(entityId)
-      addToast('Device hidden', 'success')
+      addToast(t('deviceDetail.deviceHidden'), 'success')
+    }
+  }
+
+  const handleDelete = async (alsoRemoveDevice) => {
+    setDeleting(true)
+    try {
+      // Pure-IR device: there's no HA entity to remove, so dispatch to the
+      // ir_manager's delete endpoint instead. Hybrid (HA + linked IR) still
+      // goes through deleteHaEntity — the linked IR codeset can be cleaned
+      // separately from the IR Devices panel if the user wants it gone.
+      if (facts.isIr && facts.irId) {
+        await deleteIrDevice(facts.irId)
+        addToast(t('deviceDetail.irRemoved'), 'success')
+      } else {
+        const res = await deleteHaEntity(entityId, !!alsoRemoveDevice)
+        if (res?.ha_device_removed) {
+          addToast(t('deviceDetail.deviceRemovedHa'), 'success')
+        } else if (res?.ha_removed) {
+          addToast(t('deviceDetail.entityRemovedHa'), 'success')
+        } else {
+          addToast(t('deviceDetail.deviceRemovedZiggy'), 'success')
+        }
+      }
+      // Force-refresh the store so the deleted entity / device drops out of
+      // every list immediately, without waiting for the 60s background
+      // reconciliation loop.
+      // Refresh the store, but let the in-flight dedupe absorb rapid
+      // repeat clicks. Using `force: true` previously meant N taps fired
+      // N parallel backend fan-outs, each opening fresh HA WebSocket
+      // handshakes — enough to overload HA and knock the long-lived
+      // ha_subscriber WS off the air for a few seconds.
+      try { await useDeviceStore.getState().fetchAll() } catch {}
+      setShowDelete(false)
+      navigate('/devices')
+    } catch (e) {
+      addToast(e.message || t('deviceDetail.failedToDelete'), 'error')
+      setDeleting(false)
     }
   }
 
@@ -325,16 +560,49 @@ export default function DeviceDetail() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName }),
       })
-      if (!res.ok) throw new Error('Rename failed')
-      addToast('Renamed', 'success')
+      if (!res.ok) throw new Error(t('deviceDetail.renameFailed'))
+      addToast(t('deviceDetail.renamed'), 'success')
       setShowRename(false)
-      await load()
+      load({ background: true })
     } catch (e) {
-      addToast(e.message || 'Rename failed', 'error')
+      addToast(e.message || t('deviceDetail.renameFailed'), 'error')
     }
   }
 
-  if (loading) {
+  // Render gating:
+  //   - skeleton while we're still fetching and have nothing to show
+  //   - "couldn't load" page when the fetch failed AND no store entity
+  //     (catches every HA-side change we don't have a more specific UI for)
+  //   - otherwise render the normal page below
+  if (!liveEntity && !details) {
+    if (detailsLoadFailed) {
+      return (
+        <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+            <button onClick={() => navigate(-1)} className="z-icon-btn"
+              style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }} aria-label={t('deviceDetail.back')}>
+              <ArrowLeft size={16} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="z-eyebrow" style={{ color: 'var(--warn)' }}>{t('deviceDetail.couldntLoad')}</p>
+              <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', margin: 0 }} className="truncate">
+                {entityId}
+              </h1>
+            </div>
+          </div>
+          <div className="z-card" style={{ padding: 18, borderRadius: 18 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+              {t('deviceDetail.couldntLoadHint')}
+            </p>
+            <button
+              onClick={() => navigate('/devices')}
+              className="z-btn-secondary"
+              style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13 }}
+            >{t('deviceDetail.backToDevices')}</button>
+          </div>
+        </div>
+      )
+    }
     return (
       <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px' }}>
         <div className="flex items-center gap-3 mb-6">
@@ -350,45 +618,68 @@ export default function DeviceDetail() {
     )
   }
 
-  if (!details) {
-    return (
-      <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
-        <div className="flex items-center gap-3 mb-5">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 dark:text-zinc-500 transition-colors"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className="z-eyebrow" style={{ marginBottom: 2 }}>Device</p>
-            <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }} className="truncate">
-              Not found
-            </h1>
-          </div>
-        </div>
-        <div style={{ padding: '24px 16px', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center', color: 'var(--ink-mute)', fontSize: 13 }}>
-          Could not load device details for <span className="z-mono">{entityId}</span>.
-        </div>
-      </div>
-    )
+  // Ghost path: backend flagged this entity as removed from HA but still
+  // present in Ziggy's device registry. Render a dedicated cleanup page
+  // instead of the normal remote — the controls are meaningless and the
+  // user just needs a one-tap way to drop the stale row.
+  if (details?.ghost) {
+    return <GhostDevicePage details={details} entityId={entityId} navigate={navigate} addToast={addToast} />
   }
 
-  const { ha_device, sibling_entities = [], automations_using = [], domain_meta, attributes = {} } = details
-  // Merge last_changed: top-level (from raw HA state) takes precedence over diagnostics fallback
-  const diagnostics = { ...(details.diagnostics || {}), last_changed: details.last_changed ?? details.diagnostics?.last_changed }
-  const entity = liveEntity ?? { entity_id: entityId, domain: entityId.split('.')[0], state: details.state, ...attributes }
+  // Use the live entity to drive immediate render; details fills in secondary
+  // sections (diagnostics, ha_device, siblings, automations_using) when it
+  // arrives. All `details`-derived fields safely default to empty.
+  const ha_device         = details?.ha_device || null
+  const sibling_entities  = details?.sibling_entities || []
+  const automations_using = details?.automations_using || []
+  const attributes        = details?.attributes || liveEntity || {}
+  const diagnostics = {
+    ...(details?.diagnostics || {}),
+    last_changed: details?.last_changed ?? details?.diagnostics?.last_changed ?? liveEntity?.last_changed,
+  }
+  const entity = liveEntity ?? { entity_id: entityId, domain: entityId.split('.')[0], state: details?.state, ...attributes }
   const facts = deviceFacts(entity)
   const isOn = facts.isOn
   const isToggleable = facts.meta.toggle
   const stateLabel = facts.stateLabel
   const meta = facts.meta
-  const displayName = facts.name || attributes.friendly_name || entityId
+  // When the entity is the primary of a multi-entity device, prefer the
+  // group's HA device-registry name — it's the "Switcher Boiler" the user
+  // recognises, not the per-entity friendly_name like "Switcher Boiler Power".
+  // For sibling views we keep showing the entity's own name; the group name
+  // is surfaced separately as the parent-device crumb.
+  const groupName = group?.name || null
+  const displayName = (isGroupPrimary && groupName)
+    ? groupName
+    : (facts.name || attributes.friendly_name || entityId)
   const currentRoom = rooms.find(r => (r.entities || []).includes(entityId))
 
   // Filter siblings to show only useful ones (hide update/button/number noise)
   const _HIDDEN_SIBLING_DOMAINS = new Set(['button', 'number', 'select', 'update'])
-  const usefulSiblings = sibling_entities.filter(s => !_HIDDEN_SIBLING_DOMAINS.has(s.domain))
+  // When this entity is part of a frontend-known group, prefer the group's
+  // entity list (which carries the `role` marker: primary / metric /
+  // diagnostic). Backend `sibling_entities` still arrives via the details
+  // call and supplies the live state for each — we merge by entity_id.
+  const _groupEntities = group?.entities || []
+  const _siblingStateMap = Object.fromEntries(sibling_entities.map(s => [s.entity_id, s]))
+  const allSiblings = _groupEntities.length > 0
+    ? _groupEntities.map((ge) => {
+        const live = _siblingStateMap[ge.entity_id] || {}
+        return {
+          entity_id:     ge.entity_id,
+          domain:        ge.domain || (ge.entity_id || '').split('.')[0],
+          friendly_name: live.friendly_name || ge.display_name || ge.entity_id,
+          state:         live.state ?? ge.state,
+          unit:          live.unit ?? ge.unit,
+          device_class:  live.device_class ?? ge.device_class,
+          role:          ge.role,
+          isPrimary:     ge.role === 'primary',
+        }
+      })
+    : sibling_entities.map(s => ({ ...s, isPrimary: false }))
+  const usefulSiblings = allSiblings
+    .filter(s => !_HIDDEN_SIBLING_DOMAINS.has(s.domain))
+    .filter(s => s.entity_id !== entityId)  // never list the current entity as its own sibling
 
   const hasDiagnostics = diagnostics.battery != null || diagnostics.lqi != null || diagnostics.rssi != null ||
     diagnostics.last_changed || diagnostics.last_seen || diagnostics.firmware
@@ -408,12 +699,30 @@ export default function DeviceDetail() {
           onClick={() => navigate(-1)}
           className="z-icon-btn"
           style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
-          aria-label="Back"
+          aria-label={t('deviceDetail.back')}
         >
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
-          <div style={{
+          {/* Parent-device crumb when viewing a non-primary sibling. Tapping
+              jumps to the primary entity's page — the canonical control
+              surface for the physical device. */}
+          {isSiblingView && group?.primary_entity_id && (
+            <button
+              onClick={() => navigate(`/devices/${encodeURIComponent(group.primary_entity_id)}`)}
+              className="z-mono"
+              style={{
+                fontSize: 10, color: 'var(--ink-faint)', letterSpacing: '0.05em',
+                background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 1,
+              }}
+              title={t('devices.openParentDevice')}
+            >
+              <ArrowLeft size={9} />
+              {groupName || t('devices.parentDevice')}
+            </button>
+          )}
+          <div dir="auto" style={{
             fontSize: 15, fontWeight: 600, letterSpacing: '-0.015em', color: 'var(--ink)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
@@ -424,7 +733,7 @@ export default function DeviceDetail() {
               fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2, letterSpacing: '0.04em',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
-              {[currentRoom?.name, facts.isIr ? 'IR' : facts.hasIr ? 'IR + WiFi' : null]
+              {[currentRoom?.name, facts.isIr ? 'IR' : facts.hasIr ? t('deviceDetail.irPlusWifi') : null]
                 .filter(Boolean).join(' · ')}
             </div>
           )}
@@ -433,8 +742,8 @@ export default function DeviceDetail() {
           onClick={handleRefresh}
           className={cn('z-icon-btn', refreshing && 'animate-spin')}
           style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
-          aria-label="Refresh"
-          title="Refresh"
+          aria-label={t('deviceDetail.refresh')}
+          title={t('deviceDetail.refresh')}
         >
           <RefreshCw size={15} />
         </button>
@@ -449,14 +758,14 @@ export default function DeviceDetail() {
           background: 'var(--surface-2)', borderRadius: 13,
         }}>
           {[
-            { id: 'controls', label: 'Controls' },
-            { id: 'data',     label: 'Info' },
-          ].map(t => {
-            const active = activeTab === t.id
+            { id: 'controls', label: t('deviceDetail.tabControls') },
+            { id: 'data',     label: t('deviceDetail.tabInfo') },
+          ].map(tab => {
+            const active = activeTab === tab.id
             return (
               <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
                 style={{
                   flex: 1, padding: '8px 0', borderRadius: 10,
                   background: active ? 'var(--surface)' : 'transparent',
@@ -468,7 +777,7 @@ export default function DeviceDetail() {
                   transition: 'background 0.15s',
                 }}
               >
-                {t.label}
+                {tab.label}
               </button>
             )
           })}
@@ -495,10 +804,10 @@ export default function DeviceDetail() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span className="z-eyebrow">{meta.label}</span>
                   {facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>IR</span>}
-                  {facts.hasIr && !facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>IR + WiFi</span>}
-                  {!facts.isAvailable && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--warn)' }}>Unavailable</span>}
+                  {facts.hasIr && !facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>{t('deviceDetail.irPlusWifi')}</span>}
+                  {!facts.isAvailable && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--warn)' }}>{t('deviceDetail.unavailable')}</span>}
                 </div>
-                <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em', margin: '2px 0 0' }}>
+                <h2 dir="auto" style={{ fontSize: 20, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em', margin: '2px 0 0' }}>
                   {displayName}
                 </h2>
                 {currentRoom && (
@@ -512,7 +821,7 @@ export default function DeviceDetail() {
                 onClick={() => setShowRename(true)}
                 className="z-icon-btn"
                 style={{ width: 32, height: 32, borderRadius: 10 }}
-                title="Rename"
+                title={t('deviceDetail.rename')}
               >
                 <Pencil size={13} />
               </button>
@@ -556,6 +865,11 @@ export default function DeviceDetail() {
             )
           })()}
 
+          {/* "More Commands" panel removed — the curated remote (with
+              vendor adapters + paired-remote fallback) now exposes all
+              meaningful actions inline; the dynamic catalog was mostly
+              noise (raw HA service names users couldn't interpret). */}
+
           {/* Camera live view — keep as separate panel below the remote */}
           {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
 
@@ -569,12 +883,12 @@ export default function DeviceDetail() {
       {/* ── Diagnostics ── */}
       {showData && hasDiagnostics && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Diagnostics</p>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.diagnostics')}</p>
 
           {diagnostics.battery != null && (
             <div className="mb-3">
               <div className="flex justify-between text-[11px] text-zinc-400 mb-1.5">
-                <span>Battery</span>
+                <span>{t('deviceDetail.battery')}</span>
               </div>
               <BatteryBar level={diagnostics.battery} unit={diagnostics.battery_unit} />
             </div>
@@ -582,38 +896,51 @@ export default function DeviceDetail() {
 
           {(diagnostics.lqi != null || diagnostics.rssi != null) && (
             <div className="mb-3">
-              <span className="text-[11px] text-zinc-400 block mb-1">Signal</span>
+              <span className="text-[11px] text-zinc-400 block mb-1">{t('deviceDetail.signal')}</span>
               <SignalBars lqi={diagnostics.lqi} rssi={diagnostics.rssi} />
             </div>
           )}
 
           <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-            <DiagRow label="Last changed">
+            <DiagRow label={t('deviceDetail.lastChanged')}>
               <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
                 <TimeAgo iso={diagnostics.last_changed} />
               </span>
             </DiagRow>
-            <DiagRow label="Last seen">
+            <DiagRow label={t('deviceDetail.lastSeen')}>
               {diagnostics.last_seen && (
                 <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
                   <TimeAgo iso={diagnostics.last_seen} />
                 </span>
               )}
             </DiagRow>
-            <DiagRow label="Firmware" value={diagnostics.firmware} />
+            <DiagRow label={t('deviceDetail.firmware')} value={diagnostics.firmware} />
           </div>
         </Card>
+      )}
+
+      {/* ── Sensor history chart ── numeric sensors only. */}
+      {showData && (
+        facts.kind === KIND.TEMPERATURE ||
+        facts.kind === KIND.HUMIDITY ||
+        facts.kind === KIND.POWER_METER ||
+        (facts.kind === KIND.SENSOR && !Number.isNaN(parseFloat(liveEntity?.state)))
+      ) && (
+        <SensorHistoryChart
+          entityId={entityId}
+          unitFallback={liveEntity?.attributes?.unit_of_measurement}
+        />
       )}
 
       {/* ── HA Device info ── */}
       {showData && ha_device && (ha_device.manufacturer || ha_device.model) && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Hardware</p>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.hardware')}</p>
           <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-            <DiagRow label="Manufacturer" value={ha_device.manufacturer} />
-            <DiagRow label="Model" value={ha_device.model} />
-            <DiagRow label="Firmware" value={ha_device.sw_version} />
-            <DiagRow label="Hardware rev." value={ha_device.hw_version} />
+            <DiagRow label={t('deviceDetail.manufacturer')} value={ha_device.manufacturer} />
+            <DiagRow label={t('deviceDetail.model')} value={ha_device.model} />
+            <DiagRow label={t('deviceDetail.firmware')} value={ha_device.sw_version} />
+            <DiagRow label={t('deviceDetail.hardwareRev')} value={ha_device.hw_version} />
           </div>
         </Card>
       )}
@@ -622,17 +949,17 @@ export default function DeviceDetail() {
       {showData && facts.linkedIr && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-            IR Codeset
+            {t('deviceDetail.irCodeset')}
           </p>
           <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-            <DiagRow label="Type" value={facts.linkedIr.type} />
-            <DiagRow label="Brand" value={facts.linkedIr.brand || '—'} />
-            <DiagRow label="Commands learned" value={`${(facts.linkedIr.learned_commands || []).length}`} />
-            <DiagRow label="IR ID">
+            <DiagRow label={t('deviceDetail.type')} value={facts.linkedIr.type} />
+            <DiagRow label={t('deviceDetail.brand')} value={facts.linkedIr.brand || '—'} />
+            <DiagRow label={t('deviceDetail.commandsLearned')} value={`${(facts.linkedIr.learned_commands || []).length}`} />
+            <DiagRow label={t('deviceDetail.irId')}>
               <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink)' }}>{facts.linkedIr.id}</span>
             </DiagRow>
             {facts.linkedIr.assumed_state && (
-              <DiagRow label="Assumed state" value={facts.linkedIr.assumed_state} />
+              <DiagRow label={t('deviceDetail.assumedState')} value={facts.linkedIr.assumed_state} />
             )}
           </div>
         </Card>
@@ -641,7 +968,7 @@ export default function DeviceDetail() {
       {/* ── Capability list — what this device can actually do ── */}
       {showData && facts.capabilities.size > 0 && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Capabilities</p>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.capabilities')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {[...facts.capabilities].map(c => (
               <span key={c} className="z-chip" style={{ padding: '4px 9px', fontSize: 10.5 }}>{c.replace(/_/g, ' ')}</span>
@@ -650,11 +977,13 @@ export default function DeviceDetail() {
         </Card>
       )}
 
-      {/* ── Sibling entities ── */}
+      {/* ── Sibling entities — every HA entity living on the same physical
+            device. The primary entity is highlighted so the user always
+            knows which one drives the main card / control surface. ── */}
       {showData && usefulSiblings.length > 0 && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-            Also on this device
+            {groupName ? t('deviceDetail.siblingsOn', { name: groupName }) : t('deviceDetail.alsoOnDevice')}
           </p>
           <div className="space-y-1.5">
             {usefulSiblings.map(sib => (
@@ -666,8 +995,21 @@ export default function DeviceDetail() {
                 <div className="flex items-center gap-2.5">
                   <span className="text-base">{domainIcon(sib.domain, sib.device_class)}</span>
                   <div>
-                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{sib.friendly_name}</p>
-                    <p className="text-[11px] text-zinc-400">{sib.state}{sib.unit ? ` ${sib.unit}` : ''}</p>
+                    <p dir="auto" className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                      {sib.friendly_name}
+                      {sib.isPrimary && (
+                        <span style={{
+                          marginLeft: 6, padding: '1px 6px', borderRadius: 999,
+                          fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+                          background: 'color-mix(in srgb, var(--info) 14%, var(--surface-2))',
+                          color: 'var(--info)', textTransform: 'uppercase',
+                        }}>{t('deviceDetail.primary')}</span>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-zinc-400">
+                      {sib.state ?? '—'}{sib.unit ? ` ${sib.unit}` : ''}
+                      {sib.device_class ? ` · ${sib.device_class}` : ''}
+                    </p>
                   </div>
                 </div>
                 <ChevronRight size={14} className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 transition-colors" />
@@ -681,7 +1023,7 @@ export default function DeviceDetail() {
       {showData && automations_using.length > 0 && (
         <Card className="p-4 mb-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-            Used in automations
+            {t('deviceDetail.usedInAutomations')}
           </p>
           <div className="space-y-1.5">
             {automations_using.map(auto => (
@@ -692,11 +1034,11 @@ export default function DeviceDetail() {
               >
                 <div className="flex items-center gap-2.5">
                   <Zap size={14} className={cn('shrink-0', auto.enabled ? 'text-violet-500' : 'text-zinc-300')} />
-                  <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{auto.name}</p>
+                  <p dir="auto" className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{auto.name}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={auto.enabled ? 'success' : 'default'} size="sm">
-                    {auto.enabled ? 'On' : 'Off'}
+                    {auto.enabled ? t('deviceDetail.autoOn') : t('deviceDetail.autoOff')}
                   </Badge>
                   <ChevronRight size={14} className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 transition-colors" />
                 </div>
@@ -711,7 +1053,7 @@ export default function DeviceDetail() {
       {showData && (
       <Card className="p-4 mb-3">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Room</p>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{t('deviceDetail.room')}</p>
           <button
             onClick={() => setEditingRoom(v => !v)}
             style={{
@@ -722,9 +1064,9 @@ export default function DeviceDetail() {
               border: '0.5px solid ' + (editingRoom ? 'var(--ink)' : 'var(--line)'),
               fontSize: 10.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
             }}
-            title={editingRoom ? 'Lock' : 'Unlock to edit'}
+            title={editingRoom ? t('deviceDetail.editRoomLock') : t('deviceDetail.editRoomUnlock')}
           >
-            {editingRoom ? <><LockOpen size={11} /> Done</> : <><Lock size={11} /> Edit</>}
+            {editingRoom ? <><LockOpen size={11} /> {t('deviceDetail.editRoomDone')}</> : <><Lock size={11} /> {t('deviceDetail.editRoomEdit')}</>}
           </button>
         </div>
 
@@ -736,8 +1078,8 @@ export default function DeviceDetail() {
             background: 'var(--surface-2)', border: '0.5px solid var(--line)',
           }}>
             <Home size={13} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-              {currentRoom?.name || 'No room'}
+            <span dir="auto" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+              {currentRoom?.name || t('deviceDetail.noRoom')}
             </span>
           </div>
         ) : (
@@ -750,7 +1092,7 @@ export default function DeviceDetail() {
                 !currentRoom ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800',
               )}
             >
-              <Home size={13} /> No room
+              <Home size={13} /> {t('deviceDetail.noRoom')}
             </button>
             {rooms.map(r => (
               <button
@@ -764,7 +1106,7 @@ export default function DeviceDetail() {
                 )}
               >
                 <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-700')} />
-                {r.name}
+                <span dir="auto">{r.name}</span>
                 {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
               </button>
             ))}
@@ -776,15 +1118,26 @@ export default function DeviceDetail() {
       {/* ── Danger zone ── */}
       {showData && (
       <Card className="p-4">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Actions</p>
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.actions')}</p>
         <button
           onClick={handleToggleHide}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
         >
           {isHidden
-            ? <><Eye size={13} /> Show device</>
-            : <><EyeOff size={13} /> Hide from Ziggy</>
+            ? <><Eye size={13} /> {t('deviceDetail.showDevice')}</>
+            : <><EyeOff size={13} /> {t('deviceDetail.hideFromZiggy')}</>
           }
+        </button>
+        {/* Delete — for HA entities this removes from BOTH Ziggy AND HA.
+            For pure-IR devices, removes the IR codeset from Ziggy (HA never
+            knew about it). Distinct from Hide, which only affects what Ziggy
+            shows. */}
+        <button
+          onClick={() => setShowDelete(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors"
+          style={{ color: 'var(--err)' }}
+        >
+          <Trash2 size={13} /> {t('deviceDetail.deleteDevice')}
         </button>
       </Card>
       )}
@@ -794,6 +1147,16 @@ export default function DeviceDetail() {
         currentName={displayName}
         onClose={() => setShowRename(false)}
         onSave={handleRename}
+      />
+
+      <DeleteDeviceModal
+        open={showDelete}
+        deviceName={displayName}
+        hasParentDevice={!!ha_device?.id && !facts.isIr}
+        isIr={facts.isIr}
+        deleting={deleting}
+        onClose={() => !deleting && setShowDelete(false)}
+        onConfirm={handleDelete}
       />
     </div>
   )

@@ -1,8 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
+import { useT } from '../../lib/i18n'
 
 export function Modal({ open, onClose, title, children, className, maxWidth = 520, fullScreen = false }) {
+  const t = useT()
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose?.()}>
       <AnimatePresence>
@@ -47,7 +49,7 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                     padding: '16px 20px', borderBottom: '0.5px solid var(--line)',
                     flexShrink: 0, background: 'var(--surface)',
                   }}>
-                    <button onClick={onClose} className="z-icon-btn" style={{ width: 32, height: 32, borderRadius: 10 }} aria-label="Close">
+                    <button onClick={onClose} className="z-icon-btn" style={{ width: 32, height: 32, borderRadius: 10 }} aria-label={t('common.close')}>
                       <X size={15} />
                     </button>
                     {title && (
@@ -97,7 +99,7 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                           {title}
                         </Dialog.Title>
                       )}
-                      <button onClick={onClose} className="z-icon-btn" style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8 }} aria-label="Close">
+                      <button onClick={onClose} className="z-icon-btn" style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8 }} aria-label={t('common.close')}>
                         <X size={14} />
                       </button>
                     </div>

@@ -266,6 +266,23 @@ def _log_history_cleared(rule_id: str, room_id: str) -> None:
         pass
 
 
+def log_history_action_taken(rule_id: str, room_id: str, action: str) -> None:
+    """Record which suggested_action the user executed on the currently-open
+    anomaly row. Called from map_router.execute_anomaly_action BEFORE the
+    anomaly is cleared, so the WHERE cleared_at IS NULL filter still matches.
+    """
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE anomaly_history SET action_taken=? "
+                "WHERE rule_id=? AND room_id=? AND cleared_at IS NULL",
+                (action, rule_id, room_id),
+            )
+            conn.commit()
+    except Exception as e:
+        log_error(f"[AnomalyEngine] action_taken write failed: {e}")
+
+
 # ── Time helpers ──────────────────────────────────────────────────────────────
 def _cfg() -> dict:
     return settings.get("anomaly_engine", settings.get("sensor_alerts", {}))
@@ -577,26 +594,32 @@ def _rule_anom03(ec: EvalContext) -> AnomalyResult | None:
 
 @register_rule("ANOM-04", scope="area", severity="critical")
 def _rule_anom04(ec: EvalContext) -> AnomalyResult | None:
-    """Motion during quiet hours.  Clears naturally when motion stops OR quiet hours end."""
+    """Motion during quiet hours, only when nobody is confirmed home.
+
+    Previously fired at warning-tier confidence even when occupants were home,
+    pushing a notification every time someone got up at night. This rule is
+    only useful as an intruder signal: it requires presence sources AND zero
+    confirmed occupants. Clears naturally when motion stops or quiet hours end.
+    """
     if not ec.ctx.quiet_hours:
         return None
     if not _room_has_motion(ec.area, ec.cache):
         return None
 
-    confidence = 0.65
-    if ec.ctx.mode == "away":
-        confidence += 0.30   # no one should be home at all
+    # Without presence sources we cannot distinguish intruder from occupant
+    # getting up, so the rule stays silent — better than crying wolf.
+    ha_persons    = [v for eid, v in ec.cache.items() if eid.startswith("person.")]
+    ziggy_persons = _ziggy_load_persons()
+    if not ha_persons and not ziggy_persons:
+        return None
 
-    # Reduce confidence if a person recently arrived (GPS lag / settling)
-    for eid, v in ec.cache.items():
-        if eid.startswith("person.") and v["state"] == "home":
-            if ec.now - _last_on.get(eid, 0) < 1200:   # within 20 min
-                confidence -= 0.25
-                break
+    # Someone is confirmed home → quiet-hours motion is expected behaviour.
+    if ec.ctx.occupants_home:
+        return None
 
     return AnomalyResult(
         message=f"Motion detected in {ec.area['name']}.",
-        confidence=round(max(confidence, 0.10), 2),
+        confidence=0.95,
         context="quiet_hours",
     )
 
@@ -668,6 +691,44 @@ def _rule_anom06(ec: EvalContext) -> AnomalyResult | None:
     )
 
 
+@register_rule("ANOM-11", scope="entity", severity="warning", cooldown_s=1800)
+def _rule_anom11_boiler_runaway(ec: EvalContext) -> AnomalyResult | None:
+    """Water heater / boiler has been heating for > threshold minutes.
+
+    Distinct from ANOM-06 because the threshold and severity differ — a
+    boiler heating for 2 hours straight is real money and possible safety
+    risk, not just an idle light. Default threshold: 90 minutes.
+    """
+    eid   = ec.entity_id
+    entry = ec.entity_entry
+    if not eid.startswith("water_heater."):
+        return None
+    state = entry.get("state", "")
+    # HA's water_heater states for "heating": "on", "heat_pump", "electric",
+    # "gas", "performance", "eco". "off" / "unavailable" do not heat.
+    if state in ("off", "unavailable", "unknown", ""):
+        return None
+    if eid in ec.cfg.get("exemptions", []):
+        return None
+
+    threshold_min = ec.cfg.get("anom11_boiler_runtime_minutes", 90)
+    threshold_s = threshold_min * 60
+    on_since = _last_on.get(eid, ec.now)
+    runtime  = ec.now - on_since
+    if runtime <= threshold_s:
+        return None
+
+    label = entry.get("attributes", {}).get("friendly_name", eid)
+    mins = int(runtime / 60)
+    confidence = min(0.80 + (mins - threshold_min) / 60.0 * 0.05, 0.95)
+    return AnomalyResult(
+        message=f"{label} has been heating for {mins} minutes.",
+        confidence=round(confidence, 2),
+        action_available=True,
+        suggested_action=f"turn_off:{eid}",
+    )
+
+
 # ── Automation dependency helpers ─────────────────────────────────────────────
 
 def _refresh_automation_deps() -> dict[str, list[str]]:
@@ -708,6 +769,16 @@ def _rule_anom07(ec: EvalContext) -> AnomalyResult | None:
     state = ec.entity_entry.get("state", "")
     if state not in ("unavailable", "unknown"):
         return None
+
+    # Suppress when this is an "expected off" transition on a hybrid device
+    # that has learned wifi_dies_when_off=True. The device isn't broken — it
+    # was intentionally powered off; its Wi-Fi radio dies with the power.
+    try:
+        from services.command_router import is_expected_offline
+        if is_expected_offline(eid):
+            return None
+    except Exception:
+        pass
 
     deps = _refresh_automation_deps()
     auto_names = deps.get(eid, [])
@@ -813,52 +884,35 @@ def _dispatch(rule: AnomalyRule, ec: EvalContext, active: dict, room_id: str) ->
     _push_anomaly(active, room_id, rule, result)
 
 
-# ── Main evaluate loop ────────────────────────────────────────────────────────
-async def evaluate(changed_entity: str, cache: dict, active: dict) -> None:
-    """Entry point — called by ha_subscriber on every HA state_changed event."""
-    if not _cfg().get("enabled", True):
-        return
+# ── Rule-loop debouncer ───────────────────────────────────────────────────────
+#
+# Without coalescing, every HA state_changed event runs the full rule loop —
+# entity rules iterate every entity in cache, area rules iterate every area.
+# A busy home with 200 entities + 10 areas sees 1000+ rule evaluations per
+# event, and HA pushes 10–50 events/sec during normal activity. That's an
+# easy 10k–50k rule evaluations/sec for state the user doesn't see change in
+# real time anyway.
+#
+# Strategy: per-event bookkeeping (cheap) runs immediately. Rule-loop runs
+# at most once per _RULE_LOOP_DEBOUNCE_S. A pending task absorbs every
+# subsequent event in its window. Coverage is identical — every rule still
+# sees the latest cache when it runs, just less often.
+_RULE_LOOP_DEBOUNCE_S = 0.25
+_eval_pending_task: asyncio.Task | None = None
+_eval_last_run_ts: float = 0.0
 
+
+async def _run_rule_loop(cache: dict, active: dict) -> None:
+    """The expensive part of evaluate() — every rule × every scope target."""
+    global _eval_last_run_ts
     cfg = _cfg()
     now = time.time()
-
-    new_state = cache.get(changed_entity, {}).get("state", "unknown")
-    if new_state == "off":
-        _last_off[changed_entity] = now
-    elif new_state == "on":
-        _last_on[changed_entity] = now
-
-    # Track bulk-offline window for ANOM-09 (physical domains only)
-    if new_state in ("unavailable", "unknown"):
-        domain = changed_entity.split(".")[0]
-        if domain not in _NON_PHYS_DOMAINS:
-            _recent_unavailable[changed_entity] = now
-    else:
-        _recent_unavailable.pop(changed_entity, None)
-
-    # Prune stale entries older than the detection window
-    cutoff = now - _BULK_OFFLINE_WINDOW
-    for eid in [k for k, v in _recent_unavailable.items() if v < cutoff]:
-        del _recent_unavailable[eid]
-
-    ctx      = _build_context(cache)
+    ctx = _build_context(cache)
     area_map: dict = {}
     try:
         area_map = await _get_area_map()
     except Exception:
         pass
-
-    # If a safety-critical sensor just reported any state change, it's no longer stale.
-    # Clear ANOM-10 immediately rather than waiting for the next hourly sweep.
-    _changed_domain = changed_entity.split(".")[0]
-    if _changed_domain in ("binary_sensor", "sensor"):
-        _changed_dc = cache.get(changed_entity, {}).get("attributes", {}).get("device_class", "")
-        if _changed_dc in _STALE_SAFETY_CLASSES and new_state not in ("unavailable", "unknown"):
-            _stale_room = next(
-                (aid for aid, a in area_map.items() if changed_entity in a.get("entities", [])),
-                changed_entity,
-            )
-            _clear_anomaly(active, _stale_room, "ANOM-10")
 
     disabled = settings.get("anomaly_engine", {}).get("disabled_rules", [])
 
@@ -887,6 +941,84 @@ async def evaluate(changed_entity: str, cache: dict, active: dict) -> None:
                 ec = EvalContext(cache=cache, ctx=ctx, cfg=cfg, now=now,
                                  area_map=area_map, entity_id=eid, entity_entry=entry)
                 _dispatch(rule, ec, active, room_id)
+
+    _eval_last_run_ts = time.time()
+
+
+async def _debounced_rule_loop(cache: dict, active: dict) -> None:
+    global _eval_pending_task
+    try:
+        await asyncio.sleep(_RULE_LOOP_DEBOUNCE_S)
+        await _run_rule_loop(cache, active)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        log_error(f"[AnomalyEngine] debounced rule loop failed: {e}")
+    finally:
+        _eval_pending_task = None
+
+
+# ── Main evaluate loop ────────────────────────────────────────────────────────
+async def evaluate(changed_entity: str, cache: dict, active: dict) -> None:
+    """Entry point — called by ha_subscriber on every HA state_changed event."""
+    global _eval_pending_task
+    if not _cfg().get("enabled", True):
+        return
+
+    now = time.time()
+
+    new_state = cache.get(changed_entity, {}).get("state", "unknown")
+    if new_state == "off":
+        _last_off[changed_entity] = now
+    elif new_state == "on":
+        _last_on[changed_entity] = now
+    elif changed_entity.startswith("water_heater.") and new_state in (
+        "heat_pump", "electric", "gas", "performance", "eco"
+    ):
+        # Treat any active water-heater mode as "on" so ANOM-11 runtime works.
+        _last_on[changed_entity] = now
+
+    # Track bulk-offline window for ANOM-09 (physical domains only).
+    # Skip entities whose Wi-Fi is known to die when powered off — they're
+    # expected to go unavailable on every off cycle and would inflate the
+    # bulk-offline count without a real network event.
+    if new_state in ("unavailable", "unknown"):
+        domain = changed_entity.split(".")[0]
+        if domain not in _NON_PHYS_DOMAINS:
+            try:
+                from services.command_router import is_expected_offline
+                if not is_expected_offline(changed_entity):
+                    _recent_unavailable[changed_entity] = now
+            except Exception:
+                _recent_unavailable[changed_entity] = now
+    else:
+        _recent_unavailable.pop(changed_entity, None)
+
+    # Prune stale entries older than the detection window
+    cutoff = now - _BULK_OFFLINE_WINDOW
+    for eid in [k for k, v in _recent_unavailable.items() if v < cutoff]:
+        del _recent_unavailable[eid]
+
+    # ANOM-10 clearance is per-event — must run inline so a safety sensor
+    # ack lands immediately, not 250 ms behind a debounce window.
+    _changed_domain = changed_entity.split(".")[0]
+    if _changed_domain in ("binary_sensor", "sensor"):
+        _changed_dc = cache.get(changed_entity, {}).get("attributes", {}).get("device_class", "")
+        if _changed_dc in _STALE_SAFETY_CLASSES and new_state not in ("unavailable", "unknown"):
+            try:
+                area_map_quick = await _get_area_map()
+            except Exception:
+                area_map_quick = {}
+            _stale_room = next(
+                (aid for aid, a in area_map_quick.items() if changed_entity in a.get("entities", [])),
+                changed_entity,
+            )
+            _clear_anomaly(active, _stale_room, "ANOM-10")
+
+    # Coalesce the heavy rule loop. If a debounced task is already pending,
+    # piggyback on it — the next run will see the latest cache anyway.
+    if _eval_pending_task is None or _eval_pending_task.done():
+        _eval_pending_task = asyncio.create_task(_debounced_rule_loop(cache, active))
 
 
 # ── ANOM-04 — time-boundary cleanup ──────────────────────────────────────────

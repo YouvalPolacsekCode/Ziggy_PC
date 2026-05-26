@@ -10,11 +10,12 @@ const labelStyle = {
   color: 'var(--ink-2)', marginBottom: 5,
 }
 
-export function Input({ className, label, error, style, ...props }) {
+export function Input({ className, label, error, style, dir = 'auto', ...props }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {label && <label style={labelStyle}>{label}</label>}
       <input
+        dir={dir}
         className={className}
         style={{
           ...fieldStyle,
@@ -38,11 +39,12 @@ export function Input({ className, label, error, style, ...props }) {
   )
 }
 
-export function Textarea({ className, label, error, style, ...props }) {
+export function Textarea({ className, label, error, style, dir = 'auto', ...props }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {label && <label style={labelStyle}>{label}</label>}
       <textarea
+        dir={dir}
         className={className}
         style={{
           ...fieldStyle,

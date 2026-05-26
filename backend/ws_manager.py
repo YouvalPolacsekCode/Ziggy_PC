@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from fastapi import WebSocket
 
@@ -39,9 +40,22 @@ class ConnectionManager:
         if not conns:
             return
 
+        # Serialize the payload exactly once. send_json() would otherwise
+        # JSON-encode the same dict N times per broadcast — wasted CPU on
+        # every state_changed event multiplied by client count.
+        try:
+            payload = json.dumps(data, default=str)
+        except Exception:
+            # Fall back to per-client send_json if dumps fails (e.g. non-JSON
+            # value sneaks through). Keeps behaviour bug-compatible.
+            payload = None
+
         async def _send(ws: WebSocket) -> WebSocket | None:
             try:
-                await asyncio.wait_for(ws.send_json(data), timeout=_BROADCAST_TIMEOUT_S)
+                if payload is None:
+                    await asyncio.wait_for(ws.send_json(data), timeout=_BROADCAST_TIMEOUT_S)
+                else:
+                    await asyncio.wait_for(ws.send_text(payload), timeout=_BROADCAST_TIMEOUT_S)
                 return None
             except Exception:
                 return ws

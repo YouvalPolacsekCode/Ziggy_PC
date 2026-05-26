@@ -1,32 +1,175 @@
+import logger from './logger'
+import { ErrorCode, ZiggyApiError, ziggyErrorFromEnvelope } from './errors'
+
 const BASE = '/api'
+
+// Default per-request timeout. The backend's slowest legitimate operations
+// — IR learn (~20s wait for an IR signal), voice transcribe (Whisper warm
+// path can land at 10-15s), HA reload — sit well under 30s. Anything past
+// that is almost certainly a stuck tunnel / dead backend, not a slow one,
+// so we bail out and let the caller surface "Connection is slow".
+const DEFAULT_TIMEOUT_MS = 30_000
 
 function getToken() {
   return localStorage.getItem('ziggy_token') || ''
 }
 
-async function request(method, path, body) {
+// Paths the logger should *not* emit a request line for. Polling-heavy
+// endpoints would flood the debug feed and obscure real signal. We always
+// still log failures regardless of the path — see apiError below.
+const SILENT_PATHS = [
+  '/debug/events',
+  '/debug/config',
+  '/debug/status',
+  '/debug/frontend-event',  // the logger's own POST — infinite-loop guard
+]
+
+function isSilent(path) {
+  return SILENT_PATHS.some(p => path.startsWith(p))
+}
+
+/**
+ * Race a fetch against an AbortController-driven timeout. The browser fetch
+ * API has no built-in timeout, which is what let slow tunnel hangs render
+ * the UI frozen for minutes. AbortError surfaces as ZiggyApiError(REQUEST_TIMEOUT)
+ * via the caller's normalize step.
+ *
+ * `existing` lets a caller (e.g. the long-polling debug events endpoint)
+ * opt out of the default timeout by passing their own signal.
+ */
+function fetchWithTimeout(url, opts, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  // If the caller already supplied a signal, honor it without layering a
+  // second timer — caller owns abort lifecycle.
+  if (opts?.signal) return fetch(url, opts)
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  return fetch(url, { ...opts, signal: ctrl.signal })
+    .finally(() => clearTimeout(timer))
+}
+
+/**
+ * Normalize any non-2xx HTTP response or network failure to ZiggyApiError.
+ * Called from every request path so UI code never sees raw fetch errors,
+ * "HTTP 502" strings, or unwrapped {detail: ...} payloads.
+ *
+ * Handles three backend envelope flavors gracefully:
+ *   1. New unified envelope:  { error: { code, message, request_id, ... } }
+ *   2. Legacy FastAPI:        { detail: "..." }
+ *   3. Anything else:         status code → ZiggyApiError fallback
+ */
+async function _toZiggyError(res) {
+  let body = null
+  try { body = await res.json() } catch { /* non-JSON */ }
+
+  // Shape 1 — new envelope.
+  if (body && body.error && typeof body.error === 'object') {
+    return ziggyErrorFromEnvelope(body, { status: res.status })
+  }
+
+  // Shape 2 — legacy {detail: "..."}. Map status → code; detail goes into
+  // userMessage ONLY when it looks user-safe (short, no stack/class text).
+  // The bad-marker filter mirrors the backend's _detail_looks_user_safe.
+  let userMessage = null
+  if (body && typeof body.detail === 'string') {
+    const d = body.detail
+    const looksSafe = d.length <= 200
+      && !d.startsWith('HTTP ')
+      && !/Traceback|Exception:|Error:|object at 0x|<class '|  File "/.test(d)
+    if (looksSafe) userMessage = d
+  }
+
+  const code = _statusToCode(res.status)
+  return new ZiggyApiError({
+    code,
+    userMessage,
+    status: res.status,
+    requestId: res.headers.get('x-request-id') || null,
+  })
+}
+
+function _statusToCode(status) {
+  if (status === 401) return ErrorCode.NOT_AUTHENTICATED
+  if (status === 403) return ErrorCode.INSUFFICIENT_PERMISSIONS
+  if (status === 404) return ErrorCode.NOT_FOUND
+  if (status === 409) return ErrorCode.CONFLICT
+  if (status === 422) return ErrorCode.VALIDATION_ERROR
+  if (status === 502) return ErrorCode.UPSTREAM_UNAVAILABLE
+  if (status === 503) return ErrorCode.DEVICE_UNAVAILABLE
+  if (status === 504) return ErrorCode.UPSTREAM_TIMEOUT
+  if (status >= 400 && status < 500) return ErrorCode.VALIDATION_ERROR
+  return ErrorCode.INTERNAL_ERROR
+}
+
+/**
+ * Convert any thrown value (TypeError from fetch, AbortError, anything) into
+ * a ZiggyApiError. Used by the catch arm of every request path.
+ */
+function _normalizeNetworkError(err) {
+  if (err?.isZiggyError || err instanceof ZiggyApiError) return err
+  if (err?.name === 'AbortError') {
+    return new ZiggyApiError({ code: ErrorCode.REQUEST_TIMEOUT })
+  }
+  // TypeError is what fetch throws for network failures: name lookup failure,
+  // DNS, dropped TCP, CORS preflight, etc. The browser doesn't distinguish
+  // "offline" from "server unreachable" — both surface here.
+  if (err instanceof TypeError) {
+    return new ZiggyApiError({
+      code: typeof navigator !== 'undefined' && navigator.onLine === false
+        ? ErrorCode.NETWORK_OFFLINE
+        : ErrorCode.UPSTREAM_UNAVAILABLE,
+    })
+  }
+  return new ZiggyApiError({ code: ErrorCode.INTERNAL_ERROR })
+}
+
+async function request(method, path, body, { timeoutMs } = {}) {
   const token = getToken()
+  const reqId = logger.newRequestId()
   const opts = {
     method,
     headers: {
       'Content-Type': 'application/json',
+      // Threading a request id through to the backend is what makes the
+      // Debug page's "trace one click end-to-end" feature actually work:
+      // the middleware reuses this id for every event in the chain.
+      'X-Request-Id': reqId,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
-  const res = await fetch(`${BASE}${path}`, opts)
+
+  const silent = isSilent(path)
+  const t0 = performance.now()
+  if (!silent) logger.api(method, path, reqId)
+
+  let res
+  try {
+    res = await fetchWithTimeout(`${BASE}${path}`, opts, { timeoutMs })
+  } catch (err) {
+    const dur = Math.round(performance.now() - t0)
+    logger.apiError(method, path, reqId, err, dur)
+    throw _normalizeNetworkError(err)
+  }
+  const dur = Math.round(performance.now() - t0)
+
   if (res.status === 401) {
     localStorage.removeItem('ziggy_token')
     localStorage.removeItem('ziggy_role')
+    if (!silent) logger.apiResponse(method, path, reqId, 401, dur)
     // Fire event instead of reloading — App.jsx listens and shows LoginPage
     // without a page reload, which prevents the WS reconnect storm.
     window.dispatchEvent(new Event('ziggy:unauthorized'))
-    return
+    // Throw so awaiting callers fail predictably instead of receiving
+    // undefined — the global handler in App.jsx will swap to LoginPage.
+    throw new ZiggyApiError({ code: ErrorCode.NOT_AUTHENTICATED, status: 401 })
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
+    const zerr = await _toZiggyError(res)
+    if (!silent) logger.apiResponse(method, path, reqId, res.status, dur,
+                                    { code: zerr.code, request_id: zerr.requestId })
+    throw zerr
   }
+  if (!silent) logger.apiResponse(method, path, reqId, res.status, dur)
   return res.json()
 }
 
@@ -35,6 +178,24 @@ const post = (path, body) => request('POST', path, body)
 const put = (path, body) => request('PUT', path, body)
 const patch = (path, body) => request('PATCH', path, body)
 const del = (path, body) => request('DELETE', path, body)
+
+// Retry helper for the device-fan-out endpoints on the PWA path. Cloudflare
+// Tunnel + slow backend handlers (e.g. cold HA registry cache) routinely
+// surface as "context canceled" mid-response; one quick retry rides over
+// the typical 200-500ms reconnect window without making the user wait long
+// on a real outage. Capped at 2 attempts so failures still fall through
+// fast to the keep-last-good path in the store.
+export async function withRetry(fn, { tries = 2, delayMs = 300 } = {}) {
+  let lastErr
+  for (let i = 0; i < tries; i++) {
+    try { return await fn() }
+    catch (e) {
+      lastErr = e
+      if (i < tries - 1) await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+  throw lastErr
+}
 
 // ── UI prefs (server-side persistence of Dashboard pins) ─────────────────────
 // localStorage is best-effort; the server is the source of truth so pins
@@ -49,18 +210,29 @@ export const sendIntent = (text, source = 'web') => post('/intent', { text, sour
 export const sendChat = (text, chatHistory = [], source = 'web') =>
   post('/chat', { text, chat_history: chatHistory, source })
 
-export async function sendVoice(blob) {
+// Voice upload — Whisper round-trip can be 5-15s on a warm model so the
+// timeout is generously above the request layer default. Still bounded so a
+// stuck tunnel never lets the UI sit on a phantom "transcribing…" spinner.
+async function _voicePost(path, blob) {
   const fd = new FormData()
   fd.append('file', blob, 'recording.webm')
   const token = getToken()
-  const res = await fetch(`${BASE}/voice`, {
-    method: 'POST',
-    body: fd,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  let res
+  try {
+    res = await fetchWithTimeout(`${BASE}${path}`, {
+      method: 'POST',
+      body: fd,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }, { timeoutMs: 45_000 })
+  } catch (err) {
+    throw _normalizeNetworkError(err)
+  }
+  if (!res.ok) throw await _toZiggyError(res)
   return res.json()
 }
+
+export const sendVoice           = (blob) => _voicePost('/voice', blob)
+export const sendVoiceTranscribe = (blob) => _voicePost('/voice/transcribe', blob)
 
 // Devices / HA entities
 export const getEntities = (domain) =>
@@ -70,6 +242,10 @@ export const getEntityState = (entityId) => get(`/ha/state/${entityId}`)
 export const getEntityDetails = (entityId) => get(`/ha/entity/${encodeURIComponent(entityId)}/details`)
 export const getDeviceMap = () => get('/devices')
 export const getZiggyDevices = () => get('/devices')
+// Grouped device view — one entry per physical device (HA device_id),
+// with primary entity + sibling entities + metric pills. Flat /api/devices
+// is unchanged and remains the source for legacy/external consumers.
+export const getDeviceGroups = () => get('/devices/grouped')
 export const saveDevice = (data) => post('/devices', data)
 export const removeDevice = (room, dtype) => del(`/devices/${room}/${dtype}`)
 
@@ -80,6 +256,18 @@ export const assignEntityToArea = (entityId, areaId) =>
 // Entity ↔ Ziggy-native room assignment (device registry, no HA sync)
 export const assignEntityToZiggyRoom = (entityId, roomKey) =>
   patch(`/registry/entity/${encodeURIComponent(entityId)}/room`, { room: roomKey ?? null })
+
+// Drop a ghost device from the Ziggy registry (the entity was deleted in HA
+// but Ziggy still had a row for it). Idempotent — missing entry returns ok.
+export const removeRegistryEntity = (entityId) =>
+  del(`/registry/entity/${encodeURIComponent(entityId)}`)
+
+// Delete an entity from Home Assistant (and clean up Ziggy's registry too).
+// When `deleteDevice` is true and the entity's parent device has no other
+// entities left, the parent device's config entry is also removed — i.e.
+// the HA equivalent of removing the device from the hub.
+export const deleteHaEntity = (entityId, deleteDevice = false) =>
+  request('DELETE', `/ha/entity/${encodeURIComponent(entityId)}${deleteDevice ? '?delete_device=true' : ''}`)
 
 // Device ↔ Area assignment (device-level, shows in HA device page)
 export const assignDeviceToArea = (deviceId, areaId) =>
@@ -108,6 +296,12 @@ export const createAutomation = (data) => post('/automations', data)
 export const toggleAutomation = (id, enabled) => patch(`/automations/${id}/toggle`, { enabled })
 export const triggerAutomation = (id) => post(`/automations/${id}/trigger`)
 export const deleteAutomation = (id) => del(`/automations/${id}`)
+export const getAutomationHistory = (id, limit = 20) => get(`/automations/${id}/history?limit=${limit}`)
+export const snoozeAutomation = (id, minutes) => post(`/automations/${id}/snooze`, { minutes })
+
+// Manual overrides
+export const getOverrides = () => get('/overrides')
+export const clearOverride = (entityId) => del(`/overrides/${encodeURIComponent(entityId)}`)
 
 // Routines — backed by HA Scripts
 export const getRoutines = () => get('/routines')
@@ -126,6 +320,22 @@ export const renameHaDevice = (deviceId, name) => patch(`/ha/devices/${encodeURI
 export const zwaveInclude = () => post('/ha/zwave/include')
 export const zwaveStop = () => post('/ha/zwave/stop')
 export const matterCommission = (code) => post('/ha/matter/commission', { code })
+
+// Switcher native pairing — drives HA's switcher_kis config flow through the
+// Ziggy UI step-by-step; HA does the LAN protocol work invisibly.
+export const switcherPairingStart = () => post('/pairing/switcher/start')
+export const switcherPairingStep = (flowId, userInput) =>
+  post(`/pairing/switcher/${encodeURIComponent(flowId)}/step`, { user_input: userInput || {} })
+export const switcherPairingCancel = (flowId) =>
+  post(`/pairing/switcher/${encodeURIComponent(flowId)}/cancel`)
+export const switcherPairingRecover = () => post('/pairing/switcher/recover')
+
+// Switcher account — one-time credential collection. Email + token come
+// from the Switcher mobile app (Settings → My account → request token).
+// Ziggy validates + caches them so every device pairing thereafter is one-tap.
+export const switcherAccountStatus    = ()                => get('/pairing/switcher/account')
+export const switcherAccountConnect   = (email, token)    => post('/pairing/switcher/account', { email, token })
+export const switcherAccountDisconnect= ()                => del('/pairing/switcher/account')
 export const getConfigFlows = (protocol) =>
   get(protocol ? `/ha/config_flows?protocol=${protocol}` : '/ha/config_flows')
 
@@ -156,8 +366,30 @@ export const createInvite     = (data)       => post('/auth/invites', data)
 export const listInvites      = ()           => get('/auth/invites')
 export const revokeInvite     = (token)      => del(`/auth/invites/${token}`)
 // Public — called from the AcceptInvite page (no Bearer token sent)
-export const getInvite        = (token)      => fetch(`/api/auth/invite/${token}`).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Not found'))))
-export const acceptInvite     = (token, data) => fetch(`/api/auth/invite/${token}/accept`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Failed'))))
+// Public invite endpoints — no Bearer token, so they can't go through the
+// authenticated `request()` helper. Use the same normalization helpers so
+// AcceptInvite still gets a ZiggyApiError it can describe with describeError.
+async function _publicGet(url) {
+  let res
+  try { res = await fetchWithTimeout(url, { method: 'GET' }) }
+  catch (err) { throw _normalizeNetworkError(err) }
+  if (!res.ok) throw await _toZiggyError(res)
+  return res.json()
+}
+async function _publicPost(url, body) {
+  let res
+  try {
+    res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (err) { throw _normalizeNetworkError(err) }
+  if (!res.ok) throw await _toZiggyError(res)
+  return res.json()
+}
+export const getInvite        = (token)      => _publicGet(`/api/auth/invite/${token}`)
+export const acceptInvite     = (token, data) => _publicPost(`/api/auth/invite/${token}/accept`, data)
 
 // Relay API — these call the relay service (configured via RELAY_URL setting)
 // relay_url is stored in settings and prepended by the relay helper below
@@ -169,17 +401,21 @@ function relayToken() {
 }
 async function relayRequest(method, path, body) {
   const base = relayUrl()
-  if (!base) throw new Error('Relay not configured')
+  if (!base) {
+    throw new ZiggyApiError({ code: ErrorCode.NOT_CONFIGURED })
+  }
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${relayToken()}` },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
-  const res = await fetch(`${base}${path}`, opts)
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
+  let res
+  try {
+    res = await fetchWithTimeout(`${base}${path}`, opts)
+  } catch (err) {
+    throw _normalizeNetworkError(err)
   }
+  if (!res.ok) throw await _toZiggyError(res)
   return res.json()
 }
 export const relayLogin       = (data)       => fetch(`${relayUrl()}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json())
@@ -192,8 +428,8 @@ export const relayProvStatus  = (id)         => relayRequest('GET', `/api/provis
 export const relayListInvites = ()           => relayRequest('GET', '/api/invites/')
 export const relayCreateInvite= (data)       => relayRequest('POST', '/api/invites/', data)
 export const relayRevokeInvite= (token)      => relayRequest('DELETE', `/api/invites/${token}`)
-export const relayGetInvite   = (token)      => fetch(`${relayUrl()}/api/invites/${token}/info`).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Not found'))))
-export const relayRegister    = (token, data) => fetch(`${relayUrl()}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, invite_token: token }) }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.detail || 'Failed'))))
+export const relayGetInvite   = (token)      => _publicGet(`${relayUrl()}/api/invites/${token}/info`)
+export const relayRegister    = (token, data) => _publicPost(`${relayUrl()}/api/auth/register`, { ...data, invite_token: token })
 
 export function setRelayUrl(url) { localStorage.setItem('ziggy_relay_url', url) }
 export function setRelayToken(token) { localStorage.setItem('ziggy_relay_token', token) }
@@ -216,6 +452,8 @@ export const getIntegrationsSettings = () => get('/settings/integrations')
 export const patchIntegrationsSettings = (data) => patch('/settings/integrations', data)
 export const getMqttSettings = () => get('/settings/mqtt')
 export const patchMqttSettings = (data) => patch('/settings/mqtt', data)
+export const getEntityHistory = (entityId, hours = 24) =>
+  get(`/devices/${encodeURIComponent(entityId)}/history?hours=${hours}`)
 export const getFeaturesSettings = () => get('/settings/features')
 export const patchFeaturesSettings = (data) => patch('/settings/features', data)
 export const getDebugSettings = () => get('/settings/debug')
@@ -268,6 +506,12 @@ export const getPresenceDebug         = ()             => get('/presence/debug')
 export const setPresenceLanHost       = (id, host)     => patch(`/presence/persons/${id}/lan-host`, { lan_host: host })
 export const pingMePresence           = (lat, lon, accuracy, ts) => post('/presence/me/ping', { lat, lon, accuracy, ts })
 
+// Extra geofence zones (beyond the primary "Home" zone, which lives in /presence/zone)
+export const listPresenceZones        = ()          => get('/presence/zones')
+export const createPresenceZone       = (data)      => post('/presence/zones', data)
+export const updatePresenceZone       = (id, data)  => patch(`/presence/zones/${id}`, data)
+export const deletePresenceZone       = (id)        => del(`/presence/zones/${id}`)
+
 // Sensor alert conditions
 export const getSensorAlertsSettings  = ()     => get('/settings/sensor-alerts')
 export const patchSensorAlertsSettings= (data) => patch('/settings/sensor-alerts', data)
@@ -289,6 +533,18 @@ export const controlDevice = (entityId, action, source = 'web') =>
 
 // Capabilities catalog
 export const getCapabilities = () => get('/capabilities')
+
+// Dynamic per-device command catalog — every HA service the entity supports,
+// merged with linked IR commands. Used by the "More Commands" panel and the
+// automation/routine builder.
+export const getDeviceCommands = (entityId) =>
+  get(`/devices/${encodeURIComponent(entityId)}/commands`)
+export const executeDeviceCommand = (entityId, commandId, params, preferSource) =>
+  post(`/devices/${encodeURIComponent(entityId)}/commands`, {
+    command_id: commandId,
+    params: params || {},
+    prefer_source: preferSource || null,
+  })
 
 // Virtual devices
 export const getVirtualDevices = (room) =>
@@ -320,7 +576,30 @@ export const irSend = (deviceId, command) =>
   post('/ir/send', { device_id: deviceId, command })
 export const irSendChannel = (deviceId, channel) =>
   post(`/ir/devices/${deviceId}/channel`, { channel })
+export const irSetAcTemperature = (deviceId, temperature, mode) =>
+  post(`/ir/devices/${deviceId}/ac/temperature`, mode ? { temperature, mode } : { temperature })
 export const getIrListenerStatus = () => get('/ir/listener/status')
+
+// Command catalog — per-type groups + commands + core/optional flags.
+// Used by the learn UI to render the slot list and by remotes to label
+// custom-command chips correctly.
+export const getIrCatalog = (deviceType) =>
+  get(deviceType ? `/ir/catalog?device_type=${encodeURIComponent(deviceType)}` : '/ir/catalog').then((r) => r.catalog ?? r)
+
+// User-defined commands (free-form). `id` is a slug; `label` is the
+// display name (defaults to a Title Case of the id if omitted).
+export const irAddCustomCommand = (deviceId, id, label) =>
+  post(`/ir/devices/${deviceId}/custom-command`, label ? { id, label } : { id })
+export const irRemoveCustomCommand = (deviceId, commandId) =>
+  del(`/ir/devices/${deviceId}/custom-command/${encodeURIComponent(commandId)}`)
+
+// Sequences (macros). `steps` is a list of { command, delay_after_ms }.
+export const irSaveSequence = (deviceId, name, steps) =>
+  post(`/ir/devices/${deviceId}/sequences`, { name, steps })
+export const irDeleteSequence = (deviceId, name) =>
+  del(`/ir/devices/${deviceId}/sequences/${encodeURIComponent(name)}`)
+export const irRunSequence = (deviceId, name) =>
+  post(`/ir/devices/${deviceId}/sequences/${encodeURIComponent(name)}/run`)
 
 // IR Unassigned Signals — physical-remote presses that didn't match any device.
 // The Devices page lists these and lets the user bind each to (device, command).

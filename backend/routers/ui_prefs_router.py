@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from backend.routers.auth_deps import get_current_user
 from core.logger_module import log_error
+from core.debug_bus import bus as _bus, VERBOSE as _VERBOSE
 
 router = APIRouter()
 
@@ -69,7 +70,15 @@ def _empty_prefs() -> dict:
         "quickControlIds":   [],
         "roomPhotos":        {},  # { roomId: presetKey } — overrides which preset photo a room uses
         "roomCustomPhotos":  {},  # { roomId: dataUrl }   — user-uploaded image (base64 JPEG)
+        "roomsOrder":        [],  # [roomId, …] user-defined room display order; rooms not listed fall to the end in their natural order
+        "theme":             None,  # 'light' | 'dark' | None (use system default)
     }
+
+
+def _sanitize_theme(v):
+    if v in ("light", "dark"):
+        return v
+    return None
 
 
 def _sanitize_shortcuts(arr) -> list:
@@ -109,6 +118,28 @@ _MAX_DATAURL_BYTES = 800_000
 _MAX_CUSTOM_PHOTOS = 20
 
 
+_MAX_ROOMS_ORDER = 64
+
+
+def _sanitize_rooms_order(arr) -> list:
+    """User-defined room order — list of room id strings, deduped, capped."""
+    if not isinstance(arr, list):
+        return []
+    seen = set()
+    out = []
+    for x in arr:
+        if not x:
+            continue
+        s = str(x)
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= _MAX_ROOMS_ORDER:
+            break
+    return out
+
+
 def _sanitize_room_custom_photos(obj) -> dict:
     """Custom photo data URLs: { roomId: dataUrl }. Drop anything that isn't a
     plausible data URL or that exceeds the per-image cap."""
@@ -133,6 +164,8 @@ class PrefsUpdate(BaseModel):
     quickControlIds:   Optional[list] = None
     roomPhotos:        Optional[dict] = None
     roomCustomPhotos:  Optional[dict] = None
+    roomsOrder:        Optional[list] = None
+    theme:             Optional[str]  = None
 
 
 @router.get("/api/ui/prefs")
@@ -158,7 +191,18 @@ async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
         current["roomPhotos"] = _sanitize_room_photos(body.roomPhotos)
     if body.roomCustomPhotos is not None:
         current["roomCustomPhotos"] = _sanitize_room_custom_photos(body.roomCustomPhotos)
+    if body.roomsOrder is not None:
+        current["roomsOrder"] = _sanitize_rooms_order(body.roomsOrder)
+    if body.theme is not None:
+        current["theme"] = _sanitize_theme(body.theme)
 
     all_prefs[key] = current
     await asyncio.to_thread(_save_all, all_prefs)
+    # VERBOSE not BASIC — every dashboard pin drag fires this; we only want
+    # to see it when the user has explicitly opted into verbose.
+    _bus.emit("settings", _VERBOSE, "ui_prefs_updated",
+              user=key,
+              fields=[f for f in ("pinnedShortcuts","quickControlIds","roomPhotos",
+                                   "roomCustomPhotos","roomsOrder","theme")
+                       if getattr(body, f) is not None])
     return current

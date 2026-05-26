@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Maximize2, RefreshCw } from 'lucide-react'
 import { useCameraStore, cameraSnapshotUrl, cameraStreamUrl } from '../stores/cameraStore'
+import { useT, t as i18nT } from '../lib/i18n'
 
 const SNAPSHOT_INTERVAL_MS = 10_000
 
@@ -94,7 +95,7 @@ function CameraCard({ camera, onExpand, motionEvents }) {
               <circle cx="12" cy="13" r="4"/>
               <line x1="1" y1="1" x2="23" y2="23"/>
             </svg>
-            <span>No feed</span>
+            <span>{i18nT('cameras.noFeed')}</span>
           </div>
         )}
 
@@ -110,7 +111,7 @@ function CameraCard({ camera, onExpand, motionEvents }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#fff',
             }}
-            title="Go live"
+            title={i18nT('cameras.goLive')}
           >
             <Maximize2 size={13} />
           </button>
@@ -125,7 +126,7 @@ function CameraCard({ camera, onExpand, motionEvents }) {
             fontSize: 10, fontWeight: 600,
             fontFamily: '"IBM Plex Mono", monospace',
           }}>
-            motion · {timeAgo(lastMotion.timestamp)}
+            {i18nT('cameras.motionAt', { time: timeAgo(lastMotion.timestamp) })}
           </div>
         )}
       </div>
@@ -143,7 +144,7 @@ function CameraCard({ camera, onExpand, motionEvents }) {
         <button
           onClick={() => { setTick(t => t + 1); setLoaded(false); setError(false) }}
           style={{ padding: 5, borderRadius: 7, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', display: 'flex' }}
-          title="Refresh"
+          title={i18nT('common.refresh')}
         >
           <RefreshCw size={12} />
         </button>
@@ -280,8 +281,8 @@ export default function Cameras() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, paddingBottom: 14, borderBottom: '0.5px solid var(--line)' }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 3 }}>Overview</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Security</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 3 }}>{i18nT('cameras.overview')}</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>{i18nT('cameras.security')}</h1>
         </div>
         {cameras.length > 0 && (
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
@@ -290,8 +291,8 @@ export default function Cameras() {
         )}
       </div>
 
-      {/* Loading */}
-      {loading && (
+      {/* Loading — skeleton only on cold start; cached cameras stay visible */}
+      {loading && cameras.length === 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginBottom: 28 }}>
           {[1, 2].map(i => (
             <div key={i} style={{ borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', aspectRatio: '16/9', opacity: 0.5 }} />
@@ -305,15 +306,15 @@ export default function Cameras() {
           padding: '48px 24px', borderRadius: 14, background: 'var(--surface)',
           border: '0.5px solid var(--line)', textAlign: 'center', marginBottom: 28,
         }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>No cameras found</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{i18nT('cameras.notFound')}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
-            Add <code style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 11 }}>camera.*</code> entities in Home Assistant, then add them to a Ziggy room.
+            {i18nT('cameras.notFoundHelp1')} <code style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 11 }}>camera.*</code> {i18nT('cameras.notFoundHelp2')}
           </p>
         </div>
       )}
 
       {/* Camera grid */}
-      {!loading && cameras.length > 0 && (
+      {cameras.length > 0 && (
         <div
           style={{
             display: 'grid',
@@ -336,9 +337,9 @@ export default function Cameras() {
       {/* Motion log */}
       <div style={{ padding: '14px 16px', borderRadius: 13, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <p className="z-eyebrow">Motion log · last 24h</p>
+          <p className="z-eyebrow">{i18nT('cameras.motionLog24h')}</p>
           <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-            {motionEvents.length} event{motionEvents.length !== 1 ? 's' : ''}
+            {i18nT(motionEvents.length === 1 ? 'cameras.event' : 'cameras.events', { n: motionEvents.length })}
           </span>
         </div>
         <MotionLog events={motionEvents} />

@@ -9,6 +9,7 @@
 
 import { deviceFacts, KIND } from '../../../lib/devices'
 import { Battery, BatteryLow, Wifi, Clock } from 'lucide-react'
+import { t as i18nT } from '../../../lib/i18n'
 
 function statusTone(facts) {
   switch (facts.kind) {
@@ -60,16 +61,16 @@ export function SensorRemote({ entity }) {
         <span className="z-eyebrow" style={{ display: 'block', marginBottom: 10 }}>Diagnostics</span>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {facts.battery != null && (
-            <DiagRow Icon={facts.battery < 20 ? BatteryLow : Battery} label="Battery" value={`${facts.battery}%`} tone={facts.battery < 20 ? 'err' : 'idle'} />
+            <DiagRow Icon={facts.battery < 20 ? BatteryLow : Battery} label={i18nT('sensorRemote.battery')} value={`${facts.battery}%`} tone={facts.battery < 20 ? 'err' : 'idle'} />
           )}
           {facts.rssi != null && (
-            <DiagRow Icon={Wifi} label="Signal" value={`${facts.rssi} dBm`} />
+            <DiagRow Icon={Wifi} label={i18nT('sensorRemote.signal')} value={`${facts.rssi} dBm`} />
           )}
           {facts.lastUpdated && (
-            <DiagRow Icon={Clock} label="Last update" value={formatTime(facts.lastUpdated)} />
+            <DiagRow Icon={Clock} label={i18nT('sensorRemote.lastUpdate')} value={formatTime(facts.lastUpdated)} />
           )}
           {!facts.isAvailable && (
-            <DiagRow label="Availability" value="Unavailable" tone="warn" />
+            <DiagRow label={i18nT('sensorRemote.availability')} value={i18nT('common.unavailable')} tone="warn" />
           )}
         </div>
       </div>

@@ -17,6 +17,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react'
 import { Stage, Layer, Line, Text, Group, Circle, Image as KonvaImage } from 'react-konva'
 import { getMapCanvas, putMapCanvasPosition, getMapRender, triggerMapRender } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 // ─── Projection (mirrors map_renderer.py + HomeMapCanvas constants) ───────
 const ISO_X   = 30
@@ -145,7 +146,7 @@ function autoFitPositions(stageRef, positions, sw, sh) {
 }
 
 // ─── Isometric room geometry (fallback only — no device pins) ─────────────
-function IsoRoomFallback({ room, pos, selected, locked, viewOnly, groupRef, onSelect, onDragEnd }) {
+function IsoRoomFallback({ room, pos, selected, locked, viewOnly, groupRef, onSelect, onDragEnd, t }) {
   const [topC,southC,eastC]=roomPal(room.name)
   const dark=document.documentElement.classList.contains('dark')
   const {x:mx,y:my,w:mw,h:mh}=pos
@@ -181,7 +182,7 @@ function IsoRoomFallback({ room, pos, selected, locked, viewOnly, groupRef, onSe
         fontSize={Math.max(9,Math.min(13,(mw+mh)*2.2))} fontStyle="bold"
         fill={dark?'rgba(255,255,255,0.88)':'rgba(0,0,0,0.68)'} align="center" wrap="none" ellipsis/>
       <Text x={cx-40} y={cy+5} width={80}
-        text={room.summary||(room.active_count>0?`${room.active_count} on`:'')}
+        text={room.summary||(room.active_count>0?(t?t('homeMap.onSuffix',{n:room.active_count}):`${room.active_count} on`):'')}
         fontSize={8} fill={dark?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.4)'} align="center" wrap="none" ellipsis/>
       {room.anomalies?.[0]&&(
         <Circle x={tTR.x-8} y={tTR.y+6} radius={5}
@@ -220,6 +221,7 @@ function RoomDevicePins({ room, pos }) {
 
 // ─── Measurement panel ─────────────────────────────────────────────────────
 function MeasurementPanel({room,pos,onResize,onClose}) {
+  const t = useT()
   const [w,setW]=useState(String(pos.w)), [h,setH]=useState(String(pos.h))
   useEffect(()=>{setW(String(pos.w))},[pos.w])
   useEffect(()=>{setH(String(pos.h))},[pos.h])
@@ -229,15 +231,15 @@ function MeasurementPanel({room,pos,onResize,onClose}) {
   return (
     <div className="p-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-semibold text-violet-700 dark:text-violet-400">{room.name}</p>
-        <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-600">✕</button>
+        <p dir="auto" className="text-xs font-semibold text-violet-700 dark:text-violet-400">{room.name}</p>
+        <button onClick={onClose} aria-label={t('common.close')} className="text-xs text-zinc-400 hover:text-zinc-600">✕</button>
       </div>
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-          W <input type="number" min={MIN_M} step={0.5} value={w} onChange={e=>chW(e.target.value)} className={inp}/> m
+          {t('homeMap.widthLabel')} <input type="number" min={MIN_M} step={0.5} value={w} onChange={e=>chW(e.target.value)} className={inp}/> {t('homeMap.metersUnit')}
         </label>
         <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-          H <input type="number" min={MIN_M} step={0.5} value={h} onChange={e=>chH(e.target.value)} className={inp}/> m
+          {t('homeMap.heightLabel')} <input type="number" min={MIN_M} step={0.5} value={h} onChange={e=>chH(e.target.value)} className={inp}/> {t('homeMap.metersUnit')}
         </label>
       </div>
     </div>
@@ -246,6 +248,7 @@ function MeasurementPanel({room,pos,onResize,onClose}) {
 
 // ─── Main canvas ───────────────────────────────────────────────────────────
 export function HomeMapCanvas({ rooms, viewOnly=false }) {
+  const t = useT()
   const containerRef=useRef(null), stageRef=useRef(null)
   const groupRefs=useRef({}), lastPinch=useRef(0)
 
@@ -426,7 +429,7 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
     return (pa.x+pa.y)-(pb.x+pb.y)
   })
 
-  if(loading) return <div className="flex items-center justify-center h-48 text-zinc-400 text-sm">Loading floor plan…</div>
+  if(loading) return <div className="flex items-center justify-center h-48 text-zinc-400 text-sm">{t('homeMap.loadingFloorPlan')}</div>
 
   return (
     <div className="flex flex-col gap-2">
@@ -439,12 +442,12 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
               locked?'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                     :'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}
           >
-            {locked?'🔒 Locked':'✏️ Editing'}
+            {locked?t('homeMap.locked'):t('homeMap.editing')}
           </button>
         )}
         {!viewOnly && (
           <p className="text-xs text-zinc-400 flex-1">
-            {locked?'Tap editing to rearrange':'Drag rooms · Tap to set size'}
+            {locked?t('homeMap.tapEditingHint'):t('homeMap.dragRoomsHint')}
           </p>
         )}
         {viewOnly && <div className="flex-1"/>}
@@ -454,7 +457,7 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
         {!viewOnly && (
           <>
             <span className="text-[10px] text-zinc-400">{Math.round(zoom*100)}%</span>
-            <button onClick={resetLayout} className="text-xs text-violet-500 underline">Reset</button>
+            <button onClick={resetLayout} className="text-xs text-violet-500 underline">{t('homeMap.reset')}</button>
           </>
         )}
       </div>
@@ -491,6 +494,7 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
                     groupRef={el=>{if(el)groupRefs.current[room.id]=el}}
                     onSelect={()=>setSelectedId(selectedId===room.id?null:room.id)}
                     onDragEnd={e=>handleDragEnd(room.id,e)}
+                    t={t}
                   />
                 )
               })

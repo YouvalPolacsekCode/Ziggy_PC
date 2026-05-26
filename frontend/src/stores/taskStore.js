@@ -12,7 +12,9 @@ export const useTaskStore = create((set, get) => ({
       const res = await getTasks()
       set({ tasks: res.tasks || [], loading: false })
     } catch (e) {
-      set({ loading: false, error: e.message })
+      // Store the whole error so consumers (DataState, describeError) can
+      // render a localized string + retryable signal instead of raw text.
+      set({ loading: false, error: e })
     }
   },
 

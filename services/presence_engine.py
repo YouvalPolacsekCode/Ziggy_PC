@@ -119,7 +119,9 @@ _DEFAULTS = {
     "dwell_seconds":       60,
     "cooldown_seconds":    600,
     "stale_ping_seconds":  90,
-    "stale_home_hours":    8,
+    "stale_home_hours":    8,        # max trust window when LAN actively confirms home
+    "stale_home_no_lan_minutes": 30, # GPS-only fallback — iOS Safari suspends watchPosition the moment the tab backgrounds, so a person who left will never send "I'm away" GPS. Decay home → unknown after this if there's no LAN confirmation.
+    "lan_fresh_seconds":   180,      # LAN probe is "active" if a successful reachability check happened within this window
     "stale_away_minutes":  30,
     "history_size":        20,
 }
@@ -159,6 +161,11 @@ _NEW_FIELDS = (
     "lan_last_seen",    # ISO UTC of last successful LAN probe (reachable on LAN)
 )
 
+# zone_states is a dict, not None — keep it separate so the empty default is {}.
+_NEW_DICT_FIELDS = (
+    "zone_states",      # {zone_id: {state, candidate_state, candidate_since, last_transition_at, last_transition_to}}
+)
+
 
 def _migrate_in_place(persons: list[dict]) -> bool:
     """Fill in missing fields on legacy records. Returns True if anything changed."""
@@ -167,6 +174,10 @@ def _migrate_in_place(persons: list[dict]) -> bool:
         for k in _NEW_FIELDS:
             if k not in p:
                 p[k] = None
+                changed = True
+        for k in _NEW_DICT_FIELDS:
+            if k not in p:
+                p[k] = {}
                 changed = True
         if "history" not in p:
             p["history"] = []
@@ -177,11 +188,28 @@ def _migrate_in_place(persons: list[dict]) -> bool:
 # ── decision record ───────────────────────────────────────────────────────────
 
 @dataclass
+class ZoneTransition:
+    """A per-zone entry/exit event. Independent of the primary home/not_home
+    state machine — extra zones each have their own dwell + cooldown.
+    """
+    zone_id:     str
+    zone_name:   str
+    direction:   str            # "entered" | "left"
+    ts:          datetime
+    person_id:   str
+    person_name: str
+    distance_m:  Optional[float] = None
+    reason:      str = ""
+
+
+@dataclass
 class Decision:
     """The outcome of a single ingest or sweep call.
 
     The caller (router) is responsible for firing side effects when
-    `fired_transition` is True.
+    `fired_transition` is True. `zone_transitions` carries any extra-zone
+    enter/leave events fired by the same position update — the caller fires
+    `zone_entered` / `zone_left` automations for these.
     """
     person_id:      str
     person_name:    str
@@ -195,6 +223,7 @@ class Decision:
     result:         str = "no_change"
     reason:         str = ""
     fired_transition: bool = False
+    zone_transitions: list = field(default_factory=list)  # list[ZoneTransition]
 
     def to_log_dict(self) -> dict:
         return {
@@ -351,7 +380,19 @@ def _parse_iso(s: Optional[str]) -> Optional[datetime]:
 def effective_state(person: dict, now: Optional[datetime] = None) -> str:
     """Return the displayed state after asymmetric staleness decay.
 
-    Home decays after stale_home_hours; not_home decays after stale_away_minutes.
+    Home staleness has TWO windows:
+      * If LAN probe is actively confirming presence (lan_last_seen within
+        `lan_fresh_seconds`) we trust "home" for up to `stale_home_hours`
+        (default 8 h) — phone backgrounded overnight at home is fine.
+      * Otherwise we have GPS only. iOS Safari suspends watchPosition the
+        moment the tab is backgrounded, so a person who left won't send any
+        "I'm away" ping. Decay home → unknown after
+        `stale_home_no_lan_minutes` (default 30 min) so the Dashboard chip
+        stops lying.
+
+    Not-home decays after `stale_away_minutes` regardless (came back to home
+    Wi-Fi without opening the app is the common case).
+
     `now` is dependency-injected for tests; external callers omit it.
     """
     state = person.get("state", "unknown")
@@ -360,10 +401,21 @@ def effective_state(person: dict, now: Optional[datetime] = None) -> str:
     ts = _parse_iso(person.get("last_seen"))
     if ts is None:
         return "unknown"
-    age = (now or _now()) - ts
+    n   = now or _now()
+    age = n - ts
+
     if state == "home":
-        if age > timedelta(hours=_cfg("stale_home_hours")):
-            return "unknown"
+        lan_seen   = _parse_iso(person.get("lan_last_seen"))
+        lan_recent = (
+            lan_seen is not None
+            and (n - lan_seen) < timedelta(seconds=int(_cfg("lan_fresh_seconds")))
+        )
+        if lan_recent:
+            if age > timedelta(hours=_cfg("stale_home_hours")):
+                return "unknown"
+        else:
+            if age > timedelta(minutes=_cfg("stale_home_no_lan_minutes")):
+                return "unknown"
     else:
         if age > timedelta(minutes=_cfg("stale_away_minutes")):
             return "unknown"
@@ -729,9 +781,133 @@ def _ingest_position_locked(
         distance_m=distance_m, accuracy_m=accuracy,
     )
 
+    # Extra-zone state machine — runs only when we have a real GPS fix,
+    # not when wifi_home_hint forced the position to (0, 0).
+    if not wifi_home_hint:
+        decision.zone_transitions = _evaluate_zones_for_position(
+            person, lat, lon, ts,
+        )
+
     _append_history(person, decision)
     _save(persons)
     return decision
+
+
+# ── extra-zone state machine ─────────────────────────────────────────────────
+
+def _evaluate_zones_for_position(
+    person: dict,
+    lat: float,
+    lon: float,
+    ts: datetime,
+) -> list[ZoneTransition]:
+    """Run the per-zone in/out state machine for every extra zone.
+
+    Mutates `person["zone_states"]` and returns the list of confirmed
+    transitions (dwell satisfied AND cooldown not blocked). For each zone the
+    state machine is independent: enter when distance ≤ radius, leave only
+    when distance > radius * zone_hysteresis_factor (default 1.5).
+    """
+    try:
+        from services import zones_registry
+        zones = zones_registry.list_zones()
+    except Exception as exc:
+        log_error(f"[Presence] zones list failed: {exc}")
+        return []
+    if not zones:
+        return []
+
+    states = person.get("zone_states")
+    if not isinstance(states, dict):
+        states = {}
+        person["zone_states"] = states
+
+    dwell_s    = int(_cfg("dwell_seconds"))
+    cooldown_s = int(_cfg("cooldown_seconds"))
+    factor     = float(
+        (settings.get("presence", {}) or {}).get("zone_hysteresis_factor", 1.5)
+    )
+
+    fired: list[ZoneTransition] = []
+
+    for zone in zones:
+        zid   = zone.get("id")
+        zname = zone.get("name", zid)
+        zlat  = zone.get("lat")
+        zlon  = zone.get("lon")
+        zr    = float(zone.get("radius_m", 200))
+        if zid is None or zlat is None or zlon is None:
+            continue
+
+        dist = haversine_m(lat, lon, zlat, zlon)
+        zs   = states.get(zid) or {}
+        confirmed = zs.get("state", "unknown")
+
+        if confirmed == "in":
+            raw = "in" if dist <= zr * factor else "out"
+        else:
+            raw = "in" if dist <= zr else "out"
+
+        # Same-as-confirmed → clear any candidate, no transition.
+        if raw == confirmed:
+            if zs.get("candidate_state") is not None:
+                zs["candidate_state"] = None
+                zs["candidate_since"] = None
+            zs["last_distance_m"] = round(dist, 1)
+            states[zid] = zs
+            continue
+
+        # Manage dwell candidate.
+        cand_state = zs.get("candidate_state")
+        cand_since = _parse_iso(zs.get("candidate_since"))
+        if cand_state != raw or cand_since is None:
+            zs["candidate_state"] = raw
+            zs["candidate_since"] = ts.isoformat()
+            zs["last_distance_m"] = round(dist, 1)
+            states[zid] = zs
+            continue
+
+        dwelled = (ts - cand_since).total_seconds()
+        if dwelled < dwell_s:
+            zs["last_distance_m"] = round(dist, 1)
+            states[zid] = zs
+            continue
+
+        # Cooldown / idempotency check.
+        last_to = zs.get("last_transition_to")
+        last_at = _parse_iso(zs.get("last_transition_at"))
+        suppress = False
+        if last_to == raw and last_at is not None:
+            suppress = True
+        elif last_at is not None and (ts - last_at).total_seconds() < cooldown_s:
+            suppress = True
+        if suppress:
+            zs["candidate_state"] = None
+            zs["candidate_since"] = None
+            zs["last_distance_m"] = round(dist, 1)
+            states[zid] = zs
+            continue
+
+        # Commit.
+        zs["state"]              = raw
+        zs["candidate_state"]    = None
+        zs["candidate_since"]    = None
+        zs["last_transition_at"] = ts.isoformat()
+        zs["last_transition_to"] = raw
+        zs["last_distance_m"]    = round(dist, 1)
+        states[zid] = zs
+        fired.append(ZoneTransition(
+            zone_id     = zid,
+            zone_name   = zname,
+            direction   = "entered" if raw == "in" else "left",
+            ts          = ts,
+            person_id   = person["id"],
+            person_name = person["name"],
+            distance_m  = round(dist, 1),
+            reason      = f"dwell_{int(dwelled)}s_radius_{int(zr)}m",
+        ))
+
+    return fired
 
 
 def list_lan_hosts() -> list[dict]:

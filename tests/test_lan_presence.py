@@ -36,7 +36,9 @@ def engine_and_lan(tmp_path, monkeypatch):
     cfg = {
         "home_radius_m": 100.0, "away_radius_m": 200.0, "max_accuracy_m": 150.0,
         "dwell_seconds": 60, "cooldown_seconds": 600, "stale_ping_seconds": 90,
-        "stale_home_hours": 8, "stale_away_minutes": 30, "history_size": 20,
+        "stale_home_hours": 8, "stale_home_no_lan_minutes": 30,
+        "lan_fresh_seconds": 180,
+        "stale_away_minutes": 30, "history_size": 20,
         # LAN-specific
         "lan_probe_interval_seconds": 60,
         "lan_offline_grace_minutes":  10,

@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { domainIcon as _registryDomainIcon, DOMAIN_REGISTRY } from './domainRegistry'
+import { t as i18nT } from './i18n'
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
@@ -38,8 +39,8 @@ export { _registryDomainIcon as domainIcon }
 export function formatEntityState(entity) {
   const { domain, state, device_class, unit_of_measurement } = entity
 
-  if (state === 'unavailable') return { primary: 'Unavailable', secondary: null }
-  if (state === 'unknown') return { primary: 'Unknown', secondary: null }
+  if (state === 'unavailable') return { primary: i18nT('common.unavailable'), secondary: null }
+  if (state === 'unknown') return { primary: i18nT('common.unknown'), secondary: null }
 
   if (domain === 'sensor') {
     if (device_class === 'timestamp') {
@@ -68,27 +69,14 @@ export function formatEntityState(entity) {
   }
 
   if (domain === 'binary_sensor') {
-    const CLASS_LABELS = {
-      motion: ['Motion', 'Clear'],
-      door: ['Open', 'Closed'],
-      window: ['Open', 'Closed'],
-      opening: ['Open', 'Closed'],
-      presence: ['Present', 'Away'],
-      occupancy: ['Occupied', 'Clear'],
-      lock: ['Unlocked', 'Locked'],
-      smoke: ['Smoke', 'Clear'],
-      moisture: ['Wet', 'Dry'],
-      gas: ['Gas', 'Clear'],
-      plug: ['Plugged in', 'Unplugged'],
-      battery: ['Low', 'Normal'],
-      connectivity: ['Connected', 'Disconnected'],
-      vibration: ['Vibrating', 'Still'],
+    // Labels live in i18n under `binarySensor.<class>.on` / `.off`. Looked up
+    // at call time so they track the active language.
+    const CLASSES = ['motion', 'door', 'window', 'opening', 'presence', 'occupancy', 'lock', 'smoke', 'moisture', 'gas', 'plug', 'battery', 'connectivity', 'vibration']
+    if (CLASSES.includes(device_class)) {
+      const key = `binarySensor.${device_class}.${state === 'on' ? 'on' : 'off'}`
+      return { primary: i18nT(key), secondary: null }
     }
-    const labels = CLASS_LABELS[device_class]
-    if (labels) {
-      return { primary: state === 'on' ? labels[0] : labels[1], secondary: null }
-    }
-    return { primary: state === 'on' ? 'On' : 'Off', secondary: null }
+    return { primary: state === 'on' ? i18nT('common.on') : i18nT('common.off'), secondary: null }
   }
 
   if (domain === 'climate') {
@@ -98,7 +86,7 @@ export function formatEntityState(entity) {
   }
 
   if (domain === 'media_player') {
-    if (state === 'playing') return { primary: 'Playing', secondary: entity.media_title || null }
+    if (state === 'playing') return { primary: i18nT('media.playing'), secondary: entity.media_title || null }
     return { primary: state.charAt(0).toUpperCase() + state.slice(1), secondary: null }
   }
 
@@ -108,7 +96,7 @@ export function formatEntityState(entity) {
   }
 
   if (domain === 'lock') {
-    return { primary: state === 'locked' ? 'Locked' : 'Unlocked', secondary: null }
+    return { primary: state === 'locked' ? i18nT('deviceControls.locked') : i18nT('deviceControls.unlocked'), secondary: null }
   }
 
   if (domain === 'vacuum') {
@@ -116,13 +104,13 @@ export function formatEntityState(entity) {
   }
 
   if (domain === 'fan') {
-    if (state !== 'on') return { primary: 'Off', secondary: null }
+    if (state !== 'on') return { primary: i18nT('common.off'), secondary: null }
     const pct = entity.percentage != null ? `${entity.percentage}%` : null
-    return { primary: 'On', secondary: pct }
+    return { primary: i18nT('common.on'), secondary: pct }
   }
 
-  if (state === 'on') return { primary: 'On', secondary: null }
-  if (state === 'off') return { primary: 'Off', secondary: null }
+  if (state === 'on') return { primary: i18nT('common.on'), secondary: null }
+  if (state === 'off') return { primary: i18nT('common.off'), secondary: null }
 
   // For any domain in the registry: look up a human label for the state.
   const meta = DOMAIN_REGISTRY[domain]
@@ -135,10 +123,10 @@ export function formatEntityState(entity) {
 
 export function greetingByTime() {
   const h = new Date().getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
-  if (h < 21) return 'Good evening'
-  return 'Good night'
+  if (h < 12) return i18nT('dashboard.greetingMorning')
+  if (h < 17) return i18nT('dashboard.greetingAfternoon')
+  if (h < 21) return i18nT('dashboard.greetingEvening')
+  return i18nT('dashboard.greetingNight')
 }
 
 // Hebrew U+0590–U+05FF: letters, vowel points, cantillation marks

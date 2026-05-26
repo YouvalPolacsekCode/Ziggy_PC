@@ -133,6 +133,10 @@ _BUILTIN_DEVICE_ALIASES_HE: dict[str, str] = {
     "התריס": "the blind", "תריס": "blind",
     "התריסים": "the blinds", "תריסים": "blinds",
     "הרמקול": "the speaker", "רמקול": "speaker",
+    # Water heater / boiler (Switcher's flagship)
+    "הדוד": "the boiler", "דוד": "boiler",
+    "הבוילר": "the boiler", "בוילר": "boiler",
+    "המים החמים": "the hot water", "מים חמים": "hot water",
     # Automation / scheduling nouns
     "אוטומציה": "automation", "אוטומציות": "automations",
     "שגרה": "routine", "שגרות": "routines",

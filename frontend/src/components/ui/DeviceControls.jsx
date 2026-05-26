@@ -8,6 +8,25 @@ import {
 import { Slider } from './Slider'
 import { cn, lightRgb } from '../../lib/utils'
 import { DOMAIN_REGISTRY, TOGGLEABLE_DOMAINS as _REGISTRY_TOGGLEABLE } from '../../lib/domainRegistry'
+import { useT } from '../../lib/i18n'
+
+// Capitalise + de-snake a raw HA mode/option for display.
+const _humanize = (s) => String(s).replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+
+// Translate an HA mode token (e.g. 'cool', 'heat_cool', 'fan_only') when a
+// matching deviceControls.hvac* key exists; otherwise fall back to humanise.
+const _hvacLabel = (t, mode) => {
+  const KEY = {
+    cool: 'deviceControls.hvacCool',
+    heat: 'deviceControls.hvacHeat',
+    auto: 'deviceControls.hvacAuto',
+    heat_cool: 'deviceControls.hvacHeatCool',
+    fan_only: 'deviceControls.hvacFanOnly',
+    dry: 'deviceControls.hvacDry',
+    off: 'deviceControls.hvacOff',
+  }[mode]
+  return KEY ? t(KEY) : _humanize(mode)
+}
 
 // Re-export TOGGLEABLE_DOMAINS derived from registry (keeps external imports working).
 export const TOGGLEABLE_DOMAINS = _REGISTRY_TOGGLEABLE
@@ -26,6 +45,7 @@ export function isEntityOn(entity) {
 // Anchors to the current value at pointerDown; vertical movement = delta.
 // Tap with no movement fires onTap (parent uses this to toggle the light).
 function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 'var(--gold)', width = 128, height = 184 }) {
+  const t = useT()
   const trackRef = useRef(null)
   const gesture  = useRef({ ptr: null, startY: 0, startValue: 0, moved: false })
   const [dragging, setDragging] = useState(false)
@@ -60,7 +80,7 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
       <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.035em', color: 'var(--ink)', lineHeight: 1 }}>
-        {isOn ? `${pct}%` : 'Off'}
+        {isOn ? `${pct}%` : t('deviceControls.off')}
       </div>
       <div
         ref={trackRef}
@@ -195,7 +215,9 @@ function rgbToHex(rgb) {
   return '#' + rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
 }
 
-function MoreToggle({ expanded, onToggle, label = 'More options' }) {
+function MoreToggle({ expanded, onToggle, label }) {
+  const t = useT()
+  const resolvedLabel = label ?? t('deviceControls.moreOptions')
   return (
     <button
       onClick={onToggle}
@@ -205,7 +227,7 @@ function MoreToggle({ expanded, onToggle, label = 'More options' }) {
         size={11}
         className={cn('transition-transform duration-150', expanded && 'rotate-180')}
       />
-      {expanded ? 'Less' : label}
+      {expanded ? t('deviceControls.less') : resolvedLabel}
     </button>
   )
 }
@@ -233,15 +255,16 @@ function ModeChips({ label, modes, current, colorActive, colorIdle, onSelect }) 
 
 // ─── Light ────────────────────────────────────────────────────────────────────
 const COLOR_PRESETS = [
-  { name: 'Warm',   hex: '#F4D08E' },
-  { name: 'Cool',   hex: '#FFFFFF' },
-  { name: 'Sunset', hex: '#E27A55' },
-  { name: 'Ocean',  hex: '#7AAEE0' },
-  { name: 'Forest', hex: '#6CBF8C' },
-  { name: 'Candle', hex: '#C99845' },
+  { name: 'Warm',   labelKey: 'deviceControls.presetWarm',   hex: '#F4D08E' },
+  { name: 'Cool',   labelKey: 'deviceControls.presetCool',   hex: '#FFFFFF' },
+  { name: 'Sunset', labelKey: 'deviceControls.presetSunset', hex: '#E27A55' },
+  { name: 'Ocean',  labelKey: 'deviceControls.presetOcean',  hex: '#7AAEE0' },
+  { name: 'Forest', labelKey: 'deviceControls.presetForest', hex: '#6CBF8C' },
+  { name: 'Candle', labelKey: 'deviceControls.presetCandle', hex: '#C99845' },
 ]
 
 export function LightControls({ entity, onService }) {
+  const t = useT()
   const isOn = isEntityOn(entity)
   const rawBrightness = entity.brightness != null ? Math.round(entity.brightness / 255 * 100) : 80
   const [brightness, setBrightness] = useState(rawBrightness)
@@ -339,7 +362,7 @@ export function LightControls({ entity, onService }) {
       {/* Brightness gradient slider */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span className="z-eyebrow">Brightness</span>
+          <span className="z-eyebrow">{t('deviceControls.brightness')}</span>
           <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{brightness}%</span>
         </div>
         <GradientSlider
@@ -355,8 +378,8 @@ export function LightControls({ entity, onService }) {
       {supportsColorTemp && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span className="z-eyebrow">Temperature</span>
-            <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{colorTemp}K · {colorTemp < 3500 ? 'warm' : colorTemp < 5000 ? 'neutral' : 'cool'}</span>
+            <span className="z-eyebrow">{t('deviceControls.temperature')}</span>
+            <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{colorTemp}K · {colorTemp < 3500 ? t('deviceControls.tempWarm') : colorTemp < 5000 ? t('deviceControls.tempNeutral') : t('deviceControls.tempCool')}</span>
           </div>
           <GradientSlider
             value={colorTemp}
@@ -371,7 +394,7 @@ export function LightControls({ entity, onService }) {
       {/* Color presets */}
       {supportsColor && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Presets</span>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.presets')}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             {COLOR_PRESETS.map(p => {
               const rgb = hexToRgb(p.hex)
@@ -379,7 +402,7 @@ export function LightControls({ entity, onService }) {
               return (
                 <button
                   key={p.name}
-                  title={p.name}
+                  title={t(p.labelKey)}
                   onClick={() => onService('turn_on', { rgb_color: rgb })}
                   style={{
                     flex: 1, aspectRatio: '1', borderRadius: 12,
@@ -393,7 +416,7 @@ export function LightControls({ entity, onService }) {
                 />
               )
             })}
-            <label title="Custom color" style={{ flex: 1, aspectRatio: '1', borderRadius: 12, border: '1px dashed var(--line-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', color: 'var(--ink-faint)', fontSize: 18 }}>
+            <label title={t('deviceControls.customColor')} style={{ flex: 1, aspectRatio: '1', borderRadius: 12, border: '1px dashed var(--line-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', color: 'var(--ink-faint)', fontSize: 18 }}>
               <input type="color" style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
                 value={rgbToHex(currentRgb)} onChange={(e) => onService('turn_on', { rgb_color: hexToRgb(e.target.value) })} />
               +
@@ -405,7 +428,7 @@ export function LightControls({ entity, onService }) {
       {/* Effects */}
       {effectList.length > 0 && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Effects</span>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.effects')}</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {['none', ...effectList].map(fx => (
               <button key={fx} onClick={() => onService('turn_on', { effect: fx === 'none' ? null : fx })} style={{
@@ -413,7 +436,7 @@ export function LightControls({ entity, onService }) {
                 background: (entity.effect === fx || (!entity.effect && fx === 'none')) ? 'var(--ink)' : 'var(--surface-2)',
                 color: (entity.effect === fx || (!entity.effect && fx === 'none')) ? 'var(--bg)' : 'var(--ink-mute)',
                 border: '0.5px solid var(--line)', textTransform: 'capitalize',
-              }}>{fx === 'none' ? 'None' : fx.replace(/_/g, ' ')}</button>
+              }}>{fx === 'none' ? t('deviceControls.effectNone') : fx.replace(/_/g, ' ')}</button>
             ))}
           </div>
         </div>
@@ -430,7 +453,7 @@ export function LightControls({ entity, onService }) {
         }}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.7.7 1 1.6 1 2.5v1h6v-1c0-.9.3-1.8 1-2.5A6 6 0 0 0 12 2z"/></svg>
-        {isOn ? 'On' : 'Off'}
+        {isOn ? t('deviceControls.on') : t('deviceControls.off')}
       </button>
     </div>
   )
@@ -448,6 +471,7 @@ const HVAC_MODE_META = {
 }
 
 export function ClimateControls({ entity, onService }) {
+  const t = useT()
   const hvacMode    = entity.hvac_mode || entity.state
   const hvacModes   = entity.hvac_modes || []
   const targetTemp  = entity.temperature
@@ -480,7 +504,7 @@ export function ClimateControls({ entity, onService }) {
           value={Math.max(0, dialPct)}
           max={100}
           label={`${displayTemp}°`}
-          sublabel={currentTemp ? `${hvacMode?.toUpperCase()} · ${currentTemp}° NOW` : hvacMode?.toUpperCase()}
+          sublabel={currentTemp ? `${_hvacLabel(t, hvacMode).toUpperCase()} · ${currentTemp}° ${t('deviceControls.tempNow')}` : _hvacLabel(t, hvacMode).toUpperCase()}
           color="var(--info)"
           trackColor="var(--line)"
         />
@@ -496,7 +520,7 @@ export function ClimateControls({ entity, onService }) {
       {/* HVAC mode chips */}
       {hvacModes.length > 0 && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Mode</span>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.mode')}</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
             {hvacModes.map(mode => {
               const meta = HVAC_MODE_META[mode] || { icon: '●', color: 'var(--ink-mute)' }
@@ -510,7 +534,7 @@ export function ClimateControls({ entity, onService }) {
                   display: 'flex', alignItems: 'center', gap: 5,
                 }}>
                   <span style={{ fontSize: 12 }}>{meta.icon}</span>
-                  {mode === 'heat_cool' ? 'Auto' : mode.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
+                  {_hvacLabel(t, mode)}
                 </button>
               )
             })}
@@ -521,7 +545,7 @@ export function ClimateControls({ entity, onService }) {
       {/* Fan speed chips */}
       {fanModes.length > 1 && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Fan speed</span>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.fanSpeed')}</span>
           <div style={{ display: 'flex', gap: 6 }}>
             {fanModes.map(mode => (
               <button key={mode} onClick={() => onService('set_fan_mode', { fan_mode: mode })} style={{
@@ -538,7 +562,7 @@ export function ClimateControls({ entity, onService }) {
       {/* Swing */}
       {swingModes.length > 1 && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Swing</span>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.swing')}</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {swingModes.map(mode => (
               <button key={mode} onClick={() => onService('set_swing_mode', { swing_mode: mode })} style={{
@@ -557,7 +581,7 @@ export function ClimateControls({ entity, onService }) {
         onClick={() => onService(hvacMode === 'off' ? 'set_hvac_mode' : 'set_hvac_mode', { hvac_mode: hvacMode === 'off' ? (hvacModes.find(m => m !== 'off') || 'cool') : 'off' })}
         style={{ width: '100%', padding: 14, borderRadius: 14, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
       >
-        {hvacMode === 'off' ? 'Turn on' : 'Turn off'}
+        {hvacMode === 'off' ? t('deviceControls.turnOn') : t('deviceControls.turnOff')}
       </button>
     </div>
   )
@@ -568,6 +592,7 @@ const MP_SHUFFLE = 32768
 const MP_REPEAT  = 262144
 
 export function MediaPlayerControls({ entity, onService }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const isPlaying = entity.state === 'playing'
   const isMuted   = entity.is_volume_muted
@@ -597,7 +622,7 @@ export function MediaPlayerControls({ entity, onService }) {
 
   // sourceList goes in secondary so the card stays compact even with many inputs
   const hasSecondary = sourceList.length > 0 || supportsShuffle || supportsRepeat || appList.length > 0 || soundModes.length > 1
-  const moreLabel = sourceList.length > 0 ? 'Sources & more' : 'Shuffle & more'
+  const moreLabel = sourceList.length > 0 ? t('deviceControls.sourcesAndMore') : t('deviceControls.shuffleAndMore')
 
   if (entity.state === 'off' || entity.state === 'unavailable') return null
 
@@ -653,7 +678,7 @@ export function MediaPlayerControls({ entity, onService }) {
             disabled={!volReliable}
           />
           <span className="text-[10px] text-zinc-400 w-7 text-right tabular-nums shrink-0">
-            {isMuted ? 'M' : volReliable ? `${volume}%` : '—'}
+            {isMuted ? t('deviceControls.muted') : volReliable ? `${volume}%` : t('deviceControls.unknown')}
           </span>
         </div>
       )}
@@ -692,7 +717,7 @@ export function MediaPlayerControls({ entity, onService }) {
           {/* App list (distinct from source list) */}
           {appList.length > 0 && (
             <div className="flex gap-1 flex-wrap items-center">
-              <span className="text-[10px] text-zinc-400 mr-0.5 shrink-0">Apps</span>
+              <span className="text-[10px] text-zinc-400 mr-0.5 shrink-0">{t('deviceControls.apps')}</span>
               {appList.map((app) => (
                 <button
                   key={app}
@@ -716,7 +741,7 @@ export function MediaPlayerControls({ entity, onService }) {
               {supportsShuffle && (
                 <button
                   onClick={() => onService('shuffle_set', { shuffle: !shuffle })}
-                  title={shuffle ? 'Shuffle: On' : 'Shuffle: Off'}
+                  title={shuffle ? t('deviceControls.shuffleOn') : t('deviceControls.shuffleOff')}
                   className={cn(
                     'flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
                     shuffle
@@ -724,13 +749,13 @@ export function MediaPlayerControls({ entity, onService }) {
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
                   )}
                 >
-                  <Shuffle size={10} /> Shuffle
+                  <Shuffle size={10} /> {t('deviceControls.shuffle')}
                 </button>
               )}
               {supportsRepeat && (
                 <button
                   onClick={() => onService('repeat_set', { repeat: nextRepeat })}
-                  title={`Repeat: ${repeat || 'off'}`}
+                  title={`${t('deviceControls.repeatLabel')}: ${repeat || 'off'}`}
                   className={cn(
                     'flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
                     repeat && repeat !== 'off'
@@ -739,7 +764,7 @@ export function MediaPlayerControls({ entity, onService }) {
                   )}
                 >
                   <Repeat size={10} />
-                  {repeat === 'one' ? ' ×1' : repeat === 'all' ? ' All' : ' Off'}
+                  {' '}{repeat === 'one' ? t('deviceControls.repeatOne') : repeat === 'all' ? t('deviceControls.repeatAll') : t('deviceControls.repeatOff')}
                 </button>
               )}
             </div>
@@ -748,7 +773,7 @@ export function MediaPlayerControls({ entity, onService }) {
           {/* Sound mode */}
           {soundModes.length > 1 && (
             <ModeChips
-              label="Sound"
+              label={t('deviceControls.sound')}
               modes={soundModes}
               current={soundMode}
               colorActive="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900"
@@ -771,6 +796,7 @@ const ctrlBtn = {
 }
 
 export function CoverControls({ entity, onService }) {
+  const t = useT()
   const position = entity.current_position
   const [localPos, setLocalPos] = useState(position ?? 0)
 
@@ -780,17 +806,17 @@ export function CoverControls({ entity, onService }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => onService('open_cover', {})} style={{ ...ctrlBtn, flex: 1 }}>
-          <ArrowUp size={11} /> Open
+          <ArrowUp size={11} /> {t('deviceControls.openCover')}
         </button>
         <button onClick={() => onService('stop_cover', {})} style={{ ...ctrlBtn, padding: '6px 14px' }}>■</button>
         <button onClick={() => onService('close_cover', {})} style={{ ...ctrlBtn, flex: 1 }}>
-          <ArrowDown size={11} /> Close
+          <ArrowDown size={11} /> {t('deviceControls.closeCover')}
         </button>
       </div>
       {position != null && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginBottom: 6 }}>
-            <span>Position</span>
+            <span>{t('deviceControls.position')}</span>
             <span className="z-mono">{localPos}%</span>
           </div>
           <Slider value={localPos} onValueChange={setLocalPos} onValueCommit={(v) => onService('set_cover_position', { position: v })} min={0} max={100} />
@@ -802,6 +828,7 @@ export function CoverControls({ entity, onService }) {
 
 // ─── Fan ──────────────────────────────────────────────────────────────────────
 export function FanControls({ entity, onService }) {
+  const t = useT()
   const isOn = isEntityOn(entity)
   const rawPct = entity.percentage ?? 0
   const [pct, setPct] = useState(rawPct)
@@ -816,7 +843,7 @@ export function FanControls({ entity, onService }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginBottom: 6 }}>
-          <span>Speed</span>
+          <span>{t('deviceControls.speed')}</span>
           <span className="z-mono">{pct}%</span>
         </div>
         <Slider value={pct} onValueChange={setPct} onValueCommit={(v) => onService('set_percentage', { percentage: v })} min={0} max={100} />
@@ -845,20 +872,26 @@ export function FanControls({ entity, onService }) {
 
 // ─── Lock ─────────────────────────────────────────────────────────────────────
 export function LockControls({ entity, onService }) {
+  const t = useT()
   const [confirming, setConfirming] = useState(false)
   const isLocked  = entity.state === 'locked'
   const isPending = entity.state === 'locking' || entity.state === 'unlocking'
+  const pendingLabel = entity.state === 'locking'
+    ? t('deviceControls.lockState.locking')
+    : entity.state === 'unlocking'
+      ? t('deviceControls.lockState.unlocking')
+      : entity.state
 
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {isPending ? (
-        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', padding: '6px 0', textTransform: 'capitalize' }}>{entity.state}…</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', padding: '6px 0' }}>{pendingLabel}</div>
       ) : !isLocked ? (
         <button
           onClick={() => onService('lock', {})}
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--ok) 12%, var(--surface))`, color: 'var(--ok)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}
         >
-          <Lock size={12} /> Lock
+          <Lock size={12} /> {t('deviceControls.lock')}
         </button>
       ) : confirming ? (
         <div style={{ display: 'flex', gap: 6 }}>
@@ -866,7 +899,7 @@ export function LockControls({ entity, onService }) {
             onClick={() => { onService('unlock', {}); setConfirming(false) }}
             style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: 'var(--err)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            Confirm unlock
+            {t('deviceControls.confirmUnlock')}
           </button>
           <button
             onClick={() => setConfirming(false)}
@@ -880,7 +913,7 @@ export function LockControls({ entity, onService }) {
           onClick={() => setConfirming(true)}
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--err) 10%, var(--surface))`, color: 'var(--err)', border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))' }}
         >
-          <LockOpen size={12} /> Unlock
+          <LockOpen size={12} /> {t('deviceControls.unlock')}
         </button>
       )}
     </div>
@@ -889,6 +922,7 @@ export function LockControls({ entity, onService }) {
 
 // ─── Vacuum ───────────────────────────────────────────────────────────────────
 export function VacuumControls({ entity, onService }) {
+  const t = useT()
   const state      = entity.state
   const isCleaning = state === 'cleaning'
   const isPaused   = state === 'paused'
@@ -904,26 +938,26 @@ export function VacuumControls({ entity, onService }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {!isCleaning ? (
         <button onClick={() => onService('start', {})} style={vacBtn(`color-mix(in srgb, var(--accent) 10%, var(--surface))`, 'var(--accent)', `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`)}>
-          <Play size={11} /> Start
+          <Play size={11} /> {t('deviceControls.startVacuum')}
         </button>
       ) : (
         <button onClick={() => onService('pause', {})} style={vacBtn(`color-mix(in srgb, var(--warn) 10%, var(--surface))`, 'var(--warn)', `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`)}>
-          <Pause size={11} /> Pause
+          <Pause size={11} /> {t('deviceControls.pause')}
         </button>
       )}
       {(isCleaning || isPaused || isIdle) && (
         <button onClick={() => onService('return_to_base', {})} style={ctrlBtn}>
-          <Home size={11} /> Dock
+          <Home size={11} /> {t('deviceControls.dock')}
         </button>
       )}
       {(isCleaning || isPaused) && (
         <button onClick={() => onService('stop', {})} style={vacBtn(`color-mix(in srgb, var(--err) 8%, var(--surface))`, 'var(--err)', `0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))`)}>
-          <Square size={11} /> Stop
+          <Square size={11} /> {t('deviceControls.stopCover')}
         </button>
       )}
       {isDocked && (
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', fontSize: 11, color: 'var(--ok)', fontWeight: 500 }}>
-          <Home size={11} /> Docked
+          <Home size={11} /> {t('deviceControls.docked')}
         </span>
       )}
     </div>
@@ -940,6 +974,7 @@ export function VacuumControls({ entity, onService }) {
 // Specialized components (LightControls, ClimateControls…) still handle
 // complex domains. GenericControls handles everything else with zero per-device code.
 export function GenericControls({ entity, onService }) {
+  const t = useT()
   const meta = DOMAIN_REGISTRY[entity.domain]
   const [confirming, setConfirming] = useState(null)
 
@@ -1003,7 +1038,7 @@ export function GenericControls({ entity, onService }) {
                     onClick={() => { onService(action.service, {}); setConfirming(null) }}
                     className="flex-1 py-1.5 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600 transition-colors"
                   >
-                    Confirm {action.label}
+                    {t('deviceControls.confirmAction', { label: action.label })}
                   </button>
                   <button
                     onClick={() => setConfirming(null)}
@@ -1044,7 +1079,7 @@ export function GenericControls({ entity, onService }) {
       {hasPosition && (
         <div>
           <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
-            <span>Position</span>
+            <span>{t('deviceControls.position')}</span>
             <span className="tabular-nums">{entity.current_position}%</span>
           </div>
           <Slider
@@ -1093,35 +1128,35 @@ export function GenericControls({ entity, onService }) {
 // onChannel(irDeviceId, channelNumber)
 
 const REMOTE_DISPLAY = {
-  power:        { label: '⏻',      title: 'Power' },
-  volume_up:    { label: '🔊+',    title: 'Vol +' },
-  volume_down:  { label: '🔊−',    title: 'Vol −' },
-  mute:         { label: '🔇',     title: 'Mute' },
-  nav_up:       { label: '▲',      title: 'Up' },
-  nav_down:     { label: '▼',      title: 'Down' },
-  nav_left:     { label: '◄',      title: 'Left' },
-  nav_right:    { label: '►',      title: 'Right' },
-  nav_ok:       { label: '●',      title: 'OK' },
-  back:         { label: '↩',      title: 'Back' },
-  home:         { label: '⌂',      title: 'Home' },
-  menu:         { label: '☰',      title: 'Menu' },
+  power:        { label: '⏻',      titleKey: 'deviceControls.remote.power' },
+  volume_up:    { label: '🔊+',    titleKey: 'deviceControls.remote.volUp' },
+  volume_down:  { label: '🔊−',    titleKey: 'deviceControls.remote.volDown' },
+  mute:         { label: '🔇',     titleKey: 'deviceControls.remote.mute' },
+  nav_up:       { label: '▲',      titleKey: 'deviceControls.remote.up' },
+  nav_down:     { label: '▼',      titleKey: 'deviceControls.remote.down' },
+  nav_left:     { label: '◄',      titleKey: 'deviceControls.remote.left' },
+  nav_right:    { label: '►',      titleKey: 'deviceControls.remote.right' },
+  nav_ok:       { label: '●',      titleKey: 'deviceControls.remote.ok' },
+  back:         { label: '↩',      titleKey: 'deviceControls.remote.back' },
+  home:         { label: '⌂',      titleKey: 'deviceControls.remote.home' },
+  menu:         { label: '☰',      titleKey: 'deviceControls.remote.menu' },
   hdmi_1:       { label: 'HDMI 1', title: 'HDMI 1' },
   hdmi_2:       { label: 'HDMI 2', title: 'HDMI 2' },
   hdmi_3:       { label: 'HDMI 3', title: 'HDMI 3' },
   hdmi_4:       { label: 'HDMI 4', title: 'HDMI 4' },
-  channel_up:   { label: 'CH+',    title: 'Chan +' },
-  channel_down: { label: 'CH−',    title: 'Chan −' },
-  mode_cool:    { label: '❄ Cool', title: 'Cool' },
-  mode_heat:    { label: '🔥 Heat',title: 'Heat' },
-  mode_fan:     { label: '💨 Fan', title: 'Fan' },
-  mode_auto:    { label: '🔄 Auto',title: 'Auto' },
-  mode_dry:     { label: '💧 Dry', title: 'Dry' },
-  fan_low:      { label: 'Fan Lo', title: 'Fan Low' },
-  fan_medium:   { label: 'Fan Md', title: 'Fan Med' },
-  fan_high:     { label: 'Fan Hi', title: 'Fan High' },
-  fan_auto:     { label: 'Fan ⟲',  title: 'Fan Auto' },
-  swing_on:     { label: 'Swing ✓',title: 'Swing On' },
-  swing_off:    { label: 'Swing ✗',title: 'Swing Off' },
+  channel_up:   { label: 'CH+',    titleKey: 'deviceControls.remote.chanUp' },
+  channel_down: { label: 'CH−',    titleKey: 'deviceControls.remote.chanDown' },
+  mode_cool:    { labelPrefix: '❄ ', labelKey: 'deviceControls.hvacCool', titleKey: 'deviceControls.hvacCool' },
+  mode_heat:    { labelPrefix: '🔥 ', labelKey: 'deviceControls.hvacHeat', titleKey: 'deviceControls.hvacHeat' },
+  mode_fan:     { labelPrefix: '💨 ', labelKey: 'deviceControls.hvacFanOnly', titleKey: 'deviceControls.hvacFanOnly' },
+  mode_auto:    { labelPrefix: '🔄 ', labelKey: 'deviceControls.hvacAuto', titleKey: 'deviceControls.hvacAuto' },
+  mode_dry:     { labelPrefix: '💧 ', labelKey: 'deviceControls.hvacDry', titleKey: 'deviceControls.hvacDry' },
+  fan_low:      { labelKey: 'deviceControls.remote.fanLow',   titleKey: 'deviceControls.remote.fanLow' },
+  fan_medium:   { labelKey: 'deviceControls.remote.fanMed',   titleKey: 'deviceControls.remote.fanMed' },
+  fan_high:     { labelKey: 'deviceControls.remote.fanHigh',  titleKey: 'deviceControls.remote.fanHigh' },
+  fan_auto:     { labelKey: 'deviceControls.remote.fanAuto',  titleKey: 'deviceControls.remote.fanAuto' },
+  swing_on:     { labelKey: 'deviceControls.remote.swingOn',  titleKey: 'deviceControls.remote.swingOn' },
+  swing_off:    { labelKey: 'deviceControls.remote.swingOff', titleKey: 'deviceControls.remote.swingOff' },
   digit_0:      { label: '0',       title: '0' },
   digit_1:      { label: '1',       title: '1' },
   digit_2:      { label: '2',       title: '2' },
@@ -1132,7 +1167,16 @@ const REMOTE_DISPLAY = {
   digit_7:      { label: '7',       title: '7' },
   digit_8:      { label: '8',       title: '8' },
   digit_9:      { label: '9',       title: '9' },
-  digit_ok:     { label: 'OK',      title: 'Enter' },
+  digit_ok:     { label: 'OK',      titleKey: 'deviceControls.remote.enter' },
+}
+
+// Resolve a REMOTE_DISPLAY entry into its display strings using the active locale.
+function _remoteEntry(t, cmd) {
+  const d = REMOTE_DISPLAY[cmd] || {}
+  let label = d.label
+  if (d.labelKey) label = `${d.labelPrefix || ''}${t(d.labelKey)}`
+  const title = d.titleKey ? t(d.titleKey) : d.title
+  return { label, title }
 }
 
 // Remote layout zones — each zone only renders if ≥1 command in it is known
@@ -1151,7 +1195,8 @@ const BTN_ACTIVE = 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-20
 const BTN_DISABLED = 'bg-zinc-50 dark:bg-zinc-900 text-zinc-300 dark:text-zinc-700 cursor-not-allowed'
 
 function RemoteBtn({ cmd, learned, cmds, onPress, size = 'md' }) {
-  const disp = REMOTE_DISPLAY[cmd]
+  const t = useT()
+  const disp = _remoteEntry(t, cmd)
   const exists = cmd in cmds
   const isLearned = learned.has(cmd)
   const active = exists && isLearned
@@ -1160,20 +1205,22 @@ function RemoteBtn({ cmd, learned, cmds, onPress, size = 'md' }) {
     : size === 'sm'
     ? 'w-10 h-9 text-xs'
     : 'w-12 h-10 text-sm'
+  const baseTitle = disp.title || cmd
 
   return (
     <button
-      title={active ? (disp?.title || cmd) : `${disp?.title || cmd} — not learned yet`}
+      title={active ? baseTitle : t('deviceControls.remote.notLearned', { name: baseTitle })}
       disabled={!active}
       onClick={active ? () => onPress(cmd) : undefined}
       className={cn(BTN_BASE, sz, active ? BTN_ACTIVE : BTN_DISABLED)}
     >
-      {disp?.label || cmd.replace(/_/g, ' ')}
+      {disp.label || cmd.replace(/_/g, ' ')}
     </button>
   )
 }
 
 export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
+  const t = useT()
   const learned = new Set(irDevice.learned_commands || [])
   const cmds    = irDevice.commands || {}
   const canDo   = (cmd) => cmd in cmds && learned.has(cmd)
@@ -1188,9 +1235,9 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
   const extras = [...learned].filter(c => !new Set(Object.values(REMOTE_GROUPS).flat()).has(c) && canDo(c)).sort()
 
   const topBtns = [
-    { cmd: 'power',    label: 'Power', accent: 'var(--err)' },
-    { cmd: 'mute',     label: 'Mute' },
-    { cmd: 'input',    label: 'Input' },
+    { cmd: 'power',    label: t('deviceControls.remote.power'), accent: 'var(--err)' },
+    { cmd: 'mute',     label: t('deviceControls.remote.mute') },
+    { cmd: 'input',    label: t('deviceControls.remote.input') },
   ]
 
   const ArrowIcon = ({ dir }) => {
@@ -1206,7 +1253,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
           <button onClick={onClose} className="z-icon-btn" style={{ width: 32, height: 32, borderRadius: 10 }}><X size={14} /></button>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{irDevice.name}</div>
-            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{irDevice.room ? `${irDevice.room} · ` : ''}IR · {learned.size} commands</div>
+            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{irDevice.room ? `${irDevice.room} · ` : ''}{t('deviceControls.remote.commandCount', { n: learned.size })}</div>
           </div>
         </div>
       </div>
@@ -1220,7 +1267,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{irDevice.name}</div>
-            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>Last command · {learned.size} learned</div>
+            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('deviceControls.remote.lastCommand', { n: learned.size })}</div>
           </div>
           <span className="z-dot z-dot-on" />
         </div>
@@ -1270,7 +1317,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
                   cursor: 'pointer', letterSpacing: '0.02em',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-              >OK</button>
+              >{t('deviceControls.remote.ok')}</button>
               {/* Arrows */}
               {[
                 { dir: 'up',    cmd: 'nav_up',    style: { top: 14, left: '50%', transform: 'translateX(-50%)' } },
@@ -1294,8 +1341,8 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
               <button key={cmd} onClick={() => fire(cmd)} disabled={!canDo(cmd)} style={{
                 padding: '10px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)',
                 fontSize: 11, fontWeight: 600, cursor: canDo(cmd) ? 'pointer' : 'default', color: 'var(--ink-2)', fontFamily: 'inherit',
-                opacity: canDo(cmd) ? 1 : 0.35, textTransform: 'capitalize',
-              }}>{cmd}</button>
+                opacity: canDo(cmd) ? 1 : 0.35,
+              }}>{_remoteEntry(t, cmd).title || cmd}</button>
             ))}
           </div>
         )}
@@ -1305,7 +1352,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
           {/* Volume */}
           <div style={{ padding: '10px 0', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <button onClick={() => { fire('volume_up');   setVolDisplay(v => Math.min(100, v+1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="up" /></button>
-            <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>Vol {volDisplay}</span>
+            <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.vol')} {volDisplay}</span>
             <button onClick={() => { fire('volume_down'); setVolDisplay(v => Math.max(0, v-1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="down" /></button>
           </div>
 
@@ -1317,13 +1364,13 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
             cursor: 'pointer', boxShadow: 'var(--shadow-md)',
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-            <span style={{ fontSize: 10, fontWeight: 600 }}>Speak</span>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>{t('deviceControls.remote.speak')}</span>
           </button>
 
           {/* Channel */}
           <div style={{ padding: '10px 0', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <button onClick={() => { fire('channel_up');   setChDisplay(v => v+1) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="up" /></button>
-            <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>Ch {chDisplay}</span>
+            <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.ch')} {chDisplay}</span>
             <button onClick={() => { fire('channel_down'); setChDisplay(v => Math.max(1, v-1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="down" /></button>
           </div>
         </div>
@@ -1331,7 +1378,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {/* Source chips */}
         {sourceCommands.length > 0 && (
           <div>
-            <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Source</span>
+            <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.remote.source')}</span>
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }} className="scrollbar-thin">
               {sourceCommands.map(cmd => (
                 <button key={cmd} onClick={() => fire(cmd)} style={{
@@ -1348,7 +1395,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {/* Extra commands */}
         {extras.length > 0 && (
           <div>
-            <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>More</span>
+            <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.remote.more')}</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {extras.map(cmd => (
                 <button key={cmd} onClick={() => fire(cmd)} style={{
@@ -1363,13 +1410,13 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {/* Channel entry */}
         {['digit_0','digit_1','digit_2','digit_3','digit_4','digit_5','digit_6','digit_7','digit_8','digit_9'].every(canDo) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
-            <span className="z-eyebrow" style={{ flexShrink: 0 }}>Channel</span>
+            <span className="z-eyebrow" style={{ flexShrink: 0 }}>{t('deviceControls.remote.channel')}</span>
             <input type="number" min={0} max={9999} value={ch}
               onChange={e => setCh(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
               onKeyDown={e => e.key === 'Enter' && onChannel && onChannel(irDevice.id, parseInt(ch, 10))}
               placeholder="12" className="z-input" style={{ height: 36, padding: '0 12px', flex: 1, fontSize: 13 }} />
             <button onClick={() => { if (ch) onChannel?.(irDevice.id, parseInt(ch, 10)); setCh('') }}
-              className="z-btn-primary" style={{ padding: '0 16px', height: 36, borderRadius: 10, flexShrink: 0 }}>Go</button>
+              className="z-btn-primary" style={{ padding: '0 16px', height: 36, borderRadius: 10, flexShrink: 0 }}>{t('deviceControls.remote.go')}</button>
           </div>
         )}
       </div>
@@ -1383,6 +1430,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
 // parent (lets a row's own button open the drawer directly without the intermediate
 // "Open →" row). Pass `hideTrigger` to suppress that intermediate row entirely.
 export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp, onOpenChange, hideTrigger = false }) {
+  const t = useT()
   const [internalOpen, setInternalOpen] = useState(false)
   const open = openProp !== undefined ? openProp : internalOpen
   const setOpen = (v) => {
@@ -1400,13 +1448,13 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp,
       <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400">
           <Tv2 size={11} className="text-violet-400" />
-          IR Remote · {learned.size} cmd{learned.size !== 1 ? 's' : ''}
+          {t('deviceControls.remote.cmdCount', { n: learned.size, s: learned.size !== 1 ? 's' : '' })}
         </span>
         <button
           onClick={() => setOpen(true)}
           className="text-[10px] font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
         >
-          Open →
+          {t('deviceControls.remote.openLabel')}
         </button>
       </div>
       )}

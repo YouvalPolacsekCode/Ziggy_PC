@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.ws_manager import manager
 from backend.middleware.relay_auth import RelayAuthMiddleware
-from core.logger_module import log_info
+from backend.middleware.request_logger import RequestLoggerMiddleware
+from backend.middleware.error_handler import install_error_handlers
+from core.logger_module import log_info, apply_log_level
 from core.settings_loader import settings
 
 from backend.routers.intent_router import router as intent_router
@@ -38,39 +40,92 @@ from backend.routers.push_router import router as push_router
 from backend.routers.debug_router import router as debug_router
 from backend.routers.update_router import router as update_router
 from backend.routers.ui_prefs_router import router as ui_prefs_router
+from backend.routers.mobile_router import router as mobile_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
+
+# Single source of truth for error responses. Every exception now flows
+# through the handlers in backend/middleware/error_handler.py, which return
+# the unified `{"error": {"code", "message", "request_id"}}` envelope defined
+# in core/errors.py. This MUST be installed before include_router so legacy
+# HTTPException(500, str(e)) raises from existing routers are wrapped too.
+install_error_handlers(app)
 
 
 @app.on_event("startup")
 async def _startup():
     import asyncio
+    import time as _t
     from services.ziggy_scheduler import run_scheduler
     from services.ha_subscriber import run_subscriber
-    from services.device_registry import init as dr_init, sync_rooms_to_ha
+    from services.device_registry import init as dr_init, sync_rooms_to_ha, reconcile_with_ha
     from core.debug_bus import bus
     from core.settings_loader import settings as _settings
+
+    _t0 = _t.perf_counter()
+
+    def _phase(label: str) -> None:
+        # Single source of truth for startup timing. perf_counter is
+        # monotonic so subtraction is safe across the boot window. We log
+        # both the cumulative ms-since-start and the wall-clock delta of
+        # the current phase, so a single grep on `[Startup]` gives you a
+        # ready-to-paste before/after table.
+        nonlocal _last
+        now = _t.perf_counter()
+        log_info(f"[Startup] {label} +{(now - _last) * 1000:.0f} ms (total {(now - _t0) * 1000:.0f} ms)")
+        _last = now
+
+    _last = _t0
 
     # Wire the debug bus to the WebSocket broadcast function.
     # This must happen before any service starts emitting events.
     bus.register_ws_callback(manager.broadcast)
 
     # Restore debug level from settings so it persists across restarts.
+    # The bus level governs in-memory events; apply_log_level also re-tunes
+    # the on-disk log file so "trace" actually writes trace lines to disk.
     _debug_cfg = _settings.get("debug", {})
     _saved_level = _debug_cfg.get("level", "off")
     bus.set_level(_saved_level)
+    apply_log_level(_saved_level)
     _saved_scopes = _debug_cfg.get("scopes", [])
     bus.set_scopes(_saved_scopes)
+    _phase("debug bus + log level")
 
     _bootstrap_cloud_admin()
+    _phase("cloud-admin bootstrap")
 
+    # dr_init is now phase-1 only: persistent JSON + IR merge. The HA-REST
+    # reconciliation that used to run inline (two synchronous /api/states
+    # round-trips that could add 200-600 ms to startup on a healthy LAN and
+    # several seconds on a slow tunnel) is deferred to a background task
+    # below. The registry is fully readable from JSON immediately; the
+    # status field for entries with stale rows updates within seconds.
     dr_init()
+    _phase("device registry phase 1 (JSON+IR)")
+
+    asyncio.create_task(reconcile_with_ha())
     asyncio.create_task(sync_rooms_to_ha())
     asyncio.create_task(run_scheduler())
     asyncio.create_task(run_subscriber())
     asyncio.create_task(_register_with_relay())
     asyncio.create_task(_start_ir_listener())
     asyncio.create_task(_run_update_checker())
+    # Warm the HA service catalog so the first call to /api/devices/X/commands
+    # returns instantly. Without this, the catalog stays empty until the
+    # first request triggers it, and that request blocks while the WS round-
+    # trip happens — making the device-detail page feel slow on cold start.
+    asyncio.create_task(_warm_ha_catalog())
+    _phase("background tasks scheduled")
+    log_info(f"[Startup] ready to accept requests in {(_t.perf_counter() - _t0) * 1000:.0f} ms")
+
+
+async def _warm_ha_catalog():
+    try:
+        from services.ha_capabilities import ensure_catalog_async
+        await ensure_catalog_async()
+    except Exception as e:
+        log_info(f"[HACapabilities] startup warm failed: {e}")
 
 
 async def _run_update_checker():
@@ -151,6 +206,10 @@ async def _register_with_relay():
 
 
 app.add_middleware(RelayAuthMiddleware)
+# RequestLoggerMiddleware is added LAST so it wraps every other middleware
+# and sees the real client-visible request/response, including auth rejections.
+# Starlette runs middleware bottom-up, so the outer-most call wraps the rest.
+app.add_middleware(RequestLoggerMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -166,8 +225,11 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     import json as _json
+    from core.debug_bus import bus as _bus, BASIC as _BASIC
     client_id = await manager.connect(websocket)
     log_info(f"[API] WebSocket connected. client_id={client_id} total={manager.count}")
+    _bus.emit("ws", _BASIC, "ws_client_connected",
+              client_id=client_id, total=manager.count)
     try:
         while True:
             raw = await websocket.receive_text()
@@ -201,6 +263,8 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         log_info(f"[API] WebSocket disconnected. client_id={client_id} total={manager.count}")
+        _bus.emit("ws", _BASIC, "ws_client_disconnected",
+                  client_id=client_id, total=manager.count)
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +306,7 @@ app.include_router(push_router,          dependencies=_auth)
 app.include_router(debug_router,         dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
 app.include_router(ui_prefs_router,      dependencies=_auth)
+app.include_router(mobile_router)  # mobile endpoints handle their own auth per-route
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.
@@ -251,6 +316,36 @@ app.include_router(ui_prefs_router,      dependencies=_auth)
 
 import os as _os
 from fastapi.staticfiles import StaticFiles as _StaticFiles
+from fastapi.responses import HTMLResponse as _HTMLResponse
+
+
+# ---------------------------------------------------------------------------
+# One-shot client recovery — visit /reset on any device that's stuck on a
+# stale service worker (broken cached HTML pointing at a deleted asset hash).
+# Returns a tiny page that:
+#   1. Sets `Clear-Site-Data: "storage"` — the browser unregisters every
+#      service worker for this origin and wipes caches/IndexedDB/etc.
+#      (localStorage is also wiped, so the user will log back in once.)
+#   2. Auto-redirects to `/` after the header is processed.
+# Defined BEFORE the StaticFiles mount so it isn't shadowed by index.html.
+# ---------------------------------------------------------------------------
+@app.get("/reset")
+async def reset_client():
+    html = (
+        "<!doctype html><meta charset=utf-8>"
+        "<title>Ziggy — resetting</title>"
+        "<meta http-equiv='refresh' content='1; url=/'>"
+        "<style>body{font:14px/1.5 -apple-system,system-ui,sans-serif;"
+        "padding:48px 20px;text-align:center;color:#333}</style>"
+        "<p>Clearing cached app data…</p>"
+        "<p>Redirecting to Ziggy in 1 second.</p>"
+        "<script>setTimeout(function(){location.replace('/')},700)</script>"
+    )
+    return _HTMLResponse(
+        content=html,
+        headers={"Clear-Site-Data": '"storage", "cache"'},
+    )
+
 
 _FRONTEND_DIST = _os.path.join(_os.path.dirname(__file__), '..', 'frontend', 'dist')
 if _os.path.isdir(_FRONTEND_DIST):

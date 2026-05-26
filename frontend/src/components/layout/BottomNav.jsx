@@ -1,8 +1,9 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useState } from 'react'
-import { Bell, CheckSquare, Cpu, MoreHorizontal, Settings, ShieldAlert, WifiOff } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bell, CheckSquare, Cpu, MoreHorizontal, Settings, ShieldAlert, WifiOff, Zap } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
+import { useFeature } from '../../stores/featuresStore'
+import { useT } from '../../lib/i18n'
 
 const ROLE_ORDER = ['user', 'admin', 'super_admin']
 function hasRole(userRole, minRole) {
@@ -15,23 +16,26 @@ function ZIcon({ name, size = 24, stroke = 1.6, color = 'currentColor' }) {
     case 'home':    return <svg {...p}><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
     case 'rooms':   return <svg {...p}><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
     case 'auto':    return <svg {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    case 'devices': return <svg {...p}><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
     case 'sparkle': return <svg {...p}><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
     default: return null
   }
 }
 
+// `labelKey` is resolved inside BottomNav() so labels track the active
+// language live, with no array rebuild on each render.
 const TABS_LEFT = [
-  { to: '/',      name: 'home',  label: 'Home' },
-  { to: '/rooms', name: 'rooms', label: 'Rooms' },
+  { to: '/',      name: 'home',  labelKey: 'nav.home' },
+  { to: '/rooms', name: 'rooms', labelKey: 'nav.rooms' },
 ]
 const TABS_RIGHT = [
-  { to: '/automations', name: 'auto', label: 'Automations' },
+  { to: '/devices', name: 'devices', labelKey: 'nav.devices' },
 ]
 const MORE_BASE = [
-  { to: '/devices',  Icon: Cpu,         label: 'Devices' },
-  { to: '/alerts',   Icon: Bell,        label: 'Alerts' },
-  { to: '/tasks',    Icon: CheckSquare, label: 'Tasks' },
-  { to: '/settings', Icon: Settings,    label: 'Settings' },
+  { to: '/automations', Icon: Zap,         labelKey: 'nav.automations' },
+  { to: '/alerts',      Icon: Bell,        labelKey: 'nav.alerts' },
+  { to: '/tasks',       Icon: CheckSquare, labelKey: 'nav.tasks',    feature: 'task_tracking' },
+  { to: '/settings',    Icon: Settings,    labelKey: 'nav.settings' },
 ]
 
 // Bar + cradle + FAB geometry.
@@ -93,12 +97,12 @@ function Tab({ to, name, label }) {
   )
 }
 
-function MoreTab({ active, onClick, expanded }) {
+function MoreTab({ active, onClick, expanded, label }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="More"
+      aria-label={label}
       aria-expanded={expanded}
       style={{ ...TAB_CELL, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
     >
@@ -108,7 +112,7 @@ function MoreTab({ active, onClick, expanded }) {
         fontWeight: active ? 600 : 500,
         color: active ? 'var(--ink)' : 'var(--ink-faint)',
       }}>
-        More
+        {label}
       </span>
     </button>
   )
@@ -118,74 +122,85 @@ export function BottomNav({ connected }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { role } = useAuthStore()
+  const t = useT()
   const [showMore, setShowMore] = useState(false)
 
+  // Force-close the More menu on any route change. Defensive against
+  // framer-motion's AnimatePresence stalling its exit cycle when a heavy
+  // lazy route (e.g. /devices) mounts mid-animation — without this, the
+  // z-40 backdrop can get stuck over the whole viewport, blocking taps.
+  useEffect(() => { setShowMore(false) }, [location.pathname])
+
+  const taskTrackingEnabled = useFeature('task_tracking')
   const chatActive = location.pathname.startsWith('/chat')
   const moreItems = [
-    ...MORE_BASE,
-    ...(hasRole(role, 'super_admin') ? [{ to: '/ops', Icon: ShieldAlert, label: 'Ops' }] : []),
+    ...MORE_BASE.filter(item =>
+      !item.feature || (item.feature === 'task_tracking' && taskTrackingEnabled),
+    ).map(item => ({ ...item, label: t(item.labelKey) })),
+    ...(hasRole(role, 'super_admin') ? [{ to: '/ops', Icon: ShieldAlert, label: t('nav.opsConsole') }] : []),
   ]
   const isMoreActive = moreItems.some(n => location.pathname.startsWith(n.to))
 
   return (
     <>
-      <AnimatePresence>
-        {showMore && (
-          <>
-            <motion.div
-              className="fixed inset-0 z-40 md:hidden"
-              style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)' }}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              onClick={() => setShowMore(false)}
-            />
-            <motion.div
-              className="fixed left-0 right-0 z-50 md:hidden"
-              style={{
-                // Mirror the bottom-nav's gesture-bar floor so the popover
-                // sits the same distance above the bar on both 3-button and
-                // gesture-nav Android (and on iOS).
-                bottom: `calc(${ROW_H}px + max(env(safe-area-inset-bottom, 0px), 8px) + 12px)`,
-                paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
-                paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
-              }}
-              initial={{ opacity: 0, y: 12, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.97 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div style={{
-                background: 'var(--surface)', border: '0.5px solid var(--line)',
-                borderRadius: 20, boxShadow: 'var(--shadow-lg)',
-                padding: 10, display: 'grid',
-                gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 6,
-              }}>
-                {moreItems.map(({ to, Icon, label }) => {
-                  const active = location.pathname.startsWith(to)
-                  return (
-                    <button
-                      key={to}
-                      onClick={() => { navigate(to); setShowMore(false) }}
-                      style={{
-                        background: active ? 'var(--surface-2)' : 'transparent',
-                        border: active ? '0.5px solid var(--line)' : 'none',
-                        cursor: 'pointer', borderRadius: 14,
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                        padding: '14px 8px', fontFamily: 'inherit',
-                      }}
-                    >
-                      <Icon size={22} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
-                      <span style={{ fontSize: 11, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-mute)', letterSpacing: '0.01em' }}>
-                        {label}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Plain conditional, NO AnimatePresence. The previous version used
+          framer-motion's exit cycle, which stalled on cold-start when the
+          /devices lazy chunk (Devices + PairingWizard + IRWizard ≈ 3600 LOC
+          combined) blocked the JS thread mid-animation, leaving the z-40
+          backdrop visibly stuck (blurred screen, all bottom-nav taps
+          blocked). Plain conditional rendering unmounts both elements
+          synchronously the moment showMore flips to false — no animation
+          state machine that can fail to complete. Entrance still feels
+          snappy because the menu mounts instantly with its final layout. */}
+      {showMore && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+            onClick={() => setShowMore(false)}
+          />
+          <div
+            className="fixed left-0 right-0 z-50 md:hidden"
+            style={{
+              // Mirror the bottom-nav's gesture-bar floor so the popover
+              // sits the same distance above the bar on both 3-button and
+              // gesture-nav Android (and on iOS).
+              bottom: `calc(${ROW_H}px + max(env(safe-area-inset-bottom, 0px), 8px) + 12px)`,
+              paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
+              paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
+            }}
+          >
+            <div style={{
+              background: 'var(--surface)', border: '0.5px solid var(--line)',
+              borderRadius: 20, boxShadow: 'var(--shadow-lg)',
+              padding: 10, display: 'grid',
+              gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 6,
+            }}>
+              {moreItems.map(({ to, Icon, label }) => {
+                const active = location.pathname.startsWith(to)
+                return (
+                  <button
+                    key={to}
+                    onClick={() => { setShowMore(false); navigate(to) }}
+                    style={{
+                      background: active ? 'var(--surface-2)' : 'transparent',
+                      border: active ? '0.5px solid var(--line)' : 'none',
+                      cursor: 'pointer', borderRadius: 14,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                      padding: '14px 8px', fontFamily: 'inherit',
+                    }}
+                  >
+                    <Icon size={22} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
+                    <span style={{ fontSize: 11, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-mute)', letterSpacing: '0.01em' }}>
+                      {label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 md:hidden"
@@ -202,7 +217,7 @@ export function BottomNav({ connected }) {
         {connected === false && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 0', background: 'var(--err)', gap: 5 }}>
             <WifiOff size={10} color="#fff" />
-            <span style={{ fontSize: 10, color: '#fff', fontWeight: 500 }}>offline</span>
+            <span style={{ fontSize: 10, color: '#fff', fontWeight: 500 }}>{t('common.offline')}</span>
           </div>
         )}
 
@@ -277,13 +292,13 @@ export function BottomNav({ connected }) {
             alignItems: 'end',
             height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
           }}>
-            {TABS_LEFT.map(p => <Tab key={p.to} {...p} />)}
+            {TABS_LEFT.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}
 
             {/* Ziggy cell — FAB visual is absolutely positioned above; label sits inline */}
             <NavLink
               to="/chat"
               onClick={() => setShowMore(false)}
-              aria-label="Ziggy"
+              aria-label={t('nav.ziggy')}
               style={{
                 position: 'relative',
                 minWidth: 0,
@@ -312,12 +327,12 @@ export function BottomNav({ connected }) {
                 color: chatActive ? 'var(--accent)' : 'var(--ink-faint)',
                 lineHeight: 1, letterSpacing: '0.01em',
               }}>
-                Ziggy
+                {t('nav.ziggy')}
               </span>
             </NavLink>
 
-            {TABS_RIGHT.map(p => <Tab key={p.to} {...p} />)}
-            <MoreTab active={isMoreActive} onClick={() => setShowMore(true)} expanded={showMore} />
+            {TABS_RIGHT.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}
+            <MoreTab active={isMoreActive} onClick={() => setShowMore(true)} expanded={showMore} label={t('nav.more')} />
           </div>
         </div>
 

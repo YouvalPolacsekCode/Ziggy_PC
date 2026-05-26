@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react'
+import { useEffect, useMemo, useState, useRef, lazy, Suspense } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight, Pencil } from 'lucide-react'
+import { motion, Reorder } from 'framer-motion'
+import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight, Pencil, ArrowUpDown, Check, GripVertical } from 'lucide-react'
 import { getMapRoomsSummary, getAutomations, triggerAutomation, getFeaturesSettings } from '../lib/api'
 
 const HomeMapCanvas = lazy(() =>
@@ -14,13 +14,15 @@ import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { EntitySelect } from '../components/ui/EntitySelect'
-import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceStore, applyRoomsOrder } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
+import { findRoomMetric } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
+import { useT } from '../lib/i18n'
 
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
@@ -72,6 +74,7 @@ function resolveRoomDeviceToEntity(roomDev, entities) {
 }
 
 function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
+  const t = useT()
   const [hovered, setHovered] = useState(false)
   const photo = getRoomPhoto(room)
   const hasActive = room.activeCount > 0
@@ -92,13 +95,18 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
         {/* Gradient */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.55) 100%)' }} />
 
-        {/* Status dot — top right */}
-        <span style={{
-          position: 'absolute', top: 10, right: 10,
-          width: 8, height: 8, borderRadius: '50%',
-          background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.4)',
-          boxShadow: hasActive ? '0 0 0 3px rgba(108,191,140,0.35)' : 'none',
-        }} />
+        {/* Status dot — top right. Hidden while hovered so the action
+            cluster (Edit / Delete) can take the same corner without
+            stacking on top of the dot. The temp/humidity chips own the
+            top-left now that hover actions moved out of there. */}
+        {!hovered && (
+          <span style={{
+            position: 'absolute', top: 10, right: 10,
+            width: 8, height: 8, borderRadius: '50%',
+            background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.4)',
+            boxShadow: hasActive ? '0 0 0 3px rgba(108,191,140,0.35)' : 'none',
+          }} />
+        )}
 
         {/* Temp / humidity chips — top left, matches the Dashboard carousel
             chip styling so the two surfaces feel like one design system.
@@ -134,26 +142,30 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
           </div>
         )}
 
-        {/* Name + count — bottom */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
+        {/* Name + count — bottom. Explicit textAlign overrides the parent
+            <button>'s UA-default `text-align: center`, which would otherwise
+            cascade to these <p>s and center the room name + count. */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px', textAlign: 'left' }}>
+          <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
           <p className="z-mono" style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
-            {room.entityCount} · {hasActive ? `${room.activeCount} on` : 'idle'}
-            {room.offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 4 }}>· {room.offlineCount} off</span>}
+            {room.entityCount} · {hasActive ? t('rooms.someOn', { n: room.activeCount }) : t('rooms.idle')}
+            {room.offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 4 }}>· {t('rooms.nOff', { n: room.offlineCount })}</span>}
           </p>
         </div>
       </button>
 
-      {/* Hover actions */}
+      {/* Hover actions — top-right so they never cover the temp/humidity
+          chips that live in the top-left corner. Status dot above is
+          suppressed while hovered so the cluster owns this corner cleanly. */}
       {hovered && (onEditPhoto || onDelete) && (
-        <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, zIndex: 1 }}>
+        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4, zIndex: 1 }}>
           {onEditPhoto && (
-            <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title="Edit room" style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex' }}>
+            <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title={t('rooms.editRoomAria')} aria-label={t('rooms.editRoomAria')} style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex' }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           )}
           {onDelete && (
-            <button onClick={e => { e.stopPropagation(); onDelete(room) }} title="Delete room" style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fca5a5', display: 'flex' }}>
+            <button onClick={e => { e.stopPropagation(); onDelete(room) }} title={t('rooms.deleteRoomAria')} aria-label={t('rooms.deleteRoomAria')} style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fca5a5', display: 'flex' }}>
               <Trash2 size={11} />
             </button>
           )}
@@ -167,6 +179,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
 // Used from both the Rooms-list tile hover-menu AND the Room-detail header
 // kebab menu, so the rename + photo-picker UX is consistent across surfaces.
 export function RoomEditModal({ open, room, onClose, onSaved }) {
+  const t = useT()
   const { fetchAll }  = useDeviceStore()
   const { addToast }  = useUIStore()
   const [photoKey,    setPhotoKey]    = useState('living_room')
@@ -189,7 +202,7 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
     const file = e.target.files?.[0]
     if (!file) return
     try { setCustomPhoto(await resizeImageToDataUrl(file)) }
-    catch { addToast('Could not load photo', 'error') }
+    catch { addToast(t('rooms.couldNotLoadPhoto'), 'error') }
     e.target.value = ''
   }
 
@@ -208,26 +221,26 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
         removeCustomPhoto(room.id)
         saveRoomPhoto(room.id, photoKey)
       }
-      addToast(nameChanged ? 'Room updated' : 'Photo updated', 'success')
+      addToast(nameChanged ? t('rooms.roomUpdated') : t('rooms.photoUpdated'), 'success')
       onSaved?.({ ...room, name: nameChanged ? roomName.trim() : room.name })
       onClose()
     } catch (e) {
-      addToast(e.message || 'Failed to save', 'error')
+      addToast(e.message || t('common.failedToSave'), 'error')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={() => { setCustomPhoto(null); onClose() }} title="Edit Room">
+    <Modal open={open} onClose={() => { setCustomPhoto(null); onClose() }} title={t('rooms.editRoomTitle')}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Input label="Room name" value={roomName} onChange={e => setRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()} />
+        <Input label={t('rooms.roomNameLabel')} dir="auto" value={roomName} onChange={e => setRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()} />
         <div>
-          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Photo</p>
+          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
           {customPhoto && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ position: 'relative', borderRadius: 11, overflow: 'hidden', height: 120, marginBottom: 6 }}>
-                <img src={customPhoto} alt="Custom" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <img src={customPhoto} alt={t('rooms.customAlt')} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 <button onClick={() => setCustomPhoto(null)} style={{ position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
               </div>
             </div>
@@ -257,17 +270,17 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
-              📷 Take photo
+              {t('rooms.takePhoto')}
               <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
             </label>
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: '1.5px dashed var(--line-2)', fontSize: 12, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
-              🖼 Choose file
+              {t('rooms.chooseFile')}
               <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
             </label>
           </div>
         </div>
         <button onClick={handleSave} disabled={!roomName.trim() || saving} className="z-btn-primary" style={{ width: '100%' }}>
-          {saving ? 'Saving…' : 'Save changes'}
+          {saving ? t('common.saving') : t('rooms.saveChanges')}
         </button>
       </div>
     </Modal>
@@ -276,23 +289,100 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
 
 // ── Shared Delete-room confirm modal ──────────────────────────────────────────
 export function RoomDeleteConfirm({ room, onClose, onConfirm }) {
+  const t = useT()
   return (
-    <Modal open={!!room} onClose={onClose} title="Delete room">
+    <Modal open={!!room} onClose={onClose} title={t('rooms.deleteRoomTitle')}>
       <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 16, lineHeight: 1.5 }}>
-        Delete <strong style={{ color: 'var(--ink)' }}>{room?.name}</strong>? This will also remove all devices assigned to this room.
+        {t('rooms.deleteRoomLong', { name: room?.name || '' })}
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>Cancel</button>
-        <button onClick={() => onConfirm(room)} style={{ flex: 1, background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: 10, padding: '10px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+        <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
+        <button onClick={() => onConfirm(room)} style={{ flex: 1, background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: 10, padding: '10px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{t('common.delete')}</button>
       </div>
     </Modal>
   )
 }
 
+// ── Reorder row — compact draggable list item ─────────────────────────────────
+// Rendered only while RoomsList is in reorder mode. Whole row is the drag
+// surface; the grip icon on the right is a visual affordance, not an
+// interactive button (a separate handle would force users to aim precisely
+// on mobile). useDragControls is intentionally NOT used so a press anywhere
+// in the row starts the drag — the simplest, most forgiving touch UX.
+function RoomReorderRow({ room }) {
+  const t = useT()
+  const photo = getRoomPhoto(room)
+  const hasActive = room.activeCount > 0
+  return (
+    <Reorder.Item
+      value={room}
+      as="div"
+      whileDrag={{ scale: 1.02, boxShadow: 'var(--shadow-lg)', cursor: 'grabbing' }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '8px 12px 8px 8px',
+        background: 'var(--surface)',
+        border: '0.5px solid var(--line)',
+        borderRadius: 14,
+        cursor: 'grab',
+        // Tells the browser the element captures touch — without this, mobile
+        // Safari treats the long-press as a scroll gesture and the drag never
+        // starts.
+        touchAction: 'none',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', flexShrink: 0, position: 'relative' }}>
+        <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <span style={{
+          position: 'absolute', top: 5, right: 5,
+          width: 6, height: 6, borderRadius: '50%',
+          background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.5)',
+          boxShadow: hasActive ? '0 0 0 2px rgba(108,191,140,0.35)' : 'none',
+        }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
+        <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
+          {room.entityCount === 1 ? t('rooms.deviceCountSingular', { n: room.entityCount }) : t('rooms.deviceCount', { n: room.entityCount })}
+          {hasActive && <span style={{ color: 'var(--ok)', marginLeft: 6 }}>· {t('rooms.someOn', { n: room.activeCount })}</span>}
+        </p>
+      </div>
+      <GripVertical size={18} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} aria-hidden />
+    </Reorder.Item>
+  )
+}
+
 export function RoomsList() {
+  const t = useT()
   const navigate = useNavigate()
-  const { loading, fetchAll, ziggyRooms, entities, getUnassigned, getNoRoom } = useDeviceStore()
-  const { addToast } = useUIStore()
+  // Per-field selectors so this page doesn't re-render on every WS push,
+  // and the expensive grouping derivations only run when their inputs change.
+  const fetchAll        = useDeviceStore(s => s.fetchAll)
+  const loading         = useDeviceStore(s => s.loading)
+  const rawZiggyRooms   = useDeviceStore(s => s.ziggyRooms)
+  const rawEntities     = useDeviceStore(s => s.entities)
+  const getUnassigned   = useDeviceStore(s => s.getUnassigned)
+  const getNoRoom       = useDeviceStore(s => s.getNoRoom)
+  const roomsOrder      = useDeviceStore(s => s.roomsOrder)
+  const setRoomsOrder   = useDeviceStore(s => s.setRoomsOrder)
+  const deviceGroups    = useDeviceStore(s => s.deviceGroups)
+  const groupByEntityId = useDeviceStore(s => s.groupByEntityId)
+  const groupById       = useDeviceStore(s => s.groupById)
+  // Use the physical-device-grouped views so a Switcher's 4 entities (or a
+  // multi-sensor Zigbee node's 4 sub-entities) collapse to one room card.
+  // Falls back to raw lists when /api/devices/grouped returned empty.
+  // Memoized — getGrouped* allocate fresh arrays/objects, which broke
+  // downstream useMemo deps and triggered a render storm on every WS push.
+  const ziggyRooms = useMemo(
+    () => useDeviceStore.getState().getGroupedZiggyRooms(),
+    [rawZiggyRooms, deviceGroups, groupByEntityId, groupById],
+  )
+  const entities = useMemo(
+    () => useDeviceStore.getState().getGroupedEntities(),
+    [rawEntities, deviceGroups, groupByEntityId, groupById],
+  )
+  const addToast = useUIStore(s => s.addToast)
   const [showAdd, setShowAdd] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
   const [newRoomPhoto, setNewRoomPhoto] = useState('living_room')
@@ -300,29 +390,56 @@ export function RoomsList() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [editPhotoRoom, setEditPhotoRoom] = useState(null)
   const [search, setSearch] = useState('')
+  // Reorder mode: tap the [↕] in the header to enter; tap Done to commit, X
+  // to cancel. While editing we work on `draftOrder` (a snapshot of the
+  // current rooms in their saved order) so the live store isn't mutated until
+  // the user confirms — and the saved order isn't disturbed if they bail.
+  const [reorderMode, setReorderMode] = useState(false)
+  const [draftOrder, setDraftOrder] = useState([])
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll({ maxAge: 120_000 }) }, [])
 
   // Enrich ziggyRooms with display counts and temp/humidity sensors for RoomTile.
   // entityMap lets us look up full HA entity objects (with device_class) from the
   // device list — the device entries themselves only carry ha_state, not the
   // attributes the sensor chips need.
   const entityMap = Object.fromEntries(entities.map(e => [e.entity_id, e]))
-  const rooms = ziggyRooms.map((r) => {
-    const sensors = r.devices
-      .map(d => entityMap[d.entity_id])
-      .filter(e => e?.domain === 'sensor' && !['unavailable', 'unknown'].includes(e.state))
-    return {
-      ...r,
-      entityCount:  r.devices.length,
-      activeCount:  r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
-      offlineCount: r.devices.filter((d) => d.ha_state === 'unavailable' || d.ha_state === 'unknown').length,
-      tempSensor:   sensors.find(e => e.device_class === 'temperature') || null,
-      humSensor:    sensors.find(e => e.device_class === 'humidity') || null,
-    }
-  })
+  const rooms = ziggyRooms.map((r) => ({
+    ...r,
+    entityCount:  r.devices.length,
+    activeCount:  r.devices.filter((d) => isEntityOn({ state: d.ha_state, entity_id: d.entity_id })).length,
+    offlineCount: r.devices.filter((d) => d.ha_state === 'unavailable' || d.ha_state === 'unknown').length,
+    // findRoomMetric also looks at _group.metrics, so a multi-sensor device
+    // (Roni Room Sensor) keeps surfacing humidity as a room chip even though
+    // grouping absorbed humidity into the temperature primary's siblings.
+    tempSensor:   findRoomMetric(r.devices, 'temperature', entityMap),
+    humSensor:    findRoomMetric(r.devices, 'humidity',    entityMap),
+  }))
+  // Apply user-defined room order: saved IDs first in saved order, unsaved
+  // rooms appended in their natural (server) order. Used for both the grid
+  // and the reorder list.
+  const orderedRooms = applyRoomsOrder(rooms, roomsOrder)
   const unassigned = getUnassigned()
   const noRoomDevices = getNoRoom()
+
+  const startReorder = () => {
+    setDraftOrder(orderedRooms)
+    setSearch('')
+    setReorderMode(true)
+  }
+  const cancelReorder = () => {
+    setReorderMode(false)
+    setDraftOrder([])
+  }
+  const saveReorder = () => {
+    setRoomsOrder(draftOrder.map(r => r.id))
+    setReorderMode(false)
+    setDraftOrder([])
+    // Deliberately no toast — the visible grid reorder is its own
+    // confirmation, and firing a ToastContainer AnimatePresence enter/exit
+    // alongside any subsequent page-transition AnimatePresence was a known
+    // contributing factor to the page-transition deadlock.
+  }
 
   const handleAddRoom = async () => {
     if (!newRoomName.trim()) return
@@ -332,12 +449,12 @@ export function RoomsList() {
       await fetchAll()
       const newRoom = ziggyRooms.find((r) => r.name.toLowerCase() === newRoomName.trim().toLowerCase())
       if (newRoom) saveRoomPhoto(newRoom.id, newRoomPhoto)
-      addToast(`Room "${newRoomName}" created`, 'success')
+      addToast(t('rooms.roomCreated', { name: newRoomName }), 'success')
       setNewRoomName('')
       setNewRoomPhoto('living_room')
       setShowAdd(false)
     } catch (e) {
-      addToast(e.message || 'Failed to create room', 'error')
+      addToast(e.message || t('rooms.failedToCreate'), 'error')
     } finally {
       setSaving(false)
     }
@@ -347,53 +464,102 @@ export function RoomsList() {
     try {
       await deleteRoom(room.id)
       await fetchAll()
-      addToast(`Room "${room.name}" deleted`, 'success')
+      addToast(t('rooms.roomDeleted', { name: room.name }), 'success')
       setConfirmDelete(null)
     } catch (e) {
-      addToast(e.message || 'Failed to delete room', 'error')
+      addToast(e.message || t('rooms.failedToDelete'), 'error')
     }
   }
 
-  const filteredRooms = rooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
+  const filteredRooms = orderedRooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Your home</p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>Rooms</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{reorderMode ? t('rooms.editOrder') : t('rooms.yourHome')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('rooms.title')}</h1>
           <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
-            {rooms.length} room{rooms.length !== 1 ? 's' : ''}
-            {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {unassigned.length} unassigned</span>}
+            {reorderMode
+              ? t('rooms.dragToReorder')
+              : <>
+                  {rooms.length === 1 ? t('rooms.roomsCountSingular', { n: rooms.length }) : t('rooms.roomsCount', { n: rooms.length })}
+                  {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {t('rooms.unassignedCount', { n: unassigned.length })}</span>}
+                </>}
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-          <Plus size={13} /> Add room
-        </button>
+        {/* Header actions — reorder mode replaces Add room with Cancel/Done so
+            the destructive paths (creating, deleting) aren't reachable while
+            the user is in the middle of reordering. */}
+        {reorderMode ? (
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button
+              onClick={cancelReorder}
+              className="z-btn-secondary"
+              style={{ padding: '8px 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13 }}
+              aria-label={t('rooms.cancelReorderAria')}
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={saveReorder}
+              className="z-btn-primary"
+              style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+            >
+              <Check size={14} /> {t('common.done')}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            {/* Labeled "Reorder" button — was previously an icon-only 38×38
+                square, which read as a generic chrome control on mobile and
+                users couldn't tell it was the sort affordance. Labeled
+                secondary button matches "+ Add room" in visual weight without
+                competing for primary CTA. */}
+            {rooms.length > 1 && (
+              <button
+                onClick={startReorder}
+                aria-label={t('rooms.reorderAria')}
+                className="z-btn-secondary"
+                style={{ padding: '8px 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13 }}
+              >
+                <ArrowUpDown size={13} /> {t('rooms.reorder')}
+              </button>
+            )}
+            <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <Plus size={13} /> {t('rooms.add')}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Search bar */}
-      <div style={{ position: 'relative', marginBottom: 16 }}>
-        <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
-        </svg>
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search rooms…"
-          style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 36, height: 40, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
-          onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
-          onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }}
-        />
-      </div>
+      {/* Search bar — hidden in reorder mode (search filtering would hide the
+          very rows the user is trying to drag, and the address-bar input
+          steals focus from drag gestures on mobile). */}
+      {!reorderMode && (
+        <div style={{ position: 'relative', marginBottom: 16 }}>
+          <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder={t('rooms.searchPlaceholder')}
+            dir="auto"
+            style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 36, height: 40, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }}
+          />
+        </div>
+      )}
 
-      {/* Empty state */}
-      {!loading && rooms.length === 0 && unassigned.length === 0 && (
+      {/* Empty state — only when truly empty, not during a background refresh */}
+      {rooms.length === 0 && unassigned.length === 0 && !loading && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No rooms yet</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Add a room to start organizing devices</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('rooms.empty')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('rooms.emptyHint')}</p>
           <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={13} /> Add first room
+            <Plus size={13} /> {t('rooms.addFirstRoom')}
           </button>
         </div>
       )}
@@ -401,24 +567,53 @@ export function RoomsList() {
       {/* Room photo-tile grid — `.z-rooms-grid` sets responsive cols/gap
           (2 on phones, 3 on tablet+) and bumps `--rooms-tile-h` on desktop
           so the tiles read as big anchor cards there rather than mobile-
-          sized thumbnails stretched wide. */}
-      <div className="z-rooms-grid">
-        {loading && [1, 2, 3, 4].map(i => (
-          <div key={i} style={{ height: 'var(--rooms-tile-h)', borderRadius: 16, background: 'var(--surface-2)', opacity: 0.6 }} />
-        ))}
-        {!loading && filteredRooms.map(room => (
-          <RoomTile
-            key={room.id}
-            room={room}
-            onClick={() => navigate(`/rooms/${room.id}`)}
-            onDelete={r => setConfirmDelete(r)}
-            onEditPhoto={(r) => setEditPhotoRoom(r)}
-          />
-        ))}
-      </div>
+          sized thumbnails stretched wide.
 
-      {/* Unassigned / no-room chips */}
-      {!loading && (unassigned.length > 0 || noRoomDevices.length > 0) && (
+          In reorder mode we swap to a single-column list with a thumbnail +
+          drag handle per row. Reasons:
+            1. framer-motion Reorder.Item hit-testing assumes 1D ordering;
+               on a 2-col grid axis="y" jumps multiple positions per swap
+               because rows wrap. A list is the natural fit.
+            2. The mode-switch visually separates "browsing" from "editing"
+               — fewer accidental drags on the high-traffic Rooms page.
+            3. Drag handle is an explicit affordance for mouse + touch. */}
+      {!reorderMode && (
+        <div className="z-rooms-grid">
+          {/* Stale-while-revalidate: only show skeleton on a true cold start
+              (no rooms cached at all). On a back-nav refresh, show the
+              cached tiles immediately — they update in place when the new
+              data arrives. */}
+          {loading && filteredRooms.length === 0 && [1, 2, 3, 4].map(i => (
+            <div key={i} style={{ height: 'var(--rooms-tile-h)', borderRadius: 16, background: 'var(--surface-2)', opacity: 0.6 }} />
+          ))}
+          {filteredRooms.map(room => (
+            <RoomTile
+              key={room.id}
+              room={room}
+              onClick={() => navigate(`/rooms/${room.id}`)}
+              onDelete={r => setConfirmDelete(r)}
+              onEditPhoto={(r) => setEditPhotoRoom(r)}
+            />
+          ))}
+        </div>
+      )}
+      {reorderMode && (
+        <Reorder.Group
+          as="div"
+          axis="y"
+          values={draftOrder}
+          onReorder={setDraftOrder}
+          style={{ display: 'flex', flexDirection: 'column', gap: 8, listStyle: 'none', padding: 0, margin: 0 }}
+        >
+          {draftOrder.map(room => (
+            <RoomReorderRow key={room.id} room={room} />
+          ))}
+        </Reorder.Group>
+      )}
+
+      {/* Unassigned / no-room chips — hidden in reorder mode (they're not
+          reorderable rooms; leaving them visible would invite a futile drag). */}
+      {!reorderMode && !loading && (unassigned.length > 0 || noRoomDevices.length > 0) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
           {unassigned.length > 0 && (
             <Link to="/devices?filter=unassigned" style={{
@@ -429,8 +624,8 @@ export function RoomsList() {
             }}>
               <span style={{ fontSize: 20 }}>📦</span>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)', marginBottom: 2 }}>{unassigned.length} unassigned device{unassigned.length !== 1 ? 's' : ''}</p>
-                <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>Tap to assign to rooms</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)', marginBottom: 2 }}>{unassigned.length === 1 ? t('rooms.unassignedDeviceCountSingular', { n: unassigned.length }) : t('rooms.unassignedDevicesCount', { n: unassigned.length })}</p>
+                <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('rooms.tapToAssign')}</p>
               </div>
               <ChevronRight size={14} style={{ color: 'var(--warn)', flexShrink: 0 }} />
             </Link>
@@ -443,8 +638,8 @@ export function RoomsList() {
             }}>
               <span style={{ fontSize: 20 }}>🏠</span>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length} device{noRoomDevices.length !== 1 ? 's' : ''} — no room</p>
-                <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>Intentionally left without a room</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length === 1 ? t('rooms.noRoomDeviceCountSingular', { n: noRoomDevices.length }) : t('rooms.noRoomDevicesCount', { n: noRoomDevices.length })}</p>
+                <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('rooms.intentionalNoRoom')}</p>
               </div>
               <ChevronRight size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
             </Link>
@@ -453,11 +648,11 @@ export function RoomsList() {
       )}
 
       {/* Add room modal */}
-      <Modal open={showAdd} onClose={() => { setShowAdd(false); setNewRoomName(''); setNewRoomPhoto('living_room') }} title="Add Room">
+      <Modal open={showAdd} onClose={() => { setShowAdd(false); setNewRoomName(''); setNewRoomPhoto('living_room') }} title={t('rooms.addRoomTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Input label="Room name" placeholder="e.g. Living Room, Kitchen, Office" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleAddRoom()} />
+          <Input label={t('rooms.roomNameLabel')} placeholder={t('rooms.namePlaceholderExamples')} dir="auto" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleAddRoom()} />
           <div>
-            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Photo</p>
+            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
             <div style={{ height: 252, overflowY: 'scroll', borderRadius: 10, border: '0.5px solid var(--line)' }} className="scrollbar-thin">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: 8 }}>
                 {PHOTO_OPTIONS.map(({ key, label }) => {
@@ -484,7 +679,7 @@ export function RoomsList() {
             </div>
           </div>
           <button onClick={handleAddRoom} disabled={!newRoomName.trim() || saving} className="z-btn-primary" style={{ width: '100%' }}>
-            {saving ? 'Creating…' : 'Create room'}
+            {saving ? t('rooms.creating') : t('rooms.createRoom')}
           </button>
         </div>
       </Modal>
@@ -504,10 +699,12 @@ export function RoomsList() {
   )
 }
 
-const LOST_LABEL = { lost: 'Removed from hub', unclaimed: 'Not in Ziggy', unconfigured: 'No entity set' }
+// Note: LOST_LABEL keys are used as translation keys; resolved via t() at use sites.
+const LOST_LABEL = { lost: 'rooms.removedFromHub', unclaimed: 'rooms.notInZiggy', unconfigured: 'rooms.noEntitySet' }
 const LOST_DOT   = { lost: 'bg-red-400', unclaimed: 'bg-amber-400', unconfigured: 'bg-zinc-300 dark:bg-zinc-600' }
 
 function CameraPreview({ entityId }) {
+  const t = useT()
   const navigate = useNavigate()
   const [tick, setTick] = useState(0)
   useEffect(() => {
@@ -522,7 +719,7 @@ function CameraPreview({ entityId }) {
         aspectRatio: '16 / 9', background: 'var(--bg-2)',
         cursor: 'pointer', position: 'relative',
       }}
-      title="View live in Security"
+      title={t('rooms.viewLiveSecurity')}
     >
       <img
         key={tick}
@@ -537,7 +734,7 @@ function CameraPreview({ entityId }) {
         background: 'rgba(0,0,0,0.45)', color: '#fff',
         fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
       }}>
-        LIVE ▶
+        {t('rooms.live')}
       </div>
     </div>
   )
@@ -548,6 +745,7 @@ function CameraPreview({ entityId }) {
 // _LegacyDeviceRow_unused removed (lines 485-591) — superseded by DeviceCard variant="row".
 
 function VirtualDeviceRow({ device, onTrigger, triggering }) {
+  const t = useT()
   const isTriggering = triggering === device.id
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: '0.5px solid var(--line)' }}
@@ -556,12 +754,12 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
         {device.icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>{device.capability}</p>
+        <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
+        <p dir="auto" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace' }}>{device.capability}</p>
       </div>
-      <button onClick={() => onTrigger(device)} disabled={isTriggering} title="Run"
+      <button onClick={() => onTrigger(device)} disabled={isTriggering} title={t('rooms.runShort')}
         style={{ padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: isTriggering ? 'default' : 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--ok) 10%, var(--surface))`, color: 'var(--ok)', border: '0.5px solid var(--line)', opacity: isTriggering ? 0.5 : 1 }}>
-        {isTriggering ? '…' : '▶ Run'}
+        {isTriggering ? '…' : t('rooms.run')}
       </button>
     </div>
   )
@@ -596,26 +794,54 @@ function RoomZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
 // Dead legacy components removed (LightTile, LightsGroup, ExpandableCard, ClimateRowCard, MediaRowCard, TVRowCard, and tile-hold constants).
 // All superseded by DeviceCard variant="tile" / variant="row" rendered via renderDomainSection.
 
+// Compact metric label — keeps the strip tile small while still surfacing
+// "humidity + battery" alongside the primary "temperature" reading.
+function _fmtStripMetric(m) {
+  if (m == null) return null
+  const v = m.state
+  if (v == null || v === 'unavailable' || v === 'unknown') return null
+  const n = Number(v)
+  const num = Number.isFinite(n) ? (Math.abs(n) >= 10 ? n.toFixed(1).replace(/\.0$/, '') : n.toFixed(2).replace(/\.?0+$/, '')) : String(v)
+  const unit = m.unit
+    || ({ humidity: '%', battery: '%', signal_strength: 'dBm', illuminance: 'lx', power: 'W', energy: 'kWh', voltage: 'V', current: 'A' }[m.device_class] || '')
+  return `${num}${unit ? (unit === '°' ? '°' : unit) : ''}`
+}
+
 function SensorsStrip({ devices }) {
   const renderSensor = (entity) => {
     const domain = entity.domain
     const dc = entity.ha_attributes?.device_class || entity.device_class
-    const name = entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || ''
+    const name = entity._group?.name || entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || ''
     const val = entity.ha_state || entity.state || '—'
     const unit = entity.ha_attributes?.unit_of_measurement || ''
     let icon = 'motion'
     if (dc === 'temperature') icon = 'temp'
     else if (dc === 'humidity') icon = 'humid'
     else if (dc === 'motion' || dc === 'occupancy') icon = 'motion'
-    return { icon, val: val + unit, name, entity }
+    // Pull the group's metric pills so a multi-reading sensor (Roni Room
+    // Sensor: temp + humidity + battery) doesn't lose its sibling readings
+    // just because grouping collapsed them to one card.
+    const metrics = (entity._group?.metrics || [])
+      .map(_fmtStripMetric)
+      .filter(Boolean)
+      .slice(0, 2)
+    return { icon, val: val + unit, name, metrics }
   }
   const items = devices.map(renderSensor)
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-      {items.map(({ icon, val, name }, i) => (
+      {items.map(({ icon, val, name, metrics }, i) => (
         <div key={i} style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
           <div style={{ color: 'var(--ink-faint)', marginBottom: 6 }}><RoomZIcon name={icon} size={13} /></div>
           <div className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{val}</div>
+          {metrics.length > 0 && (
+            <div className="z-mono" style={{
+              fontSize: 9.5, color: 'var(--ink-faint)', marginTop: 3, letterSpacing: '0.03em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {metrics.join(' · ')}
+            </div>
+          )}
           <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>{name}</div>
         </div>
       ))}
@@ -625,7 +851,7 @@ function SensorsStrip({ devices }) {
 
 // StandardDeviceRow removed — superseded by DeviceCard variant="row".
 
-function renderDomainSection(group, devices) {
+function renderDomainSection(group, devices, t) {
   const visibleDevices = devices
   if (!visibleDevices.length) return null
 
@@ -634,7 +860,7 @@ function renderDomainSection(group, devices) {
     const onCount = visibleDevices.filter(e => isEntityOn(e)).length
     return (
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label} · {onCount} of {visibleDevices.length} on</p>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t ? t('rooms.lightsHeader', { label: group.label, on: onCount, total: visibleDevices.length }) : `${group.label} · ${onCount} of ${visibleDevices.length} on`}</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
           {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="tile" />)}
         </div>
@@ -664,10 +890,35 @@ function renderDomainSection(group, devices) {
 }
 
 export function RoomDetail() {
+  const t = useT()
   const { roomId } = useParams()
   const navigate = useNavigate()
-  const { fetchAll, ziggyRooms, hideEntity, unhideEntity, hiddenEntities, updateEntityState, loading, entities } = useDeviceStore()
-  const { addToast } = useUIStore()
+  // Per-field selectors — destructuring the whole store re-rendered this
+  // page on every WS push, which combined with the per-render
+  // getGroupedEntities() / getGroupedZiggyRooms() walks below burned the
+  // main thread and made device-card taps feel laggy.
+  const fetchAll          = useDeviceStore(s => s.fetchAll)
+  const rawZiggyRooms     = useDeviceStore(s => s.ziggyRooms)
+  const rawEntities       = useDeviceStore(s => s.entities)
+  const hideEntity        = useDeviceStore(s => s.hideEntity)
+  const unhideEntity      = useDeviceStore(s => s.unhideEntity)
+  const hiddenEntities    = useDeviceStore(s => s.hiddenEntities)
+  const updateEntityState = useDeviceStore(s => s.updateEntityState)
+  const loading           = useDeviceStore(s => s.loading)
+  // Group lookups depend only on entities/deviceGroups — read those raw
+  // and memoize so we don't rebuild a fresh array each render.
+  const deviceGroups      = useDeviceStore(s => s.deviceGroups)
+  const groupByEntityId   = useDeviceStore(s => s.groupByEntityId)
+  const groupById         = useDeviceStore(s => s.groupById)
+  const ziggyRooms = useMemo(
+    () => useDeviceStore.getState().getGroupedZiggyRooms(),
+    [rawZiggyRooms, deviceGroups, groupByEntityId, groupById],
+  )
+  const entities = useMemo(
+    () => useDeviceStore.getState().getGroupedEntities(),
+    [rawEntities, deviceGroups, groupByEntityId, groupById],
+  )
+  const addToast = useUIStore(s => s.addToast)
   const [showAdd, setShowAdd] = useState(false)
   const [addEntityId, setAddEntityId] = useState('')
   const [saving, setSaving] = useState(false)
@@ -698,7 +949,7 @@ export function RoomDetail() {
     }
   }, [menuOpen])
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll({ maxAge: 120_000 }) }, [])
 
   useEffect(() => {
     if (!roomId) return
@@ -711,46 +962,65 @@ export function RoomDetail() {
 
   const room = ziggyRooms.find((r) => r.id === roomId)
 
-  // Adapt DeviceRegistry enriched format to the shape DeviceRow expects.
-  // Spread d first so IR markers (_is_ir, _ir_device_id, commands, etc.) are preserved.
-  const rawRoomDevices = (room?.devices || []).map((d) => ({
-    ...d,
-    entity_id: d.entity_id || null,
-    state: d.ha_state ?? 'unknown',
-    domain: d.domain || (d.entity_id ? d.entity_id.split('.')[0] : 'unknown'),
-    display_name: d.display_name || d.entity_id || d.device_type,
-    attributes: d.ha_attributes || {},
-    ...(d.ha_attributes || {}),
-    ziggyStatus: d.status,
-  }))
-  // Dedupe: when an HA entity already advertises a paired IR device via _linkedIr,
-  // hide the standalone IR row that points at the same physical IR device. Otherwise
-  // the room shows two entries for the same thing (one with the play button, one with the Remote).
-  const haPairedIrIds = new Set(
-    rawRoomDevices.filter((d) => d._linkedIr?.id).map((d) => d._linkedIr.id)
-  )
-  const roomDevices = rawRoomDevices.filter((d) => !(d._is_ir && d._ir_device_id && haPairedIrIds.has(d._ir_device_id)))
-  const entityCount  = roomDevices.length
-  const activeCount  = roomDevices.filter((d) => isEntityOn(d)).length
-  const offlineCount = roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length
-  const tempSensor   = roomDevices.find(d => d.domain === 'sensor' && d.device_class === 'temperature' && !['unavailable','unknown'].includes(d.state))
-  const humSensor    = roomDevices.find(d => d.domain === 'sensor' && d.device_class === 'humidity' && !['unavailable','unknown'].includes(d.state))
+  // Memoize the per-device adapter + derived counts. Without this, every
+  // render of RoomDetail (and on a busy install there are many — every WS
+  // push to an entity outside this room still re-renders the page) would
+  // rebuild fresh object references for every device. That defeats
+  // DeviceCard.memo entirely (its `entity` prop was always "new"), turning
+  // a single light flicker into N reconciliations and stretching the
+  // click→navigate latency on big rooms.
+  const roomDevices = useMemo(() => {
+    const raw = (room?.devices || []).map((d) => ({
+      ...d,
+      entity_id: d.entity_id || null,
+      state: d.ha_state ?? 'unknown',
+      domain: d.domain || (d.entity_id ? d.entity_id.split('.')[0] : 'unknown'),
+      display_name: d.display_name || d.entity_id || d.device_type,
+      attributes: d.ha_attributes || {},
+      ...(d.ha_attributes || {}),
+      ziggyStatus: d.status,
+    }))
+    // Dedupe: when an HA entity already advertises a paired IR device via
+    // _linkedIr, hide the standalone IR row that points at the same physical
+    // IR device.
+    const haPairedIrIds = new Set(
+      raw.filter((d) => d._linkedIr?.id).map((d) => d._linkedIr.id)
+    )
+    return raw.filter((d) => !(d._is_ir && d._ir_device_id && haPairedIrIds.has(d._ir_device_id)))
+  }, [room?.devices])
+
+  const { entityCount, activeCount, offlineCount, tempSensor, humSensor } = useMemo(() => ({
+    entityCount:  roomDevices.length,
+    activeCount:  roomDevices.filter((d) => isEntityOn(d)).length,
+    offlineCount: roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length,
+    // Walk the room's primary devices AND each device's grouped siblings, so
+    // a multi-sensor node's humidity/temperature surfaces in the room hero
+    // even when grouping made it a metric pill rather than its own card.
+    tempSensor:   findRoomMetric(roomDevices, 'temperature'),
+    humSensor:    findRoomMetric(roomDevices, 'humidity'),
+  }), [roomDevices])
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
     const entity = room?.devices?.find((d) => d.entity_id === entityId)
     if (entity?.ha_state === 'unavailable') {
-      addToast('Device is unavailable', 'error')
+      addToast(t('rooms.deviceUnavailable'), 'error')
       return
     }
     updateEntityState(entityId, on ? 'on' : 'off')
     try {
       await controlDevice(entityId, on ? 'turn_on' : 'turn_off')
-      addToast(`${on ? 'On' : 'Off'}`, 'success')
-      setTimeout(() => fetchAll(), 1500)
+      addToast(on ? t('rooms.onToast') : t('rooms.offToast'), 'success')
+      // No post-toggle fetchAll: controlDevice is fire-and-forget +
+      // already broadcasts an optimistic state_changed; the real
+      // state_changed from ha_subscriber lands within ~50 ms of HA's
+      // ack and overwrites the optimistic value through the normal
+      // updateEntityState path. A delayed full refetch (5 backend
+      // calls including two HA WS round-trips) was a redundant
+      // safety net for a problem ha_subscriber already solves.
     } catch {
       updateEntityState(entityId, on ? 'off' : 'on')
-      addToast('Failed', 'error')
+      addToast(t('rooms.failedShort'), 'error')
     }
   }
 
@@ -758,7 +1028,7 @@ export function RoomDetail() {
     try {
       await callHaService(entity.domain, service, { entity_id: entity.entity_id, ...data })
     } catch {
-      addToast('Control failed', 'error')
+      addToast(t('rooms.controlFailed'), 'error')
     }
   }
 
@@ -766,20 +1036,20 @@ export function RoomDetail() {
     try {
       await assignEntityToArea(entityId, null)
       await fetchAll()
-      addToast('Removed from room', 'success')
+      addToast(t('rooms.removedFromRoom'), 'success')
     } catch (e) {
-      addToast(e.message || 'Failed', 'error')
+      addToast(e.message || t('rooms.failedShort'), 'error')
     }
   }
 
   const handleHide = (entityId) => {
     hideEntity(entityId)
-    addToast('Device hidden', 'success')
+    addToast(t('rooms.deviceHidden'), 'success')
   }
 
   const handleUnhide = (entityId) => {
     unhideEntity(entityId)
-    addToast('Device visible again', 'success')
+    addToast(t('rooms.deviceVisibleAgain'), 'success')
   }
 
   const handleAddDevice = async () => {
@@ -788,11 +1058,11 @@ export function RoomDetail() {
     try {
       await assignEntityToArea(addEntityId, roomId)
       await fetchAll()
-      addToast('Device added to room', 'success')
+      addToast(t('rooms.deviceAddedToRoom'), 'success')
       setAddEntityId('')
       setShowAdd(false)
     } catch (e) {
-      addToast(e.message || 'Failed', 'error')
+      addToast(e.message || t('rooms.failedShort'), 'error')
     } finally {
       setSaving(false)
     }
@@ -803,12 +1073,14 @@ export function RoomDetail() {
     try {
       const result = await triggerVirtualDevice(device.id)
       addToast(
-        result.ok ? `✓ ${device.name}: ${result.message || 'Done'}` : `✗ ${result.message || 'Failed'}`,
+        result.ok
+          ? t('rooms.vDeviceSuccess', { name: device.name, msg: result.message || t('rooms.vDeviceDone') })
+          : t('rooms.vDeviceFailed', { msg: result.message || t('rooms.failedShort') }),
         result.ok ? 'success' : 'error',
       )
       getVirtualDevices(roomId).then((d) => setVDevices(d.devices || [])).catch(() => {})
     } catch (e) {
-      addToast(e.message || 'Trigger failed', 'error')
+      addToast(e.message || t('rooms.triggerFailed'), 'error')
     } finally {
       setTriggering(null)
     }
@@ -825,7 +1097,7 @@ export function RoomDetail() {
         </div>
       )
     }
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240, color: 'var(--ink-faint)', fontSize: 13 }}>Room not found</div>
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240, color: 'var(--ink-faint)', fontSize: 13 }}>{t('rooms.notFound')}</div>
   }
 
   const photo = getRoomPhoto(room)
@@ -849,7 +1121,7 @@ export function RoomDetail() {
           <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setMenuOpen(v => !v)}
-              aria-label="Room options"
+              aria-label={t('rooms.roomOptions')}
               aria-expanded={menuOpen}
               style={{
                 width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -882,7 +1154,7 @@ export function RoomDetail() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <Pencil size={14} style={{ color: 'var(--ink-mute)' }} />
-                  Edit room
+                  {t('rooms.editRoom')}
                 </button>
                 <button
                   role="menuitem"
@@ -897,7 +1169,7 @@ export function RoomDetail() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <Trash2 size={14} />
-                  Delete room
+                  {t('rooms.deleteRoom')}
                 </button>
               </div>
             )}
@@ -907,7 +1179,7 @@ export function RoomDetail() {
         {/* Title bottom */}
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, color: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{room.name}</h1>
+            <h1 dir="auto" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{room.name}</h1>
             {(tempSensor || humSensor) && (
               <span className="z-mono" style={{ fontSize: 11, opacity: 0.85 }}>
                 {tempSensor && `${parseFloat(tempSensor.state).toFixed(1)}°`}
@@ -919,11 +1191,11 @@ export function RoomDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, opacity: 0.85 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: activeCount > 0 ? '#6CBF8C' : 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
-              {activeCount} device{activeCount !== 1 ? 's' : ''} on
+              {activeCount === 1 ? t('rooms.deviceOn', { n: activeCount }) : t('rooms.devicesOn', { n: activeCount })}
             </span>
             <span>·</span>
-            <span>{entityCount} total</span>
-            {offlineCount > 0 && <><span>·</span><span style={{ color: 'rgba(252,165,165,0.9)' }}>{offlineCount} offline</span></>}
+            <span>{t('rooms.totalCount', { n: entityCount })}</span>
+            {offlineCount > 0 && <><span>·</span><span style={{ color: 'rgba(252,165,165,0.9)' }}>{t('rooms.offlineCount', { n: offlineCount })}</span></>}
           </div>
         </div>
       </div>
@@ -938,22 +1210,22 @@ export function RoomDetail() {
           return (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <p className="z-eyebrow">Devices</p>
+                <p className="z-eyebrow">{t('rooms.devices')}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {hiddenCount > 0 && (
                     <button onClick={() => setShowHiddenDevices(v => !v)} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {showHiddenDevices ? `Hide ${hiddenCount} hidden` : `${hiddenCount} hidden`}
+                      {showHiddenDevices ? t('rooms.hideHidden', { n: hiddenCount }) : t('rooms.hiddenCount', { n: hiddenCount })}
                     </button>
                   )}
                   <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Plus size={11} /> Assign
+                    <Plus size={11} /> {t('rooms.assign')}
                   </button>
                 </div>
               </div>
 
               {deviceGroups.length === 0 && (
                 <div style={{ padding: '20px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>
-                  {roomDevices.length === 0 ? 'No devices in this room' : 'All devices are hidden'}
+                  {roomDevices.length === 0 ? t('rooms.noDevicesInRoom') : t('rooms.allDevicesHidden')}
                 </div>
               )}
 
@@ -962,7 +1234,7 @@ export function RoomDetail() {
                   // Resolve each room device to its canonical entity shape from
                   // the store (proper _ir / _linkedIr markers, full attributes).
                   const resolved = group.devices.map(d => resolveRoomDeviceToEntity(d, entities))
-                  const section = renderDomainSection(group, resolved)
+                  const section = renderDomainSection(group, resolved, t)
                   return section ? <div key={group.id}>{section}</div> : null
                 })}
               </div>
@@ -973,7 +1245,7 @@ export function RoomDetail() {
         {/* Virtual / Capability Devices */}
         {vDevices.length > 0 && (
           <div>
-            <p className="z-eyebrow" style={{ marginBottom: 8 }}>Capabilities</p>
+            <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('rooms.capabilities')}</p>
             <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
               {vDevices.map(device => (
                 <VirtualDeviceRow key={device.id} device={device} onTrigger={handleTriggerVDevice} triggering={triggering} />
@@ -986,8 +1258,8 @@ export function RoomDetail() {
         {roomAutomations.length > 0 && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <p className="z-eyebrow">Automations</p>
-              <button onClick={() => navigate('/automations')} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>View all</button>
+              <p className="z-eyebrow">{t('rooms.automations')}</p>
+              <button onClick={() => navigate('/automations')} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('rooms.viewAll')}</button>
             </div>
             <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
               {roomAutomations.map((a, i) => (
@@ -998,12 +1270,12 @@ export function RoomDetail() {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={a.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</p>
-                        {a.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</p>}
+                        <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</p>
+                        {a.description && <p dir="auto" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</p>}
                       </div>
                     </button>
-                    <button onClick={async e => { e.stopPropagation(); try { await triggerAutomation(a.id); addToast(`Triggered: ${a.name}`, 'success') } catch { addToast('Failed', 'error') } }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ok)', padding: 6 }} title="Run now">
+                    <button onClick={async e => { e.stopPropagation(); try { await triggerAutomation(a.id); addToast(t('rooms.triggered', { name: a.name }), 'success') } catch { addToast(t('rooms.failedShort'), 'error') } }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ok)', padding: 6 }} title={t('rooms.runNow')}>
                       <Play size={13} />
                     </button>
                     <span style={{ color: 'var(--ink-faint)' }}><ChevronRight size={12} /></span>
@@ -1015,14 +1287,14 @@ export function RoomDetail() {
         )}
       </div>
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Assign device to room">
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={t('rooms.assignDevice')}>
         <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14, lineHeight: 1.5 }}>
-          Pick an existing HA entity to assign to this room. To add brand-new hardware, pair it in Home Assistant first.
+          {t('rooms.pickEntity')}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <EntitySelect label="Device" placeholder="Search entities…" value={addEntityId} onChange={setAddEntityId} />
+          <EntitySelect label={t('rooms.deviceLabel')} placeholder={t('rooms.searchEntities')} value={addEntityId} onChange={setAddEntityId} />
           <button onClick={handleAddDevice} disabled={!addEntityId || saving} className="z-btn-primary" style={{ width: '100%' }}>
-            {saving ? 'Assigning…' : 'Assign to room'}
+            {saving ? t('rooms.assigning') : t('rooms.assignToRoomBtn')}
           </button>
         </div>
       </Modal>
@@ -1041,11 +1313,11 @@ export function RoomDetail() {
           try {
             await deleteRoom(r.id)
             await fetchAll()
-            addToast(`Room "${r.name}" deleted`, 'success')
+            addToast(t('rooms.roomDeleted', { name: r.name }), 'success')
             setDeleteRoom(null)
             navigate('/rooms')
           } catch (e) {
-            addToast(e.message || 'Failed to delete', 'error')
+            addToast(e.message || t('rooms.failedToDeleteShort'), 'error')
           }
         }}
       />

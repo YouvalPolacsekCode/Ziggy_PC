@@ -63,6 +63,52 @@ async def _fire_automations(name: str, new_state: str) -> None:
         log_error(f"[Presence] Transition handler error: {exc}")
 
 
+async def _fire_zone_automation(zt) -> None:
+    """Fire `zone_entered` / `zone_left` automations for one zone transition."""
+    trigger_type = "zone_entered" if zt.direction == "entered" else "zone_left"
+    try:
+        from core.automation_file import list_automations
+        from services.local_automation_actions import execute_ziggy_actions
+
+        for auto in list_automations():
+            if not auto.get("enabled", True):
+                continue
+            t = auto.get("trigger", {})
+            if t.get("type") != trigger_type:
+                continue
+            zone_filter   = t.get("zone", "*")
+            person_filter = t.get("person", "*")
+            if zone_filter != "*" and zone_filter.lower() != zt.zone_name.lower():
+                continue
+            if person_filter != "*" and person_filter.lower() != zt.person_name.lower():
+                continue
+            log_info(
+                f"[Presence] Firing automation '{auto.get('name', auto['id'])}' "
+                f"for {trigger_type} zone={zt.zone_name} person={zt.person_name}"
+            )
+            try:
+                await execute_ziggy_actions(auto["id"])
+            except Exception as exc:
+                log_error(f"[Presence] Zone automation {auto['id']} failed: {exc}")
+    except Exception as exc:
+        log_error(f"[Presence] Zone handler error: {exc}")
+
+
+async def _broadcast_zone_transition(zt) -> None:
+    try:
+        from backend.ws_manager import manager
+        await manager.broadcast({
+            "type":       "presence_zone_transition",
+            "person_id":  zt.person_id,
+            "person":     zt.person_name,
+            "zone_id":    zt.zone_id,
+            "zone":       zt.zone_name,
+            "direction":  zt.direction,
+        })
+    except Exception as exc:
+        log_error(f"[Presence] Zone WS broadcast failed: {exc}")
+
+
 async def _broadcast_transition(person_id: str, name: str, new_state: str) -> None:
     """Push a `presence_transition` over the WS so the Dashboard refreshes
     immediately, instead of waiting on the 30 s polling fallback."""
@@ -103,3 +149,23 @@ def schedule_side_effects(decision: Decision) -> None:
             f"[Presence] Cannot schedule side effects (no loop): {exc} "
             f"for {decision.person_name} → {new_state}"
         )
+
+
+def schedule_zone_side_effects(decision: Decision) -> None:
+    """Fire automation + WS broadcast for each ZoneTransition on the decision.
+
+    Independent of the primary home/not_home side effects — a decision can
+    have zone_transitions even when fired_transition is False (you cross into
+    "Near Home" before crossing into "Home", or you transit a non-home zone
+    while away from home). Currently does NOT send a push notification per
+    zone — extra zones tend to be many and noisy.
+    """
+    transitions = getattr(decision, "zone_transitions", None) or []
+    if not transitions:
+        return
+    try:
+        for zt in transitions:
+            asyncio.create_task(_fire_zone_automation(zt))
+            asyncio.create_task(_broadcast_zone_transition(zt))
+    except RuntimeError as exc:
+        log_error(f"[Presence] Cannot schedule zone side effects (no loop): {exc}")

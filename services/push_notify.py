@@ -125,6 +125,7 @@ def push_notify_sync(
     url: str = "/",
     category: str = "general",
     exclude_user_id: str | None = None,
+    actions: list[dict] | None = None,
 ) -> None:
     """Send a web push to all subscriptions that pass per-user preference checks.
 
@@ -132,13 +133,20 @@ def push_notify_sync(
     insensitive) are skipped — used for self-notification suppression so a
     user doesn't get pushed about their own presence transitions.
 
+    `actions`: optional list of {action: token, title: "Label"} dicts. If
+    provided, the notification carries Web Push action buttons; tapping one
+    triggers the SW to POST /api/push/action/{token} on the backend.
+
     Safe to call from any thread.
     category must match a key in push_preferences.CATEGORIES, or "general" to skip filtering.
     """
     try:
         keys        = get_vapid_keys()
         private_pem = keys["private_b64url"]
-        data        = json.dumps({"title": title, "body": body, "url": url})
+        payload: dict = {"title": title, "body": body, "url": url}
+        if actions:
+            payload["actions"] = actions
+        data = json.dumps(payload)
 
         with _lock:
             subs = load_subs()
@@ -189,11 +197,13 @@ async def push_notify(
     url: str = "/",
     category: str = "general",
     exclude_user_id: str | None = None,
+    actions: list[dict] | None = None,
 ) -> None:
     """Async wrapper — offloads to thread pool to avoid blocking the event loop."""
     import asyncio
     await asyncio.get_event_loop().run_in_executor(
-        None, push_notify_sync, title, body, url, category, exclude_user_id
+        None,
+        lambda: push_notify_sync(title, body, url, category, exclude_user_id, actions),
     )
 
 

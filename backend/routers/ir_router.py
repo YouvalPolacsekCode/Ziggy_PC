@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from core.errors import ErrorCode, ZiggyError, ir_blaster_unreachable
 from services.ir_manager import (
     list_ir_devices, get_ir_device, create_ir_device,
     update_ir_device, delete_ir_device,
@@ -92,7 +93,7 @@ async def ir_discover():
         devices = await discover_broadlink_devices(timeout=5)
         return {"devices": devices}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Discovery failed: {e}")
+        raise ir_blaster_unreachable(cause=e)
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +164,17 @@ async def create_ir_device_endpoint(body: IrDeviceCreate):
         _refresh_device_registry()
         return {"ok": True, "device": device}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # create_ir_device raises ValueError with user-readable validation
+        # text (e.g. "blaster_host is required"). VALIDATION_ERROR is the
+        # right code so the FE can surface it inline on the form. The full
+        # exception lands in details for the admin debug channel.
+        raise ZiggyError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=str(e) if str(e) and not isinstance(e, KeyError) else None,
+            log_message=f"create_ir_device failed: {type(e).__name__}: {e}",
+            details={"cause": repr(e)},
+            cause=e,
+        )
 
 
 @router.patch("/api/ir/devices/{device_id}")
@@ -435,7 +446,15 @@ async def ir_listener_status():
             })
         return {"listeners": hosts}
     except Exception as e:
-        return {"listeners": [], "error": str(e)}
+        # Surface as a proper error rather than a "looks fine but secretly
+        # failed" empty list — the admin status page treats an empty list as
+        # "no listeners configured" which masked real outages.
+        raise ZiggyError(
+            code=ErrorCode.INTERNAL_ERROR,
+            log_message=f"ir listener status failed: {type(e).__name__}: {e}",
+            details={"cause": repr(e)},
+            cause=e,
+        )
 
 
 # ---------------------------------------------------------------------------

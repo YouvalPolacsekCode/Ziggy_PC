@@ -23,17 +23,18 @@
  */
 
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import {
   Power, Lightbulb, Sun, Tv2, Speaker, Snowflake, Wind, Wifi,
   DoorOpen, Lock as LockIcon, AlarmSmoke, Droplets, Activity, Camera,
   Thermometer, Plug, Square, ArrowUp, ArrowDown, Play, Pause,
   ChevronRight, Volume2, VolumeX, Cog, BatteryLow,
 } from 'lucide-react'
-import { deviceFacts, sendDeviceCommand, kindMeta, KIND } from '../../lib/devices'
-import { getEntityState } from '../../lib/api'
+import { deviceFacts, sendDeviceCommand, kindMeta, KIND, commandAvailable } from '../../lib/devices'
 import { useUIStore } from '../../stores/uiStore'
 import { useDeviceStore } from '../../stores/deviceStore'
+import logger from '../../lib/logger'
+import { useT, t as i18nT } from '../../lib/i18n'
 
 // ─── Icon mapping ───────────────────────────────────────────────────────────
 const KIND_ICONS = {
@@ -83,18 +84,23 @@ function KindIcon({ kind, size = 18 }) {
 
 function ToggleButton({ facts, onClick, size = 'sm' }) {
   const dim = size === 'lg' ? 38 : 32
+  const enabled = commandAvailable(facts.entity, 'toggle')
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onClick() }}
-      aria-label={facts.isOn ? 'Turn off' : 'Turn on'}
+      onClick={(e) => { e.stopPropagation(); if (enabled) onClick() }}
+      disabled={!enabled}
+      aria-label={facts.isOn ? i18nT('deviceCard.turnOff') : i18nT('deviceCard.turnOn')}
+      title={enabled ? '' : i18nT('deviceCard.powerNotLearned')}
       style={{
         width: dim, height: dim, borderRadius: 10,
         background: facts.isOn ? 'var(--ink)' : 'var(--surface-2)',
         color:      facts.isOn ? 'var(--bg)'  : 'var(--ink-mute)',
         border: '0.5px solid ' + (facts.isOn ? 'var(--ink)' : 'var(--line)'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', transition: 'background 0.12s, color 0.12s',
+        cursor: enabled ? 'pointer' : 'not-allowed',
+        transition: 'background 0.12s, color 0.12s',
         flexShrink: 0,
+        opacity: enabled ? 1 : 0.4,
       }}
     >
       <Power size={size === 'lg' ? 16 : 14} strokeWidth={2} />
@@ -103,33 +109,43 @@ function ToggleButton({ facts, onClick, size = 'sm' }) {
 }
 
 function TempStepper({ facts, onCommand }) {
-  const t = facts.targetTemp ?? facts.currentTemp
+  // Surface IR ac_memory temp as fallback for entities without HA target_temp.
+  const irMemTemp = facts.entity?._irDevice?.ac_memory?.temp ?? null
+  const t = facts.targetTemp ?? irMemTemp ?? facts.currentTemp
+  const upOk   = commandAvailable(facts.entity, 'temp_up')
+  const downOk = commandAvailable(facts.entity, 'temp_down')
   return (
     <div onClick={(e) => e.stopPropagation()} style={{
       display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
       background: 'var(--surface-2)', border: '0.5px solid var(--line)', borderRadius: 12,
       padding: '4px 6px',
     }}>
-      <button onClick={() => onCommand('temp_down')} aria-label="Cooler" style={iconBtn(28)}><ArrowDown size={14} /></button>
+      <button onClick={() => downOk && onCommand('temp_down')} aria-label={i18nT('deviceCard.cooler')} disabled={!downOk}
+        title={downOk ? '' : 'temp_down not learned'} style={iconBtn(28, !downOk)}><ArrowDown size={14} /></button>
       <span className="z-mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', minWidth: 36, textAlign: 'center' }}>
         {t != null ? `${Math.round(t)}°` : '—'}
       </span>
-      <button onClick={() => onCommand('temp_up')} aria-label="Warmer" style={iconBtn(28)}><ArrowUp size={14} /></button>
+      <button onClick={() => upOk && onCommand('temp_up')} aria-label={i18nT('deviceCard.warmer')} disabled={!upOk}
+        title={upOk ? '' : 'temp_up not learned'} style={iconBtn(28, !upOk)}><ArrowUp size={14} /></button>
     </div>
   )
 }
 
 function PlayPauseButton({ facts, onCommand }) {
   const playing = facts.state === 'playing'
+  const enabled = commandAvailable(facts.entity, 'play_pause')
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onCommand('play_pause') }}
-      aria-label={playing ? 'Pause' : 'Play'}
+      onClick={(e) => { e.stopPropagation(); if (enabled) onCommand('play_pause') }}
+      disabled={!enabled}
+      aria-label={playing ? i18nT('common.pause') : i18nT('common.play')}
+      title={enabled ? '' : 'play/pause not learned'}
       style={{
         width: 36, height: 36, borderRadius: '50%',
         background: 'var(--ink)', color: 'var(--bg)',
         border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', flexShrink: 0,
+        cursor: enabled ? 'pointer' : 'not-allowed', flexShrink: 0,
+        opacity: enabled ? 1 : 0.4,
       }}
     >
       {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" style={{ marginLeft: 2 }} />}
@@ -156,8 +172,8 @@ function VolumeBars({ facts }) {
 function CoverButtons({ onCommand }) {
   return (
     <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-      <button onClick={() => onCommand('open')}  style={iconBtn(32)} aria-label="Open"><ArrowUp size={14} /></button>
-      <button onClick={() => onCommand('close')} style={iconBtn(32)} aria-label="Close"><ArrowDown size={14} /></button>
+      <button onClick={() => onCommand('open')}  style={iconBtn(32)} aria-label={i18nT('common.open')}><ArrowUp size={14} /></button>
+      <button onClick={() => onCommand('close')} style={iconBtn(32)} aria-label={i18nT('common.closed')}><ArrowDown size={14} /></button>
     </div>
   )
 }
@@ -179,12 +195,14 @@ function StatusPill({ tone, label }) {
   )
 }
 
-function iconBtn(size) {
+function iconBtn(size, disabled = false) {
   return {
     width: size, height: size, borderRadius: 8,
-    background: 'transparent', border: 'none', cursor: 'pointer',
+    background: 'transparent', border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
     color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
     padding: 0,
+    opacity: disabled ? 0.35 : 1,
   }
 }
 
@@ -206,7 +224,7 @@ function sensorTone(facts) {
 
 function InlineControl({ facts, onCommand, variant }) {
   if (!facts.isAvailable) {
-    return <StatusPill tone="warn" label="Unavailable" />
+    return <StatusPill tone="warn" label={i18nT('common.unavailable')} />
   }
 
   // Read-only sensor kinds: just render value or status
@@ -226,7 +244,7 @@ function InlineControl({ facts, onCommand, variant }) {
       return <span className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{facts.stateLabel}</span>
 
     case KIND.CAMERA:
-      return <StatusPill tone="on" label="Live" />
+      return <StatusPill tone="on" label={i18nT('cameras.live')} />
 
     case KIND.PERSON:
       return <StatusPill tone={facts.state === 'home' ? 'on' : 'off'} label={facts.stateLabel} />
@@ -236,15 +254,22 @@ function InlineControl({ facts, onCommand, variant }) {
     case KIND.PLUG:
     case KIND.FAN:
     case KIND.HUMIDIFIER:
+    case KIND.WATER_HEATER:
+    case KIND.VALVE:
+    case KIND.LAWN_MOWER:
       return <ToggleButton facts={facts} onClick={() => onCommand('toggle')} />
 
     case KIND.AC: {
       if (variant === 'tile') {
         return <ToggleButton facts={facts} onClick={() => onCommand('toggle')} />
       }
+      // Arrows are always visible (not gated on isOn). For IR ACs, temp_up
+      // / temp_down will power the unit on first if needed (backend
+      // send_ac_temperature handles power-first). For HA ACs the same is
+      // routed through HA's set_temperature path.
       return (
         <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {facts.isOn && facts.capabilities.has('temp') && <TempStepper facts={facts} onCommand={onCommand} />}
+          {facts.capabilities.has('temp') && <TempStepper facts={facts} onCommand={onCommand} />}
           <ToggleButton facts={facts} onClick={() => onCommand('toggle')} />
         </div>
       )
@@ -256,12 +281,15 @@ function InlineControl({ facts, onCommand, variant }) {
       if (variant === 'tile') {
         return <ToggleButton facts={facts} onClick={() => onCommand('toggle')} />
       }
+      // Always show the power toggle — previously it hid when the device was
+      // on, leaving only play/pause and making it impossible to turn off from
+      // the room view. Play/pause stays additive when the device supports it.
       return (
         <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {facts.isOn && facts.capabilities.has('play_pause') && (
             <PlayPauseButton facts={facts} onCommand={onCommand} />
           )}
-          {!facts.isOn && <ToggleButton facts={facts} onClick={() => onCommand('toggle')} />}
+          <ToggleButton facts={facts} onClick={() => onCommand('toggle')} />
         </div>
       )
     }
@@ -361,8 +389,17 @@ function TileCard({ facts, onCommand, onOpen, dense = false }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: dense ? 3 : 6, minWidth: 0 }}>
-        <div style={{ fontSize: nameSize, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.01em',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {/* Wrap name to 2 lines max. Dense mode (home-page 4-up tiles) gets
+            a slightly smaller font AND tighter tracking so longer names like
+            "Living Room Lamp" pack onto line 2 instead of ellipsizing where
+            "Living Room TV" wouldn't. State line below stays single-line. */}
+        <div style={{
+          fontSize: dense ? 10 : nameSize,
+          fontWeight: 600, lineHeight: 1.15,
+          letterSpacing: dense ? '-0.025em' : '-0.01em',
+          overflow: 'hidden',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          wordBreak: 'break-word' }}>
           {facts.name}
         </div>
         <div className="z-mono" style={{ fontSize: stateSize, color: subColor, letterSpacing: '0.04em',
@@ -377,7 +414,7 @@ function TileCard({ facts, onCommand, onOpen, dense = false }) {
         onClick={(e) => { e.stopPropagation(); onOpen() }}
         role="button"
         tabIndex={0}
-        aria-label="Open device details"
+        aria-label={i18nT('deviceCard.openDetails')}
         style={{
           position: 'absolute', top: arrowOffset, right: arrowOffset,
           width: arrowSize, height: arrowSize, borderRadius: dense ? 7 : 9,
@@ -395,7 +432,7 @@ function TileCard({ facts, onCommand, onOpen, dense = false }) {
 
 // ─── Row variant ────────────────────────────────────────────────────────────
 
-function RowCard({ facts, onCommand, onOpen, dense = false }) {
+function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
   const tint = facts.tint
   const iconBg = facts.isOn
     ? `color-mix(in srgb, ${tint} 14%, var(--surface-2))`
@@ -426,7 +463,7 @@ function RowCard({ facts, onCommand, onOpen, dense = false }) {
         <KindIcon kind={facts.kind} size={17} />
       </div>
 
-      {/* Name + state */}
+      {/* Name + state + (optional) metric pills */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.01em',
@@ -437,6 +474,7 @@ function RowCard({ facts, onCommand, onOpen, dense = false }) {
         <div className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2 }}>
           {secondaryLine(facts)}
         </div>
+        <MetricPills metrics={metrics} />
       </div>
 
       {/* Inline primary control */}
@@ -457,8 +495,68 @@ function secondaryLine(facts) {
   if (facts.kind === KIND.PERSON) return facts.stateLabel
   if (facts.isIr) bits.push('IR')
   else if (facts.hasIr) bits.push('IR + WiFi')
-  if (!facts.isAvailable) bits.push('Unavailable')
+  if (!facts.isAvailable) bits.push(i18nT('common.unavailable'))
   return bits.join(' · ')
+}
+
+// Compact unit label for a metric pill. Some sensors report wonky units
+// (kg/m²/s for power, J for energy); we don't try to be clever — surface
+// the unit the device reports if any, otherwise fall back to a guess based on
+// device_class so a numerically meaningful pill never reads as just "125".
+const _METRIC_FALLBACK_UNITS = {
+  power:           'W',
+  current:         'A',
+  voltage:         'V',
+  energy:          'kWh',
+  temperature:     '°',
+  humidity:        '%',
+  illuminance:     'lx',
+  battery:         '%',
+  signal_strength: 'dBm',
+  duration:        'min',
+}
+
+function _fmtMetricValue(state) {
+  if (state == null || state === 'unavailable' || state === 'unknown') return null
+  const n = Number(state)
+  if (!Number.isFinite(n)) return String(state)
+  if (Math.abs(n) >= 100) return Math.round(n).toString()
+  if (Math.abs(n) >= 10)  return n.toFixed(1).replace(/\.0$/, '')
+  return n.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function MetricPills({ metrics }) {
+  if (!Array.isArray(metrics) || metrics.length === 0) return null
+  const visible = metrics
+    .map((m) => {
+      const v = _fmtMetricValue(m.state)
+      if (v == null) return null
+      const unit = m.unit || _METRIC_FALLBACK_UNITS[m.device_class] || ''
+      return { dc: m.device_class, value: v, unit }
+    })
+    .filter(Boolean)
+    .slice(0, 3)
+  if (visible.length === 0) return null
+  return (
+    <div className="z-mono" style={{
+      display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4, alignItems: 'center',
+      fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '0.02em',
+    }}>
+      {visible.map((m, i) => (
+        <span
+          key={`${m.dc}-${i}`}
+          title={m.dc}
+          style={{
+            padding: '2px 7px', borderRadius: 999,
+            background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+            color: 'var(--ink-mute)', whiteSpace: 'nowrap',
+          }}
+        >
+          {m.value}{m.unit ? (m.unit === '°' ? '°' : ` ${m.unit}`) : ''}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 // ─── Compact variant — small chip for pickers ───────────────────────────────
@@ -486,18 +584,29 @@ function CompactCard({ facts, onCommand, onOpen }) {
  * capabilities, inline controls, and tap routing from lib/devices.js.
  *
  * Props:
- *   entity   — required
+ *   entity   — required. When the entity is the primary of a multi-entity
+ *              physical device, attach `_group` (built by deviceStore's
+ *              getGroupedEntities) to surface the group name + metric pills.
  *   variant  — 'tile' | 'row' | 'compact'   (default 'row')
  *   onOpen   — optional override for tap (default: navigate /devices/:id)
  *   dense    — row variant: tighter padding
  */
-export function DeviceCard({ entity, variant = 'row', onOpen, dense = false }) {
+function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false }) {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
   const [pending, setPending] = useState(false)
 
   if (!entity) return null
-  const facts = deviceFacts(entity)
+  const rawFacts = deviceFacts(entity)
+  // When this entity is the primary of a real multi-entity group, prefer the
+  // group's HA device-registry name (already suffix-cleaned by the backend
+  // — e.g. "Switcher Boiler" instead of the primary entity's friendly name
+  // "Switcher Boiler Power"). Solo entities pass through unchanged.
+  const group = entity._group || null
+  const facts = (group && group.name)
+    ? { ...rawFacts, name: group.name }
+    : rawFacts
+  const groupMetrics = group?.metrics || []
 
   const open = () => {
     if (onOpen) return onOpen(facts)
@@ -507,6 +616,15 @@ export function DeviceCard({ entity, variant = 'row', onOpen, dense = false }) {
   const onCommand = async (command, params) => {
     if (pending) return
     setPending(true)
+    // One click → one log line, no matter how many internal calls follow.
+    // Most users will only have logging at "off"; this is a no-op then.
+    logger.click('DeviceCard', command, {
+      entity_id: entity?.entity_id,
+      ir_device: entity?._irDevice?.id,
+      domain: entity?.domain,
+      room: entity?.room,
+      params,
+    })
 
     // Optimistic update — flip the displayed state immediately so the tile
     // doesn't appear to "do nothing" while the HA round-trip completes.
@@ -532,34 +650,41 @@ export function DeviceCard({ entity, variant = 'row', onOpen, dense = false }) {
 
     try {
       await sendDeviceCommand(entity, command, params)
-      // After the command settles, re-read HA's real state and sync the
-      // store. If the device didn't actually change (flaky bulb, refused
-      // service, manual override) HA broadcasts no state_changed event, so
-      // our optimistic guess would otherwise sit stale forever.
-      if (!facts.isIr && entity.entity_id) {
-        try {
-          const res = await getEntityState(entity.entity_id)
-          const real = res?.state
-          if (real != null) {
-            useDeviceStore.getState().updateEntityState(
-              entity.entity_id,
-              real,
-              res?.attributes || {},
-            )
-          }
-        } catch { /* swallow — WS will eventually reconcile */ }
-      }
+      // No post-call verify: HA's REST POST already blocks until HA
+      // commits the new state, and ha_subscriber broadcasts state_changed
+      // (with full attributes) within ~10 ms of that commit. A second
+      // getEntityState() round-trip would either return the SAME data the
+      // WS event is about to deliver, or race ahead of it and read a
+      // stale value from the same cache the WS is updating. Either way
+      // it's wasted work on the user-perceived latency path. If WS is
+      // disconnected, the optimistic state stays until reconnect — the
+      // ha_connected banner already surfaces this.
     } catch (e) {
       revert?.()
-      addToast(e.message || 'Control failed', 'error')
+      logger.error('device_command_failed', e, {
+        entity_id: entity?.entity_id, command,
+        reverted: !!revert,
+      })
+      addToast(e.message || i18nT('deviceCard.controlFailed'), 'error')
     } finally {
       setPending(false)
     }
   }
 
-  if (variant === 'tile')    return <TileCard    facts={facts} onCommand={onCommand} onOpen={open} dense={dense} />
+  if (variant === 'tile')    return <TileCard    facts={facts} onCommand={onCommand} onOpen={open} dense={dense} group={group} metrics={groupMetrics} />
   if (variant === 'compact') return <CompactCard facts={facts} onCommand={onCommand} onOpen={open} />
-  return <RowCard facts={facts} onCommand={onCommand} onOpen={open} dense={dense} />
+  return <RowCard facts={facts} onCommand={onCommand} onOpen={open} dense={dense} metrics={groupMetrics} />
 }
+
+// Memoize on entity reference + variant. updateEntityState preserves
+// references for untouched entities, so a single light flicker no longer
+// drags every other card on a room/devices page through a render. The
+// touched card still re-renders because its `entity` is a fresh reference.
+export const DeviceCard = memo(DeviceCardImpl, (prev, next) => (
+  prev.entity   === next.entity   &&
+  prev.variant  === next.variant  &&
+  prev.dense    === next.dense    &&
+  prev.onOpen   === next.onOpen
+))
 
 export default DeviceCard

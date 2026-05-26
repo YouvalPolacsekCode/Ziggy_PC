@@ -42,6 +42,8 @@ def engine(tmp_path, monkeypatch):
         "cooldown_seconds":   600,
         "stale_ping_seconds": 90,
         "stale_home_hours":   8,
+        "stale_home_no_lan_minutes": 30,
+        "lan_fresh_seconds":  180,
         "stale_away_minutes": 30,
         "history_size":       20,
     }
@@ -470,6 +472,53 @@ def test_ingest_external_state_unknown_ignored(engine):
     d = engine.ingest_external_state(pid, "unknown", source="ha", now=_t0())
     assert d.fired_transition is False
     assert d.result == "ignored_non_binary_state"
+
+
+def test_home_decays_in_30min_without_lan_confirmation(engine):
+    """Regression: real-world bug — user left home for 2 h, chip stayed 'home'
+    the whole time because old default (8 h) was too lenient when GPS-only.
+    With no recent LAN probe, 'home' must decay to 'unknown' after 30 min."""
+    token = _add_person(engine)
+    t = _t0()
+    # Commit "home" via normal ping flow.
+    for _ in range(4):
+        _ping(engine, token, 30, t)
+        t += timedelta(seconds=30)
+    persons = json.loads(engine._REGISTRY.read_text())
+    assert persons[0]["state"] == "home"
+
+    # 20 min later, still considered home (within the 30 min no-LAN window).
+    t2 = t + timedelta(minutes=20)
+    assert engine.effective_state(persons[0], now=t2) == "home"
+
+    # 35 min after the last ping — should now read as unknown (chip disappears).
+    t3 = t + timedelta(minutes=35)
+    assert engine.effective_state(persons[0], now=t3) == "unknown"
+
+
+def test_home_keeps_8h_window_when_lan_recently_confirmed(engine):
+    """If LAN probe has confirmed the phone is on home Wi-Fi in the last
+    `lan_fresh_seconds`, the long 8 h trust window applies — phone-asleep-
+    at-home overnight stays as home."""
+    token = _add_person(engine)
+    t = _t0()
+    for _ in range(4):
+        _ping(engine, token, 30, t)
+        t += timedelta(seconds=30)
+    persons = json.loads(engine._REGISTRY.read_text())
+    # Stamp a recent successful LAN probe.
+    persons[0]["lan_last_seen"] = t.isoformat()
+    engine._REGISTRY.write_text(json.dumps(persons))
+
+    # 3 hours later — without LAN we'd be unknown; with fresh LAN we stay home.
+    # The LAN itself becomes stale after 180 s, so we have to also keep it fresh.
+    persons[0]["lan_last_seen"] = (t + timedelta(hours=3) - timedelta(seconds=60)).isoformat()
+    t3 = t + timedelta(hours=3)
+    assert engine.effective_state(persons[0], now=t3) == "home"
+
+    # 9 hours later, LAN gone stale → falls back to no-LAN path → unknown.
+    t9 = t + timedelta(hours=9)
+    assert engine.effective_state(persons[0], now=t9) == "unknown"
 
 
 def test_list_lan_hosts_skips_blank(engine):

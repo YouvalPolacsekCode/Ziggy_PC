@@ -514,7 +514,10 @@ async def execute_anomaly_action(room_id: str, rule_id: str):
         return {"ok": False, "message": msg}
 
     try:
-        from services.anomaly_engine import _clear_anomaly
+        # Order matters: action_taken first (it matches on cleared_at IS NULL),
+        # then _clear_anomaly which sets cleared_at and removes the active entry.
+        from services.anomaly_engine import _clear_anomaly, log_history_action_taken
+        log_history_action_taken(rule_id, room_id, action)
         _clear_anomaly(active_anomalies, room_id, rule_id)
     except Exception as e:
         log_error(f"[MapRouter] Cleared HA but failed to clear anomaly entry: {e}")

@@ -4,6 +4,7 @@ import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { useUIStore } from '../stores/uiStore'
 import { getMemory, sendIntent } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 // Derive a colour for any string via a simple hash
 const AVATAR_COLORS = [
@@ -200,23 +201,24 @@ function useMemoryLogic() {
 
 // ── Settings panel (embedded in Settings › General › Memory) ─────────────────
 export function MemoryPanel() {
+  const t = useT()
   const s = useMemoryLogic()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <div style={{ position: 'relative', flex: 1 }}>
           <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder="Search memory…" className="z-input" style={{ paddingLeft: 34, height: 36, fontSize: 12 }} />
+          <input value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingLeft: 34, height: 36, fontSize: 12 }} />
         </div>
         <button onClick={() => s.setShowAdd(true)} className="z-btn-primary" style={{ padding: '0 14px', height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, flexShrink: 0 }}>
-          + Add
+          + {t('common.add')}
         </button>
       </div>
 
       {s.loading && <div style={{ height: 60, borderRadius: 12, background: 'var(--surface-2)', opacity: 0.6 }} />}
 
       {!s.loading && s.entries.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--ink-faint)', fontSize: 12 }}>No memory entries yet</div>
+        <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--ink-faint)', fontSize: 12 }}>{t('memory.empty')}</div>
       )}
 
       {s.profiles.length > 0 && (
@@ -239,18 +241,18 @@ export function MemoryPanel() {
       </div>
 
       {/* Add / Edit modals */}
-      <Modal open={s.showAdd} onClose={() => s.setShowAdd(false)} title="Add Memory">
+      <Modal open={s.showAdd} onClose={() => s.setShowAdd(false)} title={t('memory.modalAddTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Input label="Key" placeholder="e.g. youval_coffee" value={s.newKey} onChange={e => s.setNewKey(e.target.value)} />
-          <Input label="Value" placeholder="e.g. loves espresso" value={s.newValue} onChange={e => s.setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && s.handleAdd()} />
-          <button onClick={s.handleAdd} disabled={!s.newKey.trim() || !s.newValue.trim() || s.saving} className="z-btn-primary" style={{ width: '100%' }}>{s.saving ? 'Saving…' : 'Save to memory'}</button>
+          <Input label={t('memory.labelKey')} placeholder={t('memory.keyPlaceholderShort')} value={s.newKey} onChange={e => s.setNewKey(e.target.value)} />
+          <Input label={t('memory.labelValue')} placeholder={t('memory.valuePlaceholderShort')} value={s.newValue} onChange={e => s.setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && s.handleAdd()} />
+          <button onClick={s.handleAdd} disabled={!s.newKey.trim() || !s.newValue.trim() || s.saving} className="z-btn-primary" style={{ width: '100%' }}>{s.saving ? t('common.saving') : t('memory.saveToMemory')}</button>
         </div>
       </Modal>
-      <Modal open={!!s.editEntry} onClose={() => s.setEditEntry(null)} title="Edit Memory">
+      <Modal open={!!s.editEntry} onClose={() => s.setEditEntry(null)} title={t('memory.modalEditTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Input label="Key" value={s.editEntry?.key || ''} disabled />
-          <Input label="Value" value={s.editValue} onChange={e => s.setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && s.handleEditSave()} autoFocus />
-          <button onClick={s.handleEditSave} disabled={!s.editValue.trim() || s.editSaving} className="z-btn-primary" style={{ width: '100%' }}>{s.editSaving ? 'Saving…' : 'Save'}</button>
+          <Input label={t('memory.labelKey')} value={s.editEntry?.key || ''} disabled />
+          <Input label={t('memory.labelValue')} value={s.editValue} onChange={e => s.setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && s.handleEditSave()} autoFocus />
+          <button onClick={s.handleEditSave} disabled={!s.editValue.trim() || s.editSaving} className="z-btn-primary" style={{ width: '100%' }}>{s.editSaving ? t('common.saving') : t('common.save')}</button>
         </div>
       </Modal>
     </div>
@@ -259,6 +261,7 @@ export function MemoryPanel() {
 
 // ── Main page (Profile-B layout) ──────────────────────────────────────────────
 export default function Memory() {
+  const t = useT()
   const { entries, loading, refreshing, search, setSearch, showAdd, setShowAdd, newKey, setNewKey, newValue, setNewValue, saving, editEntry, setEditEntry, editValue, setEditValue, editSaving, handleRefresh, handleDelete, handleEditSave, handleAdd, filtered, groups, profiles, activeProfile, setActiveProfile, activeFacts } = useMemoryLogic()
 
   return (
@@ -267,10 +270,10 @@ export default function Memory() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Local · never leaves this device</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Memory</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('memory.eyebrow')}</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>{t('memory.title')}</h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
-            {entries.length} {entries.length === 1 ? 'entry' : 'entries'} · {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
+            {t(entries.length === 1 ? 'memory.entry' : 'memory.entries', { n: entries.length })} · {t(profiles.length === 1 ? 'memory.profile' : 'memory.profiles', { n: profiles.length })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -279,7 +282,7 @@ export default function Memory() {
           </button>
           <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Add
+            {t('common.add')}
           </button>
         </div>
       </div>
@@ -290,7 +293,7 @@ export default function Memory() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-1.07-4.58A3 3 0 0 1 4.5 9.5a2.5 2.5 0 0 1 3-3.45A2.5 2.5 0 0 1 9.5 2M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 1.07-4.58A3 3 0 0 0 19.5 9.5a2.5 2.5 0 0 0-3-3.45A2.5 2.5 0 0 0 14.5 2"/></svg>
         </span>
         <p style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-          Ziggy uses this to personalise responses. Keys starting with a name (e.g. <span style={{ fontFamily: '"IBM Plex Mono", monospace' }}>youval_coffee</span>) appear as person profiles.
+          {t('memory.infoBanner')} <span style={{ fontFamily: '"IBM Plex Mono", monospace' }}>youval_coffee</span>{t('memory.infoBannerAfter')}
         </p>
       </div>
 
@@ -299,11 +302,12 @@ export default function Memory() {
         <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         </span>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search memory…" className="z-input" style={{ paddingLeft: 34 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingLeft: 34 }} />
       </div>
 
-      {/* Loading skeleton */}
-      {loading && (
+      {/* Loading skeleton — only on cold start; cached entries stay visible
+          during a background refresh. */}
+      {loading && entries.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
@@ -312,13 +316,13 @@ export default function Memory() {
       {/* Empty */}
       {!loading && entries.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No memories yet</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)' }}>Tell Ziggy things to remember</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('memory.noMemoriesTitle')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{t('memory.noMemoriesHelp')}</p>
         </div>
       )}
 
       {/* Profile-B layout */}
-      {!loading && entries.length > 0 && (
+      {entries.length > 0 && (
         <>
           {/* Horizontal avatar picker */}
           <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 16, marginBottom: 14, borderBottom: '0.5px solid var(--line)' }}>
@@ -341,7 +345,7 @@ export default function Memory() {
                   <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--ink)', margin: 0, textTransform: 'capitalize' }}>
                     {activeProfile}
                   </h2>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{activeFacts.length} fact{activeFacts.length !== 1 ? 's' : ''}</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t(activeFacts.length === 1 ? 'memory.fact' : 'memory.facts', { n: activeFacts.length })}</p>
                 </div>
 
                 {/* Facts grid: 2-col on wide, 1-col on narrow */}
@@ -367,7 +371,7 @@ export default function Memory() {
                     }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                    Add a fact for {activeProfile}
+                    {t('memory.addFactFor', { profile: activeProfile })}
                   </button>
                 </div>
               </motion.div>
@@ -377,31 +381,31 @@ export default function Memory() {
       )}
 
       {/* Edit modal */}
-      <Modal open={!!editEntry} onClose={() => setEditEntry(null)} title="Edit Memory">
+      <Modal open={!!editEntry} onClose={() => setEditEntry(null)} title={t('memory.modalEditTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <p className="z-eyebrow" style={{ marginBottom: 4 }}>Key</p>
+            <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('memory.labelKey')}</p>
             <p style={{ fontSize: 13, color: 'var(--ink)', padding: '8px 12px', borderRadius: 9, background: 'var(--bg-2)', fontFamily: '"IBM Plex Mono", monospace' }}>{editEntry?.key}</p>
           </div>
-          <Input label="Value" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSave()} autoFocus />
+          <Input label={t('memory.labelValue')} value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSave()} autoFocus />
           <button onClick={handleEditSave} disabled={!editValue.trim() || editSaving} className="z-btn-primary" style={{ width: '100%' }}>
-            {editSaving ? 'Saving…' : 'Save changes'}
+            {editSaving ? t('common.saving') : t('memory.saveChanges')}
           </button>
         </div>
       </Modal>
 
       {/* Add modal */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Memory">
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={t('memory.modalAddTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Input label="Key" placeholder="e.g. youval_coffee or home_city" value={newKey} onChange={e => setNewKey(e.target.value)} autoFocus />
-          <Input label="Value" placeholder="e.g. every morning with hot milk" value={newValue} onChange={e => setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+          <Input label={t('memory.labelKey')} placeholder={t('memory.keyPlaceholder')} value={newKey} onChange={e => setNewKey(e.target.value)} autoFocus />
+          <Input label={t('memory.labelValue')} placeholder={t('memory.valuePlaceholder')} value={newValue} onChange={e => setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
           {(newKey || newValue) && (
             <p style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>
-              → remember {newKey || '[key]'} is {newValue || '[value]'}
+              {t('memory.preview', { key: newKey || t('memory.previewKeyHolder'), value: newValue || t('memory.previewValueHolder') })}
             </p>
           )}
           <button onClick={handleAdd} disabled={!newKey.trim() || !newValue.trim() || saving} className="z-btn-primary" style={{ width: '100%' }}>
-            {saving ? 'Saving…' : 'Save to memory'}
+            {saving ? t('common.saving') : t('memory.saveToMemory')}
           </button>
         </div>
       </Modal>

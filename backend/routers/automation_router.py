@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from core.logger_module import log_info
+from core.debug_bus import bus as _bus, BASIC as _BASIC, VERBOSE as _VERBOSE
 from services.ha_automations import (
     list_automations as ha_list_automations,
     get_automation_for_ui,
@@ -17,7 +20,10 @@ from services.local_automation_actions import (
     delete_ziggy_actions,
     execute_ziggy_actions,
     delete_automation_meta,
+    get_automation_meta,
+    save_automation_meta,
 )
+from services.automation_history import get_history, delete_history
 
 router = APIRouter()
 
@@ -39,9 +45,19 @@ class AutomationRoomsPatch(BaseModel):
     rooms: list[str]
 
 
+class AutomationSnooze(BaseModel):
+    minutes: int
+
+
 @router.get("/api/automations")
 async def get_automations():
-    return {"automations": ha_list_automations()}
+    # ha_list_automations() does a sync `requests.get` against HA's REST
+    # /api/states (10s timeout). Without to_thread, every Automations page
+    # load froze the FastAPI event loop for the full HA response time —
+    # piling up other requests behind it. Wrapping releases the loop while
+    # HA replies.
+    autos = await asyncio.to_thread(ha_list_automations)
+    return {"automations": autos}
 
 
 def _cap_snapshot(all_states, ir_devices=None):
@@ -100,12 +116,22 @@ def _enrich_template(tmpl, cap_map, existing_names=None):
 
 
 @router.get("/api/automations/templates")
+def _safe_list_automations() -> list:
+    """Wrap ha_list_automations so a transient HA failure (during the
+    parallel fetch in get_suggested_templates) doesn't break the page."""
+    try:
+        return ha_list_automations() or []
+    except Exception:
+        return []
+
+
 async def get_automation_templates():
     """Return the full curated template library with runability flags."""
     from services.automation_templates import TEMPLATES
     from services.home_automation import get_all_states
 
-    all_states = get_all_states()
+    # Sync HA REST call — release the event loop while HA replies.
+    all_states = await asyncio.to_thread(get_all_states)
     ir_devices: list = []
     try:
         from services.ir_manager import list_ir_devices
@@ -123,7 +149,12 @@ async def get_suggested_templates():
     from services.automation_templates import TEMPLATES, matches_suggestion
     from services.home_automation import get_all_states
 
-    all_states = get_all_states()
+    # Both calls below hit HA REST sync. Run them in parallel via threads so
+    # the page (Dashboard mounts this) doesn't pay them serially.
+    all_states, existing_autos = await asyncio.gather(
+        asyncio.to_thread(get_all_states),
+        asyncio.to_thread(lambda: _safe_list_automations()),
+    )
     ir_devices: list = []
     try:
         from services.ir_manager import list_ir_devices
@@ -132,11 +163,7 @@ async def get_suggested_templates():
         pass
     cap_map = _cap_snapshot(all_states, ir_devices)
 
-    existing_names: set = set()
-    try:
-        existing_names = {(a.get("name") or "").lower() for a in ha_list_automations()}
-    except Exception:
-        pass
+    existing_names: set = {(a.get("name") or "").lower() for a in existing_autos}
 
     suggested = [
         _enrich_template(t, cap_map, existing_names)
@@ -161,10 +188,21 @@ async def get_automation_by_id(automation_id: str):
 @router.post("/api/automations")
 async def create_automation_endpoint(body: AutomationBody):
     data = body.model_dump()
+    is_update = bool(body.id)
     result = save_automation(data, auto_id=body.id)
     if not result.get("ok"):
+        _bus.emit("automation", _BASIC, "automation_save_failed",
+                  name=body.name, automation_id=body.id,
+                  result="error", error=result.get("error"))
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     auto_id = result["id"]
+    _bus.emit("automation", _BASIC,
+              "automation_updated" if is_update else "automation_created",
+              automation_id=auto_id, name=body.name,
+              trigger_kind=(body.trigger or {}).get("kind"),
+              action_count=len(body.actions or []),
+              rooms=body.rooms or [],
+              result="ok")
     automation = {
         "id": auto_id,
         "name": body.name,
@@ -191,7 +229,12 @@ async def patch_automation_rooms(automation_id: str, body: AutomationRoomsPatch)
 async def toggle_automation_endpoint(automation_id: str, body: AutomationToggle):
     ok = toggle_automation(automation_id, body.enabled)
     if not ok:
+        _bus.emit("automation", _BASIC, "automation_toggle_failed",
+                  automation_id=automation_id, enabled=body.enabled,
+                  result="error")
         raise HTTPException(status_code=502, detail="Failed to toggle automation")
+    _bus.emit("automation", _BASIC, "automation_toggled",
+              automation_id=automation_id, enabled=body.enabled, result="ok")
     return {"ok": True, "enabled": body.enabled}
 
 
@@ -201,10 +244,32 @@ async def trigger_automation_endpoint(automation_id: str, background_tasks: Back
     # other step types natively. Calling trigger_automation() in addition would
     # cause HA to double-execute call_service steps for HA-backed automations.
     # HA state-triggered automations auto-fire independently of this endpoint.
-    from services.local_automation_actions import get_automation_meta
     label = get_automation_meta(automation_id).get("name") or automation_id
-    background_tasks.add_task(execute_ziggy_actions, automation_id, label)
+    _bus.emit("automation", _BASIC, "automation_triggered",
+              automation_id=automation_id, name=label, source="manual")
+    background_tasks.add_task(
+        execute_ziggy_actions, automation_id, label, "manual",
+    )
     return {"ok": True, "message": "Automation triggered"}
+
+
+@router.get("/api/automations/{automation_id}/history")
+async def get_automation_history(automation_id: str, limit: int = 20):
+    return {"automation_id": automation_id, "history": get_history(automation_id, limit)}
+
+
+@router.post("/api/automations/{automation_id}/snooze")
+async def snooze_automation_endpoint(automation_id: str, body: AutomationSnooze):
+    """Pause an automation for N minutes. minutes=0 clears the snooze."""
+    meta = get_automation_meta(automation_id) or {}
+    if body.minutes <= 0:
+        meta.pop("snoozed_until", None)
+        save_automation_meta(automation_id, meta)
+        return {"ok": True, "snoozed_until": None}
+    until = (datetime.now(timezone.utc) + timedelta(minutes=int(body.minutes))).isoformat()
+    meta["snoozed_until"] = until
+    save_automation_meta(automation_id, meta)
+    return {"ok": True, "snoozed_until": until}
 
 
 @router.delete("/api/automations/{automation_id}")
@@ -213,7 +278,41 @@ async def delete_automation_endpoint(automation_id: str):
     ha_ok = ha_delete_automation(automation_id)
     ziggy_ok = delete_ziggy_automation(automation_id)
     if not ha_ok and not ziggy_ok:
+        _bus.emit("automation", _BASIC, "automation_delete_not_found",
+                  automation_id=automation_id, result="not_found")
         raise HTTPException(status_code=404, detail="Automation not found")
     delete_ziggy_actions(automation_id)
     delete_automation_meta(automation_id)
+    delete_history(automation_id)
+    _bus.emit("automation", _BASIC, "automation_deleted",
+              automation_id=automation_id,
+              ha_deleted=ha_ok, ziggy_deleted=ziggy_ok,
+              result="ok")
     return {"ok": True}
+
+
+# ── Actionable push notification callback ────────────────────────────────────
+
+@router.post("/api/push/action/{token}")
+async def push_action_callback(token: str):
+    """Service worker POSTs here when the user taps a notification action button."""
+    from services import push_actions
+    action = push_actions.consume(token)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action token expired or already used")
+    return await push_actions.execute_action(action)
+
+
+# ── Manual override inspection / clearing ────────────────────────────────────
+
+@router.get("/api/overrides")
+async def list_overrides():
+    from services import manual_overrides
+    return {"overrides": manual_overrides.list_active()}
+
+
+@router.delete("/api/overrides/{entity_id}")
+async def clear_override(entity_id: str):
+    from services import manual_overrides
+    cleared = manual_overrides.clear_override(entity_id)
+    return {"ok": True, "cleared": cleared}

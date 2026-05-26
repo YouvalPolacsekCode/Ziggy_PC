@@ -307,7 +307,11 @@ def _heuristic_enrich(candidates: list[QualifiedCandidate]) -> list[dict]:
 
 
 def _heuristic_reason(c: QualifiedCandidate) -> str:
-    """Generate a specific, evidence-citing reason string without the LLM."""
+    """Generate a specific, evidence-citing reason string without the LLM.
+
+    The reason is shown in the "Why did Ziggy suggest this?" drawer, so it
+    should read as a plain-English explanation rather than a stats dump.
+    """
     es = c.evidence_summary
     n = es.get("occurrences", c.occurrences)
     weeks = es.get("unique_weeks", "?")
@@ -320,20 +324,17 @@ def _heuristic_reason(c: QualifiedCandidate) -> str:
         days = es.get("active_day_names", [])
         day_part = f" on {', '.join(days)}" if days else ""
         return (
-            f"You did this {n} time(s) between {tw} (avg {avg})"
+            f"Seen {n} times between {tw} (around {avg})"
             f"{day_part}, across {weeks} week(s).{last_part}"
         )
 
     if c.pattern_type == "sequence":
-        b_intent = c.details.get("b_intent", "").replace("_", " ")
-        b_room = c.details.get("b_room") or ""
-        b_str = f"{b_intent} in {b_room}".strip() if b_room else b_intent
         return (
-            f"After {c.intent.replace('_', ' ')}, you often {b_str} — "
-            f"{n} time(s) across {weeks} week(s).{last_part}"
+            f"This pair has happened {n} times within a few minutes of each other,"
+            f" across {weeks} week(s).{last_part}"
         )
 
-    return f"Observed {n} time(s) across {weeks} week(s).{last_part}"
+    return f"Seen {n} times across {weeks} week(s).{last_part}"
 
 
 def _default_trigger(c: QualifiedCandidate) -> dict:
@@ -352,8 +353,15 @@ def _default_trigger(c: QualifiedCandidate) -> dict:
 def _default_actions(c: QualifiedCandidate) -> list[dict]:
     if c.pattern_type == "sequence":
         b = c.details
-        return [{"intent": b.get("b_intent", ""), "params": {"room": b.get("b_room", "")}}]
-    return [{"intent": c.intent, "params": {"room": c.room, "turn_on": c.action == "on"}}]
+        params: dict = {"room": b.get("b_room", "")}
+        if b.get("b_dominant_entity_id"):
+            params["entity_id"] = b["b_dominant_entity_id"]
+        return [{"intent": b.get("b_intent", ""), "params": params}]
+
+    params = {"room": c.room, "turn_on": c.action == "on"}
+    if c.details.get("dominant_entity_id"):
+        params["entity_id"] = c.details["dominant_entity_id"]
+    return [{"intent": c.intent, "params": params}]
 
 
 # ---------------------------------------------------------------------------

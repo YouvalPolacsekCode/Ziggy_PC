@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/authStore'
+import { useT } from '../lib/i18n'
 
 export default function LoginPage() {
+  const t = useT()
   const [mode,         setMode]         = useState('loading')
   const [username,     setUsername]     = useState('')
   const [password,     setPassword]     = useState('')
@@ -25,9 +27,9 @@ export default function LoginPage() {
       const endpoint = mode === 'setup' ? '/api/auth/setup' : '/api/auth/login'
       const res  = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: username.trim(), password }) })
       const data = await res.json()
-      if (!res.ok) { setError(data.detail || 'Something went wrong.'); setLoading(false); return }
+      if (!res.ok) { setError(data.detail || t('common.somethingWentWrong')); setLoading(false); return }
       setToken(data.token, data.role)
-    } catch { setError('Cannot reach Ziggy. Is it running?'); setLoading(false) }
+    } catch { setError(t('login.cannotReach')); setLoading(false) }
   }
 
   const fieldStyle = {
@@ -77,21 +79,22 @@ export default function LoginPage() {
             <span style={{ color: 'var(--accent)', fontSize: 28, fontWeight: 700 }}>.</span>
           </div>
           <p className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>
-            {mode === 'setup' ? 'Create your account' : 'Sign in to your home'}
+            {mode === 'setup' ? t('login.createAccount') : t('login.signInToHome')}
           </p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <label className="z-eyebrow" style={{ display: 'block', marginBottom: 6 }}>Username</label>
+            <label className="z-eyebrow" style={{ display: 'block', marginBottom: 6 }}>{t('common.username')}</label>
             <input
               type="text"
               autoComplete="username"
               autoCapitalize="none"
+              dir="auto"
               value={username}
               onChange={e => { setUsername(e.target.value); setError('') }}
-              placeholder="your name"
+              placeholder={t('login.usernamePlaceholder')}
               style={fieldStyle}
               onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
               onBlur={e  => e.currentTarget.style.borderColor = 'var(--line)'}
@@ -99,7 +102,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="z-eyebrow" style={{ display: 'block', marginBottom: 6 }}>Password</label>
+            <label className="z-eyebrow" style={{ display: 'block', marginBottom: 6 }}>{t('common.password')}</label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -144,14 +147,14 @@ export default function LoginPage() {
             {loading ? (
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <span style={{ width: 14, height: 14, border: '2px solid var(--bg)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block' }} />
-                {mode === 'setup' ? 'Creating…' : 'Signing in…'}
+                {mode === 'setup' ? t('login.creating') : t('login.signingIn')}
               </span>
-            ) : mode === 'setup' ? 'Create account' : 'Sign in'}
+            ) : mode === 'setup' ? t('login.createAccountButton') : t('login.signIn')}
           </button>
         </form>
 
         <p className="z-eyebrow" style={{ textAlign: 'center', marginTop: 32 }}>
-          Ziggy · Local · Your data
+          {t('login.tagline')}
         </p>
       </div>
     </div>
