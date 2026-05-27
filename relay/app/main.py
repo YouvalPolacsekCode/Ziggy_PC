@@ -11,6 +11,7 @@ from .routers.auth import router as auth_router, ensure_relay_admin
 from .routers.backup_keys import router as backup_keys_router
 from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
+from .routers.ota import router as ota_router
 from .routers.proxy import router as proxy_router, _proxy_client
 from .routers.provision import router as provision_router
 from .routers.public_presence import router as public_presence_router
@@ -44,6 +45,10 @@ app.include_router(provision_router, prefix="/api")
 # the catch-all proxy router so /api/homes/{id}/seal-key etc. are not
 # accidentally proxied to a hub. Order matters in FastAPI route matching.
 app.include_router(backup_keys_router, prefix="/api")
+# OTA router owns its own absolute paths (/api/devices/* + /api/admin/ota/*
+# + /api/admin/homes/*/ota-pin) so it mounts WITHOUT a prefix. Must also
+# come BEFORE the catch-all proxy.
+app.include_router(ota_router)
 # Public presence passthrough — must register BEFORE the catch-all proxy so
 # its specific /api/presence/ping route takes precedence.
 app.include_router(public_presence_router)

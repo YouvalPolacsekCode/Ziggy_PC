@@ -79,12 +79,33 @@ CREATE TABLE IF NOT EXISTS home_backup_keys (
     last_unsealed_by       TEXT    REFERENCES users(email)
 );
 
+-- OTA release catalog. Each row is an admin-authored target version that
+-- hubs may converge to. Resolution at GET /api/devices/{device_id}/ota-manifest:
+--   1. If homes.ota_pinned_release_id is set, return that release.
+--   2. Otherwise return the most recent row by id DESC.
+--   3. If the table is empty, the endpoint returns 404 — hubs treat that as
+--      "no release published yet, no version delta, no action."
+--
+-- image_digests is stored as JSON text (a dict of image_name → digest).
+-- Schema is opaque to the relay; the edge agent interprets it. See
+-- relay/app/routers/ota.py for the documented field list.
+CREATE TABLE IF NOT EXISTS ota_releases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ha_version      TEXT    NOT NULL,
+    ziggy_version   TEXT    NOT NULL,
+    image_digests   TEXT    NOT NULL,      -- JSON object
+    notes           TEXT,
+    created_at      TEXT    NOT NULL,
+    created_by      TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_home     ON users(home_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token  ON invites(token);
 CREATE INDEX IF NOT EXISTS idx_invites_home   ON invites(home_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event    ON audit_log(event, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_home     ON audit_log(home_id, ts);
+CREATE INDEX IF NOT EXISTS idx_ota_releases_created ON ota_releases(created_at DESC);
 """
 
 # Audit event names that Chunk #7's backup endpoints will emit. The
@@ -114,6 +135,17 @@ async def init_db():
         if "hash_algo" not in cols:
             await db.execute(
                 "ALTER TABLE users ADD COLUMN hash_algo TEXT NOT NULL DEFAULT 'hmac_sha256'"
+            )
+        # Per-home OTA pin (Prompt 2 Chunk #2). NULL = use the most recent
+        # release. Foreign-key not enforced (pragma foreign_keys is OFF in
+        # this DB) — the pin endpoint validates the release_id exists
+        # before writing, and a release deletion path that orphans pins
+        # does not exist today.
+        rows = await db.execute_fetchall("PRAGMA table_info(homes)")
+        home_cols = {r[1] for r in rows}
+        if "ota_pinned_release_id" not in home_cols:
+            await db.execute(
+                "ALTER TABLE homes ADD COLUMN ota_pinned_release_id INTEGER"
             )
         await db.commit()
 
