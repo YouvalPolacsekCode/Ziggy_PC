@@ -153,6 +153,100 @@ async def _maybe_poll_ota() -> None:
         log_error(f"[Scheduler] OTA poll tick error: {exc}")
 
 
+# Per-day idempotency guard for HA installer apply. Same shape as
+# _last_backup_date — prevents two applies in one maintenance window if
+# the minute tick straddles drift, and a daily reset means a freshly
+# released manifest gets a chance every night.
+_last_ha_apply_date: str | None = None
+
+
+def _within_window(now_hm: str, start: str, end: str) -> bool:
+    """Inclusive of start, exclusive of end. Both strings 'HH:MM'.
+
+    Doesn't handle wrap-around (e.g. 23:30 → 01:00). The default window
+    03:00–04:00 doesn't cross midnight; if a user reconfigures across
+    midnight, the apply just won't fire that night — explicit failure
+    is better than a clever wrap that misbehaves at the edge.
+    """
+    return start <= now_hm < end
+
+
+async def _maybe_apply_ha_install(now: datetime) -> None:
+    """Apply a staged HA manifest if (a) auto_install is enabled, (b) we're
+    inside the configured maintenance window, (c) a staged manifest is
+    present, and (d) we haven't already applied today.
+
+    Ships DORMANT — ha.auto_install defaults to false in
+    config/settings.example.yaml. Flip on a single non-prod hub to
+    validate, then roll wider. Manual admin trigger lives in chunk-2.
+    """
+    global _last_ha_apply_date
+    try:
+        from core.settings_loader import settings as _settings
+        ha_cfg = (_settings.get("ha") or {})
+        if not ha_cfg.get("auto_install"):
+            return
+
+        window = ha_cfg.get("maintenance_window") or {}
+        start = str(window.get("start") or "03:00")
+        end   = str(window.get("end")   or "04:00")
+        current_hm = f"{now.hour:02d}:{now.minute:02d}"
+        if not _within_window(current_hm, start, end):
+            return
+
+        today_str = now.date().isoformat()
+        if _last_ha_apply_date == today_str:
+            return
+
+        # Read the staged manifest. If none, nothing to do.
+        from services.ota_client import load_state as _load_ota_state
+        ota_state = _load_ota_state()
+        staged = ota_state.get("staged")
+        installed = ota_state.get("installed") or {}
+        if not staged:
+            return
+
+        # Defense in depth — if staged matches what's already installed,
+        # there's no version delta to apply. apply_manifest itself catches
+        # this with `already_at_target`, but skipping the worker-thread
+        # spawn entirely is cleaner.
+        if installed.get("ha_version") == staged.get("ha_version"):
+            return
+
+        _last_ha_apply_date = today_str   # claim the slot before applying
+
+        log_info(
+            f"[Scheduler] HA installer: applying staged manifest "
+            f"release_id={staged.get('release_id')} "
+            f"ha_version={staged.get('ha_version')}"
+        )
+        from services.ha_installer import apply_manifest
+        result = await asyncio.to_thread(apply_manifest, staged)
+
+        if result.get("ok"):
+            _dbus.emit("ha_install", BASIC, "ha_install_ok",
+                       from_version=result.get("from_version"),
+                       to_version=result.get("to_version"),
+                       duration_s=result.get("duration_s"))
+            log_info(
+                f"[Scheduler] HA installer ok: "
+                f"{result.get('from_version')} -> {result.get('to_version')} "
+                f"in {result.get('duration_s')}s"
+            )
+        else:
+            _dbus.emit("ha_install", BASIC, "ha_install_failed",
+                       reason=result.get("reason"),
+                       rolled_back=result.get("rolled_back"),
+                       from_version=result.get("from_version"),
+                       to_version=result.get("to_version"))
+            log_error(
+                f"[Scheduler] HA installer failed: reason={result.get('reason')} "
+                f"rolled_back={result.get('rolled_back')} detail={result.get('detail')}"
+            )
+    except Exception as exc:
+        log_error(f"[Scheduler] HA installer tick error: {exc}")
+
+
 async def _fire_presence_automation(trigger_type: str, name: str) -> None:
     """Fire all enabled automations matching the given presence trigger_type and person."""
     try:
@@ -282,6 +376,13 @@ async def run_scheduler() -> None:
         # Time-of-day gated, off unless backup.enabled=true in settings.
         # Runs off-thread so the scheduler keeps ticking during upload.
         await _maybe_fire_daily_backup(now)
+
+        # ── HA installer: apply staged manifest in the maintenance window ────
+        # (Prompt 4 chunk 1.E). Dormant unless settings.ha.auto_install=true
+        # AND a staged manifest is present AND current time falls inside
+        # settings.ha.maintenance_window (default 03:00–04:00, after the
+        # 02:00 backup). One apply per day max via _last_ha_apply_date.
+        await _maybe_apply_ha_install(now)
 
         # Sleep to the start of the next minute.
         now = datetime.now()

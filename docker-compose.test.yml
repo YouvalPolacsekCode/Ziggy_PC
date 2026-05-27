@@ -1,0 +1,26 @@
+# Throwaway compose used by tests/test_ha_installer_integration.py to drive
+# a real installer apply against a real (but ephemeral) Home Assistant.
+# Gated behind HA_INSTALLER_INTEGRATION=1 — the regular `pytest` run does
+# not bring this up, so CI stays fast.
+#
+# The integration test starts HA at HA_INTEGRATION_FROM_TAG (default
+# 2024.4.2 — small, fast image), runs apply_manifest pinning to
+# HA_INTEGRATION_TO_TAG (default 2024.4.3), and asserts:
+#   - the new tag is what HA reports via /api/config
+#   - entity count and automation count are preserved across the recreate
+#
+# Volumes are scoped under the project name so concurrent runs don't
+# collide. Default project name is `ziggy_ha_installer_it` (set in the
+# test).
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HA_TAG:-2024.4.2}
+    container_name: ziggy_ha_installer_it_homeassistant
+    restart: "no"
+    volumes:
+      - ha-config:/config
+    ports:
+      - "127.0.0.1:${HA_HOST_PORT:-18123}:8123"
+
+volumes:
+  ha-config:

@@ -90,10 +90,16 @@ _INSTALLER_STATE_DEFAULTS: dict = {
 }
 
 
-def load_installer_state(path: Path = INSTALLER_STATE_PATH) -> dict:
+def load_installer_state(path: Optional[Path] = None) -> dict:
     """Read installer state. Missing file → fresh defaults. Same shape as
     ota_client.load_state — extra keys in the file are preserved on read so
-    a future chunk can extend without breaking existing rollback runs."""
+    a future chunk can extend without breaking existing rollback runs.
+
+    Defaulting to None and resolving INSTALLER_STATE_PATH at call time
+    lets tests monkeypatch the module-level constant without rebinding
+    every function's default."""
+    if path is None:
+        path = INSTALLER_STATE_PATH
     try:
         raw = path.read_text()
     except FileNotFoundError:
@@ -110,21 +116,25 @@ def load_installer_state(path: Path = INSTALLER_STATE_PATH) -> dict:
     return out
 
 
-def save_installer_state(state: dict, path: Path = INSTALLER_STATE_PATH) -> None:
+def save_installer_state(state: dict, path: Optional[Path] = None) -> None:
     """Atomic write — same temp+rename pattern as ota_client.save_state."""
+    if path is None:
+        path = INSTALLER_STATE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
     os.replace(tmp, path)
 
 
-def _record_outcome(reason: str, *, path: Path = INSTALLER_STATE_PATH,
+def _record_outcome(reason: str, *, path: Optional[Path] = None,
                     clear_previous: bool = False) -> None:
     """Update last_apply_outcome / last_apply_ts in installer state.
 
     clear_previous=True nulls previous_image_tag — used after a successful
     apply once we know the new tag is healthy and the old one is no longer
     a useful rollback target."""
+    if path is None:
+        path = INSTALLER_STATE_PATH
     try:
         state = load_installer_state(path)
         state["last_apply_outcome"] = reason
