@@ -428,11 +428,25 @@ Master key flows through the relay in memory only, during a single request handl
 ### What is NOT possible
 
 - Hub cannot self-unseal. Even compromised, it cannot decrypt other homes' backups (per-home B2 keys, per-home data keys).
-- Relay cannot self-unseal. Master key never lives on relay.
-- Anyone with relay DB read access sees `wrapped_data_key` (ciphertext), useless without master key.
-- Anyone with B2 read access sees `*.enc` files, useless without master key + relay row.
+- Relay cannot self-unseal **for per-home data**. The per-home master key never lives on relay.
+- Anyone with relay DB read access sees `wrapped_data_key` (ciphertext), useless without the per-home master key.
+- Anyone with B2 read access sees `*.enc` files, useless without per-home master key + relay row.
 
-Three independent breaches required to read a single home's data: B2 credential + relay DB + master key. Each requires a different attacker capability.
+Three independent breaches required to read a single home's data: B2 credential + relay DB + per-home master key. Each requires a different attacker capability.
+
+### Amendment (2026-05-26): RELAY_BACKUP_KEY is a separate key
+
+§13 Chunk #8 originally said "encrypt with founder master key" for the relay-DB backup pipeline. That literal reading conflicts with the bullet above — automated nightly backups would require the per-home master key to live in the relay env, defeating the protection.
+
+The resolved implementation uses a **dedicated `RELAY_BACKUP_KEY`** (32 bytes, AES-256-GCM, same wire format as Chunk #2's `wrap`/`unwrap`), stored alongside but distinct from the per-home master in 1Password. See [`relay/app/db_backup.py`](relay/app/db_backup.py) module docstring for the full rationale.
+
+Threat model with the resolved design:
+
+- Compromise of Fly env → attacker gets `RELAY_BACKUP_KEY` → can decrypt the relay-DB snapshot in B2 → sees every home's `wrapped_data_key` rows, **still ciphertext** — useless without the per-home master that lives only in 1Password.
+- Compromise of 1Password (per-home master) without relay access → attacker has the master but no `wrapped_data_key` rows to unwrap — useless.
+- Compromise of B2 (relay-backups bucket) without `RELAY_BACKUP_KEY` → attacker sees opaque ciphertext blobs only.
+
+So the per-home protection now has **four** independent walls: B2 (homes) + relay DB + per-home master + (for relay-DB recovery) `RELAY_BACKUP_KEY`. The fourth doesn't unlock the others — it only gates whether a lost relay DB can be reconstructed.
 
 ---
 
@@ -469,7 +483,7 @@ Each chunk is small, independently testable, and revertable. Order matters — e
 | 5 | Wire scheduler hook in `services/ziggy_scheduler.py` — daily at 02:00 local. Off by default behind feature flag `backup.enabled` in settings.yaml. **Impl flag:** stale-lock cleanup — on lock acquisition, read PID from lockfile; if process is dead, clear lock and proceed. Avoids stuck-forever state after a crashed prior run. | `services/ziggy_scheduler.py` | Manually trigger; verify file appears in B2 |
 | 6 | Relay schema migration — add `home_backup_keys` table (incl. `wrapped_b2_credentials`, `b2_creds_nonce`). New audit event types. | `relay/app/database.py`, migration file | Relay test suite green |
 | 7 | Relay endpoints — `seal-key`, `unseal`, `backup-status` (POST/GET), `restore-events`. Unseal response returns both `data_key` and `b2_credentials`. | `relay/app/routes/admin.py` (or matching existing path) | Integration tests with mock founder JWT |
-| 8 | **NEW.** Relay DB backup pipeline. Nightly `sqlite3 /data/relay.db .backup /tmp/relay.db.snapshot` → encrypt with founder master key (NOT per-home keys — per-home keys ARE the data being protected) → upload to **separate** bucket `b2://ziggy-relay-backups`. Lifecycle: **14 daily + 8 weekly** (heavier retention than per-home because catastrophic loss is unrecoverable). Restore is a documented manual procedure: founder supplies master key + downloads from B2 + decrypts to `/data/relay.db`. | `relay/app/services/db_backup.py`, `relay/app/scheduler.py` (or equivalent), Fly machine cron / sidecar | Manual trigger; verify encrypted snapshot in `ziggy-relay-backups`; full decrypt + restore-to-new-Fly-volume dry run |
+| 8 | **NEW.** Relay DB backup pipeline. Nightly `sqlite3 /data/relay.db .backup` → encrypt with **dedicated `RELAY_BACKUP_KEY`** (NOT per-home master, NOT per-home wrapping keys — see §11 amendment 2026-05-26 for the key-model rationale) → upload to **separate** bucket `b2://ziggy-relay-backups`. Lifecycle: **14 daily + 8 weekly** (heavier retention than per-home because catastrophic loss is unrecoverable). Restore is a documented manual procedure: founder supplies `RELAY_BACKUP_KEY` from 1Password + downloads from B2 + decrypts to `/data/relay.db`. | `relay/app/db_backup.py`, external cron (Fly machine cron / systemd timer / GitHub Action) | Manual trigger via `python -m relay.app.db_backup --once`; verify encrypted snapshot in `ziggy-relay-backups`; full decrypt + restore-to-new-Fly-volume dry run |
 | 9 | `scripts/factory/ziggy-restore-device.sh` — full restore flow. Calls relay for unseal, B2 for download, drives docker compose. **Impl flag:** verify manifest `schema_version` matches KNOWN before any extraction; abort otherwise. | `scripts/factory/ziggy-restore-device.sh` | Dry-run mode (`--dry-run`) validates flow without touching containers |
 | 10 | **REVISED.** Write `docs/SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md` — exact CLI calls + code snippet the future factory imaging script (per PROMPT_FACTORY_IMAGING.md, a Claude Code prompt for a future session, not an existing file) must include for sealing during imaging. Covers: generate `data_key`, generate B2 app key for this home, wrap both with master key, POST `/admin/homes/{home_id}/seal-key`, persist runtime copies to `/etc/ziggy/`. **We do not touch any file outside the repo.** Founder integrates this snippet into the PROMPT_FACTORY_IMAGING.md spec separately. | `docs/SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md` | Founder reviews, confirms snippet can be pasted into the imaging prompt verbatim |
 | 11 | `RUNBOOK_DR.md` — operator runbook. Step-by-step for the founder: "device dead → restore in 30 min." Also covers manual relay DB restore from Chunk #8. | `RUNBOOK_DR.md` | Walkthrough with founder |
@@ -501,8 +515,8 @@ To be executed before declaring v1 done.
 | 14 | Negative test: cross-coordinator restore without flag | Restore script aborts with clear message |
 | 15 | Negative test: cross-coordinator restore WITH flag | Restore completes; sensors re-join |
 | 16 | Verify relay DB backup ran | Encrypted snapshot appears in `b2://ziggy-relay-backups/{date}/` per Chunk #8 schedule |
-| 17 | **Simulated relay DB loss + restore.** On a staging Fly app, delete `/data/relay.db`. Stop relay process. Download latest snapshot from `b2://ziggy-relay-backups`. Decrypt with founder master key. Place at `/data/relay.db`. Restart relay. | Relay comes up healthy; previously-sealed homes still unseal cleanly; audit_log entries from before the simulated loss are intact |
-| 18 | Negative test: relay DB restore with wrong master key | Decryption fails with GCM tag error; clear message; no partial write to `/data/relay.db` |
+| 17 | **Simulated relay DB loss + restore.** On a staging Fly app, delete `/data/relay.db`. Stop relay process. Download latest snapshot from `b2://ziggy-relay-backups/latest/`. Decrypt with `RELAY_BACKUP_KEY` (from 1Password). Place at `/data/relay.db`. Restart relay. | Relay comes up healthy; previously-sealed homes still unseal cleanly using the per-home master key; audit_log entries from before the simulated loss are intact |
+| 18 | Negative test: relay DB restore with wrong `RELAY_BACKUP_KEY` (or the per-home master key by mistake) | Decryption fails with GCM tag error; clear message; no partial write to `/data/relay.db` |
 
 ---
 
