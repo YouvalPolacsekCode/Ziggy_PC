@@ -143,6 +143,15 @@ def load_settings() -> dict:
     if os.getenv("TUNNEL_URL"):
         relay["tunnel_url"] = os.getenv("TUNNEL_URL")
 
+    # HA installer (Prompt 4) — cloud topology bind-mounts the host's
+    # docker-compose.yml at /host/docker-compose.yml; the provisioner
+    # template exports ZIGGY_HOST_COMPOSE_FILE so the installer reads
+    # the right path without per-home settings.yaml edits. Local-dev
+    # hubs leave this unset and use ha.compose_file from settings.yaml.
+    ha_install = data.setdefault("ha", {})
+    if os.getenv("ZIGGY_HOST_COMPOSE_FILE"):
+        ha_install["compose_file"] = os.getenv("ZIGGY_HOST_COMPOSE_FILE")
+
     # SMTP / email — credentials never belong in tracked YAML.
     email = data.setdefault("email", {})
     if os.getenv("SMTP_HOST"):

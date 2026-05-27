@@ -36,6 +36,14 @@ services:
     volumes:
       - ./config:/app/config
       - ./user_files:/app/user_files
+      # HA installer (Prompt 4): Ziggy recreates the homeassistant container
+      # at a pinned tag from the OTA manifest. The compose file lives on the
+      # host; the installer reads + edits it and runs `docker compose up -d`
+      # via the host's docker daemon. Bind grants root-equivalent on the host
+      # — acceptable for single-tenant hubs, will tighten via a socket-proxy
+      # in a follow-up if multi-tenancy lands.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/host/docker-compose.yml
     depends_on: [mosquitto, homeassistant]
 
 volumes:

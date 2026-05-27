@@ -208,6 +208,37 @@ home_assistant:
   token: REPLACE_WITH_HA_LONG_LIVED_TOKEN
   url: http://homeassistant.local:8123/
 
+# HA installer (Prompt 4) — version pinning + apply/rollback of the HA
+# Docker image. Reads the target version from manifests staged by
+# services/ota_client.py (Prompt 2). Ships dormant: auto_install defaults
+# to false so chunks A–E land without changing any hub's behavior. Flip
+# to true on one non-prod hub to validate, then enable elsewhere.
+ha:
+  # Path to the docker-compose file containing the homeassistant service.
+  # Cloud: /opt/ziggy-homes/<home_id>/docker-compose.yml (per-home stack)
+  # Local: ./docker-compose.yml (repo-relative)
+  compose_file: ./docker-compose.yml
+  # Image repo the installer pins a tag onto. The manifest's ha_version is
+  # appended as the tag (e.g. ghcr.io/.../home-assistant:2026.5.1).
+  image_repo: ghcr.io/home-assistant/home-assistant
+  # URL the installer hits after restart to confirm the new version is
+  # serving. From inside the Ziggy container this is the HA service's
+  # in-network address (cloud topology: http://homeassistant:8123).
+  health_url: http://homeassistant.local:8123
+  # When false, a staged manifest sits in ota_state.json and waits for an
+  # explicit admin trigger. When true, the scheduler applies it inside the
+  # maintenance window. Default false so chunk-1 ships as a no-op.
+  auto_install: false
+  maintenance_window:
+    start: "03:00"   # local time; runs after the 02:00 backup
+    end:   "04:00"
+  # Total budget for a single apply attempt (image pull + recreate + probe).
+  apply_timeout_s: 600
+  # Health probe cadence: attempts × interval = max wait for HA to report
+  # the expected version. 12 × 10s = 120s tolerance for a slow startup.
+  health_check_attempts: 12
+  health_check_interval_s: 10
+
 home_zone:
   # Coordinates of the home for presence calculations.
   lat: 0.0

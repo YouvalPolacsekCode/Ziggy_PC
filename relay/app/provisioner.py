@@ -46,7 +46,14 @@ FLY_API_TOKEN      = os.getenv("FLY_API_TOKEN", "")
 CF_API_TOKEN       = os.getenv("CF_API_TOKEN", "")
 CF_ACCOUNT_ID      = os.getenv("CF_ACCOUNT_ID", "")
 RELAY_URL          = os.getenv("RELAY_PUBLIC_URL", "")
-HA_IMAGE           = "ghcr.io/home-assistant/home-assistant:stable"
+# HA image: repo is constant; the tag floats until the edge installer
+# (services/ha_installer.py, Prompt 4) pins it to a manifest-provided
+# version. New hubs come up on :stable so first boot doesn't depend on
+# a published release; the next OTA poll stages a manifest with a real
+# version, and the installer rewrites the compose file in place.
+HA_IMAGE_REPO      = "ghcr.io/home-assistant/home-assistant"
+HA_IMAGE_DEFAULT_TAG = "stable"
+HA_IMAGE           = f"{HA_IMAGE_REPO}:{HA_IMAGE_DEFAULT_TAG}"
 CF_IMAGE           = "cloudflare/cloudflared:latest"
 MOSQUITTO_IMAGE    = "eclipse-mosquitto:2"
 
@@ -169,8 +176,20 @@ services:
       - INITIAL_ADMIN_EMAIL={admin_email}
       - INITIAL_ADMIN_PASSWORD={admin_password}
       - ZIGGY_CONFIG_PATH=/app/user_files/settings.yaml
+      # HA installer (Prompt 4): points at the host-side compose file as
+      # bind-mounted below. The installer reads + rewrites this path to
+      # pin the HA image tag, then runs `docker compose up -d homeassistant`
+      # against the host daemon via the socket bind.
+      - ZIGGY_HOST_COMPOSE_FILE=/host/docker-compose.yml
     volumes:
       - ziggy_data:/app/user_files
+      # HA installer access to the host docker daemon + compose file.
+      # See docker-compose.yml in the repo root for the same pattern on
+      # local-dev hubs. Privilege note: this grants root-equivalent on
+      # the host. Acceptable today since each Oracle VM hosts exactly
+      # one home; revisit if multi-tenancy lands.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/host/docker-compose.yml
 
   cloudflared:
     image: {CF_IMAGE}
