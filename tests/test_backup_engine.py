@@ -530,3 +530,294 @@ def test_full_roundtrip_through_manifest(ctx):
         import hashlib
         assert hashlib.sha256(plaintext).hexdigest() == entry["sha256_plaintext"]
         assert len(plaintext) == entry["size_plaintext"]
+
+
+# ---------- Chunk #5: lock with stale-PID cleanup ----------
+
+import os as _os  # noqa: E402 — separated so it's clear these are Chunk #5 imports
+import fcntl as _fcntl_test  # noqa: E402 — direct fcntl for the test-side held lock
+
+
+def test_lock_acquire_release_happy(tmp_path):
+    lock = str(tmp_path / "test.lock")
+    fd = be._acquire_backup_lock(lock)
+    assert fd is not None
+    assert Path(lock).exists()
+    assert int(Path(lock).read_text().strip()) == _os.getpid()
+    be._release_backup_lock(fd, lock)
+    assert not Path(lock).exists()
+
+
+def test_lock_release_idempotent(tmp_path):
+    lock = str(tmp_path / "test.lock")
+    fd = be._acquire_backup_lock(lock)
+    be._release_backup_lock(fd, lock)
+    # Calling again with None is a no-op:
+    be._release_backup_lock(None, lock)
+
+
+def test_lock_stale_pid_cleared(tmp_path):
+    """A lockfile holding a dead PID is silently cleared on acquire."""
+    lock = tmp_path / "test.lock"
+    # PID 99999999 is well above any plausible OS max_pid — guaranteed gone.
+    lock.write_text("99999999\n")
+    fd = be._acquire_backup_lock(str(lock))
+    assert fd is not None
+    assert int(lock.read_text().strip()) == _os.getpid()
+    be._release_backup_lock(fd, str(lock))
+
+
+def test_lock_corrupt_contents_cleared(tmp_path):
+    lock = tmp_path / "test.lock"
+    lock.write_text("definitely-not-a-pid\n")
+    fd = be._acquire_backup_lock(str(lock))
+    assert fd is not None
+    be._release_backup_lock(fd, str(lock))
+
+
+def test_lock_contention_raises(tmp_path):
+    """A live flock held by another fd blocks acquisition."""
+    lock = str(tmp_path / "test.lock")
+    held_fd = _os.open(lock, _os.O_CREAT | _os.O_RDWR, 0o644)
+    _fcntl_test.flock(held_fd, _fcntl_test.LOCK_EX | _fcntl_test.LOCK_NB)
+    try:
+        with pytest.raises(RuntimeError, match="already running"):
+            be._acquire_backup_lock(lock)
+    finally:
+        _fcntl_test.flock(held_fd, _fcntl_test.LOCK_UN)
+        _os.close(held_fd)
+
+
+def test_pid_alive_self_is_true():
+    assert be._pid_alive(_os.getpid()) is True
+
+
+def test_pid_alive_dead_is_false():
+    assert be._pid_alive(99999999) is False
+
+
+def test_pid_alive_bad_pid_is_false():
+    assert be._pid_alive(0) is False
+    assert be._pid_alive(-1) is False
+
+
+# ---------- Chunk #5: run_daily_backup_with_lock ----------
+
+def test_with_lock_happy_path(ctx, tmp_path):
+    ctx.lock_path = str(tmp_path / "test.lock")
+    result = be.run_daily_backup_with_lock(ctx)
+    assert result["ok"] is True, result
+    # Lock file released after the run.
+    assert not Path(ctx.lock_path).exists()
+
+
+def test_with_lock_contention_returns_lock_stage(ctx, tmp_path):
+    lock = str(tmp_path / "test.lock")
+    ctx.lock_path = lock
+    held_fd = _os.open(lock, _os.O_CREAT | _os.O_RDWR, 0o644)
+    _fcntl_test.flock(held_fd, _fcntl_test.LOCK_EX | _fcntl_test.LOCK_NB)
+    try:
+        result = be.run_daily_backup_with_lock(ctx)
+        assert result["ok"] is False
+        assert result["stage"] == "lock"
+        assert "already running" in result["error"]
+        # Storage should not have been touched.
+        ctx.storage.upload.assert_not_called()
+    finally:
+        _fcntl_test.flock(held_fd, _fcntl_test.LOCK_UN)
+        _os.close(held_fd)
+
+
+def test_with_lock_releases_on_inner_failure(ctx, tmp_path):
+    """Even when run_daily_backup returns a failure dict, the lock is released."""
+    ctx.lock_path = str(tmp_path / "test.lock")
+    ctx._ntp_skew_provider = lambda: 999.0  # force pre-flight failure
+    result = be.run_daily_backup_with_lock(ctx)
+    assert result["ok"] is False
+    assert result["stage"] == "preflight"
+    assert not Path(ctx.lock_path).exists()
+
+
+# ---------- Chunk #5: BackupContext.from_settings ----------
+
+def _good_settings(tmp_path, kit_manifest_path=None):
+    """Settings dict + on-disk data_key file. Returns (settings, data_key_path)."""
+    dkp = tmp_path / "data_key"
+    dkp.write_bytes(b"x" * 32)
+    if kit_manifest_path is None:
+        kit_manifest_path = str(tmp_path / "nonexistent_kit.yaml")
+    return {
+        "home": {"id": "home-test"},
+        "home_assistant": {"url": "http://ha.local", "token": "tok"},
+        "backup": {
+            "b2_endpoint": "https://s3.eu-central-003.backblazeb2.com",
+            "b2_bucket": "test-bucket",
+            "b2_key_id_env": "TEST_B2_KEY",
+            "b2_app_key_env": "TEST_B2_APP",
+            "data_key_path": str(dkp),
+            "kit_manifest_path": kit_manifest_path,
+            "device_id": "dev-test",
+            "coordinator_type": "smlight",
+            "ha_config_dir": str(tmp_path / "ha"),
+            "user_files_dir": str(tmp_path / "uf"),
+            "config_dir": str(tmp_path / "cfg"),
+            "lock_path": str(tmp_path / "lock"),
+            "recorder_skip_threshold_mb": 250,
+        },
+    }, dkp
+
+
+@pytest.fixture
+def _b2_env(monkeypatch):
+    monkeypatch.setenv("TEST_B2_KEY", "k")
+    monkeypatch.setenv("TEST_B2_APP", "a")
+
+
+def test_from_settings_happy_path(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    ctx = be.BackupContext.from_settings(settings)
+    assert ctx.home_id == "home-test"
+    assert ctx.device_id == "dev-test"
+    assert ctx.coordinator_type == "smlight"
+    assert ctx.coordinator_ieee is None
+    assert len(ctx.data_key) == 32
+    assert ctx.ha_config_dir == Path(str(tmp_path / "ha"))
+    assert ctx.recorder_skip_threshold_mb == 250
+
+
+def test_from_settings_kit_manifest_overrides_fallbacks(tmp_path, _b2_env):
+    kit = tmp_path / "kit.yaml"
+    kit.write_text(
+        "device_id: kit-dev-id\n"
+        "coordinator_type: sonoff_e\n"
+        "coordinator_ieee: \"00:11:22:33:44:55:66:77\"\n"
+    )
+    settings, _ = _good_settings(tmp_path, kit_manifest_path=str(kit))
+    settings["backup"]["device_id"] = "REPLACE_WITH_DEVICE_ID"  # ignored
+    settings["backup"]["coordinator_type"] = "smlight"  # ignored
+    ctx = be.BackupContext.from_settings(settings)
+    assert ctx.device_id == "kit-dev-id"
+    assert ctx.coordinator_type == "sonoff_e"
+    assert ctx.coordinator_ieee == "00:11:22:33:44:55:66:77"
+
+
+def test_from_settings_missing_home_id_raises(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    settings["home"]["id"] = ""
+    with pytest.raises(RuntimeError, match="home.id"):
+        be.BackupContext.from_settings(settings)
+
+
+def test_from_settings_placeholder_device_id_raises(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    settings["backup"]["device_id"] = "REPLACE_WITH_DEVICE_ID"
+    with pytest.raises(RuntimeError, match="device_id missing"):
+        be.BackupContext.from_settings(settings)
+
+
+def test_from_settings_unknown_coordinator_raises(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    settings["backup"]["coordinator_type"] = "huawei"
+    with pytest.raises(RuntimeError, match="coordinator_type"):
+        be.BackupContext.from_settings(settings)
+
+
+def test_from_settings_missing_ha_url_raises(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    settings["home_assistant"]["url"] = ""
+    with pytest.raises(RuntimeError, match="home_assistant"):
+        be.BackupContext.from_settings(settings)
+
+
+def test_from_settings_propagates_dry_run(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    ctx = be.BackupContext.from_settings(settings, dry_run=True)
+    assert ctx.dry_run is True
+
+
+# ---------- Chunk #5: data_key + kit_manifest helpers ----------
+
+def test_load_data_key_wrong_size(tmp_path):
+    p = tmp_path / "key"
+    p.write_bytes(b"x" * 16)
+    with pytest.raises(RuntimeError, match="32 bytes"):
+        be._load_data_key(str(p))
+
+
+def test_load_data_key_missing_file(tmp_path):
+    with pytest.raises(RuntimeError, match="not found"):
+        be._load_data_key(str(tmp_path / "absent"))
+
+
+def test_load_data_key_happy(tmp_path):
+    p = tmp_path / "key"
+    p.write_bytes(b"x" * 32)
+    assert be._load_data_key(str(p)) == b"x" * 32
+
+
+def test_read_kit_manifest_absent_returns_empty(tmp_path):
+    assert be._read_kit_manifest(str(tmp_path / "absent")) == {}
+
+
+def test_read_kit_manifest_parses_yaml(tmp_path):
+    p = tmp_path / "kit.yaml"
+    p.write_text("device_id: x\ncoordinator_type: smlight\n")
+    assert be._read_kit_manifest(str(p)) == {
+        "device_id": "x", "coordinator_type": "smlight",
+    }
+
+
+def test_read_kit_manifest_bad_yaml_returns_empty(tmp_path):
+    p = tmp_path / "kit.yaml"
+    p.write_text("[: not yaml :{")
+    assert be._read_kit_manifest(str(p)) == {}
+
+
+def test_read_kit_manifest_non_dict_returns_empty(tmp_path):
+    p = tmp_path / "kit.yaml"
+    p.write_text("- just\n- a\n- list\n")
+    assert be._read_kit_manifest(str(p)) == {}
+
+
+# ---------- Chunk #5: CLI (python -m services.backup_engine) ----------
+
+def test_cli_requires_once_flag(capsys):
+    with pytest.raises(SystemExit):
+        be._main([])
+
+
+def test_cli_runs_with_once(monkeypatch, capsys, ctx, tmp_path):
+    """Stub the context builder so the CLI sees our pre-wired test ctx."""
+    ctx.lock_path = str(tmp_path / "test.lock")
+    monkeypatch.setattr(be, "_build_context_from_settings",
+                        lambda *a, **kw: ctx)
+    code = be._main(["--once"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert '"ok": true' in out.lower() or '"ok": True' in out
+
+
+def test_cli_dry_run_propagates(monkeypatch, capsys, ctx, tmp_path):
+    ctx.lock_path = str(tmp_path / "test.lock")
+    captured: dict = {}
+
+    def _fake_builder(settings, *, dry_run, today):
+        captured["dry_run"] = dry_run
+        ctx.dry_run = dry_run
+        return ctx
+
+    monkeypatch.setattr(be, "_build_context_from_settings", _fake_builder)
+    code = be._main(["--once", "--dry-run"])
+    assert code == 0
+    assert captured["dry_run"] is True
+    # In dry-run, no actual upload calls.
+    ctx.storage.upload.assert_not_called()
+
+
+def test_cli_failure_returns_nonzero(monkeypatch, capsys, ctx, tmp_path):
+    ctx.lock_path = str(tmp_path / "test.lock")
+    ctx._ntp_skew_provider = lambda: 999.0  # force pre-flight failure
+    monkeypatch.setattr(be, "_build_context_from_settings",
+                        lambda *a, **kw: ctx)
+    code = be._main(["--once"])
+    assert code == 1

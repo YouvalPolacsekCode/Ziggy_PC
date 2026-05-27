@@ -53,6 +53,16 @@ import requests
 from services import backup_keys
 from services.backup_storage import BackupStorage
 
+# fcntl is POSIX-only. On Windows the file lock is silently skipped —
+# production target is Ubuntu, and the founder's Windows dev box doesn't
+# need flock semantics for a single-process manual --once run.
+try:
+    import fcntl as _fcntl
+    _HAS_FCNTL = True
+except ImportError:
+    _fcntl = None  # type: ignore[assignment]
+    _HAS_FCNTL = False
+
 log = logging.getLogger(__name__)
 
 
@@ -619,3 +629,298 @@ def _promote_to_latest(ctx: BackupContext, filenames: list[str]) -> None:
             _backup_key_for(ctx.home_id, ctx.today, name),
             _latest_key_for(ctx.home_id, name),
         )
+
+
+# ---------- file lock with stale-PID cleanup ----------
+#
+# Chunk #5 impl flag (DESIGN_BACKUP_DR.md §13): on lock acquisition,
+# read the PID stored in the lockfile; if that process is dead, clear
+# the lock and proceed. Without this, a crashed prior run would leave
+# the lock pinned forever and every subsequent day would skip.
+
+def _pid_alive(pid: int) -> bool:
+    """True iff a process with the given PID exists.
+
+    Uses signal 0 — "check only, don't deliver." ProcessLookupError means
+    the PID is gone. PermissionError means the process exists but is
+    owned by another user; we treat that as alive (don't wrongly clear
+    someone else's lock).
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _acquire_backup_lock(path: str) -> Optional[int]:
+    """Acquire an exclusive flock on `path`. Returns the fd to release later.
+
+    Stale-PID cleanup happens before the flock attempt: if the lockfile
+    holds a dead PID, we unlink it. If another live process holds the
+    lock, raises RuntimeError. On non-POSIX (no fcntl), returns None —
+    locking is silently skipped.
+    """
+    if not _HAS_FCNTL:
+        log.warning("fcntl unavailable — backup lock not enforced on this platform")
+        return None
+
+    # Stale-lock cleanup. Best-effort: if anything in here fails, we let
+    # flock decide the truth.
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                content = f.read().strip()
+            if content:
+                try:
+                    pid = int(content)
+                except ValueError:
+                    log.warning("lockfile %s has non-numeric contents — clearing", path)
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                else:
+                    if not _pid_alive(pid):
+                        log.warning("clearing stale backup lock for dead PID %d", pid)
+                        try:
+                            os.unlink(path)
+                        except OSError:
+                            pass
+        except OSError:
+            pass
+
+    # Ensure parent dir exists (e.g. /var/run/ziggy/ on first run).
+    parent = os.path.dirname(path)
+    if parent and not os.path.isdir(parent):
+        try:
+            os.makedirs(parent, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            raise RuntimeError(f"cannot create lock directory {parent}: {e}") from e
+
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+    except (BlockingIOError, OSError) as e:
+        os.close(fd)
+        raise RuntimeError(f"backup already running (lock held at {path})") from e
+
+    # Persist our PID for future stale-detection runs.
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        os.fsync(fd)
+    except OSError as e:
+        log.warning("could not write PID to lockfile %s: %s", path, e)
+
+    return fd
+
+
+def _release_backup_lock(fd: Optional[int], path: str) -> None:
+    """Inverse of _acquire_backup_lock. Idempotent — safe to call twice."""
+    if fd is None:
+        return
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    try:
+        os.unlink(path)
+    except (FileNotFoundError, OSError):
+        pass
+
+
+def run_daily_backup_with_lock(ctx: BackupContext) -> dict:
+    """Acquire the per-hub backup lock, run one daily cycle, release.
+
+    On lock contention, returns a result dict (stage="lock") rather than
+    raising — uniform with run_daily_backup's exception-to-dict contract
+    so the scheduler can handle every outcome the same way.
+    """
+    try:
+        fd = _acquire_backup_lock(ctx.lock_path)
+    except RuntimeError as e:
+        log.warning("backup lock unavailable: %s", e)
+        return {
+            "ok": False,
+            "stage": "lock",
+            "uploaded_bytes": 0,
+            "files": [],
+            "optional_skipped": [],
+            "error": str(e),
+        }
+    try:
+        return run_daily_backup(ctx)
+    finally:
+        _release_backup_lock(fd, ctx.lock_path)
+
+
+# ---------- runtime factory (settings + env + kit manifest) ----------
+
+def _read_kit_manifest(path: str) -> dict:
+    """Read the factory-imaging kit manifest. Returns {} if missing.
+
+    The factory imaging script (per docs/SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md,
+    Chunk #10) writes this file at provisioning time. Until that script
+    lands, callers fall back to settings.backup.{device_id, coordinator_type}.
+    """
+    p = Path(path)
+    if not p.is_file():
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(p.read_text()) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        log.warning("kit manifest at %s unreadable: %s", path, e)
+        return {}
+
+
+def _load_data_key(path: str) -> bytes:
+    """Read raw 32-byte data_key from disk. Strict on length.
+
+    File format is binary — exactly 32 random bytes written by the
+    factory imaging script with `head -c 32 /dev/urandom > <path>`.
+    Mode 0600. Lives outside the backup bundle by design.
+    """
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError as e:
+        raise RuntimeError(f"data_key not found at {path} — seal-key step missing") from e
+    except PermissionError as e:
+        raise RuntimeError(f"data_key at {path} unreadable (check mode 0600 and uid): {e}") from e
+    if len(raw) != 32:
+        raise RuntimeError(
+            f"data_key at {path} must be exactly 32 bytes, got {len(raw)}. "
+            "Regenerate with `head -c 32 /dev/urandom > <path>`."
+        )
+    return raw
+
+
+def _build_context_from_settings(
+    settings: Optional[dict],
+    *,
+    dry_run: bool,
+    today: Optional[dt.date],
+) -> BackupContext:
+    """Shared factory body for BackupContext.from_settings(); separated so
+    tests can patch settings without monkey-patching the global loader."""
+    if settings is None:
+        from core.settings_loader import settings as global_settings
+        settings = global_settings
+    backup_cfg = (settings or {}).get("backup") or {}
+    home_cfg = (settings or {}).get("home") or {}
+    ha_cfg = (settings or {}).get("home_assistant") or {}
+
+    home_id = home_cfg.get("id")
+    if not home_id:
+        raise RuntimeError("settings.home.id must be set to back up")
+
+    # Kit manifest wins over settings fallbacks.
+    kit_path = backup_cfg.get("kit_manifest_path", "/etc/ziggy/kit_manifest.yaml")
+    kit = _read_kit_manifest(kit_path)
+    device_id = kit.get("device_id") or backup_cfg.get("device_id")
+    coordinator_type = kit.get("coordinator_type") or backup_cfg.get("coordinator_type", "smlight")
+    coordinator_ieee = kit.get("coordinator_ieee")
+
+    if not device_id or device_id == "REPLACE_WITH_DEVICE_ID":
+        raise RuntimeError(
+            "device_id missing: factory imaging script must populate "
+            f"{kit_path} (see docs/SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md) "
+            "or set settings.backup.device_id for dev."
+        )
+    if coordinator_type not in ("smlight", "sonoff_e"):
+        raise RuntimeError(
+            f"coordinator_type {coordinator_type!r} not recognized; expected "
+            "'smlight' or 'sonoff_e' per DESIGN_BACKUP_DR.md §8."
+        )
+
+    data_key_path = backup_cfg.get("data_key_path", "/etc/ziggy/data_key")
+    data_key = _load_data_key(data_key_path)
+
+    ha_url = ha_cfg.get("url")
+    ha_token = ha_cfg.get("token")
+    if not ha_url or not ha_token:
+        raise RuntimeError("settings.home_assistant.url and .token must be set")
+
+    storage = BackupStorage.from_settings(settings)
+
+    return BackupContext(
+        home_id=home_id,
+        device_id=device_id,
+        coordinator_type=coordinator_type,
+        coordinator_ieee=coordinator_ieee,
+        data_key=data_key,
+        ha_config_dir=Path(backup_cfg.get("ha_config_dir", "docker/ha-config")),
+        user_files_dir=Path(backup_cfg.get("user_files_dir", "user_files")),
+        config_dir=Path(backup_cfg.get("config_dir", "config")),
+        storage=storage,
+        ha_url=ha_url,
+        ha_token=ha_token,
+        recorder_skip_threshold_mb=int(backup_cfg.get("recorder_skip_threshold_mb", 500)),
+        lock_path=backup_cfg.get("lock_path", DEFAULT_LOCK_PATH),
+        dry_run=dry_run,
+        today=today or dt.date.today(),
+    )
+
+
+# Attach as a classmethod after definition to avoid forward-reference juggling
+# inside the @dataclass body above.
+def _from_settings(cls, settings: Optional[dict] = None, *, dry_run: bool = False,
+                   today: Optional[dt.date] = None) -> "BackupContext":
+    """Build a BackupContext from settings.yaml, env vars, and on-disk
+    key/kit-manifest material.
+
+    Production callers (scheduler, CLI) call this with no args — it reads
+    the global settings loader. Tests pass an explicit settings dict.
+    """
+    return _build_context_from_settings(settings, dry_run=dry_run, today=today)
+
+
+BackupContext.from_settings = classmethod(_from_settings)  # type: ignore[attr-defined]
+
+
+# ---------- CLI: python -m services.backup_engine --once ----------
+
+def _main(argv: Optional[list[str]] = None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="python -m services.backup_engine",
+        description="Manually trigger one daily backup run on this hub.",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run a single backup now and exit. Required (no other modes yet).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Collect + encrypt + manifest, but skip the B2 upload + relay POST.",
+    )
+    args = parser.parse_args(argv)
+    if not args.once:
+        parser.error("--once is required (use --help for available modes).")
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    ctx = BackupContext.from_settings(dry_run=args.dry_run)
+    result = run_daily_backup_with_lock(ctx)
+    print(json.dumps(result, indent=2, default=str))
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

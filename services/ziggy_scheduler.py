@@ -24,6 +24,11 @@ from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 _started = False
 _tick: int = 0   # increments once per minute
 
+# Per-day idempotency guard for the daily backup tick. Prevents the
+# scheduler from firing twice if the HH:MM window straddles tick drift,
+# and keeps repeat-day runs from re-firing on restart at 02:00.
+_last_backup_date: str | None = None
+
 
 async def _sweep_presence_expiry() -> None:
     """Detect ping-expiry driven departures and fire automations for them.
@@ -40,6 +45,58 @@ async def _sweep_presence_expiry() -> None:
                 await _fire_presence_automation("person_leaves", decision.person_name)
     except Exception as exc:
         log_error(f"[Scheduler] Presence sweep failed: {exc}")
+
+
+async def _maybe_fire_daily_backup(now: datetime) -> None:
+    """Fire one daily backup if the configured HH:MM matches and we haven't
+    already run today. Off unless settings.backup.enabled is true.
+
+    The actual backup runs in a worker thread (via asyncio.to_thread) so a
+    multi-minute backup never blocks the once-per-minute scheduler loop.
+    Per DESIGN_BACKUP_DR.md §6 the run is fire-and-forget at this layer —
+    inner failures land in the audit log via the engine, not here.
+    """
+    global _last_backup_date
+    try:
+        from core.settings_loader import settings as _settings
+        backup_cfg = _settings.get("backup") or {}
+        if not backup_cfg.get("enabled"):
+            return
+        target_hour = int(backup_cfg.get("schedule_hour", 2))
+        target_minute = int(backup_cfg.get("schedule_minute", 0))
+        if now.hour != target_hour or now.minute != target_minute:
+            return
+        today_str = now.date().isoformat()
+        if _last_backup_date == today_str:
+            return
+        _last_backup_date = today_str
+        log_info(f"[Scheduler] Firing daily backup at {now.hour:02d}:{now.minute:02d}")
+        asyncio.create_task(_run_backup_offthread())
+    except Exception as exc:
+        log_error(f"[Scheduler] Daily backup tick error: {exc}")
+
+
+async def _run_backup_offthread() -> None:
+    """Build context + run the engine in a worker thread. Logs the outcome."""
+    try:
+        from services.backup_engine import (
+            BackupContext, run_daily_backup_with_lock,
+        )
+        ctx = BackupContext.from_settings()
+        result = await asyncio.to_thread(run_daily_backup_with_lock, ctx)
+        if result.get("ok"):
+            log_info(
+                f"[Scheduler] Backup ok: {result.get('uploaded_bytes', 0)} bytes, "
+                f"{len(result.get('files') or [])} files, "
+                f"skipped={result.get('optional_skipped') or []}"
+            )
+        else:
+            log_error(
+                f"[Scheduler] Backup failed at stage={result.get('stage')}: "
+                f"{result.get('error')}"
+            )
+    except Exception as exc:
+        log_error(f"[Scheduler] Backup task crashed: {exc}")
 
 
 async def _fire_presence_automation(trigger_type: str, name: str) -> None:
@@ -153,6 +210,11 @@ async def run_scheduler() -> None:
                 log_info("[Scheduler] Stale sensor sweep complete")
             except Exception as exc:
                 log_error(f"[Scheduler] Stale sensor sweep failed: {exc}")
+
+        # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
+        # Time-of-day gated, off unless backup.enabled=true in settings.
+        # Runs off-thread so the scheduler keeps ticking during upload.
+        await _maybe_fire_daily_backup(now)
 
         # Sleep to the start of the next minute.
         now = datetime.now()

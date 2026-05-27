@@ -82,6 +82,28 @@ backup:
   data_key_path: /etc/ziggy/data_key
   b2_credentials_path: /etc/ziggy/b2_credentials
 
+  # Per-deployment paths. Defaults assume the bundled docker-compose
+  # layout (docker/ha-config) and repo-relative user_files/ + config/.
+  # Override if the hub runs HA outside the bundled stack.
+  ha_config_dir: docker/ha-config
+  user_files_dir: user_files
+  config_dir: config
+
+  # File lock — prevents two daily backups racing. /var/run is the
+  # production default but requires the systemd unit to be able to
+  # write there. Use /tmp/ziggy-backup.lock for unprivileged dev runs.
+  # On non-POSIX platforms (no fcntl), locking is silently skipped.
+  lock_path: /var/run/ziggy-backup.lock
+
+  # Per-home identifiers. Source of truth is /etc/ziggy/kit_manifest.yaml
+  # which the factory imaging script (per docs/SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md,
+  # Chunk #10) writes during imaging — coordinator_type, device_id, and
+  # coordinator_ieee come from there if the file exists. The fields below
+  # are dev fallbacks when no kit manifest is present yet.
+  kit_manifest_path: /etc/ziggy/kit_manifest.yaml
+  device_id: REPLACE_WITH_DEVICE_ID
+  coordinator_type: smlight
+
 calendar:
   birthdays: calendar.birthdays
   holidays: calendar.holidays_in_israel
