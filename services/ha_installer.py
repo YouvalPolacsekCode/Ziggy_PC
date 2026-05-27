@@ -1,17 +1,18 @@
 """HA installer — applies a staged OTA manifest to the local Home Assistant
-container (Prompt 4 chunk 1.C).
+container, rolling back on failure (Prompt 4 chunks 1.C + 1.D).
 
 Reads the target version from the manifest staged by services/ota_client.py,
 rewrites the homeassistant service's image tag in the host compose file, runs
 `docker compose up -d homeassistant`, and probes HA's REST API until the
 expected version is reported. On success calls ota_client.mark_installed()
-to clear the stage.
+to clear the stage. On failure after the compose file has been mutated, the
+installer reverts to the previously-running image tag (recorded to
+user_files/ha_installer_state.json before any mutation) and re-recreates the
+container — so "nothing breaks" survives a failed apply just as much as a
+successful one.
 
 This module does NOT:
 
-  - Roll back on failure. apply_manifest returns a result dict with
-    rolled_back=False; the rollback orchestrator (chunk 1.D) wraps this
-    module's apply path with the revert sequence.
   - Verify image digests. The manifest carries image_digests today but
     the installer currently trusts the registry. Pinning the digest is
     a chunk-2 hardening item once the basic apply path is proven.
@@ -27,7 +28,21 @@ Public surface:
   probe_ha_health(url, expected_version,
                   attempts, interval_s)      polls /api/config; returns dict
   apply_manifest(manifest, settings, *,
-                 dry_run=False)              orchestrates the four above
+                 dry_run=False,
+                 rollback_on_failure=True)   orchestrates the apply path,
+                                             reverts on failure
+  rollback(target_tag, *, settings)          explicit revert; called by
+                                             apply_manifest internally and
+                                             also exposed for an admin trigger
+
+Installer state at user_files/ha_installer_state.json — written by
+apply_manifest before any mutation, read by rollback():
+
+  {
+    "previous_image_tag":   "<tag>" | null,
+    "last_apply_outcome":   "<reason>" | null,
+    "last_apply_ts":        "<iso8601>" | null
+  }
 
 Test seams (every external dependency is injectable via kwargs):
 
@@ -42,6 +57,7 @@ ota_client.poll_once and telemetry_client.post_once.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -56,6 +72,68 @@ import requests
 import yaml
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Installer state file — captures "what was the image tag before we started
+# applying?" so rollback knows where to revert. Kept separate from
+# user_files/ota_state.json (managed by services/ota_client.py) so the OTA
+# layer's state model stays untouched.
+# ---------------------------------------------------------------------------
+
+INSTALLER_STATE_PATH = Path("user_files/ha_installer_state.json")
+
+_INSTALLER_STATE_DEFAULTS: dict = {
+    "previous_image_tag": None,
+    "last_apply_outcome": None,
+    "last_apply_ts":      None,
+}
+
+
+def load_installer_state(path: Path = INSTALLER_STATE_PATH) -> dict:
+    """Read installer state. Missing file → fresh defaults. Same shape as
+    ota_client.load_state — extra keys in the file are preserved on read so
+    a future chunk can extend without breaking existing rollback runs."""
+    try:
+        raw = path.read_text()
+    except FileNotFoundError:
+        return dict(_INSTALLER_STATE_DEFAULTS)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.warning("ha_installer_state.json malformed (%s) — resetting", e)
+        return dict(_INSTALLER_STATE_DEFAULTS)
+    if not isinstance(data, dict):
+        return dict(_INSTALLER_STATE_DEFAULTS)
+    out = dict(_INSTALLER_STATE_DEFAULTS)
+    out.update(data)
+    return out
+
+
+def save_installer_state(state: dict, path: Path = INSTALLER_STATE_PATH) -> None:
+    """Atomic write — same temp+rename pattern as ota_client.save_state."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+    os.replace(tmp, path)
+
+
+def _record_outcome(reason: str, *, path: Path = INSTALLER_STATE_PATH,
+                    clear_previous: bool = False) -> None:
+    """Update last_apply_outcome / last_apply_ts in installer state.
+
+    clear_previous=True nulls previous_image_tag — used after a successful
+    apply once we know the new tag is healthy and the old one is no longer
+    a useful rollback target."""
+    try:
+        state = load_installer_state(path)
+        state["last_apply_outcome"] = reason
+        state["last_apply_ts"] = datetime.now(timezone.utc).isoformat()
+        if clear_previous:
+            state["previous_image_tag"] = None
+        save_installer_state(state, path)
+    except OSError as e:
+        log.warning("ha_installer_state.json save failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +178,17 @@ class InstallResult(dict):
 
 class ProbeResult(dict):
     """{ok, reason, actual_version, attempts_made}."""
+
+
+class RollbackResult(dict):
+    """{ok, reason, restored_tag, detail}.
+
+    ok=True means the compose file was reverted AND HA came back up at the
+    previous tag (REST /api/config returned 200). ok=False means the
+    rollback itself failed — the hub is in an indeterminate state and an
+    admin must intervene. Either way, last_apply_outcome in installer
+    state records the reason.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +443,165 @@ def probe_ha_health(
 
 
 # ---------------------------------------------------------------------------
+# Lightweight liveness probe (any 200 from /api/config)
+# ---------------------------------------------------------------------------
+
+def probe_ha_alive(
+    health_url: str,
+    *,
+    ha_token: str = "",
+    attempts: int = DEFAULT_HEALTH_ATTEMPTS,
+    interval_s: float = DEFAULT_HEALTH_INTERVAL_S,
+    _http_get: Optional[Callable] = None,
+    _sleep: Optional[Callable] = None,
+) -> ProbeResult:
+    """Poll <health_url>/api/config until ANY 200 returns.
+
+    Used by rollback() — when reverting to a previous tag we don't always
+    know the exact version string HA will report (e.g. :stable resolves
+    to whatever ghcr.io has today), so "alive" is the success criterion,
+    not "alive with this exact version".
+    """
+    get_fn = _http_get or _real_http_get
+    sleep_fn = _sleep or time.sleep
+    url = health_url.rstrip("/") + "/api/config"
+    headers = {"Authorization": f"Bearer {ha_token}"} if ha_token else {}
+
+    last_reason = "no_attempts"
+    last_actual: Optional[str] = None
+
+    for i in range(1, attempts + 1):
+        try:
+            resp = get_fn(url, headers=headers, timeout=5.0)
+        except Exception as e:
+            last_reason = f"network_error: {type(e).__name__}: {e}"
+            if i < attempts:
+                sleep_fn(interval_s)
+            continue
+        status = getattr(resp, "status_code", None)
+        if status != 200:
+            last_reason = f"http_{status}"
+            if i < attempts:
+                sleep_fn(interval_s)
+            continue
+        try:
+            data = resp.json()
+            last_actual = data.get("version") if isinstance(data, dict) else None
+        except Exception:
+            last_actual = None
+        return ProbeResult(
+            ok=True, reason="alive",
+            actual_version=last_actual if isinstance(last_actual, str) else None,
+            attempts_made=i,
+        )
+
+    return ProbeResult(
+        ok=False, reason=last_reason,
+        actual_version=last_actual, attempts_made=attempts,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rollback
+# ---------------------------------------------------------------------------
+
+def rollback(
+    target_tag: str,
+    *,
+    settings: Optional[dict] = None,
+    _run_cmd: Optional[Callable] = None,
+    _http_get: Optional[Callable] = None,
+    _sleep: Optional[Callable] = None,
+) -> RollbackResult:
+    """Revert HA's image tag to target_tag and confirm the container comes
+    back alive.
+
+    Used in two ways:
+      1. Called internally by apply_manifest when an apply fails AFTER the
+         compose file has been mutated (so reverting matters).
+      2. Exposed for an explicit admin trigger (chunk-2 admin endpoint).
+
+    Returns RollbackResult{ok, reason, restored_tag, detail}. Never raises.
+    Records last_apply_outcome in installer state so an admin reviewing
+    state files can see what happened.
+
+    Probes for liveness (any 200 from /api/config), not for a specific
+    version — because a previous tag like ":stable" resolves dynamically
+    and may not equal a known version string.
+    """
+    cfg = _ha_settings(settings)
+    compose_file = Path(cfg["compose_file"])
+
+    try:
+        current = read_current_image(compose_file)
+    except FileNotFoundError:
+        _record_outcome(f"rollback_failed: compose_file_missing")
+        return RollbackResult(
+            ok=False, reason="compose_file_missing",
+            restored_tag=None, detail=str(compose_file),
+        )
+    except ValueError as e:
+        _record_outcome(f"rollback_failed: compose_invalid")
+        return RollbackResult(
+            ok=False, reason="compose_invalid",
+            restored_tag=None, detail=str(e),
+        )
+
+    if current["tag"] == target_tag:
+        # Compose already reflects the target — no rewrite needed. But the
+        # container may still be running the failed tag if it was recreated
+        # since last edit, so we always re-run docker compose up -d to
+        # converge state.
+        log.info("Rollback: compose already at %s; reconverging container", target_tag)
+    else:
+        try:
+            pin_compose_image(compose_file, cfg["image_repo"], target_tag)
+        except ValueError as e:
+            _record_outcome("rollback_failed: pin_compose_image")
+            return RollbackResult(
+                ok=False, reason="compose_pin_failed",
+                restored_tag=None, detail=str(e),
+            )
+
+    recreate = recreate_ha_container(
+        compose_file, timeout_s=cfg["apply_timeout_s"], _run_cmd=_run_cmd,
+    )
+    if not recreate.get("ok"):
+        _record_outcome(f"rollback_failed: recreate_{recreate.get('reason')}")
+        return RollbackResult(
+            ok=False, reason=f"recreate_failed: {recreate.get('reason')}",
+            restored_tag=target_tag, detail=recreate.get("detail") or "",
+        )
+
+    probe = probe_ha_alive(
+        cfg["health_url"],
+        ha_token=_ha_token_from_settings(settings),
+        attempts=cfg["health_check_attempts"],
+        interval_s=cfg["health_check_interval_s"],
+        _http_get=_http_get,
+        _sleep=_sleep,
+    )
+    if not probe.get("ok"):
+        _record_outcome(f"rollback_failed: probe_{probe.get('reason')}")
+        return RollbackResult(
+            ok=False, reason=f"probe_failed: {probe.get('reason')}",
+            restored_tag=target_tag,
+            detail=f"actual_version={probe.get('actual_version')} attempts={probe.get('attempts_made')}",
+        )
+
+    _record_outcome(f"rolled_back_to: {target_tag}", clear_previous=True)
+    log.warning(
+        "HA installer: rolled back to %s (HA reports version=%s)",
+        target_tag, probe.get("actual_version"),
+    )
+    return RollbackResult(
+        ok=True, reason="restored",
+        restored_tag=target_tag,
+        detail=f"probed_in {probe.get('attempts_made')} attempts",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Orchestration: apply_manifest
 # ---------------------------------------------------------------------------
 
@@ -379,17 +627,66 @@ def _ha_settings(settings: Optional[dict]) -> dict:
     }
 
 
+def _maybe_rollback(
+    *,
+    settings: Optional[dict],
+    previous_tag: Optional[str],
+    rollback_on_failure: bool,
+    failure_reason: str,
+    failure_detail: str,
+    from_version: Optional[str],
+    to_version: Optional[str],
+    started: float,
+    applied_at: str,
+    _run_cmd: Optional[Callable],
+    _http_get: Optional[Callable],
+    _sleep: Optional[Callable],
+) -> InstallResult:
+    """Shared post-mutation failure path. Either reverts to previous_tag and
+    sets rolled_back accordingly, or returns the failure verbatim if
+    rollback was disabled by the caller (used by tests + dry-run paths).
+
+    Pulled out so each failure case in apply_manifest is a single call,
+    not five copy-pasted result-construction blocks."""
+    if not rollback_on_failure or not previous_tag:
+        _record_outcome(f"failed_no_rollback: {failure_reason}")
+        return InstallResult(
+            ok=False, reason=failure_reason,
+            from_version=from_version, to_version=to_version,
+            duration_s=round(time.monotonic() - started, 2),
+            rolled_back=False, detail=failure_detail,
+            applied_at=applied_at,
+        )
+    rb = rollback(
+        previous_tag, settings=settings,
+        _run_cmd=_run_cmd, _http_get=_http_get, _sleep=_sleep,
+    )
+    return InstallResult(
+        ok=False, reason=failure_reason,
+        from_version=from_version, to_version=to_version,
+        duration_s=round(time.monotonic() - started, 2),
+        rolled_back=bool(rb.get("ok")),
+        detail=(
+            f"{failure_detail} | rollback: ok={rb.get('ok')} "
+            f"reason={rb.get('reason')} detail={rb.get('detail')}"
+        ),
+        applied_at=applied_at,
+    )
+
+
 def apply_manifest(
     manifest: dict,
     *,
     settings: Optional[dict] = None,
     dry_run: bool = False,
+    rollback_on_failure: bool = True,
     _run_cmd: Optional[Callable] = None,
     _http_get: Optional[Callable] = None,
     _sleep: Optional[Callable] = None,
     _mark_installed: Optional[Callable] = None,
 ) -> InstallResult:
-    """Pin HA to manifest['ha_version'] and confirm it came up.
+    """Pin HA to manifest['ha_version'] and confirm it came up. On failure
+    after the compose file is mutated, revert to the previous tag.
 
     Returns InstallResult{ok, reason, from_version, to_version,
     duration_s, rolled_back, detail, applied_at}. Never raises.
@@ -400,14 +697,15 @@ def apply_manifest(
       3. Read current image tag from compose
       4. If already at target version → no-op success
       5. (dry_run: stop here)
-      6. Pin compose file to new tag
-      7. docker compose up -d homeassistant
-      8. Probe HA health for the new version
-      9. ota_client.mark_installed(manifest) on success
-
-    Rollback is NOT performed here. See chunk 1.D for the rollback
-    orchestrator that wraps this with a revert path on health-probe
-    failure. rolled_back is always False from this module.
+      6. Persist previous_image_tag to installer state (BEFORE mutation
+         so rollback survives even if Ziggy crashes mid-apply)
+      7. Pin compose file to new tag
+      8. docker compose up -d homeassistant
+      9. Probe HA health for the new version
+     10. ota_client.mark_installed(manifest) on success
+     11. On any failure between 7 and 9: revert compose to previous tag,
+         re-recreate, probe alive — UNLESS rollback_on_failure=False
+         (tests use this to inspect the failure state before cleanup).
     """
     started = time.monotonic()
     applied_at = datetime.now(timezone.utc).isoformat()
@@ -435,12 +733,15 @@ def apply_manifest(
     try:
         current = read_current_image(compose_file)
     except FileNotFoundError:
+        # Nothing mutated yet — no rollback needed.
+        _record_outcome("failed_pre_mutation: compose_file_missing")
         return InstallResult(
             ok=False, reason="compose_file_missing", from_version=None,
             to_version=target_version, duration_s=0, rolled_back=False,
             detail=str(compose_file), applied_at=applied_at,
         )
     except ValueError as e:
+        _record_outcome("failed_pre_mutation: compose_invalid")
         return InstallResult(
             ok=False, reason="compose_invalid", from_version=None,
             to_version=target_version, duration_s=0, rolled_back=False,
@@ -450,6 +751,7 @@ def apply_manifest(
     from_version = current["tag"]
 
     if from_version == target_version:
+        _record_outcome("already_at_target")
         return InstallResult(
             ok=True, reason="already_at_target",
             from_version=from_version, to_version=target_version,
@@ -466,15 +768,34 @@ def apply_manifest(
             applied_at=applied_at,
         )
 
+    # ── Persist previous tag BEFORE any mutation. If Ziggy dies between
+    #    here and pin_compose_image, the next boot's rollback path can
+    #    still recover. ────────────────────────────────────────────────
+    try:
+        state = load_installer_state()
+        state["previous_image_tag"] = from_version
+        state["last_apply_outcome"] = "in_progress"
+        state["last_apply_ts"] = applied_at
+        save_installer_state(state)
+    except OSError as e:
+        log.warning("installer state save failed pre-apply: %s", e)
+        # Continue anyway — a state-file failure shouldn't block the
+        # upgrade path, but rollback won't be available if apply fails.
+
     # ── Rewrite the compose file ──────────────────────────────────────────
     try:
         pin_compose_image(compose_file, cfg["image_repo"], target_version)
     except ValueError as e:
-        return InstallResult(
-            ok=False, reason="compose_pin_failed",
+        # Compose write failed atomically — file is unchanged. No revert
+        # needed, but rollback_on_failure=False path is still honored so
+        # tests stay consistent.
+        return _maybe_rollback(
+            settings=settings, previous_tag=from_version,
+            rollback_on_failure=False,   # nothing to revert — pin failed atomically
+            failure_reason="compose_pin_failed", failure_detail=str(e),
             from_version=from_version, to_version=target_version,
-            duration_s=round(time.monotonic() - started, 2),
-            rolled_back=False, detail=str(e), applied_at=applied_at,
+            started=started, applied_at=applied_at,
+            _run_cmd=_run_cmd, _http_get=_http_get, _sleep=_sleep,
         )
 
     # ── Recreate the HA container ─────────────────────────────────────────
@@ -484,12 +805,14 @@ def apply_manifest(
         _run_cmd=_run_cmd,
     )
     if not recreate.get("ok"):
-        return InstallResult(
-            ok=False, reason=f"recreate_failed: {recreate.get('reason')}",
+        return _maybe_rollback(
+            settings=settings, previous_tag=from_version,
+            rollback_on_failure=rollback_on_failure,
+            failure_reason=f"recreate_failed: {recreate.get('reason')}",
+            failure_detail=recreate.get("detail") or "",
             from_version=from_version, to_version=target_version,
-            duration_s=round(time.monotonic() - started, 2),
-            rolled_back=False, detail=recreate.get("detail") or "",
-            applied_at=applied_at,
+            started=started, applied_at=applied_at,
+            _run_cmd=_run_cmd, _http_get=_http_get, _sleep=_sleep,
         )
 
     # ── Probe HA until the new version reports ────────────────────────────
@@ -502,13 +825,17 @@ def apply_manifest(
         _sleep=_sleep,
     )
     if not probe.get("ok"):
-        return InstallResult(
-            ok=False, reason=f"health_probe_failed: {probe.get('reason')}",
+        return _maybe_rollback(
+            settings=settings, previous_tag=from_version,
+            rollback_on_failure=rollback_on_failure,
+            failure_reason=f"health_probe_failed: {probe.get('reason')}",
+            failure_detail=(
+                f"actual_version={probe.get('actual_version')} "
+                f"attempts={probe.get('attempts_made')}"
+            ),
             from_version=from_version, to_version=target_version,
-            duration_s=round(time.monotonic() - started, 2),
-            rolled_back=False,
-            detail=f"actual_version={probe.get('actual_version')} attempts={probe.get('attempts_made')}",
-            applied_at=applied_at,
+            started=started, applied_at=applied_at,
+            _run_cmd=_run_cmd, _http_get=_http_get, _sleep=_sleep,
         )
 
     # ── Promote staged → installed in ota_state.json ──────────────────────
@@ -520,6 +847,10 @@ def apply_manifest(
         mark_fn(manifest)
     except Exception as e:
         log.error("HA installer: mark_installed raised: %s", e, exc_info=True)
+
+    # Apply succeeded — clear previous_image_tag so a future apply doesn't
+    # roll back to an even-older tag.
+    _record_outcome(f"installed: {target_version}", clear_previous=True)
 
     log.info(
         "HA installer: pinned %s → %s (release_id=%s) in %.1fs",
