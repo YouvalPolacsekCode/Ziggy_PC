@@ -241,4 +241,8 @@ async def test_init_db_creates_all_tables(relay_db):
             "AND name NOT LIKE 'sqlite_%'"
         )
         names = {r["name"] for r in rows}
-    assert names == {"homes", "users", "invites", "audit_log", "home_backup_keys"}
+    assert names == {
+        "homes", "users", "invites", "audit_log", "home_backup_keys",
+        # Prompt 2 chunk 2.1 + 2.3:
+        "ota_releases", "telemetry_raw", "telemetry_daily",
+    }
