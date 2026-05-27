@@ -24,11 +24,35 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request, WebS
 from pydantic import BaseModel, Field
 
 from backend.routers.auth_deps import get_current_user
+from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 from core.logger_module import log_info
 from services import mobile_app
 from services.mobile_ws_manager import mobile_ws
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP for audit events.
+
+    Prefers X-Forwarded-For (relay-proxied requests) then the direct peer.
+    Returns empty string when neither is available — emit callers must
+    tolerate that, the bus accepts any string.
+    """
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _short_code(code: str) -> str:
+    """Last 2 chars of a pair code — enough to correlate without exposing it.
+
+    Pair codes have low entropy (6 chars), so we never log the full value.
+    """
+    if not isinstance(code, str):
+        return ""
+    return code[-2:] if len(code) >= 2 else code
 
 
 # ── Models ───────────────────────────────────────────────────────────────────
@@ -76,6 +100,12 @@ async def get_current_device(request: Request) -> dict:
     token = auth.removeprefix("Bearer ").strip()
     device = mobile_app.find_device_by_token(token)
     if not device:
+        # Audit-log the rejection so brute-force / stale-token patterns
+        # are visible in /api/debug/events. Token itself never logged.
+        _dbus.emit("mobile_auth", BASIC, "mobile_device_auth_failed",
+                   path=request.url.path,
+                   source_ip=_client_ip(request),
+                   provided=bool(token))
         raise HTTPException(status_code=401, detail="Invalid device token.")
     return device
 
@@ -88,14 +118,18 @@ async def health():
 
 
 @router.post("/pair-code")
-async def mint_pair_code(user: dict = Depends(get_current_user)):
+async def mint_pair_code(request: Request, user: dict = Depends(get_current_user)):
     """PWA endpoint: logged-in user requests a code to type into / scan from
     their phone. Returns the 6-char code + expiry.
     """
     user_id = user.get("id") or user.get("username") or user.get("email")
     if not user_id:
         raise HTTPException(status_code=400, detail="User missing id.")
-    return mobile_app.create_pair_code(user_id=str(user_id))
+    result = mobile_app.create_pair_code(user_id=str(user_id))
+    _dbus.emit("mobile_auth", BASIC, "mobile_pair_code_minted",
+               user_id=str(user_id),
+               source_ip=_client_ip(request))
+    return result
 
 
 @router.post("/pair", response_model=PairResponse)
@@ -103,6 +137,15 @@ async def pair(req: PairRequest, request: Request):
     """Phone redeems a pair code → receives a device-scoped auth token."""
     match = mobile_app.consume_pair_code(req.pair_code.upper())
     if not match:
+        # Pair codes have low entropy by design (6 chars). An attacker
+        # spraying codes is exactly the pattern we want visible in
+        # /api/debug/events. Last-2 chars only so post-hoc analysis can
+        # cluster bursts without exposing the full code.
+        _dbus.emit("mobile_auth", BASIC, "mobile_pair_failed",
+                   reason="invalid_or_expired_code",
+                   code_suffix=_short_code(req.pair_code),
+                   platform=req.device.platform,
+                   source_ip=_client_ip(request))
         raise HTTPException(status_code=400, detail="Invalid or expired pair code.")
 
     record = mobile_app.register_device(
@@ -114,6 +157,11 @@ async def pair(req: PairRequest, request: Request):
     # in on is the per-home backend (or the cloud relay), so we mirror it back.
     base = str(request.base_url).rstrip("/")
     ws_base = base.replace("http://", "ws://").replace("https://", "wss://")
+    _dbus.emit("mobile_auth", BASIC, "mobile_pair_succeeded",
+               device_id=record["device_id"],
+               user_id=match["user_id"],
+               platform=req.device.platform,
+               source_ip=_client_ip(request))
     return PairResponse(
         device_id=record["device_id"],
         webhook_id=record["webhook_id"],
@@ -136,12 +184,20 @@ async def register(req: RegisterRequest, device: dict = Depends(get_current_devi
 
 @router.post("/webhook/{webhook_id}")
 async def webhook(
+    request: Request,
     webhook_id: str = Path(..., min_length=4),
     payload: dict = Body(...),
     device: dict = Depends(get_current_device),
 ):
     """Sensor + location + event ingest from the mobile app."""
     if device.get("webhook_id") != webhook_id:
+        # A device with a valid token whose webhook id doesn't match the
+        # path is either a code bug or a token reuse across devices. Either
+        # way it deserves a visible signal — not just a silent 403.
+        _dbus.emit("mobile_auth", BASIC, "mobile_webhook_id_mismatch",
+                   device_id=device.get("device_id"),
+                   url_webhook_id=webhook_id,
+                   source_ip=_client_ip(request))
         raise HTTPException(status_code=403, detail="Webhook id mismatch.")
     return mobile_app.handle_webhook(device, payload)
 
@@ -164,13 +220,18 @@ async def list_my_devices(user: dict = Depends(get_current_user)):
 
 
 @router.delete("/devices/{device_id}")
-async def revoke_device(device_id: str, user: dict = Depends(get_current_user)):
+async def revoke_device(device_id: str, request: Request,
+                          user: dict = Depends(get_current_user)):
     """Revoke a paired device — invalidates its auth token immediately by
     deleting the record. Any in-flight WS is dropped on next send attempt."""
     uid = _user_id_of(user)
     ok = mobile_app.delete_device(device_id, user_id=uid)
     if not ok:
         raise HTTPException(status_code=404, detail="Device not found or not yours.")
+    _dbus.emit("mobile_auth", BASIC, "mobile_device_revoked",
+               device_id=device_id,
+               revoked_by=uid,
+               source_ip=_client_ip(request))
     # If the device was currently connected, push them off the WS now.
     asyncio.create_task(_kick(device_id))
     return {"ok": True}
@@ -194,6 +255,13 @@ async def mobile_ws_endpoint(ws: WebSocket, token: str = ""):
     """
     device = mobile_app.find_device_by_token(token)
     if not device:
+        # WS path can't read X-Forwarded-For easily; use the peer address
+        # which works in local dev and reveals the relay's egress in prod.
+        peer = ws.client.host if ws.client else ""
+        _dbus.emit("mobile_auth", BASIC, "mobile_ws_auth_failed",
+                   path="/api/mobile/ws",
+                   provided=bool(token),
+                   source_ip=peer)
         await ws.close(code=4401)
         return
 
