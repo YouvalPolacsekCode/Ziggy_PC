@@ -1,0 +1,621 @@
+"""Daily backup orchestrator for the Ziggy hub.
+
+Implements the §6 backup flow end-to-end:
+
+    pre-flight   → NTP, disk space, B2 reachability, data_key present
+    ZHA backup   → trigger zha.network_backup, locate fresh .storage file
+    collect      → tar.gz HA config (allowlist), Ziggy state, recorder DB
+    encrypt      → AES-256-GCM per file with HKDF-derived subkeys
+    manifest     → JSON + HMAC-SHA256, encrypted under its own subkey
+    upload       → push everything to B2 under {home_id}/daily/{YYYY-MM-DD}/
+    promote      → server-side copy to {home_id}/latest/
+
+Calls into services/backup_keys (Chunk #2) and services/backup_storage
+(Chunk #3). Nothing here speaks to the scheduler — Chunk #5 wires the
+daily tick that invokes `run_daily_backup_from_settings()`.
+
+Design contracts honored:
+
+- Explicit HA `.storage/` allowlist via HA_STORAGE_PREFIX_ALLOWLIST.
+  We never tar-and-exclude; we tar-and-include. Anything we don't
+  recognize is left out of the bundle.
+- NTP pre-flight via chronyd then systemd-timesyncd fallback. Skew
+  must be within ±60s of real time (DESIGN_BACKUP_DR.md §6). Skipping
+  the run is preferable to landing a backup in the wrong daily folder.
+- Manifest stamped with `schema_version: 1`. The reader (Chunk #9
+  restore script) MUST refuse to proceed on any schema_version > the
+  KNOWN constant — better to halt than to silently misinterpret.
+- Per design §6 step 12: any failure logs + aborts the day; we never
+  retry within the same run. The scheduler picks up tomorrow.
+"""
+
+from __future__ import annotations
+
+import base64
+import datetime as dt
+import hashlib
+import hmac
+import io
+import json
+import logging
+import os
+import re
+import socket
+import sqlite3
+import subprocess
+import tarfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+import requests
+
+from services import backup_keys
+from services.backup_storage import BackupStorage
+
+log = logging.getLogger(__name__)
+
+
+# ---------- versions & constants ----------
+
+SCHEMA_VERSION = 1
+
+# Tolerance for clock skew before we refuse to back up.
+NTP_TOLERANCE_S = 60.0
+
+# Default file lock; configurable for tests via BackupContext.lock_path.
+DEFAULT_LOCK_PATH = "/var/run/ziggy-backup.lock"
+
+# Files inside ha-config/.storage/ — we ship anything whose name starts
+# with one of these prefixes. Registries (core.*), auth, lovelace, ZHA,
+# integrations, and input_* helpers. Cache files (deps/, tts/, .cloud/,
+# the recorder DB, logs) are NEVER allowlisted — they're regenerable
+# or handled separately.
+HA_STORAGE_PREFIX_ALLOWLIST: tuple[str, ...] = (
+    "auth",
+    "auth_provider.",
+    "core.",
+    "frontend.",
+    "input_",
+    "integrations.",
+    "lovelace",
+    "person.",
+    "repairs.",
+    "scenes",
+    "scripts",
+    "system_log",
+    "zha",
+)
+
+# Top-level files in ha-config/ — single-file YAMLs that may exist.
+HA_TOP_LEVEL_FILES: tuple[str, ...] = (
+    "automations.yaml",
+    "configuration.yaml",
+    "customize.yaml",
+    "groups.yaml",
+    "known_devices.yaml",
+    "scenes.yaml",
+    "scripts.yaml",
+    "secrets.yaml",
+    "ui-lovelace.yaml",
+)
+
+# Top-level directories in ha-config/ — fully recursed if present.
+HA_TOP_LEVEL_DIRS: tuple[str, ...] = (
+    "blueprints",
+    "custom_components",
+    "python_scripts",
+    "themes",
+)
+
+# Filename of HA's recorder SQLite DB; sized + skipped per §3 Tier-2.
+RECORDER_FILENAME = "home-assistant_v2.db"
+
+# HKDF info string used to derive the manifest's own HMAC key from the
+# per-home data_key. Versioned so a future change can't collide.
+_MANIFEST_HMAC_INFO = b"ziggy-backup-manifest-hmac-v1"
+
+
+# ---------- public entry point ----------
+
+@dataclass
+class BackupContext:
+    """Everything one daily run needs. Built from settings + env at runtime;
+    constructed directly with tmp paths and mock clients in tests.
+    """
+    home_id: str
+    device_id: str
+    coordinator_type: str
+    data_key: bytes
+    ha_config_dir: Path
+    user_files_dir: Path
+    config_dir: Path
+    storage: BackupStorage
+    ha_url: str
+    ha_token: str
+
+    coordinator_ieee: Optional[str] = None
+    ziggy_version: str = "0.0.0+local"
+    ha_version: Optional[str] = None
+    today: dt.date = field(default_factory=lambda: dt.date.today())
+    recorder_skip_threshold_mb: int = 500
+    lock_path: str = DEFAULT_LOCK_PATH
+    dry_run: bool = False
+
+    # Tests inject substitutes via these hooks. Production leaves them None
+    # and the real subprocess/requests/socket calls run.
+    _ntp_skew_provider: Optional[callable] = None
+    _ha_post: Optional[callable] = None
+    _now: Optional[callable] = None
+
+
+def run_daily_backup(ctx: BackupContext) -> dict:
+    """Execute one daily backup cycle. Returns a result dict.
+
+    The dict shape (also written to the audit log by the caller):
+      {
+        "ok": bool,
+        "stage": "preflight" | "zha" | "collect" | "encrypt" | "upload" | "done",
+        "uploaded_bytes": int,
+        "files": [filenames],
+        "optional_skipped": [filenames],
+        "error": str | None,
+      }
+
+    Any raised exception is caught and surfaced via the dict — the
+    scheduler must never see an unhandled error from this function.
+    """
+    result: dict = {
+        "ok": False,
+        "stage": "preflight",
+        "uploaded_bytes": 0,
+        "files": [],
+        "optional_skipped": [],
+        "error": None,
+    }
+    try:
+        _preflight(ctx)
+
+        result["stage"] = "zha"
+        zha_backup_bytes, zha_path = _trigger_and_read_zha_backup(ctx)
+
+        result["stage"] = "collect"
+        ha_bytes, ha_included = _collect_ha_config(ctx)
+        ziggy_bytes = _collect_ziggy_state(ctx)
+        recorder_bytes, recorder_skipped = _collect_recorder_db(ctx)
+        if recorder_skipped:
+            result["optional_skipped"].append("recorder.db")
+
+        bundles: dict[str, bytes] = {
+            "ha-config.tar.gz.enc": ha_bytes,
+            "ziggy-state.tar.gz.enc": ziggy_bytes,
+            "zha-network-backup.json.enc": zha_backup_bytes,
+        }
+        if recorder_bytes is not None:
+            bundles["recorder.db.enc"] = recorder_bytes
+
+        result["stage"] = "encrypt"
+        encrypted = _encrypt_files(ctx, bundles)
+
+        manifest_plain = _build_manifest(
+            ctx,
+            encrypted=encrypted,
+            optional_skipped=result["optional_skipped"],
+        )
+        encrypted_manifest = _encrypt_manifest(ctx, manifest_plain)
+        result["files"] = list(encrypted.keys()) + ["manifest.json.enc"]
+
+        result["stage"] = "upload"
+        if not ctx.dry_run:
+            uploaded_bytes = _upload_all(ctx, encrypted, encrypted_manifest)
+            result["uploaded_bytes"] = uploaded_bytes
+            _promote_to_latest(ctx, list(encrypted.keys()) + ["manifest.json.enc"])
+        else:
+            result["uploaded_bytes"] = sum(
+                len(b["nonce"]) + len(b["ciphertext"]) + len(b["tag"])
+                for b in encrypted.values()
+            ) + len(encrypted_manifest["ciphertext"])
+            log.info("dry-run: skipped upload + promote (would have uploaded %d bytes)",
+                     result["uploaded_bytes"])
+
+        result["ok"] = True
+        result["stage"] = "done"
+        log.info("backup ok home=%s files=%d bytes=%d included_ha=%s",
+                 ctx.home_id, len(result["files"]),
+                 result["uploaded_bytes"], ha_included)
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+        log.error("backup failed at stage=%s: %s", result["stage"], e, exc_info=True)
+    return result
+
+
+# ---------- pre-flight ----------
+
+def _preflight(ctx: BackupContext) -> None:
+    _check_ntp_sync(ctx)
+    _check_data_key(ctx)
+    _check_disk_space(ctx)
+    _check_b2_reachable(ctx)
+
+
+def _check_ntp_sync(ctx: BackupContext) -> None:
+    """Refuse to back up if the clock is more than ±60s out.
+
+    Tests inject `_ntp_skew_provider`. In production we try chronyd
+    (numeric offset available) then fall back to systemd-timesyncd
+    (binary synced-yes/no — we trust "yes" as ~0 skew).
+    """
+    if ctx._ntp_skew_provider is not None:
+        skew = ctx._ntp_skew_provider()
+    else:
+        skew = _query_chrony_skew()
+        if skew is None:
+            skew = _query_timesyncd_skew()
+    if skew is None:
+        raise RuntimeError(
+            "NTP sync source unavailable (chronyd / systemd-timesyncd both silent). "
+            "Refusing to back up — risk of landing in wrong daily folder."
+        )
+    if abs(skew) > NTP_TOLERANCE_S:
+        raise RuntimeError(
+            f"Clock skew {skew:.1f}s exceeds ±{NTP_TOLERANCE_S:.0f}s tolerance — skipping backup."
+        )
+
+
+def _query_chrony_skew() -> Optional[float]:
+    """Return clock offset in seconds via chronyc, or None if unavailable."""
+    try:
+        proc = subprocess.run(
+            ["chronyc", "tracking"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    # Sample: "System time     : 0.000123456 seconds slow of NTP time"
+    for line in proc.stdout.splitlines():
+        m = re.match(r"\s*System time\s*:\s*([0-9.eE+-]+)\s+seconds\s+(slow|fast)", line)
+        if m:
+            value = float(m.group(1))
+            return -value if m.group(2) == "slow" else value
+    return None
+
+
+def _query_timesyncd_skew() -> Optional[float]:
+    """Return 0.0 if timesyncd reports synced=yes; None otherwise."""
+    try:
+        proc = subprocess.run(
+            ["timedatectl", "status"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        if "synchronized:" in line.lower():
+            return 0.0 if "yes" in line.lower() else None
+    return None
+
+
+def _check_data_key(ctx: BackupContext) -> None:
+    if not isinstance(ctx.data_key, (bytes, bytearray)) or len(ctx.data_key) != 32:
+        raise RuntimeError("data_key missing or wrong length — cannot back up")
+
+
+def _check_disk_space(ctx: BackupContext) -> None:
+    """Need at least 2 GB free on /tmp for bundle staging — generous floor."""
+    try:
+        stat = os.statvfs("/tmp")
+    except (FileNotFoundError, OSError):
+        log.warning("disk-space check: /tmp unavailable, skipping")
+        return
+    free_bytes = stat.f_bavail * stat.f_frsize
+    if free_bytes < 2 * 1024 * 1024 * 1024:
+        raise RuntimeError(f"/tmp has only {free_bytes // (1024*1024)} MB free — need ≥2 GB")
+
+
+def _check_b2_reachable(ctx: BackupContext) -> None:
+    """Cheap reachability probe — list one key under our home prefix."""
+    try:
+        ctx.storage.list_prefix(f"{ctx.home_id}/.probe/")
+    except Exception as e:
+        raise RuntimeError(f"B2 unreachable: {e}") from e
+
+
+# ---------- ZHA backup ----------
+
+def _trigger_and_read_zha_backup(ctx: BackupContext) -> tuple[bytes, Path]:
+    """Call zha.network_backup, then read the freshest matching file.
+
+    Returns (bytes, source_path). Raises if no fresh file appears within
+    the 5-minute window or if the HA call returns non-2xx.
+    """
+    poster = ctx._ha_post or _ha_service_call
+    now = (ctx._now or dt.datetime.now)
+    cutoff = now() - dt.timedelta(minutes=5)
+
+    resp_code = poster(ctx.ha_url, ctx.ha_token, "zha", "network_backup", {})
+    if not (200 <= resp_code < 300):
+        raise RuntimeError(f"zha.network_backup returned HTTP {resp_code}")
+
+    storage = ctx.ha_config_dir / ".storage"
+    if not storage.is_dir():
+        raise RuntimeError(f"ha-config/.storage not found at {storage}")
+
+    candidates = sorted(
+        (p for p in storage.iterdir()
+         if p.is_file() and p.name.startswith("core.zigbee_network_backup")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise RuntimeError("zha.network_backup did not produce a file in .storage/")
+    fresh = candidates[0]
+    mtime = dt.datetime.fromtimestamp(fresh.stat().st_mtime)
+    if mtime < cutoff:
+        raise RuntimeError(
+            f"latest zigbee_network_backup is from {mtime.isoformat()} — "
+            "older than 5-minute freshness window"
+        )
+    return fresh.read_bytes(), fresh
+
+
+def _ha_service_call(ha_url: str, ha_token: str, domain: str, service: str, payload: dict) -> int:
+    """POST to HA REST. Returns the HTTP status code."""
+    url = ha_url.rstrip("/") + f"/api/services/{domain}/{service}"
+    headers = {"Authorization": f"Bearer {ha_token}", "Content-Type": "application/json"}
+    resp = requests.post(url, headers=headers, json=payload, timeout=90)
+    return resp.status_code
+
+
+# ---------- collection ----------
+
+def _collect_ha_config(ctx: BackupContext) -> tuple[bytes, list[str]]:
+    """tar.gz HA config using the explicit allowlist. Returns (bytes, included)."""
+    if not ctx.ha_config_dir.is_dir():
+        raise RuntimeError(f"ha_config_dir does not exist: {ctx.ha_config_dir}")
+    included: list[str] = []
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name in HA_TOP_LEVEL_FILES:
+            p = ctx.ha_config_dir / name
+            if p.is_file():
+                tar.add(p, arcname=name)
+                included.append(name)
+        for name in HA_TOP_LEVEL_DIRS:
+            p = ctx.ha_config_dir / name
+            if p.is_dir():
+                tar.add(p, arcname=name)  # tarfile recurses by default
+                included.append(name + "/")
+        storage = ctx.ha_config_dir / ".storage"
+        if storage.is_dir():
+            for f in sorted(storage.iterdir()):
+                if not f.is_file():
+                    continue
+                if any(f.name.startswith(p) for p in HA_STORAGE_PREFIX_ALLOWLIST):
+                    tar.add(f, arcname=f".storage/{f.name}")
+                    included.append(f".storage/{f.name}")
+    return buf.getvalue(), included
+
+
+def _collect_ziggy_state(ctx: BackupContext) -> bytes:
+    """tar.gz user_files/ + config/. SQLite files inside user_files are read
+    live — same as HA's config files. Acceptable risk per §6 (small writes,
+    overwhelmingly idle). The HA recorder DB gets the proper sqlite3.backup
+    treatment via _collect_recorder_db.
+    """
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        if ctx.user_files_dir.is_dir():
+            tar.add(ctx.user_files_dir, arcname="user_files")
+        if ctx.config_dir.is_dir():
+            tar.add(ctx.config_dir, arcname="config")
+    return buf.getvalue()
+
+
+def _collect_recorder_db(ctx: BackupContext) -> tuple[Optional[bytes], bool]:
+    """Snapshot HA's recorder DB if present and ≤ threshold.
+
+    Returns (raw_db_bytes_or_None, was_skipped). When the file exists but
+    exceeds recorder_skip_threshold_mb, we return (None, True) so the
+    caller can tag it 'optional_skipped' in the manifest.
+    """
+    src = ctx.ha_config_dir / RECORDER_FILENAME
+    if not src.is_file():
+        return None, False
+    size_mb = src.stat().st_size / (1024 * 1024)
+    if size_mb > ctx.recorder_skip_threshold_mb:
+        log.warning("recorder.db is %.0f MB > %d MB threshold — skipping",
+                    size_mb, ctx.recorder_skip_threshold_mb)
+        return None, True
+    return _snapshot_sqlite(src), False
+
+
+def _snapshot_sqlite(src: Path) -> bytes:
+    """Use sqlite3's online backup API to read a consistent snapshot.
+
+    Avoids the half-write tear that would come from tarring a live DB
+    while HA holds writer locks. Returns the snapshot bytes.
+    """
+    src_conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        with io.BytesIO() as memfile:
+            # sqlite3 can backup to disk only; use a temp file path.
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+                tmp_path = tf.name
+            try:
+                dst_conn = sqlite3.connect(tmp_path)
+                try:
+                    src_conn.backup(dst_conn)
+                finally:
+                    dst_conn.close()
+                return Path(tmp_path).read_bytes()
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except FileNotFoundError:
+                    pass
+    finally:
+        src_conn.close()
+
+
+# ---------- encryption ----------
+
+def _encrypt_files(ctx: BackupContext, plaintexts: dict[str, bytes]) -> dict[str, dict]:
+    """Encrypt each file under a key derived from its name. Returns a dict:
+
+        {filename_with_enc_suffix: {nonce, ciphertext, tag, sha256_of_plaintext, size}}
+
+    The encrypted-suffix filename (e.g. "ha-config.tar.gz.enc") is used as
+    the HKDF salt — the SAME name a restore script will compute when
+    deriving the key for decryption.
+    """
+    out: dict[str, dict] = {}
+    for name, plaintext in plaintexts.items():
+        fk = backup_keys.derive_file_key(ctx.data_key, name)
+        nonce, ct, tag = backup_keys.encrypt_file(plaintext, fk)
+        out[name] = {
+            "nonce": nonce,
+            "ciphertext": ct,
+            "tag": tag,
+            "sha256_plaintext": hashlib.sha256(plaintext).hexdigest(),
+            "size_plaintext": len(plaintext),
+        }
+    return out
+
+
+# ---------- manifest ----------
+
+def _build_manifest(
+    ctx: BackupContext,
+    *,
+    encrypted: dict[str, dict],
+    optional_skipped: list[str],
+) -> bytes:
+    """Assemble manifest JSON bytes (UTF-8). HMAC is added by _sign_manifest."""
+    now = (ctx._now or dt.datetime.utcnow)()
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "home_id": ctx.home_id,
+        "device_id": ctx.device_id,
+        "created_at": now.replace(microsecond=0).isoformat() + "Z",
+        "ziggy_version": ctx.ziggy_version,
+        "ha_version": ctx.ha_version,
+        "coordinator_type": ctx.coordinator_type,
+        "coordinator_ieee": ctx.coordinator_ieee,
+        "files": [
+            {
+                "name": name,
+                "size_plaintext": meta["size_plaintext"],
+                "sha256_plaintext": meta["sha256_plaintext"],
+                "nonce": base64.b64encode(meta["nonce"]).decode(),
+                "tag": base64.b64encode(meta["tag"]).decode(),
+            }
+            for name, meta in sorted(encrypted.items())
+        ],
+        "optional_skipped": sorted(optional_skipped),
+    }
+    return json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _manifest_hmac_key(data_key: bytes) -> bytes:
+    """Derive the manifest-HMAC key from the data_key via HKDF-SHA256.
+
+    Separate from the per-file subkeys derived in backup_keys.derive_file_key,
+    so the manifest's MAC can't collide with any file's encryption key.
+    """
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"",
+        info=_MANIFEST_HMAC_INFO,
+    ).derive(data_key)
+
+
+def sign_manifest(manifest_bytes: bytes, data_key: bytes) -> bytes:
+    """Public so the restore script (Chunk #9) can verify. Raw HMAC bytes."""
+    return hmac.new(_manifest_hmac_key(data_key), manifest_bytes, hashlib.sha256).digest()
+
+
+def verify_manifest_signature(manifest_bytes: bytes, signature: bytes, data_key: bytes) -> bool:
+    """Constant-time verify. False if mismatch or wrong key."""
+    expected = sign_manifest(manifest_bytes, data_key)
+    return hmac.compare_digest(expected, signature)
+
+
+def parse_manifest(plaintext_json: bytes) -> dict:
+    """Restore-side helper. Raises if schema_version is missing or newer than KNOWN."""
+    try:
+        data = json.loads(plaintext_json)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"manifest JSON malformed: {e}") from e
+    v = data.get("schema_version")
+    if not isinstance(v, int):
+        raise ValueError("manifest missing schema_version")
+    if v > SCHEMA_VERSION:
+        raise ValueError(
+            f"manifest schema_version {v} > supported {SCHEMA_VERSION} — "
+            "agent too old to interpret this backup; upgrade Ziggy first."
+        )
+    return data
+
+
+def _encrypt_manifest(ctx: BackupContext, manifest_bytes: bytes) -> dict:
+    """Sign then encrypt the manifest. Signature is bundled inside the
+    ciphertext (not stored alongside) so it can't be stripped or replayed.
+    """
+    signature = sign_manifest(manifest_bytes, ctx.data_key)
+    signed = json.dumps({
+        "manifest": base64.b64encode(manifest_bytes).decode(),
+        "hmac": base64.b64encode(signature).decode(),
+    }).encode("utf-8")
+    fk = backup_keys.derive_file_key(ctx.data_key, "manifest.json.enc")
+    nonce, ct, tag = backup_keys.encrypt_file(signed, fk)
+    return {"nonce": nonce, "ciphertext": ct, "tag": tag}
+
+
+# ---------- upload ----------
+
+def _backup_key_for(home_id: str, date: dt.date, filename: str) -> str:
+    """B2 object key under daily/."""
+    return f"{home_id}/daily/{date.isoformat()}/{filename}"
+
+
+def _latest_key_for(home_id: str, filename: str) -> str:
+    return f"{home_id}/latest/{filename}"
+
+
+def _upload_all(
+    ctx: BackupContext,
+    encrypted: dict[str, dict],
+    encrypted_manifest: dict,
+) -> int:
+    """Upload every bundle + manifest to {home_id}/daily/{today}/. Returns total bytes."""
+    total = 0
+    for name, meta in encrypted.items():
+        blob = meta["nonce"] + meta["ciphertext"] + meta["tag"]
+        ctx.storage.upload(blob, _backup_key_for(ctx.home_id, ctx.today, name))
+        total += len(blob)
+    manifest_blob = (
+        encrypted_manifest["nonce"]
+        + encrypted_manifest["ciphertext"]
+        + encrypted_manifest["tag"]
+    )
+    ctx.storage.upload(manifest_blob,
+                       _backup_key_for(ctx.home_id, ctx.today, "manifest.json.enc"))
+    total += len(manifest_blob)
+    return total
+
+
+def _promote_to_latest(ctx: BackupContext, filenames: list[str]) -> None:
+    """Server-side copy from daily/{today}/ → latest/. Free in B2."""
+    for name in filenames:
+        ctx.storage.copy(
+            _backup_key_for(ctx.home_id, ctx.today, name),
+            _latest_key_for(ctx.home_id, name),
+        )
