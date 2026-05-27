@@ -99,6 +99,36 @@ async def _run_backup_offthread() -> None:
         log_error(f"[Scheduler] Backup task crashed: {exc}")
 
 
+async def _maybe_poll_ota() -> None:
+    """Fire one OTA manifest poll if relay is configured. Fire-and-forget.
+
+    Skips silently when settings.home.id / relay.url / relay.secret are not
+    all set — a hub provisioned for cloud will have them; a local-only dev
+    hub won't. The poller itself uses blocking requests, so we hand it off
+    to a worker thread to keep the scheduler loop responsive.
+    """
+    try:
+        from core.settings_loader import settings as _settings
+        home_id  = (_settings.get("home")  or {}).get("id")
+        relay    = _settings.get("relay") or {}
+        if not (home_id and relay.get("url") and relay.get("secret")):
+            return
+        from services.ota_client import poll_once
+        result = await asyncio.to_thread(poll_once)
+        if result.get("ok"):
+            _dbus.emit("ota", BASIC, "ota_poll_ok",
+                       reason=result.get("reason"),
+                       staged=result.get("staged"))
+            if result.get("staged"):
+                log_info(f"[Scheduler] OTA delta staged: {result.get('reason')}")
+        else:
+            _dbus.emit("ota", BASIC, "ota_poll_failed",
+                       reason=result.get("reason"))
+            log_error(f"[Scheduler] OTA poll failed: {result.get('reason')}")
+    except Exception as exc:
+        log_error(f"[Scheduler] OTA poll tick error: {exc}")
+
+
 async def _fire_presence_automation(trigger_type: str, name: str) -> None:
     """Fire all enabled automations matching the given presence trigger_type and person."""
     try:
@@ -210,6 +240,14 @@ async def run_scheduler() -> None:
                 log_info("[Scheduler] Stale sensor sweep complete")
             except Exception as exc:
                 log_error(f"[Scheduler] Stale sensor sweep failed: {exc}")
+
+        # ── Hourly: poll OTA manifest from relay (Prompt 2 §B) ───────────────
+        # Gated by relay config presence. A hub with no relay.url / secret /
+        # home.id silently skips — that's the legitimate "local-only dev hub"
+        # state, not an error. Burst-at-xx:00 across the fleet is fine for the
+        # first 30 customers; add jitter when the fleet grows.
+        if _tick % 60 == 0:
+            await _maybe_poll_ota()
 
         # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
         # Time-of-day gated, off unless backup.enabled=true in settings.
