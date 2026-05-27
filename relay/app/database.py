@@ -55,6 +55,30 @@ CREATE TABLE IF NOT EXISTS audit_log (
     detail      TEXT
 );
 
+-- Per-home wrapped key material for the encrypted backup pipeline.
+-- See DESIGN_BACKUP_DR.md §4 (envelope encryption) and §10 (this schema).
+--
+-- Both wrapped_* columns store a single nonce(12) || ciphertext || tag(16)
+-- blob — the exact bytes returned by services.backup_keys.wrap() on the
+-- edge agent. Concatenating nonce+ciphertext+tag inside one column makes
+-- nonce reuse impossible at the use site (impossible to pair the wrong
+-- nonce with the wrong ciphertext). For wrapped_data_key the blob is
+-- always 60 bytes (12+32+16); for wrapped_b2_credentials it varies with
+-- the JSON-encoded {b2_key_id, b2_app_key} payload length.
+--
+-- last_unsealed_at / last_unsealed_by are NULL until the first founder
+-- unseal happens (Chunk #7 endpoint), at which point they're populated
+-- and a 'backup_key_unsealed' row also lands in audit_log.
+CREATE TABLE IF NOT EXISTS home_backup_keys (
+    home_id                TEXT    PRIMARY KEY REFERENCES homes(id) ON DELETE CASCADE,
+    wrapped_data_key       BLOB    NOT NULL,
+    wrapped_b2_credentials BLOB    NOT NULL,
+    key_version            INTEGER NOT NULL DEFAULT 1,
+    created_at             TEXT    NOT NULL,
+    last_unsealed_at       TEXT,
+    last_unsealed_by       TEXT    REFERENCES users(email)
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_home     ON users(home_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token  ON invites(token);
@@ -62,6 +86,20 @@ CREATE INDEX IF NOT EXISTS idx_invites_home   ON invites(home_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event    ON audit_log(event, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_home     ON audit_log(home_id, ts);
 """
+
+# Audit event names that Chunk #7's backup endpoints will emit. The
+# audit_log.event column is plain TEXT — these are documented here so the
+# event-name set stays in one place rather than being scattered string
+# literals across router handlers.
+#
+# See DESIGN_BACKUP_DR.md §10 for the full payload shape per event.
+BACKUP_AUDIT_EVENTS = (
+    "backup_key_sealed",        # factory imaging finished initial seal
+    "backup_key_unsealed",      # founder unwrapped data_key for restore
+    "backup_status_updated",    # hub reported successful daily backup
+    "restore_completed",        # new hub finished DR
+    "restore_aborted",          # restore failed mid-flow
+)
 
 
 async def init_db():

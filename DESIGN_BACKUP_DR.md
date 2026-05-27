@@ -374,21 +374,21 @@ Every Sunday after a successful daily backup, the engine does a B2 server-side c
 
 New table in `relay/app/database.py`:
 
-```python
-class HomeBackupKey(Base):
-    __tablename__ = "home_backup_keys"
-    home_id: str (PK, FK → homes.id)
-    wrapped_data_key: bytes         # AES-256-GCM ciphertext of the data_key
-    wrap_nonce: bytes               # 96-bit nonce used to wrap data_key
-    wrapped_b2_credentials: bytes   # AES-256-GCM ciphertext of {b2_key_id, b2_app_key} JSON
-    b2_creds_nonce: bytes           # 96-bit nonce used to wrap B2 creds
-    key_version: int                # for future rotation; v1 always = 1
-    created_at: datetime
-    last_unsealed_at: datetime (nullable)
-    last_unsealed_by: str (nullable, FK → users.email)
+```sql
+CREATE TABLE home_backup_keys (
+    home_id                TEXT    PRIMARY KEY REFERENCES homes(id) ON DELETE CASCADE,
+    wrapped_data_key       BLOB    NOT NULL,   -- nonce(12) || ct(32) || tag(16) = 60 bytes
+    wrapped_b2_credentials BLOB    NOT NULL,   -- nonce(12) || ct(var) || tag(16)
+    key_version            INTEGER NOT NULL DEFAULT 1,
+    created_at             TEXT    NOT NULL,
+    last_unsealed_at       TEXT,
+    last_unsealed_by       TEXT    REFERENCES users(email)
+);
 ```
 
-Both wrap operations use the same master key but independent random nonces — required for AES-GCM safety even when the same key encrypts multiple plaintexts.
+**Amended in Chunk #6 (2026-05-27):** prior versions of this section split nonce + ciphertext + tag into separate columns (`wrap_nonce`, `b2_creds_nonce`). That layout was abandoned during Chunk #2 because `backup_keys.wrap()` was specified to return a single `nonce || ciphertext || tag` blob (per §13 Chunk #2 function signature). Storing the three pieces glued together inside one column makes nonce reuse impossible at the use site — there is no way to pair the wrong nonce with the wrong ciphertext when they are physically concatenated. The relay never decomposes the blob; it stores opaque bytes and hands them back to whichever side calls `unwrap()`.
+
+Both wrap operations use the same master key but **independent random nonces** — required for AES-GCM safety even when the same key encrypts multiple plaintexts. Each call to `backup_keys.wrap()` generates a fresh nonce from `os.urandom(12)` before encryption.
 
 New audit_log event types (existing audit_log table from S2):
 
