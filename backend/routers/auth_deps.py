@@ -6,7 +6,14 @@ from fastapi import Depends, HTTPException, Request
 
 from core.settings_loader import settings
 
-ROLE_ORDER: dict[str, int] = {"guest": 0, "user": 1, "admin": 2, "super_admin": 3}
+ROLE_ORDER: dict[str, int] = {"guest": 0, "user": 1, "admin": 2, "super_admin": 3, "relay_admin": 9}
+# relay_admin is the founder role on the relay (Fly.io side). When a
+# relay-proxied request lands here, RelayAuthMiddleware injects a synthetic
+# user with role='relay_admin' so the founder can act on a customer's hub.
+# Rank 9 matches relay/app/auth.py::ROLE_ORDER so the two sides agree on
+# precedence. Without this entry, .get('relay_admin', 0) returned 0, which
+# blocked the founder against every require_role('admin'|'super_admin')
+# route on the hub.
 
 
 def find_user_by_token(token: str) -> dict | None:
