@@ -99,6 +99,30 @@ async def _run_backup_offthread() -> None:
         log_error(f"[Scheduler] Backup task crashed: {exc}")
 
 
+async def _maybe_post_telemetry() -> None:
+    """Fire one telemetry post if relay is configured. Fire-and-forget.
+
+    Same gating as _maybe_poll_ota. Blocking requests calls collect HA +
+    psutil state, so we hand the work to a worker thread.
+    """
+    try:
+        from core.settings_loader import settings as _settings
+        home_id = (_settings.get("home")  or {}).get("id")
+        relay   = _settings.get("relay") or {}
+        if not (home_id and relay.get("url") and relay.get("secret")):
+            return
+        from services.telemetry_client import post_once
+        result = await asyncio.to_thread(post_once)
+        if result.get("ok"):
+            _dbus.emit("telemetry", VERBOSE, "telemetry_post_ok",
+                       payload_bytes=result.get("payload_bytes"))
+        else:
+            _dbus.emit("telemetry", BASIC, "telemetry_post_failed",
+                       reason=result.get("reason"))
+    except Exception as exc:
+        log_error(f"[Scheduler] Telemetry post tick error: {exc}")
+
+
 async def _maybe_poll_ota() -> None:
     """Fire one OTA manifest poll if relay is configured. Fire-and-forget.
 
@@ -221,6 +245,11 @@ async def run_scheduler() -> None:
         # ── Every 5 minutes: sweep stale presence pings ───────────────────────
         if _tick % 5 == 0:
             await _sweep_presence_expiry()
+
+        # ── Every 5 minutes: post telemetry to relay (Prompt 2 §C) ───────────
+        # Same gating rule as OTA: silently skip if relay config absent.
+        if _tick % 5 == 0:
+            await _maybe_post_telemetry()
 
         # ── Every minute: LAN reachability probe for opt-in persons ──────────
         # Matches the engine's dwell_seconds default of 60 s — multiple probes
