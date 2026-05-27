@@ -79,6 +79,41 @@ CREATE TABLE IF NOT EXISTS home_backup_keys (
     last_unsealed_by       TEXT    REFERENCES users(email)
 );
 
+-- Telemetry ingestion (Prompt 2 §C). Edge agents POST every 5 min to
+-- /api/devices/{device_id}/telemetry with HA / Ziggy versions, uptime,
+-- sensor inventory + battery levels, disk/CPU/mem, container health,
+-- last automation trigger. The relay never interprets the payload — it
+-- writes it as JSON text and lets the admin dashboard parse on read.
+--
+-- Retention (relay/app/telemetry_retention.py runs daily):
+--   telemetry_raw    — 30 days
+--   telemetry_daily  — 365 days, aggregated from raw at end-of-day
+--
+-- Aggregation is one row per (home_id, day). last_seen_ts records the
+-- newest sample inside that day's window so a stale aggregate is
+-- detectable (no telemetry posted on day X → no row for day X).
+CREATE TABLE IF NOT EXISTS telemetry_raw (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    home_id   TEXT    NOT NULL,
+    ts        TEXT    NOT NULL,
+    payload   TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS telemetry_daily (
+    home_id          TEXT    NOT NULL,
+    day              TEXT    NOT NULL,        -- ISO date YYYY-MM-DD UTC
+    ha_version       TEXT,                    -- last seen that day
+    ziggy_version    TEXT,                    -- last seen that day
+    uptime_avg_s     INTEGER,
+    sensor_count_avg INTEGER,
+    disk_pct_avg     REAL,
+    cpu_pct_avg      REAL,
+    mem_pct_avg      REAL,
+    sample_count     INTEGER NOT NULL DEFAULT 0,
+    last_seen_ts     TEXT,
+    PRIMARY KEY (home_id, day)
+);
+
 -- OTA release catalog. Each row is an admin-authored target version that
 -- hubs may converge to. Resolution at GET /api/devices/{device_id}/ota-manifest:
 --   1. If homes.ota_pinned_release_id is set, return that release.
@@ -106,6 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_invites_home   ON invites(home_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event    ON audit_log(event, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_home     ON audit_log(home_id, ts);
 CREATE INDEX IF NOT EXISTS idx_ota_releases_created ON ota_releases(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_telemetry_raw_home_ts ON telemetry_raw(home_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_telemetry_daily_day ON telemetry_daily(day);
 """
 
 # Audit event names that Chunk #7's backup endpoints will emit. The

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -15,15 +16,26 @@ from .routers.ota import router as ota_router
 from .routers.proxy import router as proxy_router, _proxy_client
 from .routers.provision import router as provision_router
 from .routers.public_presence import router as public_presence_router
+from .routers.telemetry import router as telemetry_router
+from .telemetry_retention import run_retention_loop
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await ensure_relay_admin()
+    # Telemetry retention runs once a day in the background. Cancellation on
+    # shutdown is best-effort — the loop awaits sleep(86400) most of its
+    # life, so a cancel during sleep is the common case and tidy.
+    retention_task = asyncio.create_task(run_retention_loop())
     try:
         yield
     finally:
+        retention_task.cancel()
+        try:
+            await retention_task
+        except (asyncio.CancelledError, Exception):
+            pass
         await _proxy_client.aclose()
 
 
@@ -49,6 +61,9 @@ app.include_router(backup_keys_router, prefix="/api")
 # + /api/admin/homes/*/ota-pin) so it mounts WITHOUT a prefix. Must also
 # come BEFORE the catch-all proxy.
 app.include_router(ota_router)
+# Telemetry router same pattern — absolute paths under /api/devices/* +
+# /api/admin/homes/*/telemetry, no router prefix, mounted before proxy.
+app.include_router(telemetry_router)
 # Public presence passthrough — must register BEFORE the catch-all proxy so
 # its specific /api/presence/ping route takes precedence.
 app.include_router(public_presence_router)
