@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db
 from .routers.auth import router as auth_router, ensure_relay_admin
+from .routers.backup_keys import router as backup_keys_router
 from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
 from .routers.proxy import router as proxy_router, _proxy_client
@@ -39,6 +40,10 @@ app.include_router(auth_router,      prefix="/api")
 app.include_router(homes_router,     prefix="/api")
 app.include_router(invites_router,   prefix="/api")
 app.include_router(provision_router, prefix="/api")
+# Backup-keys endpoints register under /api/homes/* — must come BEFORE
+# the catch-all proxy router so /api/homes/{id}/seal-key etc. are not
+# accidentally proxied to a hub. Order matters in FastAPI route matching.
+app.include_router(backup_keys_router, prefix="/api")
 # Public presence passthrough — must register BEFORE the catch-all proxy so
 # its specific /api/presence/ping route takes precedence.
 app.include_router(public_presence_router)
