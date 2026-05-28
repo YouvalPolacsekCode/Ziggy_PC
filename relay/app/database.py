@@ -168,6 +168,48 @@ CREATE TABLE IF NOT EXISTS home_cohorts (
     assigned_by  TEXT
 );
 
+-- Founder pricing slot reservation (Prompt 9 chunk 2). Cap of 30 enforced
+-- at INSERT time by relay/app/billing/slot_counter.py via an atomic
+-- INSERT ... WHERE (SELECT COUNT(*) FROM founder_slots) < 30. The PK on
+-- slot_number serializes concurrent reservations through SQLite's writer
+-- lock. Release rules (per BILLING_AUDIT.md §2.6 + founder decisions):
+--   * checkout.session.expired (24h Stripe timeout) → DELETE
+--   * charge.refunded within 14 days of claimed_at → DELETE
+--   * After 14 days the slot is permanently bound; refunds do not release.
+CREATE TABLE IF NOT EXISTS founder_slots (
+    slot_number INTEGER PRIMARY KEY,
+    home_id     TEXT    NOT NULL UNIQUE REFERENCES homes(id) ON DELETE CASCADE,
+    claimed_at  TEXT    NOT NULL
+);
+
+-- Stripe webhook idempotency (Prompt 9 chunk 2). Stripe retries until 2xx;
+-- inserting (event_id PRIMARY KEY) raises IntegrityError on the second
+-- delivery so the dispatcher short-circuits to 200 OK without re-applying
+-- state mutations. Rows kept indefinitely — a delayed retry weeks later
+-- is still recognized.
+CREATE TABLE IF NOT EXISTS processed_webhooks (
+    event_id    TEXT    PRIMARY KEY,
+    received_at TEXT    NOT NULL,
+    event_type  TEXT    NOT NULL
+);
+
+-- Israeli עוסק פטור sequential invoice numbering (Prompt 9 chunk 2).
+-- The id column IS the invoice number — Israeli tax law requires
+-- monotonic non-reused sequential numbers with no gaps. AUTOINCREMENT
+-- (not the default ROWID behavior) guarantees the sqlite_sequence value
+-- only ever increases, so a deleted row does not free its number for
+-- reuse. Amounts in agorot (1/100 NIS) to avoid float rounding. VAT
+-- (18%, locked 2026-05-28) is stored alongside so historical invoices
+-- remain reproducible if the rate later changes.
+CREATE TABLE IF NOT EXISTS invoice_sequence (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    home_id           TEXT    NOT NULL,
+    stripe_invoice_id TEXT    UNIQUE NOT NULL,
+    issued_at         TEXT    NOT NULL,
+    amount_ils_agorot INTEGER NOT NULL,
+    vat_amount_agorot INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_home     ON users(home_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token  ON invites(token);
@@ -178,6 +220,8 @@ CREATE INDEX IF NOT EXISTS idx_ota_releases_created ON ota_releases(created_at D
 CREATE INDEX IF NOT EXISTS idx_telemetry_raw_home_ts ON telemetry_raw(home_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_daily_day ON telemetry_daily(day);
 CREATE INDEX IF NOT EXISTS idx_home_cohorts_cohort  ON home_cohorts(cohort_name);
+CREATE INDEX IF NOT EXISTS idx_founder_slots_home   ON founder_slots(home_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_seq_home     ON invoice_sequence(home_id);
 """
 
 # Audit event names that Chunk #7's backup endpoints will emit. The
@@ -219,6 +263,36 @@ async def init_db():
             await db.execute(
                 "ALTER TABLE homes ADD COLUMN ota_pinned_release_id INTEGER"
             )
+        # Subscription / billing columns (Prompt 9 chunk 2). Default
+        # subscription_state='active' preserves backward compatibility:
+        # the kill-switch only trips when a Stripe webhook explicitly
+        # flips state to past_due / cancelled / refunded. Onboarding
+        # (Prompt 7) is expected to set 'pending_setup' on new homes
+        # once it learns about this column. See docs/BILLING_AUDIT.md §1.3
+        # for the rationale of keeping `status` and `subscription_state`
+        # as two separate columns rather than collapsing them.
+        if "subscription_state" not in home_cols:
+            await db.execute(
+                "ALTER TABLE homes ADD COLUMN subscription_state TEXT NOT NULL DEFAULT 'active'"
+            )
+        if "stripe_customer_id" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN stripe_customer_id TEXT")
+        if "stripe_subscription_id" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN stripe_subscription_id TEXT")
+        if "plan_id" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN plan_id TEXT")
+        if "kit_received_at" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN kit_received_at TEXT")
+        if "trial_started_at" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN trial_started_at TEXT")
+        if "trial_ends_at" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN trial_ends_at TEXT")
+        if "subscription_updated_at" not in home_cols:
+            await db.execute("ALTER TABLE homes ADD COLUMN subscription_updated_at TEXT")
+        if "cancelled_at" not in home_cols:
+            # Set when subscription_state flips to 'cancelled'. Drives the
+            # 90-day post-cancellation B2 retention cron (chunk 3, decision 9).
+            await db.execute("ALTER TABLE homes ADD COLUMN cancelled_at TEXT")
         await db.commit()
 
 
