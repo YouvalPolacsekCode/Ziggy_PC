@@ -5,7 +5,11 @@ from core.memory import list_memory, append_chat, get_chat_history
 from core.task_file import load_task_json
 from core.logger_module import log_info, log_error
 from core.response_templates import get_response_for
-from integrations.openai_client import get_client
+from integrations.openai_client import (
+    CloudLLMUnavailable,
+    get_client,
+    require_cloud_llm_active,
+)
 
 # ── Web search tool — GPT decides when to use it ──────────────────────────────
 
@@ -49,6 +53,16 @@ def _is_hebrew(text: str) -> bool:
 
 
 async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict:
+    # Cloud LLM gate (Prompt 9 chunk 3). Cancelled / past_due / refunded
+    # subscriptions return a graceful billing message instead of trying
+    # cloud chat and surfacing a generic error. The local kit (sensors,
+    # automations, IR, local voice) is unaffected.
+    try:
+        require_cloud_llm_active()
+    except CloudLLMUnavailable as gate_err:
+        log_info(f"[chat_with_gpt] cloud LLM gated: {gate_err}")
+        return err(str(gate_err), details="cloud_llm_gated")
+
     text = str(params.get("text") or params.get("message") or params or "").strip()
 
     # Caller may inject session-scoped history (chat mode). If absent, use the

@@ -2,7 +2,11 @@ import re
 import json
 from core.settings_loader import settings
 from core.tools_schema import TOOLS, SYSTEM_PROMPT
-from integrations.openai_client import get_client
+from integrations.openai_client import (
+    CloudLLMUnavailable,
+    get_client,
+    require_cloud_llm_active,
+)
 
 # ---------------------------------------------------------------------------
 # Fast path — answered locally, no API call
@@ -232,6 +236,21 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
 
 
 def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
+    # Cloud LLM gate (Prompt 9 chunk 3). On gated subscription, fall
+    # through to the unrecognized_command path — which is handled by
+    # chat_handler.handle_unrecognized_command (no cloud call). Avoids
+    # making an OpenAI request that will be rejected and surfaces a
+    # graceful fallback to the user.
+    try:
+        require_cloud_llm_active()
+    except CloudLLMUnavailable:
+        from core.debug_bus import bus as _dbus, BASIC
+        _dbus.emit("intent", BASIC, "cloud_llm_gated",
+                   input=text, source="billing_gate")
+        return {"intent": "unrecognized_command",
+                "params": {"text": text},
+                "source": "billing_gate"}
+
     raw_text = text  # keep original for the confidence gate check
     text = _normalize_hebrew_rooms(text)
     text = _normalize_hebrew_devices(text)
