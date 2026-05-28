@@ -182,6 +182,7 @@ def run_daily_backup(ctx: BackupContext) -> dict:
         "files": [],
         "optional_skipped": [],
         "error": None,
+        "skipped_reason": None,
     }
     try:
         _preflight(ctx)
@@ -233,6 +234,12 @@ def run_daily_backup(ctx: BackupContext) -> dict:
         log.info("backup ok home=%s files=%d bytes=%d included_ha=%s",
                  ctx.home_id, len(result["files"]),
                  result["uploaded_bytes"], ha_included)
+    except BackupGated as gate_err:
+        # Distinct path from genuine errors: ok stays False (no work
+        # done) but error stays None and skipped_reason records why.
+        # Logged at INFO so cancelled hubs don't generate ops noise.
+        result["skipped_reason"] = "subscription_gated"
+        log.info("backup skipped: %s", gate_err)
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
         log.error("backup failed at stage=%s: %s", result["stage"], e, exc_info=True)
@@ -241,11 +248,53 @@ def run_daily_backup(ctx: BackupContext) -> dict:
 
 # ---------- pre-flight ----------
 
+
+class BackupGated(RuntimeError):
+    """Backup intentionally skipped because the subscription is not active.
+
+    Distinct from a true preflight failure (e.g. NTP skew, disk full).
+    The scheduler / caller can recognize this and avoid alerting; the
+    audit log records the skip with reason="subscription_gated" rather
+    than as an error.
+    """
+
+
 def _preflight(ctx: BackupContext) -> None:
+    _check_subscription_active(ctx)
     _check_ntp_sync(ctx)
     _check_data_key(ctx)
     _check_disk_space(ctx)
     _check_b2_reachable(ctx)
+
+
+def _check_subscription_active(ctx: BackupContext) -> None:
+    """Subscription gate (Prompt 9 chunk 3). Raises BackupGated on inactive.
+
+    Reads the edge cache populated by services/ota_client.py from the
+    relay's signed OTA manifest. Semantics (see
+    services/subscription_state.py):
+
+      missing cache → ALLOW  (fresh-install backward-compat)
+      stale cache   → ALLOW  (permissive — relay outages must not
+                              destroy a paying customer's backup chain)
+      fresh+active  → ALLOW
+      fresh+other   → DENY   (cancelled / past_due / refunded /
+                              pending_setup — backup engine writes no
+                              new objects to B2; existing objects are
+                              left for the 90-day retention cron to
+                              prune per founder decision 9)
+
+    Skipping here is a planned no-op, not a failure. The local kit
+    (sensors, automations, IR, local voice) is unaffected.
+    """
+    # Import inside the function so the module remains importable in
+    # test contexts that don't have user_files/ writable.
+    from services.subscription_state import is_backup_allowed
+    if not is_backup_allowed():
+        raise BackupGated(
+            "Backup skipped: subscription is not active. "
+            "Sensors, automations, IR, and local voice continue normally."
+        )
 
 
 def _check_ntp_sync(ctx: BackupContext) -> None:
