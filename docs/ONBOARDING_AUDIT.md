@@ -119,13 +119,15 @@ This is the single biggest open decision in Chunk 2 design. **I will not start c
 
 ### 3.2 PWA `Onboarding.jsx` — wire it, gate it, or leave it parked?
 
-`frontend/src/pages/Onboarding.jsx` and `backend/routers/onboarding_router.py` are polished but **completely unwired**. Three positions:
+`frontend/src/pages/Onboarding.jsx` and ~~`backend/routers/onboarding_router.py`~~ (deleted, see breadcrumb below) were polished but **completely unwired**. Three positions:
 
 - **Wire it.** Add the route in App.jsx, mount the router in server.py:418-ish. PWA users on a self-install (no kit) go through it. Mobile-kit users skip it entirely.
 - **Gate it.** Same as wire, but App.jsx checks `getAuthStatus().configured` + `/api/onboarding/state.completed` and routes unconditionally to `/onboarding` until done. This is the docstring's intent.
 - **Park it.** Leave both files unwired. Treat the web wizard as a future cleanup item. The kit + mobile flow is the v1 commercial path; the web wizard is for the next quarter.
 
 **Recommendation: Park it for Prompt 7 scope.** The rescoped Prompt 7 is mobile-kit centric. Wiring the PWA wizard now risks (a) confusing the kit-out-of-box flow with a second route the customer might land on, and (b) opening edge cases — the existing PWA login + manual HA-token flow already works for the founder + beta testers who aren't kit customers. Park it; surface it as a Future Cleanup; revisit if a self-install path becomes a v1.1 priority. **No code changes to the existing untracked files in this audit-only chunk.**
+
+**Breadcrumb (PROMPT_SECURITY_HARDENING_V2, 2026-05-28):** the backend router file `backend/routers/onboarding_router.py` was deleted in this V2 batch (bucket E — no parked code in shipped tree without a role gate; per-route auth on the dead file was correct but the file was never mounted in `server.py`, making it an audit-time hazard). The companion frontend `frontend/src/pages/Onboarding.jsx` is **NOT** deleted in V2 — it stays parked because it's imported by `App.jsx`'s OTA routes mapping (verify before any future cleanup). To restore the backend file when the BYO-hardware (v1.1+) tier is in scope: `git show HEAD:backend/routers/onboarding_router.py` from the commit prior to the deletion, or browse the git history. Routes the deleted file defined: `GET/PATCH /api/onboarding/state`, `POST /api/onboarding/complete`, `POST /api/onboarding/reset` (super_admin), `POST /api/ha/probe`. Companion service `services/onboarding_state.py` is retained on disk — it has no router dependency and may be useful for the v1.1+ rewrite.
 
 ### 3.3 Will the mobile app's existing scanner read both QR sources?
 
