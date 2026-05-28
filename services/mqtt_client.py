@@ -4,14 +4,20 @@ import yaml
 from core.logger_module import log_info
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 
-# Load MQTT settings from YAML config
+# Load MQTT settings from YAML config. Defensive .get() throughout —
+# secrets (password) live in config/secrets.yaml and may legitimately be
+# absent when the operator hasn't configured the MQTT integration yet.
+# Backend's settings panel matches this pattern (admin_router.py uses
+# mqtt.get("password", "")); previously this module was the odd one out
+# and crashed at import time with a KeyError, blocking the whole boot.
 with open("config/settings.yaml", "r", encoding="utf-8") as f:
-    settings = yaml.safe_load(f)
+    settings = yaml.safe_load(f) or {}
 
-MQTT_BROKER = settings["mqtt"]["host"]
-MQTT_PORT = settings["mqtt"].get("port", 1883)
-MQTT_USER = settings["mqtt"]["username"]
-MQTT_PASS = settings["mqtt"]["password"]
+_mqtt_cfg   = settings.get("mqtt") or {}
+MQTT_BROKER = _mqtt_cfg.get("host", "")
+MQTT_PORT   = _mqtt_cfg.get("port", 1883)
+MQTT_USER   = _mqtt_cfg.get("username", "")
+MQTT_PASS   = _mqtt_cfg.get("password", "")
 
 client = mqtt.Client()
 
@@ -42,6 +48,18 @@ def on_disconnect(client, userdata, rc):
 
 # Setup and run
 def start_mqtt():
+    # Skip cleanly if the operator hasn't configured a broker yet — the
+    # thread wrapper in ziggy_main.py just sees us exit and moves on.
+    # Without this guard, an unconfigured kit would have crashed (or
+    # hung in a tight reconnect loop) at boot.
+    if not MQTT_BROKER:
+        log_info("[MQTT] No broker configured — MQTT thread idle.")
+        _dbus.emit("ws", BASIC, "mqtt_skipped",
+                   result="not_configured",
+                   suggestion="Set mqtt.host in config/settings.yaml "
+                              "and mqtt.password in config/secrets.yaml.")
+        return
+
     client.username_pw_set(MQTT_USER, MQTT_PASS)
     client.on_connect = on_connect
     client.on_message = on_message
