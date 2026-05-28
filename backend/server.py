@@ -43,6 +43,7 @@ from backend.routers.ui_prefs_router import router as ui_prefs_router
 from backend.routers.mobile_router import router as mobile_router
 from backend.routers.edge_health_router import router as edge_health_router
 from backend.routers.first_boot_router import router as first_boot_router
+from backend.routers.onboarding_sensors_router import router as onboarding_sensors_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -426,6 +427,9 @@ app.include_router(edge_health_router)
 # (Prompt 7 chunk 2.6). Same no-auth posture as edge_health — the
 # customer hasn't created an owner account yet when they hit these.
 app.include_router(first_boot_router)
+# Onboarding sensor list (Prompt 7 chunk 2.7) — auth is device-token,
+# enforced via the get_current_device dep imported from mobile_router.
+app.include_router(onboarding_sensors_router)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.
