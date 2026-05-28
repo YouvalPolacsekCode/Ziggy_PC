@@ -482,6 +482,31 @@ export const relayHomeBackupStatus   = (id)              => relayRequest('GET', 
 // endpoint — no auth required — because the landing page also reads it.
 export const relayFounderSlotsRemaining = () => _publicGet(`${relayUrl()}/api/billing/founder-slots/remaining`)
 
+// Audit log reader (Prompt 10 chunk 3). Filters object may contain:
+//   event, home_id, ok (bool), since, until, limit, offset
+// Empty/undefined fields are stripped server-side; the helper just
+// forwards what the caller sends.
+export const relayAuditLog = (filters = {}) => {
+  const q = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === '') return
+    q.append(k, String(v))
+  })
+  const qs = q.toString()
+  return relayRequest('GET', `/api/admin/audit-log${qs ? '?' + qs : ''}`)
+}
+
+// Founder support session (Prompt 10 chunk 3, option 1). Writes audit
+// row, returns the templated SSH command for the founder to run.
+export const relayOpenSupportSession = (homeId, reason) =>
+  relayRequest('POST', `/api/admin/homes/${homeId}/support-session`, { reason: reason || undefined })
+
+// Per-home paired mobile devices (Prompt 10 chunk 3). Proxies into the
+// home backend with X-Relay-Role=relay_admin so the full device list
+// comes back rather than the caller's own.
+export const relayHomeMobileDevices = (homeId) =>
+  relayRequest('GET', `/api/admin/homes/${homeId}/mobile-devices`)
+
 export function setRelayUrl(url) { localStorage.setItem('ziggy_relay_url', url) }
 export function setRelayToken(token) { localStorage.setItem('ziggy_relay_token', token) }
 export function getRelayUrl() { return relayUrl() }
