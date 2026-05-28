@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Home, Copy, Trash2, Plus, RefreshCw, ChevronDown, ChevronRight,
   CheckCircle, Clock, XCircle, Shield, Wifi, WifiOff, Loader, Users,
-  Activity, Package, Database,
+  Activity, Package, Database, Smartphone, LifeBuoy, Terminal,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useUIStore } from '../stores/uiStore'
@@ -18,6 +18,8 @@ import {
   relayOtaReleases, relayHomeOtaPin, relaySetHomeOtaPin,
   relayOtaCohorts, relaySetHomeCohort,
   relayHomeBackupStatus,
+  relayHomeMobileDevices,
+  relayOpenSupportSession,
   relayFounderSlotsRemaining,
   isRelayConfigured, getRelayUrl, setRelayUrl, setRelayToken, relayLogin,
 } from '../lib/api'
@@ -492,6 +494,150 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
   )
 }
 
+// ── Mobile devices tab — paired phones for this home ──────────────────────────
+function MobileTab({ homeId }) {
+  const t = useT()
+  const [state, setState] = useState({ status: 'loading', devices: [], error: null })
+
+  useEffect(() => {
+    let cancelled = false
+    setState({ status: 'loading', devices: [], error: null })
+    relayHomeMobileDevices(homeId)
+      .then(d => { if (!cancelled) setState({ status: 'ok', devices: d.devices || [], error: null }) })
+      .catch(e => { if (!cancelled) setState({ status: 'error', devices: [], error: e?.message || 'load failed' }) })
+    return () => { cancelled = true }
+  }, [homeId])
+
+  if (state.status === 'loading') return <TabSpinner />
+  if (state.status === 'error')   return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
+  if (state.devices.length === 0) return <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.mobileNone')}</p>
+
+  return (
+    <div>
+      {state.devices.map(d => {
+        const platform = (d.platform || '').toLowerCase()
+        const platformLabel = platform === 'ios' ? 'iPhone' : platform === 'android' ? 'Android' : (d.platform || t('cloudAdmin.mobileUnknownPlatform'))
+        const lastSeen = d.last_seen_at || d.last_seen || d.last_active_at
+        const hasToken = !!(d.push_token || d.apns_token || d.fcm_token || d.web_push_endpoint)
+        return (
+          <div key={d.device_id || d.id} style={{ padding: '10px 20px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Smartphone size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 12, color: 'var(--ink)' }}>
+                {platformLabel}
+                {d.device_name && <span style={{ color: 'var(--ink-mute)' }}> · {d.device_name}</span>}
+                {d.ws_connected && (
+                  <span style={{ marginLeft: 6, fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 14%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>
+                    {t('cloudAdmin.mobileOnline')}
+                  </span>
+                )}
+              </p>
+              <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1, fontFamily: '"IBM Plex Mono", monospace' }}>
+                {t('cloudAdmin.mobileLastSeen', { when: lastSeen ? timeAgoLabel(t, lastSeen) : t('cloudAdmin.never') })}
+                {' · '}
+                {hasToken ? t('cloudAdmin.mobilePushOk') : t('cloudAdmin.mobilePushMissing')}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Support session modal — Option 1: audit + SSH runbook snippet ─────────────
+function SupportSessionModal({ open, onClose, homeId, homeName }) {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const [reason, setReason] = useState('')
+  const [opening, setOpening] = useState(false)
+  const [result, setResult] = useState(null)
+
+  if (!open) return null
+
+  const reset = () => { setReason(''); setResult(null) }
+  const handleClose = () => { reset(); onClose() }
+
+  const handleOpen = async () => {
+    setOpening(true)
+    try {
+      const r = await relayOpenSupportSession(homeId, reason)
+      setResult(r)
+    } catch (e) {
+      addToast(e?.message || t('cloudAdmin.supportOpenFailed'), 'error')
+    } finally {
+      setOpening(false)
+    }
+  }
+
+  const copySnippet = () => {
+    if (!result?.ssh_snippet) return
+    navigator.clipboard.writeText(result.ssh_snippet).catch(() => {})
+    addToast(t('cloudAdmin.supportSnippetCopied'), 'success')
+  }
+
+  return (
+    <div onClick={e => e.target === e.currentTarget && handleClose()}
+      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'var(--surface)', borderRadius: 16, border: '0.5px solid var(--line)', width: '100%', maxWidth: 460, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <LifeBuoy size={16} style={{ color: 'var(--accent)' }} />
+          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', flex: 1 }}>
+            {result ? t('cloudAdmin.supportSessionOpenedTitle') : t('cloudAdmin.supportOpenTitle', { home: homeName || homeId })}
+          </p>
+        </div>
+        {!result ? (
+          <>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{t('cloudAdmin.supportOpenBlurb')}</p>
+            <div>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloudAdmin.supportReasonLabel')}</p>
+              <textarea value={reason} onChange={e => setReason(e.target.value)}
+                placeholder={t('cloudAdmin.supportReasonPh')}
+                dir="auto" className="z-input"
+                style={{ width: '100%', minHeight: 64, padding: 10, fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1, height: 38, borderRadius: 10, fontSize: 12 }}>{t('common.cancel')}</button>
+              <button onClick={handleOpen} disabled={opening} className="z-btn-primary" style={{ flex: 2, height: 38, borderRadius: 10, fontSize: 12 }}>
+                {opening ? t('cloudAdmin.supportOpening') : t('cloudAdmin.supportOpenAction')}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ padding: '10px 12px', borderRadius: 8, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, transparent)' }}>
+              <p style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>{t('cloudAdmin.supportAuditWritten', { id: result.audit_id ?? '?' })}</p>
+              <p style={{ fontSize: 10.5, color: 'var(--ink-mute)', marginTop: 4 }}>{t('cloudAdmin.supportNotificationStub')}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Terminal size={11} /> {t('cloudAdmin.supportSnippetLabel')}
+              </p>
+              <pre dir="ltr" style={{
+                background: 'var(--bg-2)', borderRadius: 8, padding: '10px 12px',
+                fontSize: 11.5, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace',
+                border: '0.5px solid var(--line)', overflowX: 'auto', margin: 0,
+                whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+              }}>{result.ssh_snippet}</pre>
+            </div>
+            <p style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
+              {t('cloudAdmin.supportRunbookHint')}
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button onClick={copySnippet} className="z-btn-secondary" style={{ flex: 1, height: 36, borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Copy size={12} /> {t('cloudAdmin.supportCopySnippet')}
+              </button>
+              <button onClick={handleClose} className="z-btn-primary" style={{ flex: 1, height: 36, borderRadius: 9, fontSize: 12 }}>
+                {t('common.done')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Founder slot counter ──────────────────────────────────────────────────────
 // Reads /api/billing/founder-slots/remaining (public, rate-limited). Shows the
 // "N of 30 founder slots remaining" mini-widget in the homes header. Silent
@@ -560,11 +706,14 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
   // new homes and should never appear as pending members of an existing home.
   const pending = invites.filter(i => i.status === 'pending' && i.type !== 'home')
 
+  const [supportModalOpen, setSupportModalOpen] = useState(false)
+
   const tabs = [
-    { id: 'members',   icon: Users,    labelKey: 'cloudAdmin.tabMembers' },
-    { id: 'telemetry', icon: Activity, labelKey: 'cloudAdmin.tabTelemetry' },
-    { id: 'ota',       icon: Package,  labelKey: 'cloudAdmin.tabOta' },
-    { id: 'backup',    icon: Database, labelKey: 'cloudAdmin.tabBackup' },
+    { id: 'members',   icon: Users,      labelKey: 'cloudAdmin.tabMembers' },
+    { id: 'telemetry', icon: Activity,   labelKey: 'cloudAdmin.tabTelemetry' },
+    { id: 'mobile',    icon: Smartphone, labelKey: 'cloudAdmin.tabMobile' },
+    { id: 'ota',       icon: Package,    labelKey: 'cloudAdmin.tabOta' },
+    { id: 'backup',    icon: Database,   labelKey: 'cloudAdmin.tabBackup' },
   ]
 
   const membersContent = (
@@ -649,6 +798,15 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {!isLocal && (
+            <button
+              onClick={e => { e.stopPropagation(); setSupportModalOpen(true) }}
+              title={t('cloudAdmin.supportOpenTooltip')}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}
+            >
+              <LifeBuoy size={13} />
+            </button>
+          )}
           {!isLocal && onDeprovision && (
             <button onClick={e => { e.stopPropagation(); onDeprovision() }}
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
@@ -691,11 +849,24 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
               {/* Tab content — lazy: each tab fetches on first activation. */}
               {tab === 'members'   && membersContent}
               {tab === 'telemetry' && <TelemetryTab homeId={home.id} onPayload={setLivePayload} />}
+              {tab === 'mobile'    && <MobileTab homeId={home.id} />}
               {tab === 'ota'       && <OtaTab home={home} />}
               {tab === 'backup'    && <BackupTab homeId={home.id} />}
             </>
           )}
         </div>
+      )}
+
+      {/* Support session modal — mounted at card level so it survives tab
+          switches and isn't tied to any one tab's lifecycle. Only used
+          for non-local homes (the relay endpoint requires a home_id). */}
+      {!isLocal && (
+        <SupportSessionModal
+          open={supportModalOpen}
+          onClose={() => setSupportModalOpen(false)}
+          homeId={home.id}
+          homeName={home.name}
+        />
       )}
     </Card>
   )
