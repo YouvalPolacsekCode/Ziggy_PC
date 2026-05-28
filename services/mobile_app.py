@@ -37,7 +37,9 @@ from services import presence_engine
 _DEVICES_FILE = Path(__file__).resolve().parents[1] / "user_files" / "mobile_devices.json"
 _PAIR_FILE    = Path(__file__).resolve().parents[1] / "user_files" / "mobile_pair_codes.json"
 
-_PAIR_TTL_S      = 300       # 5 minutes
+_PAIR_TTL_S       = 300       # 5 minutes (user-tier — PWA → phone)
+_CLAIM_TTL_S      = 30 * 24 * 60 * 60   # 30 days (first-boot claim, mirrors
+                                        # PROMPT_FACTORY_IMAGING §4 step 11)
 _DEVICE_TOKEN_LEN = 32       # bytes of entropy in the auth token
 
 _lock = threading.Lock()
@@ -77,19 +79,26 @@ def _new_id(prefix: str) -> str:
 
 # ── Pair codes ───────────────────────────────────────────────────────────────
 
+def _mint_code_string() -> str:
+    return "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6))
+
+
 def create_pair_code(user_id: str) -> dict:
-    """Mint a short-lived pair code for a logged-in PWA user. The user shows the
+    """Mint a short-lived (5 min) USER-tier pair code. The PWA owner shows the
     code (or its QR) to their phone; phone POSTs to /mobile/pair to redeem.
+
+    Use this when an owner account already exists. For the kit-out-of-box
+    first-boot flow where no owner is yet defined, see create_claim_code.
     """
-    code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6))
+    code = _mint_code_string()
     expires_at = _now() + timedelta(seconds=_PAIR_TTL_S)
     with _lock:
         codes = _load(_PAIR_FILE, [])
-        # Drop expired before adding new
         codes = [c for c in codes if datetime.fromisoformat(c["expires_at"]) > _now()]
         codes.append({
-            "code": code,
-            "user_id": user_id,
+            "code":       code,
+            "kind":       "user",          # explicit so consume can route
+            "user_id":    user_id,
             "created_at": _now().isoformat(),
             "expires_at": expires_at.isoformat(),
         })
@@ -97,9 +106,75 @@ def create_pair_code(user_id: str) -> dict:
     return {"code": code, "expires_at": expires_at.isoformat(), "ttl_seconds": _PAIR_TTL_S}
 
 
+def create_claim_code(device_id: str, *, ttl_seconds: int = _CLAIM_TTL_S) -> dict:
+    """Mint a long-lived (default 30 days) CLAIM-tier pair code bound to a
+    device_id rather than a user_id.
+
+    Used on a freshly-imaged box where the customer hasn't created an owner
+    account yet. The mobile app redeems via /api/mobile/pair; the resulting
+    device record stays in a `claim_pending` state until /api/onboarding/claim
+    (Chunk 3) creates the owner and binds it.
+
+    Idempotent within a single device's lifetime: if a non-expired claim
+    code already exists for this device_id, return it instead of minting a
+    second one. Stops first-boot.py from minting fresh codes on every
+    process restart.
+    """
+    if not device_id or not device_id.strip():
+        raise ValueError("device_id is required to mint a claim code")
+    device_id = device_id.strip()
+    with _lock:
+        codes = _load(_PAIR_FILE, [])
+        codes = [c for c in codes if datetime.fromisoformat(c["expires_at"]) > _now()]
+        # Idempotency: reuse an existing non-expired claim code for the same
+        # device. Lets the LAN /pair page re-render the same QR even after
+        # an edge restart, so a sticker printed at imaging time stays valid.
+        for c in codes:
+            if c.get("kind") == "claim" and c.get("device_id") == device_id:
+                _save(_PAIR_FILE, codes)  # drop expired neighbours
+                return {
+                    "code":        c["code"],
+                    "device_id":   device_id,
+                    "expires_at":  c["expires_at"],
+                    "ttl_seconds": int(
+                        (datetime.fromisoformat(c["expires_at"]) - _now()).total_seconds()
+                    ),
+                    "kind":        "claim",
+                    "reused":      True,
+                }
+        code = _mint_code_string()
+        expires_at = _now() + timedelta(seconds=ttl_seconds)
+        codes.append({
+            "code":       code,
+            "kind":       "claim",
+            "device_id":  device_id,
+            "created_at": _now().isoformat(),
+            "expires_at": expires_at.isoformat(),
+        })
+        _save(_PAIR_FILE, codes)
+    log_info(f"[mobile_app] minted claim code for device {device_id} (ttl_s={ttl_seconds})")
+    return {
+        "code":        code,
+        "device_id":   device_id,
+        "expires_at":  expires_at.isoformat(),
+        "ttl_seconds": ttl_seconds,
+        "kind":        "claim",
+        "reused":      False,
+    }
+
+
 def consume_pair_code(code: str) -> Optional[dict]:
-    """Return the pair record (incl. user_id) if code is valid, removing it
-    atomically. Returns None if expired or unknown.
+    """Return the pair record if `code` is valid, removing it atomically.
+    Returns None if expired or unknown.
+
+    The returned dict always carries a `kind` field — "user" or "claim".
+    Older codes minted before the kind field existed are treated as "user"
+    (forward-compatible default).
+
+    Callers should branch on kind:
+      kind=="user"   → match["user_id"] identifies the owner
+      kind=="claim"  → match["device_id"] identifies the box; owner is created
+                       later via /api/onboarding/claim (Chunk 3)
     """
     with _lock:
         codes = _load(_PAIR_FILE, [])
@@ -111,38 +186,100 @@ def consume_pair_code(code: str) -> Optional[dict]:
             elif datetime.fromisoformat(c["expires_at"]) > _now():
                 remaining.append(c)
         _save(_PAIR_FILE, remaining)
+    if match is None:
+        return None
+    # Forward-compat: older records without kind are user-tier.
+    match.setdefault("kind", "user")
     return match
 
 
 # ── Devices ──────────────────────────────────────────────────────────────────
 
-def register_device(user_id: str, device_info: dict) -> dict:
-    """Create a new mobile-device record and return it with its auth token."""
+def register_device(
+    user_id: Optional[str],
+    device_info: dict,
+    *,
+    claim_pending: bool = False,
+    claim_device_id: Optional[str] = None,
+) -> dict:
+    """Create a new mobile-device record and return it with its auth token.
+
+    Two modes:
+      Normal (claim_pending=False):
+        user_id is required. Behaviour is unchanged from the pre-Prompt-7
+        flow — the device is immediately bound to its owner.
+
+      Claim-pending (claim_pending=True):
+        user_id may be None. The record is created with `claim_pending=True`
+        and `claim_device_id=<edge device_id>`, indicating the mobile app
+        successfully redeemed a first-boot claim code but the owner account
+        has not been created yet. /api/onboarding/claim (Chunk 3) will bind
+        a real user_id via bind_claim_pending_device().
+    """
+    if not claim_pending and not user_id:
+        raise ValueError("user_id is required unless claim_pending=True")
+
     device_id = _new_id("dev")
     webhook_id = _new_id("wh")
     token = _new_token()
 
     record = {
-        "device_id": device_id,
-        "webhook_id": webhook_id,
-        "user_id": user_id,
-        "person_id": None,  # bound later in /mobile/register
-        "auth_token": token,
-        "push_token": None,
-        "push_provider": None,
-        "platform": device_info.get("platform"),
-        "model": device_info.get("model"),
-        "os_version": device_info.get("os_version"),
-        "app_version": device_info.get("app_version"),
-        "created_at": _now().isoformat(),
-        "last_seen": _now().isoformat(),
+        "device_id":       device_id,
+        "webhook_id":      webhook_id,
+        "user_id":         user_id,
+        "person_id":       None,
+        "auth_token":      token,
+        "push_token":      None,
+        "push_provider":   None,
+        "platform":        device_info.get("platform"),
+        "model":           device_info.get("model"),
+        "os_version":      device_info.get("os_version"),
+        "app_version":     device_info.get("app_version"),
+        "claim_pending":   claim_pending,
+        "claim_device_id": claim_device_id,
+        "created_at":      _now().isoformat(),
+        "last_seen":       _now().isoformat(),
     }
     with _lock:
         devices = _load(_DEVICES_FILE, [])
         devices.append(record)
         _save(_DEVICES_FILE, devices)
-    log_info(f"[mobile_app] registered device {device_id} ({record['platform']} {record['model']}) for user {user_id}")
+    if claim_pending:
+        log_info(
+            f"[mobile_app] registered claim-pending device {device_id} "
+            f"({record['platform']} {record['model']}) for box {claim_device_id}"
+        )
+    else:
+        log_info(
+            f"[mobile_app] registered device {device_id} "
+            f"({record['platform']} {record['model']}) for user {user_id}"
+        )
     return record
+
+
+def bind_claim_pending_device(device_id: str, user_id: str) -> bool:
+    """Bind a claim-pending mobile-device record to a freshly-created owner.
+
+    Called from /api/onboarding/claim (Chunk 3) after the owner account has
+    been minted. Idempotent: a non-claim-pending or unknown record returns
+    False so the caller can decide whether to 404 or 409.
+    """
+    if not user_id:
+        raise ValueError("user_id is required to bind a claim-pending device")
+    with _lock:
+        devices = _load(_DEVICES_FILE, [])
+        for d in devices:
+            if d.get("device_id") != device_id:
+                continue
+            if not d.get("claim_pending"):
+                return False
+            d["user_id"]       = user_id
+            d["claim_pending"] = False
+            d["last_seen"]     = _now().isoformat()
+            _save(_DEVICES_FILE, devices)
+            log_info(f"[mobile_app] bound claim-pending device {device_id} → user {user_id}")
+            return True
+    return False
 
 
 def find_device_by_token(token: str) -> Optional[dict]:
