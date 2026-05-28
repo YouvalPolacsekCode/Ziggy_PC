@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .billing.admin import router as billing_admin_router
+from .billing.public import router as billing_public_router
 from .billing.webhooks import router as billing_webhooks_router
 from .database import init_db
 from .routers.auth import router as auth_router, ensure_relay_admin
@@ -75,6 +76,10 @@ app.include_router(billing_webhooks_router, prefix="/api")
 # Billing admin endpoints (Prompt 9). PATCH /api/admin/homes/{id}/kit-received
 # and friends — specific paths under /api/admin/*, must mount before proxy.
 app.include_router(billing_admin_router, prefix="/api")
+# Public + customer-facing billing (Prompt 9 chunk 3).
+#   GET  /api/billing/founder-slots/remaining   no auth, rate-limited
+#   POST /api/billing/checkout                  user JWT, reserves slot
+app.include_router(billing_public_router, prefix="/api")
 # Proxy last — catch-all pattern
 app.include_router(proxy_router,     prefix="/api")
 
