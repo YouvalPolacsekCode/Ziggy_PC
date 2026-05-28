@@ -44,6 +44,7 @@ from backend.routers.mobile_router import router as mobile_router
 from backend.routers.edge_health_router import router as edge_health_router
 from backend.routers.first_boot_router import router as first_boot_router
 from backend.routers.onboarding_sensors_router import router as onboarding_sensors_router
+from backend.routers.push_action_router import router as push_action_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -430,6 +431,10 @@ app.include_router(first_boot_router)
 # Onboarding sensor list (Prompt 7 chunk 2.7) — auth is device-token,
 # enforced via the get_current_device dep imported from mobile_router.
 app.include_router(onboarding_sensors_router)
+# Push action callback (PROMPT_SECURITY_HARDENING_V2). Service-worker-driven,
+# token-in-URL IS the credential — must NOT be under `_auth` because the SW
+# cannot attach an Authorization header. See push_action_router.py.
+app.include_router(push_action_router)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.

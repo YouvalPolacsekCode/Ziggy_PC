@@ -291,16 +291,11 @@ async def delete_automation_endpoint(automation_id: str):
     return {"ok": True}
 
 
-# ── Actionable push notification callback ────────────────────────────────────
-
-@router.post("/api/push/action/{token}")
-async def push_action_callback(token: str):
-    """Service worker POSTs here when the user taps a notification action button."""
-    from services import push_actions
-    action = push_actions.consume(token)
-    if not action:
-        raise HTTPException(status_code=404, detail="Action token expired or already used")
-    return await push_actions.execute_action(action)
+# ── Push action callback ─────────────────────────────────────────────────────
+# Moved to backend/routers/push_action_router.py in PROMPT_SECURITY_HARDENING_V2.
+# The handler is service-worker-driven (no bearer header possible), so it had
+# to leave a router mounted under `_auth = [Depends(get_current_user)]`.
+# See push_action_router.py for the design rationale and the bucket-D comment.
 
 
 # ── Manual override inspection / clearing ────────────────────────────────────
