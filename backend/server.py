@@ -82,6 +82,12 @@ async def _startup():
     # This must happen before any service starts emitting events.
     bus.register_ws_callback(manager.broadcast)
 
+    # Install the mobile bridge — wraps the PWA callback so allowlisted
+    # event types also fan out to paired mobile devices via mobile_ws_manager.
+    # Additive: PWA broadcasts are unchanged; mobile gets a filtered subset.
+    from services.mobile_ws_bridge import install as install_mobile_bridge
+    install_mobile_bridge()
+
     # Restore debug level from settings so it persists across restarts.
     # The bus level governs in-memory events; apply_log_level also re-tunes
     # the on-disk log file so "trace" actually writes trace lines to disk.

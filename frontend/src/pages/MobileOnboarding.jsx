@@ -111,19 +111,23 @@ function PairStep({ onDone }) {
 
   const submit = () => submitWithCode(codeEntry)
 
-  // Scan QR via @capacitor-mlkit/barcode-scanning if available. The plugin
-  // registers as `BarcodeScanning`. Graceful no-op if not installed yet.
+  // Scan QR via @capacitor/barcode-scanner (official Ionic, AVFoundation-based).
+  // Registers under either `CapacitorBarcodeScanner` (v2.x) or `BarcodeScanner`
+  // depending on Capacitor version — try both for resilience. Graceful no-op on
+  // web. Arm64-simulator-clean (unlike the MLKit fork we removed on 2026-05-28).
   const scan = async () => {
     setError(null)
-    const Scanner = plugin('BarcodeScanning')
+    const Scanner = plugin('CapacitorBarcodeScanner') || plugin('BarcodeScanner')
     if (!Scanner) {
       setError(t('mobileOnboard.scannerUnavailable'))
       return
     }
     try {
-      // Some plugin versions return { barcodes }, older ones return { hasContent, content }.
-      const res = await Scanner.scan?.() ?? {}
-      const raw = res.barcodes?.[0]?.rawValue
+      // @capacitor/barcode-scanner v2: scanBarcode({ hint }) → { ScanResult: "..." }
+      // Older plugins: scan() → { content } or { barcodes: [...] }
+      const res = (await (Scanner.scanBarcode?.({ hint: 17 /* ALL */ }) ?? Scanner.scan?.())) ?? {}
+      const raw = res.ScanResult
+                ?? res.barcodes?.[0]?.rawValue
                 ?? res.barcodes?.[0]?.displayValue
                 ?? res.content
                 ?? ''
@@ -237,14 +241,28 @@ function MotionStep({ onDone }) {
 
 function DoneStep({ onDone }) {
   const t = useT()
+  // Auto-advance after 1.5s, but also expose a manual button after 1s in case
+  // anything in the post-navigate redirect chain hiccups. The button is a
+  // visible fallback the user can always tap — no more stuck screens.
+  const [showButton, setShowButton] = useState(false)
   useEffect(() => {
-    const t = setTimeout(onDone, 1200)
-    return () => clearTimeout(t)
+    const btnTimer = setTimeout(() => setShowButton(true), 1000)
+    const navTimer = setTimeout(onDone, 1500)
+    return () => { clearTimeout(btnTimer); clearTimeout(navTimer) }
   }, [onDone])
   return (
-    <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+    <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
       <div style={{ fontSize: 48 }}>✓</div>
       <div style={{ fontSize: 16, fontWeight: 600 }}>{t('mobileOnboard.allSet')}</div>
+      {showButton && (
+        <button onClick={onDone} style={{
+          marginTop: 8, padding: '12px 20px', borderRadius: 10, border: 'none',
+          background: 'var(--accent)', color: 'white', fontWeight: 600,
+          fontSize: 14, cursor: 'pointer',
+        }}>
+          {t('common.continue')}
+        </button>
+      )}
     </section>
   )
 }

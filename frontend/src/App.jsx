@@ -107,12 +107,28 @@ const _AUTOMATION_INTENTS = new Set([
 // Native-shell only: if we're inside the Ziggy Home iOS/Android app AND the
 // device has not yet been paired, send the user to the onboarding flow once
 // per session. Pure no-op in the PWA.
+//
+// Race guard: the post-pair navigate('/') triggers a location change, which
+// would re-run this effect and could race the just-written device token in
+// Capacitor Preferences. We use a session-scoped ref to skip the re-check for
+// a few seconds after returning to '/' from '/mobile-onboarding'.
 function MobileOnboardingRedirector() {
   const navigate = useNavigate()
   const location = useLocation()
+  const lastPathRef = useRef(location.pathname)
   useEffect(() => {
     if (!isNative()) return
-    if (location.pathname === '/mobile-onboarding') return
+    if (location.pathname === '/mobile-onboarding') {
+      lastPathRef.current = location.pathname
+      return
+    }
+    // Just returned from onboarding — assume paired, skip the redirect check.
+    // The next location change (user actually navigates) will re-arm.
+    if (lastPathRef.current === '/mobile-onboarding') {
+      lastPathRef.current = location.pathname
+      return
+    }
+    lastPathRef.current = location.pathname
     let cancelled = false
     ;(async () => {
       const tok = await getDeviceToken()
