@@ -36,11 +36,13 @@ from the home. Until then, the URL param is treated as the home_id verbatim.
 
 Subscription gating:
 
-    homes.status != 'suspended'  (stub — Prompt 9 swap-target)
+    homes.status != 'suspended'  AND  subscription_state ∈ {trialing, active}
 
-Prompt 9 will introduce a real subscription_state column populated by Stripe
-webhooks. The OTA + telemetry endpoints both call `_subscription_active`
-below; when Prompt 9 lands, that one helper becomes the single line to swap.
+Both gates must be green. `status` is operational (founder safety hold);
+`subscription_state` is billing (written by Stripe webhooks in
+relay/app/billing). The OTA + telemetry endpoints both call
+`_subscription_active` below — a single helper change covers both.
+See docs/BILLING_AUDIT.md §1.3 for the rationale on two columns.
 
 Manifest signature:
 
@@ -66,6 +68,7 @@ from pydantic import BaseModel, Field
 
 from ..audit import log_event, sign as sign_signature, verify as verify_signature
 from ..auth import current_user, require_role
+from ..billing import ACTIVE_SUBSCRIPTION_STATES
 from ..database import get_db
 
 router = APIRouter()
@@ -91,17 +94,29 @@ def _resolve_home_id_from_device_id(device_id: str) -> str:
     return device_id
 
 
-async def _subscription_active(home_status: str) -> bool:
-    """Stub for Prompt 9's Stripe-driven subscription_state.
+async def _subscription_active(*, home_status: str, subscription_state: str) -> bool:
+    """Subscription kill-switch (Prompt 9 chunk 2 — swap of the Prompt 2 stub).
 
-    Today: any home that isn't explicitly 'suspended' is treated as active.
-    Provisioning / failed / pending_setup all still receive manifests — the
-    edge may be mid-install and need its first version.
+    Returns True iff the home is BOTH operationally active (status not
+    'suspended') AND in a billing state that grants cloud features
+    (subscription_state in ACTIVE_SUBSCRIPTION_STATES = {'trialing','active'}).
 
-    TODO(Prompt 9): replace with a read of homes.subscription_state once
-    the Stripe webhook handler populates that column. One-line swap.
+    The two columns are deliberately separate (see docs/BILLING_AUDIT.md §1.3):
+
+      * homes.status         operational lifecycle. 'suspended' = founder
+                             manually locked the hub (abuse, safety hold,
+                             chargeback fraud), unrelated to billing.
+      * subscription_state   billing lifecycle, written exclusively by the
+                             Stripe webhook handlers in relay/app/billing.
+
+    Both gates must be green. Provisioning / pending_setup / failed status
+    values are NOT considered suspended — the edge may be mid-install
+    and still need its first manifest, matching the original stub's
+    contract preserved here byte-for-byte.
     """
-    return home_status != "suspended"
+    if home_status == "suspended":
+        return False
+    return subscription_state in ACTIVE_SUBSCRIPTION_STATES
 
 
 def _release_row_to_payload(row: Any, home_id: str) -> dict:
@@ -172,7 +187,8 @@ async def get_ota_manifest(device_id: str, request: Request):
 
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT id, status, relay_secret, ota_pinned_release_id FROM homes WHERE id=?",
+            "SELECT id, status, subscription_state, relay_secret, ota_pinned_release_id "
+            "FROM homes WHERE id=?",
             (home_id,),
         )
     if not rows:
@@ -192,12 +208,16 @@ async def get_ota_manifest(device_id: str, request: Request):
         )
         raise HTTPException(401, "Invalid signature.")
 
-    if not await _subscription_active(home["status"]):
+    if not await _subscription_active(
+        home_status=home["status"],
+        subscription_state=home["subscription_state"],
+    ):
         await log_event(
             "ota_manifest_served", home_id=home_id, source_ip=src_ip,
-            ok=False, detail=f"suspended: status={home['status']}",
+            ok=False,
+            detail=f"gated: status={home['status']} sub={home['subscription_state']}",
         )
-        raise HTTPException(403, "Home suspended.")
+        raise HTTPException(403, "Home access is currently restricted.")
 
     # Three-level resolution: per-home pin → cohort pin → global latest.
     # See module docstring for the rationale + rollout sequence.

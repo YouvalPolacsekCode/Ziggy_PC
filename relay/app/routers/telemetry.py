@@ -28,8 +28,9 @@ edge-side telemetry_client.py stays the source of truth for fields:
 
 Anything else is accepted and stored — the admin dashboard pulls
 fields it knows about. device_id == home_id (v1, see ota.py).
-Subscription gating shares _subscription_active with the OTA router
-so Prompt 9 swaps both endpoints in one helper change.
+Subscription gating shares _subscription_active with the OTA router so
+both endpoints flip together when subscription_state changes. See
+relay/app/routers/ota.py for the gating contract.
 """
 
 from __future__ import annotations
@@ -94,7 +95,8 @@ async def post_telemetry(device_id: str, request: Request):
 
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT status, relay_secret FROM homes WHERE id=?", (home_id,)
+            "SELECT status, subscription_state, relay_secret FROM homes WHERE id=?",
+            (home_id,),
         )
     if not rows:
         await log_event(
@@ -113,12 +115,16 @@ async def post_telemetry(device_id: str, request: Request):
         )
         raise HTTPException(401, "Invalid signature.")
 
-    if not await _subscription_active(home["status"]):
+    if not await _subscription_active(
+        home_status=home["status"],
+        subscription_state=home["subscription_state"],
+    ):
         await log_event(
             "telemetry_posted", home_id=home_id, source_ip=src_ip,
-            ok=False, detail=f"suspended: status={home['status']}",
+            ok=False,
+            detail=f"gated: status={home['status']} sub={home['subscription_state']}",
         )
-        raise HTTPException(403, "Home suspended.")
+        raise HTTPException(403, "Home access is currently restricted.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
     async with get_db() as db:
