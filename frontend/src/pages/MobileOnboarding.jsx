@@ -37,7 +37,7 @@ import {
   installAutomation,
   completeOnboarding,
 } from '../lib/mobileApi'
-import { getPresencePersons } from '../lib/api'
+import { getPresencePersons, getPresenceZone, listPresenceZones } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 const STEP = {
@@ -729,18 +729,50 @@ function NotifyStep({ onDone }) {
 }
 
 function LocationStep({ onDone }) {
+  // Uses the custom ziggy-presence plugin (Phase 3 — real background coverage).
+  // Falls back to @capacitor/geolocation foreground-only if ziggy-presence
+  // isn't registered (older builds, missing cap sync, etc).
   const t = useT()
   const [busy, setBusy] = useState(false)
   const allow = async () => {
     setBusy(true)
-    const Geo = plugin('Geolocation')
+    const Pres = plugin('ZiggyPresence')
+    const Geo  = plugin('Geolocation')
     let status = 'denied'
-    if (Geo) {
+
+    if (Pres) {
+      try {
+        // Always-on coverage matches the architecture: SLC + region monitoring
+        // need background authorisation. The plugin chains WhenInUse → Always
+        // on iOS; Android prompts foreground then background sequentially.
+        const res = await Pres.requestPermissions({
+          location: 'always',
+          motion: false,
+          notifications: false,
+        })
+        status = res?.location || 'denied'
+
+        // Start background pumps + register the canonical home + near-home
+        // geofences, plus any extra zones the backend already knows about
+        // (Work, Gym, School, …). Failures here are non-fatal — onboarding
+        // continues even if geofences can't be added so the user isn't blocked.
+        if (status === 'always' || status === 'while_using') {
+          try { await Pres.startBackgroundLocation({ accuracy: 'balanced' }) } catch {}
+        }
+        if (status === 'always') {
+          await registerInitialGeofences(Pres).catch(() => {})
+        }
+      } catch {}
+    } else if (Geo) {
+      // Legacy fallback: foreground-only @capacitor/geolocation. No background,
+      // no geofences. Onboarding still completes; the user just won't get
+      // arrive/leave triggers when the app is closed.
       try {
         const res = await Geo.requestPermissions({ permissions: ['location'] })
         status = res?.location === 'granted' ? 'while_using' : 'denied'
       } catch {}
     }
+
     try { await registerDevice({ permissions: { location: status } }) } catch {}
     setBusy(false); onDone()
   }
@@ -755,12 +787,103 @@ function LocationStep({ onDone }) {
   )
 }
 
+// Builds the initial geofence set: home + near-home outer ring + every
+// configured backend zone (capped at the iOS 20-region limit).
+async function registerInitialGeofences(Pres) {
+  // Wipe stale entries first — re-onboarding after a zone-radius change should
+  // pick up the new value, not the OS's cached version.
+  try { await Pres.clearAllGeofences() } catch {}
+
+  let homeLat = null, homeLon = null
+  // 1) Prefer the backend's configured home zone (set via PWA Settings or
+  // pulled from HA core config).
+  try {
+    const z = await getPresenceZone()
+    if (z?.configured && typeof z.lat === 'number' && typeof z.lon === 'number') {
+      homeLat = z.lat
+      homeLon = z.lon
+    }
+  } catch {}
+
+  // 2) Fall back to this phone's current position — only sane if the user is
+  // physically at home during onboarding, which is the common case.
+  if (homeLat == null) {
+    try {
+      const Geo = plugin('Geolocation')
+      if (Geo) {
+        const pos = await Geo.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
+        homeLat = pos?.coords?.latitude  ?? null
+        homeLon = pos?.coords?.longitude ?? null
+      }
+    } catch {}
+  }
+  if (homeLat == null || homeLon == null) return  // nothing usable
+
+  // Home — small ring, fires on a real arrival.
+  try {
+    await Pres.addGeofence({ id: 'home', lat: homeLat, lon: homeLon, radius_m: 150 })
+  } catch {}
+  // Near-Home — ~800 m outer ring drives "approaching home" automations.
+  try {
+    await Pres.addGeofence({ id: 'home_near', lat: homeLat, lon: homeLon, radius_m: 800 })
+  } catch {}
+
+  // 3) Sync extra backend zones (Work, Gym, …). iOS caps at 20 total; we've
+  // used 2 for home + home_near, so add up to 18 more.
+  try {
+    const { zones = [] } = await listPresenceZones()
+    let added = 0
+    for (const z of zones) {
+      if (added >= 18) break
+      if (!z?.id || z.id === 'home' || z.id === 'home_near') continue
+      if (typeof z.lat !== 'number' || typeof z.lon !== 'number') continue
+      try {
+        await Pres.addGeofence({
+          id: z.id,
+          lat: z.lat,
+          lon: z.lon,
+          radius_m: Math.max(z.radius_m || 200, 100),
+        })
+        added++
+      } catch {}
+    }
+  } catch {}
+}
+
 function MotionStep({ onDone }) {
-  // Motion / Activity recognition is a custom plugin (ziggy-presence) — not
-  // in any official Capacitor plugin. Phase 3 wires this up; for now we skip
-  // gracefully so the onboarding completes.
-  useEffect(() => { onDone() }, [onDone])
-  return null
+  // Motion / Activity recognition via ziggy-presence. Used by the plugin to
+  // defer geofence enters that fire while driving — i.e. "drove past home"
+  // false-positives. Skippable; the rest of the presence stack works fine
+  // without it.
+  const t = useT()
+  const [busy, setBusy] = useState(false)
+  const allow = async () => {
+    setBusy(true)
+    const Pres = plugin('ZiggyPresence')
+    if (Pres) {
+      try {
+        await Pres.requestPermissions({ motion: true })
+        // Best-effort: even if the OS prompt was denied, calling
+        // startActivityRecognition is cheap and surfaces a clear error path
+        // through the plugin's promise rejection.
+        try { await Pres.startActivityRecognition() } catch {}
+      } catch {}
+    }
+    setBusy(false); onDone()
+  }
+  // No ziggy-presence plugin (older build) → skip silently as before.
+  useEffect(() => {
+    if (!plugin('ZiggyPresence')) onDone()
+  }, [onDone])
+  return (
+    <PermissionScreen
+      title={t('mobileOnboard.motionTitle')}
+      body={t('mobileOnboard.motionBody')}
+      onAllow={allow}
+      onSkip={onDone}
+      busy={busy}
+    />
+  )
 }
 
 function DoneStep({

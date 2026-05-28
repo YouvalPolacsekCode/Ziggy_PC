@@ -36,6 +36,7 @@ const OtaReleases     = lazy(() => import('./pages/OtaReleases'))
 const AuditLog        = lazy(() => import('./pages/AuditLog'))
 const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
+import MobilePresenceBridge from './lib/mobilePresenceBridge'
 import { useUIStore } from './stores/uiStore'
 import { useWsConnected, useWsMessages } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
@@ -414,7 +415,18 @@ export default function App() {
       if (!token || !alive) return
 
       let lastPos = null
-      const ping = (lat, lon, accuracy) => {
+      // watchPosition with enableHighAccuracy:true can fire at ~1 Hz, which
+      // wallpapers the engine's `no_change` log every second when the phone is
+      // at home. Mirror /presence/join's 20 s floor (bumped to 30 s here since
+      // App.jsx pings are background heartbeats, not the foreground page where
+      // a faster update feels nice). The engine's own dwell + cooldown ensure
+      // a transition is never missed by skipping intermediate samples.
+      const MIN_PING_INTERVAL_MS = 30 * 1000
+      let lastPingAt = 0
+      const ping = (lat, lon, accuracy, { force = false } = {}) => {
+        const now = Date.now()
+        if (!force && now - lastPingAt < MIN_PING_INTERVAL_MS) return
+        lastPingAt = now
         fetch('/api/presence/ping', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -429,12 +441,12 @@ export default function App() {
       )
 
       keepAlive = setInterval(() => {
-        if (lastPos) ping(lastPos.coords.latitude, lastPos.coords.longitude, lastPos.coords.accuracy)
+        if (lastPos) ping(lastPos.coords.latitude, lastPos.coords.longitude, lastPos.coords.accuracy, { force: true })
       }, 2 * 60 * 1000)
 
       const onVisible = () => {
         if (document.visibilityState === 'visible' && lastPos)
-          ping(lastPos.coords.latitude, lastPos.coords.longitude, lastPos.coords.accuracy)
+          ping(lastPos.coords.latitude, lastPos.coords.longitude, lastPos.coords.accuracy, { force: true })
       }
       document.addEventListener('visibilitychange', onVisible)
       cleanupRef = () => {
@@ -481,7 +493,15 @@ export default function App() {
       if (!token || !alive) return
 
       let lastPos = null
-      const ping = (lat, lon, accuracy) => {
+      // Same throttle as the PWA path above. Capacitor.Geolocation.watchPosition
+      // fires as fast as the OS surfaces updates; without this gate the engine
+      // logs `no_change` once per second on a stationary phone at home.
+      const MIN_PING_INTERVAL_MS = 30 * 1000
+      let lastPingAt = 0
+      const ping = (lat, lon, accuracy, { force = false } = {}) => {
+        const now = Date.now()
+        if (!force && now - lastPingAt < MIN_PING_INTERVAL_MS) return
+        lastPingAt = now
         fetch('/api/presence/ping', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -499,7 +519,7 @@ export default function App() {
       } catch { return }
 
       keepAlive = setInterval(() => {
-        if (lastPos) ping(lastPos.coords.latitude, lastPos.coords.longitude, lastPos.coords.accuracy)
+        if (lastPos) ping(lastPos.coords.latitude, lastPos.coords.longitude, lastPos.coords.accuracy, { force: true })
       }, 2 * 60 * 1000)
     }
 
@@ -608,6 +628,11 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {/* Native-only: forwards ZiggyPresence geofence/activity/location events
+          to the backend via /api/mobile/webhook. No-op on the PWA. Mounting
+          here (above AppRoutes) keeps listeners attached across route changes
+          so a transient screen change can't drop a background event. */}
+      <MobilePresenceBridge />
       <AppRoutes />
     </BrowserRouter>
   )
