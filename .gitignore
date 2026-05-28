@@ -26,6 +26,12 @@ config/settings.yaml
 config/secrets.yaml
 user_files/auth.db
 user_files/auth.db-*
+# Everything under user_files/ is runtime state — devices, events, layouts,
+# mobile pairings, presence zones, etc. The .gitkeep marker keeps the
+# directory alive for fresh checkouts. Add !user_files/<name> below only for
+# files a fresh checkout genuinely needs (none today).
+user_files/*
+!user_files/.gitkeep
 
 # --- VS Code / IDEs ---
 .vscode/
