@@ -211,6 +211,18 @@ export default function AdminConsole() {
             ]}
             onOpen={() => navigate('/ops/ota')}
           />
+          <ToolCard
+            badge={t('adminConsole.adminBadge')}
+            title={t('adminConsole.auditTitle')}
+            description={t('adminConsole.auditDesc')}
+            bullets={[
+              t('adminConsole.auditBullet1'),
+              t('adminConsole.auditBullet2'),
+              t('adminConsole.auditBullet3'),
+              t('adminConsole.auditBullet4'),
+            ]}
+            onOpen={() => navigate('/ops/audit')}
+          />
         </div>
       </main>
     </div>

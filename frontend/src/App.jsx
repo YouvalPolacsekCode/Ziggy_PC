@@ -33,6 +33,7 @@ const DebugPage       = lazy(() => import('./pages/DebugPage'))
 const HAUpdate        = lazy(() => import('./pages/HAUpdate'))
 const FeatureFlags    = lazy(() => import('./pages/FeatureFlags'))
 const OtaReleases     = lazy(() => import('./pages/OtaReleases'))
+const AuditLog        = lazy(() => import('./pages/AuditLog'))
 const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
 import { useUIStore } from './stores/uiStore'
@@ -323,6 +324,9 @@ function AppRoutes() {
         </Route>
         <Route element={<OpsPageWrapper title="OTA Releases" />}>
           <Route path="ota" element={<OtaReleases />} />
+        </Route>
+        <Route element={<OpsPageWrapper title="Audit Log" />}>
+          <Route path="audit" element={<AuditLog />} />
         </Route>
       </Route>
 
