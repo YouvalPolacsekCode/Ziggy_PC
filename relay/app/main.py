@@ -12,6 +12,7 @@ from .billing.public import router as billing_public_router
 from .billing.webhooks import router as billing_webhooks_router
 from .database import init_db
 from .routers.audit_log import router as audit_log_router
+from .routers.support_session import router as support_session_router
 from .routers.auth import router as auth_router, ensure_relay_admin
 from .routers.backup_keys import router as backup_keys_router
 from .routers.homes import router as homes_router
@@ -71,6 +72,9 @@ app.include_router(telemetry_router)
 # Audit log read endpoint (Prompt 10 chunk 3). Absolute path
 # /api/admin/audit-log, no prefix, must mount before the catch-all proxy.
 app.include_router(audit_log_router)
+# Support session endpoint (Prompt 10 chunk 3). Absolute path
+# /api/admin/homes/{id}/support-session, no prefix, before catch-all proxy.
+app.include_router(support_session_router)
 # Public presence passthrough — must register BEFORE the catch-all proxy so
 # its specific /api/presence/ping route takes precedence.
 app.include_router(public_presence_router)
