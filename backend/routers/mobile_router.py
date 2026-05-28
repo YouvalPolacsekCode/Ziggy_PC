@@ -118,6 +118,10 @@ async def get_current_device(request: Request) -> dict:
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: mobile-app liveness ping. Returns version + service tag,
+# no state. Used by the app at launch to confirm hub reachability before
+# attempting a pair flow.
 @router.get("/health")
 async def health():
     return {"ok": True, "service": "mobile", "version": "0.1.0"}
@@ -138,6 +142,12 @@ async def mint_pair_code(request: Request, user: dict = Depends(get_current_user
     return result
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: phone redeems a pair code. The 6-char pair-code IS the
+# credential, minted by /api/mobile/pair-code (user-bearer-authed) or by
+# the first-boot QR. Single-use: consume_pair_code 400s on invalid/expired
+# codes, and the audit bus tags the rejection so brute-force attempts on
+# pair codes are visible in /api/debug/events.
 @router.post("/pair", response_model=PairResponse)
 async def pair(req: PairRequest, request: Request):
     """Phone redeems a pair code → receives a device-scoped auth token.

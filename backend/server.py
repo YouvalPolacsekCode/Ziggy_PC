@@ -457,6 +457,10 @@ from fastapi.responses import HTMLResponse as _HTMLResponse
 #   2. Auto-redirects to `/` after the header is processed.
 # Defined BEFORE the StaticFiles mount so it isn't shadowed by index.html.
 # ---------------------------------------------------------------------------
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: stateless HTML page that sets Clear-Site-Data header and
+# redirects to /. No data exposure, no state mutation beyond the browser's
+# own caches/localStorage (which the caller is implicitly opting into).
 @app.get("/reset")
 async def reset_client():
     html = (

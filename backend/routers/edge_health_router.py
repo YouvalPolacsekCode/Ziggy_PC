@@ -121,6 +121,11 @@ def _build_health_snapshot() -> dict:
     }
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: LAN liveness during onboarding. The PWA / mobile app must
+# be able to ping the hub BEFORE the user has a session, to confirm the
+# hub is reachable on the customer's Wi-Fi. Path is /health (not /api/health),
+# distinct from the auth-gated /api/health snapshot.
 @router.get("/health")
 async def edge_health() -> dict:
     """Public liveness endpoint. Always returns 200 with a status payload —

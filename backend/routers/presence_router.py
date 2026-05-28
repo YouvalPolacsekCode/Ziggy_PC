@@ -538,6 +538,11 @@ async def ping_me(body: MePingBody, request: Request, user=Depends(get_current_u
 
 # ── phone ping (no JWT — secured by per-person token) ────────────────────────
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: per-person body-token (PingBody.token) IS the credential.
+# presence_engine.ingest_ping returns rejected_unknown_token if the token
+# doesn't match any registered person → 401 here. Token is rotated only by
+# regenerating the person via /api/presence/persons (admin-tier).
 @router.post("/api/presence/ping")
 async def ping(body: PingBody, request: Request):
     client_ts = _client_ts_from_body(body.ts)
@@ -570,6 +575,10 @@ async def ping(body: PingBody, request: Request):
 
 # ── PWA manifest ──────────────────────────────────────────────────────────────
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: static PWA manifest. The ?token= query param only affects
+# the manifest's start_url so the PWA bookmark opens the right /presence/join
+# page. The token isn't used as a credential here — it's just a deep-link.
 @router.get("/presence/manifest.json")
 async def pwa_manifest(token: str = Query(default="")):
     start_url = f"/presence/join/{token}" if token else "/presence/join/"
@@ -590,6 +599,11 @@ async def pwa_manifest(token: str = Query(default="")):
 
 # ── PWA invite page ───────────────────────────────────────────────────────────
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: per-person presence PWA invite page. The per-person URL
+# token (secrets.token_urlsafe(24)) IS the credential — unknown token → 404.
+# The page itself is HTML+JS that uses that same token in subsequent
+# /api/presence/ping calls.
 @router.get("/presence/join/{token}", response_class=HTMLResponse)
 async def pwa_join(token: str):
     person = presence_engine.find_person_by_token(token)

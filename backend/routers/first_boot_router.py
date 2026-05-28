@@ -218,6 +218,11 @@ _HTML_BODY_DONE = """
 """
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: first-boot pairing UI. Customer hasn't created an owner
+# account yet when they hit this URL. Page shows the QR + 6-char code on a
+# fresh hub, and a "this hub is already set up" message after onboarding
+# completes (first_boot.get_claim_qr returns None).
 @router.get("/pair", response_class=HTMLResponse)
 async def pair_page(request: Request) -> HTMLResponse:
     """No-auth LAN page rendering the first-boot QR.
@@ -242,6 +247,9 @@ async def pair_page(request: Request) -> HTMLResponse:
 
 # ─── /api/onboarding/first-boot/qr.json (JSON) ──────────────────────────────
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: JSON sibling of /pair for diagnostics. Same pre-account
+# rationale. 404 once onboarding completes (get_claim_qr returns None).
 @router.get("/api/onboarding/first-boot/qr.json")
 async def pair_qr_json(request: Request) -> dict:
     """JSON sibling of /pair. 404 when onboarding is complete."""

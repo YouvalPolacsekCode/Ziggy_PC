@@ -203,6 +203,10 @@ async def revoke_invite(token: str, _: dict = Depends(require_role("super_admin"
 # Public endpoints (no auth — used from the accept page)
 # ---------------------------------------------------------------------------
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: invite token (32-byte URL-safe) IS the credential. The
+# user accepting an invite cannot have a bearer yet — they're being invited
+# to create their account. Already-accepted invites return 410.
 @router.get("/api/auth/invite/{token}")
 async def get_invite(token: str):
     inv = await asyncio.to_thread(_find, token)
@@ -222,6 +226,10 @@ async def get_invite(token: str):
     }
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: invite token IS the credential — consumes it single-use.
+# Same chicken-and-egg as the GET sibling: the accepting user doesn't have
+# a bearer until this call mints them one.
 @router.post("/api/auth/invite/{token}/accept")
 async def accept_invite(token: str, body: AcceptInviteBody):
     invites = await _load_async()

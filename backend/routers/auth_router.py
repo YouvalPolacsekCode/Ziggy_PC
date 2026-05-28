@@ -117,6 +117,11 @@ class UpdateUserBody(BaseModel):
 # Public endpoints
 # ---------------------------------------------------------------------------
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: bootstrap signal for the login screen — tells the FE whether
+# any user exists yet so it knows to show setup vs login. If a bearer is
+# sent and a session exists, returns the user's claims; never leaks
+# password material.
 @router.get("/api/auth/status")
 async def auth_status(request: Request):
     # DB is the source of truth post-migration; yaml fallback covers a fresh
@@ -140,6 +145,10 @@ async def auth_status(request: Request):
     }
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: one-shot first-boot setup. Internally 409s once any user
+# exists, so adding a bearer requirement would create a chicken-and-egg
+# bootstrap problem.
 @router.post("/api/auth/setup")
 async def setup(body: SetupBody):
     """First-time account setup — creates the super_admin owner account."""
@@ -162,6 +171,11 @@ async def setup(body: SetupBody):
     return {"token": token, "role": "super_admin"}
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: login IS the auth boundary. Rate limiting is a separate
+# concern (flagged for a follow-up prompt). Empty-fleet first-boot branch
+# returns a placeholder so the FE can chain into /setup without a second
+# prompt — fine because /setup is the next gate.
 @router.post("/api/auth/login")
 async def login(body: LoginBody):
     # Empty-fleet first-boot UX: return a placeholder token so the FE can
@@ -241,6 +255,11 @@ async def change_password(body: ChangePasswordBody, current: dict = Depends(get_
     return {"token": token}
 
 
+# PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
+# Justification: idempotent session-invalidator. Reads the bearer if present
+# and removes that one session row; always returns {ok: true}. Adding an
+# auth gate would block clearing a stale/already-rotated session, which is
+# exactly the recovery case logout is for.
 @router.post("/api/auth/logout")
 async def logout(request: Request):
     auth = request.headers.get("Authorization", "")
