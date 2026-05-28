@@ -1,4 +1,5 @@
-"""Edge telemetry poster — fires every 5 minutes (Prompt 2 §C, chunk 2.4).
+"""Edge telemetry poster — fires every 5 minutes (Prompt 2 §C, chunk 2.4;
+extended with richer collectors in Prompt 4 chunk 2.F).
 
 Companion to relay/app/routers/telemetry.py. Single entry point:
 
@@ -8,23 +9,58 @@ Collects what we can, posts what we collected, drops on failure. The
 relay is the source of truth for retention — there is no local
 spool/retry. Skipped intervals just become gaps in the daily aggregate.
 
+Each collector is an independent function returning either a dict slice
+(to be merged into the payload) or None / {} when it can't collect.
+post_once tolerates any collector failing — partial telemetry is
+strictly better than no telemetry, and the relay aggregator skips
+missing keys in its averages.
+
 Payload fields (every one is best-effort; absent means "couldn't read
 this tick"):
 
-    ha_version             from GET <ha_url>/api/config
-    ziggy_version          env ZIGGY_VERSION → settings.version → "0.0.0+local"
-    uptime_s               process uptime since import
-    sensors                [{entity_id, battery, state}] from HA states,
-                           filtered to device_class=battery; capped at 200
-    disk                   {used_gb, total_gb} for the filesystem at "/"
-    cpu_pct                psutil.cpu_percent(interval=None) — non-blocking
-    mem_pct                psutil.virtual_memory().percent
-    containers             [{name, state}] from docker — only when the SDK
-                           imports and the socket is reachable
-    last_automation_trigger
-                           ISO-8601 of the most recent automation_traces
-                           seen via HA's /api/services/logbook (best-effort)
-    collected_at           ISO-8601 of when we built this payload
+  Versions
+    ha_version              from GET <ha_url>/api/config
+    ziggy_version           env ZIGGY_VERSION → settings.version → "0.0.0+local"
+
+  Uptime
+    uptime_s                process uptime since import (legacy field —
+                            relay aggregator reads this name)
+    uptime_seconds          alias of uptime_s under the spec name
+    system_uptime_s         host uptime since boot (psutil.boot_time)
+
+  Sensors
+    sensors                 [{entity_id, battery, state}] for entities with
+                            a battery reading; capped at 200 (legacy shape)
+    sensor_count            total count of entities in HA's `sensor.*`
+                            domain (proxy for hub sensor inventory)
+    sensor_battery_low_count  number of battery-bearing entities reporting
+                            below settings.anomaly_engine.anom08_battery_threshold
+
+  System
+    disk                    {used_gb, total_gb} (legacy)
+    disk_pct_used           100 * used / total
+    cpu_pct                 psutil.cpu_percent(interval=None) — non-blocking
+    mem_pct                 psutil.virtual_memory().percent
+
+  Containers
+    containers              [{name, state}] (legacy)
+    container_health        [{name, status, last_restart}] — richer view
+                            with each container's last StartedAt timestamp
+
+  Automation
+    last_automation_trigger     ISO-8601 of the latest automation entity's
+                                last_triggered attribute (legacy name)
+    last_automation_trigger_at  alias under the spec name
+
+  Bookkeeping
+    collected_at            ISO-8601 of when we built this payload
+
+Module-level state for the /health endpoint (chunk 2.G):
+
+    LAST_POST_AT_UTC        ISO-8601 of the most recent successful POST,
+                            or None until the first post lands. Updated
+                            by post_once on a 2xx response. In-memory
+                            only — restarts reset it.
 """
 
 from __future__ import annotations
@@ -50,6 +86,16 @@ _PROCESS_START_S = time.time()
 # entities will still report something useful; the aggregate cares about
 # the count, not the full list.
 MAX_SENSORS_REPORTED = 200
+
+# Default battery-low threshold mirrors backend/routers/health_router.py.
+# Kept in sync via settings.anomaly_engine.anom08_battery_threshold; this
+# constant is only used when settings is missing the key entirely.
+_BATTERY_LOW_DEFAULT_PCT = 20
+
+# Last successful POST timestamp — consumed by the LAN /health endpoint
+# (Prompt 4 chunk 2.G) so the PWA can show "edge last reported X ago".
+# Reset on process restart; that's fine for a liveness indicator.
+LAST_POST_AT_UTC: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +144,12 @@ def _get_ha_version(ha_cfg: dict, *, timeout_s: float) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _collect_system_metrics() -> dict:
-    """Disk / CPU / mem snapshot. Each key independent — partial dicts are fine."""
+    """Disk / CPU / mem snapshot. Each key independent — partial dicts are fine.
+
+    Adds disk_pct_used (chunk 2.F) alongside the legacy disk{used_gb, total_gb}
+    so consumers can drop the dict shape later without breaking the relay
+    aggregator that already reads `disk`.
+    """
     out: dict[str, Any] = {}
     try:
         import psutil  # type: ignore
@@ -110,6 +161,8 @@ def _collect_system_metrics() -> dict:
             "used_gb":  round(d.used / (1024 ** 3), 2),
             "total_gb": round(d.total / (1024 ** 3), 2),
         }
+        if d.total > 0:
+            out["disk_pct_used"] = round(100.0 * d.used / d.total, 2)
     except Exception:
         pass
     try:
@@ -121,6 +174,19 @@ def _collect_system_metrics() -> dict:
         pass
     try:
         out["mem_pct"] = float(psutil.virtual_memory().percent)
+    except Exception:
+        pass
+    return out
+
+
+def _collect_system_uptime() -> dict:
+    """Host uptime since boot. Separate from process uptime so admins can
+    distinguish 'Ziggy restarted' from 'whole box rebooted'."""
+    out: dict[str, Any] = {}
+    try:
+        import psutil  # type: ignore
+        boot = psutil.boot_time()
+        out["system_uptime_s"] = max(0, int(time.time() - boot))
     except Exception:
         pass
     return out
@@ -184,6 +250,77 @@ def _collect_sensors(ha_cfg: dict, *, timeout_s: float) -> Optional[list]:
     return out
 
 
+def _collect_sensor_counts(
+    ha_cfg: dict,
+    *,
+    timeout_s: float,
+    battery_threshold_pct: int = _BATTERY_LOW_DEFAULT_PCT,
+) -> dict:
+    """Return {sensor_count, sensor_battery_low_count}.
+
+    sensor_count               total HA entities with id starting `sensor.`
+                               (deduped by entity_id — HA's /api/states
+                               already guarantees unique ids).
+    sensor_battery_low_count   number of battery-bearing entities whose
+                               level is below battery_threshold_pct. Looks
+                               at device_class=battery (where the state IS
+                               the level) and the battery_level attribute
+                               (for sensors that report battery as an attr).
+
+    Returns {} on HA unreachable / non-200. Partial reads (e.g. malformed
+    individual entries) are tolerated entry-by-entry.
+    """
+    ha_url = ha_cfg.get("url")
+    ha_token = ha_cfg.get("token")
+    if not ha_url or not ha_token:
+        return {}
+    try:
+        resp = requests.get(
+            ha_url.rstrip("/") + "/api/states",
+            headers={"Authorization": f"Bearer {ha_token}"},
+            timeout=timeout_s,
+        )
+        if resp.status_code != 200:
+            return {}
+        states = resp.json()
+        if not isinstance(states, list):
+            return {}
+    except Exception:
+        return {}
+
+    sensor_count = 0
+    battery_low = 0
+    seen_ids: set[str] = set()
+
+    for entity in states:
+        if not isinstance(entity, dict):
+            continue
+        eid = entity.get("entity_id")
+        if not isinstance(eid, str) or eid in seen_ids:
+            continue
+        seen_ids.add(eid)
+        if eid.startswith("sensor."):
+            sensor_count += 1
+        attrs = entity.get("attributes") or {}
+        dev_class = attrs.get("device_class")
+        batt_attr = attrs.get("battery_level")
+        battery: Optional[float] = None
+        if dev_class == "battery":
+            try:
+                battery = float(entity.get("state"))
+            except (TypeError, ValueError):
+                battery = None
+        if battery is None and isinstance(batt_attr, (int, float)):
+            battery = float(batt_attr)
+        if battery is not None and 0 <= battery < battery_threshold_pct:
+            battery_low += 1
+
+    return {
+        "sensor_count":             sensor_count,
+        "sensor_battery_low_count": battery_low,
+    }
+
+
 def _collect_last_automation_trigger() -> Optional[str]:
     """Best-effort: most recent automation last_triggered across HA states.
 
@@ -225,7 +362,10 @@ def _collect_last_automation_trigger() -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _collect_containers() -> Optional[list]:
-    """List containers + their state. None if docker isn't reachable."""
+    """Legacy container collector — kept for backwards compat with any
+    consumer pinned to {name, state}. The richer view lives in
+    _collect_container_health(). None if docker isn't reachable.
+    """
     try:
         import docker  # type: ignore
     except ImportError:
@@ -240,32 +380,109 @@ def _collect_containers() -> Optional[list]:
         return None
 
 
+def _collect_container_health() -> Optional[list]:
+    """Per-container {name, status, last_restart} via docker SDK.
+
+    last_restart is the container's StartedAt — equivalent to "when did this
+    instance start" (a recreate or restart both update it). ISO-8601 UTC.
+
+    Returns None on docker unreachable / SDK missing. Individual container
+    inspect failures fall through to a partial entry rather than dropping
+    the whole list — same partial-tolerance posture as the other collectors.
+    """
+    try:
+        import docker  # type: ignore
+    except ImportError:
+        return None
+    try:
+        client = docker.from_env()
+        containers = client.containers.list(all=True)
+    except Exception:
+        return None
+
+    out: list[dict] = []
+    for c in containers:
+        entry: dict[str, Any] = {"name": c.name, "status": c.status}
+        try:
+            attrs = c.attrs or {}
+            started = (attrs.get("State") or {}).get("StartedAt")
+            if isinstance(started, str) and started and not started.startswith("0001-"):
+                # Docker emits "0001-01-01T00:00:00Z" for a never-started
+                # container. Skip the sentinel rather than emit a 0-year date.
+                entry["last_restart"] = started
+        except Exception:
+            pass
+        out.append(entry)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Payload assembly + POST
 # ---------------------------------------------------------------------------
 
+def _battery_threshold_from_settings(settings: dict) -> int:
+    """Read settings.anomaly_engine.anom08_battery_threshold with the same
+    default backend/routers/health_router.py uses. Keeps the two surfaces
+    aligned without sharing a constant across services/backend layers."""
+    try:
+        v = (settings.get("anomaly_engine") or {}).get("anom08_battery_threshold")
+        if isinstance(v, (int, float)):
+            return int(v)
+    except Exception:
+        pass
+    return _BATTERY_LOW_DEFAULT_PCT
+
+
 def _build_payload(settings: dict, *, timeout_s: float) -> dict:
-    """Assemble the JSON body. Each collector is independent — partial OK."""
+    """Assemble the JSON body. Each collector is independent — partial OK.
+
+    Chunk 2.F additions: system_uptime_s, sensor_count, sensor_battery_low_count,
+    disk_pct_used, container_health, plus uptime_seconds /
+    last_automation_trigger_at aliases under the spec field names.
+    """
     ha_cfg = settings.get("home_assistant") or {}
+    process_uptime_s = int(time.time() - _PROCESS_START_S)
     payload: dict[str, Any] = {
-        "ziggy_version": _get_ziggy_version(settings),
-        "uptime_s":      int(time.time() - _PROCESS_START_S),
-        "collected_at":  datetime.now(timezone.utc).isoformat(),
+        "ziggy_version":  _get_ziggy_version(settings),
+        "uptime_s":       process_uptime_s,
+        "uptime_seconds": process_uptime_s,   # spec-named alias of uptime_s
+        "collected_at":   datetime.now(timezone.utc).isoformat(),
     }
+
+    # ── Versions ─────────────────────────────────────────────────────────
     ha_v = _get_ha_version(ha_cfg, timeout_s=timeout_s)
     if ha_v is not None:
         payload["ha_version"] = ha_v
+
+    # ── Uptime (system, in addition to process) ──────────────────────────
+    payload.update(_collect_system_uptime())
+
+    # ── Sensors — legacy list + new counts (independent failures OK) ─────
     sensors = _collect_sensors(ha_cfg, timeout_s=timeout_s)
     if sensors is not None:
         payload["sensors"] = sensors
-    sysm = _collect_system_metrics()
-    payload.update(sysm)
+    sensor_counts = _collect_sensor_counts(
+        ha_cfg, timeout_s=timeout_s,
+        battery_threshold_pct=_battery_threshold_from_settings(settings),
+    )
+    payload.update(sensor_counts)
+
+    # ── System metrics — disk/cpu/mem (already partial-tolerant) ─────────
+    payload.update(_collect_system_metrics())
+
+    # ── Containers — legacy + richer view ────────────────────────────────
     containers = _collect_containers()
     if containers is not None:
         payload["containers"] = containers
+    container_health = _collect_container_health()
+    if container_health is not None:
+        payload["container_health"] = container_health
+
+    # ── Last automation trigger (legacy name + spec-named alias) ─────────
     lat = _collect_last_automation_trigger()
     if lat is not None:
         payload["last_automation_trigger"] = lat
+        payload["last_automation_trigger_at"] = lat
     return payload
 
 
@@ -328,6 +545,8 @@ def post_once(
             )
 
         if 200 <= resp.status_code < 300:
+            global LAST_POST_AT_UTC
+            LAST_POST_AT_UTC = datetime.now(timezone.utc).isoformat()
             return TelemetryPostResult(
                 ok=True, reason="posted", status=resp.status_code,
                 payload_bytes=len(body),
