@@ -60,7 +60,7 @@ based offline signing that would defend against a relay compromise.
 from __future__ import annotations
 
 import json as _json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -73,7 +73,19 @@ from ..database import get_db
 
 router = APIRouter()
 
-OTA_MANIFEST_SCHEMA_VERSION = 1
+# Schema 2 (Prompt 9 chunk 3) adds subscription_state +
+# subscription_state_expires_at to the manifest. JSON additive: schema-1
+# consumers ignore the new fields; schema-2 consumers read them. The
+# version bump is a hygiene signal, not enforced — no edge code asserts
+# schema_version=N today.
+OTA_MANIFEST_SCHEMA_VERSION = 2
+
+# How long an edge agent may trust a cached subscription_state value
+# before treating it as stale. 24h gives slack against transient relay
+# outages well beyond the 1h poll cadence. Tightening to e.g. 2h would
+# narrow the "cancelled user still using cloud LLM" window but make
+# brief relay downtime louder for paying customers.
+SUBSCRIPTION_STATE_TTL_HOURS = 24
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +149,9 @@ async def get_ota_manifest(device_id: str, request: Request):
     body, so the signed payload is `"<ts>."` plus zero bytes. Same scheme
     as POST handlers but with the body bytes always empty.
 
-    Response shape:
+    Response shape (schema 2):
       {
-        schema_version: 1,
+        schema_version: 2,
         home_id: "home-abc",
         device_id: "home-abc",       # v1: equals home_id
         release_id: 7,
@@ -148,11 +160,18 @@ async def get_ota_manifest(device_id: str, request: Request):
         image_digests: {<name>: <digest>, ...},
         notes: "...",
         released_at: "<iso8601>",
+        subscription_state: "active",                   # Prompt 9 chunk 3
+        subscription_state_expires_at: "<iso8601>",     # cached value TTL
         signature: "t=...,v1=..."
       }
 
-    Returns 401 on signature mismatch, 403 on suspended home, 404 on
-    unknown home or empty release catalog.
+    The subscription_state pair is what the edge agent caches under
+    user_files/subscription_state.json and that the cloud-LLM + backup
+    gates consult. Edge consumers older than schema 2 ignore the new
+    fields and remain ungated (matching their pre-Prompt-9 behavior).
+
+    Returns 401 on signature mismatch, 403 on suspended home or
+    billing-gated home, 404 on unknown home or empty release catalog.
     """
     src_ip = _client_ip(request)
     sig_header = request.headers.get("X-Ziggy-Signature", "")
@@ -239,6 +258,17 @@ async def get_ota_manifest(device_id: str, request: Request):
         raise HTTPException(404, "No release published.")
 
     manifest = _release_row_to_payload(rel_rows[0], home_id)
+    # Subscription state carried inside the signed body so the edge
+    # agent can verify it under the same HMAC as the rest of the
+    # manifest. Reaching this point means the gate is green
+    # (subscription_state ∈ {trialing, active}) — but we still surface
+    # the exact value so the edge knows e.g. 'trialing' vs 'active' if
+    # it later wants to render a trial-end banner.
+    manifest["subscription_state"] = home["subscription_state"]
+    manifest["subscription_state_expires_at"] = (
+        datetime.now(timezone.utc)
+        + timedelta(hours=SUBSCRIPTION_STATE_TTL_HOURS)
+    ).isoformat()
     body_bytes = _canonical_bytes_for_signing(manifest)
     manifest["signature"] = sign_signature(secret, body_bytes)
 
