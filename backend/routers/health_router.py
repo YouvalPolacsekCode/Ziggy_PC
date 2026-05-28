@@ -17,11 +17,20 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from core.debug_bus import bus as _dbus, BASIC
 from core.errors import ErrorCode, ZiggyError
+from .auth_deps import require_role
 
 router = APIRouter()
+
+# Bucket-B promotions in PROMPT_SECURITY_HARDENING_V2:
+# - reload-zigbee restarts the Zigbee coordinator integration. Structural.
+# - debug-coordinator is a diagnostic; admin tier matches the rest of the
+#   debug surface (debug_router is super_admin; this lower-tier diagnostic
+#   stays admin per the kit-shape rubric — the kit owner needs it).
+# Per-handler emits with auth_added=True populate the 30-day audit window.
 
 # Supported Zigbee coordinator integration domains, in preference order.
 # ZHA is the native HA integration; deCONZ covers ConBee/RaspBee; zigbee2mqtt
@@ -250,12 +259,15 @@ async def get_health():
 
 
 @router.post("/api/health/reload-zigbee")
-async def reload_zigbee():
+async def reload_zigbee(_user: dict = Depends(require_role("admin"))):
     """Reload the Zigbee coordinator integration via HA's homeassistant.reload_config_entry service.
 
     Supports ZHA, deCONZ, and Zigbee2MQTT. Discovers the entry_id dynamically.
     Safe to call: HA reloads the integration gracefully without device data loss.
     """
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/health/reload-zigbee",
+               user=_user.get("username"), auth_added=True)
     global _coordinator_cache_checked  # allow retry on explicit reload request
 
     # Always re-discover on an explicit reload request (clears cache so fresh lookup happens)
@@ -300,8 +312,11 @@ async def reload_zigbee():
 
 
 @router.get("/api/health/debug-coordinator")
-async def debug_coordinator():
+async def debug_coordinator(_user: dict = Depends(require_role("admin"))):
     """Return Zigbee coordinator discovery result for diagnostics."""
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="GET /api/health/debug-coordinator",
+               user=_user.get("username"), auth_added=True)
     global _coordinator_cache_checked
     _coordinator_cache_checked = False  # force fresh lookup
     coord = await _discover_coordinator_entry()
