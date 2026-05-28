@@ -172,11 +172,34 @@ async def rotate_hub_secret(request: Request):
 
 @router.get("/")
 async def list_homes(request: Request):
+    """Fleet list for the admin dashboard.
+
+    Returns one row per home with the fields the operator console needs to
+    render a traffic-light fleet view without N follow-up calls per home:
+
+      * Identity / lifecycle: id, name, type, tunnel_url, status, created_at,
+        owner_email, user_count.
+      * Billing (Prompt 9): subscription_state, plan_id, kit_received_at,
+        trial_ends_at, cancelled_at.
+      * Tunnel (Prompt 3 / S2): cf_tunnel_id.
+      * OTA (Prompt 2): ota_pinned_release_id.
+      * Telemetry liveness (Prompt 2): last_seen_ts = MAX(telemetry_raw.ts)
+        for the home. NULL means the hub has never posted, which the
+        dashboard surfaces as a red traffic light.
+
+    All additions are additive — older callers (CloudAdmin pre-Prompt-10,
+    the mobile app) ignore unknown fields. The correlated subquery for
+    last_seen_ts is covered by idx_telemetry_raw_home_ts.
+    """
     require_role("relay_admin")(request)
     async with get_db() as db:
         rows = await db.execute_fetchall(
             """SELECT h.id, h.name, h.type, h.tunnel_url, h.status, h.created_at, h.owner_email,
-                      COUNT(u.id) as user_count
+                      h.cf_tunnel_id, h.subscription_state, h.plan_id,
+                      h.kit_received_at, h.trial_ends_at, h.cancelled_at,
+                      h.ota_pinned_release_id,
+                      COUNT(u.id) AS user_count,
+                      (SELECT MAX(t.ts) FROM telemetry_raw t WHERE t.home_id = h.id) AS last_seen_ts
                FROM homes h
                LEFT JOIN users u ON u.home_id = h.id
                GROUP BY h.id ORDER BY h.created_at DESC"""
