@@ -3312,4 +3312,9 @@ export default {
   'otaPage.selectRelease':              'בחר גרסה…',
   'otaPage.save':                       'שמור',
   'otaPage.homeCount':                  '{n} בתים',
+
+  // ── Founder slot widget (CloudAdmin header, Prompt 9 §F) ────────────
+  'cloud.founderSlots':                 'נותרו {remaining} מתוך {total} מסלולי מייסדים',
+  'cloud.founderSlotsLoading':          'טוען מסלולי מייסדים…',
+  'cloud.founderSlotsTooltip':          'נתפסו {claimed} מתוך {total}',
 }

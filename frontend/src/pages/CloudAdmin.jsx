@@ -18,6 +18,7 @@ import {
   relayOtaReleases, relayHomeOtaPin, relaySetHomeOtaPin,
   relayOtaCohorts, relaySetHomeCohort,
   relayHomeBackupStatus,
+  relayFounderSlotsRemaining,
   isRelayConfigured, getRelayUrl, setRelayUrl, setRelayToken, relayLogin,
 } from '../lib/api'
 
@@ -491,6 +492,55 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
   )
 }
 
+// ── Founder slot counter ──────────────────────────────────────────────────────
+// Reads /api/billing/founder-slots/remaining (public, rate-limited). Shows the
+// "N of 30 founder slots remaining" mini-widget in the homes header. Silent
+// no-op when the relay isn't configured (no slot bookkeeping locally).
+function FounderSlotWidget() {
+  const t = useT()
+  const [state, setState] = useState({ status: 'loading', remaining: null, total: null })
+
+  useEffect(() => {
+    if (!isRelayConfigured()) {
+      setState({ status: 'na', remaining: null, total: null })
+      return
+    }
+    let cancelled = false
+    relayFounderSlotsRemaining()
+      .then(d => { if (!cancelled) setState({ status: 'ok', remaining: d?.remaining, total: d?.total ?? 30 }) })
+      .catch(()  => { if (!cancelled) setState({ status: 'error', remaining: null, total: null }) })
+    return () => { cancelled = true }
+  }, [])
+
+  if (state.status === 'na' || state.status === 'error') return null
+  if (state.status === 'loading') {
+    return (
+      <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+        {t('cloud.founderSlotsLoading')}
+      </span>
+    )
+  }
+  const { remaining, total } = state
+  const claimed = (total ?? 30) - (remaining ?? 0)
+  const pct = total ? Math.min(100, Math.max(0, (claimed / total) * 100)) : 0
+  // Tint red as we approach the cap.
+  const tone = remaining <= 3 ? 'var(--warn)' : remaining <= 10 ? 'var(--accent)' : 'var(--ok)'
+
+  return (
+    <div
+      title={t('cloud.founderSlotsTooltip', { claimed, total })}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 999, border: '0.5px solid var(--line)', background: 'var(--bg-2)' }}
+    >
+      <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink)' }}>
+        {t('cloud.founderSlots', { remaining, total })}
+      </span>
+      <span style={{ width: 60, height: 4, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+        <span style={{ display: 'block', height: '100%', width: `${pct}%`, background: tone, transition: 'width 0.3s' }} />
+      </span>
+    </div>
+  )
+}
+
 // ── Per-home card with expandable users ───────────────────────────────────────
 //
 // Relay-managed homes get a 4-tab expansion (Members / Telemetry / OTA /
@@ -791,9 +841,10 @@ export default function CloudAdmin() {
       <div style={{ marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Home size={13} style={{ color: 'var(--ink-faint)' }} />
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-faint)', flex: 1 }}>
             {t('cloud.homesHeader', { n: 1 + relayHomes.length })}
           </p>
+          <FounderSlotWidget />
         </div>
 
         {/* This home */}

@@ -3357,4 +3357,9 @@ export default {
   'otaPage.selectRelease':              'Select a release…',
   'otaPage.save':                       'Save',
   'otaPage.homeCount':                  '{n} homes',
+
+  // ── Founder slot widget (CloudAdmin header, Prompt 9 §F) ────────────
+  'cloud.founderSlots':                 '{remaining} of {total} founder slots remaining',
+  'cloud.founderSlotsLoading':          'Loading founder slots…',
+  'cloud.founderSlotsTooltip':          '{claimed} of {total} claimed',
 }
