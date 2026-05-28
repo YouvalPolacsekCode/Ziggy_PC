@@ -57,3 +57,23 @@ SUBSCRIPTION_STATES = (
 )
 
 ACTIVE_SUBSCRIPTION_STATES = frozenset({"trialing", "active"})
+
+
+def is_subscription_active(*, home_status: str, subscription_state: str) -> bool:
+    """The cloud-features kill-switch gate. Shared by every gated endpoint.
+
+    Returns True iff the home is BOTH operationally active (status not
+    'suspended') AND in a billing state that grants cloud features
+    (subscription_state in ACTIVE_SUBSCRIPTION_STATES = {'trialing','active'}).
+
+    Two columns are deliberately separate (see docs/BILLING_AUDIT.md §1.3):
+      * homes.status         operational lifecycle (founder safety hold)
+      * subscription_state   billing lifecycle (Stripe webhook-driven)
+
+    Both gates must be green. The 'suspended' shortcut is checked first
+    so that bypass logic (e.g. proxy.py's founder support bypass) can
+    layer above this helper without re-reading two columns.
+    """
+    if home_status == "suspended":
+        return False
+    return subscription_state in ACTIVE_SUBSCRIPTION_STATES

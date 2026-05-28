@@ -63,6 +63,7 @@ from __future__ import annotations
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from ..billing import is_subscription_active
 from ..database import get_db
 
 router = APIRouter()
@@ -86,18 +87,30 @@ _STRIP_RESPONSE_HEADERS = {
 async def _resolve_home() -> dict:
     """Return the single active home, or 404 if none / 503 if ambiguous.
 
-    Token→home routing is not yet implemented for multi-tenant installs.
+    "Active" now means both gates green: operational status not 'suspended'
+    AND subscription_state in {trialing, active}. A cancelled-but-not-
+    suspended home is invisible to presence — the family member's GPS
+    pings stop landing once cloud features are off, matching the broader
+    kill-switch semantics. Token→home routing is not yet implemented for
+    multi-tenant installs.
     """
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT id, tunnel_url, relay_secret, status FROM homes "
-            "WHERE status != 'suspended'"
+            "SELECT id, tunnel_url, relay_secret, status, subscription_state "
+            "FROM homes"
         )
-    if not rows:
+    candidates = [
+        dict(r) for r in rows
+        if is_subscription_active(
+            home_status=r["status"],
+            subscription_state=r["subscription_state"],
+        )
+    ]
+    if not candidates:
         raise HTTPException(404, "No home configured.")
-    if len(rows) > 1:
+    if len(candidates) > 1:
         raise HTTPException(503, "Multi-home presence routing not yet implemented.")
-    home = dict(rows[0])
+    home = candidates[0]
     if not home["tunnel_url"]:
         raise HTTPException(503, "Home hub not yet connected.")
     return home

@@ -44,11 +44,11 @@ from pydantic import BaseModel
 
 from ..audit import log_event, verify as verify_signature
 from ..auth import current_user
+from ..billing import is_subscription_active
 from ..database import get_db
 from .ota import (
     _client_ip,
     _resolve_home_id_from_device_id,
-    _subscription_active,
 )
 
 router = APIRouter()
@@ -115,7 +115,7 @@ async def post_telemetry(device_id: str, request: Request):
         )
         raise HTTPException(401, "Invalid signature.")
 
-    if not await _subscription_active(
+    if not is_subscription_active(
         home_status=home["status"],
         subscription_state=home["subscription_state"],
     ):

@@ -68,7 +68,7 @@ from pydantic import BaseModel, Field
 
 from ..audit import log_event, sign as sign_signature, verify as verify_signature
 from ..auth import current_user, require_role
-from ..billing import ACTIVE_SUBSCRIPTION_STATES
+from ..billing import is_subscription_active as _subscription_active
 from ..database import get_db
 
 router = APIRouter()
@@ -92,31 +92,6 @@ def _resolve_home_id_from_device_id(device_id: str) -> str:
     a search-and-replace across handlers.
     """
     return device_id
-
-
-async def _subscription_active(*, home_status: str, subscription_state: str) -> bool:
-    """Subscription kill-switch (Prompt 9 chunk 2 — swap of the Prompt 2 stub).
-
-    Returns True iff the home is BOTH operationally active (status not
-    'suspended') AND in a billing state that grants cloud features
-    (subscription_state in ACTIVE_SUBSCRIPTION_STATES = {'trialing','active'}).
-
-    The two columns are deliberately separate (see docs/BILLING_AUDIT.md §1.3):
-
-      * homes.status         operational lifecycle. 'suspended' = founder
-                             manually locked the hub (abuse, safety hold,
-                             chargeback fraud), unrelated to billing.
-      * subscription_state   billing lifecycle, written exclusively by the
-                             Stripe webhook handlers in relay/app/billing.
-
-    Both gates must be green. Provisioning / pending_setup / failed status
-    values are NOT considered suspended — the edge may be mid-install
-    and still need its first manifest, matching the original stub's
-    contract preserved here byte-for-byte.
-    """
-    if home_status == "suspended":
-        return False
-    return subscription_state in ACTIVE_SUBSCRIPTION_STATES
 
 
 def _release_row_to_payload(row: Any, home_id: str) -> dict:
@@ -208,7 +183,7 @@ async def get_ota_manifest(device_id: str, request: Request):
         )
         raise HTTPException(401, "Invalid signature.")
 
-    if not await _subscription_active(
+    if not _subscription_active(
         home_status=home["status"],
         subscription_state=home["subscription_state"],
     ):

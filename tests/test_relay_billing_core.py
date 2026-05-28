@@ -55,7 +55,7 @@ if _has_jwt:
     from relay.app.billing.admin import router as admin_router
     from relay.app.billing.invoice import VAT_RATE, vat_split_inclusive
     from relay.app.billing.slot_counter import FOUNDER_SLOT_CAP, RETURN_WINDOW_DAYS
-    from relay.app.routers.ota import _subscription_active
+    from relay.app.billing import is_subscription_active as _subscription_active
 
 
 HOME_A = "home-a"
@@ -341,10 +341,10 @@ async def test_invoice_vat_recorded(db_with_homes):
     ("pending_setup", "active", True),
     ("failed: x", "active", True),
 ])
-async def test_subscription_active_matrix(status, sub, expected):
-    got = await _subscription_active(home_status=status, subscription_state=sub)
+def test_subscription_active_matrix(status, sub, expected):
+    got = _subscription_active(home_status=status, subscription_state=sub)
     assert got is expected, (
-        f"_subscription_active(status={status!r}, sub={sub!r}) "
+        f"is_subscription_active(status={status!r}, sub={sub!r}) "
         f"expected {expected}, got {got}"
     )
 

@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from ..auth import current_user
+from ..billing import is_subscription_active
 from ..database import get_db
 
 router = APIRouter(prefix="/proxy")
@@ -59,7 +60,8 @@ async def proxy(home_id: str, path: str, request: Request):
 
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT tunnel_url, relay_secret, status FROM homes WHERE id=?", (home_id,)
+            "SELECT tunnel_url, relay_secret, status, subscription_state "
+            "FROM homes WHERE id=?", (home_id,)
         )
         if not rows:
             raise HTTPException(404, "Home not found.")
@@ -67,18 +69,20 @@ async def proxy(home_id: str, path: str, request: Request):
 
     # Founder support bypass (Prompt 9 decision 8). The founder must
     # always reach a customer's hub for support, regardless of gating
-    # — both the 'suspended' operational status here and the
-    # subscription_state gates that chunk 3 will layer on top of this
-    # router. role 'relay_admin' is already the founder's authenticated
-    # role across every other admin endpoint, so reusing it keeps the
-    # surface small and audit-traceable (the proxy still records the
-    # caller via existing X-Relay-User/Role headers below).
+    # — both the 'suspended' operational status and the subscription
+    # billing gate. role 'relay_admin' is already the founder's
+    # authenticated role across every other admin endpoint, so reusing
+    # it keeps the surface small and audit-traceable (the proxy still
+    # records the caller via existing X-Relay-User/Role headers below).
     is_founder_support = user.get("role") == "relay_admin"
 
     if not home["tunnel_url"]:
         raise HTTPException(503, "Home hub not yet connected.")
-    if home["status"] == "suspended" and not is_founder_support:
-        raise HTTPException(403, "Home is suspended.")
+    if not is_founder_support and not is_subscription_active(
+        home_status=home["status"],
+        subscription_state=home["subscription_state"],
+    ):
+        raise HTTPException(403, "Home access is currently restricted.")
 
     # Build target URL
     target = f"{home['tunnel_url']}/{path}"

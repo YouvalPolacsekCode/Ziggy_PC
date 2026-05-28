@@ -64,10 +64,11 @@ async def test_regular_user_gets_403_on_suspended(client):
     r = client.get(
         f"/api/proxy/{HOME_ID}/api/health", headers=_user_headers(),
     )
-    # Either 403 (the gate) or a downstream error from the bogus tunnel
-    # URL — we only care that 403 fires when it should.
+    # The gate denies with a generic "restricted" message (the audit
+    # log carries the specific gate=status/sub detail; the wire 403
+    # does not leak the gate type to the caller).
     assert r.status_code == 403
-    assert "suspended" in r.text.lower()
+    assert "restricted" in r.text.lower()
 
 
 async def test_founder_bypasses_suspended_gate(client):
