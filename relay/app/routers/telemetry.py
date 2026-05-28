@@ -28,9 +28,9 @@ edge-side telemetry_client.py stays the source of truth for fields:
 
 Anything else is accepted and stored — the admin dashboard pulls
 fields it knows about. device_id == home_id (v1, see ota.py).
-Subscription gating shares _subscription_active with the OTA router so
-both endpoints flip together when subscription_state changes. See
-relay/app/routers/ota.py for the gating contract.
+Telemetry shares the OTA gating policy: status='suspended' only,
+NOT subscription_state. Cancelled hubs continue to report. See
+relay/app/routers/ota.py for the rationale.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from pydantic import BaseModel
 
 from ..audit import log_event, verify as verify_signature
 from ..auth import current_user
-from ..billing import is_subscription_active
+from ..billing import is_operational
 from ..database import get_db
 from .ota import (
     _client_ip,
@@ -115,14 +115,16 @@ async def post_telemetry(device_id: str, request: Request):
         )
         raise HTTPException(401, "Invalid signature.")
 
-    if not is_subscription_active(
-        home_status=home["status"],
-        subscription_state=home["subscription_state"],
-    ):
+    # Telemetry gates ONLY on operational status='suspended', NOT on
+    # subscription_state — cancelled hubs continue to report so we know
+    # they're alive (re-activation, diagnostics). The dashboard can
+    # filter by subscription_state separately. See ota.py docstring and
+    # billing/__init__.py::is_operational.
+    if not is_operational(home["status"]):
         await log_event(
             "telemetry_posted", home_id=home_id, source_ip=src_ip,
             ok=False,
-            detail=f"gated: status={home['status']} sub={home['subscription_state']}",
+            detail=f"suspended: status={home['status']}",
         )
         raise HTTPException(403, "Home access is currently restricted.")
 

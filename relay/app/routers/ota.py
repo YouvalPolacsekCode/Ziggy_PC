@@ -36,13 +36,18 @@ from the home. Until then, the URL param is treated as the home_id verbatim.
 
 Subscription gating:
 
-    homes.status != 'suspended'  AND  subscription_state ∈ {trialing, active}
+    OTA manifest delivery gates ONLY on homes.status != 'suspended',
+    NOT on subscription_state. Two reasons:
+      1. Cancelled hubs must keep receiving security patches.
+      2. The manifest body carries subscription_state itself, which the
+         edge caches and uses to gate its own cloud features. Gating
+         the manifest would create a chicken-and-egg (the edge would
+         never learn it was cancelled).
 
-Both gates must be green. `status` is operational (founder safety hold);
-`subscription_state` is billing (written by Stripe webhooks in
-relay/app/billing). The OTA + telemetry endpoints both call
-`_subscription_active` below — a single helper change covers both.
-See docs/BILLING_AUDIT.md §1.3 for the rationale on two columns.
+    Cloud-feature gating (remote access, cloud LLM, backup) happens
+    elsewhere via is_subscription_active(). See
+    relay/app/billing/__init__.py for the helper distinction and
+    docs/BILLING_AUDIT.md §1.3 for the column rationale.
 
 Manifest signature:
 
@@ -68,7 +73,7 @@ from pydantic import BaseModel, Field
 
 from ..audit import log_event, sign as sign_signature, verify as verify_signature
 from ..auth import current_user, require_role
-from ..billing import is_subscription_active as _subscription_active
+from ..billing import is_operational
 from ..database import get_db
 
 router = APIRouter()
@@ -202,14 +207,16 @@ async def get_ota_manifest(device_id: str, request: Request):
         )
         raise HTTPException(401, "Invalid signature.")
 
-    if not _subscription_active(
-        home_status=home["status"],
-        subscription_state=home["subscription_state"],
-    ):
+    # OTA gates ONLY on operational status='suspended', NOT on
+    # subscription_state — cancelled hubs must still receive security
+    # patches AND must learn their own subscription_state via the
+    # manifest body so edge-side cloud gates can fire. See
+    # billing/__init__.py::is_operational vs is_subscription_active.
+    if not is_operational(home["status"]):
         await log_event(
             "ota_manifest_served", home_id=home_id, source_ip=src_ip,
             ok=False,
-            detail=f"gated: status={home['status']} sub={home['subscription_state']}",
+            detail=f"suspended: status={home['status']}",
         )
         raise HTTPException(403, "Home access is currently restricted.")
 

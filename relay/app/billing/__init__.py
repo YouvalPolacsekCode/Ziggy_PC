@@ -59,8 +59,30 @@ SUBSCRIPTION_STATES = (
 ACTIVE_SUBSCRIPTION_STATES = frozenset({"trialing", "active"})
 
 
+def is_operational(home_status: str) -> bool:
+    """Operational gate (status != 'suspended'). Predates billing.
+
+    Used by surfaces that must remain accessible to ALL paying-or-not
+    homes that aren't operationally locked out:
+
+      * OTA manifest delivery — cancelled hubs still receive security
+        patches and version updates. A vulnerable old Ziggy on a
+        cancelled customer's network is still a risk to that customer.
+        The manifest itself carries the subscription_state field so the
+        edge knows to gate cloud features locally.
+      * Telemetry ingestion — we want to know cancelled hubs are alive
+        for re-activation flows and for diagnostics if the customer
+        returns.
+
+    Cloud-feature gates (remote access, cloud LLM, backup) use the
+    stricter is_subscription_active() instead.
+    """
+    return home_status != "suspended"
+
+
 def is_subscription_active(*, home_status: str, subscription_state: str) -> bool:
-    """The cloud-features kill-switch gate. Shared by every gated endpoint.
+    """The cloud-features kill-switch gate. Used by remote access (proxy),
+    presence, and edge-side gates (cloud LLM, backup).
 
     Returns True iff the home is BOTH operationally active (status not
     'suspended') AND in a billing state that grants cloud features
@@ -74,6 +96,6 @@ def is_subscription_active(*, home_status: str, subscription_state: str) -> bool
     so that bypass logic (e.g. proxy.py's founder support bypass) can
     layer above this helper without re-reading two columns.
     """
-    if home_status == "suspended":
+    if not is_operational(home_status):
         return False
     return subscription_state in ACTIVE_SUBSCRIPTION_STATES

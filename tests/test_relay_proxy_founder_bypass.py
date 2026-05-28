@@ -64,11 +64,11 @@ async def test_regular_user_gets_403_on_suspended(client):
     r = client.get(
         f"/api/proxy/{HOME_ID}/api/health", headers=_user_headers(),
     )
-    # The gate denies with a generic "restricted" message (the audit
-    # log carries the specific gate=status/sub detail; the wire 403
-    # does not leak the gate type to the caller).
+    # Suspended hubs return the operational "locked" message (C3.9
+    # split the previous generic "restricted" message into operational
+    # vs billing-gated so the mobile UI can distinguish).
     assert r.status_code == 403
-    assert "restricted" in r.text.lower()
+    assert "locked" in r.text.lower()
 
 
 async def test_founder_bypasses_suspended_gate(client):
