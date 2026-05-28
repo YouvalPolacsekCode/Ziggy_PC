@@ -6,14 +6,45 @@
 brief appendix on the auth/HMAC/audit-log machinery the routes depend on.
 **Not in scope:** edge-side services, the IPC bus, the frontend, or any
 endpoint that is not in one of the two router directories.
-**Status snapshot:** taken 2026-05-27 against `main` at commit `08ccc4a`.
+**Status snapshot:** original 2026-05-27 against `main` at commit `08ccc4a`;
+**refreshed 2026-05-28 as part of PROMPT_SECURITY_HARDENING_V2**.
 
-> **Read this first.** This is a read-only audit. No code was changed by
-> producing this document. Five `backend/routers/*.py` files (`alerts`,
-> `dashboard`, `mode`, `onboarding`, `weather`) are present on disk but
-> are NOT yet imported into `backend/server.py` — they are listed for
-> completeness and marked `untracked-parallel-session`. Their routes do
-> not currently respond on a running hub.
+> ### ⚠ READ THIS FIRST — `_auth` posture correction
+>
+> The **original** master table below was captured against a snapshot that
+> predated commit `9be2d62` (2026-05-15), which added
+> `_auth = [Depends(get_current_user)]` at the **router-mount level** for
+> almost every `backend/routers/*` include in `backend/server.py`. Per-route
+> `auth: none` entries in that table for routes inside a router mounted
+> under `_auth` are **stale — read them as `user-bearer`**.
+>
+> Authoritative current state lives in
+> [Section 0: V2 Changes (post-2026-05-28)](#section-0--v2-changes-state-after-2026-05-28)
+> directly below. **Read Section 0 first**; treat the rest of the document
+> as structural reference (route enumeration, signatures, request/response
+> shapes) with the auth column corrected by Section 0 where the two diverge.
+>
+> ### What's no longer accurate in the original tables (quick index)
+> - 22 routers are mounted under `_auth`. The list is enumerated in
+>   Section 0. Treat their `auth: none` rows as `user-bearer`.
+> - 20 routes were **promoted to admin or super_admin** in V2. See Section 0.
+> - 2 routes were **deleted** in V2. See Section 0.
+> - 1 route was **moved out of an `_auth`-mounted router** to fix a
+>   2-week-old production bug (push action callback). See Section 0.
+> - 1 file was **deleted entirely** (`backend/routers/onboarding_router.py`,
+>   parked v1, never mounted). See Section 0.
+> - 4 session-2 routes (committed since the original snapshot) are
+>   itemised in Section 0.
+> - 17 routes carry a `# PUBLIC ENDPOINT — reviewed in
+>   PROMPT_SECURITY_HARDENING_V2 on 2026-05-28` audit comment in code.
+
+> **Original `Read this first` notice (preserved for history):** This is a
+> read-only audit. No code was changed by producing this document. Five
+> `backend/routers/*.py` files (`alerts`, `dashboard`, `mode`, `onboarding`,
+> `weather`) were present on disk but NOT imported into `backend/server.py`.
+> Their routes did not respond on a running hub. **V2 update:**
+> `onboarding_router.py` has now been deleted (bucket E); the other four
+> (`alerts`, `dashboard`, `mode`, `weather`) remain on disk and unmounted.
 
 ---
 
@@ -58,6 +89,206 @@ All routers mounted under global prefix `/api`, **except** `public_presence_rout
 App-level routes outside the routers:
 - Backend: `GET /reset` (Clear-Site-Data page), `WS /ws/{client_id}` (frontend pub/sub), static SPA mount at `/`.
 - Relay: `GET /health` (literal `{"ok": true, "service": "ziggy-relay"}`).
+
+---
+
+# Section 0 — V2 Changes (state after 2026-05-28)
+
+This section is **authoritative** for current state. The master table that
+follows is preserved as structural reference; where the two disagree on
+the auth column, Section 0 wins.
+
+## 0.1 Routers mounted under `_auth` (every route requires user-bearer at minimum)
+
+Source of truth: [backend/server.py](../backend/server.py) line ~392.
+`_auth = [Depends(get_current_user)]` is applied to every `include_router`
+call below:
+
+| Router | Mounted with `_auth`? | Notes |
+|---|---|---|
+| `intent_router` | yes | |
+| `device_router` | yes | 8 routes V2-promoted, see §0.3 |
+| `ha_router` | yes | |
+| `pairing_router` | yes | 10 routes V2-promoted, see §0.3 |
+| `task_router` | yes | |
+| `automation_router` | yes | `push/action/{token}` route moved out — see §0.5 |
+| `routine_router` | yes | |
+| `event_router` | yes | |
+| `capability_router` | yes | |
+| `virtual_device_router` | yes | |
+| `ir_router` | yes | |
+| `suggestion_router` | yes | |
+| `quick_ask_router` | yes | |
+| `status_router` | yes | some routes have additional per-route auth |
+| `map_router` | yes | 2 mock routes V2-deleted, see §0.4 |
+| `admin_router` | yes | every route has additional `require_role` |
+| `activity_router` | yes | |
+| `health_router` | yes | 2 routes V2-promoted, see §0.3 |
+| `camera_router` | yes | |
+| `push_router` | yes | |
+| `debug_router` | yes | every route additionally `require_role("super_admin")` |
+| `update_router` | yes | |
+| `ui_prefs_router` | yes | |
+| `auth_router` | **no** | per-route auth — public login + setup + super_admin user CRUD |
+| `invite_router` | **no** | per-route auth — public accept + super_admin CRUD |
+| `presence_router` | **no** | per-route auth — public ping/manifest/join + admin CRUD |
+| `mobile_router` | **no** | per-route auth — device-token + user-bearer mix |
+| `edge_health_router` | **no** | single public LAN liveness endpoint |
+| `first_boot_router` | **no** | public LAN onboarding (pre-account) |
+| `onboarding_sensors_router` | **no** | device-token per-route via `get_current_device` |
+| `push_action_router` | **no** | **NEW in V2** — token-in-URL IS the credential, see §0.5 |
+
+## 0.2 Session-2 routes added since the original snapshot
+
+Committed between 2026-05-26 (the original snapshot) and 2026-05-28 (this
+refresh), part of the onboarding session-2 work:
+
+| Method | Path | Router | Auth | V2 classification |
+|---|---|---|---|---|
+| GET | `/api/onboarding/sensors` | `onboarding_sensors_router` | `Depends(get_current_device)` | A (keep) |
+| POST | `/api/onboarding/claim` | `onboarding_sensors_router` | `Depends(get_current_device)` + `claim_pending=True` check | A (keep) |
+| POST | `/api/onboarding/sensors/confirm` | `onboarding_sensors_router` | `Depends(get_current_device)` + V2 defense-in-depth `device.user_id` check | A (keep + DiD) |
+| GET | `/api/onboarding/starter-pack` | `onboarding_sensors_router` | `Depends(get_current_device)` | A (keep) |
+
+`POST /api/onboarding/complete` lives in the same router and is also
+device-token authed; it was already in the original snapshot under
+`onboarding_router.py` (a different file, now deleted — see §0.4).
+
+`services/mobile_ws_manager.py` is a singleton connection registry, **not**
+a router — no new WS endpoints were added in session 2. The mobile WS
+endpoint remains at `/api/mobile/ws` with token-in-URL auth (defined in
+`mobile_router.py`).
+
+## 0.3 Bucket-B promotions (20 routes, user → admin or super_admin)
+
+Rationale: structural / destructive operations should require the
+founder/admin role; household-tier users keep everyday control.
+
+### `pairing_router` — 10 routes → admin
+
+| Method | Path | New gate |
+|---|---|---|
+| POST | `/api/ha/zha/permit` | `require_role("admin")` |
+| POST | `/api/ha/zwave/include` | `require_role("admin")` |
+| POST | `/api/ha/zwave/stop` | `require_role("admin")` |
+| POST | `/api/ha/matter/commission` | `require_role("admin")` |
+| POST | `/api/pairing/switcher/start` | `require_role("admin")` |
+| POST | `/api/pairing/switcher/{flow_id}/step` | `require_role("admin")` |
+| POST | `/api/pairing/switcher/{flow_id}/cancel` | `require_role("admin")` |
+| POST | `/api/pairing/switcher/recover` | `require_role("admin")` |
+| POST | `/api/pairing/switcher/account` | `require_role("admin")` |
+| DELETE | `/api/pairing/switcher/account` | `require_role("admin")` |
+
+Kept at user-bearer in `pairing_router`: `GET /api/ha/devices`,
+`GET /api/ha/devices/{id}/entities`, `PATCH /api/ha/devices/{id}/rename`,
+`GET /api/ha/config_flows`, `GET /api/pairing/switcher/diagnose`,
+`GET /api/pairing/switcher/account`.
+
+### `device_router` — 8 routes (7 → admin, 1 → super_admin)
+
+| Method | Path | New gate |
+|---|---|---|
+| POST | `/api/devices` | `require_role("admin")` |
+| DELETE | `/api/devices/{room}/{dtype}` | `require_role("admin")` |
+| POST | `/api/rooms` | `require_role("admin")` |
+| PATCH | `/api/rooms/{area_id}` | `require_role("admin")` |
+| DELETE | `/api/rooms/{area_id}` | `require_role("admin")` |
+| DELETE | `/api/ha/entity/{entity_id:path}` | `require_role("admin")` |
+| DELETE | `/api/registry/entity/{entity_id:path}` | `require_role("admin")` |
+| GET | `/api/debug/registry` | `require_role("super_admin")` (aligns with `debug_router` siblings) |
+
+Kept at user-bearer in `device_router`: every read, area-assignment patches,
+control endpoints, entity-name patches.
+
+### `health_router` — 2 routes → admin
+
+| Method | Path | New gate |
+|---|---|---|
+| POST | `/api/health/reload-zigbee` | `require_role("admin")` |
+| GET | `/api/health/debug-coordinator` | `require_role("admin")` |
+
+Kept at user-bearer: `GET /api/health`.
+
+Each promoted handler emits a `auth_promoted_route_called` event on the
+debug bus with `auth_added=True` + the calling username so the founder can
+spot any legitimate caller broken by the promotion during a 30-day audit
+window.
+
+## 0.4 Bucket-E deletions
+
+| Method | Path | Status | Reason |
+|---|---|---|---|
+| POST | `/api/map/anomalies/mock` | **DELETED** | dev-only, zero callers in frontend/mobile/tests — per V2: no dev endpoints in shipped code without a role gate |
+| DELETE | `/api/map/anomalies/mock` | **DELETED** | same |
+| (file) | `backend/routers/onboarding_router.py` | **DELETED** | parked v1 self-install path, never mounted in server.py; docstring marked "Parked v1". Routes the file defined are no longer present anywhere in the codebase: `GET/PATCH /api/onboarding/state`, `POST /api/onboarding/complete` (this path is now served by `onboarding_sensors_router.py:complete_onboarding`), `POST /api/onboarding/reset`, `POST /api/ha/probe`. Restore instructions for v1.1+ BYO-hardware tier: see breadcrumb in `docs/ONBOARDING_AUDIT.md §3.2`. |
+
+Companion file `services/onboarding_state.py` retained (no router
+dependency, reusable primitive).
+
+## 0.5 Push-action mover (production-bug fix)
+
+`POST /api/push/action/{token}` was inside `automation_router` (mounted
+under `_auth`). The service worker calling it cannot attach an
+`Authorization` header — bearer access requires localStorage which SWs
+can't read. From 2026-05-15 (when `_auth` landed) until 2026-05-28 (this
+V2 batch), every notification action button silently 401'd; the SW's
+`.catch()` block swallowed the failure and opened a window instead.
+
+**Fix**: handler extracted to new file
+[backend/routers/push_action_router.py](../backend/routers/push_action_router.py),
+mounted in `server.py` WITHOUT `_auth`. Smoke check confirmed the route
+has 0 FastAPI dependencies, vs 1 (the bearer) on routes still under
+`_auth`. The URL token IS the credential: single-use, TTL ≤ 1 h, minted
+at notification-send time by `services.push_actions.register_action`.
+
+Classified bucket D.
+
+## 0.6 Defense-in-depth on `/api/onboarding/sensors/confirm`
+
+The handler writes structural HA state (renames devices, creates areas,
+assigns devices to areas). Device-token auth via
+`Depends(get_current_device)` already passes a valid device, but V2 adds
+an inline check:
+
+```python
+if not device.get("user_id"):
+    raise HTTPException(status_code=409, detail="Device not claimed.")
+```
+
+The upstream invariant is set by `claim_owner →
+mobile_app.bind_claim_pending_device`; this is the safety net for future
+refactors that might split the two state mutations.
+
+**Follow-up (out of V2 scope):** the symmetric `claim_pending is False`
+check is **not** in the handler. `claim_owner` checks `claim_pending is
+True`; `sensors/confirm` should mirror it. Logged in
+[SECURITY_REPORT_V2.md](../SECURITY_REPORT_V2.md) under follow-ups.
+
+## 0.7 Bucket-D audit comments
+
+17 routes now carry a `# PUBLIC ENDPOINT — reviewed in
+PROMPT_SECURITY_HARDENING_V2 on 2026-05-28. Justification: <line>.`
+comment above their handler. Grep:
+`grep -rln "PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2"
+backend/`. Routes covered: every public endpoint listed in §0.1 as "no
+_auth + public" plus `POST /api/push/action/{token}` (§0.5) plus `GET
+/reset` and `POST /api/auth/setup` (already public-by-design).
+
+## 0.8 Endpoint count delta
+
+| Category | Prior snapshot | After V2 |
+|---|---|---|
+| device | 44 | 44 (+ 10 of pairing routes now gated `admin`) |
+| mobile | 7 | 7 |
+| user-app | 142 | 137 (−2 anomaly mock, −5 onboarding_router routes minus 1 that moved to sensors_router, −10 pairing promoted, −8 device promoted, −2 health promoted, +4 session-2 onboarding, +1 push_action_router net) |
+| admin | 67 | 87 (+20 V2 promotions) |
+| health-or-other | 12 | 12 |
+| **Total** | **272** | **287** (subject to small rounding; the net Δ across moves/deletes/additions is the most important signal, not the exact total) |
+
+The category totals shifted as bucket-B promotions reclassified rows from
+user-app → admin. The total endpoint count rose by 15 because of session-2
+additions and the push_action mover (which is a new file but the same
+endpoint, so net 0 for the path count but +1 router).
 
 ---
 
