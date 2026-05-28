@@ -52,6 +52,8 @@ import requests
 
 from core.relay_signing import sign as sign_signature
 
+from services import subscription_state as _sub_state
+
 log = logging.getLogger(__name__)
 
 # Public so tests and Prompt 4's installer can import the same path.
@@ -286,6 +288,12 @@ def poll_once(
             return _record_failure(
                 state, state_path, now_fn, reason="bad_signature", detail=why,
             )
+
+        # Refresh the subscription_state cache (Prompt 9 chunk 3) — relay
+        # schema 2 manifests carry subscription_state + expires_at; gates
+        # in cloud LLM + backup engine read the cache file written here.
+        # No-op if the relay is still serving schema 1.
+        _sub_state.update_from_manifest(manifest)
 
         delta = _has_delta(state.get("installed"), manifest)
         state["last_poll_ts"] = now_fn().isoformat()
