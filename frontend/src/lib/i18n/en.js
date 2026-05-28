@@ -3425,4 +3425,11 @@ export default {
   'cloudAdmin.supportSnippetCopied':    'Command copied to clipboard',
   'cloudAdmin.supportCopySnippet':      'Copy command',
   'cloudAdmin.supportRunbookHint':      'Requires cloudflared installed locally and enrolled with the Ziggy Cloudflare Access policy. See docs/RUNBOOK_SUPPORT_TUNNEL.md for one-time setup.',
+
+  // ── Per-user expansion in Members tab (Prompt 10 chunk 3) ───────────
+  'cloudAdmin.userEmail':               'Email',
+  'cloudAdmin.userCreated':             'Created',
+  'cloudAdmin.userSubscription':        'Subscription',
+  'cloudAdmin.userDevices':             'Paired devices',
+  'cloudAdmin.userViewAudit':           'View audit log for this home',
 }

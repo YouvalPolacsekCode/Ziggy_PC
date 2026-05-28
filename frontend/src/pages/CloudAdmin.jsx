@@ -494,8 +494,97 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
   )
 }
 
+// ── User row with expand-for-detail (Prompt 10 chunk 3) ──────────────────────
+// Per-user view: collapsed row matches the pre-chunk-3 shape (avatar +
+// username + role + delete). Click expands to show the email, the home's
+// subscription state (per-home concept, surfaced under the owner row for
+// context), a "Devices" count filtered out of the parent HomeCard's mobile
+// list when available, and a deep link into /ops/audit pre-filtered to
+// this home + the founder's support_session events.
+function UserRow({
+  user, isLocal, home,
+  onRoleChange, onDeleteUser,
+  mobileDevices,
+}) {
+  const t = useT()
+  const [expanded, setExpanded] = useState(false)
+
+  const stopRowToggle = (e) => e.stopPropagation()
+  const userId = user.id || user.email || user.username
+  const devicesForUser = Array.isArray(mobileDevices)
+    ? mobileDevices.filter(d => {
+        const owner = d.user_id || d.user_email || d.email || d.username
+        return owner && userId && String(owner).toLowerCase() === String(userId).toLowerCase()
+      })
+    : null
+  const subState = !isLocal ? home?.subscription_state : null
+  const auditDeepLink = !isLocal
+    ? `/ops/audit?home_id=${encodeURIComponent(home.id)}&event=support_session_opened`
+    : null
+
+  return (
+    <div style={{ borderBottom: '0.5px solid var(--line)' }}>
+      <div
+        onClick={() => setExpanded(v => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', cursor: 'pointer' }}
+      >
+        <div style={{ width: 28, height: 28, borderRadius: '50%', background: (ROLE_COLOR[user.role] || '#6b7280') + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: ROLE_COLOR[user.role] || '#6b7280', flexShrink: 0 }}>
+          {(user.username?.[0] || user.email?.[0] || '?').toUpperCase()}
+        </div>
+        <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {user.username || user.email || '?'}
+        </span>
+        {onRoleChange ? (
+          <select
+            value={user.role}
+            onChange={e => onRoleChange(user.username, e.target.value)}
+            onClick={stopRowToggle}
+            style={{ fontSize: 11, padding: '2px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLOR[user.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}
+          >
+            {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
+          </select>
+        ) : <RoleBadge role={user.role} />}
+        {onDeleteUser && (
+          <button
+            onClick={e => { stopRowToggle(e); onDeleteUser(user.username) }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
+        {expanded ? <ChevronDown size={12} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={12} style={{ color: 'var(--ink-faint)' }} />}
+      </div>
+      {expanded && (
+        <div style={{ padding: '10px 20px 14px', background: 'var(--bg-2)', borderTop: '0.5px solid var(--line)' }}>
+          {user.email && user.email !== user.username && (
+            <StatRow label={t('cloudAdmin.userEmail')} value={user.email} mono />
+          )}
+          {user.created_at && (
+            <StatRow label={t('cloudAdmin.userCreated')} value={timeAgoLabel(t, user.created_at)} />
+          )}
+          {subState && (
+            <StatRow label={t('cloudAdmin.userSubscription')} value={subState} />
+          )}
+          {devicesForUser !== null && (
+            <StatRow label={t('cloudAdmin.userDevices')} value={devicesForUser.length} />
+          )}
+          {auditDeepLink && (
+            <a
+              href={auditDeepLink}
+              onClick={stopRowToggle}
+              style={{ display: 'inline-block', marginTop: 8, fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}
+            >
+              {t('cloudAdmin.userViewAudit')} →
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Mobile devices tab — paired phones for this home ──────────────────────────
-function MobileTab({ homeId }) {
+function MobileTab({ homeId, onDevicesLoaded }) {
   const t = useT()
   const [state, setState] = useState({ status: 'loading', devices: [], error: null })
 
@@ -503,10 +592,17 @@ function MobileTab({ homeId }) {
     let cancelled = false
     setState({ status: 'loading', devices: [], error: null })
     relayHomeMobileDevices(homeId)
-      .then(d => { if (!cancelled) setState({ status: 'ok', devices: d.devices || [], error: null }) })
+      .then(d => {
+        if (cancelled) return
+        const devices = d.devices || []
+        setState({ status: 'ok', devices, error: null })
+        // Hand list up so the per-user expansion in Members tab can show
+        // owned device counts without re-fetching.
+        onDevicesLoaded?.(devices)
+      })
       .catch(e => { if (!cancelled) setState({ status: 'error', devices: [], error: e?.message || 'load failed' }) })
     return () => { cancelled = true }
-  }, [homeId])
+  }, [homeId, onDevicesLoaded])
 
   if (state.status === 'loading') return <TabSpinner />
   if (state.status === 'error')   return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
@@ -707,6 +803,10 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
   const pending = invites.filter(i => i.status === 'pending' && i.type !== 'home')
 
   const [supportModalOpen, setSupportModalOpen] = useState(false)
+  // Cached mobile device list. Populated by MobileTab on first activation
+  // and reused by the per-user expansion in Members tab so we don't issue
+  // duplicate /mobile-devices fetches.
+  const [cachedMobileDevices, setCachedMobileDevices] = useState(null)
 
   const tabs = [
     { id: 'members',   icon: Users,      labelKey: 'cloudAdmin.tabMembers' },
@@ -718,25 +818,18 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
 
   const membersContent = (
     <>
-      {/* Active users */}
+      {/* Active users — each row expands to show account / sub / devices /
+          deep link into /ops/audit pre-filtered to this home + this user. */}
       {users.map(u => (
-        <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', borderBottom: '0.5px solid var(--line)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: (ROLE_COLOR[u.role] || '#6b7280') + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: ROLE_COLOR[u.role] || '#6b7280', flexShrink: 0 }}>
-            {(u.username[0] || '?').toUpperCase()}
-          </div>
-          <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
-          {onRoleChange ? (
-            <select value={u.role} onChange={e => onRoleChange(u.username, e.target.value)}
-              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLOR[u.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}>
-              {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
-            </select>
-          ) : <RoleBadge role={u.role} />}
-          {onDeleteUser && (
-            <button onClick={() => onDeleteUser(u.username)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
-              <Trash2 size={12} />
-            </button>
-          )}
-        </div>
+        <UserRow
+          key={u.username || u.email || u.id}
+          user={u}
+          isLocal={isLocal}
+          home={home}
+          onRoleChange={onRoleChange}
+          onDeleteUser={onDeleteUser}
+          mobileDevices={cachedMobileDevices}
+        />
       ))}
 
       {/* Pending invites */}
@@ -849,7 +942,7 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
               {/* Tab content — lazy: each tab fetches on first activation. */}
               {tab === 'members'   && membersContent}
               {tab === 'telemetry' && <TelemetryTab homeId={home.id} onPayload={setLivePayload} />}
-              {tab === 'mobile'    && <MobileTab homeId={home.id} />}
+              {tab === 'mobile'    && <MobileTab homeId={home.id} onDevicesLoaded={setCachedMobileDevices} />}
               {tab === 'ota'       && <OtaTab home={home} />}
               {tab === 'backup'    && <BackupTab homeId={home.id} />}
             </>

@@ -3380,4 +3380,11 @@ export default {
   'cloudAdmin.supportSnippetCopied':    'הפקודה הועתקה',
   'cloudAdmin.supportCopySnippet':      'העתק פקודה',
   'cloudAdmin.supportRunbookHint':      'דורש cloudflared מותקן מקומית ורשום במדיניות Cloudflare Access של Ziggy. ראה docs/RUNBOOK_SUPPORT_TUNNEL.md לקונפיגורציה חד־פעמית.',
+
+  // ── Per-user expansion in Members tab (Prompt 10 chunk 3) ───────────
+  'cloudAdmin.userEmail':               'דוא״ל',
+  'cloudAdmin.userCreated':             'נוצר',
+  'cloudAdmin.userSubscription':        'מנוי',
+  'cloudAdmin.userDevices':             'מכשירים מקושרים',
+  'cloudAdmin.userViewAudit':           'הצג יומן ביקורת לבית הזה',
 }

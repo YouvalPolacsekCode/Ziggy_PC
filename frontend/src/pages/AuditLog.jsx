@@ -4,6 +4,7 @@
 // (matches the DebugPage's EventRow/EventDetail pattern).
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Shield, RefreshCw, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
@@ -120,12 +121,16 @@ export default function AuditLog() {
   const [error, setError]       = useState(null)
   const [homes, setHomes]       = useState([])
   const [selected, setSelected] = useState(null)
+  // Honour ?home_id=... &event=... &ok=... &since=... &until=... from the
+  // URL so deep links (e.g. the per-user "View audit log" link in
+  // CloudAdmin) land pre-filtered.
+  const [searchParams] = useSearchParams()
   const [filters, setFilters]   = useState({
-    event: '',
-    home_id: '',
-    ok: '',
-    since: '',
-    until: '',
+    event:   searchParams.get('event')   || '',
+    home_id: searchParams.get('home_id') || '',
+    ok:      searchParams.get('ok')      || '',
+    since:   searchParams.get('since')   || '',
+    until:   searchParams.get('until')   || '',
   })
 
   // Load homes once for the home_id dropdown. Failing this is non-fatal —
