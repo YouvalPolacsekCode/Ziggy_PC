@@ -459,6 +459,29 @@ export const relayRevokeInvite= (token)      => relayRequest('DELETE', `/api/inv
 export const relayGetInvite   = (token)      => _publicGet(`${relayUrl()}/api/invites/${token}/info`)
 export const relayRegister    = (token, data) => _publicPost(`${relayUrl()}/api/auth/register`, { ...data, invite_token: token })
 
+// Telemetry (Prompt 2 §C). Latest raw rows for a home + daily aggregates.
+// Backing endpoints: relay/app/routers/telemetry.py.
+export const relayHomeTelemetry      = (id, limit = 50)  => relayRequest('GET', `/api/admin/homes/${id}/telemetry?limit=${limit}`)
+export const relayHomeTelemetryDays  = (id, limit = 90)  => relayRequest('GET', `/api/admin/homes/${id}/telemetry/days?limit=${limit}`)
+
+// OTA release catalog + per-home pin + cohorts (Prompt 2 §B / Prompt 4 chunk 2.H).
+// Backing endpoints: relay/app/routers/ota.py.
+export const relayOtaReleases        = ()                => relayRequest('GET', '/api/admin/ota/releases')
+export const relayOtaCreateRelease   = (data)            => relayRequest('POST', '/api/admin/ota/releases', data)
+export const relayHomeOtaPin         = (id)              => relayRequest('GET', `/api/admin/homes/${id}/ota-pin`)
+export const relaySetHomeOtaPin      = (id, release_id)  => relayRequest('PUT', `/api/admin/homes/${id}/ota-pin`, { release_id })
+export const relayOtaCohorts         = ()                => relayRequest('GET', '/api/admin/ota/cohorts')
+export const relayOtaUpsertCohort    = (data)            => relayRequest('POST', '/api/admin/ota/cohorts', data)
+export const relaySetHomeCohort      = (id, cohort_name) => relayRequest('PUT', `/api/admin/homes/${id}/cohort`, { cohort_name })
+
+// Backup status + restore events (Prompt 8).
+// Backing endpoint: relay/app/routers/backup_keys.py.
+export const relayHomeBackupStatus   = (id)              => relayRequest('GET', `/api/homes/${id}/backup-status`)
+
+// Founder pricing slots (Prompt 9 §F). The remaining counter is a public
+// endpoint — no auth required — because the landing page also reads it.
+export const relayFounderSlotsRemaining = () => _publicGet(`${relayUrl()}/api/billing/founder-slots/remaining`)
+
 export function setRelayUrl(url) { localStorage.setItem('ziggy_relay_url', url) }
 export function setRelayToken(token) { localStorage.setItem('ziggy_relay_token', token) }
 export function getRelayUrl() { return relayUrl() }
