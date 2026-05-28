@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .billing.webhooks import router as billing_webhooks_router
 from .database import init_db
 from .routers.auth import router as auth_router, ensure_relay_admin
 from .routers.backup_keys import router as backup_keys_router
@@ -67,6 +68,9 @@ app.include_router(telemetry_router)
 # Public presence passthrough — must register BEFORE the catch-all proxy so
 # its specific /api/presence/ping route takes precedence.
 app.include_router(public_presence_router)
+# Stripe webhook (Prompt 9). Specific path, must mount before the catch-all
+# proxy. Signature verification happens inside the handler.
+app.include_router(billing_webhooks_router, prefix="/api")
 # Proxy last — catch-all pattern
 app.include_router(proxy_router,     prefix="/api")
 
