@@ -380,16 +380,31 @@ def handle_webhook(device: dict, payload: dict) -> dict:
 def _handle_location(device: dict, data: dict) -> dict:
     """Translate a location webhook into presence_engine state.
 
-    Handles two signal classes:
-      source='geofence' + transition='enter'|'exit'  → home|not_home via
-        ingest_external_state. This is the primary path once the Phase 3
-        ziggy-presence custom plugin starts firing native region-monitoring
-        events. Zone resolution: zone_id defaults to "home" so the v1 flow
-        only needs one zone to be useful; multi-zone arrives with the
-        backend zones registry already in place (see presence_router zones).
-      anything else (gps / significant_change / fused) → log only. The
-        fully-fused signal path (GPS + WiFi + activity + LAN) lands in Phase
-        3 alongside the plugin.
+    Signal classes after Phase 3 (ziggy-presence native plugin):
+
+      source='geofence' + transition='enter'|'exit', zone_id supplied:
+        * zone_id='home' → presence_engine.ingest_external_state
+            (home|not_home). Primary native presence path.
+        * zone_id='home_near' → outer-ring approach signal. No presence
+            transition (that fires when home itself enters), but on enter
+            we push "Approaching home" so head-start automations can use the
+            window before arrival. Suppressed via cooldown so multiple drive-
+            bys don't spam.
+        * zone_id matching an entry in zones_registry → broadcast a
+            zone_state WS event and fire zone_entered / zone_left automations
+            via presence_side_effects. No effect on home/not_home.
+        * unknown zone_id → log + ignore.
+
+      source='significant_change' | 'gps' | 'fused' (raw position):
+        If lat/lon present, runs through presence_engine.ingest_ping_for_person_id
+        so the engine's hysteresis + accuracy gating apply. Acts as a safety
+        net when geofences silently fail (Android OEM anti-kill, OS bugs).
+
+      source='activity':
+        Stores {activity, confidence, ts} on the device record under
+        `last_activity`. The native plugin already applies its own driving-
+        deferral on enters; backend fusion uses this as ambient evidence
+        (TODO 1c-10 LAN corroboration reads it).
 
     Devices without a person_id binding are recorded (last_seen bumped) but
     NOT forwarded to presence — there's no person to attribute the state to.
@@ -397,48 +412,305 @@ def _handle_location(device: dict, data: dict) -> dict:
     """
     update_device(device["device_id"], {})  # bump last_seen
     person_id = device.get("person_id")
+    source = data.get("source", "gps")
+
+    # Activity hints: persist on the device record. No presence side effect.
+    if source == "activity":
+        activity   = data.get("activity")
+        confidence = data.get("confidence")
+        ts         = data.get("ts")
+        if not activity:
+            return {"ok": False, "error": "activity field required"}
+        update_device(device["device_id"], {
+            "last_activity": {"activity": activity, "confidence": confidence, "ts": ts},
+        })
+        return {"ok": True, "recorded": True, "activity": activity, "confidence": confidence}
+
     if not person_id:
         return {"ok": True, "ignored": "no_person_bound"}
 
-    source = data.get("source", "gps")
-
     # Geofence transition — primary presence-update path.
     if source == "geofence":
-        transition = data.get("transition")
-        zone_id = data.get("zone_id", "home")
-        if transition in ("enter", "exit") and zone_id == "home":
-            new_state = "home" if transition == "enter" else "not_home"
-            try:
-                decision = presence_engine.ingest_external_state(
-                    person_id=person_id,
-                    new_state=new_state,
-                    source="ziggy_mobile_geofence",
-                    reason_suffix=f"zone_{zone_id}_{transition}",
-                )
-                log_info(
-                    f"[mobile_app] geofence {transition} zone={zone_id} → {new_state} "
-                    f"for person={person_id} device={device['device_id']} "
-                    f"result={decision.result}"
-                )
-                return {"ok": True, "ingested": True, "result": decision.result,
-                        "new_state": new_state}
-            except Exception as e:
-                log_error(f"[mobile_app] presence ingest failed for {device['device_id']}: {e}")
-                return {"ok": False, "error": str(e)}
-        # Geofence event with unknown transition or non-home zone — record only.
-        log_info(
-            f"[mobile_app] geofence event (no-op): "
-            f"transition={transition} zone={zone_id} device={device['device_id']}"
-        )
-        return {"ok": True, "recorded": True, "ignored": "non_home_zone_or_unknown_transition"}
+        return _handle_geofence_event(device, person_id, data)
 
-    # Non-geofence sources (raw GPS, significant_change, fused) — record only.
+    # Raw GPS / SLC / fused background updates — feed the engine when we have a
+    # real position fix, so the engine's hysteresis + cooldown act as a safety
+    # net for missed geofence events.
+    lat = data.get("lat")
+    lon = data.get("lon")
+    if lat is not None and lon is not None:
+        try:
+            accuracy = data.get("accuracy_m")
+            decision = presence_engine.ingest_ping_for_person_id(
+                person_id = person_id,
+                lat       = float(lat),
+                lon       = float(lon),
+                accuracy  = float(accuracy) if accuracy is not None else None,
+            )
+            # Side effects (push + automation + WS) are owned by the ingest
+            # path's caller — here that's us. Schedule them so a missed
+            # geofence still drives the same fanout as an explicit transition.
+            from services.presence_side_effects import schedule_side_effects
+            try:
+                schedule_side_effects(decision)
+            except Exception:
+                pass
+            return {
+                "ok": True,
+                "ingested": True,
+                "result": decision.result,
+                "new_state": decision.new_confirmed,
+            }
+        except Exception as e:
+            log_error(f"[mobile_app] gps ingest failed for {device['device_id']}: {e}")
+            return {"ok": False, "error": str(e)}
+
     log_info(
         f"[mobile_app] location from {device['device_id']} person={person_id} "
-        f"src={source} lat={data.get('lat')} lon={data.get('lon')} "
-        f"acc={data.get('accuracy_m')}m"
+        f"src={source} lat={lat} lon={lon} acc={data.get('accuracy_m')}m"
     )
     return {"ok": True, "recorded": True}
+
+
+def _handle_geofence_event(device: dict, person_id: str, data: dict) -> dict:
+    """Geofence enter/exit fanout.
+
+    Splits on zone_id:
+      home      → ingest_external_state into presence_engine (the engine then
+                  drives the push + automation fanout via presence_side_effects).
+      home_near → "Approaching home" push on enter; no presence-state change.
+      <other>   → if registered in zones_registry, broadcast zone_state and
+                  fire zone_entered / zone_left automations.
+    """
+    transition = data.get("transition")
+    zone_id    = data.get("zone_id") or "home"
+    if transition not in ("enter", "exit"):
+        return {"ok": True, "recorded": True, "ignored": f"unknown_transition_{transition}"}
+
+    if zone_id == "home":
+        new_state = "home" if transition == "enter" else "not_home"
+        # Multi-signal fusion: log the LAN + last-activity evidence on the
+        # engine's decision reason so debug history shows what corroborated
+        # (or disagreed with) the geofence. If both LAN and activity actively
+        # contradict a "home enter" (LAN-unreachable AND activity=driving in
+        # a fresh window) we suppress the enter entirely — that combination is
+        # the high-confidence "drove past home" false positive the native side's
+        # 3-min drive-hold tries to catch first, but defends against OEMs where
+        # the plugin's hold doesn't fire.
+        evidence = _corroboration_evidence(device, person_id)
+        suffix = f"zone_{zone_id}_{transition}"
+        if evidence["summary"]:
+            suffix = f"{suffix} [{evidence['summary']}]"
+
+        if (
+            transition == "enter"
+            and evidence["lan_unreachable_recent"]
+            and evidence["activity_driving_recent"]
+        ):
+            log_info(
+                f"[mobile_app] suppressing geofence enter for person={person_id} "
+                f"device={device['device_id']} — drive-past pattern "
+                f"(lan=unreachable activity=driving)"
+            )
+            return {
+                "ok": True,
+                "suppressed": "drive_past_pattern",
+                "evidence": evidence["summary"],
+            }
+
+        try:
+            decision = presence_engine.ingest_external_state(
+                person_id     = person_id,
+                new_state     = new_state,
+                source        = "ziggy_mobile_geofence",
+                reason_suffix = suffix,
+            )
+            from services.presence_side_effects import schedule_side_effects
+            try:
+                schedule_side_effects(decision)
+            except Exception:
+                pass
+            log_info(
+                f"[mobile_app] geofence {transition} zone=home → {new_state} "
+                f"for person={person_id} device={device['device_id']} "
+                f"result={decision.result}"
+            )
+            return {"ok": True, "ingested": True, "result": decision.result,
+                    "new_state": new_state}
+        except Exception as e:
+            log_error(f"[mobile_app] presence ingest failed for {device['device_id']}: {e}")
+            return {"ok": False, "error": str(e)}
+
+    if zone_id == "home_near":
+        if transition == "enter":
+            _fire_approaching_home_push(person_id)
+        log_info(
+            f"[mobile_app] geofence {transition} zone=home_near "
+            f"person={person_id} device={device['device_id']}"
+        )
+        return {"ok": True, "near_home": transition}
+
+    # Extra registered zone — fire the zones_registry fanout via the same path
+    # presence_engine uses for its in-engine zone state machine. We build a
+    # minimal ZoneTransition synthetic so presence_side_effects' zone fanout
+    # treats this exactly like a geo-derived zone crossing.
+    try:
+        from services import zones_registry
+        zone = zones_registry.get_zone(zone_id)
+    except Exception:
+        zone = None
+    if zone is None:
+        log_info(
+            f"[mobile_app] geofence {transition} unknown zone={zone_id} "
+            f"person={person_id} device={device['device_id']} (no-op)"
+        )
+        return {"ok": True, "recorded": True, "ignored": "unknown_zone"}
+
+    person = presence_engine.find_person_by_id(person_id) or {"id": person_id, "name": ""}
+    try:
+        from services.presence_engine import ZoneTransition
+        from services.presence_side_effects import schedule_zone_side_effects
+        from datetime import datetime, timezone
+        zt = ZoneTransition(
+            zone_id     = zone_id,
+            zone_name   = zone.get("name", zone_id),
+            direction   = "entered" if transition == "enter" else "left",
+            ts          = datetime.now(timezone.utc),
+            person_id   = person_id,
+            person_name = person.get("name", ""),
+            reason      = f"ziggy_mobile_geofence_{transition}",
+        )
+
+        class _Stub:
+            fired_transition = False
+            new_confirmed = "unknown"
+        stub = _Stub()
+        stub.zone_transitions = [zt]
+        try:
+            schedule_zone_side_effects(stub)
+        except Exception:
+            pass
+    except Exception as e:
+        log_error(f"[mobile_app] zone fanout failed for {zone_id}: {e}")
+    log_info(
+        f"[mobile_app] geofence {transition} zone={zone_id} "
+        f"person={person_id} device={device['device_id']}"
+    )
+    return {"ok": True, "zone_event": transition, "zone_id": zone_id}
+
+
+# Track the last "approaching home" push per person to avoid spamming when a
+# user does multiple drive-by enters in a short window. In-memory only;
+# resetting on process restart is harmless (a single missed dedupe at most).
+_LAST_APPROACH_PUSH: dict[str, datetime] = {}
+_APPROACH_PUSH_COOLDOWN_S = 600  # 10 min — matches the engine's presence cooldown
+
+
+def _corroboration_evidence(device: dict, person_id: str) -> dict:
+    """Gather LAN + last-activity evidence for a geofence event.
+
+    Returns a dict with:
+      lan_reachable_recent      bool  — LAN probe succeeded within `lan_fresh_seconds`
+      lan_unreachable_recent    bool  — LAN probe attempted recently AND failed
+      activity_driving_recent   bool  — last activity sample said "driving" within 90 s
+      summary                   str   — short tag for log lines / decision reasons
+    """
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+
+    # LAN evidence — sourced from the person record, written by lan_presence's
+    # record_lan_probe(). lan_fresh_seconds is the same window the engine uses
+    # to decide whether to trust a "home" state for the long staleness window.
+    lan_recent = False
+    lan_unreach = False
+    try:
+        person = presence_engine.find_person_by_id(person_id) or {}
+        lan_fresh_s = int(presence_engine._cfg("lan_fresh_seconds"))
+        lan_seen_iso = person.get("lan_last_seen")
+        lan_probe_iso = person.get("lan_last_probe")
+        if lan_seen_iso:
+            try:
+                lan_seen = datetime.fromisoformat(lan_seen_iso)
+                if lan_seen.tzinfo is None:
+                    lan_seen = lan_seen.replace(tzinfo=timezone.utc)
+                if (now - lan_seen) < timedelta(seconds=lan_fresh_s):
+                    lan_recent = True
+            except Exception:
+                pass
+        # "Unreachable recent" means: we DID probe in the last `lan_fresh_s`,
+        # but `lan_last_seen` is stale or absent — i.e. the most recent probe
+        # failed.
+        if not lan_recent and lan_probe_iso:
+            try:
+                lan_probe = datetime.fromisoformat(lan_probe_iso)
+                if lan_probe.tzinfo is None:
+                    lan_probe = lan_probe.replace(tzinfo=timezone.utc)
+                if (now - lan_probe) < timedelta(seconds=lan_fresh_s):
+                    lan_unreach = True
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Activity evidence — last_activity is persisted on the device record by
+    # the source='activity' branch of _handle_location.
+    driving_recent = False
+    try:
+        last_act = device.get("last_activity") or {}
+        if (last_act.get("activity") == "driving"
+                and (last_act.get("confidence") in ("medium", "high"))):
+            ts_iso = last_act.get("ts")
+            if ts_iso:
+                try:
+                    ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    if (now - ts) < timedelta(seconds=90):
+                        driving_recent = True
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    parts: list[str] = []
+    if lan_recent:   parts.append("lan=reachable")
+    elif lan_unreach: parts.append("lan=unreachable")
+    if driving_recent: parts.append("activity=driving")
+    summary = " ".join(parts)
+    return {
+        "lan_reachable_recent":     lan_recent,
+        "lan_unreachable_recent":   lan_unreach,
+        "activity_driving_recent":  driving_recent,
+        "summary":                  summary,
+    }
+
+
+def _fire_approaching_home_push(person_id: str) -> None:
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    last = _LAST_APPROACH_PUSH.get(person_id)
+    if last is not None and (now - last).total_seconds() < _APPROACH_PUSH_COOLDOWN_S:
+        return
+    _LAST_APPROACH_PUSH[person_id] = now
+
+    person = presence_engine.find_person_by_id(person_id) or {}
+    name = person.get("name") or "Someone"
+    # Self-suppression mirrors the home-arrival push: the person whose phone
+    # fired the event already knows they're heading home; their household
+    # members are who we want to notify.
+    exclude = person.get("linked_user") or None
+    try:
+        from services.push_notify import push_notify_fire_and_forget
+        push_notify_fire_and_forget(
+            f"{name} is approaching home",
+            "Ziggy will start prep automations.",
+            "/",
+            "presence_approach",
+            exclude_user_id=exclude,
+        )
+    except Exception as exc:
+        log_error(f"[mobile_app] approach push failed: {exc}")
 
 
 def _handle_sensors(device: dict, data: Any) -> dict:

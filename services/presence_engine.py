@@ -1128,8 +1128,20 @@ def sweep_expiry(now: Optional[datetime] = None) -> list[Decision]:
     return out
 
 
+_NO_CHANGE_LOG_THROTTLE_S = 60
+_last_no_change_log_at: dict[str, datetime] = {}
+
+
 def log_decision(decision: Decision) -> None:
-    """Emit a single structured-ish log line for a decision."""
+    """Emit a single structured-ish log line for a decision.
+
+    Transitions (`fired_transition=True`) always log. Non-transitions log too,
+    but the `no_change` heartbeat (raw matches the confirmed state — the most
+    common ping result for an at-home phone) is throttled to once per minute
+    per person to keep the console readable. The decision is still recorded in
+    the person's ring buffer regardless, so debugging via /api/presence/debug
+    sees every sample.
+    """
     d = decision.to_log_dict()
     if decision.fired_transition:
         log_info(
@@ -1137,9 +1149,16 @@ def log_decision(decision: Decision) -> None:
             f"src={d['source']} dist={d['dist']} acc={d['acc']} "
             f"result={d['result']} reason={d['reason']}"
         )
-    else:
-        log_info(
-            f"[Presence] {d['person']} raw={d['raw']} "
-            f"src={d['source']} dist={d['dist']} acc={d['acc']} "
-            f"prev={d['prev']} result={d['result']} reason={d['reason']}"
-        )
+        return
+
+    if decision.result == "no_change":
+        last = _last_no_change_log_at.get(decision.person_id)
+        if last is not None and (decision.ts - last).total_seconds() < _NO_CHANGE_LOG_THROTTLE_S:
+            return
+        _last_no_change_log_at[decision.person_id] = decision.ts
+
+    log_info(
+        f"[Presence] {d['person']} raw={d['raw']} "
+        f"src={d['source']} dist={d['dist']} acc={d['acc']} "
+        f"prev={d['prev']} result={d['result']} reason={d['reason']}"
+    )
