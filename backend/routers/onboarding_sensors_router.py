@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from backend.routers.mobile_router import get_current_device, _client_ip
 from core.debug_bus import bus as _dbus, BASIC
 from core.logger_module import log_error, log_info
-from services import auth_db, ha_areas, kit_manifest, mobile_app
+from services import auth_db, ha_areas, ha_zha, kit_manifest, mobile_app
 from services.auth_hashing import hash_password_bcrypt
 
 
@@ -238,4 +238,124 @@ async def claim_owner(
         "role":          "super_admin",
         "username":      username,
         "device_bound":  device_bound,
+    }
+
+
+# ── /api/onboarding/sensors/confirm (Chunk 3.2) ─────────────────────────────
+
+class SensorConfirmEntry(BaseModel):
+    """One sensor's user-confirmed name + room from the wizard."""
+    ha_device_id: str
+    name: Optional[str] = None
+    room_name: Optional[str] = None
+
+
+class SensorConfirmBody(BaseModel):
+    sensors: list[SensorConfirmEntry]
+
+
+@router.post("/sensors/confirm")
+async def confirm_sensors(
+    body: SensorConfirmBody,
+    device: dict = Depends(get_current_device),
+) -> dict:
+    """Persist user-confirmed sensor names + room assignments to HA.
+
+    Idempotent — applying the same payload twice is a no-op.
+
+    For each entry:
+      1. If `name` is provided, rename the HA device via ha_zha.rename_device
+         (single source of truth; covers all entities under the device).
+      2. If `room_name` is provided, find a matching HA area by name
+         (case-insensitive). Create it if missing, then assign the device
+         to it via ha_areas.assign_device_to_area.
+
+    Failures are per-entry — a rename error doesn't abort the rest. The
+    response reports `confirmed` (per-entry success count) and `failed`
+    (list of {ha_device_id, error}) so the wizard can surface partial
+    progress and let the user retry the failed ones.
+
+    Returns 503 only if the initial registry-snapshot fetch fails — that
+    indicates HA is unreachable, which would make every entry fail
+    anyway.
+    """
+    if not body.sensors:
+        return {"ok": True, "confirmed": 0, "failed": []}
+
+    try:
+        snap = await ha_areas.get_registry_snapshot(force=True)
+    except Exception as e:
+        log_error(f"[onboarding] sensors/confirm: HA registry fetch failed: {e}")
+        raise HTTPException(status_code=503, detail="Home Assistant unreachable.")
+
+    # Build name → area_id index, case-insensitive. We re-use this across
+    # all entries in the batch and update it when we create new areas, so
+    # two entries naming the same new room create only one area.
+    area_by_name: dict[str, str] = {}
+    for a in snap.get("areas") or []:
+        name = (a.get("name") or "").strip()
+        if name:
+            area_by_name[name.lower()] = a["area_id"]
+
+    confirmed = 0
+    failed: list[dict] = []
+
+    for s in body.sensors:
+        ha_id = (s.ha_device_id or "").strip()
+        if not ha_id:
+            failed.append({"ha_device_id": "", "error": "missing ha_device_id"})
+            continue
+
+        # 1. Rename the HA device, if a name was given.
+        new_name = (s.name or "").strip()
+        if new_name:
+            res = await ha_zha.rename_device(ha_id, new_name)
+            if not res.get("ok"):
+                failed.append({
+                    "ha_device_id": ha_id,
+                    "error": f"rename: {res.get('error', 'failed')}",
+                })
+                # Skip area assignment on rename failure — likely the
+                # device_id is wrong and assign would just fail too.
+                continue
+
+        # 2. Assign to area, creating the area if it doesn't exist yet.
+        room = (s.room_name or "").strip()
+        if room:
+            area_id = area_by_name.get(room.lower())
+            if not area_id:
+                create_res = await ha_areas.create_area(room)
+                if not create_res.get("ok"):
+                    failed.append({
+                        "ha_device_id": ha_id,
+                        "error": f"create_area: {create_res.get('error', 'failed')}",
+                    })
+                    continue
+                area_id = (create_res.get("area") or {}).get("area_id")
+                if area_id:
+                    area_by_name[room.lower()] = area_id
+            if area_id:
+                assign_res = await ha_areas.assign_device_to_area(ha_id, area_id)
+                if not assign_res.get("ok"):
+                    failed.append({
+                        "ha_device_id": ha_id,
+                        "error": f"assign_area: {assign_res.get('error', 'failed')}",
+                    })
+                    continue
+
+        confirmed += 1
+
+    log_info(
+        f"[onboarding] sensors/confirm: {confirmed} ok, {len(failed)} failed "
+        f"(device={device.get('device_id')})"
+    )
+    _dbus.emit("onboarding", BASIC, "sensors_confirmed",
+               device_id=device.get("device_id"),
+               confirmed=confirmed,
+               failed=len(failed))
+
+    return {
+        "ok":        len(failed) == 0,
+        "confirmed": confirmed,
+        "failed":    failed,
     }
