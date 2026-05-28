@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from backend.routers.mobile_router import get_current_device, _client_ip
 from core.debug_bus import bus as _dbus, BASIC
 from core.logger_module import log_error, log_info
-from services import auth_db, ha_areas, ha_zha, kit_manifest, mobile_app
+from services import auth_db, ha_areas, ha_zha, kit_manifest, mobile_app, starter_pack
 from services.auth_hashing import hash_password_bcrypt
 
 
@@ -359,3 +359,46 @@ async def confirm_sensors(
         "confirmed": confirmed,
         "failed":    failed,
     }
+
+
+# ── /api/onboarding/starter-pack (Chunk 3.3) ────────────────────────────────
+
+@router.get("/starter-pack")
+async def get_starter_pack(device: dict = Depends(get_current_device)) -> dict:
+    """Return starter automations whose slots can be filled against this kit.
+
+    For each starter in services/starter_automations/v1.yaml, look at the
+    kit manifest's sensors[] (device_types we know we shipped) and the
+    HA device + entity registries (what's actually paired right now);
+    return only the starters whose every slot resolves to a real HA
+    entity_id. The returned ha_payload already has its {{slot}}
+    placeholders substituted, so the mobile app POSTs it straight to
+    /api/automations.
+
+    Returned shape:
+      {
+        "starters": [
+          { id, label_en, label_he, description_en, description_he, ha_payload }
+        ],
+        "ha_reachable": bool
+      }
+    """
+    manifest_sensors = kit_manifest.get_sensors()
+
+    ha_devices: list[dict]  = []
+    ha_entities: list[dict] = []
+    ha_reachable = False
+    try:
+        snap = await ha_areas.get_registry_snapshot()
+        ha_devices  = snap.get("devices")  or []
+        ha_entities = snap.get("entities") or []
+        ha_reachable = True
+    except Exception as e:
+        log_error(f"[onboarding] starter-pack: HA registry fetch failed: {e}")
+
+    starters = starter_pack.list_available(
+        manifest_sensors=manifest_sensors,
+        ha_devices=ha_devices,
+        ha_entities=ha_entities,
+    )
+    return {"starters": starters, "ha_reachable": ha_reachable}

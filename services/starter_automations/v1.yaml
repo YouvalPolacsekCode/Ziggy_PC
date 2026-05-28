@@ -1,0 +1,141 @@
+# Ziggy starter automation pack — Prompt 7 chunk 3.3.
+#
+# A small curated list of automations the onboarding wizard offers the user
+# after the sensor-naming step. Each entry is a complete-ish automation
+# whose entity_id slots are resolved at GET /api/onboarding/starter-pack
+# call time, based on what's actually in the kit (kit_manifest × HA
+# registry).
+#
+# Schema (kept minimal per founder instruction — Prompt 7 chunk 3 prompt):
+#   id:         stable identifier
+#   label_en:   one-line button label, English
+#   label_he:   one-line button label, Hebrew
+#   description_en/_he:   one-line explanation under the label
+#   slots:      list of {name, device_type, ha_domain}
+#               name is referenced as {{name}} in ha_payload to resolve to
+#                   the matched HA entity_id
+#               device_type matches kit_manifest's device_type field
+#               ha_domain filters to the right HA entity (binary_sensor,
+#                   light, sensor, …) — the manifest knows the device,
+#                   HA's entity registry knows which domain represents it
+#   ha_payload: the dict POSTed to /api/automations once slots are
+#               substituted. Trigger + action shapes follow the existing
+#               services/ha_automations._trigger_to_ha / _action_to_ha
+#               translation, NOT raw HA YAML.
+
+- id: motion_turns_on_light
+  label_en: Turn on the light when motion is detected
+  label_he: הדלק את האור כשמזוהה תנועה
+  description_en: When the motion sensor detects movement, turn on the light in the same room.
+  description_he: כשחיישן התנועה מזהה תנועה, הדלק את האור באותו חדר.
+  slots:
+    - name: motion_entity
+      device_type: motion
+      ha_domain: binary_sensor
+    - name: light_entity
+      device_type: bulb
+      ha_domain: light
+  ha_payload:
+    name: Motion → light
+    description: Installed by the Ziggy starter pack.
+    trigger:
+      type: state
+      entity_id: "{{motion_entity}}"
+      state: "on"
+    actions:
+      - type: call_service
+        entity_id: "{{light_entity}}"
+        service: light.turn_on
+    rooms: []
+
+- id: door_open_notify
+  label_en: Notify me when the front door opens
+  label_he: שלח לי התראה כשהדלת הראשית נפתחת
+  description_en: Get a push notification whenever the door sensor reports the door as open.
+  description_he: קבל התראה בכל פעם שחיישן הדלת מזהה שהדלת פתוחה.
+  slots:
+    - name: door_entity
+      device_type: door
+      ha_domain: binary_sensor
+  ha_payload:
+    name: Front door → notify
+    description: Installed by the Ziggy starter pack.
+    trigger:
+      type: state
+      entity_id: "{{door_entity}}"
+      state: "on"
+    actions:
+      - type: notify
+        message: The door just opened.
+    rooms: []
+
+- id: door_open_turns_on_light
+  label_en: Turn on the light when the door opens
+  label_he: הדלק את האור כשהדלת נפתחת
+  description_en: When the door sensor reports open, turn on a smart bulb so you walk into a lit room.
+  description_he: כשחיישן הדלת מזהה פתיחה, הדלק נורה חכמה כדי שתיכנס לחדר מואר.
+  slots:
+    - name: door_entity
+      device_type: door
+      ha_domain: binary_sensor
+    - name: light_entity
+      device_type: bulb
+      ha_domain: light
+  ha_payload:
+    name: Door opens → light
+    description: Installed by the Ziggy starter pack.
+    trigger:
+      type: state
+      entity_id: "{{door_entity}}"
+      state: "on"
+    actions:
+      - type: call_service
+        entity_id: "{{light_entity}}"
+        service: light.turn_on
+    rooms: []
+
+- id: high_temperature_notify
+  label_en: Notify me if the temperature gets too high
+  label_he: שלח לי התראה אם הטמפרטורה גבוהה מדי
+  description_en: When the temperature sensor reads above 28°C, send a push notification.
+  description_he: כשחיישן הטמפרטורה מציג מעל 28°, שלח התראה.
+  slots:
+    - name: temp_entity
+      device_type: temp_humidity
+      ha_domain: sensor
+  ha_payload:
+    name: High temperature → notify
+    description: Installed by the Ziggy starter pack.
+    trigger:
+      type: numeric_state
+      entity_id: "{{temp_entity}}"
+      above: 28
+    actions:
+      - type: notify
+        message: The temperature is above 28°C right now.
+    rooms: []
+
+- id: motion_turns_on_plug
+  label_en: Turn on a smart plug when motion is detected
+  label_he: הדלק שקע חכם כשמזוהה תנועה
+  description_en: When motion is detected, switch on a smart plug — handy for a fan or lamp on a side table.
+  description_he: כשמזוהה תנועה, הדלק שקע חכם — שימושי עבור מאוורר או מנורה על שולחן צד.
+  slots:
+    - name: motion_entity
+      device_type: motion
+      ha_domain: binary_sensor
+    - name: plug_entity
+      device_type: plug
+      ha_domain: switch
+  ha_payload:
+    name: Motion → smart plug
+    description: Installed by the Ziggy starter pack.
+    trigger:
+      type: state
+      entity_id: "{{motion_entity}}"
+      state: "on"
+    actions:
+      - type: call_service
+        entity_id: "{{plug_entity}}"
+        service: switch.turn_on
+    rooms: []
