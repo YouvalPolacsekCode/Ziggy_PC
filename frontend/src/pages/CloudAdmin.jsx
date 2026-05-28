@@ -146,14 +146,16 @@ function TelemetryTab({ homeId, onPayload }) {
   const containersDown = containers.filter(c => c?.state && c.state !== 'running').length
   const uptimeHours = p.uptime_s != null ? Math.floor(p.uptime_s / 3600) : null
 
-  // Push delivery (Prompt 10 chunk 3 design — option 1 piggyback). Edge agent
-  // is expected to add these counters to its telemetry payload. Until then,
-  // they read as undefined and the rows simply don't render.
+  // Push delivery (Prompt 10 chunk 3 — option 1 piggyback). Edge agent is
+  // expected to add these counters to the telemetry payload; until it
+  // ships them, render the section with a "no data yet" stub so the
+  // operator can see the feature exists and is waiting on the edge.
   const apnsSuccess = p.apns_success_24h
   const apnsFailure = p.apns_failure_24h
   const fcmSuccess  = p.fcm_success_24h
   const fcmFailure  = p.fcm_failure_24h
-  const showPush = [apnsSuccess, apnsFailure, fcmSuccess, fcmFailure].some(v => v != null)
+  const hasApns = apnsSuccess != null || apnsFailure != null
+  const hasFcm  = fcmSuccess  != null || fcmFailure  != null
 
   return (
     <div style={{ padding: '12px 20px 16px' }}>
@@ -167,22 +169,18 @@ function TelemetryTab({ homeId, onPayload }) {
       <StatRow label={t('cloudAdmin.telemetrySensors')} value={sensors.length || null} />
       <StatRow label={t('cloudAdmin.telemetryContainers')} value={containers.length ? `${containers.length} (${containersDown} down)` : null} />
       <StatRow label={t('cloudAdmin.telemetryLastAutomation')} value={p.last_automation_trigger ? timeAgoLabel(t, p.last_automation_trigger) : null} />
-      {showPush && (
-        <>
-          <StatRow
-            label={t('cloudAdmin.telemetryPushApns')}
-            value={apnsSuccess != null || apnsFailure != null
-              ? t('cloudAdmin.telemetryPushDelivery', { success: apnsSuccess ?? 0, failure: apnsFailure ?? 0 })
-              : null}
-          />
-          <StatRow
-            label={t('cloudAdmin.telemetryPushFcm')}
-            value={fcmSuccess != null || fcmFailure != null
-              ? t('cloudAdmin.telemetryPushDelivery', { success: fcmSuccess ?? 0, failure: fcmFailure ?? 0 })
-              : null}
-          />
-        </>
-      )}
+      <StatRow
+        label={t('cloudAdmin.telemetryPushApns')}
+        value={hasApns
+          ? t('cloudAdmin.telemetryPushDelivery', { success: apnsSuccess ?? 0, failure: apnsFailure ?? 0 })
+          : t('cloudAdmin.telemetryPushStub')}
+      />
+      <StatRow
+        label={t('cloudAdmin.telemetryPushFcm')}
+        value={hasFcm
+          ? t('cloudAdmin.telemetryPushDelivery', { success: fcmSuccess ?? 0, failure: fcmFailure ?? 0 })
+          : t('cloudAdmin.telemetryPushStub')}
+      />
       <button
         onClick={() => setShowRaw(v => !v)}
         style={{ marginTop: 10, fontSize: 10, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}

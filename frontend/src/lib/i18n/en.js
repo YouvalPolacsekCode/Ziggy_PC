@@ -3297,6 +3297,7 @@ export default {
   'cloudAdmin.telemetryPushApns':       'APNs (24h)',
   'cloudAdmin.telemetryPushFcm':        'FCM (24h)',
   'cloudAdmin.telemetryPushDelivery':   '{success} delivered · {failure} failed',
+  'cloudAdmin.telemetryPushStub':       'No data yet — waiting for edge agent v1.5+',
   'cloudAdmin.telemetryViewRaw':        'View raw payload',
   'cloudAdmin.otaCurrentRelease':       'Current release',
   'cloudAdmin.otaPinLabel':             'Pin to release',

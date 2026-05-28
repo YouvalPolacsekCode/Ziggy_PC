@@ -3252,6 +3252,7 @@ export default {
   'cloudAdmin.telemetryPushApns':       'APNs‏ (24 שעות)',
   'cloudAdmin.telemetryPushFcm':        'FCM‏ (24 שעות)',
   'cloudAdmin.telemetryPushDelivery':   'נשלחו {success} · נכשלו {failure}',
+  'cloudAdmin.telemetryPushStub':       'אין נתונים — ממתינים לסוכן קצה v1.5+',
   'cloudAdmin.telemetryViewRaw':        'הצג מטען גולמי',
   'cloudAdmin.otaCurrentRelease':       'גרסה נוכחית',
   'cloudAdmin.otaPinLabel':             'נעל לגרסה',
