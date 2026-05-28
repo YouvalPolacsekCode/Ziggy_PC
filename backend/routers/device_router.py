@@ -5,7 +5,7 @@ import threading
 import time as _time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 
 from core.errors import ErrorCode, ZiggyError, ha_unavailable
@@ -18,8 +18,17 @@ from services.ha_areas import (
     invalidate_registry_cache, _ws,
 )
 from services.home_automation import get_all_states, get_state
+from .auth_deps import require_role
 
 router = APIRouter()
+
+# Bucket-B promotions in PROMPT_SECURITY_HARDENING_V2:
+# - Structural mutations (rooms CRUD, device registry CRUD, HA entity delete,
+#   registry entity delete) require admin tier.
+# - GET /api/debug/registry promoted to super_admin to align with the rest
+#   of /api/debug/* gated in debug_router.
+# - Reads, area-assignment patches, and entity-name rename stay at user.
+# Per-handler emits with auth_added=True populate the 30-day audit window.
 
 # ---------------------------------------------------------------------------
 # /api/devices enrichment cache
@@ -353,7 +362,10 @@ async def _sync_entity_to_registry_room(entity_id: str, area_id: str | None) -> 
 # ---------------------------------------------------------------------------
 
 @router.get("/api/debug/registry")
-async def debug_registry():
+async def debug_registry(_user: dict = Depends(require_role("super_admin"))):
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="GET /api/debug/registry",
+              user=_user.get("username"), auth_added=True)
     import services.device_registry as dr
     try:
         if not dr._initialized:
@@ -424,7 +436,11 @@ async def get_devices_grouped():
 
 
 @router.post("/api/devices")
-async def upsert_device(device: DeviceUpsert):
+async def upsert_device(device: DeviceUpsert,
+                        _user: dict = Depends(require_role("admin"))):
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="POST /api/devices",
+              user=_user.get("username"), auth_added=True)
     room = device.room.lower().strip().replace(" ", "_")
     dtype = device.type.lower().strip()
 
@@ -451,7 +467,11 @@ async def upsert_device(device: DeviceUpsert):
 
 
 @router.delete("/api/devices/{room}/{dtype}")
-async def delete_device(room: str, dtype: str):
+async def delete_device(room: str, dtype: str,
+                        _user: dict = Depends(require_role("admin"))):
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="DELETE /api/devices/{room}/{dtype}",
+              user=_user.get("username"), auth_added=True)
     dm = settings.get("device_map", {})
     if room not in dm or dtype not in dm[room]:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -557,7 +577,11 @@ async def get_all_rooms():
 
 
 @router.post("/api/rooms")
-async def create_room(body: RoomCreate):
+async def create_room(body: RoomCreate,
+                      _user: dict = Depends(require_role("admin"))):
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="POST /api/rooms",
+              user=_user.get("username"), auth_added=True)
     result = await create_area(body.name)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
@@ -566,7 +590,11 @@ async def create_room(body: RoomCreate):
 
 
 @router.delete("/api/rooms/{area_id}")
-async def delete_room(area_id: str):
+async def delete_room(area_id: str,
+                      _user: dict = Depends(require_role("admin"))):
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="DELETE /api/rooms/{area_id}",
+              user=_user.get("username"), auth_added=True)
     # Fetch area list BEFORE deleting so we can read entity membership and name.
     area_cache: list[dict] = []
     ha_area_exists = False
@@ -624,7 +652,11 @@ async def delete_room(area_id: str):
 
 
 @router.patch("/api/rooms/{area_id}")
-async def rename_room(area_id: str, body: RoomCreate):
+async def rename_room(area_id: str, body: RoomCreate,
+                      _user: dict = Depends(require_role("admin"))):
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="PATCH /api/rooms/{area_id}",
+              user=_user.get("username"), auth_added=True)
     result = await rename_area(area_id, body.name)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
@@ -730,7 +762,8 @@ async def patch_device_area(device_id: str, body: DeviceAreaPatch):
 
 
 @router.delete("/api/ha/entity/{entity_id:path}")
-async def delete_ha_entity(entity_id: str, delete_device: bool = False):
+async def delete_ha_entity(entity_id: str, delete_device: bool = False,
+                           _user: dict = Depends(require_role("admin"))):
     """Remove an entity from Home Assistant (and clean up Ziggy's registry).
 
     Maps to HA's "Delete" affordance in its UI. Useful for one-shot cleanup
@@ -747,6 +780,9 @@ async def delete_ha_entity(entity_id: str, delete_device: bool = False):
     Always also drops the entity from Ziggy's device registry so it doesn't
     re-appear as a ghost after the next refresh.
     """
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="DELETE /api/ha/entity/{entity_id:path}",
+              user=_user.get("username"), auth_added=True)
     # 1) Look up the HA device_id (for the optional device-level removal).
     device_id: str | None = None
     try:
@@ -912,7 +948,8 @@ def _strip_entity_from_yaml_device_map(entity_id: str) -> int:
 
 
 @router.delete("/api/registry/entity/{entity_id:path}")
-async def delete_registry_entity(entity_id: str):
+async def delete_registry_entity(entity_id: str,
+                                 _user: dict = Depends(require_role("admin"))):
     """Drop an entity from the Ziggy device registry.
 
     Intended use: the entity was deleted directly in Home Assistant, so
@@ -926,6 +963,9 @@ async def delete_registry_entity(entity_id: str):
 
     Always returns ok=true; a missing entity is treated as success (idempotent).
     """
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="DELETE /api/registry/entity/{entity_id:path}",
+              user=_user.get("username"), auth_added=True)
     import services.device_registry as dr
     if not dr._initialized:
         dr.init()
