@@ -65,9 +65,19 @@ async def proxy(home_id: str, path: str, request: Request):
             raise HTTPException(404, "Home not found.")
         home = dict(rows[0])
 
+    # Founder support bypass (Prompt 9 decision 8). The founder must
+    # always reach a customer's hub for support, regardless of gating
+    # — both the 'suspended' operational status here and the
+    # subscription_state gates that chunk 3 will layer on top of this
+    # router. role 'relay_admin' is already the founder's authenticated
+    # role across every other admin endpoint, so reusing it keeps the
+    # surface small and audit-traceable (the proxy still records the
+    # caller via existing X-Relay-User/Role headers below).
+    is_founder_support = user.get("role") == "relay_admin"
+
     if not home["tunnel_url"]:
         raise HTTPException(503, "Home hub not yet connected.")
-    if home["status"] == "suspended":
+    if home["status"] == "suspended" and not is_founder_support:
         raise HTTPException(403, "Home is suspended.")
 
     # Build target URL
