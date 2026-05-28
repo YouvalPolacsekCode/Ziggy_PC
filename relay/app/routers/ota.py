@@ -1,4 +1,4 @@
-"""OTA manifest endpoints (Prompt 2 §B).
+"""OTA manifest endpoints (Prompt 2 §B; cohort surface added Prompt 4 chunk 2.H).
 
 Public surface:
 
@@ -8,9 +8,22 @@ Public surface:
   Founder JWT (relay_admin role):
     GET  /api/admin/ota/releases                  list catalog
     POST /api/admin/ota/releases                  publish a new release
-    GET  /api/admin/homes/{home_id}/ota-pin       read current pin
-    PUT  /api/admin/homes/{home_id}/ota-pin       pin home to a release id
-                                                  (body release_id=null unpins)
+    GET  /api/admin/homes/{home_id}/ota-pin       read current per-home pin
+    PUT  /api/admin/homes/{home_id}/ota-pin       set/clear per-home pin
+    GET  /api/admin/ota/cohorts                   list staged-rollout cohorts
+    POST /api/admin/ota/cohorts                   create-or-update a cohort
+    PUT  /api/admin/homes/{home_id}/cohort        assign a home to a cohort
+                                                  (body cohort_name=null unassigns)
+
+Resolution order (extended in chunk 2.H):
+
+    1. homes.ota_pinned_release_id  (per-home pin, Prompt 2)
+    2. home_cohorts.cohort_name → ota_release_cohorts.release_id (this chunk)
+    3. Most recent ota_releases row (global rollout, Prompt 2)
+
+The fall-through means the existing per-home pin path is preserved
+byte-for-byte; cohort resolution only kicks in when the per-home pin is
+NULL. Empty cohort → still falls through to latest, never 404s the edge.
 
 device_id semantics (v1):
 
@@ -186,6 +199,8 @@ async def get_ota_manifest(device_id: str, request: Request):
         )
         raise HTTPException(403, "Home suspended.")
 
+    # Three-level resolution: per-home pin → cohort pin → global latest.
+    # See module docstring for the rationale + rollout sequence.
     pin_id = home["ota_pinned_release_id"]
     async with get_db() as db:
         if pin_id is not None:
@@ -196,11 +211,31 @@ async def get_ota_manifest(device_id: str, request: Request):
             )
             resolution = "pinned"
         else:
-            rel_rows = await db.execute_fetchall(
-                "SELECT id, ha_version, ziggy_version, image_digests, notes, created_at "
-                "FROM ota_releases ORDER BY id DESC LIMIT 1"
+            # Try cohort fall-through. Join home_cohorts → ota_release_cohorts
+            # → ota_releases so the entire lookup is one statement and the
+            # cohort_name appears in the audit detail when it hits.
+            cohort_rows = await db.execute_fetchall(
+                "SELECT rc.cohort_name, r.id, r.ha_version, r.ziggy_version, "
+                "       r.image_digests, r.notes, r.created_at "
+                "FROM home_cohorts hc "
+                "JOIN ota_release_cohorts rc ON rc.cohort_name = hc.cohort_name "
+                "JOIN ota_releases r ON r.id = rc.release_id "
+                "WHERE hc.home_id = ?",
+                (home_id,),
             )
-            resolution = "latest"
+            if cohort_rows:
+                rel_rows = cohort_rows
+                resolution = f"cohort:{cohort_rows[0]['cohort_name']}"
+            else:
+                # No per-home pin AND no cohort → global latest. An empty
+                # cohort assignment (home in home_cohorts but cohort_name
+                # not in ota_release_cohorts) also falls here, by virtue
+                # of the JOIN returning zero rows.
+                rel_rows = await db.execute_fetchall(
+                    "SELECT id, ha_version, ziggy_version, image_digests, notes, created_at "
+                    "FROM ota_releases ORDER BY id DESC LIMIT 1"
+                )
+                resolution = "latest"
     if not rel_rows:
         await log_event(
             "ota_manifest_served", home_id=home_id, source_ip=src_ip,
@@ -333,3 +368,157 @@ async def set_ota_pin(home_id: str, body: OtaPinBody, request: Request):
         detail=f"release_id={body.release_id}",
     )
     return {"home_id": home_id, "release_id": body.release_id}
+
+
+# ---------------------------------------------------------------------------
+# Admin: cohorts (Prompt 4 chunk 2.H)
+# ---------------------------------------------------------------------------
+
+# Restrict cohort names to a safe character set so audit-log details remain
+# greppable and admin tooling can use them verbatim in URLs / filenames.
+# Length matches the staged-rollout terminology — short, human-readable.
+import re as _re
+_COHORT_NAME_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+class CohortCreateBody(BaseModel):
+    cohort_name: str = Field(
+        ...,
+        description="Stable identifier (1-64 chars, [A-Za-z0-9_-]).",
+    )
+    release_id: int = Field(
+        ...,
+        description="ota_releases.id this cohort tracks.",
+    )
+
+
+class HomeCohortBody(BaseModel):
+    cohort_name: Optional[str] = Field(
+        None,
+        description="Cohort name to assign this home to. Pass null to unassign.",
+    )
+
+
+@router.get("/api/admin/ota/cohorts")
+async def list_cohorts(request: Request):
+    """List staged-rollout cohorts. Admin-only.
+
+    Returns the cohort name, pinned release_id + release version strings,
+    home count, and audit fields. Same DESC ordering pattern as
+    /api/admin/ota/releases so the most recently created cohort comes first.
+    """
+    require_role("relay_admin")(request)
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT c.cohort_name, c.release_id, c.created_at, c.created_by, "
+            "       r.ha_version, r.ziggy_version, "
+            "       (SELECT COUNT(*) FROM home_cohorts h "
+            "         WHERE h.cohort_name = c.cohort_name) AS home_count "
+            "FROM ota_release_cohorts c "
+            "LEFT JOIN ota_releases r ON r.id = c.release_id "
+            "ORDER BY c.created_at DESC"
+        )
+    return {
+        "cohorts": [
+            {
+                "cohort_name":   r["cohort_name"],
+                "release_id":    r["release_id"],
+                "ha_version":    r["ha_version"],
+                "ziggy_version": r["ziggy_version"],
+                "home_count":    r["home_count"],
+                "created_at":    r["created_at"],
+                "created_by":    r["created_by"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/api/admin/ota/cohorts")
+async def create_or_update_cohort(body: CohortCreateBody, request: Request):
+    """Create or update a cohort. Admin-only.
+
+    Idempotent on cohort_name — POSTing the same name with a new release_id
+    updates the pin. This is the lowest-friction shape for the staged-
+    rollout workflow: an admin who wants to bump a cohort to a new release
+    hits the same endpoint; the URL doesn't change. created_at / created_by
+    track the most recent write.
+
+    400 if cohort_name fails validation or release_id is unknown.
+    """
+    user = require_role("relay_admin")(request)
+    src_ip = _client_ip(request)
+    if not _COHORT_NAME_RE.match(body.cohort_name):
+        raise HTTPException(400, "cohort_name must match [A-Za-z0-9_-]{1,64}.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    async with get_db() as db:
+        rel_rows = await db.execute_fetchall(
+            "SELECT id FROM ota_releases WHERE id=?", (body.release_id,),
+        )
+        if not rel_rows:
+            raise HTTPException(400, f"release_id {body.release_id} does not exist.")
+        await db.execute(
+            "INSERT OR REPLACE INTO ota_release_cohorts "
+            "(cohort_name, release_id, created_at, created_by) VALUES (?,?,?,?)",
+            (body.cohort_name, body.release_id, now_iso, user.get("email")),
+        )
+        await db.commit()
+    await log_event(
+        "ota_cohort_upserted", source_ip=src_ip, ok=True,
+        detail=f"cohort={body.cohort_name} release_id={body.release_id}",
+    )
+    return {
+        "cohort_name": body.cohort_name,
+        "release_id":  body.release_id,
+        "created_at":  now_iso,
+        "created_by":  user.get("email"),
+    }
+
+
+@router.put("/api/admin/homes/{home_id}/cohort")
+async def set_home_cohort(home_id: str, body: HomeCohortBody, request: Request):
+    """Assign a home to a cohort, or unassign with cohort_name=null.
+
+    Validates the home exists. Validates the cohort exists if non-null —
+    refusing to write a dangling home_cohorts row matches the
+    /api/admin/homes/{home_id}/ota-pin validation pattern.
+
+    404 if home unknown. 400 if cohort_name unknown.
+    """
+    require_role("relay_admin")(request)
+    src_ip = _client_ip(request)
+
+    async with get_db() as db:
+        home_rows = await db.execute_fetchall(
+            "SELECT id FROM homes WHERE id=?", (home_id,),
+        )
+        if not home_rows:
+            raise HTTPException(404, "Home not found.")
+
+        if body.cohort_name is None:
+            await db.execute("DELETE FROM home_cohorts WHERE home_id=?", (home_id,))
+        else:
+            if not _COHORT_NAME_RE.match(body.cohort_name):
+                raise HTTPException(400, "cohort_name must match [A-Za-z0-9_-]{1,64}.")
+            cohort_rows = await db.execute_fetchall(
+                "SELECT cohort_name FROM ota_release_cohorts WHERE cohort_name=?",
+                (body.cohort_name,),
+            )
+            if not cohort_rows:
+                raise HTTPException(400, f"cohort {body.cohort_name!r} does not exist.")
+            user = current_user(request)
+            await db.execute(
+                "INSERT OR REPLACE INTO home_cohorts "
+                "(home_id, cohort_name, assigned_at, assigned_by) VALUES (?,?,?,?)",
+                (home_id, body.cohort_name,
+                 datetime.now(timezone.utc).isoformat(),
+                 user.get("email")),
+            )
+        await db.commit()
+
+    await log_event(
+        "home_cohort_updated", home_id=home_id, source_ip=src_ip, ok=True,
+        detail=f"cohort={body.cohort_name}",
+    )
+    return {"home_id": home_id, "cohort_name": body.cohort_name}

@@ -134,6 +134,40 @@ CREATE TABLE IF NOT EXISTS ota_releases (
     created_by      TEXT
 );
 
+-- Staged-rollout cohorts (Prompt 4 chunk 2.H). A cohort is a named group of
+-- homes that share the same target release. Resolution order at
+-- GET /api/devices/{device_id}/ota-manifest:
+--   1. homes.ota_pinned_release_id (per-home pin from Prompt 2)
+--   2. home_cohorts.cohort_name → ota_release_cohorts.release_id (this chunk)
+--   3. Most recent ota_releases row (global rollout)
+--
+-- A founder pins one home to a new release first, watches telemetry, then
+-- creates / updates a small cohort to expand, finally lifts the cohort pin
+-- (or just adds new releases — the cohort tracks whatever release_id the
+-- admin sets, not "latest").
+--
+-- cohort_name is the PK so admins can refer to cohorts by stable name in
+-- audit logs and admin tooling. The release_id FK is not enforced (PRAGMA
+-- foreign_keys is OFF in this DB); the POST endpoint validates that the
+-- release_id exists before writing.
+CREATE TABLE IF NOT EXISTS ota_release_cohorts (
+    cohort_name   TEXT    PRIMARY KEY,
+    release_id    INTEGER NOT NULL,
+    created_at    TEXT    NOT NULL,
+    created_by    TEXT
+);
+
+-- home_cohorts: which cohort (if any) a home belongs to. PK on home_id
+-- enforces "at most one cohort per home" — if an admin wants to move a
+-- home, they PUT a new cohort_name (or NULL to unassign). ON DELETE
+-- CASCADE means deprovisioning a home automatically removes its row.
+CREATE TABLE IF NOT EXISTS home_cohorts (
+    home_id      TEXT PRIMARY KEY REFERENCES homes(id) ON DELETE CASCADE,
+    cohort_name  TEXT NOT NULL,
+    assigned_at  TEXT NOT NULL,
+    assigned_by  TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_home     ON users(home_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token  ON invites(token);
@@ -143,6 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_home     ON audit_log(home_id, ts);
 CREATE INDEX IF NOT EXISTS idx_ota_releases_created ON ota_releases(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_raw_home_ts ON telemetry_raw(home_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_daily_day ON telemetry_daily(day);
+CREATE INDEX IF NOT EXISTS idx_home_cohorts_cohort  ON home_cohorts(cohort_name);
 """
 
 # Audit event names that Chunk #7's backup endpoints will emit. The
