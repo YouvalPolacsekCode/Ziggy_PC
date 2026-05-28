@@ -246,9 +246,21 @@ def _user_id_of(user: dict) -> str:
 @router.get("/devices")
 async def list_my_devices(user: dict = Depends(get_current_user)):
     """List mobile devices paired to the current user, with live connection
-    status (whether each has an active /api/mobile/ws connection)."""
-    uid = _user_id_of(user)
-    devices = mobile_app.list_devices_for_user(uid)
+    status (whether each has an active /api/mobile/ws connection).
+
+    Admin escape hatch: callers whose role is `relay_admin` (founder via
+    the relay's admin proxy) or local `super_admin` see ALL devices in
+    this home, not just their own. This is what the operator dashboard's
+    HomeCard "Mobile" tab consumes via the relay's
+    /api/admin/homes/{id}/mobile-devices endpoint. Customer-facing
+    behaviour is unchanged.
+    """
+    role = user.get("role")
+    if role in ("relay_admin", "super_admin"):
+        devices = mobile_app.list_all_devices()
+    else:
+        uid = _user_id_of(user)
+        devices = mobile_app.list_devices_for_user(uid)
     for d in devices:
         d["ws_connected"] = mobile_ws.is_connected(d["device_id"])
     return {"devices": devices}
