@@ -41,6 +41,7 @@ from backend.routers.debug_router import router as debug_router
 from backend.routers.update_router import router as update_router
 from backend.routers.ui_prefs_router import router as ui_prefs_router
 from backend.routers.mobile_router import router as mobile_router
+from backend.routers.edge_health_router import router as edge_health_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -409,6 +410,11 @@ app.include_router(debug_router,         dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
 app.include_router(ui_prefs_router,      dependencies=_auth)
 app.include_router(mobile_router)  # mobile endpoints handle their own auth per-route
+# Edge /health (Prompt 4 chunk 2.G) — LAN-reachable, NO auth dependency
+# so the PWA / mobile app can ping it during onboarding before the user
+# has a session. Lives at /health (not /api/health) so it can't collide
+# with the existing auth-gated route in health_router.
+app.include_router(edge_health_router)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.
