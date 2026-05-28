@@ -1,35 +1,33 @@
-"""Onboarding sensor list — Prompt 7 chunk 2.7.
+"""Onboarding endpoints — Prompt 7 chunks 2.7 + 3.
 
-GET /api/onboarding/sensors
-    Device-auth (mobile-paired phone). Returns the list the sensor-naming
-    wizard step (Chunk 3.2) renders: each pre-paired sensor from the kit
-    manifest, joined with HA's device registry so the mobile app shows the
-    current name + area alongside the factory-set Hebrew + English intended
-    labels.
+All /api/onboarding/* routes the mobile app calls during the kit-out-of-box
+flow live here. Routes are grouped by wizard step:
 
-Why join here and not in the app
---------------------------------
-The kit manifest lives on the edge (factory writes /etc/ziggy/kit_manifest.yaml).
-The HA registry lives in the local HA instance. The mobile app has no
-direct access to either. This endpoint is the only spot in the system
-where both are visible — keeping the join here means the app stays
-ignorant of HA-specific concepts (device_id, area_id, connections).
+  GET  /api/onboarding/sensors         (Chunk 2.7) — sensor list for the
+                                       naming wizard step
+  POST /api/onboarding/claim           (Chunk 3.1) — first-boot owner-account
+                                       creation + claim-pending device bind
+  POST /api/onboarding/sensors/confirm (Chunk 3.2) — TBD
+  GET  /api/onboarding/starter-pack    (Chunk 3.3) — TBD
+  POST /api/onboarding/complete        (Chunk 3.4) — TBD
 
-Sensors present in the manifest but not yet in HA come back with
-paired=False so the wizard can flag a missing sensor (factory imaging
-incomplete, sensor battery dead in transit, mesh re-pair needed). Sensors
-present in HA but absent from the manifest are NOT returned — the manifest
-is the source of truth for "what the kit shipped with."
+Auth posture varies per endpoint and is documented inline. Most use the
+device-token Depends(get_current_device) imported from mobile_router so a
+single source of truth for mobile-device-token validation stays in place.
 """
 from __future__ import annotations
 
+import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
-from backend.routers.mobile_router import get_current_device
-from core.logger_module import log_error
-from services import ha_areas, kit_manifest
+from backend.routers.mobile_router import get_current_device, _client_ip
+from core.debug_bus import bus as _dbus, BASIC
+from core.logger_module import log_error, log_info
+from services import auth_db, ha_areas, kit_manifest, mobile_app
+from services.auth_hashing import hash_password_bcrypt
 
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
@@ -125,4 +123,119 @@ async def get_onboarding_sensors(device: dict = Depends(get_current_device)) -> 
         # with an empty list). The wizard uses it to decide between
         # "no sensors found yet, retry" and "no sensors in this kit by
         # design" / "HA is offline right now, retry in a moment".
+    }
+
+
+# ── /api/onboarding/claim (Chunk 3.1) ───────────────────────────────────────
+
+class ClaimBody(BaseModel):
+    """Owner-account credentials submitted from the mobile CLAIM_OWNER step."""
+    username: str
+    password: str
+
+
+@router.post("/claim")
+async def claim_owner(
+    body: ClaimBody,
+    request: Request,
+    device: dict = Depends(get_current_device),
+) -> dict:
+    """First-boot owner-account creation + claim-pending device bind.
+
+    Flow on the wire:
+      1. Mobile app scanned the LAN /pair QR (claim-tier code).
+      2. POST /api/mobile/pair created a device record with claim_pending=True
+         and returned an auth_token + is_first_pair=True (Chunk 2.5).
+      3. Mobile app collected username + password from the customer.
+      4. POST /api/onboarding/claim (this endpoint) with the device token in
+         Authorization. We create the super_admin owner account, bind the
+         freshly-paired mobile device to it, and return a user session token
+         the customer's PWA can pick up later for browser auto-login.
+
+    Concurrency notes:
+      - Only the FIRST caller succeeds. has_any_user() race is benign:
+        the second create_user would fail at SQL uniqueness; we re-check
+        explicitly to return a tidy 409.
+      - A claim-pending device whose token can't bind (race with revoke or
+        bind-already-happened) yields device_bound=False without rolling
+        back the user creation — the customer's account exists, the
+        device is just orphaned and can be revoked from Settings later.
+
+    Audit:
+      Emits `onboarding.claim_succeeded` and `onboarding.claim_rejected`
+      (with a specific reason) so the founder's debug feed shows whether
+      a freshly-imaged box made it through claim cleanly.
+    """
+    src_ip = _client_ip(request)
+
+    # 1. The auth dep already returned a valid device record. Now verify
+    #    it's actually waiting to be claimed.
+    if not device.get("claim_pending"):
+        _dbus.emit("onboarding", BASIC, "claim_rejected",
+                   reason="device_not_claim_pending",
+                   device_id=device.get("device_id"),
+                   source_ip=src_ip)
+        raise HTTPException(status_code=409, detail="This device is already claimed.")
+
+    # 2. Refuse a second claim — only the very first owner gets the
+    #    super_admin slot via this no-auth flow. Subsequent users go through
+    #    invite_router.
+    if auth_db.has_any_user():
+        _dbus.emit("onboarding", BASIC, "claim_rejected",
+                   reason="owner_already_exists",
+                   device_id=device.get("device_id"),
+                   source_ip=src_ip)
+        raise HTTPException(status_code=409, detail="An owner account already exists.")
+
+    # 3. Lightweight validation — mirrors /api/auth/setup so two routes that
+    #    create owner accounts apply the same minimum requirements.
+    username = (body.username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Username required.")
+    if len(body.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
+
+    # 4. Create the owner. Mirror /api/auth/setup primitives so the user row
+    #    matches what every other login path expects (bcrypt hash, empty
+    #    salt, hash_algo=bcrypt, super_admin role).
+    user_session_token = secrets.token_hex(32)
+    user_row_id = auth_db.create_user(
+        username=username,
+        password_hash=hash_password_bcrypt(body.password),
+        salt="",
+        role="super_admin",
+        hash_algo="bcrypt",
+    )
+    auth_db.add_session(user_row_id, user_session_token)
+
+    # 5. Bind the device. mobile_app stores user_id as the username string
+    #    (convention shared with /api/mobile/pair-code's mint path).
+    device_bound = mobile_app.bind_claim_pending_device(
+        device["device_id"],
+        user_id=username,
+    )
+    if not device_bound:
+        # Created the user but the device record could not be bound — the
+        # customer's account exists and they can still use the PWA, but the
+        # mobile device is orphaned. Surface this loudly via the audit bus
+        # so the founder spots the inconsistency in /api/debug/events.
+        log_error(
+            f"[onboarding] claim: created user '{username}' but failed to bind "
+            f"claim-pending device {device['device_id']} — device record may "
+            f"have been concurrently mutated."
+        )
+
+    log_info(f"[onboarding] claim succeeded — user={username} device={device['device_id']}")
+    _dbus.emit("onboarding", BASIC, "claim_succeeded",
+               device_id=device.get("device_id"),
+               user_id=username,
+               device_bound=device_bound,
+               source_ip=src_ip)
+
+    return {
+        "ok":            True,
+        "user_token":    user_session_token,
+        "role":          "super_admin",
+        "username":      username,
+        "device_bound":  device_bound,
     }
