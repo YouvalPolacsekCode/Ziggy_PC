@@ -199,6 +199,18 @@ export default function AdminConsole() {
             ]}
             onOpen={() => navigate('/ops/ha-update')}
           />
+          <ToolCard
+            badge={t('adminConsole.adminBadge')}
+            title={t('adminConsole.otaTitle')}
+            description={t('adminConsole.otaDesc')}
+            bullets={[
+              t('adminConsole.otaBullet1'),
+              t('adminConsole.otaBullet2'),
+              t('adminConsole.otaBullet3'),
+              t('adminConsole.otaBullet4'),
+            ]}
+            onOpen={() => navigate('/ops/ota')}
+          />
         </div>
       </main>
     </div>
