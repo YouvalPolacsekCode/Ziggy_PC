@@ -4,7 +4,7 @@ import asyncio
 import threading
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.errors import ErrorCode, ZiggyError, pairing_failed
@@ -18,8 +18,15 @@ from services.ha_pairing import (
     WIFI_INTEGRATIONS,
 )
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
+from .auth_deps import require_role
 
 router = APIRouter()
+
+
+# Promoted from user-bearer to admin in PROMPT_SECURITY_HARDENING_V2
+# (bucket B — structural/destructive). Per-route emits below tag the calls
+# with auth_added=True so the founder can spot any legitimate caller
+# broken by the change during the 30-day audit window.
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +72,10 @@ class DeviceRename(BaseModel):
 
 
 @router.post("/api/ha/zha/permit")
-async def zha_permit(body: ZhaPermitBody):
+async def zha_permit(body: ZhaPermitBody, _user: dict = Depends(require_role("admin"))):
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/ha/zha/permit",
+               user=_user.get("username"), auth_added=True)
     _dbus.emit("ha", BASIC, "pairing_permit_join_started",
                duration_s=body.duration,
                message=f"Zigbee permit join opened for {body.duration}s")
@@ -113,7 +123,10 @@ async def ha_rename_device(device_id: str, body: DeviceRename):
 # ---------------------------------------------------------------------------
 
 @router.post("/api/ha/zwave/include")
-async def zwave_include():
+async def zwave_include(_user: dict = Depends(require_role("admin"))):
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/ha/zwave/include",
+               user=_user.get("username"), auth_added=True)
     result = await start_zwave_inclusion()
     if not result.get("ok"):
         raise pairing_failed("zwave", upstream_detail=result.get("error"))
@@ -122,7 +135,10 @@ async def zwave_include():
 
 
 @router.post("/api/ha/zwave/stop")
-async def zwave_stop():
+async def zwave_stop(_user: dict = Depends(require_role("admin"))):
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/ha/zwave/stop",
+               user=_user.get("username"), auth_added=True)
     await stop_zwave_inclusion()
     return {"ok": True}
 
@@ -136,7 +152,11 @@ class MatterCommissionBody(BaseModel):
 
 
 @router.post("/api/ha/matter/commission")
-async def matter_commission(body: MatterCommissionBody):
+async def matter_commission(body: MatterCommissionBody,
+                            _user: dict = Depends(require_role("admin"))):
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/ha/matter/commission",
+               user=_user.get("username"), auth_added=True)
     if not body.code.strip():
         raise ZiggyError(
             code=ErrorCode.VALIDATION_ERROR,
@@ -174,7 +194,7 @@ class FlowStepBody(BaseModel):
 
 
 @router.post("/api/pairing/switcher/start")
-async def switcher_pairing_start():
+async def switcher_pairing_start(_user: dict = Depends(require_role("admin"))):
     """Start (or resume) a Switcher pairing flow. Returns the first step.
 
     Returns 200 with the full envelope even on expected errors (port-in-use,
@@ -182,6 +202,9 @@ async def switcher_pairing_start():
     targeted recovery actions. Only true infrastructure failures should
     raise HTTPException.
     """
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/switcher/start",
+               user=_user.get("username"), auth_added=True)
     from services.switcher_pairing import start_or_resume
     _dbus.emit("ha", BASIC, "switcher_pairing_started",
                message="Switcher pairing started — driving HA switcher_kis flow.")
@@ -190,8 +213,12 @@ async def switcher_pairing_start():
 
 
 @router.post("/api/pairing/switcher/{flow_id}/step")
-async def switcher_pairing_step(flow_id: str, body: FlowStepBody):
+async def switcher_pairing_step(flow_id: str, body: FlowStepBody,
+                                _user: dict = Depends(require_role("admin"))):
     """Submit user answers for the current step; return the next step."""
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/switcher/{flow_id}/step",
+               user=_user.get("username"), auth_added=True)
     from services.switcher_pairing import submit
     res = await submit(flow_id, body.user_input)
     if not res.get("ok"):
@@ -205,7 +232,11 @@ async def switcher_pairing_step(flow_id: str, body: FlowStepBody):
 
 
 @router.post("/api/pairing/switcher/{flow_id}/cancel")
-async def switcher_pairing_cancel(flow_id: str):
+async def switcher_pairing_cancel(flow_id: str,
+                                  _user: dict = Depends(require_role("admin"))):
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/switcher/{flow_id}/cancel",
+               user=_user.get("username"), auth_added=True)
     from services.switcher_pairing import cancel
     res = await cancel(flow_id)
     return res
@@ -224,12 +255,15 @@ async def switcher_pairing_diagnose():
 
 
 @router.post("/api/pairing/switcher/recover")
-async def switcher_pairing_recover():
+async def switcher_pairing_recover(_user: dict = Depends(require_role("admin"))):
     """Heavy-handed recovery: restart HA, wait for it, retry pairing.
 
     Triggered by the FE only after we've shown the user that HA's switcher
     discovery port is leaked. Hides the underlying HA restart entirely.
     """
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/switcher/recover",
+               user=_user.get("username"), auth_added=True)
     from services.switcher_pairing import restart_ha_and_retry
     _dbus.emit("ha", BASIC, "switcher_pairing_recover_started",
                message="Restarting HA to free Switcher discovery port.")
@@ -262,12 +296,16 @@ async def switcher_account_status():
 
 
 @router.post("/api/pairing/switcher/account")
-async def switcher_account_connect(body: SwitcherAccountBody):
+async def switcher_account_connect(body: SwitcherAccountBody,
+                                   _user: dict = Depends(require_role("admin"))):
     """Validate and save Switcher account credentials.
 
     Calls Switcher's ValidateToken endpoint via aioswitcher. On success,
     persists the credentials so they auto-inject into every future pairing.
     """
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/switcher/account",
+               user=_user.get("username"), auth_added=True)
     from services.switcher_account import validate_and_save
     res = await validate_and_save(body.email, body.token)
     if not res.get("ok"):
@@ -278,7 +316,10 @@ async def switcher_account_connect(body: SwitcherAccountBody):
 
 
 @router.delete("/api/pairing/switcher/account")
-async def switcher_account_disconnect():
+async def switcher_account_disconnect(_user: dict = Depends(require_role("admin"))):
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="DELETE /api/pairing/switcher/account",
+               user=_user.get("username"), auth_added=True)
     from services.switcher_account import clear_credentials
     removed = clear_credentials()
     return {"ok": True, "had_credentials": removed}
