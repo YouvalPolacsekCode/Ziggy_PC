@@ -3004,6 +3004,46 @@ export default {
   'mobileOnboard.personEmpty':       "No household members yet. You can add one from Settings → Presence tracking, then return here.",
   'mobileOnboard.skipPerson':        'Skip — bind later in Settings',
 
+  // First-boot claim-owner step (Prompt 7 chunk 3.6)
+  'mobileOnboard.subtitleClaim':     'Create your owner account.',
+  'mobileOnboard.claim.title':       'Create your Ziggy account',
+  'mobileOnboard.claim.body':        "This is the first time anyone has set up this Ziggy. Pick a username and password — you'll use these to sign in on the web later.",
+  'mobileOnboard.claim.username':    'Username or email',
+  'mobileOnboard.claim.password':    'Password',
+  'mobileOnboard.claim.passwordHint':'At least 4 characters.',
+  'mobileOnboard.claim.create':      'Create account',
+  'mobileOnboard.claim.creating':    'Creating…',
+  'mobileOnboard.claim.errEmpty':    'Username and password required.',
+  'mobileOnboard.claim.errShort':    'Password must be at least 4 characters.',
+  'mobileOnboard.claim.errExists':   'An owner account already exists. Use Pair Phone instead.',
+  'mobileOnboard.claim.errGeneric':  "Couldn't create the account. Try again.",
+
+  // First-boot sensor naming wizard (Prompt 7 chunk 3.6)
+  'mobileOnboard.subtitleSensors':   "Let's confirm your sensors.",
+  'mobileOnboard.sensors.title':     'Confirm your sensors',
+  'mobileOnboard.sensors.intro':     "We'll walk through each sensor in your kit. Edit the name if you like, or just tap Next.",
+  'mobileOnboard.sensors.progress':  '{current} of {total}',
+  'mobileOnboard.sensors.nameLabel': 'Sensor name',
+  'mobileOnboard.sensors.roomLabel': 'Room',
+  'mobileOnboard.sensors.next':      'Next',
+  'mobileOnboard.sensors.skip':      'Skip this one',
+  'mobileOnboard.sensors.finish':    'Save and continue',
+  'mobileOnboard.sensors.saving':    'Saving…',
+  'mobileOnboard.sensors.empty':     'No kit sensors detected. Skipping this step.',
+  'mobileOnboard.sensors.haDown':    "Couldn't reach Home Assistant. Skipping for now — you can rename sensors later from Settings.",
+  'mobileOnboard.sensors.savedSome': 'Saved {confirmed} sensors. {failed} could not be saved — you can fix them later in Settings.',
+
+  // First-boot starter automation pack (Prompt 7 chunk 3.6)
+  'mobileOnboard.subtitleStarter':   "Want some automations to get you started?",
+  'mobileOnboard.starter.title':     'Starter automations',
+  'mobileOnboard.starter.intro':     "Here are a few automations matched to your kit. Toggle the ones you want — they install automatically and you can change them anytime.",
+  'mobileOnboard.starter.install':   'Install selected',
+  'mobileOnboard.starter.installing':'Installing…',
+  'mobileOnboard.starter.skipAll':   'Skip all',
+  'mobileOnboard.starter.empty':     'No starter automations available for this kit yet.',
+  'mobileOnboard.starter.haDown':    "Couldn't reach Home Assistant. Skipping starter automations for now.",
+  'mobileOnboard.starter.installedN':'Installed {n}. {failed} could not be installed.',
+
   // ── Mobile diagnostics (MobileDiagnostics.jsx) ──────────────────────
   'mobileDiag.title':                'Mobile diagnostics',
   'mobileDiag.tokenPresent':         '••• present',

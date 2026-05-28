@@ -2633,6 +2633,46 @@ export default {
   'mobileOnboard.personEmpty':       'אין עדיין חברי משק בית. אפשר להוסיף אחד בהגדרות → מעקב נוכחות, ולחזור לכאן.',
   'mobileOnboard.skipPerson':        'דלג — אקשר מאוחר יותר בהגדרות',
 
+  // First-boot claim-owner step (Prompt 7 chunk 3.6)
+  'mobileOnboard.subtitleClaim':     'יצירת חשבון בעלים.',
+  'mobileOnboard.claim.title':       'צור את חשבון זיגי שלך',
+  'mobileOnboard.claim.body':        'זאת הפעם הראשונה שמישהו מגדיר את זיגי הזה. בחר שם משתמש וסיסמה — תשתמש בהם כדי להתחבר מהדפדפן בהמשך.',
+  'mobileOnboard.claim.username':    'שם משתמש או אימייל',
+  'mobileOnboard.claim.password':    'סיסמה',
+  'mobileOnboard.claim.passwordHint':'לפחות 4 תווים.',
+  'mobileOnboard.claim.create':      'צור חשבון',
+  'mobileOnboard.claim.creating':    'יוצר…',
+  'mobileOnboard.claim.errEmpty':    'נדרשים שם משתמש וסיסמה.',
+  'mobileOnboard.claim.errShort':    'הסיסמה חייבת להכיל לפחות 4 תווים.',
+  'mobileOnboard.claim.errExists':   'כבר קיים חשבון בעלים. השתמש בצימוד טלפון במקום.',
+  'mobileOnboard.claim.errGeneric':  'לא הצלחתי ליצור את החשבון. נסה שוב.',
+
+  // First-boot sensor naming wizard (Prompt 7 chunk 3.6)
+  'mobileOnboard.subtitleSensors':   'בוא נאשר את החיישנים שלך.',
+  'mobileOnboard.sensors.title':     'אשרו את החיישנים',
+  'mobileOnboard.sensors.intro':     'נעבור על כל חיישן בערכה. ערוך את השם אם תרצה, או פשוט הקש על הבא.',
+  'mobileOnboard.sensors.progress':  '{current} מתוך {total}',
+  'mobileOnboard.sensors.nameLabel': 'שם החיישן',
+  'mobileOnboard.sensors.roomLabel': 'חדר',
+  'mobileOnboard.sensors.next':      'הבא',
+  'mobileOnboard.sensors.skip':      'דלג על זה',
+  'mobileOnboard.sensors.finish':    'שמור והמשך',
+  'mobileOnboard.sensors.saving':    'שומר…',
+  'mobileOnboard.sensors.empty':     'לא זוהו חיישני ערכה. מדלג על השלב הזה.',
+  'mobileOnboard.sensors.haDown':    'לא הצלחתי להגיע ל-Home Assistant. מדלג בינתיים — אפשר לשנות שמות חיישנים בהגדרות.',
+  'mobileOnboard.sensors.savedSome': 'נשמרו {confirmed} חיישנים. {failed} לא נשמרו — אפשר לתקן בהגדרות.',
+
+  // First-boot starter automation pack (Prompt 7 chunk 3.6)
+  'mobileOnboard.subtitleStarter':   'רוצה כמה אוטומציות להתחלה?',
+  'mobileOnboard.starter.title':     'אוטומציות התחלתיות',
+  'mobileOnboard.starter.intro':     'הנה כמה אוטומציות שמתאימות לערכה שלך. סמן את אלה שאתה רוצה — הן יותקנו אוטומטית ותמיד אפשר לשנות אותן.',
+  'mobileOnboard.starter.install':   'התקן נבחרות',
+  'mobileOnboard.starter.installing':'מתקין…',
+  'mobileOnboard.starter.skipAll':   'דלג על הכל',
+  'mobileOnboard.starter.empty':     'אין עדיין אוטומציות התחלתיות זמינות לערכה הזו.',
+  'mobileOnboard.starter.haDown':    'לא הצלחתי להגיע ל-Home Assistant. מדלג בינתיים על האוטומציות ההתחלתיות.',
+  'mobileOnboard.starter.installedN':'הותקנו {n}. {failed} לא הותקנו.',
+
   // ── Mobile diagnostics (MobileDiagnostics.jsx) ──────────────────────
   'mobileDiag.title':                'אבחון נייד',
   'mobileDiag.tokenPresent':         '••• קיים',
