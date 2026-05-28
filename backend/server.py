@@ -42,6 +42,7 @@ from backend.routers.update_router import router as update_router
 from backend.routers.ui_prefs_router import router as ui_prefs_router
 from backend.routers.mobile_router import router as mobile_router
 from backend.routers.edge_health_router import router as edge_health_router
+from backend.routers.first_boot_router import router as first_boot_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -421,6 +422,10 @@ app.include_router(mobile_router)  # mobile endpoints handle their own auth per-
 # has a session. Lives at /health (not /api/health) so it can't collide
 # with the existing auth-gated route in health_router.
 app.include_router(edge_health_router)
+# First-boot LAN /pair page + /api/onboarding/first-boot/qr.json
+# (Prompt 7 chunk 2.6). Same no-auth posture as edge_health — the
+# customer hasn't created an owner account yet when they hit these.
+app.include_router(first_boot_router)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.

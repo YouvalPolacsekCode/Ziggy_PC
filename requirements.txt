@@ -74,6 +74,12 @@ bcrypt<4.1
 cryptography>=42.0.0
 boto3>=1.34.0
 
+# First-boot LAN /pair page QR rendering. Pure-Python, no Pillow needed —
+# we emit SVG inline in the HTML response, so segno's tiny footprint is
+# sufficient. Mirrors the qrencode shell binary used by the factory imaging
+# script (PROMPT_FACTORY_IMAGING §4 step 11).
+segno>=1.6
+
 # IR blaster direct access (used alongside HA — enables continuous IR receive)
 broadlink>=0.18.0
 
