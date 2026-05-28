@@ -2,16 +2,22 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Home, Copy, Trash2, Plus, RefreshCw, ChevronDown, ChevronRight,
   CheckCircle, Clock, XCircle, Shield, Wifi, WifiOff, Loader, Users,
+  Activity, Package, Database,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
+import { computeHealth, HEALTH_COLORS } from '../lib/fleetHealth'
 import {
   getUsers, updateUser, deleteUser,
   listInvites, createInvite, revokeInvite,
   getHaSettings, getHealth,
   relayListHomes, relayGetHome, relayProvision, relayDeprovision,
   relayCreateInvite,
+  relayHomeTelemetry,
+  relayOtaReleases, relayHomeOtaPin, relaySetHomeOtaPin,
+  relayOtaCohorts, relaySetHomeCohort,
+  relayHomeBackupStatus,
   isRelayConfigured, getRelayUrl, setRelayUrl, setRelayToken, relayLogin,
 } from '../lib/api'
 
@@ -31,6 +37,304 @@ function RoleBadge({ role }) {
     }}>
       {labelKey ? t(labelKey) : role}
     </span>
+  )
+}
+
+// ── Traffic-light pill for fleet health ───────────────────────────────────────
+// Drives the pill colour + tooltip text from fleetHealth.computeHealth.
+// Only used for relay-managed homes; the local home keeps its haConnected
+// binary pill because computeHealth's heartbeat rule doesn't fit the local
+// (no-telemetry-loop) shape.
+function TrafficLightPill({ home, latestPayload }) {
+  const t = useT()
+  const { level, reasons } = computeHealth(home, latestPayload)
+  const colors = HEALTH_COLORS[level]
+  const tooltip = reasons.length === 0
+    ? t(`fleetHealth.${level}`)
+    : reasons.map(r => t(r.key, r.args || {})).join(' · ')
+  return (
+    <span
+      title={tooltip}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        fontSize: 10, fontWeight: 600, padding: '1px 8px', borderRadius: 999,
+        background: colors.bg, color: colors.fg, border: `0.5px solid ${colors.border}`,
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.fg }} />
+      {t(`fleetHealth.${level}`)}
+    </span>
+  )
+}
+
+// ── Helpers for tab content rendering ─────────────────────────────────────────
+function timeAgoLabel(t, iso) {
+  if (!iso) return t('cloudAdmin.never')
+  const ts = Date.parse(iso)
+  if (!Number.isFinite(ts)) return t('cloudAdmin.never')
+  const mins = Math.floor((Date.now() - ts) / 60000)
+  if (mins < 1) return t('cloudAdmin.minutesAgo', { n: 0 })
+  if (mins < 60) return t('cloudAdmin.minutesAgo', { n: mins })
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return t('cloudAdmin.hoursAgo', { n: hours })
+  return t('cloudAdmin.daysAgo', { n: Math.floor(hours / 24) })
+}
+
+function StatRow({ label, value, mono }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px dashed var(--line)' }}>
+      <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{label}</span>
+      <span style={{
+        fontSize: 11, color: 'var(--ink)',
+        fontFamily: mono ? '"IBM Plex Mono", monospace' : 'inherit',
+        wordBreak: 'break-all', textAlign: 'right',
+      }}>
+        {value ?? '—'}
+      </span>
+    </div>
+  )
+}
+
+function TabSpinner() {
+  return (
+    <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-faint)', fontSize: 11 }}>
+      <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+      <span />
+    </div>
+  )
+}
+
+// ── Telemetry tab ─────────────────────────────────────────────────────────────
+function TelemetryTab({ homeId, onPayload }) {
+  const t = useT()
+  const [state, setState] = useState({ status: 'loading', rows: [], error: null })
+  const [showRaw, setShowRaw] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setState({ status: 'loading', rows: [], error: null })
+    relayHomeTelemetry(homeId, 1)
+      .then(res => {
+        if (cancelled) return
+        setState({ status: 'ok', rows: res.rows || [], error: null })
+        // Hand the latest payload back up so the pill can compute richer health
+        // reasons (disk/CPU/battery) without an extra fetch.
+        if (res.rows?.[0]?.payload) onPayload?.(res.rows[0].payload)
+      })
+      .catch(e => {
+        if (cancelled) return
+        setState({ status: 'error', rows: [], error: e?.message || 'load failed' })
+      })
+    return () => { cancelled = true }
+  }, [homeId, onPayload])
+
+  if (state.status === 'loading') return <TabSpinner />
+  if (state.status === 'error') return (
+    <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
+  )
+  if (state.rows.length === 0) return (
+    <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.telemetryNone')}</p>
+  )
+
+  const row = state.rows[0]
+  const p = row.payload || {}
+  const sensors = Array.isArray(p.sensors) ? p.sensors : []
+  const containers = Array.isArray(p.containers) ? p.containers : []
+  const containersDown = containers.filter(c => c?.state && c.state !== 'running').length
+  const uptimeHours = p.uptime_s != null ? Math.floor(p.uptime_s / 3600) : null
+
+  // Push delivery (Prompt 10 chunk 3 design — option 1 piggyback). Edge agent
+  // is expected to add these counters to its telemetry payload. Until then,
+  // they read as undefined and the rows simply don't render.
+  const apnsSuccess = p.apns_success_24h
+  const apnsFailure = p.apns_failure_24h
+  const fcmSuccess  = p.fcm_success_24h
+  const fcmFailure  = p.fcm_failure_24h
+  const showPush = [apnsSuccess, apnsFailure, fcmSuccess, fcmFailure].some(v => v != null)
+
+  return (
+    <div style={{ padding: '12px 20px 16px' }}>
+      <StatRow label={t('cloudAdmin.telemetryLastSeen')} value={timeAgoLabel(t, row.ts)} />
+      <StatRow label={t('cloudAdmin.telemetryHaVersion')} value={p.ha_version} mono />
+      <StatRow label={t('cloudAdmin.telemetryZiggyVersion')} value={p.ziggy_version} mono />
+      {uptimeHours != null && <StatRow label={t('cloudAdmin.telemetryUptime')} value={`${uptimeHours} h`} />}
+      <StatRow label={t('cloudAdmin.telemetryDisk')} value={p.disk_pct != null ? `${Math.round(p.disk_pct)}%` : null} />
+      <StatRow label={t('cloudAdmin.telemetryCpu')}  value={p.cpu_pct  != null ? `${Math.round(p.cpu_pct)}%`  : null} />
+      <StatRow label={t('cloudAdmin.telemetryMem')}  value={p.mem_pct  != null ? `${Math.round(p.mem_pct)}%`  : null} />
+      <StatRow label={t('cloudAdmin.telemetrySensors')} value={sensors.length || null} />
+      <StatRow label={t('cloudAdmin.telemetryContainers')} value={containers.length ? `${containers.length} (${containersDown} down)` : null} />
+      <StatRow label={t('cloudAdmin.telemetryLastAutomation')} value={p.last_automation_trigger ? timeAgoLabel(t, p.last_automation_trigger) : null} />
+      {showPush && (
+        <>
+          <StatRow
+            label={t('cloudAdmin.telemetryPushApns')}
+            value={apnsSuccess != null || apnsFailure != null
+              ? t('cloudAdmin.telemetryPushDelivery', { success: apnsSuccess ?? 0, failure: apnsFailure ?? 0 })
+              : null}
+          />
+          <StatRow
+            label={t('cloudAdmin.telemetryPushFcm')}
+            value={fcmSuccess != null || fcmFailure != null
+              ? t('cloudAdmin.telemetryPushDelivery', { success: fcmSuccess ?? 0, failure: fcmFailure ?? 0 })
+              : null}
+          />
+        </>
+      )}
+      <button
+        onClick={() => setShowRaw(v => !v)}
+        style={{ marginTop: 10, fontSize: 10, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+      >
+        {showRaw ? '▼' : '▶'} {t('cloudAdmin.telemetryViewRaw')}
+      </button>
+      {showRaw && (
+        <pre style={{
+          fontSize: 9.5, color: 'var(--ink-mute)', background: 'var(--bg-2)',
+          padding: 10, borderRadius: 8, overflow: 'auto',
+          fontFamily: '"IBM Plex Mono", monospace', marginTop: 8,
+          maxHeight: 240, border: '0.5px solid var(--line)',
+        }}>
+          {JSON.stringify(p, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+// ── OTA tab — per-home pin + cohort selectors ─────────────────────────────────
+function OtaTab({ home }) {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const [releases, setReleases] = useState(null)
+  const [cohorts,  setCohorts]  = useState(null)
+  const [pinId,    setPinId]    = useState(home.ota_pinned_release_id ?? '')
+  const [cohort,   setCohort]   = useState('')
+  const [savingPin,    setSavingPin]    = useState(false)
+  const [savingCohort, setSavingCohort] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setError(null)
+    Promise.all([
+      relayOtaReleases().catch(e => { throw e }),
+      relayOtaCohorts().catch(e => { throw e }),
+      relayHomeOtaPin(home.id).catch(() => null),
+    ])
+      .then(([rel, coh, pin]) => {
+        if (cancelled) return
+        setReleases(rel.releases || [])
+        setCohorts(coh.cohorts || [])
+        if (pin?.release_id != null) setPinId(String(pin.release_id))
+      })
+      .catch(e => { if (!cancelled) setError(e?.message || 'load failed') })
+    return () => { cancelled = true }
+  }, [home.id])
+
+  if (error) return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {error}</p>
+  if (releases == null || cohorts == null) return <TabSpinner />
+
+  const savePin = async () => {
+    setSavingPin(true)
+    try {
+      const next = pinId === '' ? null : Number(pinId)
+      await relaySetHomeOtaPin(home.id, next)
+      addToast(t('cloudAdmin.otaPinSaved'), 'success')
+    } catch (e) { addToast(e?.message || t('cloudAdmin.tabLoadError'), 'error') }
+    finally { setSavingPin(false) }
+  }
+  const saveCohort = async () => {
+    setSavingCohort(true)
+    try {
+      await relaySetHomeCohort(home.id, cohort || null)
+      addToast(t('cloudAdmin.otaCohortSaved'), 'success')
+    } catch (e) { addToast(e?.message || t('cloudAdmin.tabLoadError'), 'error') }
+    finally { setSavingCohort(false) }
+  }
+
+  const inputStyle = { width: '100%', height: 32, padding: '0 8px', borderRadius: 8, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12 }
+
+  return (
+    <div style={{ padding: '14px 20px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloudAdmin.otaPinLabel')}</p>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <select value={pinId} onChange={e => setPinId(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+            <option value="">{t('cloudAdmin.otaPinNone')}</option>
+            {releases.map(r => (
+              <option key={r.id} value={String(r.id)}>
+                #{r.id} · HA {r.ha_version} · Ziggy {r.ziggy_version}
+              </option>
+            ))}
+          </select>
+          <button onClick={savePin} disabled={savingPin} className="z-btn-secondary" style={{ padding: '0 12px', height: 32, borderRadius: 8, fontSize: 11 }}>
+            {savingPin ? '…' : t('cloudAdmin.otaSavePin')}
+          </button>
+        </div>
+      </div>
+      <div>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloudAdmin.otaCohortLabel')}</p>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <select value={cohort} onChange={e => setCohort(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+            <option value="">{t('cloudAdmin.otaCohortNone')}</option>
+            {cohorts.map(c => (
+              <option key={c.cohort_name} value={c.cohort_name}>
+                {c.cohort_name} → #{c.release_id} ({c.home_count})
+              </option>
+            ))}
+          </select>
+          <button onClick={saveCohort} disabled={savingCohort} className="z-btn-secondary" style={{ padding: '0 12px', height: 32, borderRadius: 8, fontSize: 11 }}>
+            {savingCohort ? '…' : t('cloudAdmin.otaSaveCohort')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Backup tab — last backup + restore events ─────────────────────────────────
+function BackupTab({ homeId }) {
+  const t = useT()
+  const [state, setState] = useState({ status: 'loading', data: null, error: null })
+
+  useEffect(() => {
+    let cancelled = false
+    setState({ status: 'loading', data: null, error: null })
+    relayHomeBackupStatus(homeId)
+      .then(d => { if (!cancelled) setState({ status: 'ok', data: d, error: null }) })
+      .catch(e => { if (!cancelled) setState({ status: 'error', data: null, error: e?.message || 'load failed' }) })
+    return () => { cancelled = true }
+  }, [homeId])
+
+  if (state.status === 'loading') return <TabSpinner />
+  if (state.status === 'error') return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
+  const d = state.data || {}
+  const restoreEvents = Array.isArray(d.restore_events) ? d.restore_events : []
+  if (!d.last_backup_at && !d.last_unsealed_at && restoreEvents.length === 0) {
+    return <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.backupNoStatus')}</p>
+  }
+
+  return (
+    <div style={{ padding: '12px 20px 16px' }}>
+      <StatRow label={t('cloudAdmin.backupLastBackup')} value={d.last_backup_at ? timeAgoLabel(t, d.last_backup_at) : null} />
+      <StatRow
+        label={t('cloudAdmin.backupKeyState')}
+        value={d.last_unsealed_at
+          ? t('cloudAdmin.backupKeyUnsealed', { by: d.last_unsealed_by || '?', when: timeAgoLabel(t, d.last_unsealed_at) })
+          : t('cloudAdmin.backupKeySealed')}
+      />
+      <div style={{ marginTop: 10 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+          {t('cloudAdmin.backupRestoreEvents')}
+        </p>
+        {restoreEvents.length === 0 ? (
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.backupNoRestoreEvents')}</p>
+        ) : restoreEvents.map((ev, i) => (
+          <div key={i} style={{ fontSize: 11, color: 'var(--ink-mute)', padding: '4px 0', borderBottom: '0.5px dashed var(--line)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            {ev.ts} · {ev.event} {ev.ok === false ? '(failed)' : ''}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -188,12 +492,78 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
 }
 
 // ── Per-home card with expandable users ───────────────────────────────────────
+//
+// Relay-managed homes get a 4-tab expansion (Members / Telemetry / OTA /
+// Backup), with the first tab being the pre-existing users+invites surface
+// unchanged. Local home stays single-pane (no telemetry pipe to Prompt 2's
+// relay endpoints, no per-home OTA pin, no relay backup status — these
+// only exist for cloud-provisioned homes).
 function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeInvite, onInviteUser, onDeprovision, isLocal }) {
   const t = useT()
   const [expanded, setExpanded] = useState(isLocal)
+  const [tab, setTab] = useState('members')
+  // TelemetryTab hands the latest payload up here so the traffic-light pill
+  // can compute disk/CPU/battery reasons on top of the heartbeat baseline
+  // without firing a second relay request.
+  const [livePayload, setLivePayload] = useState(null)
   // Only show user invites under a home — home-type invites are for provisioning
   // new homes and should never appear as pending members of an existing home.
   const pending = invites.filter(i => i.status === 'pending' && i.type !== 'home')
+
+  const tabs = [
+    { id: 'members',   icon: Users,    labelKey: 'cloudAdmin.tabMembers' },
+    { id: 'telemetry', icon: Activity, labelKey: 'cloudAdmin.tabTelemetry' },
+    { id: 'ota',       icon: Package,  labelKey: 'cloudAdmin.tabOta' },
+    { id: 'backup',    icon: Database, labelKey: 'cloudAdmin.tabBackup' },
+  ]
+
+  const membersContent = (
+    <>
+      {/* Active users */}
+      {users.map(u => (
+        <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', borderBottom: '0.5px solid var(--line)' }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: (ROLE_COLOR[u.role] || '#6b7280') + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: ROLE_COLOR[u.role] || '#6b7280', flexShrink: 0 }}>
+            {(u.username[0] || '?').toUpperCase()}
+          </div>
+          <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
+          {onRoleChange ? (
+            <select value={u.role} onChange={e => onRoleChange(u.username, e.target.value)}
+              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLOR[u.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}>
+              {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
+            </select>
+          ) : <RoleBadge role={u.role} />}
+          {onDeleteUser && (
+            <button onClick={() => onDeleteUser(u.username)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      ))}
+
+      {/* Pending invites */}
+      {pending.map(inv => (
+        <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', borderBottom: '0.5px solid var(--line)', opacity: 0.7 }}>
+          <Clock size={13} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+          <span style={{ flex: 1, fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {inv.email || t('cloud.openInviteShort')} · {ROLE_LABEL_KEY[inv.role] ? t(ROLE_LABEL_KEY[inv.role]) : inv.role}
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '1px 6px', borderRadius: 6, flexShrink: 0 }}>{t('cloud.tagPending')}</span>
+          {onRevokeInvite && (
+            <button onClick={() => onRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
+      ))}
+
+      {/* Invite button */}
+      <div style={{ padding: '12px 20px' }}>
+        <button onClick={onInviteUser} className="z-btn-secondary" style={{ width: '100%', height: 34, borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Plus size={13} /> {t('cloud.inviteUser')}
+        </button>
+      </div>
+    </>
+  )
 
   return (
     <Card style={{ marginBottom: 12 }}>
@@ -208,13 +578,17 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{home.name}</p>
-            <span style={{
-              fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 999,
-              background: home.haConnected !== false ? 'var(--ok)18' : 'var(--warn)18',
-              color: home.haConnected !== false ? 'var(--ok)' : 'var(--warn)',
-            }}>
-              {isLocal ? (home.haConnected ? t('cloud.haOnline') : t('cloud.haOffline')) : (home.status || t('cloud.unknown'))}
-            </span>
+            {isLocal ? (
+              <span style={{
+                fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 999,
+                background: home.haConnected !== false ? 'var(--ok)18' : 'var(--warn)18',
+                color: home.haConnected !== false ? 'var(--ok)' : 'var(--warn)',
+              }}>
+                {home.haConnected ? t('cloud.haOnline') : t('cloud.haOffline')}
+              </span>
+            ) : (
+              <TrafficLightPill home={home} latestPayload={livePayload} />
+            )}
             <span style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'var(--bg-2)', padding: '1px 7px', borderRadius: 999 }}>
               {home.type || t('cloud.hub')}
             </span>
@@ -235,52 +609,42 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
         </div>
       </button>
 
-      {/* Expanded: users + pending invites + invite button */}
+      {/* Expanded section */}
       {expanded && (
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
-          {/* Active users */}
-          {users.map(u => (
-            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', borderBottom: '0.5px solid var(--line)' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: (ROLE_COLOR[u.role] || '#6b7280') + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: ROLE_COLOR[u.role] || '#6b7280', flexShrink: 0 }}>
-                {(u.username[0] || '?').toUpperCase()}
+          {/* Local home: no tabs (no relay-side data sources). */}
+          {isLocal ? membersContent : (
+            <>
+              {/* Tab strip */}
+              <div style={{ display: 'flex', borderBottom: '0.5px solid var(--line)', background: 'var(--bg-2)' }}>
+                {tabs.map(({ id, icon: Icon, labelKey }) => {
+                  const active = tab === id
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setTab(id)}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                        padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                        color: active ? 'var(--accent)' : 'var(--ink-faint)',
+                        borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                      }}
+                    >
+                      <Icon size={12} />
+                      {t(labelKey)}
+                    </button>
+                  )
+                })}
               </div>
-              <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
-              {onRoleChange ? (
-                <select value={u.role} onChange={e => onRoleChange(u.username, e.target.value)}
-                  style={{ fontSize: 11, padding: '2px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLOR[u.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}>
-                  {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
-                </select>
-              ) : <RoleBadge role={u.role} />}
-              {onDeleteUser && (
-                <button onClick={() => onDeleteUser(u.username)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-          ))}
 
-          {/* Pending invites */}
-          {pending.map(inv => (
-            <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', borderBottom: '0.5px solid var(--line)', opacity: 0.7 }}>
-              <Clock size={13} style={{ color: 'var(--warn)', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {inv.email || t('cloud.openInviteShort')} · {ROLE_LABEL_KEY[inv.role] ? t(ROLE_LABEL_KEY[inv.role]) : inv.role}
-              </span>
-              <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '1px 6px', borderRadius: 6, flexShrink: 0 }}>{t('cloud.tagPending')}</span>
-              {onRevokeInvite && (
-                <button onClick={() => onRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
-                  <Trash2 size={11} />
-                </button>
-              )}
-            </div>
-          ))}
-
-          {/* Invite button */}
-          <div style={{ padding: '12px 20px' }}>
-            <button onClick={onInviteUser} className="z-btn-secondary" style={{ width: '100%', height: 34, borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              <Plus size={13} /> {t('cloud.inviteUser')}
-            </button>
-          </div>
+              {/* Tab content — lazy: each tab fetches on first activation. */}
+              {tab === 'members'   && membersContent}
+              {tab === 'telemetry' && <TelemetryTab homeId={home.id} onPayload={setLivePayload} />}
+              {tab === 'ota'       && <OtaTab home={home} />}
+              {tab === 'backup'    && <BackupTab homeId={home.id} />}
+            </>
+          )}
         </div>
       )}
     </Card>
