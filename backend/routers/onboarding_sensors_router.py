@@ -284,6 +284,17 @@ async def confirm_sensors(
     indicates HA is unreachable, which would make every entry fail
     anyway.
     """
+    # Defense-in-depth (PROMPT_SECURITY_HARDENING_V2): device token is valid
+    # (get_current_device handled that) but additionally require that the
+    # device is bound to a user — i.e. has been through /api/onboarding/claim.
+    # A claim-pending device that somehow held a token without binding (race
+    # with bind_claim_pending_device, future refactor that splits the two
+    # state mutations) shouldn't be allowed to write HA structure under
+    # nobody's name. The upstream invariant is set by claim_owner; this
+    # is the safety net.
+    if not device.get("user_id"):
+        raise HTTPException(status_code=409, detail="Device not claimed.")
+
     if not body.sensors:
         return {"ok": True, "confirmed": 0, "failed": []}
 
