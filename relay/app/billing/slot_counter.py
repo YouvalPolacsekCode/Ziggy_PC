@@ -32,6 +32,14 @@ guarded by a COUNT(*) < 30 subquery, executed inside SQLite's writer
 lock. SQLite serializes all writes to the database file, so two
 concurrent reserve() calls cannot both observe count=29 and both
 insert; the second sees count=30 and the WHERE clause yields zero rows.
+
+Slot number reuse: slot_number is assigned via COALESCE(MAX(...),0)+1,
+NOT AUTOINCREMENT. A released slot's number is reused by the next
+reservation. Intentional: a released slot means the prior holder
+abandoned or was refunded (never converted), so there is no founder-#N
+identity to preserve. If we ever issue physical founder certificates
+where each # must be globally unique forever, switch slot_number to
+AUTOINCREMENT and decouple "cap count" from "slot identity".
 """
 
 from __future__ import annotations
@@ -63,14 +71,30 @@ async def reserve(home_id: str) -> Optional[int]:
             return int(existing[0]["slot_number"])
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        # The (SELECT COUNT(*) ...) < cap subquery guards the cap; the
-        # COALESCE(MAX(...), 0) + 1 assigns the next slot number. Both
-        # subqueries see a consistent snapshot inside SQLite's writer
-        # lock so concurrent reservations cannot race past 30.
+        # Cap-guarded atomic INSERT. Each piece, and why it's needed:
+        #
+        #   FROM (SELECT 1) AS dummy
+        #     Yields exactly one synthetic row. Required because we want
+        #     the WHERE to filter THIS row, not to filter the founder_slots
+        #     aggregate — filtering an aggregate over an empty set still
+        #     returns one NULL row, so the original `... FROM founder_slots
+        #     WHERE (count < cap)` formulation would compute MAX=NULL ->
+        #     slot_number=1 once the cap was hit and crash on UNIQUE.
+        #
+        #   (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM founder_slots)
+        #     Next slot number — computed inside the same writer txn so
+        #     concurrent reservers see a consistent snapshot.
+        #
+        #   WHERE (SELECT COUNT(*) FROM founder_slots) < ?
+        #     The cap. If 30 slots are already taken, this is FALSE, the
+        #     dummy row is filtered out, and INSERT touches zero rows
+        #     (cursor.rowcount == 0). SQLite's writer lock serializes the
+        #     COUNT subquery against concurrent inserts.
         cursor = await db.execute(
             """INSERT INTO founder_slots (slot_number, home_id, claimed_at)
-               SELECT COALESCE(MAX(slot_number), 0) + 1, ?, ?
-               FROM founder_slots
+               SELECT (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM founder_slots),
+                      ?, ?
+               FROM (SELECT 1) AS dummy
                WHERE (SELECT COUNT(*) FROM founder_slots) < ?""",
             (home_id, now_iso, FOUNDER_SLOT_CAP),
         )

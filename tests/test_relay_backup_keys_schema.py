@@ -245,4 +245,8 @@ async def test_init_db_creates_all_tables(relay_db):
         "homes", "users", "invites", "audit_log", "home_backup_keys",
         # Prompt 2 chunk 2.1 + 2.3:
         "ota_releases", "telemetry_raw", "telemetry_daily",
+        # Prompt 4 chunk 2.H (staged-rollout cohorts):
+        "ota_release_cohorts", "home_cohorts",
+        # Prompt 9 chunk 2 (Stripe billing):
+        "founder_slots", "processed_webhooks", "invoice_sequence",
     }
