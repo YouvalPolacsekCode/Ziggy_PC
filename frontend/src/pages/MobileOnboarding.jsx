@@ -23,10 +23,12 @@ import {
   registerDevice,
   getDeviceToken,
 } from '../lib/mobileApi'
+import { getPresencePersons } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 const STEP = {
   PAIR:        'pair',
+  PERSON:      'person',      // who is this phone for? (binds device → presence person)
   NOTIFY:      'notify',
   LOCATION:    'location',
   MOTION:      'motion',
@@ -68,6 +70,7 @@ export default function MobileOnboarding() {
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{t('mobileOnboard.welcome')}</h1>
         <p style={{ margin: '8px 0 0', fontSize: 14, color: 'var(--ink-faint)' }}>
           {step === STEP.PAIR    && t('mobileOnboard.subtitlePair')}
+          {step === STEP.PERSON  && t('mobileOnboard.subtitlePerson')}
           {step === STEP.NOTIFY  && t('mobileOnboard.subtitleNotify')}
           {step === STEP.LOCATION && t('mobileOnboard.subtitleLocation')}
           {step === STEP.MOTION  && t('mobileOnboard.subtitleMotion')}
@@ -76,7 +79,8 @@ export default function MobileOnboarding() {
       </header>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {step === STEP.PAIR     && <PairStep    onDone={() => { setPaired(true); setStep(STEP.NOTIFY) }} />}
+        {step === STEP.PAIR     && <PairStep    onDone={() => { setPaired(true); setStep(STEP.PERSON) }} />}
+        {step === STEP.PERSON   && <PersonStep  onDone={() => setStep(STEP.NOTIFY)} />}
         {step === STEP.NOTIFY   && <NotifyStep  onDone={() => setStep(STEP.LOCATION)} />}
         {step === STEP.LOCATION && <LocationStep onDone={() => setStep(STEP.MOTION)} />}
         {step === STEP.MOTION   && <MotionStep  onDone={() => setStep(STEP.DONE)} />}
@@ -228,6 +232,82 @@ function LocationStep({ onDone }) {
       onSkip={onDone}
       busy={busy}
     />
+  )
+}
+
+function PersonStep({ onDone }) {
+  // "Who is this phone for?" — binds the freshly-paired device to a presence
+  // person record so geofence enter/exit events from this phone update that
+  // person's home/away state (handled by services/mobile_app._handle_location).
+  //
+  // Reuses the existing /api/presence/persons endpoint (no new backend route).
+  // Binding posts to /api/mobile/register, which mobile_app.update_device
+  // writes into the device record. Skipping is allowed — the user can bind
+  // later from Settings → Ziggy Home (mobile).
+  const t = useT()
+  const [persons, setPersons] = useState(null)   // null = loading
+  const [busy, setBusy]       = useState(false)
+  const [error, setError]     = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getPresencePersons()
+      .then(list => { if (!cancelled) setPersons(Array.isArray(list) ? list : []) })
+      .catch(e => { if (!cancelled) { setError(e?.message || 'load failed'); setPersons([]) } })
+    return () => { cancelled = true }
+  }, [])
+
+  const pick = async (person_id) => {
+    setBusy(true); setError(null)
+    try {
+      await registerDevice({ person_id })
+      onDone()
+    } catch (e) {
+      setError(e?.message || 'bind failed')
+      setBusy(false)
+    }
+  }
+
+  if (persons === null) {
+    return (
+      <section style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>{t('common.loading')}…</div>
+      </section>
+    )
+  }
+
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+        {t('mobileOnboard.personBody')}
+      </p>
+      {persons.length === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '8px 4px' }}>
+          {t('mobileOnboard.personEmpty')}
+        </div>
+      )}
+      {persons.map(p => (
+        <button
+          key={p.id}
+          onClick={() => pick(p.id)}
+          disabled={busy}
+          style={{
+            padding: '14px 16px', borderRadius: 10,
+            border: '1px solid var(--line)',
+            background: 'var(--bg-2)', color: 'var(--ink)',
+            display: 'flex', alignItems: 'center', gap: 12,
+            cursor: busy ? 'wait' : 'pointer', fontSize: 15, fontWeight: 500,
+            textAlign: 'left',
+          }}
+        >
+          <span>{p.name || p.id}</span>
+        </button>
+      ))}
+      {error && <div style={{ fontSize: 12, color: 'var(--danger, #c00)' }}>{error}</div>}
+      <button onClick={onDone} disabled={busy} style={secondaryBtn}>
+        {t('mobileOnboard.skipPerson')}
+      </button>
+    </section>
   )
 }
 

@@ -2627,6 +2627,11 @@ export default {
   'mobileOnboard.allow':             'אפשר',
   'mobileOnboard.skipForNow':        'דלג כרגע',
   'mobileOnboard.allSet':            'הכל מוכן.',
+  // Person picker (PersonStep)
+  'mobileOnboard.subtitlePerson':    'למי שייך הטלפון הזה?',
+  'mobileOnboard.personBody':        'בחר את חבר משק הבית שאליו שייך הטלפון. זיגי ישתמש במיקום הטלפון כדי לעדכן את סטטוס בית/בחוץ שלו.',
+  'mobileOnboard.personEmpty':       'אין עדיין חברי משק בית. אפשר להוסיף אחד בהגדרות → מעקב נוכחות, ולחזור לכאן.',
+  'mobileOnboard.skipPerson':        'דלג — אקשר מאוחר יותר בהגדרות',
 
   // ── Mobile diagnostics (MobileDiagnostics.jsx) ──────────────────────
   'mobileDiag.title':                'אבחון נייד',

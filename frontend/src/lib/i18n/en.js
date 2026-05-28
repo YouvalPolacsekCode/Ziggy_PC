@@ -2998,6 +2998,11 @@ export default {
   'mobileOnboard.allow':             'Allow',
   'mobileOnboard.skipForNow':        'Skip for now',
   'mobileOnboard.allSet':            "You're all set.",
+  // Person picker (PersonStep — binds this phone to a household member)
+  'mobileOnboard.subtitlePerson':    'Who is this phone for?',
+  'mobileOnboard.personBody':        "Pick the household member this phone belongs to. Ziggy will use this phone's location to update their home/away status.",
+  'mobileOnboard.personEmpty':       "No household members yet. You can add one from Settings → Presence tracking, then return here.",
+  'mobileOnboard.skipPerson':        'Skip — bind later in Settings',
 
   // ── Mobile diagnostics (MobileDiagnostics.jsx) ──────────────────────
   'mobileDiag.title':                'Mobile diagnostics',

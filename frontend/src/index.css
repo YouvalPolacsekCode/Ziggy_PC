@@ -4,6 +4,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global horizontal-overflow guard.
+ * Any single element with `width: 600px` or accidental `min-width: 100%`
+ * deep in the tree can otherwise push the document wider than the viewport,
+ * triggering page-level horizontal scroll on narrow phone screens. This
+ * caps every layer to the viewport and clips overflow without affecting
+ * sticky positioning the way `overflow-x: hidden` would.
+ * `overflow-x: clip` is well-supported in iOS Safari 16+ / Chrome 90+,
+ * which matches our deployment target (iOS 16+ for the native shell).
+ */
+html, body, #root {
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
 /* ── Responsive foundation ────────────────────────────────────────────────
  * Safe-area, dvh, and shell-geometry tokens. Centralized so every page
  * uses the same numbers — no per-component magic.

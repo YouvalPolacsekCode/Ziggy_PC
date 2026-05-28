@@ -378,11 +378,22 @@ def handle_webhook(device: dict, payload: dict) -> dict:
 
 
 def _handle_location(device: dict, data: dict) -> dict:
-    """Phase 1 stub: log the location, mark device last_seen, and (if a
-    person_id is bound) forward to presence_engine.
+    """Translate a location webhook into presence_engine state.
 
-    The fully-fused signal path (GPS + WiFi + activity + LAN) lands in Phase 3
-    once the native plugin is sending us geofence enter/exit events.
+    Handles two signal classes:
+      source='geofence' + transition='enter'|'exit'  → home|not_home via
+        ingest_external_state. This is the primary path once the Phase 3
+        ziggy-presence custom plugin starts firing native region-monitoring
+        events. Zone resolution: zone_id defaults to "home" so the v1 flow
+        only needs one zone to be useful; multi-zone arrives with the
+        backend zones registry already in place (see presence_router zones).
+      anything else (gps / significant_change / fused) → log only. The
+        fully-fused signal path (GPS + WiFi + activity + LAN) lands in Phase
+        3 alongside the plugin.
+
+    Devices without a person_id binding are recorded (last_seen bumped) but
+    NOT forwarded to presence — there's no person to attribute the state to.
+    The PWA picker in MobileOnboarding handles binding.
     """
     update_device(device["device_id"], {})  # bump last_seen
     person_id = device.get("person_id")
@@ -390,8 +401,38 @@ def _handle_location(device: dict, data: dict) -> dict:
         return {"ok": True, "ignored": "no_person_bound"}
 
     source = data.get("source", "gps")
-    # Phase 1: we just record. Geofence-enter/exit translate to home/not_home
-    # in Phase 3 once the native plugin classifies them.
+
+    # Geofence transition — primary presence-update path.
+    if source == "geofence":
+        transition = data.get("transition")
+        zone_id = data.get("zone_id", "home")
+        if transition in ("enter", "exit") and zone_id == "home":
+            new_state = "home" if transition == "enter" else "not_home"
+            try:
+                decision = presence_engine.ingest_external_state(
+                    person_id=person_id,
+                    new_state=new_state,
+                    source="ziggy_mobile_geofence",
+                    reason_suffix=f"zone_{zone_id}_{transition}",
+                )
+                log_info(
+                    f"[mobile_app] geofence {transition} zone={zone_id} → {new_state} "
+                    f"for person={person_id} device={device['device_id']} "
+                    f"result={decision.result}"
+                )
+                return {"ok": True, "ingested": True, "result": decision.result,
+                        "new_state": new_state}
+            except Exception as e:
+                log_error(f"[mobile_app] presence ingest failed for {device['device_id']}: {e}")
+                return {"ok": False, "error": str(e)}
+        # Geofence event with unknown transition or non-home zone — record only.
+        log_info(
+            f"[mobile_app] geofence event (no-op): "
+            f"transition={transition} zone={zone_id} device={device['device_id']}"
+        )
+        return {"ok": True, "recorded": True, "ignored": "non_home_zone_or_unknown_transition"}
+
+    # Non-geofence sources (raw GPS, significant_change, fused) — record only.
     log_info(
         f"[mobile_app] location from {device['device_id']} person={person_id} "
         f"src={source} lat={data.get('lat')} lon={data.get('lon')} "

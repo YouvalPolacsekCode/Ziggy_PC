@@ -56,7 +56,13 @@ export default function LoginPage() {
         minHeight: 'var(--vh)',
         background: 'var(--bg)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '24px 20px',
+        // Honor iOS safe-area-insets so inputs don't graze the bezel edges
+        // when the keyboard appears and the viewport reflows.
+        padding: '24px max(20px, env(safe-area-inset-left)) 24px max(20px, env(safe-area-inset-right))',
+        boxSizing: 'border-box',
+        width: '100%',
+        maxWidth: '100vw',
+        overflow: 'hidden',
         fontFamily: "'Heebo', system-ui, sans-serif",
       }}
     >
