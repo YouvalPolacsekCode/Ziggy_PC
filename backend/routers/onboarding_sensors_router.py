@@ -26,7 +26,12 @@ from pydantic import BaseModel
 from backend.routers.mobile_router import get_current_device, _client_ip
 from core.debug_bus import bus as _dbus, BASIC
 from core.logger_module import log_error, log_info
-from services import auth_db, ha_areas, ha_zha, kit_manifest, mobile_app, starter_pack
+import asyncio
+
+from services import (
+    auth_db, first_boot, ha_areas, ha_zha, kit_manifest, mobile_app, starter_pack,
+    telemetry_client,
+)
 from services.auth_hashing import hash_password_bcrypt
 
 
@@ -402,3 +407,85 @@ async def get_starter_pack(device: dict = Depends(get_current_device)) -> dict:
         ha_entities=ha_entities,
     )
     return {"starters": starters, "ha_reachable": ha_reachable}
+
+
+# ── /api/onboarding/complete (Chunk 3.4) ────────────────────────────────────
+
+class CompleteBody(BaseModel):
+    """End-of-wizard summary the mobile app sends after the last step."""
+    time_elapsed_seconds:        int = 0
+    sensors_confirmed_count:     int = 0
+    automations_accepted_count:  int = 0
+    errors:                      list[str] = []
+
+
+@router.post("/complete")
+async def complete_onboarding(
+    body: CompleteBody,
+    device: dict = Depends(get_current_device),
+) -> dict:
+    """Finalise the wizard: stamp first_boot.completed_at and fire a one-shot
+    telemetry post with the summary.
+
+    Idempotent in practice:
+      - first_boot.mark_onboarding_complete() is itself idempotent (the
+        timestamp doesn't move on subsequent calls).
+      - The telemetry post is fire-and-forget per-call. Repeated calls
+        emit repeated events; the relay stores them all and the founder
+        sees the most recent one. Mobile app code is the de-facto guard
+        against double-firing — it only calls this once at the end of
+        the wizard.
+
+    Returns:
+      ok               — always True; the telemetry post is best-effort.
+      first_boot_done  — True after this call (idempotent).
+      telemetry_posted — True if the relay accepted; False on any failure
+                         (missing config, network error, non-2xx). Mobile
+                         app uses this only for diagnostic display.
+      telemetry_reason — short string explaining the False case.
+    """
+    # 1. Mark first-boot complete so the LAN /pair page stops showing the QR.
+    state = first_boot.mark_onboarding_complete()
+
+    # 2. Build the extras dict per the §1.7 spec from docs/ONBOARDING_AUDIT.md.
+    extras = {
+        "event":                      "onboarding_complete",
+        "time_elapsed_seconds":       int(body.time_elapsed_seconds),
+        "sensors_confirmed_count":    int(body.sensors_confirmed_count),
+        "automations_accepted_count": int(body.automations_accepted_count),
+        "errors":                     list(body.errors or []),
+        "device_id":                  state.get("device_id"),
+    }
+
+    # 3. Fire the one-shot telemetry post. telemetry_client.post_once is
+    #    sync (requests-based) — run it off the event loop so we don't
+    #    block other concurrent requests if the relay is slow. Failures
+    #    don't bubble — completion stands regardless of relay reachability.
+    try:
+        result = await asyncio.to_thread(telemetry_client.post_once, extra=extras)
+        telemetry_posted = bool(result.get("ok"))
+        telemetry_reason = str(result.get("reason") or "")
+    except Exception as e:
+        log_error(f"[onboarding] complete: telemetry post crashed: {e}")
+        telemetry_posted = False
+        telemetry_reason = "exception"
+
+    _dbus.emit("onboarding", BASIC, "onboarding_complete",
+               device_id=device.get("device_id"),
+               time_elapsed_seconds=extras["time_elapsed_seconds"],
+               sensors_confirmed_count=extras["sensors_confirmed_count"],
+               automations_accepted_count=extras["automations_accepted_count"],
+               telemetry_posted=telemetry_posted)
+    log_info(
+        f"[onboarding] complete — elapsed={extras['time_elapsed_seconds']}s "
+        f"sensors={extras['sensors_confirmed_count']} "
+        f"automations={extras['automations_accepted_count']} "
+        f"telemetry_posted={telemetry_posted}"
+    )
+
+    return {
+        "ok":               True,
+        "first_boot_done":  True,
+        "telemetry_posted": telemetry_posted,
+        "telemetry_reason": telemetry_reason,
+    }

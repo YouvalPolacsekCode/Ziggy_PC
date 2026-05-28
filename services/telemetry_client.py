@@ -499,10 +499,18 @@ def post_once(
     *,
     settings: Optional[dict] = None,
     timeout_s: float = 15.0,
+    extra: Optional[dict] = None,
     _http_post: Optional[Any] = None,
     _build_payload_fn: Optional[Any] = None,
 ) -> TelemetryPostResult:
     """Single 5-min tick. Returns a result dict; never raises.
+
+    `extra` (Prompt 7 chunk 3.4) — optional dict merged into the payload
+    top-level after the standard collectors run. Lets one-shot callers
+    piggy-back event data (e.g. onboarding_complete) on the existing
+    HMAC-signed pipeline without inventing a new endpoint. Extra keys
+    win on collision with the standard payload, since the caller
+    presumably knows why they're overriding.
 
     Test seams:
       _http_post         callable(url, headers, content, timeout) → response
@@ -529,6 +537,11 @@ def post_once(
             )
 
         payload = builder(settings, timeout_s=timeout_s)
+        if extra:
+            # Extras win on collision so one-shot event callers can override
+            # a standard field if they need to (rare, but the relay stores
+            # arbitrary JSON anyway — schema is forward-compatible).
+            payload = {**payload, **extra}
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         url = _build_url(relay_url, home_id)
         headers = {
