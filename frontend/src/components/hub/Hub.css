@@ -1,0 +1,342 @@
+/* Hub Dashboard styles — tablet-only.
+ *
+ * Scoped under .z-hub-page so nothing here can bleed into the existing
+ * Dashboard, mobile, or web layouts. If you ever see one of these selectors
+ * affecting another page, the .z-hub-page root is missing.
+ *
+ * Grid breakpoints mirror Dashboard's 1024px cutoff: a 4-col mobile grid for
+ * phones, 8-col tablet (the primary target), 12-col for desktop preview.
+ */
+
+.z-hub-page {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Status strip — always-on top bar. Edit mode swaps the right-side actions. */
+.z-hub-strip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* Safe-area padding so it clears the iPad status bar in PWA mode. */
+  padding-top: max(14px, env(safe-area-inset-top, 0));
+}
+.z-hub-strip-left  { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.z-hub-strip-right { display: flex; align-items: center; gap: 10px; }
+.z-hub-strip-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.z-hub-strip-sub   { font-size: 11px; color: var(--ink-faint); letter-spacing: 0.4px; text-transform: uppercase; }
+
+.z-hub-strip button {
+  background: transparent;
+  border: 0.5px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 36px;
+}
+.z-hub-strip button.primary {
+  background: var(--accent, #4f46e5);
+  border-color: transparent;
+  color: white;
+}
+
+/* Pair-this-tablet banner — only shown when localStorage has no tablet_id. */
+.z-hub-banner {
+  margin: 16px 20px 0;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 0.5px dashed var(--line);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.z-hub-banner-text { font-size: 13px; color: var(--ink-faint); }
+
+/* Grid — single source of truth for column counts at each breakpoint. */
+.z-hub-grid {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  align-content: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-bottom: max(20px, env(safe-area-inset-bottom, 0));
+}
+@media (min-width: 768px) {
+  .z-hub-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 18px; }
+  .z-hub-section { grid-column: span var(--col-tablet) !important; }
+}
+@media (min-width: 1280px) {
+  .z-hub-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px; }
+  .z-hub-section { grid-column: span var(--col-desktop) !important; }
+}
+
+/* Larger tap targets across the page — wall-tablet ergonomics. */
+.z-hub-page button { min-height: 44px; }
+
+/* ── Edit mode ────────────────────────────────────────────────────────────── */
+/* Every selector below requires .z-hub-page.is-editing or .z-hub-section.is-editing
+ * so nothing in edit-mode styling can ever apply to the rest of the app. */
+
+.z-hub-page.is-editing .z-hub-section {
+  /* Faint outline so users see where each section starts and ends, the way
+   * iOS Home wiggles icons in edit mode (without the wiggle). */
+  outline: 1px dashed var(--line-2, var(--line));
+  outline-offset: 4px;
+  border-radius: 14px;
+  /* Smooth the grid reflow when a drag swap re-orders the layout. The
+   * transform-based highlight on .is-dragging cancels its own transition so
+   * the dragged tile snaps with the finger instead of lagging. */
+  transition: outline-color 0.15s ease, transform 0.18s ease;
+}
+
+/* The section being dragged — softened so the user sees the layout reflowing
+ * around it, but stays in place visually (we don't position:absolute the
+ * dragged tile; the swap-in-grid pattern below is the feedback). */
+.z-hub-page.is-editing .z-hub-section.is-dragging {
+  opacity: 0.45;
+  transform: scale(0.97);
+  outline-color: var(--accent, #4f46e5);
+  transition: none;
+}
+
+.z-hub-edit-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;       /* sections underneath can't be tapped; only our buttons receive events */
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 6px;
+  z-index: 5;
+}
+
+/* The grip is the drag handle. touch-action: none stops the browser from
+ * interpreting touches as page scrolls so the section actually follows the
+ * finger. cursor: grab on desktop, no-text-selection so the grip glyph
+ * doesn't get highlighted as the pointer drags. */
+.z-hub-edit-grip {
+  pointer-events: auto;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink-faint);
+  letter-spacing: 2px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  min-width: 40px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.z-hub-edit-grip:active { cursor: grabbing; background: var(--bg); }
+
+.z-hub-edit-actions {
+  pointer-events: auto;
+  display: flex;
+  gap: 6px;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.z-hub-edit-actions button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.z-hub-edit-actions button:hover { background: var(--bg); }
+.z-hub-edit-actions button.danger { color: var(--err); }
+
+/* Floating add-section button — only visible while editing. */
+.z-hub-add-fab {
+  position: fixed;
+  right: 24px;
+  bottom: max(24px, env(safe-area-inset-bottom, 0));
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  background: var(--accent, #4f46e5);
+  color: white;
+  border: none;
+  font-size: 28px;
+  font-weight: 400;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: 50;
+  /* Override the .z-hub-page button { min-height: 44px } rule so 56px wins. */
+  min-height: 56px;
+}
+
+/* ── Section picker modal ─────────────────────────────────────────────────── */
+
+.z-hub-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;        /* bottom-sheet on mobile */
+  justify-content: center;
+  padding: 0;
+}
+@media (min-width: 768px) {
+  .z-hub-picker-backdrop {
+    align-items: center;        /* center on tablet+ */
+    padding: 24px;
+  }
+}
+
+.z-hub-picker {
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 18px 18px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@media (min-width: 768px) {
+  .z-hub-picker { border-radius: 18px; max-height: 70vh; }
+}
+
+.z-hub-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 0.5px solid var(--line);
+  flex: 0 0 auto;
+}
+.z-hub-picker-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--ink-faint);
+  width: 32px; height: 32px;
+  min-height: 32px;
+  border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+}
+.z-hub-picker-close:hover { background: var(--bg); color: var(--ink); }
+
+.z-hub-picker-body {
+  padding: 18px 20px 24px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.z-hub-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 0.5px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: start;
+  min-height: 56px;
+}
+.z-hub-picker-item:hover { border-color: var(--line-2, var(--accent)); }
+
+/* ── Camera live modal ────────────────────────────────────────────────────── */
+/* Fullscreen overlay holding an MJPEG <img>. Top bar shows the camera name +
+ * close button; the rest of the viewport is the stream. */
+
+.z-hub-cam-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 120;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  /* iPad PWA safe areas — the camera stage extends edge-to-edge but the bar
+   * pads itself for the notch. */
+  padding: 0;
+}
+.z-hub-cam-modal-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.z-hub-cam-modal-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  padding-top: max(12px, env(safe-area-inset-top, 0));
+  color: white;
+  background: rgba(0, 0, 0, 0.4);
+}
+.z-hub-cam-modal-close {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  border-radius: 999px;
+  color: white;
+  font-size: 22px;
+  width: 36px; height: 36px;
+  min-height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.z-hub-cam-modal-close:hover { background: rgba(255, 255, 255, 0.22); }
+
+.z-hub-cam-modal-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.z-hub-cam-modal-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+  /* Preserve aspect ratio without cropping the stream — letterboxed black is
+   * better than cropping a license plate or a face. */
+  object-fit: contain;
+}
