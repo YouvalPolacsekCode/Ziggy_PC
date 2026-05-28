@@ -78,7 +78,7 @@ async function _toZiggyError(res) {
     if (looksSafe) userMessage = d
   }
 
-  const code = _statusToCode(res.status)
+  const code = _statusToCode(res.status, userMessage)
   return new ZiggyApiError({
     code,
     userMessage,
@@ -87,9 +87,28 @@ async function _toZiggyError(res) {
   })
 }
 
-function _statusToCode(status) {
+// Substring marker the relay's billing-gated 403 response carries (set in
+// relay/app/routers/proxy.py). Detected here in addition to the status
+// code so the UI can render the subscription-specific banner instead of
+// a generic permission-denied message.
+const _SUBSCRIPTION_GATED_MARKER = 'Subscription required for remote access'
+
+function _statusToCode(status, userMessage) {
   if (status === 401) return ErrorCode.NOT_AUTHENTICATED
-  if (status === 403) return ErrorCode.INSUFFICIENT_PERMISSIONS
+  if (status === 403) {
+    if (userMessage && userMessage.includes(_SUBSCRIPTION_GATED_MARKER)) {
+      // Notify any subscribers (e.g. the global SubscriptionGateBanner)
+      // that we just saw a billing-gated 403. Window event keeps the
+      // api.js module decoupled from React component lifecycles.
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('ziggy:subscription-gated'))
+        } catch { /* SSR or test env without CustomEvent — ignore */ }
+      }
+      return ErrorCode.SUBSCRIPTION_INACTIVE
+    }
+    return ErrorCode.INSUFFICIENT_PERMISSIONS
+  }
   if (status === 404) return ErrorCode.NOT_FOUND
   if (status === 409) return ErrorCode.CONFLICT
   if (status === 422) return ErrorCode.VALIDATION_ERROR
@@ -170,6 +189,15 @@ async function request(method, path, body, { timeoutMs } = {}) {
     throw zerr
   }
   if (!silent) logger.apiResponse(method, path, reqId, res.status, dur)
+  // Successful response from a relay-proxied path implies the billing
+  // gate is now green. Fire a 'cleared' event so the SubscriptionGateBanner
+  // hides itself without waiting for a reload. Cheap to dispatch
+  // unconditionally; the banner listener no-ops if not currently shown.
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('ziggy:subscription-cleared'))
+    } catch { /* ignore */ }
+  }
   return res.json()
 }
 

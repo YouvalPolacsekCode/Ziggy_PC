@@ -117,6 +117,8 @@ export default {
   'errors.pairingTimeout':     'Pairing timed out before the device joined.',
   'errors.notConfigured':      "That feature isn't set up yet.",
   'errors.featureDisabled':    'That feature is turned off.',
+  'errors.subscriptionInactive': 'Subscription required for remote access — your home still works locally.',
+  'billing.subscriptionGatedBanner': 'Subscription required for remote access — your home still works locally.',
   'errors.requestTimeout':     'Connection is slow. Please try again.',
   'errors.networkOffline':     "You're offline. Reconnecting…",
   'errors.actionDidNotComplete': "That action didn't complete.",

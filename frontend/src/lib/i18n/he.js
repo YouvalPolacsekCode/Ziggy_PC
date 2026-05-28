@@ -115,6 +115,8 @@ export default {
   'errors.pairingTimeout':     'הזמן לצימוד נגמר לפני שהמכשיר התחבר.',
   'errors.notConfigured':      'הפיצ׳ר הזה עוד לא מוגדר.',
   'errors.featureDisabled':    'הפיצ׳ר הזה כבוי.',
+  'errors.subscriptionInactive': 'נדרש מנוי לגישה מרחוק — הבית שלך עדיין פועל מקומית.',
+  'billing.subscriptionGatedBanner': 'נדרש מנוי לגישה מרחוק — הבית שלך עדיין פועל מקומית.',
   'errors.requestTimeout':     'החיבור איטי. נסה שוב.',
   'errors.networkOffline':     'אין חיבור לאינטרנט. מתחבר מחדש…',
   'errors.actionDidNotComplete': 'הפעולה לא הושלמה.',

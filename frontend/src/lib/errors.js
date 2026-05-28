@@ -37,6 +37,11 @@ export const ErrorCode = Object.freeze({
   PAIRING_TIMEOUT:           'pairing_timeout',
   NOT_CONFIGURED:            'not_configured',
   FEATURE_DISABLED:          'feature_disabled',
+  // Subscription kill-switch (Prompt 9 chunk 3). Surfaced when the relay's
+  // proxy gate returns 403 with the billing-specific message. Distinct
+  // from INSUFFICIENT_PERMISSIONS so the UI can show a "your home still
+  // works locally" banner instead of a generic permission error.
+  SUBSCRIPTION_INACTIVE:     'subscription_inactive',
   // Frontend-only codes — never produced by the backend.
   REQUEST_TIMEOUT:           'request_timeout',
   NETWORK_OFFLINE:           'network_offline',
@@ -67,6 +72,7 @@ const CODE_TO_I18N = {
   [ErrorCode.PAIRING_TIMEOUT]:          'errors.pairingTimeout',
   [ErrorCode.NOT_CONFIGURED]:           'errors.notConfigured',
   [ErrorCode.FEATURE_DISABLED]:         'errors.featureDisabled',
+  [ErrorCode.SUBSCRIPTION_INACTIVE]:    'errors.subscriptionInactive',
   [ErrorCode.REQUEST_TIMEOUT]:          'errors.requestTimeout',
   [ErrorCode.NETWORK_OFFLINE]:          'errors.networkOffline',
 }

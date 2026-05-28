@@ -82,7 +82,15 @@ async def proxy(home_id: str, path: str, request: Request):
         home_status=home["status"],
         subscription_state=home["subscription_state"],
     ):
-        raise HTTPException(403, "Home access is currently restricted.")
+        # Differentiate operational suspension from billing gate so the
+        # mobile app can render the right user-facing message. Audit log
+        # still carries the precise gate=status/sub detail elsewhere.
+        if home["status"] == "suspended":
+            raise HTTPException(403, "This home is currently locked. Please contact support.")
+        raise HTTPException(
+            403,
+            "Subscription required for remote access — your home still works locally.",
+        )
 
     # Build target URL
     target = f"{home['tunnel_url']}/{path}"

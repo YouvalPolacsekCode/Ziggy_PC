@@ -47,6 +47,7 @@ import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, get
 import { setLang as setI18nLang, t as i18nT } from './lib/i18n'
 import { isNative } from './lib/native'
 import { getDeviceToken } from './lib/mobileApi'
+import SubscriptionGateBanner from './components/SubscriptionGateBanner'
 
 // ─── Ops route guard + breadcrumb layout ─────────────────────────────────────
 
@@ -268,6 +269,10 @@ function AppRoutes() {
 
   return (
     <Suspense fallback={null}>
+    {/* Prompt 9 chunk 3 / decision 5: persistent banner shown when the
+        relay's billing gate has refused a recent request. Mounted at the
+        top so it overlays every route, including mobile-onboarding. */}
+    <SubscriptionGateBanner />
     <MobileOnboardingRedirector />
     <Routes>
       {/* ── Main consumer app ── */}
