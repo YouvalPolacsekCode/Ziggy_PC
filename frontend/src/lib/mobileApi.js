@@ -108,6 +108,85 @@ export const fireEvent    = (event, payload = {}) =>
   postWebhook({ type: 'fire_event', data: { event, payload } })
 
 
+// ── Onboarding flow (Prompt 7 chunk 3.6) ────────────────────────────────────
+// All endpoints below are auth=device-token (the just-paired phone), except
+// installAutomation which uses the freshly-minted user_token returned by
+// claimOwner. They live here rather than lib/api.js because lib/api.js is
+// hardwired for the PWA session-token auth + redirects to LoginPage on 401.
+
+async function _deviceAuthHeaders() {
+  const token = await getDeviceToken()
+  if (!token) throw new Error('not paired')
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+}
+
+export async function claimOwner({ username, password }) {
+  const res = await fetch('/api/onboarding/claim', {
+    method: 'POST',
+    headers: await _deviceAuthHeaders(),
+    body: JSON.stringify({ username, password }),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    const err = new Error(`claim failed (${res.status}): ${detail}`)
+    err.status = res.status
+    throw err
+  }
+  return res.json()   // { ok, user_token, role, username, device_bound }
+}
+
+export async function getOnboardingSensors() {
+  const res = await fetch('/api/onboarding/sensors', {
+    headers: { Authorization: (await _deviceAuthHeaders()).Authorization },
+  })
+  if (!res.ok) throw new Error(`sensors fetch failed: ${res.status}`)
+  return res.json()   // { sensors: [...], manifest_loaded, ha_reachable }
+}
+
+export async function confirmSensors(sensors) {
+  const res = await fetch('/api/onboarding/sensors/confirm', {
+    method: 'POST',
+    headers: await _deviceAuthHeaders(),
+    body: JSON.stringify({ sensors }),
+  })
+  if (!res.ok) throw new Error(`sensors/confirm failed: ${res.status}`)
+  return res.json()   // { ok, confirmed, failed: [...] }
+}
+
+export async function getStarterPack() {
+  const res = await fetch('/api/onboarding/starter-pack', {
+    headers: { Authorization: (await _deviceAuthHeaders()).Authorization },
+  })
+  if (!res.ok) throw new Error(`starter-pack fetch failed: ${res.status}`)
+  return res.json()   // { starters: [...], ha_reachable }
+}
+
+// /api/automations is user-authed — uses the user_token returned by claimOwner.
+export async function installAutomation(haPayload, userToken) {
+  if (!userToken) throw new Error('user token required for automation install')
+  const res = await fetch('/api/automations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+    body: JSON.stringify(haPayload),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`automation install failed (${res.status}): ${detail}`)
+  }
+  return res.json()
+}
+
+export async function completeOnboarding(summary) {
+  const res = await fetch('/api/onboarding/complete', {
+    method: 'POST',
+    headers: await _deviceAuthHeaders(),
+    body: JSON.stringify(summary),
+  })
+  if (!res.ok) throw new Error(`complete failed: ${res.status}`)
+  return res.json()   // { ok, first_boot_done, telemetry_posted, telemetry_reason }
+}
+
+
 // ── Paired device management (PWA-facing, user-authed) ──────────────────────
 
 const WS_URL_KEY = 'ziggy_device_ws_url'
