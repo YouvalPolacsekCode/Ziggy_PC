@@ -77,6 +77,12 @@ class PairResponse(BaseModel):
     auth_token: str
     person_id: Optional[str]
     home_id: Optional[str] = None
+    # True only for first-boot claim-tier pairs (kit-out-of-box flow). User-
+    # tier pairs (PWA owner mints a code for their second phone) always set
+    # this False so the mobile app skips the sensor-wizard + starter-pack
+    # onboarding steps. Optional + default False keeps existing mobile-app
+    # builds backward-compatible. See docs/ONBOARDING_AUDIT.md §4.
+    is_first_pair: bool = False
 
 
 class RegisterRequest(BaseModel):
@@ -134,7 +140,20 @@ async def mint_pair_code(request: Request, user: dict = Depends(get_current_user
 
 @router.post("/pair", response_model=PairResponse)
 async def pair(req: PairRequest, request: Request):
-    """Phone redeems a pair code → receives a device-scoped auth token."""
+    """Phone redeems a pair code → receives a device-scoped auth token.
+
+    Two redemption modes (distinguished by `match["kind"]`):
+
+    USER-tier (legacy + PWA-owner-pairs-second-phone):
+        match has user_id. Device record is created bound to that user.
+        is_first_pair=False — the home is already onboarded.
+
+    CLAIM-tier (kit-out-of-box first boot, Prompt 7):
+        match has device_id (edge box id) but no user_id. Device record
+        is created with claim_pending=True; /api/onboarding/claim
+        (Chunk 3) will later bind a freshly-minted owner. is_first_pair=True
+        so the mobile app drives CLAIM_OWNER + SENSORS + STARTER_PACK steps.
+    """
     match = mobile_app.consume_pair_code(req.pair_code.upper())
     if not match:
         # Pair codes have low entropy by design (6 chars). An attacker
@@ -148,10 +167,23 @@ async def pair(req: PairRequest, request: Request):
                    source_ip=_client_ip(request))
         raise HTTPException(status_code=400, detail="Invalid or expired pair code.")
 
-    record = mobile_app.register_device(
-        user_id=match["user_id"],
-        device_info=req.device.model_dump(),
-    )
+    kind = match.get("kind", "user")
+    if kind == "claim":
+        record = mobile_app.register_device(
+            user_id=None,
+            device_info=req.device.model_dump(),
+            claim_pending=True,
+            claim_device_id=match.get("device_id"),
+        )
+        is_first_pair = True
+        audit_user_id = None
+    else:
+        record = mobile_app.register_device(
+            user_id=match["user_id"],
+            device_info=req.device.model_dump(),
+        )
+        is_first_pair = False
+        audit_user_id = match["user_id"]
 
     # Build URLs the app should use from this point. The Host the request came
     # in on is the per-home backend (or the cloud relay), so we mirror it back.
@@ -159,7 +191,9 @@ async def pair(req: PairRequest, request: Request):
     ws_base = base.replace("http://", "ws://").replace("https://", "wss://")
     _dbus.emit("mobile_auth", BASIC, "mobile_pair_succeeded",
                device_id=record["device_id"],
-               user_id=match["user_id"],
+               user_id=audit_user_id,
+               kind=kind,
+               is_first_pair=is_first_pair,
                platform=req.device.platform,
                source_ip=_client_ip(request))
     return PairResponse(
@@ -170,6 +204,7 @@ async def pair(req: PairRequest, request: Request):
         auth_token=record["auth_token"],
         person_id=record.get("person_id"),
         home_id=None,  # populated in Phase 2 when multi-home is real
+        is_first_pair=is_first_pair,
     )
 
 
