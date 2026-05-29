@@ -315,10 +315,24 @@ async def mobile_ws_endpoint(ws: WebSocket, token: str = ""):
         # WS path can't read X-Forwarded-For easily; use the peer address
         # which works in local dev and reveals the relay's egress in prod.
         peer = ws.client.host if ws.client else ""
-        _dbus.emit("mobile_auth", BASIC, "mobile_ws_auth_failed",
+        # ws_auth namespace (not mobile_auth) so a single grep —
+        #   /api/debug/events?event=ws_auth_failed
+        # — surfaces every WS auth rejection across /ws AND /api/mobile/ws.
+        # relay_user_attempted is always False here: mobile clients don't
+        # come through RelayAuthMiddleware, but the field stays for query
+        # symmetry with the /ws event in backend/server.py.
+        _dbus.emit("ws_auth", BASIC, "ws_auth_failed",
                    path="/api/mobile/ws",
                    provided=bool(token),
-                   source_ip=peer)
+                   source_ip=peer,
+                   relay_user_attempted=False)
+        # Accept-then-close so the mobile client receives a real WebSocket
+        # close frame with code 4401. Closing pre-accept causes
+        # Starlette/uvicorn to reply HTTP 403 on the upgrade — the WebView
+        # / mobile WS lib surfaces that as code=1006 (abnormal closure),
+        # indistinguishable from a network drop. See the matching fix on
+        # /ws in backend/server.py (88bd9c8).
+        await ws.accept()
         await ws.close(code=4401)
         return
 

@@ -167,18 +167,25 @@ def test_webhook_id_mismatch_emits_audit_event(client):
 
 
 def test_ws_bad_token_emits_audit_event(client):
-    # WebSocket auth-failure path. TestClient.websocket_connect raises
-    # starlette's WebSocketDisconnect on a server-side close — catch and
-    # inspect the bus afterwards.
+    # WebSocket auth-failure path. The handler now accepts the upgrade then
+    # closes with code 4401 (mirrors the /ws fix in 88bd9c8 — pre-accept
+    # close becomes HTTP 403 on upgrade, which surfaces as code=1006 to
+    # the client). So the TestClient context enters successfully and the
+    # close surfaces on the next receive.
     from starlette.websockets import WebSocketDisconnect
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/mobile/ws?token=nope"):
-            pass
-    matched = _events(scope="mobile_auth", step="mobile_ws_auth_failed")
+    with client.websocket_connect("/api/mobile/ws?token=nope") as ws:
+        with pytest.raises(WebSocketDisconnect) as ei:
+            ws.receive_text()
+    assert ei.value.code == 4401
+
+    # Namespace is now ws_auth (was mobile_auth) so a single grep covers
+    # both /ws and /api/mobile/ws WS-auth rejections.
+    matched = _events(scope="ws_auth", step="ws_auth_failed")
     assert len(matched) == 1
     d = _data(matched)
     assert d["path"] == "/api/mobile/ws"
     assert d["provided"] is True
+    assert d["relay_user_attempted"] is False
 
 
 # ─── Success-path audit signals ─────────────────────────────────────────────
