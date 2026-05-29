@@ -118,11 +118,22 @@ def _events(step: str) -> list[dict]:
 
 # ─── Auth failure paths ─────────────────────────────────────────────────────
 
-def test_missing_token_closes_4401_and_emits_audit(client):
-    with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/ws"):
-            pass
+def _assert_closed_4401(client, url, headers=None):
+    """The handler accepts the upgrade then closes with code 4401 — so the
+    TestClient context enters successfully, and the close surfaces on the
+    next receive. (Accept-then-close is intentional: closing pre-accept
+    causes uvicorn to reply HTTP 403 on the upgrade and the browser then
+    reports code=1006, which the frontend can't distinguish from a network
+    drop.)"""
+    kwargs = {"headers": headers} if headers else {}
+    with client.websocket_connect(url, **kwargs) as ws:
+        with pytest.raises(WebSocketDisconnect) as ei:
+            ws.receive_text()
     assert ei.value.code == 4401
+
+
+def test_missing_token_closes_4401_and_emits_audit(client):
+    _assert_closed_4401(client, "/ws")
 
     failed = _events("ws_auth_failed")
     assert len(failed) == 1
@@ -135,10 +146,7 @@ def test_missing_token_closes_4401_and_emits_audit(client):
 
 
 def test_bad_token_closes_4401_and_emits_audit(client):
-    with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/ws?token=not-a-real-token"):
-            pass
-    assert ei.value.code == 4401
+    _assert_closed_4401(client, "/ws?token=not-a-real-token")
 
     failed = _events("ws_auth_failed")
     assert len(failed) == 1
@@ -152,19 +160,13 @@ def test_bogus_relay_headers_without_secret_still_4401(client):
     the middleware does NOT inject state.relay_user. The audit event must
     record relay_user_attempted=False because no synthetic user landed in
     scope.state — proving the middleware didn't fall for the spoof."""
-    with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect(
-            "/ws",
-            headers={
-                "x-relay-user": "attacker@example.com",
-                "x-relay-role": "super_admin",
-                "x-relay-home": "home-victim",
-                # NOTE: no x-relay-secret, or a wrong one
-                "x-relay-secret": "wrong-secret",
-            },
-        ):
-            pass
-    assert ei.value.code == 4401
+    _assert_closed_4401(client, "/ws", headers={
+        "x-relay-user":   "attacker@example.com",
+        "x-relay-role":   "super_admin",
+        "x-relay-home":   "home-victim",
+        # NOTE: no matching x-relay-secret
+        "x-relay-secret": "wrong-secret",
+    })
 
     failed = _events("ws_auth_failed")
     assert len(failed) == 1

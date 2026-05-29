@@ -363,6 +363,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str = ""):
                   source_ip=peer,
                   relay_user_attempted=bool(relay_user))
         log_info(f"[API] WebSocket rejected (unauthenticated) from {peer}")
+        # Accept-then-close so the client receives a real WebSocket close
+        # frame with code 4401. Closing pre-accept causes Starlette/uvicorn
+        # to reply with HTTP 403 on the upgrade — the browser surfaces that
+        # as code=1006 and the frontend can't distinguish unauthenticated
+        # from a generic network drop (would busy-loop reconnect).
+        await websocket.accept()
         await websocket.close(code=4401)
         return
 
