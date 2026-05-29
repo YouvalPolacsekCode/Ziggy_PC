@@ -28,7 +28,7 @@ from backend.routers.suggestion_router import router as suggestion_router
 from backend.routers.quick_ask_router import router as quick_ask_router
 from backend.routers.status_router import router as status_router
 from backend.routers.auth_router import router as auth_router
-from backend.routers.auth_deps import get_current_user
+from backend.routers.auth_deps import get_current_user, find_user_by_token
 from backend.routers.invite_router import router as invite_router
 from backend.routers.map_router import router as map_router
 from backend.routers.admin_router import router as admin_router
@@ -335,9 +335,37 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str = ""):
+    """Core PWA broadcast socket.
+
+    Auth model — accepts EITHER:
+      (a) RelayAuthMiddleware-injected synthetic user on websocket.state.relay_user
+          (cloud relay path; only present when X-Relay-Secret matched in the
+          middleware, see backend/middleware/relay_auth.py).
+      (b) ?token=<bearer> query param matching an active session token
+          (direct LAN / per-home Cloudflare Tunnel path).
+
+    Anything else is closed with code 4401 and an audit event before the
+    socket is even accepted by the manager. WebSocket endpoints can't use
+    FastAPI's Depends(get_current_user) cleanly, so we reuse the same
+    underlying find_user_by_token() that get_current_user delegates to.
+    """
     import json as _json
     from core.debug_bus import bus as _bus, BASIC as _BASIC
+
+    relay_user = getattr(websocket.state, "relay_user", None)
+    user = relay_user or find_user_by_token(token)
+    if not user:
+        peer = websocket.client.host if websocket.client else ""
+        _bus.emit("ws_auth", _BASIC, "ws_auth_failed",
+                  path="/ws",
+                  provided=bool(token),
+                  source_ip=peer,
+                  relay_user_attempted=bool(relay_user))
+        log_info(f"[API] WebSocket rejected (unauthenticated) from {peer}")
+        await websocket.close(code=4401)
+        return
+
     client_id = await manager.connect(websocket)
     log_info(f"[API] WebSocket connected. client_id={client_id} total={manager.count}")
     _bus.emit("ws", _BASIC, "ws_client_connected",

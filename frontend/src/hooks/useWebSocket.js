@@ -1,7 +1,8 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState } from 'react'
 import logger from '../lib/logger'
+import { useAuthStore } from '../stores/authStore'
 
-function getWsUrl() {
+function getWsBaseUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   // When accessing via Cloudflare Tunnel (https), the WS goes through
   // Tunnel → Vite proxy → FastAPI. Cloudflare requires keepalives to
@@ -12,8 +13,6 @@ function getWsUrl() {
   const host = window.location.host
   return `${proto}//${host}/ws`
 }
-
-const WS_URL = getWsUrl()
 
 // Reconnect cadence. Ziggy's backend takes ~10-15s to fully boot (many
 // threads + Whisper model warmup), so a classic exponential backoff lands
@@ -75,14 +74,26 @@ function _connect() {
   // Don't connect when the tab is hidden — visibilitychange retries on focus.
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
 
-  const socket = new WebSocket(WS_URL)
+  // Auth gate: the /ws endpoint now requires a bearer token in the URL.
+  // Re-read from authStore on every connect so token rotation (re-login,
+  // session refresh) takes effect on the next reconnect without us caching
+  // anything at WS-instance scope. No token → no socket; the logout-aware
+  // subscriber below kicks us back into _connect() when login completes.
+  const token = useAuthStore.getState().token
+  if (!token) {
+    if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
+    return
+  }
+  const url = `${getWsBaseUrl()}?token=${encodeURIComponent(token)}`
+
+  const socket = new WebSocket(url)
   _socket = socket
 
   socket.onopen = () => {
     _connected = true
     _retryCount = 0
     if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
-    logger.ws('ws_open', { url: WS_URL })
+    logger.ws('ws_open')
     _pingTimer = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'ping' }))
@@ -115,6 +126,12 @@ function _connect() {
     })
     _emit()
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    // 4401 = unauthenticated. Don't busy-loop reconnect against bad creds —
+    // the authStore subscriber re-kicks us when the token changes (re-login).
+    if (evt?.code === 4401) {
+      _retryCount = 0
+      return
+    }
     const delay = _retryDelay(_retryCount)
     _retryCount = Math.min(_retryCount + 1, 6)
     logger.ws('ws_reconnect_scheduled', { delay_ms: delay, attempt: _retryCount })
@@ -136,9 +153,28 @@ if (typeof document !== 'undefined') {
   })
 }
 
+// Auth-token observer — token rotation closes any live socket; a fresh token
+// kicks _connect(). Zustand fires this on every store mutation, so we filter
+// to actual transitions of the token field. Registered once at module load.
+let _lastToken = useAuthStore.getState().token
+useAuthStore.subscribe((state) => {
+  const next = state.token
+  if (next === _lastToken) return
+  _lastToken = next
+  _clearTimers()
+  if (_socket) {
+    try { _socket.close() } catch { /* swallow */ }
+    _socket = null
+  }
+  _connected = false
+  _emit()
+  if (next) _connect()
+})
+
 // Kick off the first connection at module-eval time. Vite HMR may re-import
 // this module — the readyState guard inside _connect() prevents a duplicate
-// socket in that case.
+// socket in that case. Unauthenticated users no-op out of _connect() until
+// the authStore subscriber above fires on login.
 _connect()
 
 // ─── React-facing API ──────────────────────────────────────────────────────
