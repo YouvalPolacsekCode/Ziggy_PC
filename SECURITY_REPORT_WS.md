@@ -66,3 +66,72 @@ I cannot drive a real browser in this environment. The following remain on found
 9bb2242  test(auth): cover /ws auth gate (token, missing, bad, relay path, dual-fakery)
 88bd9c8  fix(auth): accept-then-close on /ws 4401 so client sees real WS close code
 ```
+
+---
+
+## Post-WS cleanup — 2026-05-29
+
+Two follow-ups surfaced during the WS-auth landing, now closed.
+
+### `RelayAuthMiddleware` state assignment (P1 from the original report)
+
+[backend/middleware/relay_auth.py:53](backend/middleware/relay_auth.py#L53)
+was doing `scope["state"].relay_user = {...}`. Current Starlette
+pre-initialises `scope["state"]` as a `dict` before user middleware
+runs, so the `if "state" not in scope:` guard skipped and the next
+line raised `AttributeError: 'dict' object has no attribute
+'relay_user'`. The exception unwound; `get_current_user`'s
+`getattr(request.state, "relay_user", None)` saw `None` and fell back
+to bearer-token validation. **The synthetic-user path has been
+non-functional for an unknown stretch** — every relay-proxied request
+silently degraded to "must also carry a valid bearer token." No
+runtime impact today because no operator route relies on relay
+synthetic auth without an accompanying bearer (per DECISIONS.md the
+cloud relay is tunnel-only + future operator work). The path is now
+genuinely working for the first time, which matters for upcoming
+operator-dashboard live-feed plans.
+
+Fix is one line: `scope.setdefault("state", {})["relay_user"] = {...}`.
+Removed the now-unused `State` import. Regression coverage: the
+relay-success and bogus-relay tests in `tests/test_ws_auth.py` now
+mount the **real** middleware (not the in-test shim that the original
+WS-auth batch used). Verified the new tests fail against the pre-fix
+middleware (`AttributeError`) and pass against the fix — this exact
+regression can't sneak back without `test_ws_auth.py` turning red.
+
+### `/api/mobile/ws` accept-then-close (P1 from the original report)
+
+Same gap as `/ws` had pre-`88bd9c8`:
+[backend/routers/mobile_router.py:322](backend/routers/mobile_router.py#L322)
+called `ws.close(code=4401)` BEFORE `ws.accept()`, so the WebView /
+mobile WS lib saw HTTP 403 on the upgrade rather than a real close
+frame with code 4401. The mobile client doesn't currently inspect the
+close code, so the gap was latent — but it would silently no-op any
+future 4401-specific code path (force re-pair on revoke, etc.).
+Mirrored the `/ws` fix: accept first, then close with code 4401.
+
+The same commit also migrates the audit emit from the `mobile_auth`
+scope to the new `ws_auth` scope (path stays `/api/mobile/ws`). One
+grep — `/api/debug/events?event=ws_auth_failed` — now surfaces every
+WS auth rejection across BOTH `/ws` and `/api/mobile/ws`. Payload
+gains `relay_user_attempted=False` for query symmetry (always False
+for mobile because mobile clients don't come through
+`RelayAuthMiddleware`). `tests/test_mobile_router_audit_events.py::test_ws_bad_token_emits_audit_event`
+updated for the new namespace and the accept-then-close TestClient
+pattern.
+
+### Commits
+
+```
+0649322  fix(auth): repair RelayAuthMiddleware state assignment on current Starlette
+b3078f2  fix(auth): mirror accept-then-close on /api/mobile/ws so client sees 4401
+```
+
+### Regression check (cleanup batch)
+
+| Suite | Result |
+|---|---|
+| `pytest tests/test_ws_auth.py` | **5 passed** (now against the real middleware) |
+| `pytest tests/test_mobile_router_audit_events.py` | **12 passed** (the WS test updated for new namespace + accept-then-close) |
+| Pre-fix verification (`git checkout HEAD~ -- backend/middleware/relay_auth.py`) | `test_valid_relay_headers_accept_connection_without_token` **fails** with the documented `AttributeError`, confirming regression catch |
+| Full suite | unchanged (745 passing + 10 pre-existing anomaly_engine failures, same as before this batch) |
