@@ -26,41 +26,12 @@ from starlette.websockets import WebSocketDisconnect
 
 from core.debug_bus import bus, BASIC, OFF
 from backend import server as srv
+from backend.middleware.relay_auth import RelayAuthMiddleware
 
 
 VALID_TOKEN = "zgy_ws_VALID"
 VALID_USER = {"username": "owner@example.com", "role": "user"}
 RELAY_SECRET = "test-relay-secret-xyz"
-
-
-# Test shim for the relay-injected synthetic-user path.
-#
-# We do NOT mount the real backend.middleware.relay_auth.RelayAuthMiddleware
-# here because it has a separate latent bug (it tries to set an attribute on
-# scope["state"], which is a dict in current Starlette and so raises
-# AttributeError; the production HTTP path silently falls back to bearer
-# auth). Fixing that middleware is out of scope for this WS-auth prompt.
-#
-# This shim does exactly what RelayAuthMiddleware INTENDS to do — populate
-# scope["state"]["relay_user"] when X-Relay-Secret matches — so the WS
-# handler's consumption of relay_user (the contract we're testing here) is
-# exercised end-to-end. Tracked as a follow-up: SECURITY_REPORT_WS.md.
-class _RelayShim:
-    def __init__(self, app):
-        self.app = app
-    async def __call__(self, scope, receive, send):
-        if scope["type"] in ("http", "websocket"):
-            headers = {k.lower(): v for k, v in scope.get("headers", [])}
-            secret = headers.get(b"x-relay-secret", b"").decode("latin-1")
-            if secret and secret == RELAY_SECRET:
-                state = scope.setdefault("state", {})
-                state["relay_user"] = {
-                    "username": headers.get(b"x-relay-user", b"").decode("latin-1"),
-                    "role":     headers.get(b"x-relay-role", b"user").decode("latin-1"),
-                    "home_id":  headers.get(b"x-relay-home", b"").decode("latin-1"),
-                    "_via_relay": True,
-                }
-        await self.app(scope, receive, send)
 
 
 @pytest.fixture(autouse=True)
@@ -101,13 +72,16 @@ def stub_manager(monkeypatch):
 
 
 @pytest.fixture
-def client(stub_user_lookup, stub_manager):
+def client(stub_user_lookup, stub_manager, monkeypatch):
     """Test app wired with the SAME /ws handler the production app uses,
-    plus the _RelayShim above (which populates scope.state.relay_user the
-    way the real middleware INTENDS to) so the relay-injected path is
-    exercised end-to-end."""
+    behind the REAL RelayAuthMiddleware so the relay-injected path is
+    exercised end-to-end. Mounting the real middleware (not a shim) makes
+    this file catch a regression of the dict-attribute bug fixed in the
+    Post-WS cleanup batch."""
+    monkeypatch.setenv("RELAY_SECRET", RELAY_SECRET)
+
     app = FastAPI()
-    app.add_middleware(_RelayShim)
+    app.add_middleware(RelayAuthMiddleware)
     app.add_api_websocket_route("/ws", srv.websocket_endpoint)
     return TestClient(app)
 

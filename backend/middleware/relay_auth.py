@@ -21,7 +21,6 @@ Local requests continue to use Bearer tokens as before.
 """
 
 import os
-from starlette.datastructures import State
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from core.settings_loader import settings
@@ -47,10 +46,16 @@ class RelayAuthMiddleware:
             if relay_secret_hdr:
                 expected = _relay_secret()
                 if expected and relay_secret_hdr == expected:
-                    # Ensure scope["state"] is a Starlette State object
-                    if "state" not in scope:
-                        scope["state"] = State()
-                    scope["state"].relay_user = {
+                    # scope["state"] is a dict in current Starlette (it
+                    # pre-initialises it before user middleware runs). The
+                    # previous code tried `scope["state"].relay_user = ...`
+                    # which raises AttributeError on a dict; the exception
+                    # unwound and the synthetic-user path silently failed.
+                    # Read side (request.state.relay_user / websocket.state
+                    # .relay_user) wraps this same dict via Starlette's
+                    # State(scope["state"]) — assigning to the dict key
+                    # makes the attribute reachable through that wrapper.
+                    scope.setdefault("state", {})["relay_user"] = {
                         "username": headers.get(b"x-relay-user", b"relay").decode("latin-1"),
                         "role":     headers.get(b"x-relay-role", b"user").decode("latin-1"),
                         "home_id":  headers.get(b"x-relay-home", b"").decode("latin-1"),
