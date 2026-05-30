@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -104,6 +105,134 @@ def update_and_detect(extra_events: list[dict] | None = None) -> list[QualifiedC
 # Keep the old name as an alias so any code that imports detect_patterns still works
 def detect_patterns(extra_events: list[dict] | None = None) -> list[QualifiedCandidate]:
     return update_and_detect(extra_events)
+
+
+# ---------------------------------------------------------------------------
+# Template signal detector (Prompt 2 infrastructure)
+#
+# Curated templates may declare a `habit_signal` dict that watches for a
+# specific user intent firing N+ times within a window. When the signal fires
+# we re-surface the template in the Suggested tab — bypassing the full
+# multi-layer qualification gate above, because these signals are curated
+# (one template author wrote them) not discovered (statistically inferred
+# from arbitrary user behavior).
+#
+# This is intentionally a separate function from update_and_detect() so the
+# habit-pattern pipeline keeps its own evidence/scoring/persistence flow.
+# ---------------------------------------------------------------------------
+
+# Context predicates: each takes an event dict and returns True if the event
+# falls within the named context. Templates reference these by string name in
+# their habit_signal.context field.
+_HABIT_SIGNAL_CONTEXTS: dict[str, "callable"] = {
+    "after_midnight": lambda ev: 0 <= (ev.get("ctx") or {}).get("hour", -1) < 5,
+    "late_night":     lambda ev: (ev.get("ctx") or {}).get("hour", -1) >= 22
+                                  or 0 <= (ev.get("ctx") or {}).get("hour", -1) < 5,
+    "morning":        lambda ev: 5 <= (ev.get("ctx") or {}).get("hour", -1) < 12,
+    "evening":        lambda ev: 18 <= (ev.get("ctx") or {}).get("hour", -1) < 22,
+    "weekend":        lambda ev: (ev.get("ctx") or {}).get("day_of_week", -1) in (5, 6),
+    "weekday":        lambda ev: 0 <= (ev.get("ctx") or {}).get("day_of_week", -1) <= 4,
+}
+
+
+def template_signal_detector(
+    templates: list[dict] | None = None,
+    extra_events: list[dict] | None = None,
+) -> list[dict]:
+    """
+    Scan recent events for each template's habit_signal definition.
+
+    Returns a list of fire-records for templates whose signal threshold was
+    reached within the window. Each record:
+
+        {
+          "template_id":      str,
+          "intent":           str,
+          "occurrences":      int,
+          "window_days":      int,
+          "min_occurrences":  int,
+          "context":          str | None,
+          "re_surface":       bool,
+          "last_seen":        str (ISO),
+          "first_seen":       str (ISO),
+        }
+
+    Templates without a habit_signal are skipped silently. Bypasses the
+    evidence gate used by update_and_detect — these are curated signals.
+    """
+    if templates is None:
+        # Lazy import: pattern_detector is imported by suggestion_engine which
+        # is imported very early during startup. Importing automation_templates
+        # at module top-level would create a circular hazard if the templates
+        # file ever needs a pattern_detector helper.
+        from services.automation_templates import TEMPLATES
+        templates = TEMPLATES
+
+    fires: list[dict] = []
+
+    for tmpl in templates:
+        sig = tmpl.get("habit_signal")
+        if not isinstance(sig, dict):
+            continue
+        if sig.get("type") != "manual_repeat":
+            # Unknown signal types are reserved for future expansion; ignored
+            # rather than raising so older Ziggy builds running newer template
+            # libraries don't crash.
+            continue
+
+        intent = sig.get("intent")
+        min_occ = int(sig.get("min_occurrences", 3))
+        window_days = int(sig.get("window_days", 14))
+        context = sig.get("context")
+        if not intent or min_occ <= 0 or window_days <= 0:
+            continue
+
+        events = load_events(lookback_days=window_days)
+        if extra_events:
+            events = list(extra_events) + events
+
+        # Only count successful, non-reversed, automatable executions of the
+        # watched intent. Reversed events represent corrections, not habits.
+        matched = [
+            e for e in events
+            if e.get("intent") == intent
+            and e.get("result") == "ok"
+            and e.get("automatable", True)
+            and not e.get("reversed", False)
+        ]
+
+        # Apply context filter if specified (e.g., after_midnight only).
+        if context:
+            predicate = _HABIT_SIGNAL_CONTEXTS.get(context)
+            if predicate is not None:
+                matched = [e for e in matched if predicate(e)]
+
+        if len(matched) < min_occ:
+            continue
+
+        matched.sort(key=lambda e: e.get("ts", ""))
+        fires.append({
+            "template_id":     tmpl.get("id"),
+            "intent":          intent,
+            "occurrences":     len(matched),
+            "window_days":     window_days,
+            "min_occurrences": min_occ,
+            "context":         context,
+            "re_surface":      bool(sig.get("re_surface", False)),
+            "first_seen":      matched[0].get("ts", ""),
+            "last_seen":       matched[-1].get("ts", ""),
+        })
+
+    return fires
+
+
+def get_active_template_signals() -> dict[str, dict]:
+    """
+    Convenience wrapper: returns {template_id: fire_record} for templates whose
+    habit_signal is currently firing. Used by the automation router to attach
+    a `habit_signal_fired` field to enriched template responses.
+    """
+    return {f["template_id"]: f for f in template_signal_detector() if f.get("template_id")}
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +473,7 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
 
 def _qualify(candidates: dict) -> list[QualifiedCandidate]:
     qualified: list[QualifiedCandidate] = []
+    stale_marker_changed = False
 
     for ckey, cand in candidates.items():
         if cand.get("status") == "suppressed":
@@ -367,6 +497,27 @@ def _qualify(candidates: dict) -> list[QualifiedCandidate]:
         if composite < CONFIDENCE_THRESHOLD:
             continue
 
+        # Stale-entity gate: a candidate cached an entity_id that has since
+        # left the device registry (unpaired, renamed, or never existed).
+        # Surfacing it would produce a suggestion the wizard can't bind to
+        # any real device. Mark the candidate as stale so it stops surfacing
+        # this run; the stale_at timestamp is overwritten on every check so
+        # the candidate auto-recovers as soon as the entity returns. The
+        # marker is informational only — re-qualification on the next run
+        # will clear it transparently if the entity is back.
+        is_valid, stale_reason = _validate_candidate_entities(cand)
+        if not is_valid:
+            cand["stale_at"] = datetime.now().isoformat(timespec="seconds")
+            cand["stale_reason"] = stale_reason
+            stale_marker_changed = True
+            continue
+        # Clear any prior stale marker once the entity is recognised again
+        # so historical state doesn't linger on the candidate.
+        if "stale_at" in cand or "stale_reason" in cand:
+            cand.pop("stale_at", None)
+            cand.pop("stale_reason", None)
+            stale_marker_changed = True
+
         details = cand.get("details", {})
         pattern_type = cand["pattern_type"]
 
@@ -384,6 +535,12 @@ def _qualify(candidates: dict) -> list[QualifiedCandidate]:
             user_message=_draft_message(cand, details),
             evidence_summary=_build_evidence_summary(cand),
         ))
+
+    # Persist stale-marker churn so the JSON store reflects the latest
+    # entity-validity verdict between runs. Save lazily — only when
+    # something actually changed.
+    if stale_marker_changed:
+        _save_candidates(candidates)
 
     qualified.sort(key=lambda c: c.confidence, reverse=True)
     return qualified
@@ -473,21 +630,49 @@ def _compute_scores(cand: dict) -> dict | None:
 # Candidate persistence
 # ---------------------------------------------------------------------------
 
-def _load_candidates() -> dict:
-    if not CANDIDATES_FILE.exists():
-        return {}
+# In-memory cache for candidates.json. The pattern detector update path was
+# loading and rewriting the entire file per event; this cache skips the read
+# when the file hasn't changed since the last write and writes atomically.
+_candidates_lock = threading.Lock()
+_candidates_cache: dict | None = None
+_candidates_mtime: float = 0.0
+
+
+def _candidates_mtime_now() -> float:
     try:
-        with open(CANDIDATES_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
+        return CANDIDATES_FILE.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _load_candidates() -> dict:
+    global _candidates_cache, _candidates_mtime
+    with _candidates_lock:
+        if not CANDIDATES_FILE.exists():
+            _candidates_cache = {}
+            _candidates_mtime = 0.0
+            return dict(_candidates_cache)
+        mtime = _candidates_mtime_now()
+        if _candidates_cache is None or mtime != _candidates_mtime:
+            try:
+                with open(CANDIDATES_FILE, encoding="utf-8") as f:
+                    data = json.load(f)
+                    _candidates_cache = data if isinstance(data, dict) else {}
+            except (json.JSONDecodeError, OSError):
+                _candidates_cache = {}
+            _candidates_mtime = mtime
+        return dict(_candidates_cache)
 
 
 def _save_candidates(candidates: dict) -> None:
-    CANDIDATES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CANDIDATES_FILE, "w", encoding="utf-8") as f:
-        json.dump(candidates, f, indent=2, ensure_ascii=False)
+    global _candidates_cache, _candidates_mtime
+    with _candidates_lock:
+        CANDIDATES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = CANDIDATES_FILE.with_suffix(CANDIDATES_FILE.suffix + ".tmp")
+        tmp.write_text(json.dumps(candidates, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(CANDIDATES_FILE)
+        _candidates_cache = dict(candidates) if isinstance(candidates, dict) else {}
+        _candidates_mtime = _candidates_mtime_now()
 
 
 def get_candidate(key: str) -> dict | None:
@@ -617,6 +802,48 @@ def _dominant_entity_id(entity_ids: list[str]) -> str | None:
     if top_count / len(entity_ids) < 0.5:
         return None
     return top
+
+
+def _entity_id_is_known(entity_id: str | None) -> bool:
+    """Return True if entity_id resolves to a current device in the registry.
+
+    Used by _qualify() to guard against surfacing a habit suggestion whose
+    cached entity_id points at a device the user has since unpaired or
+    renamed. Blank / None ids are treated as known — _device_phrase falls
+    back to a generic phrase in that case. If the registry itself is
+    unreachable we fail OPEN so a transient lookup failure can't blackhole
+    every suggestion in the system.
+    """
+    if not entity_id:
+        return True
+    try:
+        from services.device_registry import get_device_info
+        info = get_device_info(entity_id)
+    except Exception:
+        return True
+    return bool(info)
+
+
+def _validate_candidate_entities(cand: dict) -> tuple[bool, str | None]:
+    """Verify every entity_id cached on a candidate is still in the device
+    registry. Returns (True, None) when the candidate is safe to promote,
+    or (False, reason) when at least one entity_id is now stale.
+
+    Sequence candidates carry both `dominant_entity_id` (action A) and
+    `b_dominant_entity_id` (action B); both must check out.
+    """
+    details = cand.get("details") or {}
+
+    eid_a = details.get("dominant_entity_id")
+    if not _entity_id_is_known(eid_a):
+        return False, f"stale_entity_id:{eid_a}"
+
+    if cand.get("pattern_type") == "sequence":
+        eid_b = details.get("b_dominant_entity_id")
+        if not _entity_id_is_known(eid_b):
+            return False, f"stale_b_entity_id:{eid_b}"
+
+    return True, None
 
 
 def _device_phrase(entity_id: str | None) -> tuple[str | None, str | None]:

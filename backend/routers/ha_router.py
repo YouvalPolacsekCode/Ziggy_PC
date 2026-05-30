@@ -131,13 +131,116 @@ class EntityNamePatch(BaseModel):
 
 @router.patch("/api/ha/entity/{entity_id:path}/name")
 async def patch_entity_name(entity_id: str, body: EntityNamePatch):
+    """Rename an entity.
+
+    Two-layer write:
+      1. Local override in settings.yaml's `entity_names` — picked up by
+         /api/ha/entities so Ziggy's UI shows the chosen name immediately
+         even when HA's registry update is slow/unreachable.
+      2. Best-effort push to HA's entity registry via WebSocket so HA-side
+         surfaces (HA UI, automations referencing friendly_name, third-party
+         integrations reading the entity registry) all agree. HA stores this
+         as `name_by_user`, which it surfaces as the entity's friendly_name
+         when set, falling back to the integration-provided name otherwise.
+
+    The local override is authoritative for Ziggy's render path. If the HA
+    push fails (HA unreachable, entity not in HA's registry yet), we still
+    return ok — the user sees their rename inside Ziggy. `ha_renamed` in
+    the response tells the caller whether the HA-side push succeeded so
+    they can surface a "Ziggy-only" caveat if they want.
+    """
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Name cannot be empty")
     names = settings.setdefault("entity_names", {})
     names[entity_id] = name
     save_settings(settings)
-    return {"ok": True, "entity_id": entity_id, "display_name": name}
+
+    ha_renamed = False
+    device_renamed = False
+    try:
+        # Lazy import to avoid pulling the WS helper into modules that only
+        # need the read-side of ha_router.
+        from services.ha_areas import _ws
+        res, = await _ws({
+            "type": "config/entity_registry/update",
+            "entity_id": entity_id,
+            "name": name,
+        })
+        if res.get("success"):
+            ha_renamed = True
+            # Look up the entity's parent device_id from the SAME registry
+            # call's result so we can cascade the rename to the device too.
+            # The response wraps the entry under `result.entity_entry` (not
+            # flat under `result` — earlier code missed the nesting and the
+            # device cascade silently no-op'd on every rename, leaving
+            # tiles/detail-headers that read the device-registry name out
+            # of sync with surfaces that read the entity name).
+            # When device_id is set, the user thinks of "device" and "entity"
+            # as one thing (the lamp, not "the light entity on the lamp"),
+            # so renaming one MUST rename the other.
+            entry = (res.get("result") or {}).get("entity_entry") or {}
+            device_id = entry.get("device_id")
+            if device_id:
+                try:
+                    dev_res, = await _ws({
+                        "type": "config/device_registry/update",
+                        "device_id": device_id,
+                        "name_by_user": name,
+                    })
+                    if dev_res.get("success"):
+                        device_renamed = True
+                    else:
+                        err = (dev_res.get("error") or {}).get("message", "")
+                        log_info(f"[API] patch_entity_name: HA refused device rename {device_id}: {err}")
+                except Exception as dev_err:
+                    log_info(f"[API] patch_entity_name: device rename failed for {device_id}: {dev_err}")
+        else:
+            err = (res.get("error") or {}).get("message", "")
+            # `not_found` is common for IR-only entities (ir.<id>) that
+            # never enrolled in HA's registry — local override still wins.
+            if "not_found" not in err.lower():
+                log_info(f"[API] patch_entity_name: HA refused rename of {entity_id}: {err}")
+    except Exception as e:
+        log_info(f"[API] patch_entity_name: HA WS rename failed for {entity_id}: {e}")
+
+    # Bust the registry caches so the next /api/devices/grouped pulls fresh
+    # device names instead of serving up to 60s of stale "renamed to Front
+    # Door but card still says SONOFF SNZB-04PR2."
+    if ha_renamed or device_renamed:
+        try:
+            from services.ha_areas import invalidate_registry_cache
+            invalidate_registry_cache()
+        except Exception:
+            pass
+        try:
+            from services.device_groups import invalidate_cache as _invalidate_groups
+            _invalidate_groups()
+        except Exception:
+            pass
+
+    # Notify every connected client (other browser tabs, the mobile shell,
+    # the tablet hub) so they pick up the new label without waiting for
+    # their next periodic refresh. App.jsx routes this to deviceStore's
+    # renameEntity for the same optimistic update we do on the requester
+    # side. Local override means the rename is meaningful even when the
+    # HA-side push failed (e.g. IR entities), so broadcast unconditionally.
+    try:
+        await manager.broadcast({
+            "type": "entity_renamed",
+            "entity_id": entity_id,
+            "display_name": name,
+        })
+    except Exception as e:
+        log_info(f"[API] patch_entity_name: rename broadcast failed: {e}")
+
+    return {
+        "ok": True,
+        "entity_id": entity_id,
+        "display_name": name,
+        "ha_renamed": ha_renamed,
+        "device_renamed": device_renamed,
+    }
 
 
 @router.delete("/api/ha/entity/{entity_id:path}/name")

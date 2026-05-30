@@ -1,3 +1,10 @@
+// LEGACY — superseded by the Suggested tab inside Automations.jsx.
+// The canonical SuggestionCard now lives at Automations.jsx (Configure → wizard flow,
+// no auto-deploy). This page's SuggestionCard still uses the older accept/reject UX
+// and is kept only because /suggestions is still routed from App.jsx and linked from
+// Dashboard. New suggestion work should go through the Suggested tab; do not extend
+// this page. Slated for removal once the Dashboard link and /suggestions route are
+// retired.
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSuggestionStore } from '../stores/suggestionStore'

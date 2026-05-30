@@ -48,30 +48,30 @@ export default function HomeMap() {
         <motion.h1
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100"
+          className="text-2xl font-semibold text-ink"
         >
           {t('homeMap.title')}
         </motion.h1>
         <button
           onClick={() => navigate('/map/build')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-surface-2 text-ink-2 hover:bg-line transition-all"
         >
           <Pencil size={12} /> {t('homeMap.editLayout')}
         </button>
       </div>
 
       {haError && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-medium mb-4">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-warn-soft text-warn text-xs font-medium mb-4">
           <WifiOff size={13} />
           {t('homeMap.lostConnection')}
         </div>
       )}
 
       {loading ? (
-        <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" style={{ height: 480 }} />
+        <div className="rounded-2xl bg-surface-2 animate-pulse" style={{ height: 480 }} />
       ) : (
         <Suspense fallback={
-          <div className="flex items-center justify-center h-48 text-zinc-400 dark:text-zinc-600 text-sm">{t('homeMap.loadingMap')}</div>
+          <div className="flex items-center justify-center h-48 text-ink-faint text-sm">{t('homeMap.loadingMap')}</div>
         }>
           <HomeMapCanvas rooms={rooms} viewOnly={true} />
         </Suspense>

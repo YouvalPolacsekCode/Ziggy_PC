@@ -22,7 +22,9 @@ export function Toggle({ checked, onCheckedChange, disabled, className }) {
         style={{
           display: 'block', width: 16, height: 16, borderRadius: '50%',
           background: 'var(--surface)',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+          // Knob lift: derived from ink so the shadow tints with the palette
+          // instead of staying flat-black on a dark surface.
+          boxShadow: '0 1px 3px color-mix(in srgb, var(--ink) 22%, transparent)',
           transition: 'transform 0.15s',
           transform: checked ? 'translateX(18px)' : 'translateX(2px)',
         }}

@@ -16,7 +16,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY } from '../lib/domainRegistry'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
@@ -283,7 +283,7 @@ function CameraPanel({ entityId, navigate }) {
   return (
     <Card className="p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{t('deviceDetail.camera')}</p>
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider">{t('deviceDetail.camera')}</p>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setLive(v => !v)}
@@ -396,6 +396,11 @@ export default function DeviceDetail() {
   const [editingRoom, setEditingRoom] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // Parent IR blaster — fetched lazily when the entity is IR-linked so
+  // the IR codeset card can show the blaster name + status alongside
+  // codeset info. Always reflects the canonical registry name (renames
+  // from the Blasters admin UI flow through immediately on next mount).
+  const [parentBlaster, setParentBlaster] = useState(null)
 
   // (liveEntity is already pulled via the narrow selector above.)
 
@@ -461,6 +466,21 @@ export default function DeviceDetail() {
     setDetailsLoadFailed(false)
     load({ background: true })
   }, [entityId])
+
+  // Parent blaster lookup — fires whenever the entity is IR-linked and
+  // the codeset declares a blaster_id. Lazy, doesn't block render; the
+  // chip just appears once the row resolves. Cached server-side, so
+  // re-mounts of the same device are cheap.
+  useEffect(() => {
+    const ir = liveEntity?._linkedIr || (liveEntity?._irDevice) || null
+    const bid = ir?.blaster_id
+    if (!bid) { setParentBlaster(null); return }
+    let alive = true
+    getIrBlaster(bid)
+      .then((b) => { if (alive) setParentBlaster(b) })
+      .catch(() => { if (alive) setParentBlaster(null) })
+    return () => { alive = false }
+  }, [liveEntity?._linkedIr, liveEntity?._irDevice])
 
   // Rooms list — read from the deviceStore (already loaded by Dashboard /
   // fetchAll). Only fall back to a network fetch when the user opens the
@@ -535,6 +555,11 @@ export default function DeviceDetail() {
           addToast(t('deviceDetail.deviceRemovedZiggy'), 'success')
         }
       }
+      // Optimistic local drop — the WS `entity_removed` broadcast lands a
+      // moment later for other tabs; this client is already navigating away
+      // so we apply the change inline so the Devices list never re-renders
+      // with the deleted row.
+      try { useDeviceStore.getState().removeEntity(entityId) } catch {}
       // Force-refresh the store so the deleted entity / device drops out of
       // every list immediately, without waiting for the 60s background
       // reconciliation loop.
@@ -553,16 +578,29 @@ export default function DeviceDetail() {
   }
 
   const handleRename = async (newName) => {
-    // HA entity rename via registry
+    // Goes through the api.js helper so the request gets the Bearer token,
+    // request-id tracing, and (when applicable) Fly relay routing. Backend
+    // both persists a local display-name override AND pushes name_by_user
+    // to HA's entity registry + device registry, so HA-side surfaces stay
+    // in sync.
     try {
-      const res = await fetch(`/api/ha/entity/${encodeURIComponent(entityId)}/rename`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName }),
-      })
-      if (!res.ok) throw new Error(t('deviceDetail.renameFailed'))
+      await renameHaEntity(entityId, newName)
       addToast(t('deviceDetail.renamed'), 'success')
       setShowRename(false)
+
+      // Optimistic local update: patch the store immediately so the user
+      // sees the new name everywhere on the next render — instead of
+      // waiting for the next fetchAll. Previously this gap was producing
+      // a "rename appears one cycle late" feel: each rename only became
+      // visible after the *next* action triggered a fetch.
+      try { useDeviceStore.getState().renameEntity(entityId, newName) } catch {}
+
+      // Force a full store refresh too so the canonical truth (group_name
+      // from device_registry, etc.) lands. The optimistic update covers
+      // the common case; this catches the multi-entity-group and Rooms
+      // page surfaces that don't read display_name/friendly_name directly.
+      try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+
       load({ background: true })
     } catch (e) {
       addToast(e.message || t('deviceDetail.renameFailed'), 'error')
@@ -606,13 +644,13 @@ export default function DeviceDetail() {
     return (
       <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px' }}>
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 transition-colors">
+          <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-surface-2 text-ink-mute transition-colors">
             <ArrowLeft size={18} />
           </button>
-          <div className="h-5 w-32 bg-zinc-100 dark:bg-zinc-800 rounded animate-pulse" />
+          <div className="h-5 w-32 bg-surface-2 rounded animate-pulse" />
         </div>
         {[1, 2, 3].map(i => (
-          <div key={i} className="h-24 mb-3 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+          <div key={i} className="h-24 mb-3 rounded-2xl bg-surface-2 animate-pulse" />
         ))}
       </div>
     )
@@ -883,11 +921,11 @@ export default function DeviceDetail() {
       {/* ── Diagnostics ── */}
       {showData && hasDiagnostics && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.diagnostics')}</p>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.diagnostics')}</p>
 
           {diagnostics.battery != null && (
             <div className="mb-3">
-              <div className="flex justify-between text-[11px] text-zinc-400 mb-1.5">
+              <div className="flex justify-between text-[11px] text-ink-mute mb-1.5">
                 <span>{t('deviceDetail.battery')}</span>
               </div>
               <BatteryBar level={diagnostics.battery} unit={diagnostics.battery_unit} />
@@ -896,20 +934,20 @@ export default function DeviceDetail() {
 
           {(diagnostics.lqi != null || diagnostics.rssi != null) && (
             <div className="mb-3">
-              <span className="text-[11px] text-zinc-400 block mb-1">{t('deviceDetail.signal')}</span>
+              <span className="text-[11px] text-ink-mute block mb-1">{t('deviceDetail.signal')}</span>
               <SignalBars lqi={diagnostics.lqi} rssi={diagnostics.rssi} />
             </div>
           )}
 
-          <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+          <div className="divide-y divide-line">
             <DiagRow label={t('deviceDetail.lastChanged')}>
-              <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              <span className="text-xs font-medium text-ink-2">
                 <TimeAgo iso={diagnostics.last_changed} />
               </span>
             </DiagRow>
             <DiagRow label={t('deviceDetail.lastSeen')}>
               {diagnostics.last_seen && (
-                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                <span className="text-xs font-medium text-ink-2">
                   <TimeAgo iso={diagnostics.last_seen} />
                 </span>
               )}
@@ -935,8 +973,8 @@ export default function DeviceDetail() {
       {/* ── HA Device info ── */}
       {showData && ha_device && (ha_device.manufacturer || ha_device.model) && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.hardware')}</p>
-          <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.hardware')}</p>
+          <div className="divide-y divide-line">
             <DiagRow label={t('deviceDetail.manufacturer')} value={ha_device.manufacturer} />
             <DiagRow label={t('deviceDetail.model')} value={ha_device.model} />
             <DiagRow label={t('deviceDetail.firmware')} value={ha_device.sw_version} />
@@ -948,10 +986,40 @@ export default function DeviceDetail() {
       {/* ── IR codeset info — shown for both pure IR and IR+HA hybrid ── */}
       {showData && facts.linkedIr && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">
             {t('deviceDetail.irCodeset')}
           </p>
-          <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+          <div className="divide-y divide-line">
+            {/* Parent blaster row — only renders once the registry lookup
+                resolves (lazy). Status chip mirrors the Blasters admin UI
+                so the same green/yellow/red signals appear in both surfaces.
+                Tapping the row could deep-link to admin in a later pass. */}
+            {parentBlaster && (
+              <DiagRow label="Blaster">
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--ink)', fontWeight: 500 }}>
+                    {parentBlaster.name}
+                  </span>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    padding: '1px 6px', borderRadius: 999,
+                    color:
+                      parentBlaster.status === 'online'      ? 'var(--ok)'   :
+                      parentBlaster.status === 'stale'       ? 'var(--warn)' :
+                                                               'var(--err)',
+                    background:
+                      parentBlaster.status === 'online'      ? 'color-mix(in srgb, var(--ok) 14%, transparent)'   :
+                      parentBlaster.status === 'stale'       ? 'color-mix(in srgb, var(--warn) 14%, transparent)' :
+                                                               'color-mix(in srgb, var(--err) 14%, transparent)',
+                  }}>
+                    {parentBlaster.status === 'online' ? 'online'
+                      : parentBlaster.status === 'stale' ? 'stale'
+                      : 'unreachable'}
+                  </span>
+                </span>
+              </DiagRow>
+            )}
             <DiagRow label={t('deviceDetail.type')} value={facts.linkedIr.type} />
             <DiagRow label={t('deviceDetail.brand')} value={facts.linkedIr.brand || '—'} />
             <DiagRow label={t('deviceDetail.commandsLearned')} value={`${(facts.linkedIr.learned_commands || []).length}`} />
@@ -968,7 +1036,7 @@ export default function DeviceDetail() {
       {/* ── Capability list — what this device can actually do ── */}
       {showData && facts.capabilities.size > 0 && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.capabilities')}</p>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.capabilities')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {[...facts.capabilities].map(c => (
               <span key={c} className="z-chip" style={{ padding: '4px 9px', fontSize: 10.5 }}>{c.replace(/_/g, ' ')}</span>
@@ -982,7 +1050,7 @@ export default function DeviceDetail() {
             knows which one drives the main card / control surface. ── */}
       {showData && usefulSiblings.length > 0 && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">
             {groupName ? t('deviceDetail.siblingsOn', { name: groupName }) : t('deviceDetail.alsoOnDevice')}
           </p>
           <div className="space-y-1.5">
@@ -990,12 +1058,12 @@ export default function DeviceDetail() {
               <Link
                 key={sib.entity_id}
                 to={`/devices/${encodeURIComponent(sib.entity_id)}`}
-                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group"
+                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
               >
                 <div className="flex items-center gap-2.5">
                   <span className="text-base">{domainIcon(sib.domain, sib.device_class)}</span>
                   <div>
-                    <p dir="auto" className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    <p dir="auto" className="text-sm font-medium text-ink">
                       {sib.friendly_name}
                       {sib.isPrimary && (
                         <span style={{
@@ -1006,13 +1074,13 @@ export default function DeviceDetail() {
                         }}>{t('deviceDetail.primary')}</span>
                       )}
                     </p>
-                    <p className="text-[11px] text-zinc-400">
+                    <p className="text-[11px] text-ink-mute">
                       {sib.state ?? '—'}{sib.unit ? ` ${sib.unit}` : ''}
                       {sib.device_class ? ` · ${sib.device_class}` : ''}
                     </p>
                   </div>
                 </div>
-                <ChevronRight size={14} className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 transition-colors" />
+                <ChevronRight size={14} className="text-ink-faint group-hover:text-ink-mute transition-colors" />
               </Link>
             ))}
           </div>
@@ -1022,7 +1090,7 @@ export default function DeviceDetail() {
       {/* ── Automations using this device ── */}
       {showData && automations_using.length > 0 && (
         <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">
             {t('deviceDetail.usedInAutomations')}
           </p>
           <div className="space-y-1.5">
@@ -1030,17 +1098,17 @@ export default function DeviceDetail() {
               <Link
                 key={auto.id}
                 to="/automations"
-                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group"
+                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
               >
                 <div className="flex items-center gap-2.5">
-                  <Zap size={14} className={cn('shrink-0', auto.enabled ? 'text-violet-500' : 'text-zinc-300')} />
-                  <p dir="auto" className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{auto.name}</p>
+                  <Zap size={14} className={cn('shrink-0', auto.enabled ? 'text-accent' : 'text-ink-faint')} />
+                  <p dir="auto" className="text-sm font-medium text-ink">{auto.name}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={auto.enabled ? 'success' : 'default'} size="sm">
                     {auto.enabled ? t('deviceDetail.autoOn') : t('deviceDetail.autoOff')}
                   </Badge>
-                  <ChevronRight size={14} className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 transition-colors" />
+                  <ChevronRight size={14} className="text-ink-faint group-hover:text-ink-mute transition-colors" />
                 </div>
               </Link>
             ))}
@@ -1053,7 +1121,7 @@ export default function DeviceDetail() {
       {showData && (
       <Card className="p-4 mb-3">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{t('deviceDetail.room')}</p>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider">{t('deviceDetail.room')}</p>
           <button
             onClick={() => setEditingRoom(v => !v)}
             style={{
@@ -1089,7 +1157,7 @@ export default function DeviceDetail() {
               onClick={() => handleAssignRoom(null)}
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
-                !currentRoom ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                !currentRoom ? 'bg-accent-soft text-accent font-medium' : 'text-ink-mute hover:bg-surface-2',
               )}
             >
               <Home size={13} /> {t('deviceDetail.noRoom')}
@@ -1101,13 +1169,13 @@ export default function DeviceDetail() {
                 className={cn(
                   'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
                   currentRoom?.id === r.id
-                    ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 font-medium'
-                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                    ? 'bg-accent-soft text-accent font-medium'
+                    : 'text-ink-2 hover:bg-surface-2',
                 )}
               >
-                <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-700')} />
+                <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-accent' : 'bg-line')} />
                 <span dir="auto">{r.name}</span>
-                {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
+                {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
               </button>
             ))}
           </div>
@@ -1118,10 +1186,10 @@ export default function DeviceDetail() {
       {/* ── Danger zone ── */}
       {showData && (
       <Card className="p-4">
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{t('deviceDetail.actions')}</p>
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.actions')}</p>
         <button
           onClick={handleToggleHide}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-ink-mute hover:bg-surface-2 transition-colors"
         >
           {isHidden
             ? <><Eye size={13} /> {t('deviceDetail.showDevice')}</>

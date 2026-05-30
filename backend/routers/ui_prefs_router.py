@@ -33,6 +33,12 @@ router = APIRouter()
 
 _FILE = Path(__file__).parent.parent.parent / "user_files" / "ui_prefs.json"
 
+# In-memory cache of the whole prefs file. Each dashboard pin drag fires PUT
+# /api/ui/prefs which previously re-read the entire JSON from disk. The cache
+# is invalidated by mtime so out-of-band edits still load on next read.
+_cache: dict | None = None
+_cache_mtime: float = 0.0
+
 # Hard caps mirror the frontend's QUICK_MAX / SHORTCUTS_MAX so the server can't
 # be tricked into storing unbounded arrays. Keep these in lockstep with
 # frontend/src/stores/deviceStore.js.
@@ -40,20 +46,42 @@ _QUICK_MAX = 4
 _SHORTCUTS_MAX = 8
 
 
-def _load_all() -> dict:
-    if not _FILE.exists():
-        return {}
+def _file_mtime() -> float:
     try:
-        return json.loads(_FILE.read_text(encoding="utf-8"))
-    except Exception as e:
-        log_error(f"[ui_prefs] Read failed, starting from empty: {e}")
-        return {}
+        return _FILE.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _load_all() -> dict:
+    global _cache, _cache_mtime
+    if not _FILE.exists():
+        _cache = {}
+        _cache_mtime = 0.0
+        return dict(_cache)
+    mtime = _file_mtime()
+    if _cache is None or mtime != _cache_mtime:
+        try:
+            _cache = json.loads(_FILE.read_text(encoding="utf-8"))
+            _cache_mtime = mtime
+        except Exception as e:
+            log_error(f"[ui_prefs] Read failed, starting from empty: {e}")
+            _cache = {}
+            _cache_mtime = 0.0
+    return dict(_cache)
 
 
 def _save_all(data: dict) -> None:
+    global _cache, _cache_mtime
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)
-        _FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        # Atomic rename: write to .tmp then replace. Prevents partial files
+        # if the process dies mid-write.
+        tmp = _FILE.with_suffix(_FILE.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(_FILE)
+        _cache = dict(data) if isinstance(data, dict) else {}
+        _cache_mtime = _file_mtime()
     except Exception as e:
         log_error(f"[ui_prefs] Write failed: {e}")
 

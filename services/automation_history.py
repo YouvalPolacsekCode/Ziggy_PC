@@ -18,21 +18,46 @@ MAX_PER_AUTOMATION = 20
 
 _lock = threading.Lock()
 
+# In-memory cache keyed by file mtime — every record_run/get_history call
+# previously re-read history.json. The cache is invalidated when the file is
+# modified out-of-band.
+_cache: dict | None = None
+_cache_mtime: float = 0.0
+
+
+def _file_mtime() -> float:
+    try:
+        return os.path.getmtime(STORE_FILE)
+    except OSError:
+        return 0.0
+
 
 def _load() -> dict:
+    global _cache, _cache_mtime
     if not os.path.exists(STORE_FILE):
-        return {}
-    try:
-        with open(STORE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        _cache = {}
+        _cache_mtime = 0.0
+        return dict(_cache)
+    mtime = _file_mtime()
+    if _cache is None or mtime != _cache_mtime:
+        try:
+            with open(STORE_FILE, "r", encoding="utf-8") as f:
+                _cache = json.load(f)
+        except Exception:
+            _cache = {}
+        _cache_mtime = mtime
+    return dict(_cache)
 
 
 def _save(data: dict) -> None:
+    global _cache, _cache_mtime
     os.makedirs(os.path.dirname(STORE_FILE), exist_ok=True)
-    with open(STORE_FILE, "w", encoding="utf-8") as f:
+    tmp = STORE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, STORE_FILE)
+    _cache = dict(data) if isinstance(data, dict) else {}
+    _cache_mtime = _file_mtime()
 
 
 def record_run(

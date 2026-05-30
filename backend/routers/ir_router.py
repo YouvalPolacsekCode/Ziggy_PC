@@ -43,6 +43,12 @@ class IrDeviceCreate(BaseModel):
     commands: Optional[dict] = None
     ac_config: Optional[dict] = None
     blaster_host: Optional[str] = None   # IP for direct python-broadlink access
+    # MAC address of the Broadlink, captured at pairing time from
+    # `broadlink.discover()`. Optional for backwards compat with the
+    # manual-IP entry path (no discovery → no MAC); the listener also
+    # lazy-backfills MAC on first successful contact. Stored canonical
+    # lowercase-hex, no separators — see _norm_mac.
+    blaster_mac: Optional[str] = None
 
 
 class IrDevicePatch(BaseModel):
@@ -72,12 +78,138 @@ class IrSendBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Blasters — HA entities + network discovery
+# Blaster registry — first-class CRUD on physical IR-blaster hardware
 # ---------------------------------------------------------------------------
+# Replaces the previous read-only HA-remote-entity list (now at
+# /api/ir/ha-remotes for the few flows that still need it). The registry
+# is the user-facing source of truth: name, room, status, IR-device count.
+
+class BlasterCreate(BaseModel):
+    name: str
+    mac: Optional[str] = None             # canonical hex preferred; helper normalizes
+    ip: Optional[str] = None
+    room: Optional[str] = None
+    model: Optional[str] = None
+    ha_remote_entity_id: Optional[str] = None
+
+
+class BlasterPatch(BaseModel):
+    name: Optional[str] = None
+    room: Optional[str] = None
+    model: Optional[str] = None
+    ha_remote_entity_id: Optional[str] = None
+
+
+def _decorate_blaster(b: dict) -> dict:
+    """Add derived fields the UI needs but the registry doesn't store:
+    status (online/stale/unreachable from last_seen_at) and device_count
+    (how many IR devices currently route through this blaster)."""
+    from services.ir_blasters import status_for
+    try:
+        from services.ir_manager import _load as _ir_load
+        devices = _ir_load() or []
+        count = sum(1 for d in devices if d.get("blaster_id") == b.get("id"))
+    except Exception:
+        count = 0
+    return {**b, "status": status_for(b), "device_count": count}
+
 
 @router.get("/api/ir/blasters")
 async def ir_blasters():
-    """Return Broadlink remote.* entities from HA (for legacy HA-path setup)."""
+    """Return every registered blaster with derived status + device_count.
+
+    This is the authoritative blaster list used by the Blasters admin UI
+    and the IR Wizard's "pick blaster" picker. Backed by ir_blasters.json
+    (in user_files/) — built from existing ir_devices.json on first boot
+    after upgrade, then maintained explicitly via this API.
+    """
+    from services.ir_blasters import list_blasters
+    return {"blasters": [_decorate_blaster(b) for b in list_blasters()]}
+
+
+@router.get("/api/ir/blasters/{blaster_id}")
+async def get_blaster(blaster_id: str):
+    from services.ir_blasters import get_blaster as _get
+    row = _get(blaster_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Blaster not found")
+    return _decorate_blaster(row)
+
+
+@router.post("/api/ir/blasters")
+async def create_blaster_endpoint(body: BlasterCreate):
+    """Register a new blaster. Idempotent on MAC: re-creating with the same
+    MAC returns the existing row instead of duplicating. Used by the IR
+    Wizard's name-this-blaster step right after the user picks a discovered
+    Broadlink (and again on every re-pair of the same hardware)."""
+    if not (body.mac or body.ip):
+        raise HTTPException(status_code=422, detail="Either mac or ip must be provided")
+    from services.ir_blasters import create_blaster
+    blaster = create_blaster(
+        name=body.name,
+        mac=body.mac or "",
+        ip=body.ip or "",
+        model=body.model,
+        room=body.room,
+        ha_remote_entity_id=body.ha_remote_entity_id,
+    )
+    return _decorate_blaster(blaster)
+
+
+@router.patch("/api/ir/blasters/{blaster_id}")
+async def patch_blaster(blaster_id: str, body: BlasterPatch):
+    """Rename / move / re-link a blaster. id, mac, ip, last_seen are
+    immutable from this endpoint — mac is the stable identity; ip is
+    runtime state owned by the rediscovery flow."""
+    from services.ir_blasters import update_blaster
+    updates = body.model_dump(exclude_none=True)
+    row = update_blaster(blaster_id, updates)
+    if not row:
+        raise HTTPException(status_code=404, detail="Blaster not found")
+    return _decorate_blaster(row)
+
+
+@router.delete("/api/ir/blasters/{blaster_id}")
+async def delete_blaster_endpoint(blaster_id: str, cascade: bool = False):
+    """Remove a blaster. By default, attached IR devices are ORPHANED (kept
+    in ir_devices.json but with no working route — they'll error on send
+    until the user re-pairs them). Pass `?cascade=true` to also delete
+    every IR device hosted on this blaster.
+
+    The UI shows the orphan count and asks for confirmation before either
+    path — this endpoint just executes whichever was picked.
+    """
+    from services.ir_blasters import delete_blaster, get_blaster as _get
+    target = _get(blaster_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Blaster not found")
+
+    orphan_count = 0
+    if cascade:
+        # Cascade-delete attached IR devices first.
+        try:
+            from services.ir_manager import _load as _ir_load, _save as _ir_save
+            devices = _ir_load() or []
+            before = len(devices)
+            kept = [d for d in devices if d.get("blaster_id") != blaster_id]
+            orphan_count = before - len(kept)
+            if orphan_count:
+                _ir_save(kept)
+        except Exception as e:
+            _bus.emit("api", _BASIC, "blaster_cascade_failed", blaster_id=blaster_id, error=str(e))
+            raise HTTPException(status_code=500, detail=f"Cascade delete failed: {e}")
+
+    delete_blaster(blaster_id)
+    _refresh_device_registry()
+    return {"ok": True, "deleted": True, "cascaded_devices": orphan_count}
+
+
+@router.get("/api/ir/ha-remotes")
+async def ha_remote_entities():
+    """Return HA `remote.*` entities. Used only by flows that need to wire
+    Ziggy's blaster registry to an existing HA Broadlink integration entity
+    (so HA-routed send fallback works). Most surfaces should use
+    /api/ir/blasters instead."""
     return {"blasters": list_ir_blasters()}
 
 
@@ -151,6 +283,7 @@ async def create_ir_device_endpoint(body: IrDeviceCreate):
             commands=body.commands,
             ac_config=body.ac_config,
             blaster_host=body.blaster_host,
+            blaster_mac=body.blaster_mac,
         )
         # If blaster_host provided, start listener for this host
         if body.blaster_host:

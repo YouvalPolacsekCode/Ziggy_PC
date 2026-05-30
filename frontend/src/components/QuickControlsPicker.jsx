@@ -30,7 +30,12 @@ const ALLOWED_DOMAINS = new Set([
 
 export function QuickControlsPicker({ open, onClose }) {
   const t = useT()
-  const { entities, quickControlIds, setQuickControlIds } = useDeviceStore()
+  // Slice the store so the picker only re-renders when entities or the saved
+  // quick-control ids change — destructuring the whole store re-renders on
+  // every unrelated device tick.
+  const entities = useDeviceStore(s => s.entities)
+  const quickControlIds = useDeviceStore(s => s.quickControlIds)
+  const setQuickControlIds = useDeviceStore(s => s.setQuickControlIds)
   const [draft, setDraft] = useState(quickControlIds)
   const [editingSlot, setEditingSlot] = useState(null)  // index or null
 

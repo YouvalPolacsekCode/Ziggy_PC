@@ -15,7 +15,8 @@
 
 import { callHaService, irSend, irSendChannel, irSetAcTemperature, irRunSequence, controlDevice } from './api'
 import { DOMAIN_REGISTRY } from './domainRegistry'
-import { lightRgb } from './utils'
+import { lightRgb, humanizeSlug } from './utils'
+import { t as i18nT } from './i18n'
 
 // ─── Kind taxonomy ──────────────────────────────────────────────────────────
 //
@@ -136,6 +137,71 @@ const BINARY_CLASS_TO_KIND = {
   opening:     KIND.DOOR,
 }
 
+// Inferred-class fallback for binary_sensors that ship without a
+// `device_class`. The Sonoff SNZB-04 Pro (PR2) is the canonical offender —
+// ZHA exposes its door-state binary_sensor with `device_class=null`, so
+// without this fallback every Pro door sensor reads as a generic on/off
+// indicator and Ziggy says "On / Off" instead of "Open / Closed" in
+// every surface (Devices page, Rooms page, device detail, voice intents).
+//
+// Each row is [regex, deviceClass, kind]. Order matters: more specific
+// classes first. First match wins. Word-boundary regex prevents `door`
+// matching "indoor" or `gas` matching "vegas".
+//
+// Used in two places:
+//   - getKind() — drives icon, color tint, primary-entity picking
+//   - inferBinarySensorClass() — used by formatEntityState in lib/utils.js
+//     so the Devices list / room sensor strip get the right "Open/Closed"
+//     style label without needing to duplicate this table.
+const _BINARY_INFERRED_TABLE = [
+  [/\b(smoke|fire)\b/,                            'smoke',     KIND.SMOKE],
+  [/\bgas\b/,                                     'gas',       KIND.SMOKE],
+  [/\b(co|carbon[_\s-]?monoxide)\b/,              'gas',       KIND.SMOKE],
+  [/\b(leak|moisture|flood|water[_\s-]?leak)\b/,  'moisture',  KIND.LEAK],
+  [/\b(motion)\b/,                                'motion',    KIND.MOTION],
+  [/\b(occupancy|presence)\b/,                    'occupancy', KIND.OCCUPANCY],
+  [/\b(door|opening|contact)\b/,                  'door',      KIND.DOOR],
+  [/\b(window)\b/,                                'window',    KIND.WINDOW],
+]
+
+function _binaryInferredMatch(entity) {
+  // Search both the entity_id slug (HA-assigned, integration-controlled)
+  // and any user-facing name. A user who renamed their entity to "Living
+  // room main window" telegraphs the intent even when ZHA didn't.
+  const hay = [
+    entity?.entity_id || '',
+    entity?.friendly_name || '',
+    entity?.display_name || '',
+    entity?.attributes?.friendly_name || '',
+  ].join(' ').toLowerCase()
+  if (!hay.trim()) return null
+  for (const [re, dc, kind] of _BINARY_INFERRED_TABLE) {
+    if (re.test(hay)) return { deviceClass: dc, kind }
+  }
+  return null
+}
+
+function _binaryKindFromText(entity) {
+  return _binaryInferredMatch(entity)?.kind || null
+}
+
+/**
+ * Return the effective `device_class` for a binary_sensor — the real HA
+ * value if set, or the keyword-inferred fallback. Exposed so non-deviceFacts
+ * call sites (the Devices list's formatEntityState, the room SensorsStrip)
+ * can render correct "Open / Closed", "Motion / Clear", etc. labels for
+ * sensors whose integration omitted device_class. Returns `null` when no
+ * signal is available.
+ */
+export function inferBinarySensorClass(entity) {
+  if (!entity) return null
+  if ((entity.domain || (entity.entity_id || '').split('.')[0]) !== 'binary_sensor') {
+    return entity.device_class || null
+  }
+  if (entity.device_class) return entity.device_class
+  return _binaryInferredMatch(entity)?.deviceClass || null
+}
+
 const SENSOR_CLASS_TO_KIND = {
   temperature: KIND.TEMPERATURE,
   humidity:    KIND.HUMIDITY,
@@ -248,7 +314,14 @@ export function getKind(entity) {
     case 'camera':              return KIND.CAMERA
     case 'person':              return KIND.PERSON
     case 'binary_sensor':
-      return BINARY_CLASS_TO_KIND[entity.device_class] || KIND.BINARY
+      // device_class is the canonical signal. When it's set, trust it.
+      // Many integrations (notably ZHA's SNZB-04 Pro) omit device_class
+      // entirely — fall back to a keyword scan of the entity_id + name so
+      // an obvious door/window/motion sensor still renders with the right
+      // kind, icon, and state label instead of generic "On/Off".
+      return BINARY_CLASS_TO_KIND[entity.device_class]
+          || _binaryKindFromText(entity)
+          || KIND.BINARY
     case 'sensor':
       return SENSOR_CLASS_TO_KIND[entity.device_class] || KIND.SENSOR
     default:                    return KIND.UNKNOWN
@@ -678,13 +751,22 @@ export function deviceFacts(entity) {
   const linkedIr = entity._linkedIr || (isIr ? entity._irDevice : null)
   const labelFn = KIND_STATE_LABEL[kind] || KIND_STATE_LABEL.unknown
   const isOnState = isOn(entity)
+  // Single customer-facing label for every non-on/off state. HA splits
+  // `unavailable` (lost connection) from `unknown` (never reported) but we
+  // collapse both — plus null/empty for malformed payloads — to one
+  // "Unavailable" string. Without this, the kind-specific label functions
+  // silently mapped `unknown`/`unavailable` into their off-branch ("Closed",
+  // "Clear", "Off"), which lied to the user about the device's real state.
+  const _rawState = entity._ir ? (entity.assumed_state || entity.state) : entity.state
+  const _isUnavailable = _rawState === 'unavailable' || _rawState === 'unknown' || _rawState == null || _rawState === ''
+  const _stateLabel = _isUnavailable ? i18nT('common.unavailable') : labelFn(entity)
   return {
     // Reference to the original entity — so downstream components can call
     // commandAvailable(facts.entity, ...) without re-threading the prop.
     entity,
     id:           entity.entity_id,
     irId:         linkedIr?.id || null,
-    name:         entity.display_name || entity.friendly_name || (entity.entity_id || '').split('.')[1]?.replace(/_/g, ' ') || 'Device',
+    name:         entity.display_name || entity.friendly_name || humanizeSlug(entity.entity_id) || 'Device',
     domain:       entity.domain || entity.entity_id?.split('.')[0],
     deviceClass:  entity.device_class || null,
     kind,
@@ -699,7 +781,7 @@ export function deviceFacts(entity) {
     hasIr,
     linkedIr,
     state:        entity.state,
-    stateLabel:   labelFn(entity),
+    stateLabel:   _stateLabel,
     capabilities: getCapabilities(entity),
     // Light values
     brightness:   brightnessPct(entity),

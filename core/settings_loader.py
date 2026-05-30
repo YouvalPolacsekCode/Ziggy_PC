@@ -103,25 +103,6 @@ def load_settings() -> dict:
     if os.getenv("OPENAI_API_KEY"):
         oai["api_key"] = os.getenv("OPENAI_API_KEY")
 
-    tg = data.setdefault("telegram", {})
-    if os.getenv("TELEGRAM_BOT_TOKEN"):
-        tg["token"] = os.getenv("TELEGRAM_BOT_TOKEN")
-    if os.getenv("TELEGRAM_ALLOWED_USERS"):
-        tg["allowed_users"] = [
-            int(x) for x in os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
-            if x.strip().isdigit()
-        ]
-
-    mqtt = data.setdefault("mqtt", {})
-    if os.getenv("MQTT_HOST"):
-        mqtt["host"] = os.getenv("MQTT_HOST")
-    if os.getenv("MQTT_PORT"):
-        mqtt["port"] = int(os.getenv("MQTT_PORT"))
-    if os.getenv("MQTT_USERNAME"):
-        mqtt["username"] = os.getenv("MQTT_USERNAME")
-    if os.getenv("MQTT_PASSWORD"):
-        mqtt["password"] = os.getenv("MQTT_PASSWORD")
-
     serp = data.setdefault("serpapi", {})
     if os.getenv("SERPAPI_API_KEY"):
         serp["api_key"] = os.getenv("SERPAPI_API_KEY")
@@ -194,8 +175,6 @@ _secrets_lock = threading.Lock()
 _SECRET_PATHS: list[tuple[str, ...]] = [
     ("home_assistant", "token"),
     ("openai", "api_key"),
-    ("telegram", "token"),
-    ("mqtt", "password"),
     ("serpapi", "api_key"),
     ("email", "password"),
     ("voice", "azure", "speech_key"),
@@ -235,13 +214,21 @@ def _strip_secret_paths(data: dict) -> dict:
     return out
 
 
+def _atomic_yaml_write(path: str, data: dict) -> None:
+    # Atomic-rename pattern: write to a sibling tmp file then rename. Avoids
+    # partial files when two writers race or the process is killed mid-write.
+    tmp = path + ".tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+    os.replace(tmp, path)
+
+
 def save_settings(settings_data: dict) -> None:
     path = _config_path()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     safe = _strip_secret_paths(settings_data)
     with _save_lock:
-        with open(path, 'w', encoding='utf-8') as f:
-            yaml.dump(safe, f, allow_unicode=True, default_flow_style=False)
+        _atomic_yaml_write(path, safe)
 
 
 def save_secrets(updates: dict) -> None:
@@ -258,8 +245,7 @@ def save_secrets(updates: dict) -> None:
             except Exception:
                 existing = {}
         _deep_merge(existing, updates or {})
-        with open(_SECRETS_FILE, 'w', encoding='utf-8') as f:
-            yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
+        _atomic_yaml_write(_SECRETS_FILE, existing)
 
 
 settings = load_settings()

@@ -99,15 +99,59 @@ html, body, #root {
   .z-rooms-grid { gap: 16px; }
 }
 
+/* Dashboard Pinned Devices / Quick Controls grid.
+   2 columns on phone (the redesign's drawn layout), 4 columns on tablet+
+   so the wider main column doesn't leave half the row empty. Same
+   QuickControlTile renders in every cell — only the column count changes,
+   tile sizing follows the column width. */
+.z-quick-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 768px) {
+  .z-quick-controls-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+/* Web/desktop "no-scroll dashboard" frame.
+   On lg+ (>=1024px) the dashboard clamps to the visible viewport and hides
+   overflow, then distributes vertical space inside via flex. The rooms
+   section absorbs the leftover height (flex: 1, min-height: 0) so room
+   tiles re-scale automatically when the user resizes the window or
+   adds/removes rooms — the page is never tall enough to need scrolling.
+   On phone/tablet the dashboard stays a natural-flow document that
+   scrolls normally; none of these rules apply. */
+.z-dashboard-outer {
+  max-width: var(--page-max-w-wide);
+  margin: 0 auto;
+  padding: 20px 20px 100px;
+}
+@media (min-width: 1024px) {
+  .z-dashboard-outer {
+    height: calc(var(--vh) - var(--safe-top));
+    padding-bottom: 20px;
+    overflow: hidden;
+  }
+  /* Override the rail-stretch behavior so both columns share the same
+     fixed height. The main column becomes a vertical flex container so
+     its `.z-dashboard-fill` child can grow. */
+  .z-dashboard-grid { height: 100%; align-items: stretch; }
+  .z-dashboard-main-col { height: 100%; min-height: 0; }
+  .z-dashboard-fill { flex: 1; min-height: 0; }
+}
+
 /* ── Warm-light palette (default + explicit) ─────────────────────────────── */
 :root,
 [data-palette="light"] {
-  --bg:         #F5F2ED;
-  --bg-2:       #EDE8E0;
-  --bg-3:       #E5DFD4;
+  --bg:         #F9F7F3;
+  --bg-2:       #F1EEE8;
+  --bg-3:       #E8E4DC;
   --surface:    #FFFFFF;
-  --surface-2:  #F8F4EE;
-  --surface-3:  #EFE9E0;
+  --surface-2:  #F5F3EE;
+  --surface-3:  #EDEAE3;
   --ink:        #1E1812;
   --ink-2:      #3A2E22;
   --ink-mute:   #6E5A48;
@@ -126,21 +170,28 @@ html, body, #root {
   --gold:       #C99845;
   /* Tile base for cozy tinted device tiles — darker than page bg in light
      mode so a tint mix reads as warm/grounded, not washed-out pastel. */
-  --tile-base:  #E5DFD4;
+  --tile-base:  #E8E4DC;
+  /* Intent tokens — text/scrim/backdrop/shadow values that depend on the
+     active palette. Using a token instead of a raw literal means any future
+     palette tweak (or a third palette) cascades automatically. */
+  --on-accent:  #FFFFFF;
+  --scrim:      color-mix(in srgb, var(--ink) 22%, transparent);
+  --backdrop:   rgba(0, 0, 0, 0.40);
   --shadow-sm:  0 1px 0 rgba(0,0,0,0.04);
   --shadow-md:  0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -12px rgba(0,0,0,0.10);
   --shadow-lg:  0 1px 0 rgba(0,0,0,0.04), 0 24px 48px -24px rgba(0,0,0,0.16);
+  --shadow-fab: 0 8px 18px rgba(0,0,0,0.22);
   color-scheme: light;
 }
 
 /* ── Premium dark palette ────────────────────────────────────────────────── */
 [data-palette="dark"] {
-  --bg:         #0A0907;
-  --bg-2:       #0F0E0B;
-  --bg-3:       #161410;
-  --surface:    #1A1714;
-  --surface-2:  #221E19;
-  --surface-3:  #2C2620;
+  --bg:         #0B0D11;
+  --bg-2:       #0F1218;
+  --bg-3:       #14181F;
+  --surface:    #14191D;
+  --surface-2:  #1B2127;
+  --surface-3:  #232930;
   --ink:        #F2EBDE;
   --ink-2:      #D8CFBE;
   --ink-mute:   #9A907F;
@@ -159,10 +210,18 @@ html, body, #root {
   --gold:       #D7AE6A;
   /* In dark mode tile sits LIGHTER than page bg — a tint mix on this base
      reads as a warm glow, not a flat shadow. Inverse of the light-mode goal. */
-  --tile-base:  #2C2620;
+  --tile-base:  #20262C;
+  /* Dark intent tokens. --on-accent stays white because --accent in dark
+     (#E27A55 salmon) keeps WCAG-AA contrast with white. --scrim derives from
+     ink so it reads as a warm wash instead of a flat black. --backdrop sits
+     deeper than light to push modals off the near-black bg. */
+  --on-accent:  #FFFFFF;
+  --scrim:      color-mix(in srgb, var(--ink) 14%, transparent);
+  --backdrop:   rgba(0, 0, 0, 0.62);
   --shadow-sm:  0 1px 0 rgba(0,0,0,0.4);
   --shadow-md:  0 4px 16px -4px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(255,230,180,0.04);
   --shadow-lg:  0 24px 60px -24px rgba(0,0,0,0.9), 0 0 0 0.5px rgba(255,230,180,0.04);
+  --shadow-fab: 0 8px 22px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,230,180,0.04);
   color-scheme: dark;
 }
 
@@ -210,6 +269,26 @@ html, body, #root {
     font-feature-settings: "ss01", "tnum";
   }
 
+  /* Placeholder text — global tint so every input across the app reads
+     clearly as "example / hint" vs actual user-entered text. Browser
+     defaults render placeholder at ~50% ink opacity, which in dark mode
+     looks nearly identical to a real value (a customer on a fresh "New
+     IR device" form couldn't tell whether "Living Room TV" was the
+     example or something already there). --ink-faint + reduced opacity
+     unambiguously separates the two roles. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-faint);
+    opacity: 0.55;
+  }
+  /* Older WebKit syntax for Capacitor's UIWebView (still around on some
+     long-tail iOS PWA installs that haven't migrated to WKWebView). */
+  input::-webkit-input-placeholder,
+  textarea::-webkit-input-placeholder {
+    color: var(--ink-faint);
+    opacity: 0.55;
+  }
+
   /* Surface cards */
   .z-card      { background: var(--surface);   border: 0.5px solid var(--line); border-radius: 18px; }
   .z-card-soft { background: var(--surface-2); border: 0.5px solid var(--line); border-radius: 16px; }
@@ -228,6 +307,26 @@ html, body, #root {
   .z-alert-err  { background: color-mix(in srgb, var(--err)  8%, var(--surface)); }
   .z-alert-warn { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
   .z-alert-info { background: var(--surface); }
+
+  /* Soft tint utilities — palette-aware replacements for the old
+     bg-violet-50 / bg-emerald-50 / bg-amber-50 / bg-red-50 patterns.
+     Tailwind's `/N` opacity modifier doesn't compose with CSS variables,
+     so we use color-mix here and expose simple class names so consumers
+     stay Tailwind-ergonomic. Border-soft mirrors the same percentage so
+     a chip's fill + border stay in the same family. */
+  .bg-accent-soft     { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+  .bg-ok-soft         { background: color-mix(in srgb, var(--ok)     12%, var(--surface)); }
+  .bg-warn-soft       { background: color-mix(in srgb, var(--warn)   12%, var(--surface)); }
+  .bg-err-soft        { background: color-mix(in srgb, var(--err)    12%, var(--surface)); }
+  .bg-info-soft       { background: color-mix(in srgb, var(--info)   12%, var(--surface)); }
+  .border-accent-soft { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .border-ok-soft     { border-color: color-mix(in srgb, var(--ok)     30%, var(--line)); }
+  .border-warn-soft   { border-color: color-mix(in srgb, var(--warn)   30%, var(--line)); }
+  .border-err-soft    { border-color: color-mix(in srgb, var(--err)    30%, var(--line)); }
+  .border-info-soft   { border-color: color-mix(in srgb, var(--info)   30%, var(--line)); }
+  .hover\:bg-accent-soft:hover { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+  .hover\:border-accent-soft:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .hover\:text-accent:hover { color: var(--accent); }
 
   /* Chip */
   .z-chip {
@@ -299,7 +398,8 @@ html, body, #root {
   .z-toggle::after {
     content: ''; position: absolute; top: 2px; left: 2px;
     width: 16px; height: 16px; border-radius: 50%;
-    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    background: var(--on-accent);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 22%, transparent);
     transition: transform 0.15s;
   }
   .z-toggle[aria-checked="true"]::after { transform: translateX(16px); }
@@ -316,8 +416,11 @@ html, body, #root {
     background: transparent; border: 0.5px solid transparent;
     text-decoration: none; width: 100%;
   }
-  .z-nav-item:hover { background: var(--surface); color: var(--ink); }
-  .z-nav-item.active { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 600; }
+  /* Hover/active highlights ride one step ABOVE the sidebar surface so the
+     active item is visible — the sidebar itself uses var(--surface) (same
+     as tiles), and a same-color highlight would be invisible. */
+  .z-nav-item:hover { background: var(--surface-2); color: var(--ink); }
+  .z-nav-item.active { background: var(--surface-2); color: var(--ink); border-color: var(--line); font-weight: 600; }
 
   /* Page container.
      Horizontal env() padding so content clears notches in landscape on iPhone /

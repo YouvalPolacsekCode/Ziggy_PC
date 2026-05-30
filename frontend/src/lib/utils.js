@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { domainIcon as _registryDomainIcon, DOMAIN_REGISTRY } from './domainRegistry'
 import { t as i18nT } from './i18n'
+import { inferBinarySensorClass } from './devices'
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
@@ -9,6 +10,44 @@ export function cn(...inputs) {
 
 export function formatTime(date) {
   return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * Humanize an HA entity_id (or any snake_case slug) into a readable label.
+ * Strips the `domain.` prefix, replaces underscores with spaces.
+ *
+ * Used as the last-resort fallback when an entity has neither a
+ * `display_name` nor a `friendly_name`. Kept here as a single helper so
+ * every surface uses the same shape — historically some places left the
+ * underscores in (`light.living_room_lamp` → "living_room_lamp"), some
+ * stripped them (→ "living room lamp"), some title-cased the result
+ * (→ "Living Room Lamp"). All three coexisted, producing the case
+ * inconsistencies the user noticed across Devices / Rooms / Dashboard.
+ *
+ * Intentionally returns sentence case ("living room lamp"), not title
+ * case: the renderer can apply text-transform if it wants. Choosing case
+ * here would override any future i18n / locale-specific rule.
+ */
+export function humanizeSlug(entityId) {
+  if (!entityId) return ''
+  const slug = String(entityId).split('.').slice(-1)[0] || ''
+  return slug.replace(/_/g, ' ')
+}
+
+/**
+ * Pick the best display string for an entity: user-typed name (Ziggy
+ * override) first, then HA's friendly_name, then a humanized slug.
+ * Use this anywhere a device/entity name is rendered — replaces the
+ * old `e.friendly_name || e.entity_id.split('.')[1]` pattern that
+ * skipped display_name (so Ziggy renames didn't show up there) AND
+ * sometimes left the underscores in.
+ */
+export function entityDisplayName(entity) {
+  if (!entity) return ''
+  return entity.display_name
+      || entity.friendly_name
+      || entity.attributes?.friendly_name
+      || humanizeSlug(entity.entity_id)
 }
 
 export function formatDate(date) {
@@ -39,8 +78,15 @@ export { _registryDomainIcon as domainIcon }
 export function formatEntityState(entity) {
   const { domain, state, device_class, unit_of_measurement } = entity
 
-  if (state === 'unavailable') return { primary: i18nT('common.unavailable'), secondary: null }
-  if (state === 'unknown') return { primary: i18nT('common.unknown'), secondary: null }
+  // We collapse all "we don't have a real state" cases to a single
+  // customer-facing "Unavailable" label. HA distinguishes `unavailable`
+  // (lost connection) from `unknown` (entity exists, never reported) but
+  // that distinction is engineer-trivia — both mean "the device hasn't
+  // told us anything trustworthy" and surfacing two scary-sounding
+  // statuses confuses users.
+  if (state === 'unavailable' || state === 'unknown' || state == null || state === '') {
+    return { primary: i18nT('common.unavailable'), secondary: null }
+  }
 
   if (domain === 'sensor') {
     if (device_class === 'timestamp') {
@@ -71,9 +117,15 @@ export function formatEntityState(entity) {
   if (domain === 'binary_sensor') {
     // Labels live in i18n under `binarySensor.<class>.on` / `.off`. Looked up
     // at call time so they track the active language.
+    // `inferBinarySensorClass` returns the real device_class when HA set one,
+    // or a keyword-inferred fallback (door/window/motion/...) for sensors
+    // whose integration shipped device_class=null. Without this, the Sonoff
+    // SNZB-04 Pro family read as a generic "On/Off" indicator everywhere
+    // that formatEntityState is used (Devices page, room sensor strip).
+    const inferred = inferBinarySensorClass(entity)
     const CLASSES = ['motion', 'door', 'window', 'opening', 'presence', 'occupancy', 'lock', 'smoke', 'moisture', 'gas', 'plug', 'battery', 'connectivity', 'vibration']
-    if (CLASSES.includes(device_class)) {
-      const key = `binarySensor.${device_class}.${state === 'on' ? 'on' : 'off'}`
+    if (CLASSES.includes(inferred)) {
+      const key = `binarySensor.${inferred}.${state === 'on' ? 'on' : 'off'}`
       return { primary: i18nT(key), secondary: null }
     }
     return { primary: state === 'on' ? i18nT('common.on') : i18nT('common.off'), secondary: null }

@@ -1,4 +1,8 @@
 /** @type {import('tailwindcss').Config} */
+// All colors below resolve through CSS custom properties defined in
+// `src/index.css` and switch automatically with `[data-palette="dark"]`. Never
+// hardcode hex values here — the variable is the source of truth so Tailwind
+// classes and inline `var(--…)` styles always render the same pixel.
 export default {
   darkMode: ['selector', '[data-palette="dark"]'],
   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
@@ -9,28 +13,35 @@ export default {
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        // Ziggy warm-neutral palette — maps to CSS custom props
-        // Light
-        paper:   '#F5F2ED',
-        'paper-2': '#EDE9E3',
-        surface: '#FFFFFF',
-        'surface-2': '#F2EDE7',
-        ink:     '#2E2518',
-        'ink-2': '#4D3D2C',
-        'ink-mute': '#7A6655',
-        'ink-faint': '#9E8C7E',
-        line:    '#DDD8D0',
-        'line-2': '#CEC8BE',
-        accent:  '#C96442',
-        'accent-2': '#F7E8E2',
-        ok:      '#3D8A5F',
-        warn:    '#A07030',
-        info:    '#3D6A9E',
+        bg:          'var(--bg)',
+        'bg-2':      'var(--bg-2)',
+        'bg-3':      'var(--bg-3)',
+        surface:     'var(--surface)',
+        'surface-2': 'var(--surface-2)',
+        'surface-3': 'var(--surface-3)',
+        ink:         'var(--ink)',
+        'ink-2':     'var(--ink-2)',
+        'ink-mute':  'var(--ink-mute)',
+        'ink-faint': 'var(--ink-faint)',
+        'ink-ghost': 'var(--ink-ghost)',
+        line:        'var(--line)',
+        'line-2':    'var(--line-2)',
+        'line-3':    'var(--line-3)',
+        accent:      'var(--accent)',
+        'accent-2':  'var(--accent-2)',
+        'accent-3':  'var(--accent-3)',
+        ok:          'var(--ok)',
+        warn:        'var(--warn)',
+        err:         'var(--err)',
+        info:        'var(--info)',
+        gold:        'var(--gold)',
+        'on-accent': 'var(--on-accent)',
       },
       boxShadow: {
-        card:  '0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -12px rgba(0,0,0,0.10)',
-        'card-dark': '0 1px 0 rgba(255,255,255,0.04), 0 8px 24px -12px rgba(0,0,0,0.50)',
-        'card-hover': '0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06)',
+        sm:    'var(--shadow-sm)',
+        card:  'var(--shadow-md)',
+        lg:    'var(--shadow-lg)',
+        fab:   'var(--shadow-fab)',
       },
       animation: {
         'wave-bar': 'waveBar 0.7s ease-in-out infinite alternate',

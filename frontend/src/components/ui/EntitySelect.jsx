@@ -275,7 +275,14 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
   const filteredEntities = entities.filter((e) => {
     if (allowedDomains && !allowedDomains.has(e.domain)) return false
     const q = search.toLowerCase()
-    return !q || e.entity_id.toLowerCase().includes(q) || e.friendly_name?.toLowerCase().includes(q)
+    if (!q) return true
+    // Match against entity_id and EVERY name source so a search for the
+    // user's renamed label finds the device — earlier we only checked
+    // friendly_name, which meant Ziggy renames (stored in display_name)
+    // weren't searchable until HA's registry caught up.
+    return e.entity_id.toLowerCase().includes(q)
+        || (e.display_name || '').toLowerCase().includes(q)
+        || (e.friendly_name || '').toLowerCase().includes(q)
   })
 
   const grouped = {}
@@ -297,7 +304,7 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
   return (
     <div ref={ref} className="relative flex flex-col gap-1.5">
       {label && (
-        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{label}</label>
+        <label className="text-sm font-medium text-ink-2">{label}</label>
       )}
       <button
         type="button"
@@ -305,24 +312,24 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
         onClick={handleOpen}
         className={cn(
           'h-10 rounded-xl px-3 text-sm text-left flex items-center gap-2',
-          'bg-zinc-50 dark:bg-zinc-800',
-          'border border-zinc-200 dark:border-zinc-700',
-          'text-zinc-900 dark:text-zinc-100',
-          'transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500'
+          'bg-surface-2',
+          'border border-line',
+          'text-ink',
+          'transition-colors focus:outline-none focus:ring-2 focus:ring-accent'
         )}
       >
         {selectedEntity ? (
           <>
             <span>{domainIcon(selectedEntity.domain)}</span>
             <span className="flex-1 truncate text-sm">{selectedEntity.friendly_name || value}</span>
-            <span className="text-[10px] text-zinc-400 truncate max-w-[90px]">{selectedEntity.domain}</span>
+            <span className="text-[10px] text-ink-mute truncate max-w-[90px]">{selectedEntity.domain}</span>
           </>
         ) : value ? (
-          <span className="flex-1 truncate text-zinc-500 text-sm">{value}</span>
+          <span className="flex-1 truncate text-ink-mute text-sm">{value}</span>
         ) : (
-          <span className="text-zinc-400 text-sm">{resolvedPlaceholder}</span>
+          <span className="text-ink-mute text-sm">{resolvedPlaceholder}</span>
         )}
-        <ChevronDown size={14} className={cn('ml-auto text-zinc-400 shrink-0 transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={14} className={cn('ml-auto text-ink-mute shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
@@ -335,21 +342,21 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
             width: dropdownPos.width,
             zIndex: 9999,
           }}
-          className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+          className="bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
         >
-          <div className="p-2 border-b border-zinc-100 dark:border-zinc-800 flex gap-2">
+          <div className="p-2 border-b border-line flex gap-2">
             <div className="relative flex-1">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-mute" />
               <input
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('entitySelect.search')}
-                className="w-full h-8 pl-7 pr-3 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-800 border-0 focus:outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                className="w-full h-8 pl-7 pr-3 text-xs rounded-lg bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
               />
             </div>
             <button
-              className="text-[10px] text-zinc-400 hover:text-violet-600 px-2 whitespace-nowrap transition-colors"
+              className="text-[10px] text-ink-mute hover:text-accent px-2 whitespace-nowrap transition-colors"
               onClick={() => {
                 const v = window.prompt(t('entitySelect.manualPrompt'), value || '')
                 if (v !== null) { onChange(v); setOpen(false) }
@@ -361,16 +368,16 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
 
           <div className="max-h-56 overflow-y-auto scrollbar-thin">
             {loading && (
-              <div className="text-center py-4 text-xs text-zinc-400">{t('entitySelect.loading')}</div>
+              <div className="text-center py-4 text-xs text-ink-mute">{t('entitySelect.loading')}</div>
             )}
             {!loading && filteredEntities.length === 0 && (
-              <div className="text-center py-4 text-xs text-zinc-400">{t('entitySelect.noEntities')}</div>
+              <div className="text-center py-4 text-xs text-ink-mute">{t('entitySelect.noEntities')}</div>
             )}
 
             {roomOrder.map((room) => (
               <div key={room}>
                 <div className="px-3 pt-2.5 pb-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
                     {room === OTHER ? t('entitySelect.other') : room}
                   </span>
                 </div>
@@ -380,22 +387,22 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
                     onClick={() => { onChange(e.entity_id); setOpen(false); setSearch('') }}
                     className={cn(
                       'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                      'hover:bg-zinc-50 dark:hover:bg-zinc-800',
-                      value === e.entity_id && 'bg-violet-50 dark:bg-violet-900/20'
+                      'hover:bg-surface-2',
+                      value === e.entity_id && 'bg-accent-soft'
                     )}
                   >
                     <span className="text-base shrink-0">{domainIcon(e.domain)}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                      <p className="text-xs font-medium text-ink truncate">
                         {e.friendly_name || e.entity_id}
                       </p>
-                      <p className="text-[10px] text-zinc-400 truncate">{e.entity_id}</p>
+                      <p className="text-[10px] text-ink-mute truncate">{e.entity_id}</p>
                     </div>
                     <span className={cn(
                       'text-[10px] px-1.5 py-0.5 rounded-full shrink-0',
                       e.state === 'on'
-                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                        ? 'bg-ok-soft text-ok'
+                        : 'bg-surface-2 text-ink-mute'
                     )}>
                       {e.state}
                     </span>

@@ -575,6 +575,31 @@ def list_persons() -> list[dict]:
     return out
 
 
+def is_all_away(exclude_person_id: Optional[str] = None) -> bool:
+    """True iff every tracked person is currently not at home.
+
+    `unknown` counts as away — a person whose phone hasn't reported in a long
+    time is treated as not at home for the purpose of "everybody left" gating.
+    `exclude_person_id` lets a caller ask "would all be away if this person
+    were excluded" — useful from inside a person_leaves handler that hasn't
+    yet committed the new state to disk.
+
+    Returns False when the person list is empty so an unconfigured install
+    never accidentally fires all-away automations.
+    """
+    persons = _load()
+    if not persons:
+        return False
+    any_relevant = False
+    for p in persons:
+        if exclude_person_id and p.get("id") == exclude_person_id:
+            continue
+        any_relevant = True
+        if effective_state(p) == "home":
+            return False
+    return any_relevant
+
+
 def find_person_by_token(token: str) -> Optional[dict]:
     return next((p for p in _load() if p.get("token") == token), None)
 

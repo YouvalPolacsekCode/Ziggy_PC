@@ -321,31 +321,55 @@ function InlineControl({ facts, onCommand, variant }) {
  * `dense` makes the tile smaller for 4-up rows (Dashboard quick controls).
  * Default 3-up sizing is used by the room page light grid.
  */
-function TileCard({ facts, onCommand, onOpen, dense = false }) {
+function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted' }) {
   const isOnState    = facts.isOn
   const tint         = facts.tint
   const isToggleable = facts.meta.toggle && facts.isAvailable
-  // Cozy tinted palette — each device kind carries its own warm personality via
-  // facts.tint (gold for light, accent for media, info for AC, warn for lock…).
-  // Mixed against --tile-base, which is theme-aware: a darker beige in light
-  // mode and a lighter warm brown in dark mode. Tile always reads as elevated
-  // and grounded, never as a washed-out pastel.
-  const bg          = isOnState
-    ? `color-mix(in srgb, ${tint} 24%, var(--tile-base))`
-    : `color-mix(in srgb, ${tint} 8%,  var(--tile-base))`
-  const borderColor = isOnState
-    ? `color-mix(in srgb, ${tint} 36%, var(--line))`
-    : `color-mix(in srgb, ${tint} 14%, var(--line))`
-  const fg          = 'var(--ink)'
-  const iconColor   = isOnState ? `color-mix(in srgb, ${tint} 80%, var(--ink))` : 'var(--ink-mute)'
-  const iconBg      = isOnState
-    ? `color-mix(in srgb, ${tint} 36%, var(--tile-base))`
-    : `color-mix(in srgb, ${tint} 14%, var(--tile-base))`
-  const subColor    = isOnState ? 'var(--ink-2)' : 'var(--ink-faint)'
-  const arrowBg     = isOnState
-    ? `color-mix(in srgb, ${tint} 20%, var(--tile-base))`
-    : `color-mix(in srgb, ${tint} 6%,  var(--tile-base))`
-  const arrowColor  = isOnState ? 'var(--ink)' : 'var(--ink-mute)'
+
+  // Two visual modes:
+  //   'tinted'   — original behavior. Each device kind tints the whole tile
+  //                with its own warm personality via facts.tint, mixed against
+  //                --tile-base (theme-aware beige/brown). Subtle on/off
+  //                gradation, never inverts. Default for everything except
+  //                surfaces that explicitly opt in.
+  //   'inverted' — home-page Dashboard behavior. Tile flips to var(--ink)/
+  //                var(--bg) when on so a grid of active tiles reads as a
+  //                bold status display, not a pastel control panel. Icon box
+  //                picks up the accent tint, glyph keeps the kind tint for
+  //                personality. Opt-in via the `tileStyle` prop; Rooms passes
+  //                it through to align room-detail tiles with the home grid.
+  //
+  // Keeping both paths means the room-detail design can be flipped back to
+  // the original tinted style by toggling a single constant in Rooms.jsx.
+  let bg, fg, borderColor, iconColor, iconBg, subColor, arrowBg, arrowColor
+  if (tileStyle === 'inverted') {
+    bg          = isOnState ? 'var(--ink)'                                            : 'var(--surface)'
+    fg          = isOnState ? 'var(--bg)'                                             : 'var(--ink)'
+    borderColor = isOnState ? 'var(--ink)'                                            : 'var(--line)'
+    iconBg      = isOnState ? 'color-mix(in srgb, var(--accent) 30%, transparent)'    : 'var(--surface-2)'
+    iconColor   = isOnState ? tint                                                    : 'var(--ink-2)'
+    subColor    = isOnState ? 'color-mix(in srgb, var(--bg) 70%, transparent)'        : 'var(--ink-faint)'
+    arrowBg     = isOnState ? 'color-mix(in srgb, var(--bg) 14%, transparent)'        : 'var(--surface-2)'
+    arrowColor  = isOnState ? 'var(--bg)'                                             : 'var(--ink-mute)'
+  } else {
+    // Tinted (original).
+    bg          = isOnState
+      ? `color-mix(in srgb, ${tint} 24%, var(--tile-base))`
+      : `color-mix(in srgb, ${tint} 8%,  var(--tile-base))`
+    borderColor = isOnState
+      ? `color-mix(in srgb, ${tint} 36%, var(--line))`
+      : `color-mix(in srgb, ${tint} 14%, var(--line))`
+    fg          = 'var(--ink)'
+    iconColor   = isOnState ? `color-mix(in srgb, ${tint} 80%, var(--ink))` : 'var(--ink-mute)'
+    iconBg      = isOnState
+      ? `color-mix(in srgb, ${tint} 36%, var(--tile-base))`
+      : `color-mix(in srgb, ${tint} 14%, var(--tile-base))`
+    subColor    = isOnState ? 'var(--ink-2)' : 'var(--ink-faint)'
+    arrowBg     = isOnState
+      ? `color-mix(in srgb, ${tint} 20%, var(--tile-base))`
+      : `color-mix(in srgb, ${tint} 6%,  var(--tile-base))`
+    arrowColor  = isOnState ? 'var(--ink)' : 'var(--ink-mute)'
+  }
 
   const handleClick = (e) => {
     if (e.target?.closest('[data-tile-stop]')) return
@@ -591,7 +615,7 @@ function CompactCard({ facts, onCommand, onOpen }) {
  *   onOpen   — optional override for tap (default: navigate /devices/:id)
  *   dense    — row variant: tighter padding
  */
-function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false }) {
+function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false, tileStyle = 'tinted' }) {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
   const [pending, setPending] = useState(false)
@@ -671,7 +695,7 @@ function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false }) {
     }
   }
 
-  if (variant === 'tile')    return <TileCard    facts={facts} onCommand={onCommand} onOpen={open} dense={dense} group={group} metrics={groupMetrics} />
+  if (variant === 'tile')    return <TileCard    facts={facts} onCommand={onCommand} onOpen={open} dense={dense} group={group} metrics={groupMetrics} tileStyle={tileStyle} />
   if (variant === 'compact') return <CompactCard facts={facts} onCommand={onCommand} onOpen={open} />
   return <RowCard facts={facts} onCommand={onCommand} onOpen={open} dense={dense} metrics={groupMetrics} />
 }
@@ -681,10 +705,11 @@ function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false }) {
 // drags every other card on a room/devices page through a render. The
 // touched card still re-renders because its `entity` is a fresh reference.
 export const DeviceCard = memo(DeviceCardImpl, (prev, next) => (
-  prev.entity   === next.entity   &&
-  prev.variant  === next.variant  &&
-  prev.dense    === next.dense    &&
-  prev.onOpen   === next.onOpen
+  prev.entity    === next.entity   &&
+  prev.variant   === next.variant  &&
+  prev.dense     === next.dense    &&
+  prev.onOpen    === next.onOpen   &&
+  prev.tileStyle === next.tileStyle
 ))
 
 export default DeviceCard

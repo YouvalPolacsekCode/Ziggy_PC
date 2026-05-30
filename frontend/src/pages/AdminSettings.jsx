@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   RefreshCw, Bot, Key, Wifi, Sliders,
-  Brain, Trash2, AlertTriangle, Check, Mail,
+  Brain, Trash2, AlertTriangle, Check, Mail, Radio,
 } from 'lucide-react'
+import BlastersSection from '../components/settings/BlastersSection'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Slider } from '../components/ui/Slider'
@@ -16,7 +17,6 @@ import {
   getIntegrationsSettings, patchIntegrationsSettings,
   testPushNotification, getPushPreferences, patchPushPreferences, getPushDevices, revokePushDevice,
   getEmailSettings, patchEmailSettings, testEmail,
-  getMqttSettings, patchMqttSettings,
   getOllamaSettings, patchOllamaSettings,
   getPatternLearningSettings, patchPatternLearningSettings,
   patchSensorAlertsSettings,
@@ -395,7 +395,6 @@ export default function AdminSettings() {
   const [refreshing, setRefreshing] = useState(false)
 
   const [integrations,   setIntegrations]   = useState({})
-  const [mqtt,           setMqtt]           = useState({ host: '', port: 1883, username: '', password: '', password_configured: false })
   const [ollama,         setOllama]         = useState({ base_url: '', model: '', timeout: 30 })
   const [patternLearning, setPatternLearning] = useState({})
   const [email,          setEmail]          = useState({ enabled: false, host: '', port: 587, username: '', password_configured: false, password_masked: '', from_address: '', from_name: 'Ziggy' })
@@ -405,7 +404,6 @@ export default function AdminSettings() {
 
   const loadAll = () => {
     getIntegrationsSettings().then(setIntegrations).catch(() => {})
-    getMqttSettings().then(mq => setMqtt({ ...mq, password: '' })).catch(() => {})
     getOllamaSettings().then(setOllama).catch(() => {})
     getPatternLearningSettings().then(pl => setPatternLearning({
       enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30,
@@ -452,7 +450,7 @@ export default function AdminSettings() {
       <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Key}>{t('adminSettings.sectionApiKeys')}</SectionTitle>
         <Card>
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          <div className="divide-y divide-line">
             <SecretField
               label={t('adminSettings.openai')}
               subtitle={t('adminSettings.openaiDesc')}
@@ -489,7 +487,7 @@ export default function AdminSettings() {
         <div style={{ marginBottom: 22 }}>
           <SectionTitle icon={Mail}>{t('adminSettings.sectionEmail')}</SectionTitle>
           <Card>
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            <div className="divide-y divide-line">
               <SettingRow label={t('adminSettings.enableEmail')} subtitle={t('adminSettings.emailReq')}>
                 <Toggle
                   checked={!!email.enabled}
@@ -548,49 +546,10 @@ export default function AdminSettings() {
         </div>
       )}
 
-      {/* ── MQTT ───────────────────────────────────────────────────────────────── */}
+      {/* ── IR Blasters ─────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Wifi} restart>{t('adminSettings.sectionMqtt')}</SectionTitle>
-        <Card>
-          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <p className="text-xs text-zinc-500 mb-1.5">{t('adminSettings.host')}</p>
-                <input
-                  value={mqtt.host}
-                  onChange={e => setMqtt(s => ({ ...s, host: e.target.value }))}
-                  placeholder={t('adminSettings.mqttHostPh')}
-                  dir="auto"
-                  className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-zinc-50 dark:bg-zinc-800', 'border border-zinc-200 dark:border-zinc-700', 'text-zinc-900 dark:text-zinc-100', 'placeholder:text-zinc-400', 'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent')}
-                />
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1.5">{t('adminSettings.port')}</p>
-                <input
-                  type="number"
-                  value={mqtt.port}
-                  onChange={e => setMqtt(s => ({ ...s, port: parseInt(e.target.value) || 1883 }))}
-                  dir="auto"
-                  className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-zinc-50 dark:bg-zinc-800', 'border border-zinc-200 dark:border-zinc-700', 'text-zinc-900 dark:text-zinc-100', 'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent')}
-                />
-              </div>
-            </div>
-            <Input label={t('adminSettings.username')} placeholder={t('adminSettings.mqttUserPh')} value={mqtt.username} onChange={e => setMqtt(s => ({ ...s, username: e.target.value }))} dir="auto" />
-            <Button variant="primary" onClick={() => save('mqtt', patchMqttSettings, { host: mqtt.host, port: mqtt.port, username: mqtt.username })} disabled={saving['mqtt']} className="w-full">
-              {saving['mqtt'] ? t('adminSettings.saving') : t('adminSettings.saveConnection')}
-            </Button>
-          </div>
-          <div className="border-t border-zinc-100 dark:border-zinc-800">
-            <SecretField
-              label={t('adminSettings.password')}
-              masked={mqtt.password_masked}
-              configured={mqtt.password_configured}
-              placeholder={t('adminSettings.mqttPasswordPh')}
-              onSave={(v) => patchMqttSettings({ password: v })}
-              onRefresh={() => getMqttSettings().then(m => setMqtt({ ...m, password: '' }))}
-            />
-          </div>
-        </Card>
+        <SectionTitle icon={Radio}>{t('adminSettings.sectionBlasters') || 'IR Blasters'}</SectionTitle>
+        <BlastersSection />
       </div>
 
       {/* ── Developer Tools ─────────────────────────────────────────────────────── */}
@@ -617,13 +576,13 @@ export default function AdminSettings() {
             <Input label={t('adminSettings.baseUrl')} placeholder={t('adminSettings.ollamaBaseUrlPh')} value={ollama.base_url || ''} onChange={e => setOllama(s => ({ ...s, base_url: e.target.value }))} dir="auto" />
             <Input label={t('adminSettings.model')} placeholder={t('adminSettings.ollamaModelPh')} value={ollama.model || ''} onChange={e => setOllama(s => ({ ...s, model: e.target.value }))} dir="auto" />
             <div>
-              <p className="text-xs text-zinc-500 mb-1.5">{t('adminSettings.timeoutSec')}</p>
+              <p className="text-xs text-ink-mute mb-1.5">{t('adminSettings.timeoutSec')}</p>
               <input
                 type="number" min={5} max={300}
                 value={ollama.timeout || 30}
                 onChange={e => setOllama(s => ({ ...s, timeout: parseInt(e.target.value) || 30 }))}
                 dir="auto"
-                className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-zinc-50 dark:bg-zinc-800', 'border border-zinc-200 dark:border-zinc-700', 'text-zinc-900 dark:text-zinc-100', 'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent')}
+                className={cn('w-full h-9 rounded-xl px-3 text-sm', 'bg-surface-2', 'border border-line', 'text-ink', 'focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent')}
               />
             </div>
             <Button variant="primary" onClick={() => save('ollama', patchOllamaSettings, ollama)} disabled={saving['ollama']} className="w-full">
@@ -640,60 +599,60 @@ export default function AdminSettings() {
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('adminSettings.plEnabled')}</p>
-                <p className="text-xs text-zinc-400">{t('adminSettings.plEnabledDesc')}</p>
+                <p className="text-sm font-medium text-ink">{t('adminSettings.plEnabled')}</p>
+                <p className="text-xs text-ink-mute">{t('adminSettings.plEnabledDesc')}</p>
               </div>
               <Toggle checked={!!patternLearning.enabled} onCheckedChange={(v) => setPatternLearning(s => ({ ...s, enabled: v }))} />
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('adminSettings.plLLM')}</p>
-                <p className="text-xs text-zinc-400">{t('adminSettings.plLLMDesc')}</p>
+                <p className="text-sm font-medium text-ink">{t('adminSettings.plLLM')}</p>
+                <p className="text-xs text-ink-mute">{t('adminSettings.plLLMDesc')}</p>
               </div>
               <Toggle checked={!!patternLearning.llm_synthesis} onCheckedChange={(v) => setPatternLearning(s => ({ ...s, llm_synthesis: v }))} />
             </div>
-            <div className="pt-1 border-t border-zinc-100 dark:divide-zinc-800">
+            <div className="pt-1 border-t border-line">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plAnalysisHour')}</p>
-                <span className="text-xs font-semibold text-zinc-500">{patternLearning.analysis_hour ?? 9}:00</span>
+                <p className="text-sm text-ink-2">{t('adminSettings.plAnalysisHour')}</p>
+                <span className="text-xs font-semibold text-ink-mute">{patternLearning.analysis_hour ?? 9}:00</span>
               </div>
               <Slider value={patternLearning.analysis_hour ?? 9} onValueChange={(v) => setPatternLearning(s => ({ ...s, analysis_hour: v }))} min={0} max={23} />
-              <p className="text-[10px] text-zinc-400 mt-1">{t('adminSettings.plAnalysisHourDesc')}</p>
+              <p className="text-[10px] text-ink-mute mt-1">{t('adminSettings.plAnalysisHourDesc')}</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plLookback')}</p>
-                <span className="text-xs font-semibold text-zinc-500">{patternLearning.lookback_days ?? 30}d</span>
+                <p className="text-sm text-ink-2">{t('adminSettings.plLookback')}</p>
+                <span className="text-xs font-semibold text-ink-mute">{patternLearning.lookback_days ?? 30}d</span>
               </div>
               <Slider value={patternLearning.lookback_days ?? 30} onValueChange={(v) => setPatternLearning(s => ({ ...s, lookback_days: v }))} min={7} max={90} />
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plMinOccur')}</p>
-                <span className="text-xs font-semibold text-zinc-500">{patternLearning.min_occurrences ?? 5}×</span>
+                <p className="text-sm text-ink-2">{t('adminSettings.plMinOccur')}</p>
+                <span className="text-xs font-semibold text-ink-mute">{patternLearning.min_occurrences ?? 5}×</span>
               </div>
               <Slider value={patternLearning.min_occurrences ?? 5} onValueChange={(v) => setPatternLearning(s => ({ ...s, min_occurrences: v }))} min={2} max={20} />
-              <p className="text-[10px] text-zinc-400 mt-1">{t('adminSettings.plMinOccurDesc')}</p>
+              <p className="text-[10px] text-ink-mute mt-1">{t('adminSettings.plMinOccurDesc')}</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plMaxPending')}</p>
-                <span className="text-xs font-semibold text-zinc-500">{patternLearning.max_pending_suggestions ?? 3}</span>
+                <p className="text-sm text-ink-2">{t('adminSettings.plMaxPending')}</p>
+                <span className="text-xs font-semibold text-ink-mute">{patternLearning.max_pending_suggestions ?? 3}</span>
               </div>
               <Slider value={patternLearning.max_pending_suggestions ?? 3} onValueChange={(v) => setPatternLearning(s => ({ ...s, max_pending_suggestions: v }))} min={1} max={10} />
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plTimeWindow')}</p>
-                <span className="text-xs font-semibold text-zinc-500">{patternLearning.time_window_minutes ?? 45}min</span>
+                <p className="text-sm text-ink-2">{t('adminSettings.plTimeWindow')}</p>
+                <span className="text-xs font-semibold text-ink-mute">{patternLearning.time_window_minutes ?? 45}min</span>
               </div>
               <Slider value={patternLearning.time_window_minutes ?? 45} onValueChange={(v) => setPatternLearning(s => ({ ...s, time_window_minutes: v }))} min={15} max={120} />
-              <p className="text-[10px] text-zinc-400 mt-1">{t('adminSettings.plTimeWindowDesc')}</p>
+              <p className="text-[10px] text-ink-mute mt-1">{t('adminSettings.plTimeWindowDesc')}</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('adminSettings.plSeqGap')}</p>
-                <span className="text-xs font-semibold text-zinc-500">{patternLearning.sequence_gap_minutes ?? 5}min</span>
+                <p className="text-sm text-ink-2">{t('adminSettings.plSeqGap')}</p>
+                <span className="text-xs font-semibold text-ink-mute">{patternLearning.sequence_gap_minutes ?? 5}min</span>
               </div>
               <Slider value={patternLearning.sequence_gap_minutes ?? 5} onValueChange={(v) => setPatternLearning(s => ({ ...s, sequence_gap_minutes: v }))} min={1} max={60} />
             </div>

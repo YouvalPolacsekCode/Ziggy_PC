@@ -58,8 +58,11 @@ export default function SubscriptionGateBanner() {
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9000,
         padding: '8px 16px', textAlign: 'center',
-        background: '#7a4b00', color: '#fff', fontSize: 13, lineHeight: 1.3,
-        boxShadow: '0 1px 0 rgba(0,0,0,0.2)',
+        // Warm-amber wash tied to --warn. Reads as "heads up, action recommended"
+        // in both palettes without falling out of the Ziggy color system.
+        background: 'color-mix(in srgb, var(--warn) 70%, var(--ink))',
+        color: 'var(--on-accent)', fontSize: 13, lineHeight: 1.3,
+        boxShadow: '0 1px 0 color-mix(in srgb, var(--ink) 20%, transparent)',
       }}
     >
       {t('billing.subscriptionGatedBanner')}

@@ -221,7 +221,7 @@ function MoreToggle({ expanded, onToggle, label }) {
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-0.5 text-[10px] font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400 transition-colors mt-0.5 self-start"
+      className="flex items-center gap-0.5 text-[10px] font-medium text-accent hover:text-accent transition-colors mt-0.5 self-start"
     >
       <ChevronDown
         size={11}
@@ -236,7 +236,7 @@ function ModeChips({ label, modes, current, colorActive, colorIdle, onSelect }) 
   if (!modes || modes.length === 0) return null
   return (
     <div className="flex gap-1 flex-wrap items-center">
-      {label && <span className="text-[10px] text-zinc-400 mr-0.5 shrink-0">{label}</span>}
+      {label && <span className="text-[10px] text-ink-mute mr-0.5 shrink-0">{label}</span>}
       {modes.map((mode) => (
         <button
           key={mode}
@@ -629,10 +629,10 @@ export function MediaPlayerControls({ entity, onService }) {
   const nextRepeat = repeat === 'off' || !repeat ? 'all' : repeat === 'all' ? 'one' : 'off'
 
   return (
-    <div className="flex flex-col gap-2.5 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+    <div className="flex flex-col gap-2.5 mt-2 pt-2 border-t border-line">
       {/* Now playing */}
       {(mediaTitle || mediaArtist) && (
-        <p className="text-[10px] text-zinc-400 truncate">
+        <p className="text-[10px] text-ink-mute truncate">
           {[mediaTitle, mediaArtist].filter(Boolean).join(' · ')}
         </p>
       )}
@@ -641,21 +641,21 @@ export function MediaPlayerControls({ entity, onService }) {
       <div className="flex items-center justify-center gap-3">
         <button
           onClick={() => onService('media_previous_track', {})}
-          className="p-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          className="p-1.5 rounded-lg text-ink-mute hover:bg-surface-2 transition-colors"
         >
           <SkipBack size={15} />
         </button>
         <button
           onClick={() => onService(isPlaying ? 'media_pause' : 'media_play', {})}
-          className="w-9 h-9 rounded-full bg-zinc-900 dark:bg-white flex items-center justify-center shrink-0 hover:opacity-80 transition-opacity"
+          className="w-9 h-9 rounded-full bg-ink flex items-center justify-center shrink-0 hover:opacity-80 transition-opacity"
         >
           {isPlaying
-            ? <Pause size={14} className="text-white dark:text-zinc-900" />
-            : <Play  size={14} className="text-white dark:text-zinc-900 translate-x-px" />}
+            ? <Pause size={14} className="text-bg" />
+            : <Play  size={14} className="text-bg translate-x-px" />}
         </button>
         <button
           onClick={() => onService('media_next_track', {})}
-          className="p-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          className="p-1.5 rounded-lg text-ink-mute hover:bg-surface-2 transition-colors"
         >
           <SkipForward size={15} />
         </button>
@@ -666,7 +666,7 @@ export function MediaPlayerControls({ entity, onService }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => onService('volume_mute', { is_volume_muted: !isMuted })}
-            className="shrink-0 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+            className="shrink-0 p-1 text-ink-mute hover:text-ink-2 transition-colors"
           >
             {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
           </button>
@@ -677,7 +677,7 @@ export function MediaPlayerControls({ entity, onService }) {
             min={0} max={100}
             disabled={!volReliable}
           />
-          <span className="text-[10px] text-zinc-400 w-7 text-right tabular-nums shrink-0">
+          <span className="text-[10px] text-ink-mute w-7 text-right tabular-nums shrink-0">
             {isMuted ? t('deviceControls.muted') : volReliable ? `${volume}%` : t('deviceControls.unknown')}
           </span>
         </div>
@@ -704,8 +704,8 @@ export function MediaPlayerControls({ entity, onService }) {
                   className={cn(
                     'px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
                     source === s
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-2 text-ink-mute hover:bg-line',
                   )}
                 >
                   {s}
@@ -717,7 +717,7 @@ export function MediaPlayerControls({ entity, onService }) {
           {/* App list (distinct from source list) */}
           {appList.length > 0 && (
             <div className="flex gap-1 flex-wrap items-center">
-              <span className="text-[10px] text-zinc-400 mr-0.5 shrink-0">{t('deviceControls.apps')}</span>
+              <span className="text-[10px] text-ink-mute mr-0.5 shrink-0">{t('deviceControls.apps')}</span>
               {appList.map((app) => (
                 <button
                   key={app}
@@ -725,8 +725,8 @@ export function MediaPlayerControls({ entity, onService }) {
                   className={cn(
                     'px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
                     source === app
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-2 text-ink-mute hover:bg-line',
                   )}
                 >
                   {app}
@@ -745,8 +745,8 @@ export function MediaPlayerControls({ entity, onService }) {
                   className={cn(
                     'flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
                     shuffle
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-2 text-ink-mute hover:bg-line',
                   )}
                 >
                   <Shuffle size={10} /> {t('deviceControls.shuffle')}
@@ -759,8 +759,8 @@ export function MediaPlayerControls({ entity, onService }) {
                   className={cn(
                     'flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
                     repeat && repeat !== 'off'
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-2 text-ink-mute hover:bg-line',
                   )}
                 >
                   <Repeat size={10} />
@@ -776,8 +776,8 @@ export function MediaPlayerControls({ entity, onService }) {
               label={t('deviceControls.sound')}
               modes={soundModes}
               current={soundMode}
-              colorActive="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900"
-              colorIdle="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+              colorActive="bg-ink text-bg"
+              colorIdle="bg-surface-2 text-ink-mute hover:bg-line"
               onSelect={(mode) => onService('select_sound_mode', { sound_mode: mode })}
             />
           )}
@@ -1023,7 +1023,7 @@ export function GenericControls({ entity, onService }) {
   if (visibleActions.length === 0 && !hasPosition && chipRows.length === 0) return null
 
   return (
-    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-line">
 
       {/* Action buttons */}
       {visibleActions.length > 0 && (
@@ -1036,13 +1036,13 @@ export function GenericControls({ entity, onService }) {
                 <div key={key} className="flex gap-1.5 w-full">
                   <button
                     onClick={() => { onService(action.service, {}); setConfirming(null) }}
-                    className="flex-1 py-1.5 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600 transition-colors"
+                    className="flex-1 py-1.5 rounded-lg bg-err text-on-accent text-xs font-medium hover:bg-err transition-colors"
                   >
                     {t('deviceControls.confirmAction', { label: action.label })}
                   </button>
                   <button
                     onClick={() => setConfirming(null)}
-                    className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                    className="px-3 py-1.5 rounded-lg bg-surface-2 text-ink-mute text-xs hover:bg-line transition-colors"
                   >
                     ✕
                   </button>
@@ -1064,8 +1064,8 @@ export function GenericControls({ entity, onService }) {
                 className={cn(
                   'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium transition-colors',
                   isCurrentAction
-                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 cursor-default'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                    ? 'bg-line text-ink-mute cursor-default'
+                    : 'bg-surface-2 text-ink-2 hover:bg-line',
                 )}
               >
                 {action.label}
@@ -1078,7 +1078,7 @@ export function GenericControls({ entity, onService }) {
       {/* Position slider — gated by SET_POSITION feature bit */}
       {hasPosition && (
         <div>
-          <div className="flex justify-between text-[10px] text-zinc-400 mb-1.5">
+          <div className="flex justify-between text-[10px] text-ink-mute mb-1.5">
             <span>{t('deviceControls.position')}</span>
             <span className="tabular-nums">{entity.current_position}%</span>
           </div>
@@ -1097,7 +1097,7 @@ export function GenericControls({ entity, onService }) {
         return (
           <div key={cd.attr}>
             {cd.label && (
-              <span className="text-[10px] text-zinc-400 mr-1">{cd.label}</span>
+              <span className="text-[10px] text-ink-mute mr-1">{cd.label}</span>
             )}
             <div className="flex gap-1 flex-wrap mt-0.5">
               {opts.map((opt) => (
@@ -1107,8 +1107,8 @@ export function GenericControls({ entity, onService }) {
                   className={cn(
                     'px-2 py-0.5 rounded-lg text-[10px] font-medium capitalize transition-colors',
                     current === opt
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-2 text-ink-mute hover:bg-line',
                   )}
                 >
                   {String(opt).replace(/_/g, ' ')}
@@ -1191,8 +1191,8 @@ const REMOTE_GROUPS = {
 }
 
 const BTN_BASE = 'flex items-center justify-center rounded-xl text-sm font-medium transition-colors select-none'
-const BTN_ACTIVE = 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-95'
-const BTN_DISABLED = 'bg-zinc-50 dark:bg-zinc-900 text-zinc-300 dark:text-zinc-700 cursor-not-allowed'
+const BTN_ACTIVE = 'bg-surface-2 text-ink-2 hover:bg-line active:scale-95'
+const BTN_DISABLED = 'bg-bg text-ink-faint cursor-not-allowed'
 
 function RemoteBtn({ cmd, learned, cmds, onPress, size = 'md' }) {
   const t = useT()
@@ -1445,14 +1445,14 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp,
   return (
     <>
       {!hideTrigger && (
-      <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400">
-          <Tv2 size={11} className="text-violet-400" />
+      <div className="mt-2 pt-2 border-t border-line flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-[10px] font-medium text-ink-mute">
+          <Tv2 size={11} className="text-accent" />
           {t('deviceControls.remote.cmdCount', { n: learned.size, s: learned.size !== 1 ? 's' : '' })}
         </span>
         <button
           onClick={() => setOpen(true)}
-          className="text-[10px] font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+          className="text-[10px] font-medium text-accent hover:text-accent transition-colors"
         >
           {t('deviceControls.remote.openLabel')}
         </button>
@@ -1469,7 +1469,7 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp,
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={() => setOpen(false)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-sm"
             />
             {/* Drawer */}
             <motion.div
@@ -1477,7 +1477,7 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp,
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl overflow-hidden"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-2xl shadow-2xl overflow-hidden"
               style={{
                 // dvh + safe-area-bottom: keeps the sheet inside the visible
                 // viewport on Android Chrome (URL bar shown) and lifts the
@@ -1488,7 +1488,7 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp,
             >
               {/* Drag handle */}
               <div className="flex justify-center pt-3 pb-1">
-                <div className="w-10 h-1 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                <div className="w-10 h-1 rounded-full bg-line" />
               </div>
               <IRRemoteDrawer
                 irDevice={irDevice}

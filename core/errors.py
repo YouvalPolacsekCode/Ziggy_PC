@@ -1,5 +1,4 @@
-"""Unified error contract between the backend and any client (PWA, mobile,
-Telegram bridge).
+"""Unified error contract between the backend and any client (PWA, mobile).
 
 Why this exists
 ---------------
@@ -90,8 +89,8 @@ class ErrorCode:
 # uses this when the caller didn't pass an explicit message. Strings here are
 # English — the frontend re-translates via its i18n layer (it keys off the
 # machine code), so these only appear when:
-#   1. The client is a non-PWA consumer (Telegram bridge, mobile shell) that
-#      hasn't translated the code yet, OR
+#   1. The client is a non-PWA consumer (mobile shell) that hasn't translated
+#      the code yet, OR
 #   2. Something failed so early the i18n bundle never loaded.
 DEFAULT_MESSAGES: dict[str, str] = {
     ErrorCode.INTERNAL_ERROR:           "Something went wrong on our end.",

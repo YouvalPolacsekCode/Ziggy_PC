@@ -372,6 +372,16 @@ async def run_scheduler() -> None:
         if _tick % 60 == 0:
             await _maybe_poll_ota()
 
+        # ── Every minute: Fake Occupancy scheduler tick ──────────────────────
+        # No-op when no activations are registered — safe to call
+        # unconditionally. Owns its own lock + persistence; errors are absorbed
+        # inside tick() so a bad activation never crashes this loop.
+        try:
+            from services import fake_occupancy_scheduler
+            await fake_occupancy_scheduler.tick(now)
+        except Exception as exc:
+            log_error(f"[Scheduler] Fake occupancy tick failed: {exc}")
+
         # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
         # Time-of-day gated, off unless backup.enabled=true in settings.
         # Runs off-thread so the scheduler keeps ticking during upload.

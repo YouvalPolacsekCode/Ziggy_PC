@@ -5,7 +5,7 @@ Architecture:
   - Rules registered via @register_rule(rule_id, scope, severity, cooldown_s)
   - evaluate() dispatches every rule by scope on each HA state_changed event
   - AnomalyResult carries confidence (0–1); results below MIN_CONFIDENCE are
-    stored in active_anomalies but suppressed from Telegram / WebSocket push
+    stored in active_anomalies but suppressed from Ziggy app push / WebSocket
   - HomeContext provides occupancy mode and time-of-day to every rule function
   - Snooze state persisted to SQLite (anomaly_snooze table in home_map.db)
   - Anomaly history logged to SQLite (anomaly_history table in home_map.db)
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS anomaly_history (
 """
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-MIN_CONFIDENCE    = 0.50   # below this: stored in active dict, no Telegram/WS push
+MIN_CONFIDENCE    = 0.50   # below this: stored in active dict, no Ziggy app push / WS
 _DEFAULT_COOLDOWN = 1800   # 30 min between repeated alerts for the same rule+room
 _ANOM01_BUFFER_S  = 300    # persons must be away ≥5 min before ANOM-01 fires
 _ANOM05_THRESHOLD = 86400  # 24 h of no motion before ANOM-05 fires
@@ -939,13 +939,19 @@ async def _run_rule_loop(cache: dict, active: dict) -> None:
                 _dispatch(rule, ec, active, area_id)
 
         elif rule.scope == "entity":
+            # Build entity→area_id once per rule loop run instead of doing a
+            # generator scan over all areas for every entity. Previously the
+            # generator did O(areas × avg_entities_per_area) work per entity;
+            # this collapses it to O(total_entities) once, then O(1) per
+            # entity. Falls back to entity_id when the entity isn't mapped to
+            # any HA area.
+            _entity_to_area: dict[str, str] = {}
+            for aid, a in area_map.items():
+                for ent in a.get("entities", []):
+                    _entity_to_area[ent] = aid
+
             for eid, entry in cache.items():
-                # Store entity-level anomalies under the area that contains the entity,
-                # so they appear in room cards.  Fall back to entity_id if unmapped.
-                room_id = next(
-                    (aid for aid, a in area_map.items() if eid in a.get("entities", [])),
-                    eid,
-                )
+                room_id = _entity_to_area.get(eid, eid)
                 ec = EvalContext(cache=cache, ctx=ctx, cfg=cfg, now=now,
                                  area_map=area_map, entity_id=eid, entity_entry=entry)
                 _dispatch(rule, ec, active, room_id)
@@ -1065,7 +1071,7 @@ async def sweep_stale_sensors(
 
     Called periodically (hourly) from ziggy_scheduler — NOT from the event loop.
     Uses the same _push_anomaly / _clear_anomaly infrastructure as all other rules
-    so results appear in room cards, Telegram, and anomaly history.
+    so results appear in room cards, Ziggy app push, and anomaly history.
     """
     from datetime import datetime, timezone as _tz_module
 

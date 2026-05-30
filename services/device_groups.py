@@ -134,14 +134,31 @@ _PRIMARY_BINARY_SENSOR_PATTERNS: list[tuple[str, _re.Pattern]] = [
 ]
 
 
-def _binary_sensor_purpose_score(row: dict) -> int | None:
-    """Return a priority index for a purposeful binary_sensor, or None.
+# Reserved high index used as the "generic binary_sensor" fallback when
+# device_class is missing AND no entity-id suffix matches. Sits at the end
+# of the priority table so any *named* purposeful binary_sensor still wins
+# the tiebreak — but the bare binary_sensor still outranks plain sensors
+# in `_pick_primary` (battery, signal_strength etc.), which it should: the
+# device's reason to exist is its binary state, not its battery level.
+# Without this, the Sonoff SNZB-04P/PR2 door sensor (which ZHA exposes
+# with no device_class on its binary_sensor) had `sensor.X_battery` win
+# the primary slot and the card read "100%" instead of "Open/Closed".
+_GENERIC_BINARY_SENSOR_SCORE = len(_PRIMARY_BINARY_SENSOR_CLASSES) + 100
 
-    Lower is better. First checks `device_class` (cheap, authoritative when
-    HA provides it), then falls back to entity-id suffix matching for the
-    common case where an integration omits device_class — e.g. some
-    Zigbee2MQTT motion sensors expose `binary_sensor.bedroom_motion_occupancy`
-    with no device_class set.
+
+def _binary_sensor_purpose_score(row: dict) -> int | None:
+    """Return a priority index for a binary_sensor, or None for non-binary rows.
+
+    Lower is better. Walks three layers, each more permissive than the last:
+      1. `device_class` lookup — authoritative when HA labels the entity.
+      2. Entity-id suffix match — catches Zigbee2MQTT motion sensors that
+         omit device_class but name the entity `..._motion_occupancy`.
+      3. Generic fallback — any binary_sensor that's not a diagnostic gets
+         a high-but-finite score so it still outranks plain `sensor.*`
+         entities (battery, signal_strength). A bare `binary_sensor.X`
+         on a device exists *because* the device's purpose is binary;
+         skipping it lets meta-metrics win the card, which is wrong for
+         door sensors, leak sensors, button-press sensors, etc.
     """
     if (row.get("domain") or "") != "binary_sensor":
         return None
@@ -149,12 +166,17 @@ def _binary_sensor_purpose_score(row: dict) -> int | None:
     if dc in _PRIMARY_BINARY_SENSOR_CLASSES:
         return _PRIMARY_BINARY_SENSOR_CLASSES.index(dc)
     eid = (row.get("entity_id") or "").split(".", 1)[-1].lower()
-    if not eid:
+    if eid:
+        for i, (_, pat) in enumerate(_PRIMARY_BINARY_SENSOR_PATTERNS):
+            if pat.search(eid):
+                return i
+    # Generic-binary fallback. Skip when the binary_sensor is obviously a
+    # health/meta indicator rather than the device's purpose — `connectivity`,
+    # `problem`, `update` and `battery_charging` are about the device, not
+    # what it senses. (`battery` here means low-battery alert, also meta.)
+    if dc in {"connectivity", "problem", "update", "battery", "battery_charging", "running", "plug"}:
         return None
-    for i, (_, pat) in enumerate(_PRIMARY_BINARY_SENSOR_PATTERNS):
-        if pat.search(eid):
-            return i
-    return None
+    return _GENERIC_BINARY_SENSOR_SCORE
 
 # Metric pills surfaced on the card (in this order, capped client-side
 # to ~2). These are device_classes whose value is "interesting at a glance"

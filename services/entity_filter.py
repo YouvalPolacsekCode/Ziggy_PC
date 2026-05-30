@@ -75,7 +75,29 @@ def _should_hide(entity_id: str) -> bool:
 
 
 def normalize_name(entity_id: str, friendly_name: str | None) -> str:
-    """Return a clean, human-readable display name for an entity."""
+    """Return a clean, human-readable display name for an entity.
+
+    Three cases:
+
+    1. The user provided a friendly_name in HA (the common case for any
+       device they care about). Preserve their casing verbatim — modulo
+       brand cleanup (`Sagemcom F@ST 5366` → `Router`) and whitespace
+       collapse. A user who typed "Living room lamp" sees "Living room
+       lamp"; one who typed "Living Room Lamp" sees that. Earlier this
+       function force-title-cased every name, causing "Living room lamp"
+       to render as "Living Room Lamp" on every surface that reads
+       /api/ha/entities while /api/devices/grouped (no normalization)
+       served the un-touched original — making the same device appear
+       under two different casings on Devices/Home vs Rooms/Detail.
+
+    2. The friendly_name is all-caps screaming text the integration
+       defaulted to (e.g. some Tuya devices ship "TS0505B"). Treat that
+       as effectively unstyled and title-case it.
+
+    3. There's no friendly_name at all. Derive from the entity_id slug
+       and title-case (every surface needs SOMETHING to render).
+    """
+    user_supplied = bool((friendly_name or "").strip())
     raw = (friendly_name or "").strip() or _name_from_entity_id(entity_id)
 
     for pattern, replacement in _NAME_REPLACEMENTS:
@@ -87,7 +109,20 @@ def normalize_name(entity_id: str, friendly_name: str | None) -> str:
     # Collapse multiple spaces
     raw = re.sub(r"\s{2,}", " ", raw).strip()
 
-    return raw.title() if raw == raw.upper() else _title_preserve(raw)
+    if not raw:
+        return raw
+
+    # User-typed names: trust the user. Only override when the entire
+    # string is all-caps (case 2) — that's almost never intentional and
+    # usually the manufacturer's slug leaking through.
+    if user_supplied:
+        has_alpha = any(c.isalpha() for c in raw)
+        if has_alpha and raw == raw.upper():
+            return _title_preserve(raw)
+        return raw
+
+    # Slug-derived fallback: title-case for readability.
+    return _title_preserve(raw)
 
 
 def _name_from_entity_id(entity_id: str) -> str:

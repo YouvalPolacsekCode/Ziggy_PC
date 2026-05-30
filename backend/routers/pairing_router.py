@@ -39,24 +39,27 @@ def _schedule_registry_refresh(delay_s: float = 5.0) -> None:
     Called after pairing succeeds so newly joined devices appear promptly
     without waiting for the 60-second reconciliation loop.
     """
-    def _run():
-        import time
-        time.sleep(delay_s)
+    async def _run():
+        await asyncio.sleep(delay_s)
         try:
             from services.device_registry import refresh
-            refresh()
+            # refresh() is sync; off-load to threadpool so it doesn't block
+            # the running event loop.
+            await asyncio.to_thread(refresh)
         except Exception:
             pass
         try:
             from backend.ws_manager import manager
-            import asyncio as _aio
-            loop = _aio.new_event_loop()
-            loop.run_until_complete(manager.broadcast({"type": "devices_changed"}))
-            loop.close()
+            await manager.broadcast({"type": "devices_changed"})
         except Exception:
             pass
 
-    threading.Thread(target=_run, daemon=True).start()
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_run())
+    except RuntimeError:
+        # Called from a sync context with no running loop (rare; tests).
+        threading.Thread(target=lambda: asyncio.run(_run()), daemon=True).start()
 
 
 # ---------------------------------------------------------------------------

@@ -138,18 +138,29 @@ def _ha_step_to_ziggy(s: dict) -> dict:
 # ── API calls ─────────────────────────────────────────────────────────────────
 
 def list_scripts() -> list:
+    # Prefer the WS state cache (ha_subscriber). Falls back to REST only when
+    # the cache is empty (early boot, before the subscriber's first snapshot).
+    # Same pattern as ha_automations.list_automations — see comment there.
     try:
-        resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return []
+        from services.ha_subscriber import state_cache
+        cache_items = list(state_cache.items()) if state_cache else None
+    except Exception:
+        cache_items = None
+
+    try:
+        if cache_items is None:
+            resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
+            if resp.status_code != 200:
+                return []
+            cache_items = [(s.get("entity_id", ""), s) for s in resp.json()]
+
         meta_store = _load_routine_meta()
         result = []
-        for s in resp.json():
-            eid = s.get("entity_id", "")
+        for eid, s in cache_items:
             if not eid.startswith("script."):
                 continue
             script_id = eid[len("script."):]
-            attrs = s.get("attributes", {})
+            attrs = s.get("attributes", {}) or {}
             meta = meta_store.get(script_id, {})
             result.append({
                 "id": script_id,

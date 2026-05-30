@@ -3,7 +3,7 @@ const variants = {
   secondary: { background: 'var(--surface)', color: 'var(--ink)',     border: '0.5px solid var(--line)' },
   ghost:     { background: 'transparent',    color: 'var(--ink-mute)', border: 'none' },
   danger:    { background: `color-mix(in srgb, var(--err) 10%, var(--surface))`, color: 'var(--err)', border: '0.5px solid var(--line)' },
-  accent:    { background: 'var(--accent)',  color: '#fff',            border: 'none' },
+  accent:    { background: 'var(--accent)',  color: 'var(--on-accent)', border: 'none' },
 }
 
 const sizes = {

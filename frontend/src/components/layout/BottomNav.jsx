@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Bell, CheckSquare, Cpu, MoreHorizontal, Settings, ShieldAlert, WifiOff, Zap } from 'lucide-react'
+import { Bell, CheckSquare, MoreHorizontal, Settings, ShieldAlert, WifiOff, Zap } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
 import { useT } from '../../lib/i18n'
@@ -22,13 +22,12 @@ function ZIcon({ name, size = 24, stroke = 1.6, color = 'currentColor' }) {
   }
 }
 
-// `labelKey` is resolved inside BottomNav() so labels track the active
-// language live, with no array rebuild on each render.
-const TABS_LEFT = [
-  { to: '/',      name: 'home',  labelKey: 'nav.home' },
-  { to: '/rooms', name: 'rooms', labelKey: 'nav.rooms' },
-]
-const TABS_RIGHT = [
+// `labelKey` resolves inside BottomNav() so labels track the active language
+// live without rebuilding the array on each render.
+const PRIMARY_TABS = [
+  { to: '/',        name: 'home',    labelKey: 'nav.home' },
+  { to: '/rooms',   name: 'rooms',   labelKey: 'nav.rooms' },
+  { to: '/chat',    name: 'sparkle', labelKey: 'nav.ziggy' },
   { to: '/devices', name: 'devices', labelKey: 'nav.devices' },
 ]
 const MORE_BASE = [
@@ -38,32 +37,13 @@ const MORE_BASE = [
   { to: '/settings',    Icon: Settings,    labelKey: 'nav.settings' },
 ]
 
-// Bar + cradle + FAB geometry.
-// Bar's top edge HUMPS UP around the FAB — the curve sits OVER the FAB's
-// upper portion, cradling it with a 4px gap. Curve radius = FAB_R + GAP.
-const ROW_H        = 60
-const FAB_SIZE     = 68
-const FAB_R        = FAB_SIZE / 2      // 34
-const FAB_GAP      = 4
-const ARC_R        = FAB_R + FAB_GAP   // 38
-// HUMP_H < ARC_R → arc is <180° (shallow cup, not necked-in). FAB center sits
-// (ARC_R - HUMP_H) = 3px BELOW the bar's top edge → ~55% of FAB is inside the bar.
-// half-chord = sqrt(ARC_R² - (ARC_R - HUMP_H)²) = sqrt(38² - 3²) ≈ 37.88
-const HUMP_H       = 35
-const ARC_HALF_W   = Math.sqrt(ARC_R * ARC_R - (ARC_R - HUMP_H) ** 2)
-const NOTCH_W      = 112
-const ARC_X1       = NOTCH_W / 2 - ARC_HALF_W
-const ARC_X2       = NOTCH_W / 2 + ARC_HALF_W
-// FAB center sits at arc center → uniform FAB_GAP all around the cradle.
-// CSS bottom = ROW_H + HUMP_H - ARC_R - FAB_R = 23 (FAB bottom 23px above bar bottom)
-const FAB_BOTTOM   = ROW_H + HUMP_H - ARC_R - FAB_R
+// Bar geometry — flat row, no notch / FAB. Bar height matches the CSS
+// --nav-h variable so pb-nav math stays in sync.
+const ROW_H  = 60
+const BAR_BG = 'color-mix(in srgb, var(--bg) 92%, transparent)'
 
-const BAR_BG = 'color-mix(in srgb, var(--bg) 97%, transparent)'
-
-// Shared label style — `minWidth: 0` + ellipsis ensures the cell never expands
-// past its grid track even if the label is longer than the cell width. Without
-// this the long "Automations" label would push neighbouring cells narrower
-// (under flex), which is exactly what threw the FAB off-center on Galaxy S24.
+// `minWidth: 0` + ellipsis keeps long labels from pushing neighbouring cells
+// narrower (under flex this drifted the cell centers off the grid track).
 const TAB_LABEL = {
   fontSize: 12,
   lineHeight: 1, letterSpacing: '0.01em',
@@ -71,9 +51,6 @@ const TAB_LABEL = {
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 const TAB_CELL = {
-  // No flex:1 — the parent uses grid with minmax(0, 1fr), so each cell is
-  // *exactly* 1/5 of the row regardless of its content. That's the property
-  // we need for the Ziggy cell's center to land on the bar's geometric center.
   minWidth: 0,
   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
   padding: '8px 4px 6px',
@@ -85,7 +62,7 @@ function Tab({ to, name, label }) {
   const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
   return (
     <NavLink to={to} style={{ ...TAB_CELL, textDecoration: 'none' }}>
-      <ZIcon name={name} size={28} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-faint)'} />
+      <ZIcon name={name} size={26} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-faint)'} />
       <span style={{
         ...TAB_LABEL,
         fontWeight: active ? 600 : 500,
@@ -106,7 +83,7 @@ function MoreTab({ active, onClick, expanded, label }) {
       aria-expanded={expanded}
       style={{ ...TAB_CELL, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
     >
-      <MoreHorizontal size={28} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-faint)'} />
+      <MoreHorizontal size={26} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-faint)'} />
       <span style={{
         ...TAB_LABEL,
         fontWeight: active ? 600 : 500,
@@ -128,11 +105,10 @@ export function BottomNav({ connected }) {
   // Force-close the More menu on any route change. Defensive against
   // framer-motion's AnimatePresence stalling its exit cycle when a heavy
   // lazy route (e.g. /devices) mounts mid-animation — without this, the
-  // z-40 backdrop can get stuck over the whole viewport, blocking taps.
+  // backdrop can get stuck over the whole viewport, blocking taps.
   useEffect(() => { setShowMore(false) }, [location.pathname])
 
   const taskTrackingEnabled = useFeature('task_tracking')
-  const chatActive = location.pathname.startsWith('/chat')
   const moreItems = [
     ...MORE_BASE.filter(item =>
       !item.feature || (item.feature === 'task_tracking' && taskTrackingEnabled),
@@ -145,18 +121,16 @@ export function BottomNav({ connected }) {
     <>
       {/* Plain conditional, NO AnimatePresence. The previous version used
           framer-motion's exit cycle, which stalled on cold-start when the
-          /devices lazy chunk (Devices + PairingWizard + IRWizard ≈ 3600 LOC
-          combined) blocked the JS thread mid-animation, leaving the z-40
-          backdrop visibly stuck (blurred screen, all bottom-nav taps
-          blocked). Plain conditional rendering unmounts both elements
-          synchronously the moment showMore flips to false — no animation
-          state machine that can fail to complete. Entrance still feels
-          snappy because the menu mounts instantly with its final layout. */}
+          /devices lazy chunk blocked the JS thread mid-animation, leaving
+          the backdrop visibly stuck (blurred screen, all bottom-nav taps
+          blocked). Plain conditional unmounts both elements synchronously
+          the moment showMore flips to false — no animation state machine
+          that can fail to complete. */}
       {showMore && (
         <>
           <div
             className="fixed inset-0 z-40 md:hidden"
-            style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+            style={{ background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
             onClick={() => setShowMore(false)}
           />
           <div
@@ -205,146 +179,54 @@ export function BottomNav({ connected }) {
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 md:hidden"
         style={{
-          // NO paddingBottom here. We render an explicit "safe-area floor" sibling
-          // below the notched bar (see below) so the bar's background extends all
-          // the way to the bottom edge of the device. The previous approach used
-          // a transparent padding zone, which let page content scroll through the
-          // visible band between the bar and the system gesture / button area.
+          // NO paddingBottom — we render an explicit safe-area floor sibling
+          // below the bar (see below) so the bar's background extends all
+          // the way to the bottom edge of the device. The previous approach
+          // used a transparent padding zone, which let page content scroll
+          // through the visible band between the bar and the system gesture
+          // / button area.
           paddingLeft: 'env(safe-area-inset-left, 0px)',
           paddingRight: 'env(safe-area-inset-right, 0px)',
         }}
       >
         {connected === false && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3px 0', background: 'var(--err)', gap: 5 }}>
-            <WifiOff size={10} color="#fff" />
-            <span style={{ fontSize: 10, color: '#fff', fontWeight: 500 }}>{t('common.offline')}</span>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '3px 0', background: 'var(--err)', gap: 5,
+          }}>
+            <WifiOff size={10} color="var(--on-accent)" />
+            <span style={{ fontSize: 10, color: 'var(--on-accent)', fontWeight: 500 }}>{t('common.offline')}</span>
           </div>
         )}
 
-        {/* Bar: single band, notch on top edge cradles the FAB */}
-        <div style={{ position: 'relative', height: ROW_H }}>
-
-          {/* Background — SVG notch pinned at exact 50% via translateX(-50%),
-              with two flanking flat strips that meet at the SVG's exact edges.
-              Previously this used a 3-piece flex row to center the SVG — but
-              on widths where (bar_width - NOTCH_W) is odd (e.g. 411px CSS
-              viewport on Galaxy S24 in some zoom modes), flex distribution
-              splits the remainder into 149.5 / 149.5 which the browser then
-              rounds asymmetrically (149/150 or 150/149). That ½–1px drift
-              moves the notch off the FAB's center, since the FAB is positioned
-              with `left: 50%` and ignores rounding entirely.
-              Explicit `left: 50%; transform: translateX(-50%)` makes the
-              notch use the *same* anchoring math as the FAB — guaranteed
-              to align regardless of bar width.
-              The shared drop-shadow filter stays on the wrapping div so the
-              1px dark outline still traces flat→hump→flat as one continuous
-              alpha (per-element strokes would expose a seam at each junction). */}
-          <div
-            style={{
-              position: 'absolute', inset: 0,
-              filter: 'drop-shadow(0 -1px 0 rgba(0,0,0,0.55)) drop-shadow(0 -10px 22px rgba(0,0,0,0.18))',
-            }}
-            aria-hidden="true"
-          >
-            {/* Left strip — meets the SVG's left edge exactly */}
-            <div style={{
-              position: 'absolute', top: 0, bottom: 0, left: 0,
-              right: `calc(50% + ${NOTCH_W / 2}px)`,
-              background: BAR_BG,
-              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            }}/>
-            {/* Notch SVG — pinned at viewport-center, same math as the FAB */}
-            <svg
-              width={NOTCH_W} height={ROW_H}
-              style={{
-                position: 'absolute', top: 0, left: '50%',
-                transform: `translateX(-${NOTCH_W / 2}px)`,
-                display: 'block', overflow: 'visible',
-              }}
-            >
-              <path
-                d={`M 0 0 L ${ARC_X1} 0 A ${ARC_R} ${ARC_R} 0 0 1 ${ARC_X2} 0 L ${NOTCH_W} 0 L ${NOTCH_W} ${ROW_H} L 0 ${ROW_H} Z`}
-                fill={BAR_BG}
-              />
-            </svg>
-            {/* Right strip — meets the SVG's right edge exactly */}
-            <div style={{
-              position: 'absolute', top: 0, bottom: 0, right: 0,
-              left: `calc(50% + ${NOTCH_W / 2}px)`,
-              background: BAR_BG,
-              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            }}/>
-          </div>
-
-          {/* Foreground — tab row.
-              GRID instead of flex: `minmax(0, 1fr)` forces every cell to be
-              exactly 1/5 of the row width regardless of the label's intrinsic
-              width. With flex:1 the long "Automations" label would steal
-              space from neighbours (min-width: auto wins), pushing the
-              centered Ziggy cell off the bar's geometric center → FAB no
-              longer aligned to the SVG notch. iPhone happened to skate by
-              because Heebo renders slightly narrower in Safari + larger
-              CSS width; Android Chrome at ~384px revealed the bug. */}
+        {/* Flat 5-tab bar — Home · Rooms · Ask · Devices · More.
+            Replaces the previous notched FAB pattern; the Ask tab is now
+            a regular tab with the sparkle icon. Glass background uses
+            color-mix on var(--bg) so it tints with the active palette. */}
+        <div style={{
+          position: 'relative',
+          background: BAR_BG,
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderTop: '0.5px solid var(--line)',
+        }}>
           <div style={{
-            position: 'relative', zIndex: 1,
             display: 'grid',
             gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
             alignItems: 'end',
             height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
           }}>
-            {TABS_LEFT.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}
-
-            {/* Ziggy cell — FAB visual is absolutely positioned above; label sits inline */}
-            <NavLink
-              to="/chat"
-              onClick={() => setShowMore(false)}
-              aria-label={t('nav.ziggy')}
-              style={{
-                position: 'relative',
-                minWidth: 0,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end',
-                padding: '8px 4px 6px',
-                textDecoration: 'none', WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <div style={{
-                position: 'absolute',
-                left: '50%',
-                bottom: FAB_BOTTOM,
-                transform: 'translateX(-50%)',
-                width: FAB_SIZE, height: FAB_SIZE, borderRadius: '50%',
-                background: chatActive ? 'var(--accent)' : 'var(--ink)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: chatActive
-                  ? '0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent), 0 8px 18px rgba(0,0,0,0.22)'
-                  : '0 8px 18px rgba(0,0,0,0.22)',
-                transition: 'background 0.2s, box-shadow 0.2s',
-              }}>
-                <ZIcon name="sparkle" size={28} stroke={1.8} color="var(--bg)" />
-              </div>
-              <span style={{
-                fontSize: 12, fontWeight: 600,
-                color: chatActive ? 'var(--accent)' : 'var(--ink-faint)',
-                lineHeight: 1, letterSpacing: '0.01em',
-              }}>
-                {t('nav.ziggy')}
-              </span>
-            </NavLink>
-
-            {TABS_RIGHT.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}
+            {PRIMARY_TABS.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}
             <MoreTab active={isMoreActive} onClick={() => setShowMore(true)} expanded={showMore} label={t('nav.more')} />
           </div>
         </div>
 
         {/* Safe-area floor — solid bar background extending through the gesture
             handle / system button strip. Without this, the bar would float
-            above the OS bottom strip and page content would be visible behind
-            it (the original bug on Galaxy S24 and on desktop where env() == 0
-            but the 8px floor still leaves a transparent band).
-            Height = max(env, 8px) keeps the floor present on 3-button Android
-            (env == 0) while matching the gesture-bar height on iOS / gesture
-            Android. backdropFilter mirrors the bar so the blur stays continuous
-            below the curved section. */}
+            above the OS bottom strip and page content would be visible
+            behind it. Height = max(env, 8px) keeps the floor present on
+            3-button Android (env == 0) while matching the gesture-bar
+            height on iOS / gesture Android. */}
         <div
           aria-hidden="true"
           style={{

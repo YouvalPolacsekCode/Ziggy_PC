@@ -80,10 +80,78 @@ _CAPABILITY_RULES: dict[str, list] = {
         lambda e: e["entity_id"].startswith("sensor.")
             and _dc(e, "humidity"),
     ],
+
+    # ── New `has_*` buckets (Prompt 2 infrastructure) ─────────────────────
+    # Added additively so new templates can opt in to the explicit naming
+    # without breaking any existing template that uses the older keys.
+    # Where semantics overlap an existing bucket (e.g. has_motion_sensor ≡
+    # motion_sensor) the predicate is duplicated rather than aliased so
+    # detect_capabilities() can populate both lists in one pass without an
+    # extra post-processing step.
+    "has_motion_sensor": [
+        lambda e: e["entity_id"].startswith("binary_sensor.")
+            and _dc(e, "motion"),
+    ],
+    "has_door_sensor": [
+        lambda e: e["entity_id"].startswith("binary_sensor.")
+            and _dc(e, ("door", "opening")),
+    ],
+    "has_window_sensor": [
+        lambda e: e["entity_id"].startswith("binary_sensor.")
+            and _dc(e, "window"),
+    ],
+    "has_mmwave_sensor": [
+        # mmWave radar sensors expose occupancy device_class in Z2M.
+        lambda e: e["entity_id"].startswith("binary_sensor.")
+            and _dc(e, "occupancy"),
+    ],
+    "has_smart_plug": [
+        lambda e: e["entity_id"].startswith("switch."),
+    ],
+    "has_energy_monitoring_plug": [
+        # A smart plug paired with a power/energy sensor on the same device:
+        # we approximate by checking that both a switch entity and a power
+        # sensor exist (the matcher runs per-entity, so the same device is
+        # captured by both buckets; templates that require it should also
+        # require has_smart_plug to ensure same-device intent).
+        lambda e: e["entity_id"].startswith("sensor.")
+            and _dc(e, ("power", "energy")),
+    ],
+    "has_power_monitoring": [
+        lambda e: e["entity_id"].startswith("sensor.")
+            and _dc(e, ("power", "energy")),
+    ],
+    "has_dimmable_light": [
+        lambda e: e["entity_id"].startswith("light.")
+            and "brightness" in (e.get("attributes") or {}),
+    ],
+    "has_color_temp_light": [
+        # color_temp tunable lights expose either color_temp or supported_color_modes
+        # containing color_temp. Both shapes show up in the wild (HA core vs Z2M).
+        lambda e: e["entity_id"].startswith("light.") and (
+            "color_temp" in (e.get("attributes") or {})
+            or "color_temp_kelvin" in (e.get("attributes") or {})
+            or "color_temp" in ((e.get("attributes") or {}).get("supported_color_modes") or [])
+        ),
+    ],
+    "has_climate_entity": [
+        lambda e: e["entity_id"].startswith("climate."),
+    ],
+    "has_weather_entity": [
+        lambda e: e["entity_id"].startswith("weather."),
+    ],
 }
 
 # IR-based AC devices are detected separately from HA states.
 CAP_IR_AC = "ir_ac_control"
+# New broader IR-blaster bucket (Prompt 2): any IR blaster device, regardless
+# of whether it's been mapped to an AC. Used by templates that send arbitrary
+# IR commands (TV, fan, projector, etc.).
+CAP_IR_BLASTER = "has_ir_blaster"
+# Zone-based presence (Prompt 2): person entities tracked by Ziggy's own
+# presence_engine (not HA Companion). Derived from list_persons() rather
+# than HA states.
+CAP_ZONE_PRESENCE = "has_zone_presence"
 
 # Domains to skip when iterating (automations, scripts, etc. are not devices)
 _SKIP_PREFIXES = (
@@ -103,6 +171,8 @@ def detect_capabilities(
     """
     cap_map: dict[str, list[str]] = {cap: [] for cap in _CAPABILITY_RULES}
     cap_map[CAP_IR_AC] = []
+    cap_map[CAP_IR_BLASTER] = []
+    cap_map[CAP_ZONE_PRESENCE] = []
 
     for state in all_states:
         eid = state.get("entity_id", "")
@@ -117,12 +187,34 @@ def detect_capabilities(
             except Exception:
                 pass
 
-    # IR devices that act as AC controllers
+    # IR devices that act as AC controllers (legacy bucket)
     for dev in (ir_devices or []):
         if (dev.get("type") or "").lower() in ("ac", "air_conditioner", "split"):
             dev_id = dev.get("id") or dev.get("room", "")
             if dev_id:
                 cap_map[CAP_IR_AC].append(dev_id)
+
+    # Broader IR-blaster bucket: any IR device with at least one known command
+    # or that's reachable. We treat presence of ANY IR device as sufficient.
+    for dev in (ir_devices or []):
+        dev_id = dev.get("id") or dev.get("name") or dev.get("room", "")
+        if dev_id and dev_id not in cap_map[CAP_IR_BLASTER]:
+            cap_map[CAP_IR_BLASTER].append(dev_id)
+
+    # Zone-based presence: pull from presence_engine, not HA. Templates that
+    # condition on "is home" or "in living room" can rely on this without
+    # needing HA Companion. Imported lazily because presence_engine isn't a
+    # core dependency of capability matching and may be unavailable in tests.
+    try:
+        from services.presence_engine import list_persons as _list_persons
+        for person in (_list_persons() or []):
+            pid = person.get("id") or person.get("person_id") or person.get("name")
+            if pid:
+                cap_map[CAP_ZONE_PRESENCE].append(pid)
+    except Exception:
+        # Never crash capability detection because presence_engine is
+        # mid-init or unavailable; the bucket just stays empty.
+        pass
 
     return cap_map
 
@@ -168,6 +260,20 @@ def capability_summary(cap_map: dict[str, list[str]], capabilities: list[str]) -
         "media_player":     "media player",
         "room_temperature": "temperature sensor",
         "humidity":         "humidity sensor",
+        # New `has_*` buckets
+        "has_motion_sensor":           "motion sensor",
+        "has_door_sensor":             "door sensor",
+        "has_window_sensor":           "window sensor",
+        "has_mmwave_sensor":           "mmWave presence sensor",
+        "has_smart_plug":              "smart plug",
+        "has_energy_monitoring_plug":  "energy-monitoring plug",
+        "has_power_monitoring":        "power monitor",
+        "has_dimmable_light":          "dimmable lights",
+        "has_color_temp_light":        "color-temperature lights",
+        "has_climate_entity":          "smart AC/thermostat",
+        "has_weather_entity":          "weather data",
+        "has_ir_blaster":              "IR blaster",
+        "has_zone_presence":           "zone-tracked presence",
     }
     found = [CAP_LABELS.get(c, c.replace("_", " ")) for c in capabilities if cap_map.get(c)]
     if not found:

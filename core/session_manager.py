@@ -1,8 +1,5 @@
 """Per-source session state for Ziggy.
 
-Telegram sessions live in context.chat_data (managed by the interface layer).
-The helpers below provide a uniform API for reading/writing that dict.
-
 Voice sessions live in a single module-level slot (one microphone, one user).
 """
 from __future__ import annotations
@@ -132,25 +129,3 @@ def reset_voice_session() -> None:
         _voice_session["chat_history"] = []
 
 
-# ── Telegram session helpers (operate on context.chat_data) ───────────────────
-
-def get_telegram_mode(chat_data: dict) -> str:
-    return chat_data.get("mode", MODE_COMMAND)
-
-
-def set_telegram_mode(chat_data: dict, mode: str) -> None:
-    chat_data["mode"] = mode
-    chat_data["mode_changed_at"] = datetime.utcnow().isoformat()
-    if mode == MODE_COMMAND:
-        chat_data["session_chat_history"] = []
-
-
-def get_telegram_chat_history(chat_data: dict) -> list[dict]:
-    return list(chat_data.get("session_chat_history", []))
-
-
-def append_telegram_chat(chat_data: dict, role: str, content: str) -> None:
-    hist = chat_data.setdefault("session_chat_history", [])
-    hist.append({"role": role, "content": content})
-    if len(hist) > MAX_CHAT_HISTORY:
-        chat_data["session_chat_history"] = hist[-MAX_CHAT_HISTORY:]

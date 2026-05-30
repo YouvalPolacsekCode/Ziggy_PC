@@ -12,6 +12,7 @@ Key invariants:
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,18 +28,54 @@ REJECTION_COOLDOWN_DAYS = 30   # after first rejection, re-evaluate after this p
 # ---------------------------------------------------------------------------
 # Persistence — suggestions
 # ---------------------------------------------------------------------------
+#
+# In-memory cache for suggestions.json and rejected_patterns.json. Every read
+# API call (get_pending, get_all, count_pending, pending_slots_available, etc.)
+# previously re-read the JSON file from disk. The cache is invalidated by mtime
+# so external edits still load on the next read.
+
+_lock = threading.Lock()
+_suggestions_cache: list[dict] | None = None
+_suggestions_mtime: float = 0.0
+_rejected_cache: dict | None = None
+_rejected_mtime: float = 0.0
+
+
+def _file_mtime(p: Path) -> float:
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _atomic_write_json(p: Path, data) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(p)
+
 
 def _load() -> list[dict]:
-    if not SUGGESTIONS_FILE.exists():
-        return []
-    with open(SUGGESTIONS_FILE, encoding="utf-8") as f:
-        return json.load(f)
+    global _suggestions_cache, _suggestions_mtime
+    with _lock:
+        if not SUGGESTIONS_FILE.exists():
+            _suggestions_cache = []
+            _suggestions_mtime = 0.0
+            return list(_suggestions_cache)
+        mtime = _file_mtime(SUGGESTIONS_FILE)
+        if _suggestions_cache is None or mtime != _suggestions_mtime:
+            with open(SUGGESTIONS_FILE, encoding="utf-8") as f:
+                _suggestions_cache = json.load(f)
+            _suggestions_mtime = mtime
+        return list(_suggestions_cache)
 
 
 def _save(suggestions: list[dict]) -> None:
-    SUGGESTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(SUGGESTIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(suggestions, f, indent=2, ensure_ascii=False)
+    global _suggestions_cache, _suggestions_mtime
+    with _lock:
+        _atomic_write_json(SUGGESTIONS_FILE, suggestions)
+        _suggestions_cache = list(suggestions)
+        _suggestions_mtime = _file_mtime(SUGGESTIONS_FILE)
 
 
 # ---------------------------------------------------------------------------
@@ -46,19 +83,29 @@ def _save(suggestions: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 
 def _load_rejected() -> dict:
-    if not REJECTED_PATTERNS_FILE.exists():
-        return {}
-    try:
-        with open(REJECTED_PATTERNS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
+    global _rejected_cache, _rejected_mtime
+    with _lock:
+        if not REJECTED_PATTERNS_FILE.exists():
+            _rejected_cache = {}
+            _rejected_mtime = 0.0
+            return dict(_rejected_cache)
+        mtime = _file_mtime(REJECTED_PATTERNS_FILE)
+        if _rejected_cache is None or mtime != _rejected_mtime:
+            try:
+                with open(REJECTED_PATTERNS_FILE, encoding="utf-8") as f:
+                    _rejected_cache = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                _rejected_cache = {}
+            _rejected_mtime = mtime
+        return dict(_rejected_cache)
 
 
 def _save_rejected(data: dict) -> None:
-    REJECTED_PATTERNS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(REJECTED_PATTERNS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    global _rejected_cache, _rejected_mtime
+    with _lock:
+        _atomic_write_json(REJECTED_PATTERNS_FILE, data)
+        _rejected_cache = dict(data) if isinstance(data, dict) else {}
+        _rejected_mtime = _file_mtime(REJECTED_PATTERNS_FILE)
 
 
 # ---------------------------------------------------------------------------

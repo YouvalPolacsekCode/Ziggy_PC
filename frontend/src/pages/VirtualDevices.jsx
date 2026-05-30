@@ -10,7 +10,7 @@ import { Select } from '../components/ui/Select'
 import { Toggle } from '../components/ui/Toggle'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { cn } from '../lib/utils'
+import { cn, entityDisplayName } from '../lib/utils'
 import {
   getCapabilities, getVirtualDevices, createVirtualDevice,
   patchVirtualDevice, deleteVirtualDevice, triggerVirtualDevice,
@@ -29,8 +29,11 @@ function EntityHintSelect({ label, domain, value, onChange }) {
         const entities = res.entities || []
         setOptions(
           entities.map((e) => ({
-            value: (e.friendly_name || e.entity_id.split('.')[1]).toLowerCase(),
-            label: e.friendly_name || e.entity_id.split('.')[1],
+            // value is a case-insensitive key — stored lowercase for stable
+            // matching. label honors display_name first so a Ziggy rename
+            // is reflected here without waiting for HA's registry push.
+            value: entityDisplayName(e).toLowerCase(),
+            label: entityDisplayName(e),
           }))
         )
       })
@@ -245,18 +248,18 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
               ))}
 
               {configParams.length === 0 && (
-                <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-2">
+                <p className="text-sm text-ink-faint text-center py-2">
                   {t('virtual.noConfig')}
                 </p>
               )}
 
               {/* Inform user about runtime params */}
               {runtimeParams.length > 0 && (
-                <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 px-4 py-3 mt-1">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t('virtual.runtimeIntro')}</p>
+                <div className="rounded-xl bg-surface-2/60 border border-line px-4 py-3 mt-1">
+                  <p className="text-xs font-medium text-ink-mute mb-1">{t('virtual.runtimeIntro')}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {runtimeParams.map(([key, schema]) => (
-                      <span key={key} className="text-[11px] text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-700 px-2 py-0.5 rounded-full">
+                      <span key={key} className="text-[11px] text-ink-faint bg-line px-2 py-0.5 rounded-full">
                         {schema.label}
                       </span>
                     ))}
@@ -278,12 +281,12 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
                   ...rooms.map((r) => ({ value: r.id, label: r.name })),
                 ]}
               />
-              <div className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4">
+              <div className="bg-surface-2 rounded-xl p-4">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-2xl">{selectedCap?.icon}</span>
                   <div>
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-100" dir="auto">{name}</p>
-                    <p className="text-xs text-zinc-400" dir="auto">{selectedCap?.description}</p>
+                    <p className="font-semibold text-ink" dir="auto">{name}</p>
+                    <p className="text-xs text-ink-mute" dir="auto">{selectedCap?.description}</p>
                   </div>
                 </div>
                 {Object.keys(params).filter((k) => params[k] != null && params[k] !== '').length > 0 && (
@@ -334,8 +337,8 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
       <div className="flex items-center gap-3 mb-1">
         <span className="text-2xl">{device.icon}</span>
         <div>
-          <p className="font-semibold text-zinc-900 dark:text-zinc-100" dir="auto">{device.name}</p>
-          <p className="text-xs text-zinc-400" dir="auto">{capability?.description}</p>
+          <p className="font-semibold text-ink" dir="auto">{device.name}</p>
+          <p className="text-xs text-ink-mute" dir="auto">{capability?.description}</p>
         </div>
       </div>
 
@@ -444,7 +447,7 @@ function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
       />
       <label className="flex items-center gap-3 cursor-pointer">
         <Toggle checked={enabled} onCheckedChange={setEnabled} />
-        <span className="text-sm text-zinc-700 dark:text-zinc-300">{t('virtual.enabled')}</span>
+        <span className="text-sm text-ink-2">{t('virtual.enabled')}</span>
       </label>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('virtual.cancel')}</button>

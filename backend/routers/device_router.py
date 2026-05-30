@@ -770,105 +770,147 @@ async def delete_ha_entity(entity_id: str, delete_device: bool = False,
     of a paired Zigbee/Z-Wave/etc. entity the user no longer wants — without
     having to flip between Ziggy and HA.
 
-    When `delete_device=true` AND the entity's parent device has no remaining
-    entities after this removal, the parent device's config entry is also
-    removed (the HA equivalent of removing the device from the hub). The
-    physical device itself is NOT unpaired from the radio — for Zigbee, the
-    user should still re-pair / press the reset button if they want to use
-    it elsewhere.
+    When `delete_device=true`, every entity on the same HA device_id is
+    removed (battery, signal_strength, diagnostic buttons, firmware update
+    helpers — the lot), then the device's config_entries are dropped. This
+    mirrors what a user means by "delete the door sensor": gone in one shot,
+    not "delete one entity and leave 4 orphans behind."
 
-    Always also drops the entity from Ziggy's device registry so it doesn't
-    re-appear as a ghost after the next refresh.
+    Per-entity invocation (`delete_device=false`) keeps only the named
+    entity — for niche cases where the user wants to suppress just one
+    helper on a multi-purpose device.
+
+    The physical device itself is NOT unpaired from the radio — for Zigbee,
+    the user should still re-pair / press the reset button if they want to
+    use it elsewhere.
+
+    Always also drops removed entities from Ziggy's device registry and from
+    `settings.yaml`'s `device_map`, so nothing reappears as a ghost after
+    the next refresh or restart.
     """
     _bus.emit("auth", _BASIC, "auth_promoted_route_called",
               route="DELETE /api/ha/entity/{entity_id:path}",
               user=_user.get("username"), auth_added=True)
-    # 1) Look up the HA device_id (for the optional device-level removal).
+    # 1) Look up the HA device_id + (optionally) the full entity list on it.
     device_id: str | None = None
+    targets: list[str] = [entity_id]
     try:
         ent_res, = await _ws({"type": "config/entity_registry/list"})
         entity_entries = ent_res.get("result") or []
         match = next((e for e in entity_entries if e.get("entity_id") == entity_id), None)
         if not match:
-            # Entity wasn't in HA to begin with — fall through to local cleanup.
             log_info(f"[API] delete_ha_entity: {entity_id} not in HA registry (already gone)")
         else:
             device_id = match.get("device_id")
+        if delete_device and device_id:
+            # Cascade scope: every entity HA has registered against this
+            # device. Ordered with the user's chosen entity first so its
+            # state_cache eviction and broadcast happen before any siblings
+            # — slightly nicer UX if the frontend is rendering siblings.
+            siblings = [
+                e.get("entity_id") for e in entity_entries
+                if e.get("device_id") == device_id and e.get("entity_id")
+            ]
+            targets = [entity_id] + [eid for eid in siblings if eid != entity_id]
     except Exception as e:
         log_info(f"[API] delete_ha_entity: HA registry lookup failed for {entity_id}: {e}")
 
-    ha_removed = False
-    ha_device_removed = False
-
-    # 2) Remove the entity from HA's entity registry.
+    ha_removed = False        # at least one entity removed from HA
+    ha_device_removed = False # parent device's config_entries removed
+    entities_removed: list[str] = []
     try:
-        res, = await _ws({"type": "config/entity_registry/remove", "entity_id": entity_id})
-        if res.get("success"):
-            ha_removed = True
-        else:
-            err = (res.get("error") or {}).get("message", "")
-            # "not_found" is fine — the entity may have been removed already.
-            if "not_found" not in err.lower() and "not found" not in err.lower():
-                log_info(f"[API] delete_ha_entity: HA refused removal of {entity_id}: {err}")
-    except Exception as e:
-        log_info(f"[API] delete_ha_entity: WS remove failed for {entity_id}: {e}")
+        from services.ha_subscriber import state_cache
+    except Exception:
+        state_cache = None
 
-    # 3) Optionally remove the parent device when it has no remaining entities.
+    # 2) Remove each target entity from HA + evict its state_cache row inline.
+    for eid in targets:
+        try:
+            res, = await _ws({"type": "config/entity_registry/remove", "entity_id": eid})
+            if res.get("success"):
+                ha_removed = True
+                entities_removed.append(eid)
+                if state_cache is not None:
+                    state_cache.pop(eid, None)
+            else:
+                err = (res.get("error") or {}).get("message", "")
+                # "not_found" is fine — the entity may have been removed already.
+                if "not_found" in err.lower() or "not found" in err.lower():
+                    entities_removed.append(eid)
+                    if state_cache is not None:
+                        state_cache.pop(eid, None)
+                else:
+                    log_info(f"[API] delete_ha_entity: HA refused removal of {eid}: {err}")
+        except Exception as e:
+            log_info(f"[API] delete_ha_entity: WS remove failed for {eid}: {e}")
+
+    # 3) When asked to remove the device too, drop its config_entries now
+    #    that we've cleared every entity. HA refuses device removal while
+    #    entities are still attached, hence the strict ordering.
     if delete_device and device_id:
         try:
-            # Re-list entity registry to see what's left after the removal.
-            ent_after, = await _ws({"type": "config/entity_registry/list"})
-            remaining = [
-                e for e in (ent_after.get("result") or [])
-                if e.get("device_id") == device_id
-            ]
-            if not remaining:
-                # Find the device's config_entries and remove from each.
-                dev_res, = await _ws({"type": "config/device_registry/list"})
-                target = next((d for d in (dev_res.get("result") or []) if d.get("id") == device_id), None)
-                config_entries = (target or {}).get("config_entries") or []
-                for ce in config_entries:
-                    try:
-                        await _ws({
-                            "type": "config/device_registry/remove_config_entry",
-                            "device_id": device_id,
-                            "config_entry_id": ce,
-                        })
-                        ha_device_removed = True
-                    except Exception as ce_err:
-                        log_info(f"[API] delete_ha_entity: remove_config_entry failed ({device_id}/{ce}): {ce_err}")
+            dev_res, = await _ws({"type": "config/device_registry/list"})
+            target = next((d for d in (dev_res.get("result") or []) if d.get("id") == device_id), None)
+            config_entries = (target or {}).get("config_entries") or []
+            for ce in config_entries:
+                try:
+                    await _ws({
+                        "type": "config/device_registry/remove_config_entry",
+                        "device_id": device_id,
+                        "config_entry_id": ce,
+                    })
+                    ha_device_removed = True
+                except Exception as ce_err:
+                    log_info(f"[API] delete_ha_entity: remove_config_entry failed ({device_id}/{ce}): {ce_err}")
         except Exception as e:
             log_info(f"[API] delete_ha_entity: device cleanup failed for {device_id}: {e}")
 
-    # 4) Always drop the Ziggy registry row — even if HA refused (the user
-    # asked to be rid of it, so don't strand them with a half-stuck device).
+    # 4) Drop the Ziggy registry rows for every removed entity. Done even
+    #    when HA refused (the user asked for it to be gone — don't strand
+    #    them with a half-stuck device).
     try:
         import services.device_registry as dr
         if not dr._initialized:
             dr.init()
+        wipe_set = set(entities_removed) or {entity_id}
         with dr._lock:
             before = len(dr._registry)
-            dr._registry[:] = [d for d in dr._registry if d.get("entity_id") != entity_id]
+            dr._registry[:] = [d for d in dr._registry if d.get("entity_id") not in wipe_set]
             if before != len(dr._registry):
                 dr._save_persistent(dr._registry)
     except Exception as e:
         log_info(f"[API] delete_ha_entity: registry cleanup failed for {entity_id}: {e}")
 
-    # 5) Strip from settings.yaml too. _seed_from_yaml re-adds anything
-    # listed in device_map on every Ziggy restart, so leaving the YAML
-    # entry behind would resurrect the device on the next boot.
-    try:
-        _strip_entity_from_yaml_device_map(entity_id)
-    except Exception as e:
-        log_info(f"[API] delete_ha_entity: YAML cleanup failed for {entity_id}: {e}")
+    # 5) Strip every removed entity from settings.yaml's `device_map` too.
+    #    Without this, `_seed_from_yaml` re-adds them on the next Ziggy boot
+    #    and the user's "deleted" device resurrects.
+    for eid in (entities_removed or [entity_id]):
+        try:
+            _strip_entity_from_yaml_device_map(eid)
+        except Exception as e:
+            log_info(f"[API] delete_ha_entity: YAML cleanup failed for {eid}: {e}")
 
-    # Bust the registry-snapshot cache so the next /api/rooms etc. fetches
-    # see the updated HA state instead of serving stale data for up to 15s.
+    # Bust the registry-snapshot cache AND the device-groups cache so the
+    # next /api/devices, /api/rooms, /api/devices/grouped all see the
+    # change instead of serving up to 60s of stale grouped data.
     if ha_removed or ha_device_removed:
         invalidate_registry_cache()
+        try:
+            from services.device_groups import invalidate_cache as _invalidate_groups
+            _invalidate_groups()
+        except Exception:
+            pass
     _refresh_device_registry()
-    log_info(f"[API] delete_ha_entity: {entity_id} done (ha={ha_removed}, device={ha_device_removed})")
-    return {"ok": True, "ha_removed": ha_removed, "ha_device_removed": ha_device_removed}
+    log_info(
+        f"[API] delete_ha_entity: {entity_id} done "
+        f"(removed={len(entities_removed)} entities, ha={ha_removed}, device={ha_device_removed})"
+    )
+    return {
+        "ok": True,
+        "ha_removed": ha_removed,
+        "ha_device_removed": ha_device_removed,
+        "entities_removed": entities_removed,
+    }
 
 
 # ---------------------------------------------------------------------------

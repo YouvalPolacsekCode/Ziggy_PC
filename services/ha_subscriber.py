@@ -135,10 +135,33 @@ async def _process_event(event: dict) -> None:
     """Handle a single state_changed event from HA."""
     data = event.get("event", {}).get("data", {})
     entity_id = data.get("entity_id")
-    new_state = data.get("new_state") or {}
-    old_state = data.get("old_state") or {}
-    if not entity_id or not new_state:
+    raw_new_state = data.get("new_state")
+    raw_old_state = data.get("old_state")
+    if not entity_id:
         return
+
+    # Entity removal: HA emits state_changed with new_state=None when the
+    # entity is dropped from the registry (manual delete, integration unload,
+    # device removal). Without this branch the state_cache row stays forever
+    # and /api/ha/entities keeps serving the ghost — that's how a deleted
+    # device "reappears" on the Devices page after the user confirms delete.
+    if raw_new_state is None:
+        had_entry = state_cache.pop(entity_id, None) is not None
+        if not had_entry:
+            return
+        try:
+            from backend.ws_manager import manager
+            await manager.broadcast({
+                "type": "entity_removed",
+                "entity_id": entity_id,
+            })
+        except Exception as e:
+            log_error(f"[HASubscriber] removal broadcast failed: {e}")
+        _dbus.emit("ha", VERBOSE, "ha_entity_removed", entity_id=entity_id)
+        return
+
+    new_state = raw_new_state
+    old_state = raw_old_state or {}
 
     prev_s = old_state.get("state", "")
     new_s = new_state.get("state", "unknown")

@@ -77,6 +77,41 @@ def get_ir_device(device_id: str) -> Optional[dict]:
     return None
 
 
+def _resolve_or_register_blaster_id(blaster_host: Optional[str], blaster_mac: Optional[str]) -> Optional[str]:
+    """Find or auto-register a blaster row for this device.
+
+    Looks up an existing blaster by MAC (preferred) or IP. If neither matches
+    a registered blaster yet (new install, or migration hasn't run), creates
+    one with a default name derived from the MAC so the device always has a
+    parent to point at. The user can rename the auto-registered blaster from
+    the Blasters admin UI later.
+    """
+    if not blaster_host and not blaster_mac:
+        return None
+    try:
+        from services import ir_blasters as bl
+        row = None
+        if blaster_mac:
+            row = bl.get_by_mac(blaster_mac)
+        if not row and blaster_host:
+            row = bl.get_by_host(blaster_host)
+        if row:
+            return row.get("id")
+        # Auto-register — better to have an unnamed row than no row at all.
+        # The IR Wizard's new "Name this blaster" step (Phase 5) calls
+        # create_blaster() with a real name BEFORE create_ir_device, so this
+        # path only fires for headless device creates (CLI / API direct).
+        new_row = bl.create_blaster(
+            name=f"IR Blaster ({(blaster_host or 'unknown')})",
+            mac=blaster_mac or "",
+            ip=blaster_host or "",
+        )
+        return new_row.get("id")
+    except Exception as e:
+        log_error(f"[IR] _resolve_or_register_blaster_id failed: {e}")
+        return None
+
+
 def create_ir_device(
     name: str,
     device_type: str,
@@ -91,6 +126,7 @@ def create_ir_device(
     ac_config: Optional[dict] = None,
     ha_entity_id: Optional[str] = None,
     blaster_host: Optional[str] = None,
+    blaster_mac: Optional[str] = None,
 ) -> dict:
     room_norm = (room or name).lower().replace(" ", "_")
     ha_device_namespace = f"{room_norm}_{device_type.lower()}"
@@ -129,6 +165,20 @@ def create_ir_device(
         #   - Raw code storage for signal matching
         # Falls back to HA remote.send_command if not set or if ir_codes missing.
         "blaster_host": blaster_host or None,
+        # MAC address of the Broadlink — stable across DHCP reassignments.
+        # Captured at pairing time when the wizard discovered the device by
+        # LAN broadcast. Used by `_hello_with_rediscovery` to pick the
+        # right device when the home has more than one Broadlink and the
+        # cached IP has gone stale. Stored canonical lowercase-hex with no
+        # separators. Optional — entries created via manual-IP entry don't
+        # have one until the first successful contact backfills it.
+        "blaster_mac": (blaster_mac or "").replace(":", "").replace("-", "").lower() or None,
+        # Stable reference to the parent blaster in the ir_blasters.json
+        # registry. Auto-resolved (or auto-registered) from the host+mac
+        # tuple above. The registry holds the canonical name / room /
+        # status — IR-device renderers should look up via blaster_id
+        # rather than relying on the denormalized fields here.
+        "blaster_id": _resolve_or_register_blaster_id(blaster_host, blaster_mac),
         # IR capability flags — derived from blaster_host presence.
         # can_receive_ir becomes True once blaster_host is set and listener starts.
         "ir_capabilities": {

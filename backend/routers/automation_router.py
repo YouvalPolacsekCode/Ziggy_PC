@@ -67,8 +67,14 @@ def _cap_snapshot(all_states, ir_devices=None):
     return detect_capabilities(all_states, ir_devices or [])
 
 
-def _enrich_template(tmpl, cap_map, existing_names=None):
-    """Return the serialisable template dict with all computed fields."""
+def _enrich_template(tmpl, cap_map, existing_names=None, signal_fires=None):
+    """Return the serialisable template dict with all computed fields.
+
+    signal_fires: optional {template_id: fire_record} from
+    pattern_detector.get_active_template_signals(). When present, templates
+    whose habit_signal is currently firing get an extra `habit_signal_fired`
+    field so the Suggested tab can surface them with a re-surfacing badge.
+    """
     from services.automation_templates import (
         build_prefill, can_run as tmpl_can_run,
         get_matched_caps, get_missing_required, get_missing_optional, friendly_cap,
@@ -103,7 +109,7 @@ def _enrich_template(tmpl, cap_map, existing_names=None):
     else:
         tier = "unavailable"
 
-    return {
+    enriched = {
         **tmpl,
         "can_run":             runnable,
         "tier":                tier,
@@ -114,8 +120,15 @@ def _enrich_template(tmpl, cap_map, existing_names=None):
         "already_exists":      already_exists,
     }
 
+    # Attach habit_signal fire info if this template's curated signal is
+    # currently firing. The frontend uses this to add a "we noticed you keep
+    # doing X" re-surfacing badge on top of the regular Suggested card.
+    if signal_fires and tmpl.get("id") in signal_fires:
+        enriched["habit_signal_fired"] = signal_fires[tmpl["id"]]
 
-@router.get("/api/automations/templates")
+    return enriched
+
+
 def _safe_list_automations() -> list:
     """Wrap ha_list_automations so a transient HA failure (during the
     parallel fetch in get_suggested_templates) doesn't break the page."""
@@ -125,6 +138,18 @@ def _safe_list_automations() -> list:
         return []
 
 
+def _safe_signal_fires() -> dict:
+    """Wrap get_active_template_signals so a broken events.jsonl or
+    pattern_detector import failure can't take down the templates endpoint.
+    Returns {template_id: fire_record} on success, {} on any failure."""
+    try:
+        from services.pattern_detector import get_active_template_signals
+        return get_active_template_signals() or {}
+    except Exception:
+        return {}
+
+
+@router.get("/api/automations/templates")
 async def get_automation_templates():
     """Return the full curated template library with runability flags."""
     from services.automation_templates import TEMPLATES
@@ -139,8 +164,9 @@ async def get_automation_templates():
     except Exception:
         pass
     cap_map = _cap_snapshot(all_states, ir_devices)
+    signal_fires = _safe_signal_fires()
 
-    return {"templates": [_enrich_template(t, cap_map) for t in TEMPLATES]}
+    return {"templates": [_enrich_template(t, cap_map, signal_fires=signal_fires) for t in TEMPLATES]}
 
 
 @router.get("/api/automations/templates/suggested")
@@ -162,13 +188,14 @@ async def get_suggested_templates():
     except Exception:
         pass
     cap_map = _cap_snapshot(all_states, ir_devices)
+    signal_fires = _safe_signal_fires()
 
     existing_names: set = {(a.get("name") or "").lower() for a in existing_autos}
 
     suggested = [
-        _enrich_template(t, cap_map, existing_names)
+        _enrich_template(t, cap_map, existing_names, signal_fires=signal_fires)
         for t in TEMPLATES
-        if matches_suggestion(t, cap_map)
+        if matches_suggestion(t, cap_map) or t.get("id") in signal_fires
     ]
     # Sort: ready first, then partial, then unavailable
     order = {"ready": 0, "partial": 1, "unavailable": 2}
@@ -176,6 +203,51 @@ async def get_suggested_templates():
 
     return {"suggested": suggested}
 
+
+# ── Circadian Lighting bundle ────────────────────────────────────────────────
+# The "Smart Light Schedule" suggestion (D1) expands to 4 HA automations
+# (sunrise / solar-noon / sunset / bedtime). The standard wizard speaks the
+# single-trigger schema only, so Configure on this suggestion routes here
+# instead. The bundle is idempotent — re-saving overwrites the same HA IDs.
+
+class CircadianBundleBody(BaseModel):
+    lights:  list[str]
+    bedtime: Optional[str] = "22:00"
+
+
+@router.get("/api/automations/circadian-bundle")
+async def get_circadian_bundle():
+    from services.circadian_builder import get_bundle
+    return await asyncio.to_thread(get_bundle)
+
+
+@router.post("/api/automations/circadian-bundle")
+async def save_circadian_bundle(body: CircadianBundleBody):
+    from services.circadian_builder import save_bundle
+    result = await asyncio.to_thread(save_bundle, body.lights, body.bedtime or "22:00")
+    if not result.get("ok"):
+        _bus.emit("automation", _BASIC, "circadian_bundle_save_failed",
+                  light_count=len(body.lights), bedtime=body.bedtime,
+                  failed=[f.get("id") for f in result.get("failed", [])],
+                  result="error")
+        raise HTTPException(status_code=502, detail=result)
+    _bus.emit("automation", _BASIC, "circadian_bundle_saved",
+              light_count=len(body.lights), bedtime=body.bedtime,
+              saved=result.get("saved", []), result="ok")
+    return {"ok": True, **result}
+
+
+@router.delete("/api/automations/circadian-bundle")
+async def delete_circadian_bundle():
+    from services.circadian_builder import delete_bundle
+    result = await asyncio.to_thread(delete_bundle)
+    _bus.emit("automation", _BASIC, "circadian_bundle_deleted",
+              deleted=result.get("deleted", []),
+              missed=result.get("missed", []), result="ok")
+    return result
+
+
+# ── Single-automation endpoints ──────────────────────────────────────────────
 
 @router.get("/api/automations/{automation_id}")
 async def get_automation_by_id(automation_id: str):
@@ -233,6 +305,16 @@ async def toggle_automation_endpoint(automation_id: str, body: AutomationToggle)
                   automation_id=automation_id, enabled=body.enabled,
                   result="error")
         raise HTTPException(status_code=502, detail="Failed to toggle automation")
+    # Disabling a Fake Occupancy automation must immediately stop its
+    # multi-day activation — otherwise the per-minute scheduler would keep
+    # cycling lights even after the user toggled it off in the UI. Safe
+    # no-op for any automation that isn't currently running an activation.
+    if not body.enabled:
+        try:
+            from services import fake_occupancy_scheduler
+            fake_occupancy_scheduler.stop(automation_id)
+        except Exception:
+            pass
     _bus.emit("automation", _BASIC, "automation_toggled",
               automation_id=automation_id, enabled=body.enabled, result="ok")
     return {"ok": True, "enabled": body.enabled}
@@ -284,6 +366,13 @@ async def delete_automation_endpoint(automation_id: str):
     delete_ziggy_actions(automation_id)
     delete_automation_meta(automation_id)
     delete_history(automation_id)
+    # Drop any Fake Occupancy activation tied to this automation so a deleted
+    # "Away — Simulate Presence" stops the per-minute scheduler immediately.
+    try:
+        from services import fake_occupancy_scheduler
+        fake_occupancy_scheduler.stop(automation_id)
+    except Exception:
+        pass
     _bus.emit("automation", _BASIC, "automation_deleted",
               automation_id=automation_id,
               ha_deleted=ha_ok, ziggy_deleted=ziggy_ok,
@@ -296,6 +385,25 @@ async def delete_automation_endpoint(automation_id: str):
 # The handler is service-worker-driven (no bearer header possible), so it had
 # to leave a router mounted under `_auth = [Depends(get_current_user)]`.
 # See push_action_router.py for the design rationale and the bucket-D comment.
+
+
+# ── Fake Occupancy (Away — Simulate Presence) status / stop ─────────────────
+# The "start" side runs through the normal Run-automation path (POST /trigger),
+# which executes a `fake_occupancy_start` step. These endpoints expose the
+# scheduler's internal activation list so the UI can show "Day 3 of 7" and
+# offer a Stop button without having to disable the whole automation.
+
+@router.get("/api/automations/fake_occupancy/active")
+async def list_fake_occupancy_active():
+    from services import fake_occupancy_scheduler
+    return {"activations": fake_occupancy_scheduler.list_active()}
+
+
+@router.post("/api/automations/{automation_id}/fake_occupancy/stop")
+async def stop_fake_occupancy(automation_id: str):
+    from services import fake_occupancy_scheduler
+    stopped = fake_occupancy_scheduler.stop(automation_id)
+    return {"ok": True, "stopped": stopped}
 
 
 # ── Manual override inspection / clearing ────────────────────────────────────

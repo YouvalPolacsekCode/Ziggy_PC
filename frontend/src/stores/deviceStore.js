@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices, getUiPrefs, putUiPrefs, getDeviceGroups, withRetry } from '../lib/api'
 import { CONTROLLABLE_DOMAINS, TOGGLEABLE_DOMAINS, DOMAIN_REGISTRY } from '../lib/domainRegistry'
+import { entityDisplayName } from '../lib/utils'
 
 export { CONTROLLABLE_DOMAINS }
 
@@ -536,6 +537,127 @@ export const useDeviceStore = create((set, get) => ({
     })
   },
 
+  // Optimistic rename — patches every store surface that carries this
+  // entity's name so the UI reflects the new label immediately, before
+  // the next fetchAll round-trip completes. Without this, the Devices
+  // page (which reads from `entities`) kept showing the old name until
+  // the next full refresh, while the device detail page (which calls
+  // load() inline) showed the new name — making each rename appear to
+  // land one cycle late. Covers:
+  //   - entities[]            (display_name + friendly_name)
+  //   - groupById[id].name    (when this entity is the group's primary)
+  //   - ziggyRooms[].devices  (the per-room device row's ha_attributes)
+  // Backend's `entity_renamed` WS broadcast routes other tabs/devices
+  // through this same path.
+  renameEntity: (entityId, newName) => {
+    if (!entityId || !newName) return
+    set((s) => {
+      const idx = s.entities.findIndex((e) => e.entity_id === entityId)
+      if (idx === -1) return s
+      const prev = s.entities[idx]
+      if (prev.display_name === newName && prev.friendly_name === newName) return s
+
+      const nextEntities = [...s.entities]
+      nextEntities[idx] = { ...prev, display_name: newName, friendly_name: newName }
+
+      // Update group name when this entity is the group's primary. Tile/card
+      // surfaces render group.name when it exists, so missing this would
+      // leave the room/devices grid showing the old name even after the
+      // entity itself was patched above.
+      const groupId = s.groupByEntityId[entityId]
+      let nextGroupById = s.groupById
+      if (groupId) {
+        const group = s.groupById[groupId]
+        if (group && group.primary_entity_id === entityId && group.name !== newName) {
+          nextGroupById = { ...s.groupById, [groupId]: { ...group, name: newName } }
+        }
+      }
+
+      // Patch ziggyRooms only when the entity actually lives in a room.
+      let nextRooms = s.ziggyRooms
+      const roomIdx = s.ziggyRooms.findIndex(
+        (r) => (r.devices || []).some((d) => d.entity_id === entityId),
+      )
+      if (roomIdx !== -1) {
+        const r = s.ziggyRooms[roomIdx]
+        nextRooms = [...s.ziggyRooms]
+        nextRooms[roomIdx] = {
+          ...r,
+          devices: r.devices.map((d) =>
+            d.entity_id === entityId
+              ? { ...d, ha_attributes: { ...(d.ha_attributes || {}), friendly_name: newName } }
+              : d
+          ),
+        }
+      }
+
+      return {
+        entities: nextEntities,
+        groupById: nextGroupById,
+        ziggyRooms: nextRooms,
+      }
+    })
+  },
+
+  // Drop an entity from the in-memory store after the backend confirmed it
+  // was removed from HA. Called by App.jsx on the `entity_removed` broadcast
+  // and by DeviceDetail right after a successful delete — so the Devices page
+  // shows the change instantly without waiting for the next fetchAll.
+  // Also clears every dependent index (status map, group lookups, ziggyRooms
+  // device row) so stale references don't keep the ghost alive in
+  // group-aware code paths.
+  removeEntity: (entityId) => {
+    set((s) => {
+      const hadEntity = s.entities.some((e) => e.entity_id === entityId)
+      const hadStatus = entityId in s.deviceStatusMap
+      if (!hadEntity && !hadStatus) return s
+
+      const nextStatusMap = { ...s.deviceStatusMap }
+      delete nextStatusMap[entityId]
+
+      const groupId = s.groupByEntityId[entityId]
+      let nextGroupByEntityId = s.groupByEntityId
+      let nextGroupById = s.groupById
+      if (groupId) {
+        nextGroupByEntityId = { ...s.groupByEntityId }
+        delete nextGroupByEntityId[entityId]
+        const group = s.groupById[groupId]
+        if (group) {
+          const filtered = (group.entities || []).filter((e) => e.entity_id !== entityId)
+          nextGroupById = { ...s.groupById }
+          if (filtered.length === 0) {
+            delete nextGroupById[groupId]
+          } else {
+            nextGroupById[groupId] = { ...group, entities: filtered }
+          }
+        }
+      }
+
+      let nextZiggyRooms = s.ziggyRooms
+      const roomIdx = s.ziggyRooms.findIndex(
+        (r) => (r.devices || []).some((d) => d.entity_id === entityId),
+      )
+      if (roomIdx !== -1) {
+        const r = s.ziggyRooms[roomIdx]
+        nextZiggyRooms = [...s.ziggyRooms]
+        nextZiggyRooms[roomIdx] = {
+          ...r,
+          devices: r.devices.filter((d) => d.entity_id !== entityId),
+        }
+      }
+
+      return {
+        entities: s.entities.filter((e) => e.entity_id !== entityId),
+        unclaimedDevices: s.unclaimedDevices.filter((d) => d.entity_id !== entityId),
+        noRoomDevices: s.noRoomDevices.filter((d) => d.entity_id !== entityId),
+        deviceStatusMap: nextStatusMap,
+        groupByEntityId: nextGroupByEntityId,
+        groupById: nextGroupById,
+        ziggyRooms: nextZiggyRooms,
+      }
+    })
+  },
+
   // Update IR device assumed state optimistically in the entity list
   updateIrAssumedState: (irId, newState) => {
     set((s) => ({
@@ -626,9 +748,12 @@ export const useDeviceStore = create((set, get) => ({
   getPresenceSummary: () => {
     const { entities } = get()
     const results = []
+    // All three loops resolve names via display_name first so a Ziggy
+    // rename takes effect in the spoken/written summary immediately
+    // instead of after HA propagates the registry update.
     for (const e of entities) {
       if (e.domain === 'person' && e.state === 'home') {
-        const name = (e.friendly_name || e.entity_id.split('.')[1]).replace(/_/g, ' ')
+        const name = entityDisplayName(e)
         results.push(`${name} is home`)
       }
     }
@@ -636,7 +761,7 @@ export const useDeviceStore = create((set, get) => ({
       if (e.domain !== 'binary_sensor') continue
       if (!['occupancy', 'presence', 'motion'].includes(e.device_class)) continue
       if (e.state !== 'on') continue
-      const raw = (e.friendly_name || e.entity_id.split('.')[1]).replace(/_/g, ' ')
+      const raw = entityDisplayName(e)
       const room = raw.replace(/\s+(Motion Occupancy|Occupancy|Motion|Presence|Sensor)$/i, '').trim()
       results.push(`Someone is in the ${room}`)
     }
@@ -645,7 +770,7 @@ export const useDeviceStore = create((set, get) => ({
       const id = e.entity_id.toLowerCase()
       if (!id.includes('presence') && !id.includes('occupancy')) continue
       if (e.state === 'occupied') {
-        const room = (e.friendly_name || id.split('.')[1]).replace(/_/g, ' ')
+        const room = entityDisplayName(e)
         results.push(`${room} is occupied`)
       }
     }

@@ -227,18 +227,18 @@ function MeasurementPanel({room,pos,onResize,onClose}) {
   useEffect(()=>{setH(String(pos.h))},[pos.h])
   const chW=v=>{setW(v);const n=parseFloat(v);if(!isNaN(n)&&n>=MIN_M)onResize(n,pos.h)}
   const chH=v=>{setH(v);const n=parseFloat(v);if(!isNaN(n)&&n>=MIN_M)onResize(pos.w,n)}
-  const inp="w-16 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-center text-zinc-900 dark:text-zinc-100"
+  const inp="w-16 px-2 py-1 rounded-lg border border-line bg-surface text-sm text-center text-ink"
   return (
-    <div className="p-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30">
+    <div className="p-3 rounded-xl border border-accent-soft bg-accent-soft">
       <div className="flex items-center justify-between mb-2">
-        <p dir="auto" className="text-xs font-semibold text-violet-700 dark:text-violet-400">{room.name}</p>
-        <button onClick={onClose} aria-label={t('common.close')} className="text-xs text-zinc-400 hover:text-zinc-600">✕</button>
+        <p dir="auto" className="text-xs font-semibold text-accent">{room.name}</p>
+        <button onClick={onClose} aria-label={t('common.close')} className="text-xs text-ink-mute hover:text-ink-2">✕</button>
       </div>
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+        <label className="flex items-center gap-1.5 text-xs text-ink-mute">
           {t('homeMap.widthLabel')} <input type="number" min={MIN_M} step={0.5} value={w} onChange={e=>chW(e.target.value)} className={inp}/> {t('homeMap.metersUnit')}
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+        <label className="flex items-center gap-1.5 text-xs text-ink-mute">
           {t('homeMap.heightLabel')} <input type="number" min={MIN_M} step={0.5} value={h} onChange={e=>chH(e.target.value)} className={inp}/> {t('homeMap.metersUnit')}
         </label>
       </div>
@@ -429,7 +429,7 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
     return (pa.x+pa.y)-(pb.x+pb.y)
   })
 
-  if(loading) return <div className="flex items-center justify-center h-48 text-zinc-400 text-sm">{t('homeMap.loadingFloorPlan')}</div>
+  if(loading) return <div className="flex items-center justify-center h-48 text-ink-mute text-sm">{t('homeMap.loadingFloorPlan')}</div>
 
   return (
     <div className="flex flex-col gap-2">
@@ -439,14 +439,14 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
           <button
             onClick={()=>{setLocked(l=>!l);setSelectedId(null)}}
             className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-              locked?'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    :'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}
+              locked?'bg-ink text-bg'
+                    :'bg-surface-2 text-ink-2'}`}
           >
             {locked?t('homeMap.locked'):t('homeMap.editing')}
           </button>
         )}
         {!viewOnly && (
-          <p className="text-xs text-zinc-400 flex-1">
+          <p className="text-xs text-ink-mute flex-1">
             {locked?t('homeMap.tapEditingHint'):t('homeMap.dragRoomsHint')}
           </p>
         )}
@@ -456,15 +456,15 @@ export function HomeMapCanvas({ rooms, viewOnly=false }) {
 
         {!viewOnly && (
           <>
-            <span className="text-[10px] text-zinc-400">{Math.round(zoom*100)}%</span>
-            <button onClick={resetLayout} className="text-xs text-violet-500 underline">{t('homeMap.reset')}</button>
+            <span className="text-[10px] text-ink-mute">{Math.round(zoom*100)}%</span>
+            <button onClick={resetLayout} className="text-xs text-accent underline">{t('homeMap.reset')}</button>
           </>
         )}
       </div>
 
       {/* Canvas */}
       <div ref={containerRef}
-        className="w-full rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700"
+        className="w-full rounded-2xl overflow-hidden border border-line"
         style={{height:stageH, background:bgColor}}
       >
         <Stage ref={stageRef} width={stageW} height={stageH} draggable

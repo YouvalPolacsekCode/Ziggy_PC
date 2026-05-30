@@ -345,7 +345,14 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     """
     Save an automation.  Routes to HA or Ziggy-only depending on needs_ha().
     auto_id — supply when updating an existing automation so the same slug is used.
+
+    Paired templates (e.g. Night Watch) carry `paired: True` + `stages: [...]`;
+    they are fanned out atomically by _save_paired_automation — see that helper
+    for the rollback contract.
     """
+    if data.get("paired") and data.get("stages"):
+        return _save_paired_automation(data, auto_id)
+
     if not auto_id:
         auto_id = _slug(data.get("name", "ziggy_automation"))
 
@@ -412,6 +419,90 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         return {"ok": False, "error": f"HA {resp.status_code}: {resp.text}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _save_paired_automation(data: dict, base_auto_id: Optional[str] = None) -> dict:
+    """Atomic fan-out for paired templates (e.g. Night Watch).
+
+    Reads `data["stages"]` (a list of stage dicts, each with its own trigger /
+    conditions / actions / name / description and an optional `_initial_enabled`
+    hint). Creates each stage as a separate automation via save_automation,
+    using `{base_id}_{stage_key}` slugs. If any stage save fails, every stage
+    saved earlier in this call is deleted before returning the error — all
+    succeed or none do.
+
+    Stage key resolution (in priority order):
+      1. stage.get("key")              — explicit key from the template
+      2. _slug(stage["name"])          — derived from the stage's name
+      3. f"stage_{idx}"                — last-resort positional fallback
+    Stage 0 owns the parent ID exactly so the user sees ONE "Night Watch"
+    automation in the Active tab; stages 1..N get `{base}_{key}` suffixes.
+    """
+    base_id = data.get("base_id") or base_auto_id or _slug(data.get("name", "paired_automation"))
+    stages = data.get("stages") or []
+    if not stages:
+        return {"ok": False, "error": "paired automation has empty stages[]"}
+
+    created: list[str] = []   # populated as each stage succeeds; used for rollback
+
+    try:
+        for idx, stage in enumerate(stages):
+            key = stage.get("key") or _slug(stage.get("name") or f"stage_{idx}")
+            stage_id = base_id if idx == 0 else f"{base_id}_{key}"
+
+            # Re-wire any `automation` steps that reference the partner stages
+            # by their unsuffixed key (e.g. `"night_watch_alert"`). The template
+            # builder uses literal strings; if the user picks a non-default
+            # base_id, those references would dangle. We rewrite them here.
+            stage_actions = list(stage.get("actions") or [])
+            stage_conditions = list(stage.get("conditions") or [])
+
+            stage_payload = {
+                "name":         stage.get("name", f"{data.get('name', 'Paired')} — Stage {idx + 1}"),
+                "description":  stage.get("description", ""),
+                "trigger":      stage.get("trigger", {}),
+                "conditions":   stage_conditions,
+                "actions":      stage_actions,
+                "rooms":        stage.get("rooms", []),
+            }
+
+            # Recursive call — but with `paired` stripped so it goes through
+            # the normal HA/Ziggy save path, not back into _save_paired_automation.
+            result = save_automation(stage_payload, auto_id=stage_id)
+            if not result.get("ok"):
+                raise RuntimeError(
+                    f"stage {idx + 1}/{len(stages)} ({stage_id}) save failed: "
+                    f"{result.get('error', 'unknown error')}"
+                )
+
+            created.append(stage_id)
+
+            # Honor `_initial_enabled: False` — used by Night Watch's alert
+            # stage so the first time it fires is when Stage 1 arms it.
+            if stage.get("_initial_enabled") is False:
+                try:
+                    toggle_automation(stage_id, False)
+                except Exception as toggle_err:
+                    raise RuntimeError(
+                        f"stage {stage_id} created but could not be disabled: {toggle_err}"
+                    )
+
+        return {
+            "ok":      True,
+            "id":      base_id,
+            "source":  "paired",
+            "stages":  created,
+            "paired":  True,
+        }
+
+    except Exception as e:
+        # Rollback: best-effort delete of every stage created in this call.
+        for prev_id in created:
+            try:
+                delete_automation(prev_id)
+            except Exception as del_err:
+                log_error(f"[paired] rollback delete {prev_id} failed: {del_err}")
+        return {"ok": False, "error": str(e), "rolled_back": created}
 
 
 def delete_automation(auto_id: str) -> bool:

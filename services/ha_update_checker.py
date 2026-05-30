@@ -11,7 +11,7 @@ Flow:
   6. Match breaking change text against risk rules keyed to profile
   7. Score → risk level (safe / low / medium / high / unknown)
   8. Cache result 1 h; persist history to user_files/update_history.json
-  9. Notify via web push (+ Telegram if configured) when risk > safe
+  9. Notify via Ziggy app push when risk > safe
 
 Safety rules baked in:
   - NEVER auto-updates HA
@@ -507,13 +507,12 @@ def get_history() -> list[dict]:
 # ── Notification ───────────────────────────────────────────────────────────────
 
 def _notify(report: dict) -> None:
-    """Send web push (and optionally Telegram) notification for a risky update."""
+    """Send Ziggy app push notification for a risky update."""
     risk_level = report.get("risk_level", "unknown")
     if risk_level == "safe":
         return
 
     latest  = report.get("latest_version", "unknown")
-    current = report.get("current_version", "unknown")
     risk_count = len(report.get("risks", []))
 
     title = f"HA Update Available: {latest}"
@@ -522,51 +521,13 @@ def _notify(report: dict) -> None:
         body_parts.append(f"{risk_count} potential compatibility issue{'s' if risk_count > 1 else ''} detected.")
     body = " · ".join(body_parts)
 
-    # Web push — fire-and-forget so a slow VAPID endpoint can't stall the
+    # Ziggy push — fire-and-forget so a slow VAPID endpoint can't stall the
     # checker thread mid-cycle.
     try:
         from services.push_notify import push_notify_fire_and_forget
         push_notify_fire_and_forget(title, body, "/ha-update", "ha_update")
     except Exception as exc:
         log_error(f"[UpdateChecker] push notify failed: {exc}")
-
-    # Telegram — if bot token and allowed users are configured
-    _notify_telegram(latest, current, risk_level, report.get("risks", []))
-
-
-def _notify_telegram(latest: str, current: str, risk_level: str, risks: list[dict]) -> None:
-    tg = settings.get("telegram", {})
-    token = tg.get("token")
-    allowed = tg.get("allowed_users") or []
-    if not token or not allowed:
-        return
-
-    icon_map = {"safe": "✅", "low": "🟡", "medium": "🟠", "high": "🔴", "unknown": "❓"}
-    icon = icon_map.get(risk_level, "❓")
-
-    lines = [
-        f"{icon} *HA Update Available*",
-        f"Current: `{current}` → New: `{latest}`",
-        f"Risk: *{risk_level.upper()}*",
-        "",
-    ]
-    if risks:
-        lines.append("*What may break:*")
-        for r in risks[:5]:
-            lines.append(f"• {r['feature']}: {r['message']}")
-    lines += ["", "⚠️ Back up Home Assistant before updating.", "Open Ziggy → HA Update for full details."]
-
-    text = "\n".join(lines)
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    for chat_id in allowed:
-        try:
-            _requests.post(url, json={
-                "chat_id":    chat_id,
-                "text":       text,
-                "parse_mode": "Markdown",
-            }, timeout=10)
-        except Exception as exc:
-            log_error(f"[UpdateChecker] Telegram notify to {chat_id} failed: {exc}")
 
 
 # ── Main check function ────────────────────────────────────────────────────────

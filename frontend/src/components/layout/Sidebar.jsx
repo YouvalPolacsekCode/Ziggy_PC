@@ -60,6 +60,11 @@ export function Sidebar({ connected }) {
         // gap that leaves an empty band at the bottom of fixed/sticky cols.
         height: 'var(--vh)',
         width: 'var(--sidebar-w)',
+        // Sidebar bg matches the tile/card surface (var(--surface) =
+        // #14191D in dark, #FFFFFF in light). Stays one step ABOVE the
+        // page bg so the boundary between sidebar and main is a clean
+        // surface-on-bg step, not a flat hairline. Nav-item hover/active
+        // states use --surface-2 so they're visible against this bg.
         background: 'var(--surface)',
         borderRight: '0.5px solid var(--line)',
         padding: '18px 10px',

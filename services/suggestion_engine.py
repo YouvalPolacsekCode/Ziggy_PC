@@ -7,7 +7,7 @@ Flow:
   2. _quality_gate()       — ask Ollama (local, free) whether each candidate is worth
                              surfacing; filter out noise; generate polished user copy
   3. add_suggestion()      — persist at most 1 new suggestion per run (hard cap)
-  4. notify_fn()           — push to Telegram if provided
+  4. notify_fn()           — Ziggy app push if provided
 
 Ollama runs locally — no tokens, no billing, no internet required.
 Falls back to heuristic copy if Ollama is unavailable.

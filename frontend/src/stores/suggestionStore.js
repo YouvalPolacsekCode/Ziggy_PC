@@ -19,6 +19,17 @@ export const useSuggestionStore = create((set, get) => ({
     }
   },
 
+  // Populate the habit-suggestion slice from a unified-feed response.
+  // The unified feed returns the original habit suggestion under each
+  // item's `raw` field, so we restore the persisted shape verbatim.
+  // Callers should pass the full items array; non-habit items are ignored.
+  setFromFeed: (items) => {
+    const habits = (items || [])
+      .filter((it) => it && it.source === 'habit')
+      .map((it) => it.raw || it)
+    set({ suggestions: habits })
+  },
+
   accept: async (id) => {
     await acceptSuggestion(id)
     await get().fetch()

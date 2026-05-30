@@ -45,6 +45,330 @@ _DISCOVERY_CACHE_TTL = 60  # seconds — reuse results within 1 minute
 _LEARN_WINDOW = 28
 _POLL_INTERVAL = 0.35  # seconds between check_data() polls
 
+# Per-host "last rediscovery attempted at" timestamp — keeps us from triggering
+# a LAN broadcast on every single retry inside a tight failure loop. Honoured
+# by `_hello_with_rediscovery` below.
+_rediscovery_cooldown: dict[str, float] = {}
+_REDISCOVERY_COOLDOWN_S = 20.0
+
+
+# Pretty labels for Broadlink hardware type strings reported by
+# python-broadlink. Used by `_humanize_broadlink_name` when the device's
+# self-reported `name` looks like a factory default.
+_BROADLINK_TYPE_LABELS = {
+    "RM4MINI":   "RM4 Mini",
+    "RM4PRO":    "RM4 Pro",
+    "RM4MINIB":  "RM4 Mini",
+    "RM4C":      "RM4C",
+    "RM3MINI":   "RM3 Mini",
+    "RM3PROPLUS":"RM3 Pro+",
+    "RMMINIB":   "RM Mini",
+    "RMPRO":     "RM Pro",
+    "RMPLUS":    "RM Plus",
+    "MP1":       "MP1",
+    "SP2":       "SP2",
+    "SP3":       "SP3",
+}
+
+# Factory-default device names from Broadlink + common IR-blaster brands
+# that Ziggy may discover (some flash Broadlink-compatible firmware and
+# show up via python-broadlink's discover). All are exact, case-folded
+# matches against the device's self-reported name. Anything not in this
+# list AND not entirely non-ASCII is treated as user-customized and
+# preserved as-typed.
+_BROADLINK_FACTORY_NAMES = frozenset({
+    # Broadlink cloud defaults (the dominant case worldwide)
+    "智能遥控",         # zh: Smart Remote — every unit ships with this
+    "万能遥控",         # zh: Universal Remote — older RM3 variants
+    "万能遥控器",       # zh: Universal Remote (formal)
+    "智能遥控器",       # zh: Smart Remote (formal)
+    "远程遥控",         # zh: Remote Control
+    "黑豆",             # zh: "Black Bean" — RM3 mini's nickname
+    "smart remote",
+    "smart ir",
+    "universal remote",
+    "broadlink",
+    "broadlink rm",
+    # IHC / OEM clones that flash a Broadlink-compatible firmware
+    "ihc",
+    "ir hub",
+    "ir blaster",
+    "blaster",
+    # Tuya-rebranded IR hubs that some integrations route through here
+    "smart ir remote",
+    "智能红外遥控",     # zh: Smart Infrared Remote (Tuya)
+    "红外遥控",         # zh: Infrared Remote
+    # Xiaomi / Mi (when discoverable on the same protocol)
+    "米家万能遥控",     # zh: Mi Home Universal Remote
+    "万能遥控器pro",    # zh: Universal Remote Pro
+    # Generic placeholders
+    "device",
+    "new device",
+    "untitled",
+    "(null)",
+    "none",
+})
+
+
+def _humanize_broadlink_name(raw: str, type_str: str, mac: bytes) -> str:
+    """Replace factory-default IR-blaster names with something readable.
+
+    Returns the raw name as-is when the user has customized it. Replaces
+    when:
+      1. Empty / null / whitespace-only.
+      2. Exact match (case-folded, whitespace-trimmed) against the known
+         factory-default list above.
+      3. Entirely non-ASCII (the device has not been renamed in any app —
+         user-typed mixed-locale strings like "Living Room 客厅" still
+         contain ASCII and are preserved).
+
+    Replacement format: "Broadlink RM4 Mini · FC67" — pretty type label
+    plus the MAC's last 4 hex chars. The MAC suffix disambiguates homes
+    with multiple identical units, which a commercial-tier installation
+    will commonly have.
+    """
+    name = (raw or "").strip()
+    has_ascii = any(c.isascii() and c.isalnum() for c in name)
+    looks_factory = (
+        not name
+        or not has_ascii                            # Chinese / Cyrillic / Arabic / Japanese / etc.
+        or name.lower() in _BROADLINK_FACTORY_NAMES
+    )
+    if not looks_factory:
+        return name
+    pretty_type = _BROADLINK_TYPE_LABELS.get(
+        (type_str or "").upper(),
+        (type_str or "Blaster").replace("_", " ").title(),
+    )
+    short_mac = ""
+    try:
+        short_mac = mac.hex()[-4:].upper() if mac else ""
+    except Exception:
+        pass
+    return f"Broadlink {pretty_type}" + (f" · {short_mac}" if short_mac else "")
+
+
+def _norm_mac(mac) -> str:
+    """Canonical lowercase-hex MAC, no separators.
+
+    `dev.mac.hex()` gives `ec0bae6afc67`; user-facing UI strings come in as
+    `ec:0b:ae:6a:fc:67` or `EC-0B-AE-6A-FC-67`. We strip and lowercase so
+    every comparison through the rediscovery path is symmetric regardless
+    of which source the MAC originated from.
+    """
+    if not mac:
+        return ""
+    if isinstance(mac, (bytes, bytearray)):
+        return mac.hex().lower()
+    return str(mac).replace(":", "").replace("-", "").replace(" ", "").lower()
+
+
+def _hello_with_rediscovery(host: str, timeout: int = 3):
+    """`broadlink.hello(host)` with automatic LAN-rediscovery on failure.
+
+    Broadlink devices get their IP via DHCP, so the address Ziggy has cached
+    in `ir_devices.json` goes stale every time the router reboots or the
+    lease rotates. Without recovery, every IR send fails until the user
+    manually re-enters the new IP. This wrapper:
+
+      1. Tries the cached host first (fast path, identical to upstream).
+         On success, lazy-backfills the device's MAC if it wasn't stored
+         (handles records created before MAC capture was added) AND marks
+         the matching blaster registry row as last-seen-just-now.
+      2. On failure, throttle-checks the rediscovery cooldown — we don't
+         want to broadcast-scan the LAN on every retry inside a tight loop.
+      3. If allowed, runs `broadlink.discover()`. When the device's MAC is
+         known we match by MAC (handles multi-Broadlink homes correctly).
+         When MAC isn't known and exactly one Broadlink answers, we accept
+         that as the device. Multiple-without-MAC re-raises rather than
+         guessing.
+      4. Persists the new IP back to `ir_devices.json` + the blaster
+         registry (the authoritative source for blaster identity) and
+         returns the live device handle so the caller can complete its send.
+    """
+    import broadlink
+    try:
+        dev = broadlink.hello(host, timeout=timeout)
+        mac_norm = _norm_mac(dev.mac)
+        # Lazy MAC backfill — store on first successful contact so future
+        # rediscoveries can disambiguate even in multi-Broadlink homes.
+        try:
+            _persist_blaster_mac(host, mac_norm)
+        except Exception:
+            pass
+        # Registry heartbeat: mark this blaster as freshly contacted, so the
+        # UI's status chip reads "online" and last_seen_at is accurate.
+        try:
+            from services import ir_blasters as _bl
+            row = _bl.get_by_mac(mac_norm) if mac_norm else _bl.get_by_host(host)
+            if row:
+                _bl.mark_seen(row["id"], host)
+        except Exception:
+            pass
+        return dev
+    except Exception as e:
+        now = time.monotonic()
+        last = _rediscovery_cooldown.get(host, 0.0)
+        if (now - last) < _REDISCOVERY_COOLDOWN_S:
+            raise
+        _rediscovery_cooldown[host] = now
+        log_info(f"[IR] hello({host}) failed ({type(e).__name__}); attempting LAN rediscovery")
+        try:
+            found = broadlink.discover(timeout=3)
+        except Exception as disc_err:
+            log_error(f"[IR] LAN rediscovery failed: {disc_err}")
+            raise e
+        if not found:
+            log_error("[IR] No Broadlink answered LAN broadcast — device powered off or off-network?")
+            raise e
+
+        # MAC-anchored disambiguation: prefer the device whose MAC matches
+        # this host's known MAC. Falls back to "single device" heuristic
+        # only when no MAC is stored (legacy records).
+        known_macs = _lookup_blaster_macs_for_host(host)
+        new_dev = None
+        if known_macs:
+            for d in found:
+                if _norm_mac(d.mac) in known_macs:
+                    new_dev = d
+                    break
+            if new_dev is None:
+                log_error(
+                    f"[IR] {len(found)} Broadlinks on LAN but none match known "
+                    f"MAC(s) {sorted(known_macs)} for host={host} — leaving config unchanged"
+                )
+                raise e
+        elif len(found) == 1:
+            new_dev = found[0]
+        else:
+            ips = [d.host[0] for d in found]
+            log_error(
+                f"[IR] {len(found)} Broadlinks on LAN ({ips}); can't auto-pick "
+                f"without stored MAC for host={host} — re-pair the device to record its MAC"
+            )
+            raise e
+
+        new_host = new_dev.host[0]
+        if new_host == host:
+            # Same IP yet hello() still failed — actually a device problem,
+            # not an IP-change problem. Don't rewrite the config.
+            raise e
+        log_info(f"[IR] Broadlink IP changed: {host} → {new_host}; updating registry + ir_devices.json")
+        new_mac = _norm_mac(new_dev.mac)
+        try:
+            _persist_blaster_host_change(host, new_host)
+            _persist_blaster_mac(new_host, new_mac)
+        except Exception as save_err:
+            log_error(f"[IR] Failed to persist new blaster IP {new_host}: {save_err}")
+            # Don't fail the send — we still have a live device handle.
+        # Also bump the canonical registry row (matched by MAC, since IP
+        # just changed). mark_seen handles the IP update + last_seen
+        # atomically. Failure here is non-fatal — the send still works
+        # via the live handle and the legacy JSON fields are already
+        # patched above.
+        try:
+            from services import ir_blasters as _bl
+            row = _bl.get_by_mac(new_mac) if new_mac else None
+            if row:
+                _bl.mark_seen(row["id"], new_host)
+        except Exception:
+            pass
+        return new_dev
+
+
+def _persist_blaster_host_change(old_host: str, new_host: str) -> int:
+    """Rewrite every reference to `old_host` in ir_devices.json to `new_host`.
+
+    Touches both `blaster_host` and the synthesized `blaster_entity_id`
+    (which embeds the host as `direct_<ip>`). Returns the number of
+    device records updated. Best-effort: a failed save logs but doesn't
+    raise — the in-memory device handle is still usable.
+    """
+    from services.ir_manager import _load as _ir_load, _save as _ir_save
+    devices = _ir_load()
+    changed = 0
+    for d in devices:
+        if (d.get("blaster_host") or "").strip() == old_host:
+            d["blaster_host"] = new_host
+            changed += 1
+        beid = (d.get("blaster_entity_id") or "")
+        if beid == f"direct_{old_host}":
+            d["blaster_entity_id"] = f"direct_{new_host}"
+    if changed:
+        _ir_save(devices)
+    return changed
+
+
+def _persist_blaster_mac(host: str, mac: str) -> int:
+    """Record `mac` for every ir_devices.json row pointing at `host`.
+
+    Idempotent: skip rows that already have the same MAC. Returns the
+    number of records updated. Lazy backfill path: records created before
+    MAC capture was added pick up their MAC on the first successful
+    contact, which lets future rediscoveries pick the right device even
+    in homes with multiple Broadlinks.
+    """
+    if not mac or not host:
+        return 0
+    from services.ir_manager import _load as _ir_load, _save as _ir_save
+    devices = _ir_load()
+    changed = 0
+    for d in devices:
+        if (d.get("blaster_host") or "").strip() != host:
+            continue
+        if _norm_mac(d.get("blaster_mac")) != mac:
+            d["blaster_mac"] = mac
+            changed += 1
+    if changed:
+        _ir_save(devices)
+    return changed
+
+
+def _lookup_blaster_macs_for_host(host: str) -> set[str]:
+    """Return every distinct MAC stored against `host`. Usually 0 or 1.
+
+    Returns an empty set for hosts that haven't yet been MAC-anchored —
+    callers treat that as "fall back to the legacy single-device heuristic."
+    """
+    from services.ir_manager import _load as _ir_load
+    macs: set[str] = set()
+    for d in _ir_load():
+        if (d.get("blaster_host") or "").strip() != host:
+            continue
+        m = _norm_mac(d.get("blaster_mac"))
+        if m:
+            macs.add(m)
+    return macs
+
+
+async def warmup_blaster_connections() -> None:
+    """Probe each cached blaster_host once at boot to refresh stale IPs.
+
+    Without this, the *first* IR command of the day after an overnight
+    DHCP IP change takes a noticeable 2–3s hit while `_hello_with_rediscovery`
+    runs its broadcast scan inline. Running the same probe at startup
+    folds that cost into background warmup so the user-perceived send
+    latency stays sub-100ms even when the IP has rotated.
+
+    Best-effort: any probe that fails was already logged inside the helper.
+    """
+    by_host = list(_all_ir_devices_by_host().keys())
+    if not by_host:
+        return
+    loop = asyncio.get_event_loop()
+
+    def _probe(h: str):
+        try:
+            _hello_with_rediscovery(h, timeout=2)
+        except Exception:
+            pass   # Already logged inside the helper.
+
+    await asyncio.gather(
+        *[loop.run_in_executor(None, _probe, h) for h in by_host],
+        return_exceptions=True,
+    )
+    log_info(f"[IRListener] Warmup probed {len(by_host)} blaster host(s)")
+
 
 def _all_ir_devices_by_host() -> dict[str, list[dict]]:
     """Group enabled IR devices by their blaster_host (direct IP)."""
@@ -449,7 +773,7 @@ async def _listen_loop(host: str) -> None:
 
     def _connect() -> Optional[object]:
         try:
-            d = broadlink.hello(host)
+            d = _hello_with_rediscovery(host)
             d.auth()
             return d
         except Exception as e:
@@ -533,12 +857,22 @@ async def start_listener() -> None:
     """
     Discover all configured blaster_hosts and launch a listen loop for each.
     Called once at server startup. Safe to call if no hosts configured (no-op).
+
+    Runs `warmup_blaster_connections` first so any cached IP that's gone
+    stale overnight (DHCP rotation, router reboot) is refreshed before
+    we kick off listener loops — listeners would otherwise burn their
+    first iteration on a 10s timeout against the dead IP.
     """
     by_host = _all_ir_devices_by_host()
     if not by_host:
         log_info("[IRListener] No blaster_host configured — IR receive not active. "
                  "Set blaster_host on an IR device to enable physical remote detection.")
         return
+
+    # Probe + refresh cached IPs in parallel. May rewrite ir_devices.json,
+    # so re-read the host list after.
+    await warmup_blaster_connections()
+    by_host = _all_ir_devices_by_host()
 
     for host in by_host:
         if host not in _tasks or _tasks[host].done():
@@ -600,7 +934,7 @@ async def learn_command_direct(host: str, timeout: int = 20) -> Optional[bytes]:
     pause_for_learn(host)
     try:
         def _connect_and_learn():
-            d = broadlink.hello(host)
+            d = _hello_with_rediscovery(host)
             d.auth()
             d.enter_learning()
             return d
@@ -678,7 +1012,11 @@ async def discover_broadlink_devices(timeout: int = 8) -> list[dict]:
                 "host": host,
                 "mac": ":".join(f"{b:02x}" for b in dev.mac),
                 "type": dev_type,
-                "name": getattr(dev, "name", "").strip() or f"Broadlink {dev_type}",
+                "name": _humanize_broadlink_name(
+                    getattr(dev, "name", "") or "",
+                    dev_type,
+                    dev.mac,
+                ),
             }
 
         def _try_hello(ip: str) -> dict | None:
@@ -747,7 +1085,7 @@ async def send_ir_direct(host: str, code_b64: str) -> bool:
     def _send():
         try:
             raw = base64.b64decode(code_b64)
-            dev = broadlink.hello(host)
+            dev = _hello_with_rediscovery(host)
             dev.auth()
             dev.send_data(raw)
             return True

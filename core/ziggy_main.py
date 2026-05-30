@@ -17,7 +17,6 @@ from core.shared_flags import shutdown_event
 from core.logger_module import log_info
 from interfaces.voice_interface import start_voice_interface
 from interfaces.dashboard import start_dashboard
-from services.mqtt_client import start_mqtt
 from services.task_manager import start_reminder_thread
 from services.push_notify import push_notify_sync
 from backend.server import start_api_server
@@ -57,6 +56,16 @@ def main():
     except Exception as e:
         log_info(f"[Main] DeviceRegistry init failed (HA may be offline): {e} — continuing with degraded device resolution")
 
+    # IR blaster registry: idempotent migration on cold start. Builds the
+    # ir_blasters.json registry from existing ir_devices.json entries on
+    # the first boot after upgrade, no-op on subsequent boots. Cheap
+    # (parses two JSON files, writes one); won't block startup.
+    try:
+        from services.ir_blasters import ensure_initialized as init_blasters
+        init_blasters()
+    except Exception as e:
+        log_info(f"[Main] IR blaster registry init failed: {e} — continuing without it")
+
     def thread_wrapper(name, target):
         def run():
             log_info(f"[Thread:{name}] Starting...")
@@ -83,13 +92,6 @@ def main():
         threads.append(threading.Thread(
             target=thread_wrapper("Dashboard", start_dashboard),
             name="Dashboard",
-            daemon=True,
-        ))
-
-    if settings.get("features", {}).get("zigbee_support", False):
-        threads.append(threading.Thread(
-            target=thread_wrapper("MQTT", start_mqtt),
-            name="MQTT",
             daemon=True,
         ))
 

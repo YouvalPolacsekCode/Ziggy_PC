@@ -14,7 +14,7 @@ import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
 import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity } from '../lib/api'
-import { cn } from '../lib/utils'
+import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
@@ -85,12 +85,12 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
   const chipClass = cn(
     'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors whitespace-nowrap',
     isStale
-      ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+      ? 'bg-warn-soft border-warn-soft text-warn'
       : assumedState === 'on' || (assumedState && assumedState !== 'off')
-      ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+      ? 'bg-ok-soft border-ok-soft text-ok'
       : assumedState === 'off'
-      ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500'
-      : 'bg-zinc-50 dark:bg-zinc-800/50 border-dashed border-zinc-200 dark:border-zinc-700 text-zinc-400',
+      ? 'bg-surface-2 border-line text-ink-mute'
+      : 'bg-surface-2/50 border-dashed border-line text-ink-mute',
   )
 
   return (
@@ -116,21 +116,21 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
             initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.1 }}
             style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, minWidth: 130 }}
-            className="bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+            className="bg-surface rounded-xl shadow-xl border border-line overflow-hidden"
           >
-            <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">{t('devices.setAssumedState')}</p>
+            <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.setAssumedState')}</p>
             {irStateOptions.map((s) => (
               <button key={s}
                 onClick={() => { onIrStateChange(irDevice.id, s); setOpen(false) }}
-                className={cn('w-full text-left px-3 py-2 text-xs capitalize hover:bg-zinc-50 dark:hover:bg-zinc-800', assumedState === s ? 'text-violet-600 font-semibold' : 'text-zinc-700 dark:text-zinc-300')}
+                className={cn('w-full text-left px-3 py-2 text-xs capitalize hover:bg-surface-2', assumedState === s ? 'text-accent font-semibold' : 'text-ink-2')}
               >
-                {assumedState === s && <span className="text-violet-400 mr-1 text-[10px]">✓</span>}{s}
+                {assumedState === s && <span className="text-accent mr-1 text-[10px]">✓</span>}{s}
               </button>
             ))}
-            <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1">
+            <div className="border-t border-line mt-1">
               <button
                 onClick={() => { onIrStateChange(irDevice.id, 'unknown'); setOpen(false) }}
-                className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                className="w-full text-left px-3 py-2 text-xs text-ink-mute hover:bg-surface-2"
               >{t('devices.clearAssumption')}</button>
             </div>
           </motion.div>
@@ -202,7 +202,7 @@ function CompactAcStepper({ entity }) {
   )
 }
 
-const INPUT_CLS = 'w-full h-10 px-3 rounded-xl text-sm border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500/50'
+const INPUT_CLS = 'w-full h-10 px-3 rounded-xl text-sm border border-line bg-surface-2 text-ink focus:outline-none focus:ring-2 focus:ring-accent'
 
 function CommandRow({ cmd, learned, deviceId, onLearned, onRemove, recentSignal }) {
   const t = useT()
@@ -243,32 +243,32 @@ function CommandRow({ cmd, learned, deviceId, onLearned, onRemove, recentSignal 
 
   useEffect(() => () => clearInterval(timerRef.current), [])
 
-  const dot = status === 'learned' ? 'bg-green-400'
-    : status === 'error' ? 'bg-red-400'
-    : status === 'learning' ? 'bg-yellow-400 animate-pulse'
-    : 'bg-zinc-300 dark:bg-zinc-600'
+  const dot = status === 'learned' ? 'bg-ok'
+    : status === 'error' ? 'bg-err'
+    : status === 'learning' ? 'bg-warn animate-pulse'
+    : 'bg-line'
 
   return (
     <div className="flex items-center gap-2 py-1">
       <div className={cn('w-2 h-2 rounded-full shrink-0', dot)} />
-      <span className="flex-1 min-w-0 text-xs text-zinc-700 dark:text-zinc-300">
+      <span className="flex-1 min-w-0 text-xs text-ink-2">
         <span className="font-medium">{cmd.label}</span>
         {cmd.id !== cmd.label.toLowerCase().replace(/[^a-z0-9]+/g, '_') && (
-          <span className="text-[10px] text-zinc-400 ml-1 font-mono truncate">· {cmd.id}</span>
+          <span className="text-[10px] text-ink-mute ml-1 font-mono truncate">· {cmd.id}</span>
         )}
       </span>
       {recentSignal && status !== 'learned' && status !== 'learning' && (
-        <button onClick={bindRecent} className="text-[10px] text-violet-400 hover:text-violet-600 whitespace-nowrap" title={t('devices.irEdit.bindRecent')}>
+        <button onClick={bindRecent} className="text-[10px] text-accent hover:text-accent whitespace-nowrap" title={t('devices.irEdit.bindRecent')}>
           {t('devices.irEdit.bind')}
         </button>
       )}
       {status === 'learning'
-        ? <span className="text-xs text-yellow-500 w-10 text-right font-mono">{countdown}s</span>
-        : <button onClick={startLearn} className="text-xs text-violet-500 hover:text-violet-600 w-12 text-right">{status === 'learned' ? t('devices.irEdit.relearn') : t('devices.irEdit.learn')}</button>
+        ? <span className="text-xs text-warn w-10 text-right font-mono">{countdown}s</span>
+        : <button onClick={startLearn} className="text-xs text-accent hover:text-accent w-12 text-right">{status === 'learned' ? t('devices.irEdit.relearn') : t('devices.irEdit.learn')}</button>
       }
-      <button onClick={test} disabled={status !== 'learned'} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 w-8 text-right disabled:opacity-30">{t('devices.irEdit.test')}</button>
+      <button onClick={test} disabled={status !== 'learned'} className="text-xs text-ink-mute hover:text-ink-2 w-8 text-right disabled:opacity-30">{t('devices.irEdit.test')}</button>
       {onRemove && (
-        <button onClick={onRemove} className="text-zinc-300 dark:text-zinc-600 hover:text-red-400 transition-colors" title={t('devices.irEdit.removeCustomTitle')}>
+        <button onClick={onRemove} className="text-ink-faint hover:text-err transition-colors" title={t('devices.irEdit.removeCustomTitle')}>
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       )}
@@ -285,10 +285,10 @@ function CommandGroup({ group, learnedSet, deviceId, recentSignal, onLearned, on
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">{group.label}</span>
+        <span className="text-[10px] uppercase tracking-wider text-ink-mute font-semibold">{group.label}</span>
         {hasExtras && (
           <button onClick={onToggleShowOptional}
-            className="text-[10px] text-violet-400 hover:text-violet-600">
+            className="text-[10px] text-accent hover:text-accent">
             {showOptional
               ? t('devices.irEdit.hideOptional', { n: extraCmds.length })
               : learnedExtras.length
@@ -322,17 +322,17 @@ function UnassignedSignalsBanner({ signals, deviceId, onAssigned, onDismissed })
   const t = useT()
   if (!signals?.length) return null
   return (
-    <div className="mb-3 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-      <p className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-300 font-semibold mb-1">
+    <div className="mb-3 p-2 rounded-lg bg-warn-soft border border-warn-soft">
+      <p className="text-[10px] uppercase tracking-wider text-warn font-semibold mb-1">
         {signals.length === 1 ? t('devices.irEdit.recentOne') : t('devices.irEdit.recentMany', { n: signals.length })}
       </p>
-      <p className="text-[11px] text-amber-700 dark:text-amber-300 mb-1.5">
+      <p className="text-[11px] text-warn mb-1.5">
         {t('devices.irEdit.bindHint')}
       </p>
       <div className="flex gap-1 flex-wrap">
         {signals.slice(0, 3).map((s) => (
           <button key={s.id} onClick={() => onDismissed(s.id)}
-            className="text-[10px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60">
+            className="text-[10px] px-2 py-0.5 rounded bg-warn-soft text-warn hover:bg-warn-soft">
             ✕ {s.id.slice(0, 8)}
           </button>
         ))}
@@ -352,16 +352,16 @@ function SequenceRow({ seq, deviceId, allCommands, onDeleted }) {
   }
   return (
     <div className="flex items-center gap-2 py-1">
-      <span className="flex-1 min-w-0 text-xs text-zinc-700 dark:text-zinc-300">
+      <span className="flex-1 min-w-0 text-xs text-ink-2">
         <span className="font-medium capitalize">{seq.name.replace(/_/g, ' ')}</span>
-        <span className="text-[10px] text-zinc-400 ml-1">· {t('devices.irEdit.stepsLabel', { n: seq.steps.length })}</span>
+        <span className="text-[10px] text-ink-mute ml-1">· {t('devices.irEdit.stepsLabel', { n: seq.steps.length })}</span>
       </span>
       <button onClick={run} disabled={running}
-        className="text-xs text-violet-500 hover:text-violet-600 w-12 text-right disabled:opacity-50">
+        className="text-xs text-accent hover:text-accent w-12 text-right disabled:opacity-50">
         {running ? '…' : t('devices.irEdit.run')}
       </button>
       <button onClick={() => onDeleted(seq.name)}
-        className="text-zinc-300 dark:text-zinc-600 hover:text-red-400 transition-colors">
+        className="text-ink-faint hover:text-err transition-colors">
         <Trash2 className="w-3.5 h-3.5" />
       </button>
     </div>
@@ -384,19 +384,19 @@ function SequenceBuilder({ deviceId, allCommands, onSaved, onCancel }) {
     onSaved()
   }
   return (
-    <div className="mb-3 p-2 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/40 dark:bg-violet-900/10 space-y-2">
+    <div className="mb-3 p-2 rounded-lg border border-accent-soft bg-accent-soft/40 space-y-2">
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('devices.irEdit.macroNamePlaceholder')} dir="auto"
-        className="w-full h-7 px-2 rounded-md text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800" />
+        className="w-full h-7 px-2 rounded-md text-xs border border-line bg-surface" />
       <div className="space-y-1">
         {steps.map((s, i) => (
           <div key={i} className="flex items-center gap-2 text-xs">
-            <span className="font-mono flex-1 text-zinc-700 dark:text-zinc-300 truncate">{i + 1}. {s.command}</span>
+            <span className="font-mono flex-1 text-ink-2 truncate">{i + 1}. {s.command}</span>
             <input type="number" value={s.delay_after_ms} min={0} max={10000} step={100}
               onChange={(e) => setSteps((arr) => arr.map((x, j) => j === i ? { ...x, delay_after_ms: Number(e.target.value) || 0 } : x))}
-              className="w-16 h-6 px-1 rounded text-[10px] border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-right" />
-            <span className="text-[10px] text-zinc-400">ms</span>
+              className="w-16 h-6 px-1 rounded text-[10px] border border-line bg-surface text-right" />
+            <span className="text-[10px] text-ink-mute">ms</span>
             <button onClick={() => setSteps((arr) => arr.filter((_, j) => j !== i))}
-              className="text-zinc-300 hover:text-red-400">
+              className="text-ink-faint hover:text-err">
               <Trash2 className="w-3 h-3" />
             </button>
           </div>
@@ -404,25 +404,25 @@ function SequenceBuilder({ deviceId, allCommands, onSaved, onCancel }) {
       </div>
       <div className="relative">
         <button onClick={() => setPicker((v) => !v)}
-          className="w-full h-7 rounded-md text-xs text-violet-600 dark:text-violet-300 border border-dashed border-violet-300 dark:border-violet-700 hover:bg-violet-100 dark:hover:bg-violet-900/30">
+          className="w-full h-7 rounded-md text-xs text-accent border border-dashed border-accent-soft hover:bg-accent-soft">
           {t('devices.irEdit.addStep')}
         </button>
         {picker && (
-          <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
-            {allCommands.length === 0 && <p className="px-2 py-1 text-[11px] text-zinc-400">{t('devices.irEdit.learnSomeFirst')}</p>}
+          <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-md border border-line bg-surface shadow-lg">
+            {allCommands.length === 0 && <p className="px-2 py-1 text-[11px] text-ink-mute">{t('devices.irEdit.learnSomeFirst')}</p>}
             {allCommands.map((c) => (
               <button key={c.id} onClick={() => addStep(c.id)}
-                className="block w-full px-2 py-1 text-left text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                {c.label} <span className="text-[10px] text-zinc-400 font-mono">{c.id}</span>
+                className="block w-full px-2 py-1 text-left text-xs text-ink-2 hover:bg-surface-2">
+                {c.label} <span className="text-[10px] text-ink-mute font-mono">{c.id}</span>
               </button>
             ))}
           </div>
         )}
       </div>
       <div className="flex justify-end gap-1">
-        <button onClick={onCancel} className="px-2 h-7 text-[11px] text-zinc-500">{t('devices.irEdit.cancel')}</button>
+        <button onClick={onCancel} className="px-2 h-7 text-[11px] text-ink-mute">{t('devices.irEdit.cancel')}</button>
         <button onClick={save} disabled={!name.trim() || !steps.length}
-          className="px-3 h-7 text-[11px] rounded-md bg-violet-500 text-white disabled:opacity-40">
+          className="px-3 h-7 text-[11px] rounded-md bg-accent text-on-accent disabled:opacity-40">
           {t('devices.irEdit.saveMacro')}
         </button>
       </div>
@@ -568,15 +568,15 @@ function IREditModal({ device, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-100 dark:border-zinc-800 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-surface rounded-2xl shadow-2xl border border-line flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           <div>
-            <h2 dir="auto" className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{device.name}</h2>
-            <p className="text-[10px] text-zinc-400">{t('devices.commandsLearned', { n: learnedSet.size })}</p>
+            <h2 dir="auto" className="text-base font-semibold text-ink">{device.name}</h2>
+            <p className="text-[10px] text-ink-mute">{t('devices.commandsLearned', { n: learnedSet.size })}</p>
           </div>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg leading-none" aria-label={t('common.close')}>✕</button>
+          <button onClick={onClose} className="text-ink-mute hover:text-ink-2 text-lg leading-none" aria-label={t('common.close')}>✕</button>
         </div>
 
         {/* Tabs */}
@@ -588,7 +588,7 @@ function IREditModal({ device, onClose, onSaved }) {
           ].map((tabDef) => (
             <button key={tabDef.id} onClick={() => setTab(tabDef.id)}
               className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                tab === tabDef.id ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                tab === tabDef.id ? 'bg-ink text-bg' : 'text-ink-mute hover:bg-surface-2'
               )}
             >{tabDef.label}{tabDef.id === 'macros' && sequences.length > 0 ? ` (${sequences.length})` : ''}</button>
           ))}
@@ -599,31 +599,31 @@ function IREditModal({ device, onClose, onSaved }) {
           {tab === 'details' && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-zinc-500 mb-1">{t('devices.irEdit.name')}</label>
+                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.name')}</label>
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} dir="auto" className={INPUT_CLS} />
               </div>
               <div>
-                <label className="block text-xs text-zinc-500 mb-1">{t('devices.irEdit.type')}</label>
+                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.type')}</label>
                 <div className="flex flex-wrap gap-1.5">
                   {IR_DEVICE_TYPES.map((dt) => (
                     <button key={dt} onClick={() => setForm({ ...form, device_type: dt })}
                       className={cn('px-3 py-1 rounded-lg text-xs border transition-all capitalize',
-                        form.device_type === dt ? 'border-violet-500 bg-violet-500/15 text-violet-600 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                        form.device_type === dt ? 'border-accent bg-accent/15 text-accent' : 'border-line text-ink-mute hover:bg-line'
                       )}
                     >{dt}</button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-zinc-500 mb-1">{t('devices.irEdit.room')}</label>
+                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.room')}</label>
                 <select value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} className={INPUT_CLS}>
                   <option value="">{t('devices.irEdit.noRoom')}</option>
                   {rooms.map((r) => <option key={r.id ?? r.name} value={r.id ?? r.area_id ?? r.name}>{r.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-500 mb-1">{t('devices.irEdit.brand')}</label>
-                <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder={t('devices.irEdit.brandPlaceholder')} dir="auto" className={INPUT_CLS + ' placeholder:text-zinc-400'} />
+                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.brand')}</label>
+                <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder={t('devices.irEdit.brandPlaceholder')} dir="auto" className={INPUT_CLS + ' placeholder:text-ink-mute'} />
               </div>
             </div>
           )}
@@ -634,10 +634,10 @@ function IREditModal({ device, onClose, onSaved }) {
                 signals={unassignedSignals} deviceId={device.id}
                 onDismissed={handleSignalDismissed}
               />
-              <p className="text-[11px] text-zinc-400 mb-2">
+              <p className="text-[11px] text-ink-mute mb-2">
                 {t('devices.irEdit.commandsHelp')}
               </p>
-              {groups.length === 0 && <p className="text-xs text-zinc-400 py-4">{t('devices.irEdit.loadingCatalog')}</p>}
+              {groups.length === 0 && <p className="text-xs text-ink-mute py-4">{t('devices.irEdit.loadingCatalog')}</p>}
               {groups.map((g) => (
                 <CommandGroup
                   key={g.id} group={g} learnedSet={learnedSet} deviceId={device.id}
@@ -648,7 +648,7 @@ function IREditModal({ device, onClose, onSaved }) {
                 />
               ))}
               <button onClick={handleAddCustom}
-                className="w-full mt-2 h-8 rounded-lg text-xs text-violet-600 dark:text-violet-300 border border-dashed border-violet-300 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20">
+                className="w-full mt-2 h-8 rounded-lg text-xs text-accent border border-dashed border-accent-soft hover:bg-accent-soft">
                 {t('devices.irEdit.addCustom')}
               </button>
             </div>
@@ -656,11 +656,11 @@ function IREditModal({ device, onClose, onSaved }) {
 
           {tab === 'macros' && (
             <div>
-              <p className="text-[11px] text-zinc-400 mb-2">
+              <p className="text-[11px] text-ink-mute mb-2">
                 {t('devices.irEdit.macrosHelp')}
               </p>
               {sequences.length === 0 && !buildingSeq && (
-                <p className="text-xs text-zinc-400 py-2">{t('devices.irEdit.noMacros')}</p>
+                <p className="text-xs text-ink-mute py-2">{t('devices.irEdit.noMacros')}</p>
               )}
               {sequences.map((s) => (
                 <SequenceRow key={s.name} seq={s} deviceId={device.id}
@@ -671,7 +671,7 @@ function IREditModal({ device, onClose, onSaved }) {
                   onSaved={handleSequenceSaved} onCancel={() => setBuildingSeq(false)} />
               ) : (
                 <button onClick={() => setBuildingSeq(true)}
-                  className="w-full mt-2 h-8 rounded-lg text-xs text-violet-600 dark:text-violet-300 border border-dashed border-violet-300 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20">
+                  className="w-full mt-2 h-8 rounded-lg text-xs text-accent border border-dashed border-accent-soft hover:bg-accent-soft">
                   {t('devices.irEdit.newMacro')}
                 </button>
               )}
@@ -679,12 +679,12 @@ function IREditModal({ device, onClose, onSaved }) {
           )}
         </div>
 
-        {error && <p className="px-5 pb-1 text-xs text-red-500">{error}</p>}
+        {error && <p className="px-5 pb-1 text-xs text-err">{error}</p>}
 
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">{t('common.close')}</button>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-ink-mute hover:text-ink-2 transition-colors">{t('common.close')}</button>
           <button onClick={handleSave} disabled={saving || !form.name.trim()}
-            className="px-4 py-2 text-sm font-medium rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 disabled:opacity-50 transition-opacity"
+            className="px-4 py-2 text-sm font-medium rounded-xl bg-ink text-bg disabled:opacity-50 transition-opacity"
           >
             {saving ? t('common.saving') : t('devices.irEdit.saveDetails')}
           </button>
@@ -765,7 +765,7 @@ function IRQuickControls({ device, onCommand }) {
   if (buttons.length === 0) return null
 
   return (
-    <div className="mt-2.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex gap-1.5 flex-wrap">
+    <div className="mt-2.5 pt-2.5 border-t border-line flex gap-1.5 flex-wrap">
       {buttons.map(({ cmd, icon, label }) => {
         const localized = labelKey(label)
         return (
@@ -773,7 +773,7 @@ function IRQuickControls({ device, onCommand }) {
             key={cmd}
             onClick={() => onCommand(device.id, cmd)}
             title={localized}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-xs font-medium"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-2 text-ink-2 hover:bg-line transition-colors text-xs font-medium"
           >
             <span className="text-[11px]">{icon}</span>
             <span className="text-[10px]">{localized}</span>
@@ -809,14 +809,14 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
       <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-violet-400" />
+        <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4 text-accent" />
         </div>
         <div>
-          <p dir="auto" className="text-sm font-medium text-zinc-900 dark:text-zinc-100 leading-tight">{device.name}</p>
-          {room && <p dir="auto" className="text-xs text-zinc-400 mt-0.5 capitalize">{room}</p>}
+          <p dir="auto" className="text-sm font-medium text-ink leading-tight">{device.name}</p>
+          {room && <p dir="auto" className="text-xs text-ink-mute mt-0.5 capitalize">{room}</p>}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-xs text-zinc-400">{t('devices.commandsCount', { learned: learnedCount, total: totalCount })}</span>
+            <span className="text-xs text-ink-mute">{t('devices.commandsCount', { learned: learnedCount, total: totalCount })}</span>
             {/* Interactive assumed-state chip — for AC, the state line also
                 surfaces decoded temp/mode/fan from physical-remote packets. */}
             <div className="relative">
@@ -826,10 +826,10 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
                 className={cn(
                   'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors',
                   assumedState === 'on' || (assumedState && assumedState !== 'off')
-                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    ? 'bg-ok-soft border-ok-soft text-ok'
                     : assumedState === 'off'
-                    ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500'
-                    : 'bg-zinc-50 dark:bg-zinc-800/50 border-dashed border-zinc-200 dark:border-zinc-700 text-zinc-400'
+                    ? 'bg-surface-2 border-line text-ink-mute'
+                    : 'bg-surface-2/50 border-dashed border-line text-ink-mute'
                 )}
               >
                 <span>{assumedState ?? t('common.unknown')}</span>
@@ -845,26 +845,26 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: -4 }}
                     transition={{ duration: 0.1 }}
-                    className="absolute bottom-full left-0 mb-1 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-800 overflow-hidden min-w-[100px]"
+                    className="absolute bottom-full left-0 mb-1 z-50 bg-surface rounded-xl shadow-xl border border-line overflow-hidden min-w-[100px]"
                   >
-                    <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">{t('devices.setAssumedState')}</p>
+                    <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.setAssumedState')}</p>
                     {stateOptions.map((s) => (
                       <button
                         key={s}
                         onClick={() => { onStateChange(device.id, s); setShowStatePicker(false) }}
                         className={cn(
-                          'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors capitalize',
-                          assumedState === s ? 'text-violet-600 dark:text-violet-400 font-semibold' : 'text-zinc-700 dark:text-zinc-300'
+                          'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors capitalize',
+                          assumedState === s ? 'text-accent font-semibold' : 'text-ink-2'
                         )}
                       >
-                        {assumedState === s && <span className="text-violet-400 text-[10px]">✓</span>}
+                        {assumedState === s && <span className="text-accent text-[10px]">✓</span>}
                         {s}
                       </button>
                     ))}
-                    <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1 pb-1">
+                    <div className="border-t border-line mt-1 pt-1 pb-1">
                       <button
                         onClick={() => { onStateChange(device.id, 'unknown'); setShowStatePicker(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-mute hover:bg-surface-2 transition-colors"
                       >
                         {t('devices.clearAssumption')}
                       </button>
@@ -879,14 +879,14 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
       <div className="flex items-center gap-2 shrink-0 mt-0.5">
         <button
           onClick={() => onEdit(device)}
-          className="text-zinc-300 dark:text-zinc-600 hover:text-violet-500 transition-colors"
+          className="text-ink-faint hover:text-accent transition-colors"
           title={t('devices.editIrDevice')}
         >
           <Pencil className="w-4 h-4" />
         </button>
         <button
           onClick={() => onDelete(device.id)}
-          className="text-zinc-300 dark:text-zinc-600 hover:text-red-400 transition-colors"
+          className="text-ink-faint hover:text-err transition-colors"
           title={t('devices.removeIrDevice')}
         >
           <Trash2 className="w-4 h-4" />
@@ -1077,7 +1077,7 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+        className="p-1 rounded-lg text-ink-mute hover:text-ink-2 hover:bg-line transition-colors"
       >
         <MoreVertical size={14} />
       </button>
@@ -1091,25 +1091,25 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ duration: 0.12 }}
-            className="w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+            className="w-48 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
               {currentRoom && (
                 <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400" dir="auto">
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-200">{currentRoom.name}</span>
+                  <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
+                  <span className="text-[11px] text-ink-mute" dir="auto">
+                    <span className="font-semibold text-ink-2">{currentRoom.name}</span>
                   </span>
                 </div>
               )}
-              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mute">
                 {t('devices.assignToRoom')}
               </p>
               <button
                 onClick={() => { onAssign(entity.entity_id, null); setOpen(false) }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors',
-                  !currentRoom ? 'text-violet-600 dark:text-violet-400 font-medium' : 'text-zinc-500'
+                  'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors',
+                  !currentRoom ? 'text-accent font-medium' : 'text-ink-mute'
                 )}
               >
                 <Home size={12} /> {t('devices.noRoom')}
@@ -1119,27 +1119,27 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
                   key={r.id}
                   onClick={() => { onAssign(entity.entity_id, r.id); setOpen(false) }}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors',
+                    'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors',
                     currentRoom?.id === r.id
-                      ? 'text-violet-600 dark:text-violet-400 font-semibold'
-                      : 'text-zinc-700 dark:text-zinc-300'
+                      ? 'text-accent font-semibold'
+                      : 'text-ink-2'
                   )}
                 >
                   <span className={cn(
                     'w-2 h-2 rounded-full shrink-0',
-                    currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                    currentRoom?.id === r.id ? 'bg-accent' : 'bg-line'
                   )} />
                   <span dir="auto">{r.name}</span>
-                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
+                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
                 </button>
               ))}
-              <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1">
+              <div className="border-t border-line mt-1 pt-1">
                 <button
                   onClick={() => {
                     isHidden ? onUnhide(entity.entity_id) : onHide(entity.entity_id)
                     setOpen(false)
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-mute hover:bg-surface-2 transition-colors"
                 >
                   {isHidden
                     ? <><Eye size={12} /> {t('devices.showDevice')}</>
@@ -1148,7 +1148,7 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
                 </button>
                 {extraItems.map((item, i) => (
                   <button key={i} onClick={() => { item.onClick(); setOpen(false) }}
-                    className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors', item.className || 'text-zinc-700 dark:text-zinc-300')}
+                    className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors', item.className || 'text-ink-2')}
                   >
                     {item.icon} {item.label}
                   </button>
@@ -1176,7 +1176,7 @@ function LinkIrModal({ irDevice, open, onClose, onLink }) {
 
   return (
     <Modal open={open} onClose={() => { setEntityId(''); onClose() }} title={t('devices.linkModalTitle', { name: irDevice?.name || '' })}>
-      <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4 -mt-1 leading-relaxed">
+      <p className="text-xs text-ink-mute mb-4 -mt-1 leading-relaxed">
         {t('devices.linkModalDescription')}
       </p>
       <EntitySelect
@@ -1198,10 +1198,10 @@ function LinkIrModal({ irDevice, open, onClose, onLink }) {
 
 // ── Shared status constants ───────────────────────────────────────────────────
 const STATUS_DOT = {
-  lost:         'bg-red-400',
-  unclaimed:    'bg-amber-400',
-  unconfigured: 'bg-zinc-300 dark:bg-zinc-600',
-  connected:    'bg-emerald-400',
+  lost:         'bg-err',
+  unclaimed:    'bg-warn',
+  unconfigured: 'bg-line',
+  connected:    'bg-ok',
 }
 function getStatusLabel(t, status) {
   switch (status) {
@@ -1267,7 +1267,7 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+        className="p-1 rounded-lg text-ink-mute hover:text-ink-2 hover:bg-line transition-colors"
       >
         <MoreVertical size={14} />
       </button>
@@ -1279,53 +1279,53 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
             style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999 }}
             initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.12 }}
-            className="w-52 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+            className="w-52 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
               {currentRoom && (
                 <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400" dir="auto">
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-200">{currentRoom.name}</span>
+                  <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
+                  <span className="text-[11px] text-ink-mute" dir="auto">
+                    <span className="font-semibold text-ink-2">{currentRoom.name}</span>
                   </span>
                 </div>
               )}
-              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{t('devices.assignToRoom')}</p>
+              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.assignToRoom')}</p>
               <button onClick={() => { onAssign(null); setOpen(false) }}
-                className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800', !currentRoom ? 'text-violet-600 font-medium' : 'text-zinc-500')}
+                className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2', !currentRoom ? 'text-accent font-medium' : 'text-ink-mute')}
               >
                 <Home size={12} /> {t('devices.noRoom')}
               </button>
               {rooms.map((r) => (
                 <button key={r.id} onClick={() => { onAssign(r.id); setOpen(false) }}
-                  className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800', currentRoom?.id === r.id ? 'text-violet-600 font-semibold' : 'text-zinc-700 dark:text-zinc-300')}
+                  className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2', currentRoom?.id === r.id ? 'text-accent font-semibold' : 'text-ink-2')}
                 >
-                  <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-violet-500' : 'bg-zinc-300 dark:bg-zinc-600')} />
+                  <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-accent' : 'bg-line')} />
                   <span dir="auto">{r.name}</span>
-                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-violet-400">✓</span>}
+                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
                 </button>
               ))}
-              <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1">
+              <div className="border-t border-line mt-1 pt-1">
                 <button onClick={() => { onEdit(); setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-2 hover:bg-surface-2"
                 >
                   <Pencil size={12} /> {t('devices.editIrDevice')}
                 </button>
                 {irDevice?.ha_entity_id ? (
                   <button onClick={() => { onUnlinkFromWifi?.(); setOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-violet-600 dark:text-violet-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-accent hover:bg-surface-2"
                   >
                     ⬡ {t('devices.unlinkFromWifi')}
                   </button>
                 ) : (
                   <button onClick={() => { onLinkToWifi?.(); setOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-violet-600 dark:text-violet-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-accent hover:bg-surface-2"
                   >
                     ⬡ {t('devices.linkToWifi')}
                   </button>
                 )}
                 <button onClick={() => { onDelete(); setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-err hover:bg-surface-2"
                 >
                   <Trash2 size={12} /> {t('common.remove')}
                 </button>
@@ -1424,7 +1424,7 @@ const DeviceCard = forwardRef(function DeviceCard({
                 DeviceDetail handles `ir.<id>` entity_ids via its isIrTarget branch. */}
             <button
               onClick={() => navigate(`/devices/${encodeURIComponent(entity.entity_id)}`)}
-              className="p-1 rounded-lg text-zinc-300 dark:text-zinc-700 hover:text-zinc-500 dark:hover:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="p-1 rounded-lg text-ink-faint hover:text-ink-mute hover:bg-surface-2 transition-colors"
               title={t('devices.deviceDetailsTooltip')}
             >
               <ChevronRight size={14} />
@@ -1472,7 +1472,7 @@ const DeviceCard = forwardRef(function DeviceCard({
                 onAssign={onAssign}
                 extraItems={[
                   { label: t('devices.editIrRemote'), icon: <Pencil size={12} />, onClick: () => onEditIr(linkedIr) },
-                  { label: t('devices.unlinkIr'), icon: <span className="text-[11px]">⬡</span>, onClick: () => onUnlinkIr(linkedIr.id), className: 'text-violet-600 dark:text-violet-400' },
+                  { label: t('devices.unlinkIr'), icon: <span className="text-[11px]">⬡</span>, onClick: () => onUnlinkIr(linkedIr.id), className: 'text-accent' },
                 ]}
               />
             ) : (
@@ -1482,8 +1482,8 @@ const DeviceCard = forwardRef(function DeviceCard({
         </div>
 
         {/* ── Name ── */}
-        <p dir="auto" className="text-sm font-medium text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">
-          {entity.display_name || entity.friendly_name || entity.entity_id.split('.')[1]}
+        <p dir="auto" className="text-sm font-medium text-ink leading-tight mb-0.5 truncate">
+          {entityDisplayName(entity)}
         </p>
 
         {/* ── State ── */}
@@ -1539,7 +1539,7 @@ const DeviceCard = forwardRef(function DeviceCard({
             )}
           </div>
         ) : showStatusBadge ? (
-          <p className="text-xs font-medium text-red-400">{statusBadgeLabel}</p>
+          <p className="text-xs font-medium text-err">{statusBadgeLabel}</p>
         ) : (() => {
           // Read-only kinds (sensors, motion, door, etc.) collapse primary +
           // secondary onto one line so the tile is just name + reading.
@@ -1549,16 +1549,16 @@ const DeviceCard = forwardRef(function DeviceCard({
           const showsExpander  = !isHidden && isControllable && entity.state !== 'unavailable'
           const colorClass = cn(
             'text-xs font-medium',
-            isHidden ? 'text-zinc-300 dark:text-zinc-700' :
-            entity.state === 'unavailable' ? 'text-zinc-300 dark:text-zinc-600' :
-            isActive ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-600',
+            isHidden ? 'text-ink-faint' :
+            entity.state === 'unavailable' ? 'text-ink-faint' :
+            isActive ? 'text-ok' : 'text-ink-faint',
           )
           return (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <p className={cn(colorClass, 'truncate min-w-0 flex-1')}>
                 {stateLabel}
                 {!isControllable && stateSecondary && (
-                  <span className="text-zinc-400 dark:text-zinc-600 font-normal ml-1">· {stateSecondary}</span>
+                  <span className="text-ink-faint font-normal ml-1">· {stateSecondary}</span>
                 )}
               </p>
               {showsExpander && (
@@ -1582,10 +1582,10 @@ const DeviceCard = forwardRef(function DeviceCard({
           )
         })()}
         {!isIr && stateSecondary && !isHidden && kindMeta(getKind(entity)).controllable && (
-          <p className="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">{stateSecondary}</p>
+          <p className="text-xs text-ink-faint mt-0.5">{stateSecondary}</p>
         )}
         {isIr && irDevice?.last_command_sent_at && (
-          <p className="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5 truncate">
+          <p className="text-[10px] text-ink-faint mt-0.5 truncate">
             {t('devices.last')}: {irDevice.last_command_sent?.replace(/_/g, ' ')} · {_fmtAgo(irDevice.last_command_sent_at)}
           </p>
         )}

@@ -256,7 +256,7 @@ async def handle_ir_play_sequence(params: dict, *, source: str = "unknown") -> d
 async def handle_ir_learn_command(params: dict, *, source: str = "unknown") -> dict:
     """
     Trigger Broadlink learning mode for a specific device + command.
-    Used from the setup wizard (via API) and optionally from voice/Telegram.
+    Used from the setup wizard (via API) and optionally from voice.
 
     Rule: if the device has blaster_host set, always go direct via python-broadlink
     so the raw code is captured and stored for physical remote matching.

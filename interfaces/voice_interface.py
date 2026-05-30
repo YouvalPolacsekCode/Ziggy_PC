@@ -2,6 +2,7 @@
 
 import os
 import re
+import functools
 import tempfile
 import uuid
 import time
@@ -528,6 +529,17 @@ def _translate(text: str) -> str:
     # For the rare unmatched reply, call GPT directly with a tight timeout.
     # Ollama is intentionally skipped — it times out frequently (adding 5s+
     # of dead weight) and its quality is inconsistent.
+    cached = _translate_via_gpt_cached(text)
+    if cached is not None:
+        return cached
+    return text
+
+
+# Cache GPT translations of unmatched English replies. The chat fallback path
+# can repeat the same reply ("I didn't catch that.", "Try again.") many times
+# in a session; each previously fired a 1–3 s GPT call. LRU caps memory.
+@functools.lru_cache(maxsize=256)
+def _translate_via_gpt_cached(text: str) -> str | None:
     t0 = time.time()
     try:
         from integrations.openai_client import get_client
@@ -545,7 +557,7 @@ def _translate(text: str) -> str:
         return result
     except Exception as e:
         print(f"[Voice] Translation skipped ({e}) — returning English")
-        return text
+        return None
 
 _NO_SPEECH_THRESHOLD = 0.80
 
@@ -810,8 +822,11 @@ def speak(text: str, lang: str = "en"):
                 print("[Voice] Azure TTS used.")
             return
 
-        # Piper — local, no internet; Hebrew voice used if available
-        if TTS_ENGINE != "azure" and _speak_piper(text, lang=lang):
+        # Piper — local, no internet; Hebrew voice used if available.
+        # Try Piper even when TTS_ENGINE=azure if Azure fell through, so we
+        # don't drop to network gTTS for a transient Azure failure. Piper is
+        # ~0.3 s local vs gTTS ~2 s round-trip on common short replies.
+        if _speak_piper(text, lang=lang):
             if is_verbose():
                 print("[Voice] Piper TTS used.")
             return
@@ -819,10 +834,18 @@ def speak(text: str, lang: str = "en"):
         # gTTS fallback — works for Hebrew and any other language
         tts = gTTS(text=text, lang=_GTTS_LANG_MAP.get(lang, lang))
         filename = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.mp3")
-        tts.save(filename)
-        playsound.playsound(filename)
-        if is_verbose():
-            print("[Voice] gTTS fallback used.")
+        try:
+            tts.save(filename)
+            playsound.playsound(filename)
+            if is_verbose():
+                print("[Voice] gTTS fallback used.")
+        finally:
+            # Clean up the gTTS MP3 — was leaking under /tmp on every gTTS
+            # fallback (saved with no cleanup), filling disk over weeks.
+            try:
+                os.unlink(filename)
+            except OSError:
+                pass
     except Exception as e:
         print("[Voice] TTS Error:", e)
         _tts_guard_until = time.time() + 0.8
@@ -1098,7 +1121,15 @@ def start_voice_interface():
                 print(f"[TIMING] wav write: {time.time() - t_wav0:.2f}s")
 
                 t_stt0 = time.time()
-                transcription, detected_lang = transcribe(_wav_path)
+                try:
+                    transcription, detected_lang = transcribe(_wav_path)
+                finally:
+                    # Clean up the temp WAV — was leaking under /tmp on every
+                    # utterance (NamedTemporaryFile(delete=False) + no unlink).
+                    try:
+                        os.unlink(_wav_path)
+                    except OSError:
+                        pass
                 print(f"[TIMING] stt total: {time.time() - t_stt0:.2f}s")
 
                 if not transcription.strip():

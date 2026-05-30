@@ -35,9 +35,59 @@ UNCONFIGURED = "unconfigured"
 LOST         = "lost"
 IR_ONLY      = "ir_only"
 
+# Internal tags on registry entries. Stored as a list of strings on each
+# device row (key: "tags"). NOT exposed via the UI — auto-applied at registry
+# init based on entity_id / friendly-name heuristics so loads the user can't
+# afford to lose (fridge, router, Ziggy Brain) are never touched by sweep
+# automations like "Last One Out".
+TAG_CRITICAL = "critical"
+
+# Substring keywords that auto-tag a switch.* entity as critical. Matched
+# case-insensitively against both entity_id and the friendly name, so devices
+# named "Mekarer" (Hebrew transliteration) or HA-assigned ids like
+# switch.shelly_fridge both get caught. Add Hebrew variants because the
+# Israel-first launch will see device names in Hebrew at the HA layer too.
+_CRITICAL_PLUG_KEYWORDS: tuple[str, ...] = (
+    # English / transliteration
+    "fridge", "refrigerator", "freezer", "router", "modem", "wifi", "wi_fi",
+    "internet", "network", "switch_network", "nas", "server", "alarm",
+    "ziggy", "brain", "boiler", "water_heater", "heater",
+    # Hebrew (UTF-8) — covers the common consumer device names
+    "מקרר", "ראוטר", "מודם", "פריזר", "שרת", "אזעקה", "דוד",
+)
+
 _registry: list[dict] = []
 _lock = threading.Lock()
 _initialized = False
+
+# Hot-path lookup indexes. Rebuilt every time _registry is reassigned (init,
+# reconcile_with_ha, refresh) and whenever an in-place mutation moves a device
+# between rooms / changes its entity_id. The indexes hold *references* to the
+# same dict objects in _registry, so in-place flag/tag mutations remain visible
+# without rebuild.
+#
+# Previously, get_entity / get_ir_device_id / get_status / get_device_info all
+# did O(N) linear scans, and DeviceCard enrichment in /api/devices cascaded
+# several of them per device — quadratic on large registries.
+_idx_by_entity_id: dict[str, dict] = {}
+_idx_by_room_type: dict[tuple[str, str], list[dict]] = {}
+
+
+def _rebuild_indexes() -> None:
+    """Recompute the lookup indexes from _registry. Caller holds _lock."""
+    global _idx_by_entity_id, _idx_by_room_type
+    by_eid: dict[str, dict] = {}
+    by_rt: dict[tuple[str, str], list[dict]] = {}
+    for d in _registry:
+        eid = d.get("entity_id")
+        if eid:
+            by_eid[eid] = d
+        room = d.get("room")
+        dtype = d.get("device_type")
+        if room and dtype:
+            by_rt.setdefault((room, dtype), []).append(d)
+    _idx_by_entity_id = by_eid
+    _idx_by_room_type = by_rt
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +432,7 @@ def init() -> None:
         # immediately on /api/devices even before reconcile_with_ha runs.
         devices = _merge_ir_devices(devices)
         _registry = devices
+        _rebuild_indexes()
         _initialized = True
     log_info(f"[DeviceRegistry] Phase 1 initialized with {len(_registry)} devices (HA reconcile pending)")
 
@@ -415,6 +466,7 @@ async def reconcile_with_ha() -> None:
             devices = _merge_ir_devices(devices)
             _save_persistent(devices)
             _registry = devices
+            _rebuild_indexes()
             return len(_registry)
 
     try:
@@ -424,6 +476,15 @@ async def reconcile_with_ha() -> None:
         return
     if count:
         log_info(f"[DeviceRegistry] Phase 2 reconciled: {count} devices")
+    # Critical-plug auto-tag pass runs after reconcile so newly-paired plugs
+    # (fridge, router, …) get caught immediately rather than waiting for the
+    # next 60s tick. Idempotent — does nothing on the steady state.
+    try:
+        added = await _asyncio.to_thread(auto_tag_critical_plugs)
+        if added:
+            log_info(f"[DeviceRegistry] Auto-tagged {added} critical plug(s)")
+    except Exception as e:
+        log_error(f"[DeviceRegistry] auto_tag_critical_plugs failed: {e}")
 
 
 def refresh() -> None:
@@ -447,6 +508,7 @@ def refresh() -> None:
         devices = _merge_ir_devices(devices)
         _save_persistent(devices)
         _registry = devices
+        _rebuild_indexes()
     # Drop any cached HA entity-registry → device_id grouping so the next
     # /api/devices/grouped call picks up rooms/areas changes immediately.
     try:
@@ -454,6 +516,12 @@ def refresh() -> None:
         _invalidate_groups()
     except Exception:
         pass
+    # Re-run the critical-plug auto-tag pass. Cheap, idempotent; catches
+    # plugs that were named "Mekarer" or "Fridge" after the last reconcile.
+    try:
+        auto_tag_critical_plugs()
+    except Exception as e:
+        log_error(f"[DeviceRegistry] auto_tag_critical_plugs (refresh) failed: {e}")
     log_info("[DeviceRegistry] Refreshed")
 
 
@@ -462,18 +530,17 @@ def get_entity(room: str, device_type: str) -> Optional[str]:
     room_norm = (room or "").lower().replace(" ", "_").strip()
     dtype_norm = (device_type or "").lower().strip()
     with _lock:
-        for d in _registry:
-            if d.get("room") == room_norm and d.get("device_type") == dtype_norm:
-                if d["status"] == CONNECTED:
-                    return d["entity_id"]
-                if d["status"] == LOST:
-                    log_error(
-                        f"[DeviceRegistry] {room_norm}.{dtype_norm} is lost "
-                        f"(entity '{d['entity_id']}' removed from HA)"
-                    )
-                elif d["status"] == UNCONFIGURED:
-                    log_error(f"[DeviceRegistry] {room_norm}.{dtype_norm} has no entity_id assigned")
-                return None
+        for d in _idx_by_room_type.get((room_norm, dtype_norm), ()):
+            if d["status"] == CONNECTED:
+                return d["entity_id"]
+            if d["status"] == LOST:
+                log_error(
+                    f"[DeviceRegistry] {room_norm}.{dtype_norm} is lost "
+                    f"(entity '{d['entity_id']}' removed from HA)"
+                )
+            elif d["status"] == UNCONFIGURED:
+                log_error(f"[DeviceRegistry] {room_norm}.{dtype_norm} has no entity_id assigned")
+            return None
     return None
 
 
@@ -482,12 +549,8 @@ def get_ir_device_id(room: str, device_type: str) -> Optional[str]:
     room_norm = (room or "").lower().replace(" ", "_").strip()
     dtype_norm = (device_type or "").lower().strip()
     with _lock:
-        for d in _registry:
-            if (
-                d.get("room") == room_norm
-                and d.get("device_type") == dtype_norm
-                and d["status"] == IR_ONLY
-            ):
+        for d in _idx_by_room_type.get((room_norm, dtype_norm), ()):
+            if d["status"] == IR_ONLY:
                 return d.get("ir_device_id")
     return None
 
@@ -496,9 +559,9 @@ def get_status(room: str, device_type: str) -> Optional[str]:
     room_norm = (room or "").lower().replace(" ", "_").strip()
     dtype_norm = (device_type or "").lower().strip()
     with _lock:
-        for d in _registry:
-            if d.get("room") == room_norm and d.get("device_type") == dtype_norm:
-                return d["status"]
+        bucket = _idx_by_room_type.get((room_norm, dtype_norm))
+        if bucket:
+            return bucket[0]["status"]
     return None
 
 
@@ -516,10 +579,8 @@ def get_all_for_room(room: str) -> list[dict]:
 def get_device_info(entity_id: str) -> Optional[dict]:
     """Return the registry entry for an entity_id, or None."""
     with _lock:
-        for d in _registry:
-            if d.get("entity_id") == entity_id:
-                return dict(d)
-    return None
+        d = _idx_by_entity_id.get(entity_id)
+        return dict(d) if d is not None else None
 
 
 def set_learned_flag(entity_id: str, flag: str, value) -> bool:
@@ -531,15 +592,12 @@ def set_learned_flag(entity_id: str, flag: str, value) -> bool:
     """
     if not entity_id:
         return False
-    global _registry
     with _lock:
+        d = _idx_by_entity_id.get(entity_id)
         changed = False
-        for d in _registry:
-            if d.get("entity_id") == entity_id:
-                if d.get(flag) != value:
-                    d[flag] = value
-                    changed = True
-                break
+        if d is not None and d.get(flag) != value:
+            d[flag] = value
+            changed = True
         if changed:
             _save_persistent(_registry)
     return changed
@@ -552,25 +610,101 @@ def set_command_routing(entity_id: str, command: str, prefer: str | None) -> boo
     """
     if not entity_id or not command:
         return False
-    global _registry
     with _lock:
         changed = False
-        for d in _registry:
-            if d.get("entity_id") == entity_id:
-                routing = d.setdefault("command_routing", {})
-                if prefer is None:
-                    if command in routing:
-                        routing.pop(command, None)
-                        changed = True
-                else:
-                    cur = (routing.get(command) or {}).get("prefer")
-                    if cur != prefer:
-                        routing[command] = {"prefer": prefer}
-                        changed = True
-                break
+        d = _idx_by_entity_id.get(entity_id)
+        if d is not None:
+            routing = d.setdefault("command_routing", {})
+            if prefer is None:
+                if command in routing:
+                    routing.pop(command, None)
+                    changed = True
+            else:
+                cur = (routing.get(command) or {}).get("prefer")
+                if cur != prefer:
+                    routing[command] = {"prefer": prefer}
+                    changed = True
         if changed:
             _save_persistent(_registry)
     return changed
+
+
+def set_device_tag(entity_id: str, tag: str, on: bool) -> bool:
+    """Add or remove a tag on a device row keyed by entity_id.
+
+    Tags live in a `tags: list[str]` field on the registry entry. The list is
+    created on demand and pruned to empty when the last tag is removed.
+    Persisted on change. Returns True iff the row was actually updated.
+    """
+    if not entity_id or not tag:
+        return False
+    with _lock:
+        changed = False
+        d = _idx_by_entity_id.get(entity_id)
+        if d is not None:
+            current = list(d.get("tags") or [])
+            has = tag in current
+            if on and not has:
+                current.append(tag)
+                d["tags"] = current
+                changed = True
+            elif not on and has:
+                current.remove(tag)
+                if current:
+                    d["tags"] = current
+                else:
+                    d.pop("tags", None)
+                changed = True
+        if changed:
+            _save_persistent(_registry)
+    return changed
+
+
+def get_devices_with_tag(tag: str) -> list[dict]:
+    """Return a copy of every registry entry that carries `tag`."""
+    if not tag:
+        return []
+    with _lock:
+        return [dict(d) for d in _registry if tag in (d.get("tags") or [])]
+
+
+def has_tag(entity_id: str, tag: str) -> bool:
+    """True iff the device row for `entity_id` carries `tag`."""
+    if not entity_id or not tag:
+        return False
+    with _lock:
+        d = _idx_by_entity_id.get(entity_id)
+        return bool(d and tag in (d.get("tags") or []))
+
+
+def auto_tag_critical_plugs() -> int:
+    """Heuristically tag switch.* entities whose entity_id or name contains a
+    known critical keyword (fridge, router, etc.). Idempotent — adds only,
+    never removes — so a user-renamed plug stays tagged across reboots and
+    a freshly-paired fridge gets caught on the next reconcile.
+
+    Returns the number of newly-tagged rows (0 on no-op).
+    """
+    global _registry
+    added = 0
+    with _lock:
+        changed_any = False
+        for d in _registry:
+            eid = (d.get("entity_id") or "")
+            if not eid.startswith("switch."):
+                continue
+            existing = d.get("tags") or []
+            if TAG_CRITICAL in existing:
+                continue
+            haystack = (eid + " " + (d.get("name") or "")).lower()
+            if any(kw in haystack for kw in _CRITICAL_PLUG_KEYWORDS):
+                d["tags"] = existing + [TAG_CRITICAL]
+                added += 1
+                changed_any = True
+                log_info(f"[DeviceRegistry] Auto-tagged critical: {eid}")
+        if changed_any:
+            _save_persistent(_registry)
+    return added
 
 
 def get_rooms_by_device_type() -> dict[str, list[str]]:
@@ -670,6 +804,7 @@ async def sync_rooms_to_ha() -> None:
                 if old_norm in created:
                     d["room"] = created[old_norm]
             _save_persistent(_registry)
+            _rebuild_indexes()  # room keys changed → (room, type) buckets stale
             log_info(f"[DeviceRegistry] sync_rooms_to_ha: migrated room keys: {created}")
 
 

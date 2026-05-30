@@ -218,7 +218,7 @@ export function TVRemote({ entity }) {
                   padding: '7px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 500,
                   background: 'var(--surface-2)', color: 'var(--ink-2)',
                   border: '0.5px solid var(--line)',
-                  cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
+                  cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >{x.label}</button>
             ))}
@@ -295,7 +295,6 @@ function SourceRow({ sources, facts, entity, fire }) {
           fontSize: 11.5, fontWeight: 500,
           cursor: enabled ? 'pointer' : 'not-allowed',
           fontFamily: 'inherit',
-          textTransform: 'capitalize',
           opacity: enabled ? 1 : 0.4,
         }}
       >{label.replace?.(/_/g, ' ') ?? label}</button>
@@ -693,13 +692,39 @@ function ChannelEntry({ value, onChange, onSubmit }) {
 
 // Extract source command list from a linked IR device's learned commands.
 // Surfaces HDMI inputs and named input commands as picker entries.
+//
+// Three naming conventions seen in the wild:
+//   - `hdmi_1`, `hdmi_2`              (TVs)
+//   - `source_tv`, `source_av`        (older TVs)
+//   - `input_hdmi`, `input_optical`,  (soundbars / AV receivers — most
+//     `input_bluetooth`, `input_aux`,  common modern convention)
+//     `input_tv`, `input_usb`, …
+//   - bare `input`                     (TVs with a single Source/Input button)
+//
+// Earlier this function only matched the first two patterns plus bare
+// `input`, so soundbar inputs like `input_bluetooth` never appeared in
+// the picker even when learned — AND they couldn't fall through to the
+// "extras" row because TV_REMOTE_CONSUMES claims every `input_*` for
+// the source row. The commands existed in storage but had no UI surface.
 function extractIrSources(ir) {
   if (!ir) return []
   const learned = new Set(ir.learned_commands || [])
   const result = []
   for (const c of learned) {
-    if (c.startsWith('hdmi_') || c.startsWith('source_') || c === 'input') {
-      result.push({ label: c.replace(/^source_/, '').replace(/_/g, ' '), cmd: c })
+    if (
+      c.startsWith('hdmi_') ||
+      c.startsWith('source_') ||
+      c.startsWith('input_') ||
+      c === 'input'
+    ) {
+      // Strip the prefix in the user-facing label so "input_bluetooth"
+      // reads as "bluetooth" instead of "input bluetooth" — cleaner in
+      // the source row where the context already says "Source".
+      const label = c
+        .replace(/^source_/, '')
+        .replace(/^input_/, '')
+        .replace(/_/g, ' ')
+      result.push({ label, cmd: c })
     }
   }
   return result

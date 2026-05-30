@@ -1,8 +1,7 @@
 # services/sensor_alerts.py
 """
-Polls Home Assistant sensor states and sends Telegram notifications
-when configured sensors change to their trigger state (e.g. door opened,
-motion detected).  No HA MQTT automation required — uses the HA REST API.
+Polls sensor states and sends Ziggy app push notifications when configured
+sensors change to their trigger state (e.g. door opened, motion detected).
 """
 
 from __future__ import annotations
@@ -70,7 +69,7 @@ def _check_conditions(conditions: Dict[str, Any]) -> bool:
 
 def start_sensor_alerts(notify_fn: Callable[[str], None]) -> None:
     """
-    Background loop.  notify_fn(message) sends a Telegram (or any) notification.
+    Background loop.  notify_fn(message) sends a Ziggy app push notification.
     Runs until the process exits.
     """
     cfg = _cfg()

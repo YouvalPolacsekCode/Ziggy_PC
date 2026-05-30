@@ -22,7 +22,7 @@ async def handle_quick_message(params: dict, *, source: str = "unknown") -> dict
     return communication_manager.quick_message(
         contact_name=params.get("contact_name", ""),
         text=params.get("text", ""),
-        channel=params.get("channel", "telegram"),
+        channel=params.get("channel", "email"),
     )
 
 

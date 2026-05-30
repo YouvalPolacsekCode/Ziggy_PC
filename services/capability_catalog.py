@@ -236,15 +236,15 @@ CAPABILITY_CATALOG: dict[str, dict] = {
         "name": "Quick Message",
         "category": "communication",
         "icon": "💬",
-        "description": "Send a message to a contact via Telegram or WhatsApp",
+        "description": "Send a message to a contact via email or WhatsApp",
         "params_schema": {
             "contact_name": {
                 "type": "string", "label": "Contact name",
                 "required": True, "param_type": "config",
             },
             "channel": {
-                "type": "select", "label": "Channel", "options": ["telegram", "whatsapp"],
-                "default": "telegram", "param_type": "config",
+                "type": "select", "label": "Channel", "options": ["email", "whatsapp"],
+                "default": "email", "param_type": "config",
             },
             "text": {
                 "type": "string", "label": "Message text",

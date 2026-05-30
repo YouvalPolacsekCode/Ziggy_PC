@@ -59,6 +59,27 @@ async def _fire_automations(name: str, new_state: str) -> None:
                 await execute_ziggy_actions(auto["id"])
             except Exception as exc:
                 log_error(f"[Presence] Automation {auto['id']} failed: {exc}")
+
+        # Composite trigger: fire `all_persons_left` automations only when the
+        # household just emptied. Layered on top of `person_leaves` so existing
+        # per-person automations stay untouched.
+        if trigger_type == "person_leaves":
+            from services.presence_engine import is_all_away
+            if is_all_away():
+                for auto in list_automations():
+                    if not auto.get("enabled", True):
+                        continue
+                    t = auto.get("trigger", {})
+                    if t.get("type") != "all_persons_left":
+                        continue
+                    log_info(
+                        f"[Presence] Firing automation '{auto.get('name', auto['id'])}' "
+                        f"for all_persons_left (last person: {name})"
+                    )
+                    try:
+                        await execute_ziggy_actions(auto["id"])
+                    except Exception as exc:
+                        log_error(f"[Presence] Automation {auto['id']} failed: {exc}")
     except Exception as exc:
         log_error(f"[Presence] Transition handler error: {exc}")
 
