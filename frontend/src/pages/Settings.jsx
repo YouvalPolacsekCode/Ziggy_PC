@@ -100,6 +100,53 @@ function SectionTitle({ icon: Icon, children }) {
   )
 }
 
+// Collapsed-by-default "Advanced" container. Holds the diagnostics + network
+// panes that most users never touch (System Status, Zigbee bridge, etc.).
+// Keeping them in the DOM tree — just visually collapsed — means existing
+// deep-links / scroll-into-view still work after a user expands once.
+function AdvancedSettingsSection({ children }) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ marginBottom: 22, marginTop: 6 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 14px', borderRadius: 12, background: 'var(--surface)',
+          border: '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
+          color: 'var(--ink)', textAlign: 'left',
+        }}
+        aria-expanded={open}
+      >
+        <span>
+          <p style={{ fontSize: 13, fontWeight: 600 }}>{t('settings.advanced')}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{t('settings.advancedHint')}</p>
+        </span>
+        <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{ paddingTop: 14 }}>
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 function SettingRow({ icon: Icon, label, subtitle, children }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
@@ -1247,44 +1294,33 @@ export default function Settings() {
             </Card>
           </div>
 
-          {/* System Status */}
+          {/* Home Sensing (was: Presence tracking) — kept top-level because
+              the main on/off toggle is something normal users do want to find. */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle icon={Activity}>System Status</SectionTitle>
-            <SystemStatusCard />
-          </div>
-
-          {/* Presence tracking */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle icon={MapPin}>Presence tracking</SectionTitle>
+            <SectionTitle icon={MapPin}>{t('settings.homeSensing')}</SectionTitle>
             <PresenceSection />
           </div>
 
           {/* Ziggy Home (mobile app) */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle icon={Smartphone}>Ziggy Home (mobile)</SectionTitle>
+            <SectionTitle icon={Smartphone}>{t('settings.mobileApp')}</SectionTitle>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <PairWithPhone />
               <MobileDevicesList />
             </div>
           </div>
 
-          {/* Zigbee Bridge */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle icon={Radio}>Zigbee Bridge</SectionTitle>
-            <ZigbeeBridgeSection isAdmin={isAdmin} />
-          </div>
-
           {/* Users & Access — super_admin only */}
           {isSuperAdmin && (
             <div style={{ marginBottom: 22 }}>
-              <SectionTitle icon={Users}>Users & Access</SectionTitle>
+              <SectionTitle icon={Users}>{t('settings.usersAndAccess')}</SectionTitle>
               <UsersAndAccessSection currentUsername={username} />
             </div>
           )}
 
           {/* Quick Asks */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Quick Asks</SectionTitle>
+            <SectionTitle>{t('settings.quickAsks')}</SectionTitle>
             <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: '16px 16px 8px' }}>
               <QuickAsks embedded />
             </div>
@@ -1292,11 +1328,26 @@ export default function Settings() {
 
           {/* Memory */}
           <div style={{ marginBottom: 22 }}>
-            <SectionTitle>Memory</SectionTitle>
+            <SectionTitle>{t('settings.memory')}</SectionTitle>
             <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
               <MemoryPanel />
             </div>
           </div>
+
+          {/* ── Advanced (collapsed by default) ─────────────────────────────
+              Diagnostics + network-y panes that most users never need.
+              Sections kept intact (not removed) — just folded out of the
+              default scroll path so the General tab feels lighter. */}
+          <AdvancedSettingsSection>
+            <div style={{ marginBottom: 16 }}>
+              <SectionTitle icon={Activity}>{t('settings.systemStatus')}</SectionTitle>
+              <SystemStatusCard />
+            </div>
+            <div>
+              <SectionTitle icon={Radio}>{t('settings.zigbeeBridge')}</SectionTitle>
+              <ZigbeeBridgeSection isAdmin={isAdmin} />
+            </div>
+          </AdvancedSettingsSection>
 
         </>
       )}
@@ -1308,8 +1359,8 @@ export default function Settings() {
 
           {/* Capabilities (Virtual Devices) — admin only */}
           <div style={{ marginTop: 32 }}>
-            <SectionTitle>Capabilities</SectionTitle>
-            <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14 }}>Virtual devices and custom capabilities for automation triggers.</p>
+            <SectionTitle>{t('settings.capabilities')}</SectionTitle>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14 }}>{t('settings.capabilitiesDesc')}</p>
             <VirtualDevices embedded />
           </div>
         </>
