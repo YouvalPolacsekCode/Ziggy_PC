@@ -114,7 +114,7 @@ export default function MediaPlayActionEditor({ action, onChange }) {
             <option value="">—</option>
             {enabledSpeakers.map(s => (
               <option key={s.entity_id} value={s.entity_id}>
-                {s.display_name || s.entity_id}{s.room ? ` · ${s.room}` : ''}
+                {s.display_name || t('media.unnamedSpeaker')}{s.room ? ` · ${s.room}` : ''}
               </option>
             ))}
           </select>

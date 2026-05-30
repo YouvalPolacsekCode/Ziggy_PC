@@ -184,6 +184,7 @@ function actionSummary(action) {
       const dys = action.duration_days || 7
       return tStatic('automations.summary.fakeOccupancy', { n, window: win, days: dys })
     }
+    case 'media_play':   return tStatic('media.action.playMedia')
     default:             return action.type
   }
 }

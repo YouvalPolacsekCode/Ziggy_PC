@@ -24,6 +24,7 @@ import { Card, CardBody } from '../ui/Card'
 import { useFeature } from '../../stores/featuresStore'
 import { useMediaStore } from '../../stores/mediaStore'
 import { pauseMedia, resumeMedia, nextMedia } from '../../lib/api'
+import { useT } from '../../lib/i18n'
 
 // ─── Shared bits ─────────────────────────────────────────────────────────────
 
@@ -585,6 +586,7 @@ export function MediaCardSection({ config = {} }) {
   const ensureLoaded = useMediaStore(s => s.ensureLoaded)
   const refreshState = useMediaStore(s => s.refreshState)
   const ws           = useWsMessages()
+  const t            = useT()
   useEffect(() => { if (enabled) ensureLoaded() }, [enabled, ensureLoaded])
   useEffect(() => {
     if (!enabled || !ws?.length) return
@@ -597,8 +599,8 @@ export function MediaCardSection({ config = {} }) {
   if (!enabled) {
     return (
       <Card><CardBody>
-        <SectionTitle>Music</SectionTitle>
-        <EmptyHint>Enable Music in Settings → Feature flags to use this widget.</EmptyHint>
+        <SectionTitle>{t('media.hub.title')}</SectionTitle>
+        <EmptyHint>{t('media.hub.featureOffHint')}</EmptyHint>
       </CardBody></Card>
     )
   }
@@ -606,8 +608,8 @@ export function MediaCardSection({ config = {} }) {
   if (!items || items.length === 0) {
     return (
       <Card><CardBody>
-        <SectionTitle>Music</SectionTitle>
-        <EmptyHint>No speakers enabled. Add one in Settings → Music.</EmptyHint>
+        <SectionTitle>{t('media.hub.title')}</SectionTitle>
+        <EmptyHint>{t('media.hub.noSpeakersHint')}</EmptyHint>
       </CardBody></Card>
     )
   }
@@ -622,20 +624,28 @@ export function MediaCardSection({ config = {} }) {
 
   return (
     <Card><CardBody>
-      <SectionTitle>Music</SectionTitle>
+      <SectionTitle>{t('media.hub.title')}</SectionTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {sorted.map(it => <HubSpeakerRow key={it.entity_id} item={it} />)}
+        {sorted.map(it => <HubSpeakerRow key={it.entity_id} item={it} t={t} />)}
       </div>
     </CardBody></Card>
   )
 }
 
-function HubSpeakerRow({ item }) {
+const KNOWN_PLAYER_STATES = new Set(['playing', 'paused', 'idle', 'off', 'unavailable', 'unknown'])
+
+function HubSpeakerRow({ item, t }) {
   const [busy, setBusy] = useState(false)
   const playing = item.state === 'playing'
   const onPause  = async () => { setBusy(true); try { await pauseMedia(item.entity_id) } finally { setBusy(false) } }
   const onResume = async () => { setBusy(true); try { await resumeMedia(item.entity_id) } finally { setBusy(false) } }
   const onNext   = async () => { setBusy(true); try { await nextMedia(item.entity_id) } finally { setBusy(false) } }
+
+  // Only translate known states; unknown values (e.g. "buffering") are hidden
+  // rather than leaking the raw HA value or a missing-i18n-key string.
+  const stateKey = item.state && KNOWN_PLAYER_STATES.has(item.state) ? item.state : null
+  const friendlyState = playing || !stateKey ? null : t(`media.state.${stateKey}`)
+  const speakerName = item.display_name || t('media.unnamedSpeaker')
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 8px', borderRadius: 10, border: '0.5px solid var(--line)' }}>
@@ -645,17 +655,17 @@ function HubSpeakerRow({ item }) {
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {item.title || item.display_name}
+          {item.title || speakerName}
         </div>
         <div dir="auto" style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {[item.artist, item.room || null, playing ? null : (item.state || 'idle')].filter(Boolean).join(' · ')}
+          {[item.artist, item.room || null, friendlyState].filter(Boolean).join(' · ')}
         </div>
       </div>
-      <button type="button" disabled={busy} onClick={playing ? onPause : onResume} style={hubBtn} aria-label={playing ? 'Pause' : 'Play'}>
+      <button type="button" disabled={busy} onClick={playing ? onPause : onResume} style={hubBtn} aria-label={playing ? t('media.hub.pause') : t('media.hub.play')}>
         {playing ? '⏸' : '▶'}
       </button>
       {playing && (
-        <button type="button" disabled={busy} onClick={onNext} style={hubBtn} aria-label="Next">
+        <button type="button" disabled={busy} onClick={onNext} style={hubBtn} aria-label={t('media.hub.next')}>
           ⏭
         </button>
       )}

@@ -222,16 +222,23 @@ export default function MediaSettings() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+const KNOWN_PLAYER_STATES = new Set(['playing', 'paused', 'idle', 'off', 'unavailable', 'unknown'])
+
 function SpeakerRow({ sp, t, busy, onToggle, onRename, onForget }) {
   const isSupported = sp.class !== 'unsupported'
+  const speakerName = sp.display_name || t('media.unnamedSpeaker')
+  // Hide raw/unknown HA states; map known ones to friendly i18n labels.
+  const friendlyState = sp.state && KNOWN_PLAYER_STATES.has(sp.state)
+    ? t(`media.state.${sp.state}`)
+    : null
   return (
     <div style={{ ...row, opacity: isSupported ? 1 : 0.55 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={rowTitle} dir="auto">{sp.display_name || sp.entity_id}</div>
+        <div style={rowTitle} dir="auto">{speakerName}</div>
         <div style={rowSub} dir="auto">
           <span>{t(CLASS_LABEL[sp.class] || CLASS_LABEL.unsupported)}</span>
           {sp.room && <span> · {sp.room}</span>}
-          {sp.state && <span> · {sp.state}</span>}
+          {friendlyState && <span> · {friendlyState}</span>}
         </div>
         <div style={{ ...rowSub, marginTop: 2, fontStyle: 'italic' }}>
           {t(CLASS_HINT[sp.class] || CLASS_HINT.unsupported)}
@@ -276,6 +283,12 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
           <button onClick={onClose} style={closeBtn} aria-label="Close">×</button>
         </div>
         <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{
+            background: 'rgba(220,150,40,0.10)', color: '#a06a18',
+            padding: '8px 12px', borderRadius: 8, fontSize: 11,
+          }}>
+            ⚠ {t('media.ytmAdvancedNotice')}
+          </div>
           <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0 }}>{t('media.ytmHowTo1')}</p>
           <ol style={{ margin: 0, paddingInlineStart: 18, fontSize: 12, color: 'var(--ink-mute)', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <li>{t('media.ytmStep1')}</li>

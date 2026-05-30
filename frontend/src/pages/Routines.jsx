@@ -185,7 +185,7 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
     : step.type === 'automation' ? `▶ ${step.automation_name || step.automation_id || 'Automation'}`
     : step.type === 'delay' ? `Wait ${step.delay_seconds || '?'}s`
     : step.type === 'notify' ? `📣 ${step.message || 'Notification'}`
-    : step.type === 'media_play' ? `🎵 ${step.service || '?'} → ${step.speaker_entity || '?'}`
+    : step.type === 'media_play' ? `🎵 ${t('media.action.playMedia')}`
     : step.text || 'Send command'
 
   if (collapsed) {
