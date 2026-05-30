@@ -25,9 +25,6 @@ python-dotenv
 pytz
 dateparser
 
-# MQTT (optional – comment if unused)
-paho-mqtt
-
 # Zigbee / Home Assistant Support (optional – comment if unused)
 zigpy
 bellows
@@ -103,3 +100,6 @@ spotipy>=2.24.0
 google-api-python-client>=2.136.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
+# YouTube Music unofficial API — browser-cookie auth, used by the media
+# subsystem when a household member connects YT Music.
+ytmusicapi>=1.7.0

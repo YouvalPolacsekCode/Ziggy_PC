@@ -7,8 +7,10 @@ import { EntitySelect, getActionsForDomain, getActionLabel } from '../components
 import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getEntityState } from '../lib/api'
+import { getEntityState, getSuggestedRoutines } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
+import MediaPlayActionEditor from '../components/media/MediaPlayActionEditor'
+import { useFeature } from '../stores/featuresStore'
 import { useT } from '../lib/i18n'
 
 const ICONS = ['⚡', '☀️', '🌙', '🏠', '🎬', '🏋️', '🛏️', '☕', '🌿', '🔒', '💡', '🎵']
@@ -34,6 +36,7 @@ const validateStep = (step) => {
     case 'delay':      return (Number(step.delay_seconds) > 0) ? null : 'routines.validate.delay'
     case 'notify':     return step.message ? null : 'routines.validate.notify'
     case 'message':    return (step.text && step.text.trim()) ? null : 'routines.validate.message'
+    case 'media_play': return (step.speaker_entity && step.service && step.profile) ? null : 'media.action.validate'
     default:           return null
   }
 }
@@ -46,6 +49,10 @@ const STEP_TYPES = [
   { value: 'delay',      labelKey: 'routines.stepType.delay' },
   { value: 'notify',     labelKey: 'routines.stepType.notify' },
   { value: 'message',    labelKey: 'routines.stepType.message' },
+  // media_play is appended at render time inside StepRow when the
+  // media_music feature flag is on — keeping it out of this static list
+  // means existing routines load their step labels cleanly without the
+  // flag.
 ]
 
 const selectStyle = {
@@ -162,15 +169,23 @@ function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIr
 // ── StepRow ───────────────────────────────────────────────────────────────────
 function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse, validationError }) {
   const t = useT()
+  const mediaMusic = useFeature('media_music')
   const { entities } = useDeviceStore()
   const domain = step.entity_id?.split('.')?.[0] || null
   const availableActions = (step.type === 'device' && domain) ? getActionsForDomain(domain) : [{ value: 'turn_on', labelKey: 'entitySelect.action.turnOn', label: 'Turn On' }, { value: 'turn_off', labelKey: 'entitySelect.action.turnOff', label: 'Turn Off' }, { value: 'toggle', labelKey: 'entitySelect.action.toggle', label: 'Toggle' }]
   const linkedIr = entities.find(e => e.entity_id === step.entity_id)?._linkedIr || null
+  // Step type list — append "Play media" when the media_music flag is on so
+  // existing routine steps still resolve their label even after the flag
+  // gets disabled later.
+  const stepTypeOptions = mediaMusic
+    ? [...STEP_TYPES, { value: 'media_play', labelKey: 'media.action.playMedia' }]
+    : STEP_TYPES
   const stepLabel = step.type === 'device' ? `${getActionLabel(availableActions.find(a => a.value === step.action), t) || 'Control'} · ${step.entity_id || '?'}`
     : step.type === 'ir_command' ? `📡 ${step.ir_device_name || 'IR'} → ${step.ir_sequence || step.ir_command || '?'}`
     : step.type === 'automation' ? `▶ ${step.automation_name || step.automation_id || 'Automation'}`
     : step.type === 'delay' ? `Wait ${step.delay_seconds || '?'}s`
     : step.type === 'notify' ? `📣 ${step.message || 'Notification'}`
+    : step.type === 'media_play' ? `🎵 ${step.service || '?'} → ${step.speaker_entity || '?'}`
     : step.text || 'Send command'
 
   if (collapsed) {
@@ -203,7 +218,14 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
           entity_id / action / service_data / etc.). Clear only fields that
           don't make sense for the new type at execute time; the validator
           will gate Save if anything else is missing. */}
-      <Select options={STEP_TYPES} value={step.type || 'device'} onChange={e => onChange({ ...step, type: e.target.value })} />
+      <Select options={stepTypeOptions} value={step.type || 'device'} onChange={e => {
+        const nextType = e.target.value
+        if (nextType === 'media_play') {
+          onChange({ _uid: step._uid, type: nextType, speaker_entity: '', service: 'spotify', profile: '', mode: 'playlist' })
+        } else {
+          onChange({ ...step, type: nextType })
+        }
+      }} />
       {validationError && (
         <p style={{ fontSize: 11, color: 'var(--err)', margin: '-4px 0 0', fontFamily: '"IBM Plex Mono", monospace' }}>
           ⚠ {validationError}
@@ -242,6 +264,9 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
         </>
       )}
       {step.type === 'message' && <SendIntentEditor value={step.text || ''} onChange={text => onChange({ ...step, text })} />}
+      {step.type === 'media_play' && mediaMusic && (
+        <MediaPlayActionEditor action={step} onChange={onChange} />
+      )}
     </div>
   )
 }
@@ -557,6 +582,79 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
   )
 }
 
+// ── SuggestedRoutineCard ─────────────────────────────────────────────────────
+// Mirrors RoutineCard's tinted-square / name / meta-pill layout but swaps the
+// right-side action row for a single Configure button. Suggested routines are
+// curated templates from /api/routines/suggested — they never auto-deploy; the
+// button opens RoutineWizard prefilled with the template's steps and the user
+// confirms before save. Visual distinction: a muted "SUGGESTED" pill instead of
+// "ROUTINE", and a slightly different tint so the user can tell suggested from
+// installed routines at a glance.
+const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template, onConfigure }) {
+  const t = useT()
+  const tier = template.tier || 'ready'
+  // Suggested templates get a softer tint to read as "available" rather than
+  // "installed" — mirrors how SuggestedTemplates render in Automations.jsx.
+  const tint = tier === 'ready' ? 'var(--info)' : tier === 'partial' ? 'var(--warn)' : 'var(--ink-faint)'
+  const stepCount = (template.wizard_prefill?.steps || []).length
+
+  return (
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
+      <div style={{
+        padding: '14px 16px', borderRadius: 12,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+      }}>
+        <div style={{
+          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`,
+          fontSize: 18,
+        }}>
+          {template.icon || '⚡'}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }}>
+            {template.name}
+          </p>
+          {template.description && (
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, lineHeight: 1.4 }}>
+              {template.description}
+            </p>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600,
+              fontFamily: '"IBM Plex Mono", monospace',
+              background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint,
+            }}>
+              {t('routines.suggested.tag')}
+            </span>
+            {stepCount > 0 && (
+              <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                {stepCount} step{stepCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div style={{ flexShrink: 0 }}>
+          <button
+            onClick={() => onConfigure(template)}
+            disabled={tier === 'unavailable'}
+            className={tier === 'ready' ? 'z-btn-primary' : 'z-btn-secondary'}
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, whiteSpace: 'nowrap', opacity: tier === 'unavailable' ? 0.4 : 1 }}
+          >
+            {t('routines.suggested.configure')}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  )
+})
+
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 /**
  * Headerless routines list + wizard. Renders inside any container, no page
@@ -566,13 +664,28 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
 export function RoutinesListPanel() {
   const { routines, loading, fetchRoutines, saveRoutine, removeRoutine, runRoutine, loadRoutineConfig } = useAutomationStore()
   const { addToast } = useUIStore()
+  const t = useT()
   const [showWizard, setShowWizard] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [viewTarget, setViewTarget] = useState(null)
+  // Suggested routine templates from /api/routines/suggested. Filtered to
+  // `tier !== 'unavailable'` and `already_exists !== true` so we never show
+  // a card the user can't act on or that duplicates an existing routine.
+  const [suggested, setSuggested] = useState([])
 
   // Only fetch on first visit — re-fetching on every mount toggles `loading`
   // in the store, which flashes skeletons mid-tab-transition and looks jumpy.
   useEffect(() => { if (routines.length === 0) fetchRoutines() }, [])
+
+  // Suggested routines: fire-and-forget. A failure (e.g. backend not yet
+  // restarted with the new endpoint) leaves `suggested` empty — the section
+  // just doesn't render. No skeleton, no error toast: this is an additive
+  // surface and the existing routines list is the primary content.
+  useEffect(() => {
+    getSuggestedRoutines()
+      .then(r => setSuggested(Array.isArray(r?.suggested) ? r.suggested : []))
+      .catch(() => setSuggested([]))
+  }, [])
 
   // saveRoutine handles both create AND update (id present = update in place).
   // Without this, edits would slugify-on-name → orphan the original script
@@ -603,13 +716,46 @@ export function RoutinesListPanel() {
   const handleView = async r => {
     try { const config = await loadRoutineConfig(r.id); setViewTarget(config || r) } catch { setViewTarget(r) }
   }
+  // Configure a suggested-routine template: open the wizard with the template's
+  // prefill so the user reviews and saves. Suggested templates never auto-deploy.
+  const handleConfigureSuggested = (template) => {
+    const prefill = template.wizard_prefill || {
+      name: template.name || '',
+      description: template.description || '',
+      icon: template.icon || '⚡',
+      steps: [],
+    }
+    setEditTarget(prefill)
+    setShowWizard(true)
+  }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
+
+  // Filter once: hide unavailable tier (user can't act on it) and dedupe
+  // against existing routines so we don't suggest something the user already
+  // built. Computed here (not in useMemo) — the suggested list is tiny.
+  const suggestedToRender = suggested.filter(s => s.tier !== 'unavailable' && !s.already_exists)
 
   return (
     <>
       {loading && routines.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 62, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+        </div>
+      )}
+
+      {/* Suggested routines section — renders above the existing list so the
+          user sees curated next steps first. Hidden entirely when empty so
+          there's no visual weight when no template matches the user's setup. */}
+      {suggestedToRender.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <p className="z-eyebrow" style={{ marginBottom: 8, color: 'var(--ink-mute)' }}>
+            {t('routines.suggested.sectionTitle')}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {suggestedToRender.map(s => (
+              <SuggestedRoutineCard key={s.id} template={s} onConfigure={handleConfigureSuggested} />
+            ))}
+          </div>
         </div>
       )}
 

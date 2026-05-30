@@ -2,6 +2,8 @@
 # Business logic lives in backend/routers/*.py.
 from __future__ import annotations
 
+import asyncio
+
 import uvicorn
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +47,7 @@ from backend.routers.edge_health_router import router as edge_health_router
 from backend.routers.first_boot_router import router as first_boot_router
 from backend.routers.onboarding_sensors_router import router as onboarding_sensors_router
 from backend.routers.push_action_router import router as push_action_router
+from backend.routers.media_router import router as media_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -134,9 +137,13 @@ async def _startup():
 
 
 async def _warm_ha_catalog():
+    # Cap the startup warm-up so a slow/unreachable HA can't hold the catalog
+    # task open indefinitely. The first user call will retry if needed.
     try:
         from services.ha_capabilities import ensure_catalog_async
-        await ensure_catalog_async()
+        await asyncio.wait_for(ensure_catalog_async(), timeout=10.0)
+    except asyncio.TimeoutError:
+        log_info("[HACapabilities] startup warm timed out after 10s (will fetch on demand)")
     except Exception as e:
         log_info(f"[HACapabilities] startup warm failed: {e}")
 
@@ -452,6 +459,12 @@ app.include_router(push_router,          dependencies=_auth)
 app.include_router(debug_router,         dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
 app.include_router(ui_prefs_router,      dependencies=_auth)
+# media_router intentionally registered WITHOUT global _auth: every route
+# declares its own Depends(get_current_user) or Depends(require_role), AND
+# the Spotify OAuth callback (/api/media/spotify/callback) is reachable
+# unauthenticated because Spotify's redirect cannot carry a Ziggy session
+# cookie — the unforgeable state token is the handle.
+app.include_router(media_router)
 app.include_router(mobile_router)  # mobile endpoints handle their own auth per-route
 # Edge /health (Prompt 4 chunk 2.G) — LAN-reachable, NO auth dependency
 # so the PWA / mobile app can ping it during onboarding before the user

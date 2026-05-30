@@ -20,6 +20,7 @@ import {
   ModeSwitcherSection,
   CameraTileSection,
   CommandButtonSection,
+  MediaCardSection,
   UnknownSection,
 } from './sections'
 
@@ -34,6 +35,7 @@ const REGISTRY = {
   mode_switcher:   ModeSwitcherSection,
   camera_tile:     CameraTileSection,
   command_button:  CommandButtonSection,
+  media_card:      MediaCardSection,
 }
 
 // Size → grid column span on the responsive grid. FULL always spans the row.

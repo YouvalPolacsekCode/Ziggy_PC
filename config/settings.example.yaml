@@ -113,7 +113,6 @@ contacts:
   # Optional address book used by comm_handler. Each entry is keyed by short name.
   example_person:
     email: person@example.com
-    telegram: '@telegram_handle'
     whatsapp: '+15551234567'
 
 database:
@@ -181,11 +180,11 @@ features:
   home_map: false
   ifttt: false
   local_storage: true
+  media_music: false       # Phase 1+2 music/media. Off by default; toggle in Settings → Feature flags.
   rouge: false
   scenes: false
   smart_home: true
   task_tracking: false
-  telegram: false
   voice: true
   zigbee_support: true
 
@@ -252,12 +251,6 @@ ifttt:
   - send_notification
   webhook_key: YOUR_IFTTT_WEBHOOK_KEY
 
-ir_blasters:
-- ha_entity_id: remote.ir_blaster
-  id: blaster_living_room
-  name: Living Room IR Blaster
-  room: living_room
-
 language: en
 
 media:
@@ -266,13 +259,6 @@ media:
   default_speaker: null
   default_volume: 0.35
   device_map: {}
-
-mqtt:
-  base_topic: ziggy
-  host: 127.0.0.1
-  password: REPLACE_WITH_MQTT_PASSWORD
-  port: 1883
-  username: ziggy
 
 news:
   rss_sources:
@@ -361,12 +347,6 @@ target_registry: {}
   # Per-deployment registry of speakable targets (TVs, speakers, streamers).
   # Each entry: { ha_entity, name, room, aliases: [...], supports_audio,
   # supports_images, supports_video, type }.
-
-telegram:
-  allowed_users: []
-  default_chat_id: 0
-  enabled: false
-  token: REPLACE_WITH_TELEGRAM_BOT_TOKEN
 
 todo:
   shopping_list: todo.shopping_list

@@ -103,52 +103,6 @@ async def patch_integrations(patch: IntegrationsPatch, _: dict = Depends(require
 
 
 # ---------------------------------------------------------------------------
-# MQTT
-# ---------------------------------------------------------------------------
-
-@router.get("/mqtt")
-async def get_mqtt_settings(_: dict = Depends(require_role("super_admin"))):
-    mqtt = settings.get("mqtt", {})
-    pw = mqtt.get("password", "")
-    return {
-        "host": mqtt.get("host", ""),
-        "port": mqtt.get("port", 1883),
-        "username": mqtt.get("username", ""),
-        "password_configured": bool(pw),
-        "password_masked": _mask(pw),
-    }
-
-
-class MqttPatch(BaseModel):
-    host: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-
-
-@router.patch("/mqtt")
-async def patch_mqtt_settings(patch: MqttPatch, _: dict = Depends(require_role("super_admin"))):
-    mqtt = settings.setdefault("mqtt", {})
-    data = patch.model_dump(exclude_none=True)
-
-    # host/port/username are non-secret — settings.yaml.
-    non_secret_changed = False
-    for field in ("host", "port", "username"):
-        if field in data:
-            mqtt[field] = data[field]
-            non_secret_changed = True
-    if non_secret_changed:
-        save_settings(settings)
-
-    # password is the secret.
-    if "password" in data:
-        mqtt["password"] = data["password"]
-        save_secrets({"mqtt": {"password": data["password"]}})
-
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
 # Feature flags
 # ---------------------------------------------------------------------------
 
@@ -160,6 +114,7 @@ _FEATURE_DEFAULTS: dict[str, bool] = {
     "home_map":       False,
     "ifttt":          True,
     "local_storage":  True,
+    "media_music":    False,
     "smart_home":     True,
     "task_tracking":  False,
     "voice":          True,

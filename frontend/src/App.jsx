@@ -36,6 +36,8 @@ const OtaReleases     = lazy(() => import('./pages/OtaReleases'))
 const AuditLog        = lazy(() => import('./pages/AuditLog'))
 const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
+const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
+const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
 import MobilePresenceBridge from './lib/mobilePresenceBridge'
 import { useUIStore } from './stores/uiStore'
 import { useWsConnected, useWsMessages } from './hooks/useWebSocket'
@@ -47,6 +49,7 @@ import { useFeaturesStore, useFeature } from './stores/featuresStore'
 import LoginPage from './pages/LoginPage'
 import AcceptInvite from './pages/AcceptInvite'
 import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings } from './lib/api'
+import { entityDisplayName, humanizeSlug } from './lib/utils'
 import { setLang as setI18nLang, t as i18nT } from './lib/i18n'
 import { isNative } from './lib/native'
 import { getDeviceToken } from './lib/mobileApi'
@@ -102,6 +105,12 @@ function OpsPageWrapper({ title }) {
 // 'reload' = F5/Ctrl+R (stay on current URL), 'navigate' = cold start (redirect to /).
 const _navType = performance?.getEntriesByType?.('navigation')?.[0]?.type ?? 'navigate'
 let _appMounted = false
+// Tracks the previous render's authenticated value so we can detect the
+// false→true edge (i.e. the user just logged in) and force the URL back
+// to '/' regardless of what page they were on when they logged out.
+// Without this, the post-login render falls through with the stale URL
+// (e.g. '/settings') and BrowserRouter dutifully takes them back there.
+let _wasAuthenticated = !!localStorage.getItem('ziggy_token')
 
 const _AUTOMATION_INTENTS = new Set([
   'create_automation', 'update_automation', 'delete_automation',
@@ -146,6 +155,7 @@ function MobileOnboardingRedirector() {
 
 function AppRoutes() {
   const taskTrackingEnabled = useFeature('task_tracking')
+  const mediaMusicEnabled   = useFeature('media_music')
   // `connected` only feeds AppShell's offline banner — read it via the
   // narrow context so updateEntityState's per-message work doesn't drag
   // AppShell + Sidebar through a re-render too.
@@ -157,6 +167,8 @@ function AppRoutes() {
   // stable Zustand refs, so selecting them never re-renders this component.
   const updateEntityState           = useDeviceStore(s => s.updateEntityState)
   const updateIrDeviceFromAcPacket  = useDeviceStore(s => s.updateIrDeviceFromAcPacket)
+  const removeEntity                = useDeviceStore(s => s.removeEntity)
+  const renameEntity                = useDeviceStore(s => s.renameEntity)
   const fetchAll                    = useDeviceStore(s => s.fetchAll)
   const fetchAutomations  = useAutomationStore(s => s.fetchAutomations)
   const addToast          = useUIStore(s => s.addToast)
@@ -182,6 +194,20 @@ function AppRoutes() {
     const last = messages[messages.length - 1]
     if (!last) return
 
+    // Entity removed in HA (delete via Ziggy or HA's own UI). Drop it from
+    // every store index so the Devices/Rooms/Map pages stop showing it
+    // without waiting for the next fetchAll.
+    if (last.type === 'entity_removed' && last.entity_id) {
+      removeEntity(last.entity_id)
+    }
+
+    // Entity renamed (via Ziggy's rename modal on another tab/device or
+    // via HA's UI). Patch the store immediately so every surface shows
+    // the new label without waiting for the next periodic refresh.
+    if (last.type === 'entity_renamed' && last.entity_id && last.display_name) {
+      renameEntity(last.entity_id, last.display_name)
+    }
+
     // Live HA entity state push
     if (last.type === 'state_changed' && last.entity_id) {
       updateEntityState(last.entity_id, last.new_state, last.attributes)
@@ -193,18 +219,25 @@ function AppRoutes() {
         last.attributes?.device_class === 'motion' &&
         last.new_state === 'on'
       ) {
+        // Prefer the store-resolved display_name (picks up Ziggy renames
+        // instantly) over the friendly_name from the raw WS payload
+        // (which only updates after HA processes the registry change).
+        const stored = useDeviceStore.getState().entities.find(e => e.entity_id === last.entity_id)
         addMotionEvent({
           entity_id: last.entity_id,
-          name: last.attributes?.friendly_name || last.entity_id.split('.')[1]?.replace(/_/g, ' '),
+          name: stored ? entityDisplayName(stored)
+                       : (last.attributes?.friendly_name || humanizeSlug(last.entity_id)),
           state: 'on',
           timestamp: new Date().toISOString(),
           type: 'motion',
         })
       }
       if (domain === 'camera' && last.new_state === 'detected') {
+        const stored = useDeviceStore.getState().entities.find(e => e.entity_id === last.entity_id)
         addMotionEvent({
           entity_id: last.entity_id,
-          name: last.attributes?.friendly_name || last.entity_id.split('.')[1]?.replace(/_/g, ' '),
+          name: stored ? entityDisplayName(stored)
+                       : (last.attributes?.friendly_name || humanizeSlug(last.entity_id)),
           state: 'detected',
           timestamp: new Date().toISOString(),
           type: 'camera',
@@ -302,6 +335,9 @@ function AppRoutes() {
         <Route path="quick-asks" element={<QuickAsks />} />
         <Route path="cameras" element={<Cameras />} />
         <Route path="admin" element={<AdminSettings />} />
+        {mediaMusicEnabled && (
+          <Route path="settings/music" element={<MediaSettings />} />
+        )}
       </Route>
 
       {/* ── Mobile (Ziggy Home native app) onboarding — no AppShell, only reachable inside Capacitor ── */}
@@ -329,6 +365,11 @@ function AppRoutes() {
         <Route element={<OpsPageWrapper title="Audit Log" />}>
           <Route path="audit" element={<AuditLog />} />
         </Route>
+        {mediaMusicEnabled && (
+          <Route element={<OpsPageWrapper title="Media Diagnostics" />}>
+            <Route path="media" element={<MediaDiagnostics />} />
+          </Route>
+        )}
       </Route>
 
       {/* ── Legacy redirect from old bookmark ── */}
@@ -610,7 +651,25 @@ export default function App() {
     )
   }
 
-  if (!authenticated) return <LoginPage />
+  if (!authenticated) {
+    _wasAuthenticated = false
+    return <LoginPage />
+  }
+
+  // Post-login redirect: when authenticated flips false→true (the user just
+  // logged in), the URL is whatever they were on when they last logged out
+  // — typically /settings, since that's where the Logout button lives.
+  // Without this rewrite, BrowserRouter mounts on the stale URL and lands
+  // the user right back on the post-logout page. Always send them home.
+  // Skip /presence/ for consistency with the cold-start branch below
+  // (public deep links shouldn't get hijacked).
+  const _justLoggedIn = !_wasAuthenticated && authenticated
+  _wasAuthenticated = true
+  if (_justLoggedIn &&
+      window.location.pathname !== '/' &&
+      !window.location.pathname.startsWith('/presence/')) {
+    window.history.replaceState(null, '', '/')
+  }
 
   // Cold-start redirect: rewrite URL to '/' before BrowserRouter initializes.
   // Only fires on fresh navigations (PWA tap, new tab) — NOT on F5/Ctrl+R reloads.

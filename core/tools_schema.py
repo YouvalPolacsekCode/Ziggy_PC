@@ -711,11 +711,11 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "comm_quick_message",
-        "description": "Send a quick message via Telegram or WhatsApp",
+        "description": "Send a quick message via email or WhatsApp",
         "parameters": {"type": "object", "properties": {
             "contact_name": {"type": "string"},
             "text":         {"type": "string"},
-            "channel":      {"type": "string", "enum": ["telegram", "whatsapp"]},
+            "channel":      {"type": "string", "enum": ["email", "whatsapp"]},
         }, "required": ["contact_name", "text"]},
     }},
     {"type": "function", "function": {

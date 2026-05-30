@@ -12,6 +12,7 @@ const DEFAULTS = {
   home_map:        false,
   ifttt:           true,
   local_storage:   true,
+  media_music:     false,
   smart_home:      true,
   task_tracking:   false,
   voice:           true,

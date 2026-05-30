@@ -88,6 +88,11 @@ const CATALOG = [
       { type: 'command_button', label: 'Command button',   size: 'S',    hint: 'Bind a single Ziggy intent' },
     ],
   },
+  { group: 'Music',
+    items: [
+      { type: 'media_card',     label: 'Music',            size: 'M',    hint: 'Now playing across enabled speakers (requires Music feature)' },
+    ],
+  },
   { group: 'Notifications',
     items: [
       { type: 'alerts_inbox',   label: 'Alerts',           size: 'M',    hint: 'Active alerts (placeholder)' },

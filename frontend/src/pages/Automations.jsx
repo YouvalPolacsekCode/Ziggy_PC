@@ -10,8 +10,11 @@ import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { CONTROLLABLE_DOMAINS } from '../lib/domainRegistry'
-import { getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates, getDeviceCommands } from '../lib/api'
+import { getAllRooms, getEntityState, getEntities, getAutomationTemplates, getSuggestedTemplates, getSuggestionsFeed, getDeviceCommands, getIrDevices, saveCircadianBundle, deleteCircadianBundle } from '../lib/api'
+import { entityDisplayName } from '../lib/utils'
 import IRDeviceSelect from '../components/IRDeviceSelect'
+import MediaPlayActionEditor from '../components/media/MediaPlayActionEditor'
+import { useFeature } from '../stores/featuresStore'
 import { RoutinesListPanel } from './Routines'
 import { useT, t as tStatic } from '../lib/i18n'
 
@@ -40,6 +43,9 @@ function getTriggerTypes() {
     { value: 'sunrise', label: tStatic('automations.triggerSunrise') },
     { value: 'sunset',  label: tStatic('automations.triggerSunset') },
     { value: 'webhook', label: tStatic('automations.triggerWebhook') },
+    // App-driven trigger — automation only runs when the user taps Run.
+    // Used by Fake Occupancy and any other "start when I say so" automation.
+    { value: 'manual',  label: tStatic('automations.triggerManual') },
   ]
 }
 
@@ -52,15 +58,25 @@ function getTrackerTriggerStates() {
 
 // `ziggy_intent` (Ziggy capabilities) is intentionally omitted here — it'll
 // come back behind a feature flag as part of the broader capabilities project.
-function getActionTypes() {
-  return [
-    { value: 'call_service',    label: tStatic('automations.actionCall') },
-    { value: 'device_command',  label: tStatic('automations.actionCommand') },
-    { value: 'ir_command',      label: tStatic('automations.actionIR') },
-    { value: 'send_intent',     label: tStatic('automations.actionSendIntent') },
-    { value: 'delay',           label: tStatic('automations.actionDelay') },
-    { value: 'notify',          label: tStatic('automations.actionNotify') },
+function getActionTypes(opts = {}) {
+  const out = [
+    { value: 'call_service',         label: tStatic('automations.actionCall') },
+    { value: 'device_command',       label: tStatic('automations.actionCommand') },
+    { value: 'ir_command',           label: tStatic('automations.actionIR') },
+    { value: 'send_intent',          label: tStatic('automations.actionSendIntent') },
+    { value: 'delay',                label: tStatic('automations.actionDelay') },
+    { value: 'notify',               label: tStatic('automations.actionNotify') },
+    // Multi-day "Away — Simulate Presence" activation. The wizard exposes
+    // window/rooms/days/TV controls; the backend hands off to
+    // services.fake_occupancy_scheduler once the user taps Run.
+    { value: 'fake_occupancy_start', label: tStatic('automations.actionFakeOccupancy') },
+    // Music playback (Spotify / YT Music). The ActionRow's type SELECT
+    // hides this option when the media_music flag is off (opts.mediaMusic).
+    // It's still in the lookup table so existing media_play steps render a
+    // human label, even if the flag is currently off.
+    ...(opts.mediaMusic === false ? [] : [{ value: 'media_play', label: tStatic('media.action.playMedia') }]),
   ]
+  return out
 }
 
 // Keys to identify groups; localized labels resolved at render time
@@ -145,6 +161,7 @@ function triggerSummary(trigger) {
       ? tStatic('automations.summary.sunsetOffset', { offset: trigger.offset })
       : tStatic('automations.summary.atSunset')
     case 'webhook': return tStatic('automations.summary.webhook', { id: trigger.webhook_id || tStatic('automations.summary.noWebhookId') })
+    case 'manual':  return tStatic('automations.summary.manual')
     default:        return trigger.type
   }
 }
@@ -161,6 +178,12 @@ function actionSummary(action) {
     case 'send_intent':  return tStatic('automations.summary.commandLabel', { text: action.text || unk })
     case 'delay':        return tStatic('automations.summary.waitSeconds', { n: action.seconds || unk })
     case 'notify':       return tStatic('automations.summary.notifyLabel', { message: action.message || unk })
+    case 'fake_occupancy_start': {
+      const n   = (action.rooms || []).length
+      const win = `${action.window_start || '19:00'}–${action.window_end || '23:00'}`
+      const dys = action.duration_days || 7
+      return tStatic('automations.summary.fakeOccupancy', { n, window: win, days: dys })
+    }
     default:             return action.type
   }
 }
@@ -186,7 +209,7 @@ function conditionSummary(c) {
   }
 }
 
-const ACTION_TYPE_ICON = { call_service: '⚙', device_command: '✨', ir_command: '📡', send_intent: '💬', delay: '⏱', notify: '📣' }
+const ACTION_TYPE_ICON = { call_service: '⚙', device_command: '✨', ir_command: '📡', send_intent: '💬', delay: '⏱', notify: '📣', fake_occupancy_start: '🌙', media_play: '🎵' }
 
 const selectStyle = {
   width: '100%', height: 38, padding: '0 28px 0 10px',
@@ -370,7 +393,7 @@ function ZoneTriggerEditor({ trigger, onChange }) {
   // make the user pick "Home" out of a one-item dropdown.
   const extraZones = zones.filter(z => z.entity_id !== 'zone.home').map(z => ({
     value: z.entity_id,
-    label: (z.attributes?.friendly_name || z.entity_id.replace('zone.', '')).replace(/_/g, ' '),
+    label: entityDisplayName(z),
   }))
   const zoneOptions = [
     { value: 'zone.home', label: t('automations.editor.zoneHome') },
@@ -467,6 +490,7 @@ function TriggerEditor({ trigger, onChange }) {
     else if (next === 'state')   onChange({ type: 'state',   entity_id: '', state: 'on' })
     else if (next === 'time')    onChange({ type: 'time',    time: '' })
     else if (next === 'webhook') onChange({ type: 'webhook', webhook_id: '' })
+    else if (next === 'manual')  onChange({ type: 'manual' })
     else                         onChange({ ...trigger, type: next })
   }
 
@@ -578,6 +602,21 @@ function TriggerEditor({ trigger, onChange }) {
             {t('automations.editor.webhookHint')}
           </FieldHint>
         </>
+      )}
+
+      {uiType === 'manual' && (
+        <div style={{
+          padding: '10px 12px', borderRadius: 10,
+          background: `color-mix(in srgb, var(--info) 6%, var(--surface))`,
+          border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
+        }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--info)', marginBottom: 4 }}>
+            {t('automations.editor.manualTitle')}
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+            {t('automations.editor.manualBody')}
+          </p>
+        </div>
       )}
     </div>
   )
@@ -891,8 +930,157 @@ function DeviceCommandEditor({ value, onChange }) {
   )
 }
 
+// ── FakeOccupancyEditor ───────────────────────────────────────────────────────
+// Editor for the `fake_occupancy_start` step. Lets the user pick which rooms
+// (their dimmable lights) to cycle, the active window, brightness, an optional
+// TV blaster, and how many days to run. The saved step shape mirrors what
+// services.fake_occupancy_scheduler.start() expects:
+//   { type: 'fake_occupancy_start', window_start, window_end, duration_days,
+//     rooms: [{id, entity_id}], tv_ir_device_id, brightness_pct }
+function FakeOccupancyEditor({ action, onChange }) {
+  const t = useT()
+  const { entities, ziggyRooms } = useDeviceStore()
+  const [irDevices, setIrDevices] = useState([])
+  const [loadingIr, setLoadingIr] = useState(true)
+
+  useEffect(() => {
+    getIrDevices()
+      .then(arr => setIrDevices((arr || []).filter(d => (d.type || '').toLowerCase() === 'tv')))
+      .catch(() => setIrDevices([]))
+      .finally(() => setLoadingIr(false))
+  }, [])
+
+  // Build the (room → first dimmable light) candidate list. ziggyRooms carries
+  // each room's devices; dimmable lights expose a `brightness` attribute.
+  const candidates = useMemo(() => {
+    const out = []
+    const seen = new Set()
+    for (const room of ziggyRooms || []) {
+      for (const dev of room.devices || []) {
+        const eid = dev.entity_id
+        if (!eid || !eid.startsWith('light.')) continue
+        const ent = entities.find(e => e.entity_id === eid)
+        const attrs = ent?.attributes || {}
+        if (!('brightness' in attrs)) continue
+        if (seen.has(room.id)) continue
+        seen.add(room.id)
+        out.push({ id: room.id, name: room.name, entity_id: eid })
+        break
+      }
+    }
+    return out
+  }, [ziggyRooms, entities])
+
+  const selectedRoomIds = new Set((action.rooms || []).map(r => r.id))
+
+  const toggleRoom = (room) => {
+    const next = selectedRoomIds.has(room.id)
+      ? (action.rooms || []).filter(r => r.id !== room.id)
+      : [...(action.rooms || []), { id: room.id, entity_id: room.entity_id }]
+    onChange({ ...action, rooms: next })
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{
+        padding: '10px 12px', borderRadius: 10,
+        background: `color-mix(in srgb, var(--info) 6%, var(--surface))`,
+        border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
+      }}>
+        <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+          {t('automations.fakeOccupancy.intro')}
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Input
+          label={t('automations.fakeOccupancy.windowStart')}
+          type="time"
+          value={(action.window_start || '19:00').slice(0, 5)}
+          onChange={e => onChange({ ...action, window_start: e.target.value })}
+        />
+        <Input
+          label={t('automations.fakeOccupancy.windowEnd')}
+          type="time"
+          value={(action.window_end || '23:00').slice(0, 5)}
+          onChange={e => onChange({ ...action, window_end: e.target.value })}
+        />
+      </div>
+
+      <div>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+          {t('automations.fakeOccupancy.roomsLabel')}
+        </p>
+        {candidates.length === 0 ? (
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+            {t('automations.fakeOccupancy.noRooms')}
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {candidates.map(c => {
+              const sel = selectedRoomIds.has(c.id)
+              return (
+                <button key={c.id} type="button" onClick={() => toggleRoom(c)} style={{
+                  padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                  background: sel ? 'var(--ink)' : 'var(--surface)',
+                  color: sel ? 'var(--bg)' : 'var(--ink-mute)',
+                  border: sel ? 'none' : '0.5px solid var(--line)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>{c.name}</button>
+              )
+            })}
+          </div>
+        )}
+        <FieldHint>{t('automations.fakeOccupancy.roomsHint')}</FieldHint>
+      </div>
+
+      <Input
+        label={t('automations.fakeOccupancy.durationDays')}
+        type="number"
+        min={1}
+        max={60}
+        value={action.duration_days ?? 7}
+        onChange={e => onChange({ ...action, duration_days: Math.max(1, parseInt(e.target.value || '1')) })}
+      />
+
+      <Input
+        label={t('automations.fakeOccupancy.brightnessPct')}
+        type="number"
+        min={10}
+        max={100}
+        value={action.brightness_pct ?? 70}
+        onChange={e => onChange({ ...action, brightness_pct: Math.max(10, Math.min(100, parseInt(e.target.value || '70'))) })}
+      />
+
+      <div>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+          {t('automations.fakeOccupancy.tvLabel')}
+        </p>
+        {loadingIr ? (
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('irDeviceSelect.loading')}</p>
+        ) : irDevices.length === 0 ? (
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+            {t('automations.fakeOccupancy.noTV')}
+          </p>
+        ) : (
+          <Select
+            options={[
+              { value: '', label: t('automations.fakeOccupancy.tvNone') },
+              ...irDevices.map(d => ({ value: d.id, label: `${d.name}${d.room ? ` (${d.room.replace(/_/g, ' ')})` : ''}` })),
+            ]}
+            value={action.tv_ir_device_id || ''}
+            onChange={e => onChange({ ...action, tv_ir_device_id: e.target.value || null })}
+          />
+        )}
+        <FieldHint>{t('automations.fakeOccupancy.tvHint')}</FieldHint>
+      </div>
+    </div>
+  )
+}
+
 function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleCollapse, dragHandleProps }) {
   const t = useT()
+  const mediaMusic = useFeature('media_music')
   const { entities } = useDeviceStore()
   const domain = action.entity_id?.split('.')?.[0] || null
   const availableActions = domain ? getActionsForDomain(domain) : [{ value: 'turn_on', label: t('automations.fallback.turnOn') }, { value: 'turn_off', label: t('automations.fallback.turnOff') }, { value: 'toggle', label: t('automations.fallback.toggle') }]
@@ -953,7 +1141,19 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
         </div>
       </div>
 
-      <Select options={getActionTypes()} value={action.type || 'call_service'} onChange={e => onChange({ type: e.target.value, entity_id: '', service: '' })} />
+      <Select options={getActionTypes({ mediaMusic })} value={action.type || 'call_service'} onChange={e => {
+        const nextType = e.target.value
+        // Seed sensible defaults for the few step types that have a dedicated
+        // editor — otherwise the editor opens with empty fields and the user
+        // has to remember every required param themselves.
+        if (nextType === 'fake_occupancy_start') {
+          onChange({ type: nextType, window_start: '19:00', window_end: '23:00', duration_days: 7, brightness_pct: 70, rooms: [], tv_ir_device_id: null })
+        } else if (nextType === 'media_play') {
+          onChange({ type: nextType, speaker_entity: '', service: 'spotify', profile: '', mode: 'playlist' })
+        } else {
+          onChange({ type: nextType, entity_id: '', service: '' })
+        }
+      }} />
 
       {action.type === 'ir_command' && <IRDeviceSelect value={action} onChange={patch => onChange({ ...action, ...patch })} />}
 
@@ -989,6 +1189,8 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
       {action.type === 'delay'       && <Input type="number" placeholder={t('automations.action.secondsPh')} value={action.seconds || ''} onChange={e => onChange({ ...action, seconds: parseInt(e.target.value) })} />}
       {action.type === 'notify'      && <Input placeholder={t('automations.action.messagePh')} value={action.message || ''} onChange={e => onChange({ ...action, message: e.target.value })} dir="auto" />}
       {action.type === 'device_command' && <DeviceCommandEditor value={action} onChange={patch => onChange({ ...action, ...patch })} />}
+      {action.type === 'fake_occupancy_start' && <FakeOccupancyEditor action={action} onChange={patch => onChange(patch)} />}
+      {action.type === 'media_play' && mediaMusic && <MediaPlayActionEditor action={action} onChange={onChange} />}
     </div>
   )
 }
@@ -1067,6 +1269,196 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
   )
 }
 
+// ── CircadianBundleWizard ─────────────────────────────────────────────────────
+// Dedicated wizard for the "Smart Light Schedule" suggestion (D1). The
+// regular AutomationWizard speaks the single-trigger/single-action schema;
+// circadian is 4 HA automations under the hood, so this wizard renders only
+// the two user-tunable knobs (lights + bedtime) and POSTs to the dedicated
+// /api/automations/circadian-bundle endpoint via saveCircadianBundle().
+//
+// Lights pool comes from initial.defaults.lights (server-pre-filtered to
+// has_color_temp_light). Falling back to filtering the live deviceStore
+// covers the edit flow where the wizard reopens on an existing bundle.
+function CircadianBundleWizard({ initial, onSaved, onClose }) {
+  const t = useT()
+  const { entities } = useDeviceStore()
+
+  const candidateLights = useMemo(() => {
+    const fromPrefill = (initial?.defaults?.lights || initial?.lights || []).filter(Boolean)
+    if (fromPrefill.length > 0) return fromPrefill
+    return (entities || [])
+      .filter(e => {
+        if (!e?.entity_id?.startsWith('light.')) return false
+        const a = e.attributes || {}
+        const modes = a.supported_color_modes || []
+        return modes.includes('color_temp')
+          || 'color_temp' in a || 'color_temp_kelvin' in a
+          || a.min_color_temp_kelvin != null || a.max_color_temp_kelvin != null
+          || a.min_mireds != null || a.max_mireds != null
+      })
+      .map(e => e.entity_id)
+  }, [initial, entities])
+
+  const [selected, setSelected] = useState(() => {
+    const pre = initial?.selectedLights || initial?.defaults?.lights || candidateLights
+    return new Set(pre)
+  })
+  const [bedtime, setBedtime] = useState(initial?.defaults?.bedtime || initial?.bedtime || '22:00')
+  const [saving, setSaving]   = useState(false)
+  const [error,  setError]    = useState(null)
+
+  const toggle = (eid) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(eid)) next.delete(eid); else next.add(eid)
+    return next
+  })
+
+  const isUpdate = !!initial?._isInstalled
+  const noLights = candidateLights.length === 0
+  const canSave  = !noLights && selected.size > 0 && /^\d{2}:\d{2}$/.test(bedtime) && !saving
+
+  const handleConfirm = async () => {
+    setSaving(true); setError(null)
+    try {
+      await saveCircadianBundle({ lights: Array.from(selected), bedtime })
+      await onSaved?.({ updated: isUpdate })
+    } catch (e) {
+      setError(e?.userMessage || e?.message || t('automations.circadian.failed'))
+      setSaving(false)
+    }
+  }
+
+  const handleRemove = async () => {
+    setSaving(true); setError(null)
+    try {
+      await deleteCircadianBundle()
+      await onSaved?.({ removed: true })
+    } catch (e) {
+      setError(e?.userMessage || e?.message || t('automations.circadian.failed'))
+      setSaving(false)
+    }
+  }
+
+  const labelFor = (eid) => entityDisplayName(entities?.find(e => e.entity_id === eid)) || eid
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px' }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+        {t('automations.circadian.subtitle')}
+      </p>
+
+      {/* Lights multi-select (color-temp lights only) */}
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.lights')}</p>
+        {noLights ? (
+          <p style={{ fontSize: 12, color: 'var(--warn)', padding: '10px 12px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 10 }}>
+            {t('automations.circadian.noLights')}
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, border: '0.5px solid var(--line)', borderRadius: 10, padding: 6, background: 'var(--surface)' }}>
+            {candidateLights.map(eid => {
+              const checked = selected.has(eid)
+              return (
+                <button
+                  key={eid}
+                  type="button"
+                  onClick={() => toggle(eid)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 10px', borderRadius: 8,
+                    background: checked ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                  }}
+                >
+                  <span style={{
+                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                    border: `1.5px solid ${checked ? 'var(--ok)' : 'var(--line)'}`,
+                    background: checked ? 'var(--ok)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {checked && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 12l5 5L20 6"/>
+                      </svg>
+                    )}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{labelFor(eid)}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
+          {t('automations.circadian.lightsHelp')}
+        </p>
+      </div>
+
+      {/* Bedtime */}
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.bedtime')}</p>
+        <Input
+          type="time"
+          value={bedtime}
+          onChange={e => setBedtime(e.target.value)}
+          style={{ maxWidth: 140 }}
+        />
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
+          {t('automations.circadian.bedtimeHelp')}
+        </p>
+      </div>
+
+      {/* Daily-schedule preview */}
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.preview')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontFamily: '"IBM Plex Mono", monospace', fontSize: 11.5, color: 'var(--ink-2)' }}>
+          <div>🌅 {t('automations.circadian.previewSunrise')}</div>
+          <div>☀️ {t('automations.circadian.previewNoon')}</div>
+          <div>🌇 {t('automations.circadian.previewSunset')}</div>
+          <div>🌙 {t('automations.circadian.previewBedtime', { time: bedtime || '22:00' })}</div>
+        </div>
+      </div>
+
+      {error && (
+        <p style={{ fontSize: 12, color: 'var(--accent)', padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}>
+          {error}
+        </p>
+      )}
+
+      {/* Footer actions */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          {isUpdate && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={saving}
+              className="z-btn-secondary"
+              style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13, color: 'var(--accent)' }}
+            >
+              {t('automations.circadian.delete')}
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={onClose} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!canSave}
+            className="z-btn-primary"
+            style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13, opacity: canSave ? 1 : 0.5 }}
+          >
+            {isUpdate ? t('automations.circadian.update') : t('automations.circadian.confirm')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 // ── AutomationWizard ──────────────────────────────────────────────────────────
 function AutomationWizard({ initial, onSave, onClose }) {
   const t = useT()
@@ -1115,6 +1507,11 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const [maxReached, setMaxReached] = useState(initial ? STEP_COUNT - 1 : 0)
   useEffect(() => { if (step > maxReached) setMaxReached(step) }, [step])
 
+  // Template-supplied wizard warnings (e.g. Night Watch single-mmWave guard).
+  // Each entry: { id, level: "warn"|"info", text }. Rendered as a small
+  // banner above the wizard steps; user can still proceed.
+  const wizardWarnings = Array.isArray(initial?.warnings) ? initial.warnings : []
+
   return (
     <div>
       <StepIndicator
@@ -1122,6 +1519,27 @@ function AutomationWizard({ initial, onSave, onClose }) {
         maxReached={maxReached}
         onJump={(i) => setStep(i)}
       />
+      {wizardWarnings.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0 12px' }}>
+          {wizardWarnings.map(w => (
+            <div
+              key={w.id || w.text}
+              dir="auto"
+              style={{
+                padding: '8px 12px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                lineHeight: 1.45,
+                background: w.level === 'warn' ? 'rgba(255, 196, 0, 0.12)' : 'var(--surface)',
+                border: '0.5px solid ' + (w.level === 'warn' ? 'rgba(255, 196, 0, 0.45)' : 'var(--line)'),
+                color: 'var(--ink)',
+              }}
+            >
+              {w.text}
+            </div>
+          ))}
+        </div>
+      )}
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.15 }}>
           {step === 0 && (
@@ -1412,6 +1830,57 @@ const AutomationCard = React.memo(function AutomationCard({
   )
 })
 
+// ── CircadianGroupRow ─────────────────────────────────────────────────────────
+// Renders the 4 ziggy_circadian_* HA automations as a single feature row on the
+// Active tab. The user never sees the underlying 4 entries — they see "Smart
+// Light Schedule" as one thing they can toggle, edit, or remove.
+function CircadianGroupRow({ group, onToggleAll, onEdit, onDelete }) {
+  const t = useT()
+  const { lights, bedtime, allEnabled, count } = group
+  const tint = allEnabled ? 'var(--gold)' : 'var(--ink-faint)'
+
+  return (
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
+      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 14%, var(--surface-2))`, fontSize: 18 }}>
+          🌅
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }} dir="auto">
+            {t('automations.circadian.installedBadge')}
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }} dir="auto">
+            {t('automations.circadian.subtitle')}
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint }}>
+              {t('automations.circadian.fourPhases')}
+            </span>
+            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+              {t('automations.circadian.bedtime')}: {bedtime}
+            </span>
+            <span style={{ fontSize: 10.5, color: 'var(--ink-mute)' }}>
+              {lights.length}× {lights.length === 1 ? 'light' : 'lights'}
+            </span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <Toggle checked={allEnabled} onCheckedChange={() => onToggleAll(!allEnabled)} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            <button onClick={onEdit} title={t('common.edit')} aria-label={t('common.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 4 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button onClick={onDelete} title={t('common.delete')} aria-label={t('common.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+
 // ── TemplateCard ──────────────────────────────────────────────────────────────
 const TIER_STYLE = {
   ready:       { border: 'color-mix(in srgb, var(--ok)   30%, var(--line))', bg: 'color-mix(in srgb, var(--ok)   4%, var(--surface))', badgeBg: 'color-mix(in srgb, var(--ok)   14%, transparent)', badgeColor: 'var(--ok)',      badgeKey: 'ready' },
@@ -1427,14 +1896,32 @@ function TemplateCard({ template, onConfigure }) {
   const missReq     = template.missing_req_labels || []
   const missOpt     = template.missing_opt_labels || []
   const canConfigure = tier === 'ready' || tier === 'partial'
+  // Collapsed by default — Library lists many templates at once, so the
+  // header alone (name + tier badge + one-line status) is the right scan
+  // level. Tapping anywhere on the card (except Configure) reveals the
+  // description and the per-device match list.
   const [expanded, setExpanded] = useState(false)
 
+  const statusLine = tier === 'ready'
+    ? t(matched.length === 1 ? 'automations.template.deviceReadyOne' : 'automations.template.devicesReady', { n: matched.length })
+    : tier === 'partial'
+    ? t('automations.template.partialFound', { matched: matched.length, total: matched.length + missReq.length })
+    : t(missReq.length === 1 ? 'automations.template.deviceNeededOne' : 'automations.template.devicesNeeded', { n: missReq.length })
+
   return (
-    <div style={{
-      padding: '14px 16px', borderRadius: 12,
-      background: ts.bg, border: `0.5px solid ${ts.border}`,
-      display: 'flex', alignItems: 'flex-start', gap: 12,
-    }}>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      onClick={() => setExpanded(v => !v)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) } }}
+      style={{
+        padding: '14px 16px', borderRadius: 12,
+        background: ts.bg, border: `0.5px solid ${ts.border}`,
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+        cursor: 'pointer', userSelect: 'none',
+      }}
+    >
       <div style={{
         width: 36, height: 36, borderRadius: 10, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1458,44 +1945,40 @@ function TemplateCard({ template, onConfigure }) {
           )}
         </div>
 
-        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8, lineHeight: 1.4 }} dir="auto">{template.description}</p>
+        {/* One-line status — visible in both states so the card stays scannable. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit' }}>
+          <span aria-hidden="true" style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
+          {statusLine}
+        </div>
 
-        {/* Device chips */}
-        <button
-          onClick={() => setExpanded(v => !v)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', marginBottom: expanded ? 8 : 0 }}
-        >
-          <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
-          {tier === 'ready'
-            ? t(matched.length === 1 ? 'automations.template.deviceReadyOne' : 'automations.template.devicesReady', { n: matched.length })
-            : tier === 'partial'
-            ? t('automations.template.partialFound', { matched: matched.length, total: matched.length + missReq.length })
-            : t(missReq.length === 1 ? 'automations.template.deviceNeededOne' : 'automations.template.devicesNeeded', { n: missReq.length })
-          }
-        </button>
-
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {expanded && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }} style={{ overflow: 'hidden', marginBottom: 6 }}>
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              style={{ overflow: 'hidden' }}
+            >
+              <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: '8px 0', lineHeight: 1.4 }} dir="auto">{template.description}</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 4 }}>
                 {matched.map(m => (
                   <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: 'var(--ok)', fontSize: 11, flexShrink: 0 }}>✓</span>
-                    <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{m.label}</span>
-                    {m.entity && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.entity}</span>}
+                    <span style={{ fontSize: 11, color: 'var(--ink-2)' }} dir="auto">{m.label}</span>
                   </div>
                 ))}
                 {missReq.map(m => (
                   <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: 'var(--warn)', fontSize: 11, flexShrink: 0 }}>✗</span>
-                    <span style={{ fontSize: 11, color: 'var(--warn)' }}>{m.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--warn)' }} dir="auto">{m.label}</span>
                     <span style={{ fontSize: 10, color: 'var(--warn)', fontFamily: '"IBM Plex Mono", monospace', opacity: 0.7 }}>{t('automations.template.required')}</span>
                   </div>
                 ))}
                 {missOpt.map(m => (
                   <div key={m.cap} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: 'var(--ink-faint)', fontSize: 11, flexShrink: 0 }}>○</span>
-                    <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{m.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-faint)' }} dir="auto">{m.label}</span>
                     <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('automations.template.optional')}</span>
                   </div>
                 ))}
@@ -1507,7 +1990,7 @@ function TemplateCard({ template, onConfigure }) {
 
       <div style={{ flexShrink: 0 }}>
         <button
-          onClick={() => onConfigure(template)}
+          onClick={(e) => { e.stopPropagation(); onConfigure(template) }}
           disabled={!canConfigure}
           className={tier === 'ready' ? 'z-btn-primary' : 'z-btn-secondary'}
           style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, whiteSpace: 'nowrap', opacity: canConfigure ? 1 : 0.35 }}
@@ -1681,6 +2164,11 @@ function getSuggestionStatusMeta() {
   }
 }
 
+// Canonical suggestion card for the Suggested tab. Configure opens the
+// AutomationWizard pre-populated with detected devices and suggestion defaults —
+// never auto-deploys. A separate, legacy SuggestionCard lives in pages/Suggestions.jsx
+// (the standalone /suggestions page) with an older accept/reject UX; do not edit
+// that one for new work.
 function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
   const t = useT()
   const [expanded, setExpanded] = useState(false)
@@ -1810,7 +2298,7 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
 export default function Automations() {
   const t = useT()
   const { automations, routines, loading, fetchAutomations, fetchRoutines, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
-  const { suggestions, loading: sugLoading, fetch: fetchSuggestions, accept, reject, snooze, runAnalysis, analyzing, pendingCount } = useSuggestionStore()
+  const { suggestions, loading: sugLoading, fetch: fetchSuggestions, setFromFeed: setSuggestionsFromFeed, accept, reject, snooze, runAnalysis, analyzing, pendingCount } = useSuggestionStore()
   const { addToast } = useUIStore()
   // Per-field selectors — pulling the whole deviceStore here would re-render
   // the page (and every automation card under it) on every WS tick.
@@ -1833,6 +2321,11 @@ export default function Automations() {
   const [viewTarget,        setViewTarget]        = useState(null)
   const [suggestedTemplates, setSuggestedTemplates] = useState(suggestedTemplatesCache || [])
   const [showLibrary,       setShowLibrary]       = useState(false)
+  // Circadian bundle wizard — opened by Configure on the Smart Light Schedule
+  // template, or by Edit on the grouped Active-tab row. Carries the prefill
+  // (defaults.lights, defaults.bedtime) and an _isInstalled flag so the
+  // wizard can show "Update" + "Remove" rather than "Activate".
+  const [circadianTarget,   setCircadianTarget]   = useState(null)
   // Collapsed by default — the Recommended-by-Ziggy block is helpful but
   // not the user's primary intent when landing on the Suggested tab. They
   // came to review pending suggestions; the templates banner is secondary.
@@ -1842,6 +2335,34 @@ export default function Automations() {
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
   const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
 
+  // Group the 4 ziggy_circadian_* automations behind a single "Smart Light
+  // Schedule" row on the Active tab. The user sees one toggleable feature,
+  // not 4 cryptic clock entries. Member IDs and shared lights/bedtime are
+  // derived from the bedtime automation's trigger time and any member's
+  // light targets (all 4 share the same light set on save).
+  const { circadianGroup, visibleAutomations } = useMemo(() => {
+    const members = automations.filter(a => a.id?.startsWith('ziggy_circadian_'))
+    if (members.length === 0) return { circadianGroup: null, visibleAutomations: automations }
+    const visible = automations.filter(a => !a.id?.startsWith('ziggy_circadian_'))
+
+    const bedtimeAuto = members.find(a => a.id === 'ziggy_circadian_bedtime')
+    const bedtime = bedtimeAuto?.trigger?.time?.slice(0, 5) || '22:00'
+    const lightSet = new Set()
+    members.forEach(m => (m.actions || []).forEach(act => {
+      const eid = act.entity_id
+      if (typeof eid === 'string' && eid.startsWith('light.')) lightSet.add(eid)
+      else if (Array.isArray(eid)) eid.forEach(x => x?.startsWith?.('light.') && lightSet.add(x))
+    }))
+    const lights = Array.from(lightSet)
+    const allEnabled = members.every(m => m.enabled)
+    const anyEnabled = members.some(m => m.enabled)
+
+    return {
+      circadianGroup: { members, lights, bedtime, allEnabled, anyEnabled, count: members.length },
+      visibleAutomations: visible,
+    }
+  }, [automations])
+
   // Only fetch what isn't cached. Re-fetching on every revisit toggles the
   // store's `loading` flag, which flashes skeleton placeholders mid-mount and
   // makes navigation feel jumpy. Stores persist within the SPA session, so a
@@ -1849,22 +2370,84 @@ export default function Automations() {
   useEffect(() => {
     if (automations.length === 0)        fetchAutomations()
     if (routines.length === 0)           fetchRoutines()
-    if (suggestions.length === 0)        fetchSuggestions()
-    if (suggestedTemplates.length === 0 && !suggestedTemplatesCache) {
-      getSuggestedTemplates()
-        .then(r => {
-          const arr = r.suggested || []
-          suggestedTemplatesCache = arr
-          setSuggestedTemplates(arr)
-        })
-        .catch(() => {})
-    }
+
+    // Prefer the unified Suggested-tab feed (one fetch covers both habit
+    // suggestions and device-template suggestions). Fall back to the two
+    // legacy endpoints if /suggestions/feed errors — that path remains
+    // identical to the pre-Gap 4 behaviour so an outage of the new endpoint
+    // can't blank the tab.
+    const needsHabits    = suggestions.length === 0
+    const needsTemplates = suggestedTemplates.length === 0 && !suggestedTemplatesCache
+    if (!needsHabits && !needsTemplates) return
+
+    getSuggestionsFeed()
+      .then(resp => {
+        const items = Array.isArray(resp?.items) ? resp.items : []
+        if (needsHabits) {
+          setSuggestionsFromFeed(items)
+        }
+        if (needsTemplates) {
+          const templates = items
+            .filter(it => it && it.source === 'template')
+            .map(it => it.raw)
+            .filter(Boolean)
+          suggestedTemplatesCache = templates
+          setSuggestedTemplates(templates)
+        }
+      })
+      .catch(() => {
+        // Fallback path — two separate fetches against the legacy endpoints.
+        if (needsHabits) fetchSuggestions()
+        if (needsTemplates) {
+          getSuggestedTemplates()
+            .then(r => {
+              const arr = r.suggested || []
+              suggestedTemplatesCache = arr
+              setSuggestedTemplates(arr)
+            })
+            .catch(() => {})
+        }
+      })
   }, [])
 
   const handleConfigureTemplate = (template) => {
     if (!template.wizard_prefill) return
+    // Bundle templates (e.g. Smart Light Schedule) take the wizard schema
+    // off the rails — route them to a dedicated wizard instead.
+    if (template.wizard_prefill.bundle === 'circadian') {
+      setCircadianTarget({ ...template.wizard_prefill, _templateId: template.id, _isInstalled: false })
+      return
+    }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
     setShowWizard(true)
+  }
+
+  // Open the circadian wizard in edit mode for an installed bundle. Called
+  // from the grouped Smart Light Schedule row on the Active tab.
+  const handleEditCircadianBundle = (group) => {
+    setCircadianTarget({
+      _isInstalled: true,
+      selectedLights: group.lights,
+      bedtime: group.bedtime,
+      defaults: { lights: group.lights, bedtime: group.bedtime },
+    })
+  }
+
+  const handleCircadianClose = () => setCircadianTarget(null)
+  const handleCircadianSaved = async ({ updated, removed }) => {
+    setCircadianTarget(null)
+    addToast(
+      removed ? t('automations.circadian.deleted')
+              : (updated ? t('automations.circadian.updated') : t('automations.circadian.saved')),
+      'success',
+    )
+    try { await fetchAutomations({ force: true }) } catch {}
+    try {
+      const r = await getSuggestedTemplates()
+      const arr = r.suggested || []
+      suggestedTemplatesCache = arr
+      setSuggestedTemplates(arr)
+    } catch {}
   }
 
   // Accepting a suggestion opens the wizard pre-filled with the suggestion's
@@ -2084,7 +2667,25 @@ export default function Automations() {
 
       <AnimatePresence mode="popLayout">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {automations.map(a => (
+          {circadianGroup && (
+            <CircadianGroupRow
+              group={circadianGroup}
+              onToggleAll={async (toEnabled) => {
+                try {
+                  await Promise.all(circadianGroup.members.map(m => toggleAutomation(m.id, toEnabled)))
+                } catch { addToast(t('automations.circadian.failed'), 'error') }
+              }}
+              onEdit={() => handleEditCircadianBundle(circadianGroup)}
+              onDelete={async () => {
+                try {
+                  await deleteCircadianBundle()
+                  addToast(t('automations.circadian.deleted'), 'success')
+                  await fetchAutomations({ force: true })
+                } catch { addToast(t('automations.circadian.failed'), 'error') }
+              }}
+            />
+          )}
+          {visibleAutomations.map(a => (
             <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
               onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
               onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }} />
@@ -2111,6 +2712,20 @@ export default function Automations() {
         editTarget ? t('automations.editTitle', { name: editTarget.name }) : t('automations.newCustom')
       }>
         <AutomationWizard key={editTarget?.id || '__new__'} initial={editTarget} onSave={handleSave} onClose={handleClose} />
+      </Modal>
+
+      {/* Smart Light Schedule (circadian) wizard — separate modal so its
+          dedicated 2-field layout doesn't have to coexist with the
+          single-trigger AutomationWizard. */}
+      <Modal open={!!circadianTarget} onClose={handleCircadianClose} title={t('automations.circadian.title')}>
+        {circadianTarget && (
+          <CircadianBundleWizard
+            key={circadianTarget._isInstalled ? 'edit' : 'new'}
+            initial={circadianTarget}
+            onSaved={handleCircadianSaved}
+            onClose={handleCircadianClose}
+          />
+        )}
       </Modal>
 
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title={t('automations.detailsTitle')}>

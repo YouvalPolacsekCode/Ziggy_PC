@@ -21,6 +21,9 @@ import { useWsMessages } from '../../hooks/useWebSocket'
 import { useHubStore } from '../../stores/hubStore'
 import DeviceCard from '../device/DeviceCard'
 import { Card, CardBody } from '../ui/Card'
+import { useFeature } from '../../stores/featuresStore'
+import { useMediaStore } from '../../stores/mediaStore'
+import { pauseMedia, resumeMedia, nextMedia } from '../../lib/api'
 
 // ─── Shared bits ─────────────────────────────────────────────────────────────
 
@@ -437,7 +440,7 @@ function CameraLiveModal({ entityId, label, onClose }) {
     <div className="z-hub-cam-modal" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="z-hub-cam-modal-inner" onClick={e => e.stopPropagation()}>
         <div className="z-hub-cam-modal-bar">
-          <span style={{ fontSize: 14, fontWeight: 600, textTransform: 'capitalize' }}>{label}</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
           <button onClick={onClose} aria-label="Close" className="z-hub-cam-modal-close">×</button>
         </div>
         <div className="z-hub-cam-modal-stage">
@@ -513,7 +516,6 @@ export function CameraTileSection({ config = {} }) {
           position: 'absolute', left: 10, bottom: 8,
           background: 'rgba(0,0,0,0.55)', color: 'white',
           fontSize: 12, padding: '4px 8px', borderRadius: 6,
-          textTransform: 'capitalize',
         }}>{niceName}</div>
         {!editing && (
           <div style={{
@@ -565,6 +567,108 @@ export function CommandButtonSection({ config = {} }) {
       <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
     </button>
   )
+}
+
+// ─── media_card ──────────────────────────────────────────────────────────────
+// Phase 1+2 media. Self-gated on the media_music feature flag — when the flag
+// is off, the section renders a placeholder telling the user to enable Music
+// in Settings, so it doesn't silently take up grid space.
+//
+// Lists every enabled speaker with its current playback state and a
+// play/pause + next button. Transport only — no search, no profile picker
+// (that's all in Settings → Music). The tablet user reads what's playing and
+// can adjust on the fly.
+
+export function MediaCardSection({ config = {} }) {
+  const enabled      = useFeature('media_music')
+  const items        = useMediaStore(s => s.items)
+  const ensureLoaded = useMediaStore(s => s.ensureLoaded)
+  const refreshState = useMediaStore(s => s.refreshState)
+  const ws           = useWsMessages()
+  useEffect(() => { if (enabled) ensureLoaded() }, [enabled, ensureLoaded])
+  useEffect(() => {
+    if (!enabled || !ws?.length) return
+    const last = ws[ws.length - 1]
+    if (last?.type === 'state_changed' && last.entity_id?.startsWith('media_player.')) {
+      refreshState()
+    }
+  }, [ws, enabled, refreshState])
+
+  if (!enabled) {
+    return (
+      <Card><CardBody>
+        <SectionTitle>Music</SectionTitle>
+        <EmptyHint>Enable Music in Settings → Feature flags to use this widget.</EmptyHint>
+      </CardBody></Card>
+    )
+  }
+
+  if (!items || items.length === 0) {
+    return (
+      <Card><CardBody>
+        <SectionTitle>Music</SectionTitle>
+        <EmptyHint>No speakers enabled. Add one in Settings → Music.</EmptyHint>
+      </CardBody></Card>
+    )
+  }
+
+  // Sort: currently-playing first, then by name.
+  const sorted = [...items].sort((a, b) => {
+    if (a.state === 'playing' && b.state !== 'playing') return -1
+    if (b.state === 'playing' && a.state !== 'playing') return 1
+    return (a.display_name || '').localeCompare(b.display_name || '')
+  })
+  void config
+
+  return (
+    <Card><CardBody>
+      <SectionTitle>Music</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {sorted.map(it => <HubSpeakerRow key={it.entity_id} item={it} />)}
+      </div>
+    </CardBody></Card>
+  )
+}
+
+function HubSpeakerRow({ item }) {
+  const [busy, setBusy] = useState(false)
+  const playing = item.state === 'playing'
+  const onPause  = async () => { setBusy(true); try { await pauseMedia(item.entity_id) } finally { setBusy(false) } }
+  const onResume = async () => { setBusy(true); try { await resumeMedia(item.entity_id) } finally { setBusy(false) } }
+  const onNext   = async () => { setBusy(true); try { await nextMedia(item.entity_id) } finally { setBusy(false) } }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 8px', borderRadius: 10, border: '0.5px solid var(--line)' }}>
+      <div style={{
+        width: 44, height: 44, borderRadius: 8, flexShrink: 0,
+        background: item.art ? `center/cover no-repeat url('${item.art}')` : 'var(--line)',
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {item.title || item.display_name}
+        </div>
+        <div dir="auto" style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {[item.artist, item.room || null, playing ? null : (item.state || 'idle')].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+      <button type="button" disabled={busy} onClick={playing ? onPause : onResume} style={hubBtn} aria-label={playing ? 'Pause' : 'Play'}>
+        {playing ? '⏸' : '▶'}
+      </button>
+      {playing && (
+        <button type="button" disabled={busy} onClick={onNext} style={hubBtn} aria-label="Next">
+          ⏭
+        </button>
+      )}
+    </div>
+  )
+}
+
+const hubBtn = {
+  width: 40, height: 40, borderRadius: 20,
+  background: 'var(--accent)', color: 'white',
+  border: 'none', fontSize: 16, cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  flexShrink: 0,
 }
 
 // ─── unknown / unsupported ───────────────────────────────────────────────────

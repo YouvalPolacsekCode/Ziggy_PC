@@ -19,14 +19,24 @@ import { useUIStore } from '../stores/uiStore'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
-import { cn } from '../lib/utils'
-import { findRoomMetric } from '../lib/devices'
+import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
+import { findRoomMetric, inferBinarySensorClass } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
 import { useT } from '../lib/i18n'
 
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
 const roomDomainGroup = domainGroup
+
+// Tile color mode for room-detail device cards.
+//   'inverted' — matches the home page's dramatic var(--ink)/var(--bg) flip
+//                when active. Tile reads as a bold status display rather
+//                than a pastel control panel. Current default.
+//   'tinted'   — the previous per-kind tinted palette (gold for lights,
+//                accent for media, info for AC, …). Subtle on/off gradation
+//                against --tile-base. Both code paths live in TileCard
+//                (DeviceCard.jsx) so flipping this constant cleanly reverts.
+const ROOM_TILE_STYLE = 'inverted'
 
 // Resolve a room-device entry (shape from /rooms/devices) to the canonical
 // entity from the store. Room devices use _is_ir / _ir_device_id markers and
@@ -701,7 +711,7 @@ export function RoomsList() {
 
 // Note: LOST_LABEL keys are used as translation keys; resolved via t() at use sites.
 const LOST_LABEL = { lost: 'rooms.removedFromHub', unclaimed: 'rooms.notInZiggy', unconfigured: 'rooms.noEntitySet' }
-const LOST_DOT   = { lost: 'bg-red-400', unclaimed: 'bg-amber-400', unconfigured: 'bg-zinc-300 dark:bg-zinc-600' }
+const LOST_DOT   = { lost: 'bg-err', unclaimed: 'bg-warn', unconfigured: 'bg-line' }
 
 function CameraPreview({ entityId }) {
   const t = useT()
@@ -810,10 +820,28 @@ function _fmtStripMetric(m) {
 function SensorsStrip({ devices }) {
   const renderSensor = (entity) => {
     const domain = entity.domain
-    const dc = entity.ha_attributes?.device_class || entity.device_class
-    const name = entity._group?.name || entity.display_name || entity.entity_id?.split('.')[1]?.replace(/_/g, ' ') || ''
-    const val = entity.ha_state || entity.state || '—'
+    const dcRaw = entity.ha_attributes?.device_class || entity.device_class
+    const name = entity._group?.name || entity.display_name || humanizeSlug(entity.entity_id) || ''
+    const rawState = entity.ha_state || entity.state || '—'
     const unit = entity.ha_attributes?.unit_of_measurement || ''
+    // For binary_sensors, route through formatEntityState so we get the
+    // semantic "Open / Closed", "Motion / Clear" labels — including the
+    // device-class fallback that handles sensors whose integration shipped
+    // device_class=null (Sonoff SNZB-04 Pro). Without this, the strip
+    // dumped raw "on" / "off" no matter what kind of sensor it was.
+    let val = rawState
+    if (domain === 'binary_sensor') {
+      val = formatEntityState({
+        domain, state: rawState, device_class: dcRaw,
+        entity_id: entity.entity_id,
+        friendly_name: entity.friendly_name || entity.display_name,
+        attributes: entity.ha_attributes || entity.attributes,
+      }).primary
+    }
+    const dc = dcRaw || inferBinarySensorClass({
+      domain, device_class: dcRaw, entity_id: entity.entity_id,
+      friendly_name: entity.friendly_name || entity.display_name,
+    })
     let icon = 'motion'
     if (dc === 'temperature') icon = 'temp'
     else if (dc === 'humidity') icon = 'humid'
@@ -862,7 +890,7 @@ function renderDomainSection(group, devices, t) {
       <div>
         <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t ? t('rooms.lightsHeader', { label: group.label, on: onCount, total: visibleDevices.length }) : `${group.label} · ${onCount} of ${visibleDevices.length} on`}</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-          {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="tile" />)}
+          {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="tile" tileStyle={ROOM_TILE_STYLE} />)}
         </div>
       </div>
     )

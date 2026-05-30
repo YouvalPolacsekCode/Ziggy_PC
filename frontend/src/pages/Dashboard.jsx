@@ -6,17 +6,15 @@ import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
-import { useAuthStore } from '../stores/authStore'
 import { useFeature } from '../stores/featuresStore'
 import { useWsMessages } from '../hooks/useWebSocket'
-import { greetingByTime } from '../lib/utils'
-import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, getUpdateStatus, sendDirectIntent } from '../lib/api'
+import { greetingByTime, humanizeSlug, entityDisplayName } from '../lib/utils'
+import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, sendDirectIntent } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
-import { DeviceCard } from '../components/device/DeviceCard'
-import { findRoomMetric } from '../lib/devices'
+import { findRoomMetric, deviceFacts, sendDeviceCommand, kindMeta } from '../lib/devices'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { Modal } from '../components/ui/Modal'
-import { Pencil, Play, Sparkles, Check } from 'lucide-react'
+import { Pencil, Play, Sparkles, Check, ChevronRight } from 'lucide-react'
 import { useT, t as tt } from '../lib/i18n'
 import { describeError } from '../lib/errors'
 
@@ -99,7 +97,7 @@ function formatActivity(entry, entityMap) {
   const timeStr = diff < 1 ? tt('common.now') : diff < 60 ? `${diff}m` : diff < 1440 ? `${Math.floor(diff / 60)}h` : ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const { intent, action, room, entity_id } = entry
   const ent = entity_id ? entityMap?.[entity_id] : null
-  const entName = ent?.display_name || ent?.friendly_name || (entity_id ? entity_id.split('.').slice(-1)[0].replace(/_/g, ' ') : null)
+  const entName = ent ? entityDisplayName(ent) : (entity_id ? humanizeSlug(entity_id) : null)
   const head = intentLabel(intent)
 
   let label
@@ -147,7 +145,128 @@ function ZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
   }
 }
 
-// (ControlTile removed — Quick Controls now uses the unified DeviceCard variant="tile".)
+// ── Quick-control tile — the unified Pinned-devices vocabulary ───────────────
+// Matches the redesign's ControlTile (ziggy-atoms.jsx): icon-square top-left,
+// toggle pill top-right, label + sub on the bottom. Whole tile inverts to
+// var(--ink)/var(--bg) when on; icon-box + pill take the kind's tint color.
+// Used in every viewport — phone is 2-col, tablet+ is 4-col, both via the
+// .z-quick-controls-grid responsive utility (see index.css).
+function QuickControlTile({ entity }) {
+  const navigate = useNavigate()
+  const addToast = useUIStore(s => s.addToast)
+  const [pending, setPending] = useState(false)
+
+  if (!entity) return null
+  const facts = deviceFacts(entity)
+  const isToggleable = facts.meta.toggle && facts.isAvailable
+  const on   = facts.isOn
+  const tint = facts.tint
+
+  const open = () => navigate(`/devices/${encodeURIComponent(facts.id)}`)
+  const toggle = async () => {
+    if (pending || !isToggleable) return
+    setPending(true)
+    try { await sendDeviceCommand(entity, 'toggle') }
+    catch (e) { addToast(e?.message || 'Failed', 'error') }
+    finally { setPending(false) }
+  }
+
+  // On-state colors — the redesign inverts the tile entirely when on so the
+  // pinned grid reads as a status display, not a control panel. Icon-box uses
+  // accent regardless of kind tint so the visual hierarchy stays consistent
+  // across the 4 tiles. Arrow-pill color picks up the kind tint for personality.
+  const tileBg     = on ? 'var(--ink)'    : 'var(--surface)'
+  const tileFg     = on ? 'var(--bg)'     : 'var(--ink)'
+  const iconBg     = on ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--surface-2)'
+  const iconColor  = on ? tint            : 'var(--ink-2)'
+  // Arrow background: translucent over the dark on-state ink, surface-2 on
+  // the off-state light surface. Matches TileCard's arrow vocabulary in
+  // the room view so both surfaces feel like the same control.
+  const arrowBg    = on ? 'color-mix(in srgb, var(--bg) 14%, transparent)' : 'var(--surface-2)'
+  const arrowColor = on ? 'var(--bg)' : 'var(--ink-mute)'
+  const subColor   = on ? 'color-mix(in srgb, var(--bg) 70%, transparent)' : 'var(--ink-faint)'
+  const emoji      = kindMeta(facts.kind).icon
+
+  const sub = (() => {
+    if (!facts.isAvailable) return 'Offline'
+    if (facts.brightness != null && on) return `${facts.stateLabel} · ${facts.brightness}%`
+    return facts.stateLabel
+  })()
+
+  // Tile click toggles when the device can be toggled; otherwise it falls
+  // through to navigation. Matches the TileCard pattern in the room view
+  // (lights tap to toggle, arrow chevron opens the detail page). Earlier
+  // the home pinned grid did the inverse — tile click navigated, a toggle
+  // pill flipped state — which made the two surfaces feel like two
+  // different products. `data-tile-stop` lets the arrow swallow its own
+  // click without re-firing the tile handler.
+  const handleClick = (e) => {
+    if (e.target?.closest('[data-tile-stop]')) return
+    if (isToggleable) toggle()
+    else open()
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      style={{
+        position: 'relative',
+        padding: 14, borderRadius: 18, minHeight: 96,
+        background: tileBg, color: tileFg,
+        border: '0.5px solid var(--line)',
+        display: 'flex', flexDirection: 'column', gap: 14,
+        textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
+        transition: 'background 0.16s, color 0.16s',
+        opacity: pending ? 0.7 : 1,
+      }}
+    >
+      <span style={{
+        width: 32, height: 32, borderRadius: 10,
+        background: iconBg, color: iconColor,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 18, lineHeight: 1,
+      }} aria-hidden="true">
+        {emoji}
+      </span>
+
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 600, lineHeight: 1.2,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {facts.name}
+        </div>
+        <div style={{
+          fontSize: 11, marginTop: 2, color: subColor,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {sub}
+        </div>
+      </div>
+
+      {/* Arrow to device detail — same affordance as TileCard's arrow in
+          the room view. `data-tile-stop` keeps the parent's onClick from
+          firing (we don't want a tap on the arrow to also toggle). */}
+      <span
+        data-tile-stop
+        onClick={(e) => { e.stopPropagation(); open() }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } }}
+        role="button"
+        tabIndex={0}
+        aria-label="Open details"
+        style={{
+          position: 'absolute', top: 10, right: 10,
+          width: 24, height: 24, borderRadius: 8,
+          background: arrowBg, color: arrowColor,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+        }}
+      >
+        <ChevronRight size={14} />
+      </span>
+    </button>
+  )
+}
 
 // ── Rooms carousel — production-grade centered snap ───────────────────────────
 // One dominant card fills ~78% of the viewport. Neighbouring tiles peek ~24px
@@ -168,7 +287,12 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const handle = () => {
+    // rAF-throttle so the active-tile recompute fires at most once per frame
+    // instead of on every scroll event (was firing 60+ times per second on
+    // momentum-scroll, doing a full DOM-rect read per tile each call).
+    let raf = 0
+    const compute = () => {
+      raf = 0
       const cx = el.getBoundingClientRect().left + el.clientWidth / 2
       let best = 0, minD = Infinity
       tileRefs.current.forEach((tile, i) => {
@@ -179,8 +303,15 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
       })
       setActiveIdx(best)
     }
+    const handle = () => {
+      if (raf) return
+      raf = requestAnimationFrame(compute)
+    }
     el.addEventListener('scroll', handle, { passive: true })
-    return () => el.removeEventListener('scroll', handle)
+    return () => {
+      el.removeEventListener('scroll', handle)
+      if (raf) cancelAnimationFrame(raf)
+    }
   }, [sortedRooms.length])
 
   if (!sortedRooms.length) return null
@@ -231,11 +362,21 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                   width: C_W, height: C_H,
                   borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
                   scrollSnapAlign: 'center',
+                  // `always` forces the browser to stop at the next snap
+                  // point regardless of swipe velocity — one swipe = one
+                  // tile, instead of letting a hard flick on the S24's
+                  // aggressive touch-inertia fly past 2-3 tiles. Default
+                  // value `normal` looked fine in mobile sims (mouse-based
+                  // touch emulation has no real momentum) but felt out of
+                  // control on a real Samsung WebView.
+                  scrollSnapStop: 'always',
                   // Scale + opacity — no layout change, no jump
                   transform: isActive ? 'scale(1)' : 'scale(0.88)',
                   opacity:   isActive ? 1 : 0.6,
-                  // Elevation on active card (standard depth cue)
-                  boxShadow: isActive ? '0 10px 28px rgba(0,0,0,0.32)' : 'none',
+                  // Elevation on active card. Derive from ink so the shadow
+                  // tints with the palette instead of staying flat-black on
+                  // a dark page background.
+                  boxShadow: isActive ? '0 10px 28px color-mix(in srgb, var(--ink) 32%, transparent)' : 'none',
                   // Material ease-in-out, 300ms — matches platform expectations
                   transition: 'transform 300ms cubic-bezier(0.4,0,0.2,1), opacity 300ms cubic-bezier(0.4,0,0.2,1), box-shadow 300ms cubic-bezier(0.4,0,0.2,1)',
                   transformOrigin: 'center center',
@@ -255,8 +396,11 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                     <span style={{
                       position: 'absolute', top: 12, right: 12,
                       width: 8, height: 8, borderRadius: '50%',
-                      background: isActiveRoom ? '#6CBF8C' : 'rgba(255,255,255,0.3)',
-                      boxShadow: isActiveRoom ? '0 0 0 3px rgba(108,191,140,0.3)' : 'none',
+                      // Active dot reads --ok (palette-aware green); inactive
+                      // stays a white tint because it sits over a photo, not
+                      // the page surface.
+                      background: isActiveRoom ? 'var(--ok)' : 'rgba(255,255,255,0.3)',
+                      boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
                     }} />
                   )
                 })()}
@@ -275,8 +419,12 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                                 || summary.tempSensor.attributes?.unit_of_measurement
                                 || '°C'
                       const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
-                      const bg = tempC < 18 ? 'rgba(60, 130, 220, 0.55)'
-                               : tempC > 25 ? 'rgba(220, 80, 60, 0.55)'
+                      // Temperature tint chips. Cold/hot read from --info/--err
+                      // so dark mode picks up the lighter palette values; the
+                      // neutral chip stays a plain black wash because it sits
+                      // on a photo, not on the page bg.
+                      const bg = tempC < 18 ? 'color-mix(in srgb, var(--info) 55%, transparent)'
+                               : tempC > 25 ? 'color-mix(in srgb, var(--err) 55%, transparent)'
                                : 'rgba(0, 0, 0, 0.32)'
                       return (
                         <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: bg, backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
@@ -310,6 +458,136 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Rooms grid — desktop-only variant of RoomsCarousel ───────────────────────
+// Same per-tile vocabulary (photo + gradient + status dot + sensor chips +
+// name + status line), arranged as a 2-col grid instead of a horizontal
+// snap-scroll carousel. Used on web (>=1024px) where the carousel feels like
+// a mobile pattern shoehorned into a desktop layout — the grid lets all
+// rooms be seen and tapped at once.
+// Resolve N rooms into a (cols, rows) layout that fills a roughly 16:11 main
+// column area on desktop without leaving awkward gaps. Single column for one
+// room (it gets the whole frame), wide-and-short for 2–3, square-ish for 4–9,
+// gradually more columns past that so tiles stay readable.
+function roomsGridShape(n) {
+  if (n <= 1)  return { cols: 1, rows: 1 }
+  if (n === 2) return { cols: 2, rows: 1 }
+  if (n === 3) return { cols: 3, rows: 1 }
+  if (n === 4) return { cols: 2, rows: 2 }
+  if (n <= 6)  return { cols: 3, rows: 2 }
+  if (n <= 8)  return { cols: 4, rows: 2 }
+  if (n <= 9)  return { cols: 3, rows: 3 }
+  if (n <= 12) return { cols: 4, rows: 3 }
+  if (n <= 16) return { cols: 4, rows: 4 }
+  const cols = 5
+  return { cols, rows: Math.ceil(n / cols) }
+}
+
+function RoomsGrid({ sortedRooms, ziggyRooms }) {
+  const t = useT()
+  const navigate = useNavigate()
+  if (!sortedRooms.length) return null
+  const { cols, rows } = roomsGridShape(sortedRooms.length)
+  // Cap visible tiles to the grid cell count so the layout never overflows.
+  // In practice the cap only matters past 20 rooms; the shape function above
+  // grows enough to display every room up to 16, and 5×N beyond.
+  const visibleRooms = sortedRooms.slice(0, cols * rows)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <p className="z-eyebrow" style={{ marginBottom: 10, flexShrink: 0 }}>{t('dashboard.rooms')}</p>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+        gap: 12,
+        flex: 1, minHeight: 0,
+      }}>
+        {visibleRooms.map(summary => {
+          const room = ziggyRooms.find(r => r.id === summary.id)
+          if (!room) return null
+          const photo = getRoomPhoto(room)
+          const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
+          return (
+            <div
+              key={room.id}
+              onClick={() => navigate(`/rooms/${room.id}`)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/rooms/${room.id}`) }}
+              style={{
+                position: 'relative',
+                width: '100%', height: '100%',
+                borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
+                background: 'var(--surface-2)',
+                border: '0.5px solid var(--line)',
+                // No translateY on hover — the outer container clips it
+                // against the viewport top on the first row. Soft shadow
+                // lift + subtle border-color shift is the same affordance
+                // without the clipping issue.
+                transition: 'box-shadow 0.16s, border-color 0.16s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = 'var(--shadow-md)'
+                e.currentTarget.style.borderColor = 'var(--line-2)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = 'none'
+                e.currentTarget.style.borderColor = 'var(--line)'
+              }}
+            >
+              <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
+
+              <span style={{
+                position: 'absolute', top: 10, right: 10,
+                width: 7, height: 7, borderRadius: '50%',
+                background: isActiveRoom ? 'var(--ok)' : 'rgba(255,255,255,0.3)',
+                boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
+              }} />
+
+              {(summary.tempSensor || summary.humSensor) && (
+                <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 4 }}>
+                  {summary.tempSensor && (() => {
+                    const raw = parseFloat(summary.tempSensor.state)
+                    const unit = summary.tempSensor.unit_of_measurement
+                              || summary.tempSensor.attributes?.unit_of_measurement
+                              || '°C'
+                    const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
+                    const bg = tempC < 18 ? 'color-mix(in srgb, var(--info) 55%, transparent)'
+                             : tempC > 25 ? 'color-mix(in srgb, var(--err) 55%, transparent)'
+                             : 'rgba(0, 0, 0, 0.32)'
+                    return (
+                      <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: bg, backdropFilter: 'blur(8px)', padding: '2px 6px', borderRadius: 999 }}>
+                        {raw.toFixed(1)}°
+                      </span>
+                    )
+                  })()}
+                  {summary.humSensor && (
+                    <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '2px 6px', borderRadius: 999 }}>
+                      {parseFloat(summary.humSensor.state).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
+                <p style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{room.name}</p>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {summary.activeCount > 0
+                    ? t('dashboard.activeShort', { n: summary.activeCount })
+                    : summary.hasMotion
+                      ? t('dashboard.motion')
+                      : t('dashboard.idle')}
+                  {summary.parts.length > 0 && ` · ${summary.parts[0]}`}
+                </p>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -351,9 +629,22 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
           <Pencil size={11} /> {t('dashboard.shortcutsEdit')}
         </button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+      {/* Horizontal pill carousel — matches the redesign's Quick Routines
+          vocabulary. Pill inverts (ink/bg) while a shortcut is firing so the
+          user sees the tap landed. Same surface on every viewport; on tablet
+          and desktop the pills wrap to a second row instead of horizontal
+          scroll so the user can see all of them at once. */}
+      <div
+        className="no-scrollbar"
+        style={{
+          display: 'flex', gap: 8,
+          overflowX: 'auto',
+          flexWrap: 'wrap',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
         {resolved.map(s => (
-          <ShortcutTile
+          <ShortcutPill
             key={`${s.type}:${s.id}`}
             type={s.type}
             record={s.record}
@@ -365,11 +656,15 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
   )
 }
 
-function ShortcutTile({ type, record, onFire }) {
+// Horizontal pill — used in the mobile Shortcuts carousel. Stateless surface,
+// so "active" only means "currently firing". Icon picks up the kind's tint
+// (var(--ok) for routine, var(--accent) for ask) and stays tinted on both
+// inactive (surface bg) and active (inverted ink bg) so the personality of
+// the routine survives the press.
+function ShortcutPill({ type, record, onFire }) {
   const [pending, setPending] = useState(false)
   const icon  = record.icon || (type === 'routine' ? '⚡' : '✦')
   const label = type === 'routine' ? record.name : record.label
-  const kind  = type === 'routine' ? 'routine' : 'ask'
   const tint  = type === 'routine' ? 'var(--ok)' : 'var(--accent)'
 
   const handle = async () => {
@@ -381,48 +676,23 @@ function ShortcutTile({ type, record, onFire }) {
   return (
     <button
       onClick={handle}
-      aria-label={`${kind}: ${label}`}
+      aria-label={label}
       style={{
-        // Trust aspectRatio for a true square. The previous `minHeight: 92`
-        // overrode aspectRatio on narrow phones (Galaxy S24, iPhone SE) and
-        // forced 74×92 tiles — the "squished tall" look.
-        position: 'relative', aspectRatio: '1 / 1',
-        padding: 10, borderRadius: 14,
-        // Cozy tinted tile — matches Pinned-devices palette family. Shortcuts
-        // are stateless ("always alive"), so they get a single mid-saturation
-        // tint, halfway between Pinned OFF and Pinned ON.
-        background: `color-mix(in srgb, ${tint} 14%, var(--tile-base))`,
-        color: 'var(--ink)',
-        border: '0.5px solid ' + `color-mix(in srgb, ${tint} 24%, var(--line))`,
-        textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-        opacity: pending ? 0.6 : 1,
-        transition: 'opacity 0.15s, transform 0.1s',
+        flexShrink: 0,
+        padding: '10px 12px', borderRadius: 14,
+        background: pending ? 'var(--ink)' : 'var(--surface)',
+        color:      pending ? 'var(--bg)'  : 'var(--ink-2)',
+        border: '0.5px solid var(--line)',
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+        cursor: 'pointer',
+        transition: 'background 0.18s, color 0.18s',
       }}
     >
-      <div style={{
-        width: 26, height: 26, borderRadius: 7,
-        background: `color-mix(in srgb, ${tint} 32%, var(--tile-base))`,
-        color: `color-mix(in srgb, ${tint} 80%, var(--ink))`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15,
-      }}>{icon}</div>
-      <div style={{ minWidth: 0 }}>
-        {/* 2-line name only. Dropped the ROUTINE/ASK kind label — the tile's
-            tinted background already encodes type (green = routine, peach =
-            ask), and on a 74×74 Galaxy tile the icon + 2 lines of name +
-            kind label overflowed the content area. Removing the kind label
-            recovers the ~13px needed for the 2-line name to fit cleanly.
-            Smaller font + tighter letter-spacing matches the device tile so
-            longer labels like "Turn Off Lights" actually pack onto 2 lines
-            instead of truncating on line 2. */}
-        <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.025em',
-          overflow: 'hidden',
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-          wordBreak: 'break-word' }}>
-          {label}
-        </div>
-      </div>
+      <span style={{ fontSize: 14, lineHeight: 1, color: tint }} aria-hidden="true">{icon}</span>
+      <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
     </button>
   )
 }
@@ -531,8 +801,6 @@ export default function Dashboard() {
   const { fetch: fetchSuggestions, pendingCount, pending: pendingSuggestions, accept: acceptSuggestionAction, reject: rejectSuggestionAction } = useSuggestionStore()
   const { items: quickAsks, fetch: fetchQuickAsks }   = useQuickAskStore()
   const { addToast }                                  = useUIStore()
-  const role                                          = useAuthStore(s => s.role)
-  const isSuperAdmin                                  = role === 'super_admin'
   const taskTrackingEnabled                           = useFeature('task_tracking')
 
   const [activity,          setActivity]          = useState([])
@@ -544,7 +812,6 @@ export default function Dashboard() {
     try { return parseInt(localStorage.getItem('coordWarnDismissed') || '0', 10) } catch { return 0 }
   })
   const [presencePersons,   setPresencePersons]   = useState([])
-  const [haUpdateStatus,    setHaUpdateStatus]    = useState(null)
 
   const loadAnomalies = useCallback(() => {
     getActiveAnomalies()
@@ -563,10 +830,7 @@ export default function Dashboard() {
     loadAnomalies()
     getHealth().then(setHealth).catch(() => {})
     getPresencePersons().then(r => setPresencePersons(r.persons ?? [])).catch(() => {})
-    if (isSuperAdmin) {
-      getUpdateStatus().then(setHaUpdateStatus).catch(() => {})
-    }
-  }, [isSuperAdmin])
+  }, [])
 
   // Re-poll health on a slow interval. /api/health captures `ha_connected` from
   // services.ha_subscriber, which flips false→true after the WS auth handshake
@@ -704,14 +968,10 @@ export default function Dashboard() {
   const haOffline    = health !== null && health.ha_connected === false
   const coordWarning = health?.coordinator_warning && !haOffline
 
-  const haUpdateRisk = isSuperAdmin && haUpdateStatus?.update_available ? haUpdateStatus.risk_level : null
-  const haUpdateSev  = haUpdateRisk === 'high' ? 'critical' : haUpdateRisk === 'medium' ? 'warn' : haUpdateRisk ? 'info' : null
-
   const alerts = [
     ...(haOffline ? [{ id: 'ha-offline', sev: 'critical', text: t('dashboard.haOffline'), to: '/settings' }] : []),
     ...(criticalAnomalies.length > 0 ? [{ id: 'anom-crit', sev: 'critical', text: criticalAnomalies.length === 1 ? t('dashboard.criticalAlertsOne', { n: criticalAnomalies.length }) : t('dashboard.criticalAlertsMany', { n: criticalAnomalies.length }), to: '/alerts' }] : []),
     ...(warningAnomalies.length  > 0 ? [{ id: 'anom-warn', sev: 'warn',     text: warningAnomalies.length === 1 ? t('dashboard.anomaliesOne', { n: warningAnomalies.length }) : t('dashboard.anomaliesMany', { n: warningAnomalies.length }), to: '/alerts' }] : []),
-    ...(haUpdateSev ? [{ id: 'ha-update', sev: haUpdateSev, text: t('dashboard.haUpdateBadge', { version: haUpdateStatus.latest_version, risk: haUpdateRisk }), to: '/ops/ha-update' }] : []),
     ...(pendingCount() > 0 ? [{ id: 'sug', sev: 'info', text: pendingCount() === 1 ? t('dashboard.suggestionsReadyOne', { n: pendingCount() }) : t('dashboard.suggestionsReadyMany', { n: pendingCount() }), to: '/automations' }] : []),
     ...(taskTrackingEnabled && overdueTasks.length > 0 ? [{ id: 'tasks', sev: 'warn', text: overdueTasks.length === 1 ? t('dashboard.overdueTasksOne', { n: overdueTasks.length }) : t('dashboard.overdueTasksMany', { n: overdueTasks.length }), to: '/tasks' }] : []),
   ]
@@ -755,62 +1015,47 @@ export default function Dashboard() {
   return (
     // Wide max-width: accommodates the desktop 2-col grid (main + 320px rail
     // + 24px gap). Single-column on phone/tablet via `.z-dashboard-grid`.
-    <div style={{ maxWidth: 'var(--page-max-w-wide)', margin: '0 auto', padding: '20px 20px 100px' }}>
+    // The `.z-dashboard-outer` class clamps to the visible viewport on
+    // lg+ so the desktop dashboard never needs to scroll — see index.css.
+    <div className="z-dashboard-outer">
       <div className="z-dashboard-grid">
 
       {/* ─── MAIN COLUMN ─── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+      <div className="z-dashboard-main-col" style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
 
-      {/* ── 1. Greeting ── */}
+      {/* ── 1. Greeting ── Matches the redesign greeting block exactly:
+              eyebrow → display title → flat status row of [dot · "N rooms
+              active" · "Maya & kids home"]. Presence is a borderless button
+              styled as plain text so the tap target stays (taps go to
+              /settings#presence) without breaking the design's clean
+              look. Inline alert chips are gone — the standalone Alerts
+              card below surfaces the same data and the desktop right rail
+              still owns it on lg+. */}
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 6 }}>{greetingByTime()}</p>
-        <h1 className="z-display" style={{ fontSize: 26, margin: '0 0 8px' }}>{statusText}</h1>
+        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{greetingByTime()}</p>
+        <h1 className="z-display" style={{ fontSize: 26, lineHeight: 1.1, margin: '0 0 6px' }}>{statusText}</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="z-dot" style={{ background: activeRooms.length > 0 ? 'var(--ok)' : 'var(--line-2)', flexShrink: 0 }} />
+          {activeRooms.length > 0
+            ? <span className="z-dot z-dot-on" style={{ flexShrink: 0 }} />
+            : <span className="z-dot" style={{ background: 'var(--line-2)', flexShrink: 0 }} />}
           <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
             {activeRooms.length > 0 ? `${activeRooms.length} room${activeRooms.length > 1 ? 's' : ''} active` : 'All quiet'}
           </span>
           {homePersons.length > 0 && (
             <>
               <span style={{ color: 'var(--ink-ghost)', fontSize: 12 }}>·</span>
-              {homePersons.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => navigate('/settings#presence')}
-                  title={`${p.name} is home`}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px',
-                    borderRadius: 999, fontSize: 11, fontWeight: 500,
-                    background: 'color-mix(in srgb, var(--ok) 8%, var(--surface))',
-                    border: '0.5px solid color-mix(in srgb, var(--ok) 30%, transparent)',
-                    cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink)',
-                  }}
-                >
-                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--ok)', flexShrink: 0 }} />
-                  {p.name}
-                </button>
-              ))}
+              <button
+                onClick={() => navigate('/settings#presence')}
+                style={{
+                  background: 'none', border: 'none', padding: 0,
+                  fontSize: 12, color: 'var(--ink-mute)',
+                  fontFamily: 'inherit', cursor: 'pointer',
+                }}
+              >
+                {presenceStr}
+              </button>
             </>
           )}
-          {/* Alert chips inline — mobile/tablet only. On lg+ the full Alerts
-              card in the right rail replaces these to avoid duplication. */}
-          <span className="hide-lg" style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
-          {alerts.slice(0, 2).map(a => {
-            const dotColor = a.sev === 'critical' ? 'var(--err)' : a.sev === 'warn' ? 'var(--warn)' : 'var(--info)'
-            return (
-              <button key={a.id} onClick={() => navigate(a.to)} style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px',
-                borderRadius: 999, fontSize: 11, fontWeight: 500,
-                background: 'color-mix(in srgb, ' + dotColor + ' 8%, var(--surface))',
-                border: '0.5px solid ' + dotColor + '44', cursor: 'pointer',
-                fontFamily: 'inherit', color: 'var(--ink)',
-              }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-                {a.text}
-              </button>
-            )
-          })}
-          </span>
         </div>
       </div>
 
@@ -827,7 +1072,7 @@ export default function Dashboard() {
           <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
           <span style={{ fontWeight: 600 }}>{health.offline_count} device{health.offline_count === 1 ? '' : 's'} offline.</span>
           <span style={{ color: 'var(--ink-mute)', flex: 1 }}>Some devices may be unreachable.</span>
-          <button onClick={handleReloadZigbee} disabled={reloading} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--err)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}>
+          <button onClick={handleReloadZigbee} disabled={reloading} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--err)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}>
             {reloading ? 'Reconnecting…' : 'Reconnect'}
           </button>
           <button onClick={() => { try { localStorage.setItem('coordWarnDismissed', String(health.offline_count)) } catch {} setCoordDismissedAt(health.offline_count) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, padding: '0 2px' }}>×</button>
@@ -836,7 +1081,19 @@ export default function Dashboard() {
 
       {/* ── 2. Rooms carousel ── */}
       {sortedRooms.length > 0 && (
-        <RoomsCarousel sortedRooms={sortedRooms} ziggyRooms={ziggyRooms} />
+        <>
+          {/* Phone + tablet: horizontal snap-carousel (iOS-app feel). */}
+          <div className="hide-lg">
+            <RoomsCarousel sortedRooms={sortedRooms} ziggyRooms={ziggyRooms} />
+          </div>
+          {/* Web/desktop (>=1024px): grid of room tiles — all rooms visible
+              at once. `.z-dashboard-fill` makes this section absorb the
+              leftover vertical space in the no-scroll dashboard, and the
+              tiles inside RoomsGrid stretch to fill it. */}
+          <div className="only-lg z-dashboard-fill">
+            <RoomsGrid sortedRooms={sortedRooms} ziggyRooms={ziggyRooms} />
+          </div>
+        </>
       )}
 
       {/* ── 3. Shortcuts — merged Routines + Quick Asks. Hidden when empty;
@@ -852,11 +1109,28 @@ export default function Dashboard() {
           // Two toasts were either redundant or contradictory (green Running
           // followed by red Failed). Run errors here only fire if the HTTP
           // POST itself fails (backend unreachable).
-          try { await runRoutine(r.id) }
+          try {
+            await runRoutine(r.id)
+            // Refresh the store so any state changes the routine triggered
+            // are reflected on tiles immediately, even if HA's per-entity
+            // state_changed events are slow or get dropped by a flaky link.
+            // Without this, a routine that "turn off all lights" left every
+            // pinned tile glowing "on" until the user manually navigated.
+            try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+          }
           catch { addToast('Failed to run', 'error') }
         }}
         onFireAsk={async (qa) => {
-          try { await sendDirectIntent(qa.intent, qa.params || {}); addToast(qa.label, 'success') }
+          try {
+            await sendDirectIntent(qa.intent, qa.params || {})
+            addToast(qa.label, 'success')
+            // Same catch-up refresh — quick-ask intents like
+            // `turn_off_all_lights` mutate many entities at once, and the
+            // pinned tiles need the new state to show through. WS events
+            // SHOULD cover this in the happy path; fetchAll is the
+            // defensive belt-and-suspenders that closes the gap.
+            try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+          }
           catch (e) { addToast(e.message || 'Failed', 'error') }
         }}
         onEdit={() => setShowShortcutsPicker(true)}
@@ -908,9 +1182,13 @@ export default function Dashboard() {
             + Pin up to 4 devices
           </button>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+          /* Single QuickControlTile component across all viewports — same
+             redesign vocabulary everywhere. The grid responsively expands
+             from 2 columns on phone to 4 columns on tablet+ via the
+             z-quick-controls-grid utility (defined in index.css). */
+          <div className="z-quick-controls-grid">
             {quickControlPicks.map(entity => (
-              <DeviceCard key={entity.entity_id} entity={entity} variant="tile" dense />
+              <QuickControlTile key={entity.entity_id} entity={entity} />
             ))}
           </div>
         )}
@@ -971,22 +1249,26 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── 5. Tasks peek ── */}
+      {/* ── 5. Tasks peek ── Icon-square uses --accent per the redesign
+              (peach tint reads as "today's thing to do"), even though the
+              section is semantically about completion. The redesign keeps
+              status colors (--ok / --err) for the actual outcome — overdue
+              flips the sub line to --err. */}
       {taskTrackingEnabled && pendingTasks.length > 0 && (
         <button
           onClick={() => navigate('/tasks')}
           style={{
             display: 'flex', alignItems: 'center', gap: 12,
-            padding: '12px 14px', borderRadius: 14,
+            padding: '11px 14px', borderRadius: 13,
             background: 'var(--surface)', border: '0.5px solid var(--line)',
             cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%',
           }}
         >
-          <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface-2))', color: 'var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ZIcon name="check" size={14} stroke={2.5} color="var(--ok)" />
+          <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ZIcon name="check" size={14} stroke={2.5} color="var(--accent)" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} today</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} today</div>
             <div className="z-mono" style={{ fontSize: 10, color: overdueTasks.length > 0 ? 'var(--err)' : 'var(--ink-faint)', marginTop: 2 }}>
               {overdueTasks.length > 0 ? `${overdueTasks.length} overdue` : `${pendingTasks.length} pending`}
               {pendingTasks[0]?.title && ` · ${pendingTasks[0].title}`}
@@ -1006,11 +1288,11 @@ export default function Dashboard() {
       {activity.length > 0 && (
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 8 }}>Just now</p>
+          {/* Card wrapper kept for visual parity with the Alerts card sitting
+              directly above it. The clean redesign mock drew this surface
+              without a wrapper, but in our actual page the adjacent Alerts
+              card creates a box-vs-no-box asymmetry that reads as broken. */}
           <div className="z-card" style={{ padding: '4px 6px' }}>
-            {/* Show exactly 5 rows fully (no peek), then scroll for rows 6–10.
-                Row stride = 28 height + 4 gap = 32. 5 rows × 28 + 4 gaps × 4 = 156.
-                The container holds up to 10 (activity.slice(0, 10)), so scrolling
-                reveals 5 more. */}
             <div
               className="scrollbar-thin"
               style={{
@@ -1022,7 +1304,7 @@ export default function Dashboard() {
               {activity.slice(0, 10).map((entry, i) => {
                 const { label, timeStr, ok } = formatActivity(entry, entityMap)
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, height: 28, padding: '0 2px', flexShrink: 0 }}>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px', flexShrink: 0 }}>
                     <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
                     <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
                     <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>

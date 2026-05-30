@@ -88,7 +88,7 @@ _MUTATION_INTENTS = frozenset({
     "add_task", "remove_task", "remove_all_tasks",
     "save_note", "append_to_note", "delete_note",
     "save_file", "delete_file",
-    "send_email", "send_telegram_message",
+    "send_email",
 })
 
 # Device-action vocabulary that signals a genuine command.
@@ -169,8 +169,20 @@ def _build_devices_he() -> list[tuple[str, str]]:
 _DEVICES_HE_SORTED = _build_devices_he()
 
 
+# Hebrew block: U+0590–U+05FF. If the input is pure ASCII / English, the two
+# normalize_hebrew_* loops below are a no-op but still scan their full alias
+# lists. Skip the scan entirely when no Hebrew character is present.
+def _has_hebrew(text: str) -> bool:
+    for ch in text:
+        if "֐" <= ch <= "׿":
+            return True
+    return False
+
+
 def _normalize_hebrew_rooms(text: str) -> str:
     """Replace Hebrew room names with English display names before sending to GPT."""
+    if not _has_hebrew(text):
+        return text
     from services.room_alias_bank import ROOM_ALIAS_BANK
     for he_name, en_slug in _ROOMS_HE_SORTED:
         if he_name in text:
@@ -185,6 +197,8 @@ def _normalize_hebrew_rooms(text: str) -> str:
 
 def _normalize_hebrew_devices(text: str) -> str:
     """Replace Hebrew device type words (אור, מזגן, …) with English equivalents before GPT."""
+    if not _has_hebrew(text):
+        return text
     for he_word, en_word in _DEVICES_HE_SORTED:
         if he_word in text:
             text = text.replace(he_word, en_word)

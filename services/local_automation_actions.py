@@ -10,6 +10,7 @@ from typing import Any
 
 STORE_FILE = "user_files/local_automation_actions.json"
 META_FILE = "user_files/automation_meta.json"
+STATE_FILE = "user_files/automation_state.json"
 
 
 def _load() -> dict:
@@ -55,6 +56,34 @@ def delete_automation_meta(automation_id: str) -> None:
     _save_meta(store)
 
 
+# ── Local automation state ───────────────────────────────────────────────────
+# Small file-backed key/value store, keyed by `namespace`. Used by paired
+# automations (e.g. Night Watch) to coordinate without touching a global flag.
+# Each namespace owns its keys; no cross-namespace reads.
+
+def _load_state() -> dict:
+    if not os.path.exists(STATE_FILE):
+        return {}
+    with open(STATE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_state(data: dict) -> None:
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def set_local_state(namespace: str, key: str, value: Any) -> None:
+    store = _load_state()
+    store.setdefault(namespace, {})[key] = value
+    _save_state(store)
+
+
+def get_local_state(namespace: str, key: str, default: Any = None) -> Any:
+    return _load_state().get(namespace, {}).get(key, default)
+
+
 # All step types that Ziggy's own executor can run.
 # - `device` is the routine-wizard variant of call_service (different field names).
 # - `automation` runs another automation's action list inline.
@@ -66,11 +95,28 @@ _LOCAL_TYPES = {
     "wait_for_state",     # block until an entity reaches a target state (with timeout)
     "speak",              # TTS via configured media_players
     "notify_actionable",  # push notification with action buttons
+    # User-cancellable delay + the Cancel-button action that aborts it.
+    # Paired: a notify_actionable step carries a cancel_pending button, the
+    # following wait_cancellable polls the flag and breaks out if tapped.
+    "wait_cancellable",
+    "cancel_pending",
     # Dynamic device command — surfaces the full HA service catalog through
     # the automation/routine builder. Carries {entity_id, command_id, params,
     # prefer_source?}; routed through services/command_router on hybrid
     # devices so the Wi-Fi/IR source decision matches the device-detail tile.
     "device_command",
+    # Paired-automation snapshot/restore (e.g. Night Watch). Captures
+    # per-entity {state, brightness} into a namespaced store so a later
+    # stage can restore the pre-change configuration.
+    "save_entity_states",    # {namespace, state_key, entity_ids} → snapshot
+    "restore_entity_states", # {namespace, state_key}              → replay
+    # Registers a multi-day "Away — Simulate Presence" activation with
+    # services.fake_occupancy_scheduler. The step itself returns immediately;
+    # the per-minute scheduler tick owns all subsequent execution.
+    "fake_occupancy_start",
+    # Music playback (Spotify / YT Music) on a speaker the user has enabled
+    # in Settings → Music. Self-gated on media_music; refuses to run when off.
+    "media_play",
 }
 
 
@@ -107,6 +153,15 @@ def delete_ziggy_actions(automation_id: str) -> None:
 # If the user taps "Run" multiple times before the first execution completes,
 # subsequent requests are dropped rather than queued up and run back-to-back.
 _running_automations: set[str] = set()
+
+# Cancellation flags for in-flight automations. Set by `cancel_pending` (which
+# the user triggers by tapping the Cancel button on an actionable push), read
+# by `wait_cancellable`. Value is the timestamp the flag was raised so a stale
+# flag from a previous run can be detected. The flag is cleared at the top of
+# every execute_ziggy_actions invocation, and again inside wait_cancellable
+# when it aborts — so a flag set after the wait has already passed won't carry
+# over into a subsequent unrelated step or run.
+_cancel_flags: dict[str, float] = {}
 
 
 def _eval_single_condition(cond: dict) -> tuple[bool, str]:
@@ -158,6 +213,32 @@ def _eval_single_condition(cond: dict) -> tuple[bool, str]:
         else:
             passed = after <= now_hm < before
         return passed, f"time {now_hm} in [{after},{before})"
+
+    # IR-device condition — gates on ir_manager's assumed_state for IR-only
+    # devices that don't have an HA entity (most IR ACs). Shape:
+    #   {"type": "ir_device_state", "ir_device_id": "...",
+    #    "operator": "is"|"is_not", "value": "on"|"off"}
+    if ctype == "ir_device_state":
+        ir_id = cond.get("ir_device_id", "")
+        if not ir_id:
+            return True, "no ir_device_id — skipped"
+        try:
+            from services.ir_manager import get_ir_device, get_device_state
+            dev = get_ir_device(ir_id)
+            if not dev:
+                return False, f"ir_device {ir_id} not found"
+            actual = get_device_state(dev)  # "on" | "off" | "unknown"
+        except Exception as e:
+            return False, f"ir_device_state read failed: {e}"
+        operator = cond.get("operator", "is")
+        expected = str(cond.get("value", "on"))
+        if operator == "is":
+            passed = actual == expected
+        elif operator == "is_not":
+            passed = actual != expected
+        else:
+            passed = True
+        return passed, f"ir:{ir_id}={actual} (op={operator}, expected={expected})"
 
     # entity condition (default)
     entity_id = cond.get("entity_id", "")
@@ -269,6 +350,9 @@ async def execute_ziggy_actions(
             pass
 
     _running_automations.add(automation_id)
+    # Start with a clean cancel slate — a flag left over from a previous run
+    # (e.g. user tapped Cancel after the wait completed) must not abort this one.
+    _cancel_flags.pop(automation_id, None)
     steps = get_ziggy_actions(automation_id)
     _bus.emit("automation", BASIC, "automation_started",
               request_id=request_id, automation_id=automation_id,
@@ -480,9 +564,18 @@ async def execute_ziggy_actions(
                         bound: list[dict] = []
                         for spec in raw_actions[:3]:  # web push caps at 2-3 actions
                             label_txt = spec.get("label") or spec.get("title") or "Run"
-                            action_dict = spec.get("action") or {}
+                            action_dict = dict(spec.get("action") or {})
                             if not action_dict:
                                 continue
+                            # `cancel_pending` runs through push_actions in a
+                            # transient automation context, so we have to bind
+                            # the *outer* automation_id here — that's the run
+                            # the user is asking to cancel.
+                            if (
+                                action_dict.get("type") == "cancel_pending"
+                                and not action_dict.get("target_automation_id")
+                            ):
+                                action_dict["target_automation_id"] = automation_id
                             tok = register_action(action_dict)
                             bound.append({"action": tok, "title": label_txt})
                         await push_notify(title, msg, "/", "automation", actions=bound)
@@ -493,8 +586,146 @@ async def execute_ziggy_actions(
                     except Exception as e:
                         result = {"ok": False, "message": f"Actionable notify failed: {e}"}
 
+                # ── Cancel a pending wait on another automation run ──────────────
+                # step: {"type": "cancel_pending", "target_automation_id": "..."}
+                # Issued by the Cancel button on an actionable push. The
+                # notify_actionable branch (above) injects the outer automation_id
+                # into target_automation_id at register time, so the button knows
+                # which run to abort even though it itself executes in a transient
+                # push-action context.
+                elif kind == "cancel_pending":
+                    target = step.get("target_automation_id") or ""
+                    if not target:
+                        result = {"ok": False, "message": "cancel_pending needs target_automation_id"}
+                    else:
+                        _cancel_flags[target] = _time.time()
+                        log_info(f"[Executor] Cancellation flag set for {target}")
+                        result = {"ok": True, "message": f"Cancellation queued for {target}"}
+
+                # ── Cancellable wait — abort the automation if cancelled ─────────
+                # step: {
+                #   "type": "wait_cancellable",
+                #   "seconds": 60,
+                #   # Optional presence-verification guard. While waiting, the
+                #   # executor polls each entity in `presence_sensors` once per
+                #   # second. If any reads "on" / "detected" / "occupied", the
+                #   # automation aborts and (if message is set) pushes it to
+                #   # the user. Used by Last One Out to back off the shutoff
+                #   # when motion/mmWave catches someone still home.
+                #   "presence_sensors": ["binary_sensor.…", ...],
+                #   "presence_abort_message": "...",   # push body on abort
+                #   "presence_abort_title":   "Ziggy", # push title (default)
+                # }
+                # Sleeps in 1-second slices, checking _cancel_flags AND any
+                # presence sensors each tick. Either signal breaks out using
+                # the same append-result-then-break pattern as wait_for_state
+                # on_timeout="abort". Cancel + presence are independent —
+                # cancel produces no push (the actionable notification was
+                # the user's signal); presence produces the abort push.
+                elif kind == "wait_cancellable":
+                    secs = max(0, int(step.get("seconds", step.get("delay_seconds", 0))))
+                    presence_sensors = [
+                        s for s in (step.get("presence_sensors") or []) if s
+                    ]
+                    abort_message = step.get("presence_abort_message", "")
+                    abort_title   = step.get("presence_abort_title", "Ziggy")
+                    log_info(
+                        f"[Executor] Cancellable wait {secs}s on {automation_id} "
+                        f"(presence_sensors={len(presence_sensors)})…"
+                    )
+
+                    if presence_sensors:
+                        from services.ha_subscriber import state_cache as _state_cache
+                    else:
+                        _state_cache = None  # type: ignore[assignment]
+
+                    def _presence_active() -> str:
+                        """Return the sensor entity_id reading 'present', or '' if all clear."""
+                        if not presence_sensors or _state_cache is None:
+                            return ""
+                        for sid in presence_sensors:
+                            raw = (_state_cache.get(sid) or {}).get("state")
+                            if raw is None:
+                                continue
+                            if str(raw).lower() in ("on", "detected", "occupied", "home"):
+                                return sid
+                        return ""
+
+                    cancelled = False
+                    triggered_sensor = ""
+                    for _ in range(secs):
+                        if _cancel_flags.get(automation_id):
+                            cancelled = True
+                            break
+                        triggered_sensor = _presence_active()
+                        if triggered_sensor:
+                            break
+                        await asyncio.sleep(1)
+
+                    if cancelled:
+                        _cancel_flags.pop(automation_id, None)
+                        log_info(f"[Executor] {automation_id} cancelled by user — aborting remaining steps")
+                        results.append({
+                            "ok": True,
+                            "cancelled": True,
+                            "message": "Cancelled by user — remaining steps skipped.",
+                        })
+                        break
+                    if triggered_sensor:
+                        log_info(
+                            f"[Executor] {automation_id} aborted — presence detected on "
+                            f"{triggered_sensor}. Remaining steps skipped."
+                        )
+                        if abort_message:
+                            try:
+                                from services.push_notify import push_notify
+                                await push_notify(abort_title, abort_message, "/", "automation")
+                            except Exception as _push_err:
+                                log_error(f"[Executor] presence-abort push failed: {_push_err}")
+                        results.append({
+                            "ok": True,
+                            "aborted_for_presence": True,
+                            "sensor": triggered_sensor,
+                            "message": (
+                                f"Presence detected on {triggered_sensor} — "
+                                "remaining steps skipped."
+                            ),
+                        })
+                        break
+                    result = {"ok": True, "message": f"Waited {secs}s (no cancel, no presence)"}
+
                 # ── Speak / announce via TTS ────────────────────────────────────
                 # step: {"type": "speak", "text": "Good morning"}
+                # ── Play music on a speaker ─────────────────────────────────────
+                # step: {"type": "media_play", "speaker_entity": "media_player.x",
+                #        "service": "spotify"|"ytmusic", "profile": "Youval",
+                #        "mode": "uri"|"search"|"open_app",
+                #        "uri": "spotify:playlist:..." or "https://music.youtube.com/...",
+                #        "query": "Lovely Day", "volume": 35 }
+                elif kind == "media_play":
+                    try:
+                        from core.media import flag as _media_flag
+                        if not _media_flag.is_enabled():
+                            result = {"ok": False, "message": "Music feature is disabled."}
+                        else:
+                            from core.media import orchestrator as _media_orch
+                            r = await _media_orch.play(
+                                speaker_entity=step.get("speaker_entity", ""),
+                                service=step.get("service", "spotify"),
+                                profile=step.get("profile", ""),
+                                mode=step.get("mode", "uri"),
+                                uri=step.get("uri"),
+                                query=step.get("query"),
+                                volume=step.get("volume"),
+                            )
+                            result = {
+                                "ok": bool(r.get("ok")),
+                                "message": r.get("msg") or r.get("reason") or ("Playing." if r.get("ok") else "Couldn't start playback."),
+                                "details": r,
+                            }
+                    except Exception as e:
+                        result = {"ok": False, "message": f"media_play failed: {e}"}
+
                 elif kind == "speak":
                     text = (step.get("text") or step.get("message") or "").strip()
                     if not text:
@@ -556,6 +787,69 @@ async def execute_ziggy_actions(
                         except Exception as e:
                             result = {"ok": False, "message": f"wait_for_state failed: {e}"}
 
+                # ── Snapshot current state of N entities into namespaced store ──
+                # step: {"type": "save_entity_states", "namespace": "...",
+                #        "state_key": "...", "entity_ids": ["light.foo", ...]}
+                # Captures {state, brightness} for each so restore_entity_states
+                # can replay the exact pre-dim configuration.
+                elif kind == "save_entity_states":
+                    namespace = step.get("namespace", "")
+                    state_key = step.get("state_key", "")
+                    eids      = step.get("entity_ids") or []
+                    if not namespace or not state_key:
+                        result = {"ok": False, "message": "save_entity_states needs namespace and state_key"}
+                    else:
+                        try:
+                            from services.ha_subscriber import state_cache
+                            from services.home_automation import get_state as _gs
+                            snapshot: dict = {}
+                            for eid in eids:
+                                entry = state_cache.get(eid)
+                                if not entry:
+                                    state_res = _gs(eid)
+                                    if state_res.get("ok"):
+                                        entry = state_res.get("data") or {}
+                                if not entry:
+                                    continue
+                                attrs = entry.get("attributes") or {}
+                                snapshot[eid] = {
+                                    "state":      entry.get("state"),
+                                    "brightness": attrs.get("brightness"),
+                                }
+                            set_local_state(namespace, state_key, snapshot)
+                            result = {"ok": True, "message": f"snapshotted {len(snapshot)} entity(s) into {namespace}.{state_key}"}
+                        except Exception as e:
+                            result = {"ok": False, "message": f"save_entity_states failed: {e}"}
+
+                # ── Restore entities to their saved pre-dim configuration ──
+                # step: {"type": "restore_entity_states", "namespace": "...", "state_key": "..."}
+                elif kind == "restore_entity_states":
+                    namespace = step.get("namespace", "")
+                    state_key = step.get("state_key", "")
+                    if not namespace or not state_key:
+                        result = {"ok": False, "message": "restore_entity_states needs namespace and state_key"}
+                    else:
+                        try:
+                            from services.home_automation import call_service as ha_call
+                            snapshot = get_local_state(namespace, state_key) or {}
+                            restored = 0
+                            for eid, info in snapshot.items():
+                                domain = eid.split(".")[0] if "." in eid else "homeassistant"
+                                saved_state = (info or {}).get("state")
+                                saved_brightness = (info or {}).get("brightness")
+                                if saved_state == "off":
+                                    payload = {"entity_id": eid}
+                                    await asyncio.to_thread(ha_call, domain, "turn_off", payload)
+                                else:
+                                    payload = {"entity_id": eid}
+                                    if isinstance(saved_brightness, int):
+                                        payload["brightness"] = saved_brightness
+                                    await asyncio.to_thread(ha_call, domain, "turn_on", payload)
+                                restored += 1
+                            result = {"ok": True, "message": f"restored {restored} entity(s) from {namespace}.{state_key}"}
+                        except Exception as e:
+                            result = {"ok": False, "message": f"restore_entity_states failed: {e}"}
+
                 # ── Natural-language command through Ziggy's intent pipeline ─────
                 elif kind in ("send_intent", "message"):
                     text = step.get("text", "")
@@ -605,14 +899,34 @@ async def execute_ziggy_actions(
                             "source": "automation",
                         })
 
-                # ── Run another automation inline ────────────────────────────────
-                # Loads the target automation's saved actions and executes them
-                # one-by-one in this routine's flow. Trigger/conditions of the
-                # target are intentionally ignored — this is a manual "include".
+                # ── Run / enable / disable another automation ─────────────────────
+                # mode="run"    (default) Loads the target automation's saved actions
+                #               and executes them inline. Trigger/conditions of the
+                #               target are ignored — this is a manual "include".
+                # mode="enable" Calls HA automation.turn_on(target). Used by paired
+                #               automations (e.g. Night Watch) where Stage 1 arms a
+                #               state-triggered Stage 2 by enabling it.
+                # mode="disable" Calls HA automation.turn_off(target). Paired-disarm.
                 elif kind == "automation":
                     target_id = step.get("automation_id") or ""
+                    mode = (step.get("mode") or "run").lower()
                     if not target_id:
                         result = {"ok": False, "message": "Automation step has no automation_id."}
+                    elif mode in ("enable", "disable"):
+                        try:
+                            from services.ha_automations import toggle_automation
+                            ok = await asyncio.to_thread(
+                                toggle_automation, target_id, mode == "enable"
+                            )
+                            result = {
+                                "ok": bool(ok),
+                                "message": (
+                                    f"{'Enabled' if mode == 'enable' else 'Disabled'} {target_id}"
+                                    if ok else f"Failed to {mode} {target_id}"
+                                ),
+                            }
+                        except Exception as e:
+                            result = {"ok": False, "message": f"{mode} {target_id} failed: {e}"}
                     elif target_id == automation_id:
                         result = {"ok": False, "message": "Refusing to recursively run the same automation."}
                     else:
@@ -626,6 +940,24 @@ async def execute_ziggy_actions(
                                 else f"{len(sub_failed)}/{len(sub_results)} step(s) failed in {target_id}"
                             ),
                         }
+
+                # ── Register a multi-day "Away — Simulate Presence" activation ──
+                # Hands off all execution to services.fake_occupancy_scheduler,
+                # which runs its own per-minute tick from ziggy_scheduler.
+                # Calling it again for the same automation_id resets the day
+                # counter — re-running from the app means "start over."
+                elif kind == "fake_occupancy_start":
+                    from services import fake_occupancy_scheduler
+                    result = fake_occupancy_scheduler.start(
+                        automation_id=automation_id,
+                        label=label or automation_id,
+                        window_start=step.get("window_start", "19:00"),
+                        window_end=step.get("window_end",   "23:00"),
+                        duration_days=int(step.get("duration_days", 7)),
+                        room_pool=step.get("rooms") or [],
+                        tv_ir_device_id=step.get("tv_ir_device_id") or None,
+                        brightness_pct=int(step.get("brightness_pct", 70)),
+                    )
 
                 else:
                     result = {"ok": False, "message": f"Unknown step type: {kind}"}

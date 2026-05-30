@@ -1,0 +1,35 @@
+audio_devices:
+- display_name: Living Room TV
+  room: living_room
+  ha_media_player_entity: media_player.living_room_tv
+  routing:
+    linked_playback_entity: null
+    linked_via: null
+    requires_source_switch: null
+    bluetooth_sink:
+      enabled: false
+      mac: null
+  routes:
+    preferred: direct
+    fallback:
+    - none
+  capabilities:
+    can_play_media_directly: true
+    supports_play_media: true
+    supports_spotify_connect: true
+    supports_chromecast: true
+    supports_airplay: false
+    supports_bluetooth: false
+    supports_hdmi_arc: false
+    supports_optical: false
+    ir_control_only: false
+    supported_controls:
+    - play_pause
+    - next
+    - previous
+    - volume
+    - source
+    - power
+  class: streamer
+  id: ad_48e300734e
+  created_at: '2026-05-30T19:06:49.219737+00:00'

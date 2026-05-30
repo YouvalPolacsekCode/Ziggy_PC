@@ -33,6 +33,7 @@ import { MemoryPanel } from './Memory'
 import QuickAsks from './QuickAsks'
 import VirtualDevices from './VirtualDevices'
 import { useT, setLang as setI18nLang, LANGS } from '../lib/i18n'
+import { useFeature } from '../stores/featuresStore'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function SystemStatusCard() {
 
   return (
     <Card>
-      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-line">
         <StatusRow icon={Cloud}    label="Ziggy"      value="Online"                                            valueColor="var(--ok)" />
         <StatusRow icon={Wifi}     label="Bridge"     value={bridgeOk ? 'Connected' : 'Offline'}                valueColor={bridgeOk ? 'var(--ok)' : 'var(--accent)'} />
 
@@ -243,7 +244,7 @@ function ZigbeeBridgeSection({ isAdmin }) {
 
   return (
     <Card>
-      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-line">
 
         {/* Coordinator status */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
@@ -897,7 +898,7 @@ function UsersAndAccessSection({ currentUsername }) {
 
   return (
     <Card>
-      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-line">
 
         {/* Active users */}
         {users.map(u => {
@@ -1026,6 +1027,34 @@ function TabBar({ tabs, active, onChange }) {
   )
 }
 
+// ─── Music settings entry card (flag-gated) ───────────────────────────────────
+
+function MusicSettingsLink() {
+  const enabled = useFeature('media_music')
+  const t = useT()
+  if (!enabled) return null
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <SectionTitle>{t('media.settingsLinkSection')}</SectionTitle>
+      <Card>
+        <Link
+          to="/settings/music"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 16px', textDecoration: 'none', color: 'var(--ink)',
+          }}
+        >
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500 }}>{t('media.settingsLinkTitle')}</p>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{t('media.settingsLinkSubtitle')}</p>
+          </div>
+          <span style={{ color: 'var(--ink-faint)' }}>›</span>
+        </Link>
+      </Card>
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -1126,6 +1155,7 @@ export default function Settings() {
       {/* ── General tab ───────────────────────────────────────────────────────── */}
       {activeTab === 'general' && (
         <>
+          <MusicSettingsLink />
           {/* Appearance */}
           <div style={{ marginBottom: 22 }}>
             <SectionTitle>{t('settings.appearance')}</SectionTitle>

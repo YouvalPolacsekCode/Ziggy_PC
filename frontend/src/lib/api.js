@@ -281,6 +281,13 @@ export const removeDevice = (room, dtype) => del(`/devices/${room}/${dtype}`)
 export const assignEntityToArea = (entityId, areaId) =>
   patch(`/ha/entity/${encodeURIComponent(entityId)}/area`, { area_id: areaId ?? null })
 
+// Rename an entity. The backend persists a local display-name override AND
+// best-effort pushes `name_by_user` to HA's entity registry, so HA-side
+// surfaces (HA UI, automations referencing friendly_name, etc.) stay in
+// sync with Ziggy. Returns { ok, display_name, ha_renamed }.
+export const renameHaEntity = (entityId, name) =>
+  patch(`/ha/entity/${encodeURIComponent(entityId)}/name`, { name })
+
 // Entity ↔ Ziggy-native room assignment (device registry, no HA sync)
 export const assignEntityToZiggyRoom = (entityId, roomKey) =>
   patch(`/registry/entity/${encodeURIComponent(entityId)}/room`, { room: roomKey ?? null })
@@ -327,6 +334,12 @@ export const deleteAutomation = (id) => del(`/automations/${id}`)
 export const getAutomationHistory = (id, limit = 20) => get(`/automations/${id}/history?limit=${limit}`)
 export const snoozeAutomation = (id, minutes) => post(`/automations/${id}/snooze`, { minutes })
 
+// Smart Light Schedule (circadian) — bundle of 4 HA automations created/replaced
+// atomically. See services/circadian_builder.py.
+export const getCircadianBundle    = () => get('/automations/circadian-bundle')
+export const saveCircadianBundle   = ({ lights, bedtime }) => post('/automations/circadian-bundle', { lights, bedtime })
+export const deleteCircadianBundle = () => del('/automations/circadian-bundle')
+
 // Manual overrides
 export const getOverrides = () => get('/overrides')
 export const clearOverride = (entityId) => del(`/overrides/${encodeURIComponent(entityId)}`)
@@ -334,6 +347,7 @@ export const clearOverride = (entityId) => del(`/overrides/${encodeURIComponent(
 // Routines — backed by HA Scripts
 export const getRoutines = () => get('/routines')
 export const getRoutine = (id) => get(`/routines/${id}`)
+export const getSuggestedRoutines = () => get('/routines/suggested')
 export const createRoutine = (data) => post('/routines', data)
 export const runRoutine = (id) => post(`/routines/${id}/run`)
 export const deleteRoutine = (id) => del(`/routines/${id}`)
@@ -526,8 +540,6 @@ export const getPushDevices        = ()       => get('/push/devices')
 export const revokePushDevice      = (ep)     => del('/push/subscribe', { endpoint: ep })
 export const getIntegrationsSettings = () => get('/settings/integrations')
 export const patchIntegrationsSettings = (data) => patch('/settings/integrations', data)
-export const getMqttSettings = () => get('/settings/mqtt')
-export const patchMqttSettings = (data) => patch('/settings/mqtt', data)
 export const getEntityHistory = (entityId, hours = 24) =>
   get(`/devices/${encodeURIComponent(entityId)}/history?hours=${hours}`)
 export const getFeaturesSettings = () => get('/settings/features')
@@ -637,7 +649,22 @@ export const createEvent = (data) => post('/events', data)
 export const deleteEvent = (name) => del(`/events/${encodeURIComponent(name)}`)
 
 // IR Blaster / IR Devices
-export const getIrBlasters = () => get('/ir/blasters').then((r) => r.blasters ?? r)
+// Blaster registry CRUD — first-class hardware records (id, name, room,
+// mac, ip, status). Used by the Blasters admin UI and the IR Wizard's
+// pick-and-name flow. Backed by user_files/ir_blasters.json.
+export const listIrBlasters     = ()      => get('/ir/blasters').then((r) => r.blasters ?? [])
+export const getIrBlaster       = (id)    => get(`/ir/blasters/${encodeURIComponent(id)}`)
+export const createIrBlaster    = (data)  => post('/ir/blasters', data)
+export const patchIrBlaster     = (id, d) => patch(`/ir/blasters/${encodeURIComponent(id)}`, d)
+export const deleteIrBlaster    = (id, cascade = false) =>
+  del(`/ir/blasters/${encodeURIComponent(id)}${cascade ? '?cascade=true' : ''}`)
+
+// Legacy: HA `remote.*` entity list. Kept for the rare flow that needs to
+// link a registry blaster to its HA-side integration entity. Most callers
+// should use `listIrBlasters()` above.
+export const getHaRemoteEntities = () => get('/ir/ha-remotes').then((r) => r.blasters ?? r)
+// Back-compat alias — original name some callers may still import.
+export const getIrBlasters = listIrBlasters
 // Scan local network for Broadlink devices (takes ~6s)
 export const discoverIrBlasters = () => get('/ir/discover').then((r) => r.devices ?? r)
 export const getIrDevices = (room) =>
@@ -703,6 +730,10 @@ export const acceptSuggestion = (id) => post(`/suggestions/${id}/accept`)
 export const rejectSuggestion = (id) => post(`/suggestions/${id}/reject`)
 export const snoozeSuggestion = (id, days = 3) => post(`/suggestions/${id}/snooze`, { days })
 export const runPatternAnalysis = () => post('/suggestions/analyze')
+// Unified Suggested-tab feed (habits + device templates). Single fetch;
+// items are discriminated by `source: 'habit' | 'template'`. Both legacy
+// endpoints above keep working as a fallback.
+export const getSuggestionsFeed = () => get('/suggestions/feed')
 
 // Home Map (visualizer)
 export const getMapRoomsSummary = () => get('/map/rooms/summary')
@@ -728,3 +759,44 @@ export const getCameras = () => get('/cameras')
 export const getCameraMotionEvents = (hours = 24) => get(`/cameras/motion?hours=${hours}`)
 export const cameraSnapshotUrl = (entityId) => `/api/cameras/${encodeURIComponent(entityId)}/snapshot`
 export const cameraStreamUrl   = (entityId) => `/api/cameras/${encodeURIComponent(entityId)}/stream`
+
+// ---------------------------------------------------------------------------
+// Media / music (v2) — automation-only playback + tablet hub widget.
+// Every endpoint flag-gated server-side. 404 → feature disabled.
+// ---------------------------------------------------------------------------
+export const getMediaCapabilities  = () => get('/media/capabilities')
+
+// Speakers
+export const listSpeakers          = () => get('/media/speakers')
+export const patchSpeaker          = (entityId, body) => patch(`/media/speakers/${encodeURIComponent(entityId)}`, body)
+export const deleteSpeaker         = (entityId) => del(`/media/speakers/${encodeURIComponent(entityId)}`)
+
+// Profiles
+export const listMusicProfiles     = () => get('/media/profiles')
+
+// Spotify
+export const spotifyStatus         = (member) => get(`/media/spotify/status?member=${encodeURIComponent(member)}`)
+export const spotifyConnectStart   = (member) => post('/media/spotify/connect/start', { member })
+export const spotifyDisconnect     = (member) => post('/media/spotify/disconnect', { member })
+export const spotifySearch         = (member, q, kind = 'track,playlist,album', limit = 8) =>
+  get(`/media/spotify/search?member=${encodeURIComponent(member)}&q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}&limit=${limit}`)
+export const spotifyPlaylists      = (member) => get(`/media/spotify/playlists?member=${encodeURIComponent(member)}`)
+
+// YouTube Music
+export const ytmusicStatus         = (member) => get(`/media/ytmusic/status?member=${encodeURIComponent(member)}`)
+export const ytmusicConnect        = (member, headersJson) => post('/media/ytmusic/connect', { member, headers_json: headersJson })
+export const ytmusicDisconnect     = (member) => post('/media/ytmusic/disconnect', { member })
+export const ytmusicSearch         = (member, q, limit = 8) =>
+  get(`/media/ytmusic/search?member=${encodeURIComponent(member)}&q=${encodeURIComponent(q)}&limit=${limit}`)
+export const ytmusicPlaylists      = (member) => get(`/media/ytmusic/playlists?member=${encodeURIComponent(member)}`)
+
+// Play / transport (used by automation "test play", hub widget transport)
+export const playMedia             = (body) => post('/media/play', body)
+export const pauseMedia            = (speakerEntity) => post('/media/pause',   { speaker_entity: speakerEntity })
+export const resumeMedia           = (speakerEntity) => post('/media/resume',  { speaker_entity: speakerEntity })
+export const nextMedia             = (speakerEntity) => post('/media/next',    { speaker_entity: speakerEntity })
+export const prevMedia             = (speakerEntity) => post('/media/previous',{ speaker_entity: speakerEntity })
+export const setMediaVolume        = (speakerEntity, level) => post('/media/volume', { speaker_entity: speakerEntity, level })
+export const getMediaState         = () => get('/media/state')
+
+export const mediaDiagnostics      = () => get('/media/diagnostics')

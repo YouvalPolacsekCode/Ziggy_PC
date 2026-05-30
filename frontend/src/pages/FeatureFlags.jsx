@@ -14,6 +14,7 @@ const FEATURE_KEYS = [
   { key: 'ifttt',           label: 'featureFlags.ifttt',         subtitle: 'featureFlags.iftttSub' },
   { key: 'local_storage',   label: 'featureFlags.localStorage',  subtitle: 'featureFlags.localStorageSub' },
   { key: 'zigbee_support',  label: 'featureFlags.zigbee',        subtitle: 'featureFlags.zigbeeSub' },
+  { key: 'media_music',     label: 'featureFlags.media',         subtitle: 'featureFlags.mediaSub' },
 ]
 
 export default function FeatureFlags() {
