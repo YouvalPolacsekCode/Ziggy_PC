@@ -2158,7 +2158,6 @@ export default {
   'tasks.failedToAddShort':       'Failed to add task',
 
   // ── Settings additions ──────────────────────────────────────────────
-  'settings.systemStatus':        'System Status',
   'settings.systemZiggy':         'Ziggy',
   'settings.systemBridge':        'Bridge',
   'settings.systemZigbee':        'Zigbee',
@@ -2270,10 +2269,6 @@ export default {
 
   'settings.ziggyHomeMobile':     'Ziggy Home (mobile)',
   'settings.usersAccess':         'Users & Access',
-  'settings.quickAsksHeader':     'Quick Asks',
-  'settings.memoryHeader':        'Memory',
-  'settings.capabilities':        'Capabilities',
-  'settings.capabilitiesHint':    'Virtual devices and custom capabilities for automation triggers.',
   'settings.local':               'Local',
   'settings.roleSuperAdmin':      'Super Admin',
   'settings.roleAdmin':           'Admin',

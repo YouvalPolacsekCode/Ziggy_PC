@@ -1787,7 +1787,6 @@ export default {
   'tasks.failedToAddShort':       'הוספת המשימה נכשלה',
 
   // ── Settings additions ──────────────────────────────────────────────
-  'settings.systemStatus':        'מצב מערכת',
   'settings.systemZiggy':         'זיגי',
   'settings.systemBridge':        'גשר',
   'settings.systemZigbee':        'זיגבי',
@@ -1899,10 +1898,6 @@ export default {
 
   'settings.ziggyHomeMobile':     'Ziggy Home (נייד)',
   'settings.usersAccess':         'משתמשים וגישה',
-  'settings.quickAsksHeader':     'שאלות מהירות',
-  'settings.memoryHeader':        'זיכרון',
-  'settings.capabilities':        'יכולות',
-  'settings.capabilitiesHint':    'מכשירים וירטואליים ויכולות מותאמות לטריגרים של אוטומציה.',
   'settings.local':               'מקומי',
   'settings.roleSuperAdmin':      'מנהל ראשי',
   'settings.roleAdmin':           'מנהל',
