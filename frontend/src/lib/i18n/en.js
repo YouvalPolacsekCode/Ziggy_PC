@@ -3080,13 +3080,23 @@ export default {
   'mobileOnboard.claim.body':        "This is the first time anyone has set up this Ziggy. Pick a username and password — you'll use these to sign in on the web later.",
   'mobileOnboard.claim.username':    'Username or email',
   'mobileOnboard.claim.password':    'Password',
-  'mobileOnboard.claim.passwordHint':'At least 4 characters.',
+  'mobileOnboard.claim.passwordHint':'At least 6 characters.',
   'mobileOnboard.claim.create':      'Create account',
   'mobileOnboard.claim.creating':    'Creating…',
   'mobileOnboard.claim.errEmpty':    'Username and password required.',
-  'mobileOnboard.claim.errShort':    'Password must be at least 4 characters.',
+  'mobileOnboard.claim.errShort':    'Password must be at least 6 characters.',
   'mobileOnboard.claim.errExists':   'An owner account already exists. Use Pair Phone instead.',
   'mobileOnboard.claim.errGeneric':  "Couldn't create the account. Try again.",
+
+  // ── First-run onboarding (desktop browser) ─────────────────────────
+  'onboarding.account.passwordTooShort': 'Password must be at least 6 characters.',
+  'onboarding.coord.title':              'Zigbee coordinator',
+  'onboarding.coord.haOffline':          "Your hub is offline — we can't check for a coordinator right now.",
+  'onboarding.coord.notFound':           'No Zigbee coordinator detected.',
+  'onboarding.coord.howTo':              "For Zigbee devices, plug in a coordinator (SMLIGHT, Sonoff, ConBee). Don't have one yet? Skip — Ziggy will pick it up the moment you add one.",
+  'onboarding.done.title':               "You're all set!",
+  'onboarding.done.subtitle':            'Opening your home…',
+  'onboarding.done.whatsNext':           'Next up: pair a device, map your rooms, and try a starter automation.',
 
   // First-boot sensor naming wizard (Prompt 7 chunk 3.6)
   'mobileOnboard.subtitleSensors':   "Let's confirm your sensors.",

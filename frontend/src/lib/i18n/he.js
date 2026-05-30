@@ -2709,13 +2709,23 @@ export default {
   'mobileOnboard.claim.body':        'זאת הפעם הראשונה שמישהו מגדיר את זיגי הזה. בחר שם משתמש וסיסמה — תשתמש בהם כדי להתחבר מהדפדפן בהמשך.',
   'mobileOnboard.claim.username':    'שם משתמש או אימייל',
   'mobileOnboard.claim.password':    'סיסמה',
-  'mobileOnboard.claim.passwordHint':'לפחות 4 תווים.',
+  'mobileOnboard.claim.passwordHint':'לפחות 6 תווים.',
   'mobileOnboard.claim.create':      'צור חשבון',
   'mobileOnboard.claim.creating':    'יוצר…',
   'mobileOnboard.claim.errEmpty':    'נדרשים שם משתמש וסיסמה.',
-  'mobileOnboard.claim.errShort':    'הסיסמה חייבת להכיל לפחות 4 תווים.',
+  'mobileOnboard.claim.errShort':    'הסיסמה חייבת להכיל לפחות 6 תווים.',
   'mobileOnboard.claim.errExists':   'כבר קיים חשבון בעלים. השתמש בצימוד טלפון במקום.',
   'mobileOnboard.claim.errGeneric':  'לא הצלחתי ליצור את החשבון. נסה שוב.',
+
+  // ── First-run onboarding (desktop browser) ─────────────────────────
+  'onboarding.account.passwordTooShort': 'הסיסמה חייבת להכיל לפחות 6 תווים.',
+  'onboarding.coord.title':              'רכז Zigbee',
+  'onboarding.coord.haOffline':          'המרכזייה לא מקוונת — לא ניתן לבדוק את הרכז כעת.',
+  'onboarding.coord.notFound':           'לא זוהה רכז Zigbee.',
+  'onboarding.coord.howTo':              'למכשירי Zigbee, חבר רכז (SMLIGHT, Sonoff, ConBee). אין לך עדיין? דלג — Ziggy יזהה אותו ברגע שתוסיף.',
+  'onboarding.done.title':               'הכל מוכן!',
+  'onboarding.done.subtitle':            'פותח את הבית שלך…',
+  'onboarding.done.whatsNext':           'הבא בתור: צמד מכשיר, מפה את החדרים שלך, ונסה אוטומציה התחלתית.',
 
   // First-boot sensor naming wizard (Prompt 7 chunk 3.6)
   'mobileOnboard.subtitleSensors':   'בוא נאשר את החיישנים שלך.',

@@ -310,7 +310,7 @@ function StepAccount({ onNext, draft, onDraftChange, onSetToken, addToast, t }) 
 
   const submit = async () => {
     if (!username.trim()) { setError(t('onboarding.account.usernameRequired') || 'Username required'); return }
-    if (password.length < 4) { setError(t('onboarding.account.passwordTooShort') || 'Password must be at least 4 chars'); return }
+    if (password.length < 6) { setError(t('onboarding.account.passwordTooShort') || 'Password must be at least 6 characters'); return }
     if (password !== confirm) { setError(t('onboarding.account.passwordsMismatch') || "Passwords don't match"); return }
     setBusy(true); setError('')
     try {
@@ -563,7 +563,7 @@ function StepCoordinator({ onNext, onBack, t }) {
           <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--ink-faint)' }} />
         ) : !haOnline ? (
           <p style={{ fontSize: 13, color: 'var(--ink-faint)' }}>
-            {t('onboarding.coord.haOffline') || 'Home Assistant is offline — we can\'t check for a coordinator right now.'}
+            {t('onboarding.coord.haOffline') || "Your hub is offline — we can't check for a coordinator right now."}
           </p>
         ) : connected ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -583,7 +583,7 @@ function StepCoordinator({ onNext, onBack, t }) {
               {t('onboarding.coord.notFound') || 'No Zigbee coordinator detected.'}
             </p>
             <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
-              {t('onboarding.coord.howTo') || 'Plug in a coordinator (SMLIGHT, Sonoff, ConBee) and install it in Home Assistant under Settings → Integrations. Then come back and skip this step — Ziggy auto-detects it the moment it appears.'}
+              {t('onboarding.coord.howTo') || "For Zigbee devices, plug in a coordinator (SMLIGHT, Sonoff, ConBee). Don't have one yet? Skip — Ziggy will pick it up the moment you add one."}
             </p>
           </div>
         )}
@@ -1061,16 +1061,20 @@ function StepMobile({ onNext, onBack, t }) {
 }
 
 function StepDone({ onFinish, t }) {
+  // Bumped from 1.8s → 3.5s so the "what's next" hint below the checkmark
+  // is actually readable before the auto-redirect kicks in.
   useEffect(() => {
-    const id = setTimeout(onFinish, 1800)
+    const id = setTimeout(onFinish, 3500)
     return () => clearTimeout(id)
   }, [onFinish])
+  const whatsNext = t('onboarding.done.whatsNext')
+  const showWhatsNext = whatsNext && whatsNext !== 'onboarding.done.whatsNext'
   return (
     <StepLayout
       title={t('onboarding.done.title') || "You're all set!"}
       subtitle={t('onboarding.done.subtitle') || 'Opening your home…'}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 16px 16px', gap: 18 }}>
         <div style={{
           width: 88, height: 88, borderRadius: '50%',
           background: 'var(--accent)',
@@ -1078,6 +1082,11 @@ function StepDone({ onFinish, t }) {
         }}>
           <Check size={44} color="white" strokeWidth={3} />
         </div>
+        {showWhatsNext && (
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center', maxWidth: 320, lineHeight: 1.55 }}>
+            {whatsNext}
+          </p>
+        )}
       </div>
     </StepLayout>
   )

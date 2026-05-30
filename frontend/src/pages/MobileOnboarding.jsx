@@ -276,7 +276,7 @@ function ClaimStep({ onDone, onError }) {
   const submit = async () => {
     const u = username.trim()
     if (!u || !password) { setError(t('mobileOnboard.claim.errEmpty')); return }
-    if (password.length < 4) { setError(t('mobileOnboard.claim.errShort')); return }
+    if (password.length < 6) { setError(t('mobileOnboard.claim.errShort')); return }
     setBusy(true); setError(null)
     try {
       const res = await claimOwner({ username: u, password })
