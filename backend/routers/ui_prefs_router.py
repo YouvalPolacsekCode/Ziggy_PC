@@ -5,39 +5,46 @@ Persists Dashboard pin state server-side so it survives:
   - service-worker cache eviction on app update
   - switching browsers / devices (same user gets the same pins)
 
-Storage: a single JSON file keyed by the authenticated user's email. Small
-enough to read+write whole on every change without contention.
+Storage: one JSON file per user under user_files/ui_prefs/. Previously a
+single combined file was read+rewritten on every pin drag; with many users
+or large custom-photo blobs that became O(all_users) per write.
+
+On first boot after the upgrade the combined ui_prefs.json (if present)
+is migrated automatically — each top-level user key becomes its own file
+and the legacy combined file is renamed with a .migrated suffix so it
+can't be re-imported on the next reboot.
 
 API:
   GET  /api/ui/prefs              -> { pinnedShortcuts: [...], quickControlIds: [...] }
   PUT  /api/ui/prefs              -> body merges into the user's record
-
-The shape mirrors deviceStore on the frontend so the client doesn't need to
-translate between server and store representations.
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from backend.routers.auth_deps import get_current_user
-from core.logger_module import log_error
+from backend.middleware.etag import etag_response
+from core.logger_module import log_error, log_info
 from core.debug_bus import bus as _bus, VERBOSE as _VERBOSE
 
 router = APIRouter()
 
-_FILE = Path(__file__).parent.parent.parent / "user_files" / "ui_prefs.json"
+_REPO_ROOT = Path(__file__).parent.parent.parent
+_LEGACY_FILE = _REPO_ROOT / "user_files" / "ui_prefs.json"
+_SHARDS_DIR  = _REPO_ROOT / "user_files" / "ui_prefs"
 
-# In-memory cache of the whole prefs file. Each dashboard pin drag fires PUT
-# /api/ui/prefs which previously re-read the entire JSON from disk. The cache
-# is invalidated by mtime so out-of-band edits still load on next read.
-_cache: dict | None = None
-_cache_mtime: float = 0.0
+# Per-user mtime-invalidated cache. A pin drag now reads/writes only the
+# acting user's file instead of every user's record.
+_cache: dict[str, dict] = {}
+_cache_mtime: dict[str, float] = {}
 
 # Hard caps mirror the frontend's QUICK_MAX / SHORTCUTS_MAX so the server can't
 # be tricked into storing unbounded arrays. Keep these in lockstep with
@@ -46,44 +53,117 @@ _QUICK_MAX = 4
 _SHORTCUTS_MAX = 8
 
 
-def _file_mtime() -> float:
+# ---------------------------------------------------------------------------
+# Per-user shard helpers
+# ---------------------------------------------------------------------------
+
+_SAFE_KEY_RE = re.compile(r"[^a-z0-9._@+-]")
+
+
+def _shard_filename(user_key: str) -> str:
+    """Filesystem-safe filename for a user key. Email is the normal input.
+
+    Strip control chars / path separators; if the result is empty (or the
+    original key is suspiciously long, e.g. > 80 chars), fall back to a
+    hex digest. The original key isn't recoverable from the digest, but the
+    server already has user_key in memory at every request, so we don't
+    need a reverse mapping.
+    """
+    safe = _SAFE_KEY_RE.sub("_", user_key)
+    if not safe or len(user_key) > 80:
+        safe = "u_" + hashlib.sha1(user_key.encode("utf-8")).hexdigest()[:16]
+    return safe + ".json"
+
+
+def _shard_path(user_key: str) -> Path:
+    return _SHARDS_DIR / _shard_filename(user_key)
+
+
+def _mtime(p: Path) -> float:
     try:
-        return _FILE.stat().st_mtime
+        return p.stat().st_mtime
     except OSError:
         return 0.0
 
 
-def _load_all() -> dict:
-    global _cache, _cache_mtime
-    if not _FILE.exists():
-        _cache = {}
-        _cache_mtime = 0.0
-        return dict(_cache)
-    mtime = _file_mtime()
-    if _cache is None or mtime != _cache_mtime:
-        try:
-            _cache = json.loads(_FILE.read_text(encoding="utf-8"))
-            _cache_mtime = mtime
-        except Exception as e:
-            log_error(f"[ui_prefs] Read failed, starting from empty: {e}")
-            _cache = {}
-            _cache_mtime = 0.0
-    return dict(_cache)
-
-
-def _save_all(data: dict) -> None:
-    global _cache, _cache_mtime
+def _migrate_legacy_if_present() -> None:
+    """One-shot migration from the old combined ui_prefs.json into per-user
+    shards. Renames the legacy file to .migrated on success so re-runs are
+    cheap (the .exists() check returns False on the renamed name)."""
+    if not _LEGACY_FILE.exists():
+        return
     try:
-        _FILE.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic rename: write to .tmp then replace. Prevents partial files
-        # if the process dies mid-write.
-        tmp = _FILE.with_suffix(_FILE.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        tmp.replace(_FILE)
-        _cache = dict(data) if isinstance(data, dict) else {}
-        _cache_mtime = _file_mtime()
+        raw = json.loads(_LEGACY_FILE.read_text(encoding="utf-8"))
     except Exception as e:
-        log_error(f"[ui_prefs] Write failed: {e}")
+        log_error(f"[ui_prefs] Legacy file unreadable, skipping migration: {e}")
+        return
+    if not isinstance(raw, dict) or not raw:
+        # Empty/garbage — just rename it out of the way.
+        try:
+            _LEGACY_FILE.rename(_LEGACY_FILE.with_suffix(".json.migrated"))
+        except OSError:
+            pass
+        return
+
+    _SHARDS_DIR.mkdir(parents=True, exist_ok=True)
+    migrated = 0
+    for user_key, record in raw.items():
+        if not isinstance(record, dict) or not user_key:
+            continue
+        path = _shard_path(user_key)
+        if path.exists():
+            # Already migrated for this user — don't overwrite a newer shard
+            # with an older combined-file snapshot.
+            continue
+        try:
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+            tmp.replace(path)
+            migrated += 1
+        except Exception as e:
+            log_error(f"[ui_prefs] Migration write failed for {user_key}: {e}")
+    try:
+        _LEGACY_FILE.rename(_LEGACY_FILE.with_suffix(".json.migrated"))
+    except OSError as e:
+        log_error(f"[ui_prefs] Could not rename legacy file: {e}")
+    if migrated:
+        log_info(f"[ui_prefs] Migrated {migrated} users from legacy ui_prefs.json")
+
+
+_migrate_legacy_if_present()
+
+
+def _load_user(user_key: str) -> dict:
+    """Return the user's prefs dict (empty if missing). mtime-cached."""
+    path = _shard_path(user_key)
+    if not path.exists():
+        _cache[user_key] = {}
+        _cache_mtime[user_key] = 0.0
+        return {}
+    mtime = _mtime(path)
+    if user_key not in _cache or mtime != _cache_mtime.get(user_key):
+        try:
+            _cache[user_key] = json.loads(path.read_text(encoding="utf-8"))
+            _cache_mtime[user_key] = mtime
+        except Exception as e:
+            log_error(f"[ui_prefs] Read failed for {user_key}: {e}")
+            _cache[user_key] = {}
+            _cache_mtime[user_key] = 0.0
+    return dict(_cache[user_key])
+
+
+def _save_user(user_key: str, data: dict) -> None:
+    """Atomic per-user write."""
+    path = _shard_path(user_key)
+    try:
+        _SHARDS_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        _cache[user_key] = dict(data) if isinstance(data, dict) else {}
+        _cache_mtime[user_key] = _mtime(path)
+    except Exception as e:
+        log_error(f"[ui_prefs] Write failed for {user_key}: {e}")
 
 
 def _user_key(user: dict) -> str:
@@ -197,19 +277,19 @@ class PrefsUpdate(BaseModel):
 
 
 @router.get("/api/ui/prefs")
-async def get_prefs(user: dict = Depends(get_current_user)):
-    all_prefs = await asyncio.to_thread(_load_all)
+async def get_prefs(request: Request, user: dict = Depends(get_current_user)):
+    key = _user_key(user)
+    record_raw = await asyncio.to_thread(_load_user, key)
     # Backfill any missing fields with empty defaults so the client doesn't have
     # to special-case "key absent" vs "key present but empty".
-    record = {**_empty_prefs(), **all_prefs.get(_user_key(user), {})}
-    return record
+    body = {**_empty_prefs(), **record_raw}
+    return etag_response(request, body)
 
 
 @router.put("/api/ui/prefs")
 async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
-    all_prefs = await asyncio.to_thread(_load_all)
     key = _user_key(user)
-    current = {**_empty_prefs(), **all_prefs.get(key, {})}
+    current = {**_empty_prefs(), **(await asyncio.to_thread(_load_user, key))}
 
     if body.pinnedShortcuts is not None:
         current["pinnedShortcuts"] = _sanitize_shortcuts(body.pinnedShortcuts)
@@ -224,8 +304,7 @@ async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
     if body.theme is not None:
         current["theme"] = _sanitize_theme(body.theme)
 
-    all_prefs[key] = current
-    await asyncio.to_thread(_save_all, all_prefs)
+    await asyncio.to_thread(_save_user, key, current)
     # VERBOSE not BASIC — every dashboard pin drag fires this; we only want
     # to see it when the user has explicitly opted into verbose.
     _bus.emit("settings", _VERBOSE, "ui_prefs_updated",

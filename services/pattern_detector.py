@@ -49,6 +49,24 @@ _MAX_REVERSAL_RATE = 0.40         # if >40% of actions were immediately reversed
 CONFIDENCE_THRESHOLD = 0.65
 
 
+def _prune_old(dates: set[str], weeks: set[str]) -> tuple[set[str], set[str]]:
+    """Drop occurrence dates/weeks older than the staleness window.
+
+    Without this, occurrence_dates/occurrence_weeks grew unbounded for any
+    long-lived active pattern. The staleness gate already discards candidates
+    with no recent activity, but for active ones the evidence set accumulated
+    months of stale entries. We bound it to the same window the scoring loop
+    cares about.
+    """
+    cutoff_date = (datetime.now() - timedelta(days=_MAX_STALENESS_DAYS)).strftime("%Y-%m-%d")
+    # ISO week strings ("%Y-W%W") sort lexicographically.
+    cutoff_week = (datetime.now() - timedelta(days=_MAX_STALENESS_DAYS)).strftime("%Y-W%W")
+    return (
+        {d for d in dates if d >= cutoff_date},
+        {w for w in weeks if w >= cutoff_week},
+    )
+
+
 class QualifiedCandidate(NamedTuple):
     key: str
     pattern_type: str
@@ -317,6 +335,7 @@ def _update_time_based(events: list[dict], candidates: dict) -> None:
                 existing_entities = existing["evidence"].get("entity_ids", [])
                 all_dates = existing_dates | dates
                 all_weeks = existing_weeks | weeks
+                all_dates, all_weeks = _prune_old(all_dates, all_weeks)
                 all_times = (existing_times + times_of_day)[-120:]  # cap at 120 values
                 all_entities = (existing_entities + entity_ids_in_cluster)[-120:]
                 existing["evidence"].update({
@@ -426,6 +445,7 @@ def _update_sequence(events: list[dict], candidates: dict) -> None:
             existing_b = existing["evidence"].get("b_entity_ids", [])
             all_dates = existing_dates | dates
             all_weeks = existing_weeks | weeks
+            all_dates, all_weeks = _prune_old(all_dates, all_weeks)
             existing["evidence"].update({
                 "occurrences": len(all_dates),
                 "unique_days": len(all_dates),

@@ -50,6 +50,10 @@ let _pingTimer          = null
 let _messages           = []
 let _connected          = false
 const _listeners        = new Set()   // () => void — fired on any state change
+// App-wide WS subscription filter. null = legacy firehose (default, backward
+// compatible). Set via wsSubscribe(); re-sent after every reconnect so the
+// backend doesn't fall back to firehose mode after a network blip.
+let _subscription       = null
 
 function _retryDelay(attempt) {
   return attempt < FAST_RETRY_LIMIT ? FAST_RETRY_MS : SLOW_RETRY_MS
@@ -94,6 +98,13 @@ function _connect() {
     _retryCount = 0
     if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null }
     logger.ws('ws_open')
+    // Re-send the app's subscription filter after every (re)connect so the
+    // backend doesn't fall back to firehose mode for clients that opted in.
+    if (_subscription) {
+      try {
+        socket.send(JSON.stringify({ type: 'subscribe', ..._subscription }))
+      } catch { /* swallow */ }
+    }
     _pingTimer = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'ping' }))
@@ -228,4 +239,25 @@ export function useWsMessages() {
 // Subscribe to connection state only. Re-renders ONLY on connect/disconnect.
 export function useWsConnected() {
   return useContext(ConnectedContext)
+}
+
+// Opt into a narrower WS broadcast filter for this app session.
+//   wsSubscribe({ types: ['anomaly_active', 'presence_transition'] })
+//   wsSubscribe({ entities: ['light.kitchen'] })
+//   wsSubscribe(null)   // clear → resume firehose
+// Persists across reconnects (re-sent on every onopen). Default is firehose
+// so calling this is purely opt-in; callers should be aware they are
+// narrowing the *app-wide* WS, not their own component's view.
+export function wsSubscribe(filter) {
+  _subscription = (filter && (filter.types?.length || filter.entities?.length))
+    ? { types: filter.types || undefined, entities: filter.entities || undefined }
+    : null
+  if (_socket?.readyState === WebSocket.OPEN) {
+    try {
+      _socket.send(JSON.stringify(
+        _subscription ? { type: 'subscribe', ..._subscription }
+                      : { type: 'unsubscribe' }
+      ))
+    } catch { /* swallow */ }
+  }
 }

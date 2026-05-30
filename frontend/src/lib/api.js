@@ -141,6 +141,13 @@ function _normalizeNetworkError(err) {
   return new ZiggyApiError({ code: ErrorCode.INTERNAL_ERROR })
 }
 
+// Per-URL ETag cache for GETs. When the server sends an ETag header on a
+// 200 response, we remember (etag, body); subsequent GETs send If-None-Match.
+// If the server replies 304, we return the cached body without re-parsing
+// the JSON. Endpoints with no ETag header are unaffected.
+const _etagCache = new Map() // url → { etag, body }
+
+
 async function request(method, path, body, { timeoutMs } = {}) {
   const token = getToken()
   const reqId = logger.newRequestId()
@@ -156,6 +163,14 @@ async function request(method, path, body, { timeoutMs } = {}) {
     },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
+
+  // Send If-None-Match on GETs that we have a cached ETag for. The server
+  // returns 304 with no body when our cache is still current.
+  const _etagKey = method === 'GET' ? path : null
+  if (_etagKey) {
+    const cached = _etagCache.get(_etagKey)
+    if (cached) opts.headers['If-None-Match'] = cached.etag
+  }
 
   const silent = isSilent(path)
   const t0 = performance.now()
@@ -198,7 +213,19 @@ async function request(method, path, body, { timeoutMs } = {}) {
       window.dispatchEvent(new CustomEvent('ziggy:subscription-cleared'))
     } catch { /* ignore */ }
   }
-  return res.json()
+  // 304 Not Modified — server says our cached body is still current.
+  // Return the cached JSON without parsing an empty body.
+  if (res.status === 304 && _etagKey) {
+    const cached = _etagCache.get(_etagKey)
+    if (cached) return cached.body
+  }
+  const parsed = await res.json()
+  // Remember ETag-tagged responses so the next GET can short-circuit.
+  if (_etagKey) {
+    const etag = res.headers.get('ETag')
+    if (etag) _etagCache.set(_etagKey, { etag, body: parsed })
+  }
+  return parsed
 }
 
 const get = (path) => request('GET', path)

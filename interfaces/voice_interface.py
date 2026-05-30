@@ -692,6 +692,41 @@ _tts_guard_until = 0.0
 _GTTS_LANG_MAP = {"he": "iw"}  # gTTS uses "iw" for Hebrew, not "he"
 
 
+# ===== Async runner =====
+# Each call to asyncio.run() builds and tears down a fresh event loop, which
+# costs ~30-60 ms per voice turn and re-initializes any module-scoped async
+# state (HA WS handles, etc.). Maintain a single long-lived loop on a daemon
+# thread and dispatch coroutines onto it from the sync voice loop via
+# run_coroutine_threadsafe. Created lazily on first use so non-voice imports
+# of this module don't spin up the thread.
+import threading as _threading
+
+_async_loop: asyncio.AbstractEventLoop | None = None
+_async_loop_lock = _threading.Lock()
+
+
+def _ensure_async_loop() -> asyncio.AbstractEventLoop:
+    global _async_loop
+    with _async_loop_lock:
+        if _async_loop is None or _async_loop.is_closed():
+            loop = asyncio.new_event_loop()
+
+            def _runner():
+                asyncio.set_event_loop(loop)
+                loop.run_forever()
+
+            _threading.Thread(target=_runner, daemon=True, name="voice-async-loop").start()
+            _async_loop = loop
+    return _async_loop
+
+
+def _run_coro(coro):
+    """Block the calling sync thread on a coroutine running on the shared loop."""
+    loop = _ensure_async_loop()
+    fut = asyncio.run_coroutine_threadsafe(coro, loop)
+    return fut.result()
+
+
 def _speak_azure(text: str, lang: str = "en") -> bool:
     """Speak using Azure Cognitive Services Neural TTS (REST API, no SDK needed).
 
@@ -858,7 +893,10 @@ def _handle_intent_sync(text: str):
         print(f"[TIMING] quick_parse: {time.time() - t0:.2f}s → intent={intent_data.get('intent')}")
         intent_data["source"] = "voice"
         t1 = time.time()
-        result = asyncio.run(handle_intent(intent_data))
+        # Shared long-lived loop on a background thread — avoids the per-turn
+        # asyncio.run() cost (~30-60 ms) and lets module-scoped async clients
+        # (HA WS, etc.) keep their connection state across utterances.
+        result = _run_coro(handle_intent(intent_data))
         print(f"[TIMING] handle_intent: {time.time() - t1:.2f}s")
         return result
     except Exception as e:
@@ -873,7 +911,7 @@ def _handle_chat_sync(text: str) -> dict:
         parsed["source"] = "voice"
 
         if parsed.get("intent") in CHAT_ALLOWED_INTENTS:
-            return asyncio.run(handle_intent(parsed))
+            return _run_coro(handle_intent(parsed))
 
         # Pure GPT conversation with session-scoped history.
         append_voice_chat("user", text)
@@ -883,7 +921,7 @@ def _handle_chat_sync(text: str) -> dict:
             "params": {"text": text, "chat_history": chat_history},
             "source": "voice",
         }
-        result = asyncio.run(handle_intent(intent_data))
+        result = _run_coro(handle_intent(intent_data))
         reply = render_result(result)
         if reply:
             append_voice_chat("assistant", reply)

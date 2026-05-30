@@ -397,17 +397,18 @@ class DeviceUpsert(BaseModel):
 
 
 @router.get("/api/devices")
-async def get_devices():
+async def get_devices(request: Request):
+    from backend.middleware.etag import etag_response
     try:
-        return {"devices": _get_enriched_devices()}
+        body = {"devices": _get_enriched_devices()}
     except Exception:
-        pass
-    return {"devices": [
-        {"room": room, "device_type": dtype, "entity_id": eid, "status": "unknown"}
-        for room, dtypes in settings.get("device_map", {}).items()
-        for dtype, eid in (dtypes or {}).items()
-        if eid
-    ]}
+        body = {"devices": [
+            {"room": room, "device_type": dtype, "entity_id": eid, "status": "unknown"}
+            for room, dtypes in settings.get("device_map", {}).items()
+            for dtype, eid in (dtypes or {}).items()
+            if eid
+        ]}
+    return etag_response(request, body)
 
 
 @router.get("/api/devices/grouped")
@@ -520,10 +521,11 @@ class RoomCreate(BaseModel):
 
 
 @router.get("/api/rooms")
-async def get_rooms():
+async def get_rooms(request: Request):
+    from backend.middleware.etag import etag_response
     try:
         rooms = await get_areas()
-        return {"rooms": rooms}
+        return etag_response(request, {"rooms": rooms})
     except Exception as e:
         raise ha_unavailable(e)
 

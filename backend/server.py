@@ -413,6 +413,16 @@ async def websocket_endpoint(websocket: WebSocket, token: str = ""):
                 # Prevents Cloudflare Tunnel from closing idle connections.
                 await websocket.send_text('{"type":"pong"}')
 
+            elif msg_type in ("subscribe", "unsubscribe"):
+                # Per-client broadcast filter. Default (no subscribe ever
+                # sent) is the legacy firehose, so existing clients are
+                # unaffected. Clients can narrow to specific message types
+                # and/or entity_ids via a `subscribe` message.
+                manager.handle_client_message(
+                    websocket,
+                    {"action": msg_type, **{k: v for k, v in msg.items() if k != "type"}},
+                )
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         log_info(f"[API] WebSocket disconnected. client_id={client_id} total={manager.count}")

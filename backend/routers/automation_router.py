@@ -60,11 +60,53 @@ async def get_automations():
     return {"automations": autos}
 
 
+# Cap-map cache. detect_capabilities() iterates every HA state + IR device
+# and runs every capability rule against each. The result only changes when
+# entities or IR devices are added/removed (capabilities are intrinsic to
+# device_class, not to runtime state). Cache fingerprinted by the entity_id
+# set + ir-device id list so a per-state tick doesn't invalidate. Templates
+# page mount used to fire two heavy rebuilds in parallel.
+_CAP_CACHE_TTL_S = 30.0
+_cap_cache_value: dict | None = None
+_cap_cache_fp: tuple = ()
+_cap_cache_ts: float = 0.0
+
+
 def _cap_snapshot(all_states, ir_devices=None):
-    """Build cap_map once and reuse across both template endpoints."""
+    """Return detect_capabilities() result, cached by entity+IR-device fingerprint."""
+    import time as _t
     from services.capability_matcher import detect_capabilities
-    from services.home_automation import get_all_states as _get
-    return detect_capabilities(all_states, ir_devices or [])
+
+    global _cap_cache_value, _cap_cache_fp, _cap_cache_ts
+    ir_devices = ir_devices or []
+
+    # Fingerprint: cheap-to-build set/tuple over identities, not state values.
+    # If two snapshots have the same entities and same IR devices, the cap_map
+    # is identical regardless of what state any individual entity is in.
+    fp = (
+        frozenset(s.get("entity_id", "") for s in all_states),
+        tuple(sorted(d.get("id", "") for d in ir_devices)),
+    )
+    now = _t.monotonic()
+    if (_cap_cache_value is not None
+            and _cap_cache_fp == fp
+            and now - _cap_cache_ts < _CAP_CACHE_TTL_S):
+        return _cap_cache_value
+
+    _cap_cache_value = detect_capabilities(all_states, ir_devices)
+    _cap_cache_fp = fp
+    _cap_cache_ts = now
+    return _cap_cache_value
+
+
+def invalidate_capability_cache() -> None:
+    """Force the next call to /api/automations/templates* to rebuild cap_map.
+
+    Call after device_registry refresh, IR device pair/unpair, etc.
+    """
+    global _cap_cache_value, _cap_cache_ts
+    _cap_cache_value = None
+    _cap_cache_ts = 0.0
 
 
 def _enrich_template(tmpl, cap_map, existing_names=None, signal_fires=None):

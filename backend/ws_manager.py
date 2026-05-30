@@ -16,15 +16,23 @@ class ConnectionManager:
     def __init__(self):
         # ws → assigned client_id
         self._connections: dict[WebSocket, str] = {}
+        # ws → {"types": set[str] | None, "entities": set[str] | None}
+        # A None set means "no filter on this dimension" → receive all.
+        # The default for a fresh connection is no filter at all (legacy
+        # full-firehose behaviour); the client can opt in to narrower
+        # subscriptions by sending a `subscribe` message over the WS.
+        self._filters: dict[WebSocket, dict] = {}
 
     async def connect(self, ws: WebSocket) -> str:
         await ws.accept()
         client_id = str(uuid.uuid4())
         self._connections[ws] = client_id
+        self._filters[ws] = {"types": None, "entities": None}
         return client_id
 
     def disconnect(self, ws: WebSocket) -> None:
         client_id = self._connections.pop(ws, None)
+        self._filters.pop(ws, None)
         if client_id:
             try:
                 from services.display_registry import registry
@@ -32,11 +40,75 @@ class ConnectionManager:
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------
+    # Subscription management
+    # ------------------------------------------------------------------
+
+    def set_subscription(self, ws: WebSocket, *, types=None, entities=None) -> None:
+        """Replace the client's subscription filter.
+
+        `types`: iterable of message-type strings (e.g. ["state_changed",
+                 "presence_transition"]). None or empty list means "all types".
+        `entities`: iterable of entity_id strings. Applies only to state_changed
+                    / entity_removed broadcasts. None means "all entities".
+        """
+        if ws not in self._filters:
+            return
+        self._filters[ws] = {
+            "types":    set(types)    if types    else None,
+            "entities": set(entities) if entities else None,
+        }
+
+    def handle_client_message(self, ws: WebSocket, msg: dict) -> None:
+        """Handle inbound WS protocol messages used to manage subscriptions.
+
+        Recognized shapes:
+          {"action": "subscribe",   "types": [...], "entities": [...]}
+          {"action": "unsubscribe"}   # clears filters → resume full firehose
+        Unknown messages are ignored (other handlers in server.py may consume
+        them).
+        """
+        if not isinstance(msg, dict):
+            return
+        action = msg.get("action")
+        if action == "subscribe":
+            self.set_subscription(
+                ws,
+                types=msg.get("types"),
+                entities=msg.get("entities"),
+            )
+        elif action == "unsubscribe":
+            self.set_subscription(ws, types=None, entities=None)
+
+    # ------------------------------------------------------------------
+    # Broadcast
+    # ------------------------------------------------------------------
+
+    def _matches(self, ws: WebSocket, data: dict) -> bool:
+        flt = self._filters.get(ws)
+        if not flt:
+            return True
+        msg_type = data.get("type")
+        if flt["types"] is not None and msg_type not in flt["types"]:
+            return False
+        if flt["entities"] is not None:
+            # Entity-scoped filter applies only to messages that carry an
+            # entity_id (state_changed, entity_removed). Non-entity messages
+            # pass through unconditionally.
+            eid = data.get("entity_id")
+            if eid is not None and eid not in flt["entities"]:
+                return False
+        return True
+
     async def broadcast(self, data: dict) -> None:
         # Fan out in parallel and bound each client to _BROADCAST_TIMEOUT_S.
         # Sequential awaits previously meant one slow client blocked every
         # other receiver (and the event loop) until its TCP buffer drained.
-        conns = list(self._connections.items())
+        #
+        # Per-client filter check (cheap dict lookups + set membership) lets
+        # callers ride on the existing broadcast() entry point; targeted
+        # delivery falls out naturally from each client's subscription state.
+        conns = [(ws, cid) for ws, cid in self._connections.items() if self._matches(ws, data)]
         if not conns:
             return
 

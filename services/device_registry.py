@@ -516,6 +516,14 @@ def refresh() -> None:
         _invalidate_groups()
     except Exception:
         pass
+    # Drop the automation templates capability cache so the next /api/automations/
+    # templates call sees a freshly-paired (or unpaired) device immediately
+    # instead of waiting for the 30 s TTL to expire.
+    try:
+        from backend.routers.automation_router import invalidate_capability_cache
+        invalidate_capability_cache()
+    except Exception:
+        pass
     # Re-run the critical-plug auto-tag pass. Cheap, idempotent; catches
     # plugs that were named "Mekarer" or "Fridge" after the last reconcile.
     try:

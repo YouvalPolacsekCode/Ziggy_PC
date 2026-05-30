@@ -67,14 +67,25 @@ def _parse_ha_ts(ts_str: str) -> float:
 
 
 def _full_state_refresh() -> bool:
-    """Fetch all HA states via REST and populate state_cache. Returns True on success."""
+    """Fetch all HA states via REST and populate state_cache. Returns True on success.
+
+    Returns the set of entity_ids that were present in the pre-refresh cache
+    but absent from HA's fresh snapshot — those need entity_removed broadcasts
+    (HA dropped them while we were disconnected; live state_changed with
+    new_state=None for the removal never arrived because HA had no socket to
+    push it on). The caller broadcasts these so the frontend doesn't keep
+    showing ghost entries.
+    """
     try:
         resp = requests.get(REST_STATES_URL, headers=REST_HEADERS, timeout=15)
         resp.raise_for_status()
+        pre_keys = set(state_cache.keys())
+        seen: set[str] = set()
         for entity in resp.json():
             eid = entity.get("entity_id")
             if not eid:
                 continue
+            seen.add(eid)
             state_cache[eid] = {
                 "state":        entity.get("state", "unknown"),
                 "attributes":   entity.get("attributes", {}),
@@ -95,11 +106,24 @@ def _full_state_refresh() -> bool:
                 except Exception:
                     pass
 
-        log_info(f"[HASubscriber] State refresh: {len(state_cache)} entities loaded")
+        _removed = pre_keys - seen
+        for eid in _removed:
+            state_cache.pop(eid, None)
+        _pending_reconnect_removals.update(_removed)
+        log_info(
+            f"[HASubscriber] State refresh: {len(state_cache)} entities loaded"
+            + (f", {len(_removed)} dropped" if _removed else "")
+        )
         return True
     except Exception as e:
         log_error(f"[HASubscriber] State refresh failed: {e}")
         return False
+
+
+# Bucket of entity_ids dropped during a reconnect snapshot. Broadcast by the
+# async caller (which has access to the event loop and ws manager); the sync
+# refresh helper can't broadcast directly.
+_pending_reconnect_removals: set[str] = set()
 
 
 def _refresh_with_retry(max_attempts: int = 10, base_delay: float = 2.0) -> None:
@@ -268,6 +292,20 @@ async def _run_once() -> None:
         # Full state refresh before processing any buffered events
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _refresh_with_retry)
+
+        # Broadcast removals that were detected during the snapshot diff.
+        # Mirrors the live-deletion path in _process_event so the frontend
+        # drops ghost entries instead of showing them until the next refresh.
+        if _pending_reconnect_removals:
+            try:
+                from backend.ws_manager import manager
+                for eid in list(_pending_reconnect_removals):
+                    await manager.broadcast({"type": "entity_removed", "entity_id": eid})
+                    _dbus.emit("ha", VERBOSE, "ha_entity_removed_on_reconnect", entity_id=eid)
+            except Exception as e:
+                log_error(f"[HASubscriber] reconnect removal broadcast failed: {e}")
+            finally:
+                _pending_reconnect_removals.clear()
 
         log_info("[HASubscriber] State snapshot loaded. Processing live events.")
         _dbus.emit("ha", VERBOSE, "ha_state_snapshot_loaded",
