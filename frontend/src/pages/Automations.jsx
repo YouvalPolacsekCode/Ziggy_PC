@@ -166,13 +166,25 @@ function triggerSummary(trigger) {
   }
 }
 
+// Strip the HA domain prefix from an entity_id when showing it inline in a
+// summary, so users see "kitchen main" not "switch.kitchen_main". Called by
+// actionSummary; pure helper so callers don't need a deviceStore handle.
+function friendlyEntityName(entityId) {
+  if (!entityId) return ''
+  const tail = entityId.includes('.') ? entityId.split('.').slice(1).join('.') : entityId
+  return tail.replace(/_/g, ' ')
+}
+
 function actionSummary(action) {
   const unk = tStatic('automations.summary.unknownDevice')
   switch (action.type) {
-    case 'call_service': return `${(action.service_value || action.service?.split('.')[1] || tStatic('automations.summary.control')).replace(/_/g, ' ')} ${action.entity_id || unk}`
+    case 'call_service': {
+      const verb = (action.service_value || action.service?.split('.')[1] || tStatic('automations.summary.control')).replace(/_/g, ' ')
+      return `${verb} ${action.entity_id ? friendlyEntityName(action.entity_id) : unk}`
+    }
     case 'device_command': {
       const svc = (action.command_id || '').split('.').slice(-1)[0] || tStatic('automations.summary.command')
-      return `${svc.replace(/_/g, ' ')} ${action.entity_id || unk}`
+      return `${svc.replace(/_/g, ' ')} ${action.entity_id ? friendlyEntityName(action.entity_id) : unk}`
     }
     case 'ir_command':   return `${action.ir_device_name || tStatic('automations.summary.irDevice')} → ${action.ir_sequence || action.ir_command || unk}`
     case 'send_intent':  return tStatic('automations.summary.commandLabel', { text: action.text || unk })
@@ -199,14 +211,14 @@ function conditionSummary(c) {
       : tStatic('automations.summary.timeWindow')
   }
   if (!c.entity_id) return tStatic('automations.summary.incomplete')
-  const name = c.entity_id.split('.')[1]?.replace(/_/g, ' ') || c.entity_id
+  const name = friendlyEntityName(c.entity_id)
   const val = c.value || 'on'
   switch (c.operator) {
     case 'is':     return tStatic('automations.summary.cond.is',    { name, value: val })
     case 'is_not': return tStatic('automations.summary.cond.isNot', { name, value: val })
     case 'above':  return tStatic('automations.summary.cond.above', { name, value: c.value })
     case 'below':  return tStatic('automations.summary.cond.below', { name, value: c.value })
-    default:       return c.entity_id
+    default:       return name
   }
 }
 
