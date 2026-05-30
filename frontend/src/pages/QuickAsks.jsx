@@ -142,7 +142,6 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
             </optgroup>
           ))}
         </select>
-        <p style={{ fontSize: 10, color: 'var(--accent)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 4 }}>{form.intent}</p>
       </div>
 
       {/* Params — structured form driven by intentParamSchema */}
@@ -243,7 +242,6 @@ export default function QuickAsks({ embedded = false }) {
         <AnimatePresence>
           {items.map(qa => {
             const kind = KIND_LABEL(qa.intent)
-            const hasParams = Object.keys(qa.params || {}).length > 0
             return (
               <motion.div
                 key={qa.id}
@@ -272,9 +270,6 @@ export default function QuickAsks({ embedded = false }) {
                 <div>
                   <p style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, marginBottom: 4 }}>
                     "{qa.label}"
-                  </p>
-                  <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {qa.intent}{hasParams && ` · ${JSON.stringify(qa.params)}`}
                   </p>
                 </div>
                 <div data-qa-stop style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>

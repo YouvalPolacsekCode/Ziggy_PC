@@ -321,11 +321,10 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
         {selectedEntity ? (
           <>
             <span>{domainIcon(selectedEntity.domain)}</span>
-            <span className="flex-1 truncate text-sm">{selectedEntity.friendly_name || value}</span>
-            <span className="text-[10px] text-ink-mute truncate max-w-[90px]">{selectedEntity.domain}</span>
+            <span className="flex-1 truncate text-sm">{selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
           </>
         ) : value ? (
-          <span className="flex-1 truncate text-ink-mute text-sm">{value}</span>
+          <span className="flex-1 truncate text-ink-mute text-sm">{t('entitySelect.unknownDevice')}</span>
         ) : (
           <span className="text-ink-mute text-sm">{resolvedPlaceholder}</span>
         )}
@@ -394,18 +393,19 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
                     <span className="text-base shrink-0">{domainIcon(e.domain)}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-ink truncate">
-                        {e.friendly_name || e.entity_id}
+                        {e.friendly_name || t('entitySelect.unnamedDevice')}
                       </p>
-                      <p className="text-[10px] text-ink-mute truncate">{e.entity_id}</p>
                     </div>
-                    <span className={cn(
-                      'text-[10px] px-1.5 py-0.5 rounded-full shrink-0',
-                      e.state === 'on'
-                        ? 'bg-ok-soft text-ok'
-                        : 'bg-surface-2 text-ink-mute'
-                    )}>
-                      {e.state}
-                    </span>
+                    {e.state === 'on' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-ok-soft text-ok">
+                        {t('entitySelect.stateOn')}
+                      </span>
+                    )}
+                    {(e.state === 'unavailable' || e.state === 'unknown') && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-surface-2 text-ink-mute">
+                        {t('entitySelect.stateOffline')}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>

@@ -94,13 +94,20 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
           padding: '8px 10px', borderRadius: 9, background: 'var(--bg-2)',
           display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 10 : 0,
         }}>
-          {suggestion.trigger?.type && (
-            <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-              {t('suggestions.actionWhen')}  {suggestion.trigger.type}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}
-            </span>
-          )}
+          {suggestion.trigger?.type && (() => {
+            const FRIENDLY_TRIGGERS = new Set(['time', 'state', 'numeric_state', 'zone', 'sunrise', 'sunset'])
+            const triggerText = FRIENDLY_TRIGGERS.has(suggestion.trigger.type)
+              ? t(`suggestions.trigger.${suggestion.trigger.type}`)
+              : null
+            if (!triggerText) return null
+            return (
+              <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+                {t('suggestions.actionWhen')}  {triggerText}{suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}
+              </span>
+            )
+          })()}
           {suggestion.actions?.slice(0, 2).map((a, i) => (
-            <span key={i} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            <span key={i} style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
               {t('suggestions.actionDo')}    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}
             </span>
           ))}

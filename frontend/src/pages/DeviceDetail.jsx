@@ -45,8 +45,12 @@ function SignalBars({ lqi, rssi }) {
     : rssi != null ? Math.max(0, Math.min(100, Math.round((rssi + 100) * 2))) : null
   if (strength == null) return null
   const bars = Math.ceil(strength / 25)
+  // Friendly label instead of "LQI 187" / "-68 dBm". Raw value still
+  // available on hover for support/debugging via the title attribute.
+  const friendly = bars >= 4 ? 'Strong' : bars >= 3 ? 'Good' : bars >= 2 ? 'Fair' : 'Weak'
+  const rawTitle = lqi != null ? `LQI ${lqi}` : `${rssi} dBm`
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 16 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 16 }} title={rawTitle}>
       {[1, 2, 3, 4].map(b => (
         <div
           key={b}
@@ -56,8 +60,8 @@ function SignalBars({ lqi, rssi }) {
           }}
         />
       ))}
-      <span className="z-mono" style={{ marginLeft: 4, fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1 }}>
-        {lqi != null ? `LQI ${lqi}` : `${rssi} dBm`}
+      <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1 }}>
+        {friendly}
       </span>
     </div>
   )
@@ -140,8 +144,6 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
           {t('deviceDetail.ghost.description')}
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 6, fontSize: 12, marginTop: 12 }}>
-          <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.entityId')}</span>
-          <span className="z-mono" style={{ color: 'var(--ink)' }}>{entityId}</span>
           {room && (<>
             <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.room')}</span>
             <span style={{ color: 'var(--ink)' }}>{room.replace(/_/g, ' ')}</span>
