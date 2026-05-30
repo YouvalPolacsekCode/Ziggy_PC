@@ -1484,11 +1484,11 @@ export default {
   'entitySelect.input.brightnessPct':        'Brightness (1–100 %)',
   'entitySelect.input.effect':               'Effect',
   'entitySelect.input.temperatureC':         'Temperature (°C)',
-  'entitySelect.input.hvacMode':             'HVAC mode',
-  'entitySelect.input.fanMode':              'Fan mode',
+  'entitySelect.input.hvacMode':             'Mode',
+  'entitySelect.input.fanMode':              'Fan speed',
   'entitySelect.input.preset':               'Preset',
-  'entitySelect.input.positionPct':          'Position %',
-  'entitySelect.input.sourceApp':            'Source / app',
+  'entitySelect.input.positionPct':          'Position (%)',
+  'entitySelect.input.sourceApp':            'Input source',
   'entitySelect.input.selectFirst':          'Select a device first',
 
   // ── Wizards (Pairing, IR, Switcher) ─────────────────────────────────
