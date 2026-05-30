@@ -1682,8 +1682,8 @@ export default {
   'dashboard.done':               'בוצע',
   'dashboard.criticalAlertsOne':  'התראה קריטית אחת',
   'dashboard.criticalAlertsMany': '{n} התראות קריטיות',
-  'dashboard.anomaliesOne':       'חריגה אחת',
-  'dashboard.anomaliesMany':      '{n} חריגות',
+  'dashboard.anomaliesOne':       'התראה אחת',
+  'dashboard.anomaliesMany':      '{n} התראות',
   'dashboard.haOffline':          'המרכזייה לא מקוונת',
   'dashboard.haUpdateBadge':      'HA {version} · סיכון {risk}',
   'dashboard.suggestionsReadyOne':'הצעה אחת מוכנה',
@@ -2003,6 +2003,7 @@ export default {
   'anomalies.turnOff':                'כבה',
   'anomalies.reconnect':              'התחבר מחדש',
   'anomalies.refresh':                'רענן',
+  'anomalies.saveFailed':             'השמירה נכשלה. נסה שוב.',
 
   // ── Memory (extended) ───────────────────────────────────────────────
   'memory.eyebrow':                   'מקומי · לעולם לא יוצא מהמכשיר',
@@ -2773,11 +2774,11 @@ export default {
   'anomaliesPage.tabHistory':        'היסטוריה',
   'anomaliesPage.tabRules':          'כללים',
   'anomaliesPage.allClear':          'הכל נקי',
-  'anomaliesPage.allClearHelp':      'אין כרגע אנומליות פעילות. זיגי משגיח.',
+  'anomaliesPage.allClearHelp':      'אין כרגע התראות פעילות. זיגי משגיח.',
   'anomaliesPage.needsAttention':    'דורש תשומת לב',
   'anomaliesPage.earlierToday':      'קודם היום',
   'anomaliesPage.noHistory':         'אין עדיין היסטוריה',
-  'anomaliesPage.noHistoryHelp':     'אירועי אנומליות יופיעו כאן כשייתגלו.',
+  'anomaliesPage.noHistoryHelp':     'התראות יופיעו כאן כשייתגלו.',
 
   // ── IR device select (IRDeviceSelect.jsx) ───────────────────────────
   'irDeviceSelect.loading':          'טוען מכשירי אינפרא…',

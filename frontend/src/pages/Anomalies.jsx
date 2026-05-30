@@ -439,14 +439,14 @@ export default function Anomalies() {
     setRules(next)
     try {
       await patchAnomalyRules({ rules: [{ id, ...patch }] })
-    } catch { addToast('Failed to save', 'error') }
+    } catch { addToast(t('anomalies.saveFailed'), 'error') }
   }
 
   const saveExemptions = async (next) => {
     setExemptions(next)
     try {
       await patchAnomalyRules({ exemptions: next })
-    } catch { addToast('Failed to save', 'error') }
+    } catch { addToast(t('anomalies.saveFailed'), 'error') }
   }
 
   // Pool the user can pick from for "Device left on" exemptions — must match
@@ -633,8 +633,8 @@ export default function Anomalies() {
               {/* Overall engine toggle */}
               <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Anomaly detection</p>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>Master switch for all anomaly rules</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.engineTitle')}</p>
+                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{t('anomalies.engineDesc')}</p>
                 </div>
                 <button
                   className="z-toggle"
@@ -643,7 +643,7 @@ export default function Anomalies() {
                     const next = !engineEnabled
                     setEngineEnabled(next)
                     try { await patchAnomalyRules({ engine_enabled: next }) }
-                    catch { addToast('Failed to save', 'error') }
+                    catch { addToast(t('anomalies.saveFailed'), 'error') }
                   }}
                 />
               </div>
