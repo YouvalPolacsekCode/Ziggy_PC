@@ -162,7 +162,40 @@ def load_settings() -> dict:
         ifttt["webhook_key"] = os.getenv("IFTTT_WEBHOOK_KEY")
 
     _validate(data)
+    _dev_safety_check(data)
     return data
+
+
+def _dev_safety_check(data: dict) -> None:
+    """Warn loudly if a hub-typed config carries cloud relay credentials.
+
+    Catches the common drift case: a developer copies the production
+    settings.yaml to their Mac for testing, forgets to strip the `relay:`
+    block, and the dev process starts polling the cloud relay / staging
+    OTA manifests. This is additive — it doesn't disable anything, just
+    makes the leak visible at startup.
+
+    Silent for cloud-typed homes (which are SUPPOSED to talk to the relay)
+    and inside pytest runs (which set CLOUD_MODE explicitly or use stubs).
+    """
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
+    home = data.get("home") or {}
+    if home.get("type") != "hub":
+        return
+    relay = data.get("relay") or {}
+    leaks = [k for k in ("url", "secret", "tunnel_url") if relay.get(k)]
+    if not leaks:
+        return
+    print(
+        "\n[Ziggy] DEV WARNING: home.type=hub but relay config is populated: "
+        f"{', '.join(leaks)}.\n"
+        "        This hub will poll the cloud relay and may stage OTA manifests\n"
+        "        intended for cloud homes. If this is a developer machine,\n"
+        "        remove the `relay:` block from your active config file\n"
+        "        (see docs/DEPLOYMENT.md § Config layering).\n",
+        file=sys.stderr,
+    )
 
 
 _save_lock = threading.Lock()

@@ -1,0 +1,116 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Ziggy — Mac DEV config template
+#
+# Use:   cp config/settings.dev.yaml.example config/settings.yaml
+#
+# This template is intentionally MINIMAL and SAFE for a developer Mac:
+#   - home.type: hub          (NOT a cloud-typed VM)
+#   - no relay block          (won't poll the Fly.io relay, won't stage OTA)
+#   - no real HA token        (won't control your real home until you add one)
+#   - all "live" features OFF (backup, email, push, etc.)
+#
+# config/settings.yaml is git-ignored, so this file stays on your Mac only.
+#
+# For the full schema (every supported field, with comments), see
+# config/settings.example.yaml.
+#
+# For production, do NOT copy this file — set up ~/.ziggy/home.yaml on the
+# mini PC with real values. See docs/DEPLOYMENT.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+home:
+  id: home-dev-mac
+  name: "Dev (Mac)"
+  type: hub                    # MUST stay "hub" on Mac. "cloud" enables the
+                               # per-home VM code paths and OTA polling.
+
+system:
+  language: en
+  timezone: UTC
+
+# ── Home Assistant ──────────────────────────────────────────────────────────
+# Two choices:
+#   a) Leave token blank — Ziggy boots in degraded mode, HA-dependent features
+#      are unavailable. Best for pure frontend/intent-parser dev.
+#   b) Point at a local/dev HA instance — never at your real home from the Mac.
+home_assistant:
+  url: http://homeassistant.local:8123/
+  token: ""                    # blank = no HA control from Mac dev
+
+# ── OpenAI ──────────────────────────────────────────────────────────────────
+# Leave blank to disable LLM features. If you set a key, it spends real
+# credit — use a separate dev-budget key if you can.
+openai:
+  api_key: ""
+
+# ── Relay (cloud OTA / telemetry) ───────────────────────────────────────────
+# Intentionally absent. Adding any of relay.url / relay.secret / relay.tunnel_url
+# will cause the dev-safety warning to fire on startup (see
+# core/settings_loader.py::_dev_safety_check).
+
+# ── Feature flags — keep risky/external integrations OFF on dev ─────────────
+features:
+  buddy_mode: true
+  file_management: true
+  home_map: false
+  ifttt: false
+  local_storage: true
+  media_music: false
+  rouge: false
+  scenes: false
+  smart_home: true
+  task_tracking: false
+  voice: true
+  zigbee_support: false        # Mac doesn't have a Zigbee coordinator
+
+# ── Voice — push-to-talk only, no wake word, no TTS ─────────────────────────
+voice:
+  enabled: true
+  language: en
+  stt_language: auto
+  tts_enabled: false
+  wakeword_enabled: false
+
+# ── Backup — OFF on dev. Never write to B2 from a developer machine. ────────
+backup:
+  enabled: false
+
+# ── Email — OFF on dev. Never send real notifications from Mac. ─────────────
+email:
+  enabled: false
+
+# ── Sensor alerts — OFF on dev. Avoid spurious notifications. ───────────────
+sensor_alerts:
+  enabled: false
+
+# ── Anomaly engine — OFF on dev. ────────────────────────────────────────────
+anomaly_engine:
+  enabled: false
+
+# ── Web interface — same ports as production for parity with vite proxy ────
+web_interface:
+  enabled: true
+  backend_port: 8001
+  frontend_port: 3000
+
+# ── Debug — verbose on dev is fine ──────────────────────────────────────────
+debug:
+  enable_dashboard: true
+  level: basic
+  verbose: false
+  verbose_logging: true
+
+# ── Required-by-loader stubs ────────────────────────────────────────────────
+# core.settings_loader._validate warns if these top-level sections are
+# missing entirely. Keep them as empty maps to silence the warning on a
+# pure-frontend dev boot.
+auth: {}
+device_map: {}
+devices: {}
+global_sensors: {}
+target_registry: {}
+paths:
+  file_store: files/
+  logs: logs/
+  memory_log: memory/memory_log.json
+  task_log: memory/task_log.json

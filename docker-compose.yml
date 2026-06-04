@@ -30,6 +30,13 @@ services:
     ports:
       - "8001:8001"
     environment:
+      # This compose file is for self-hosted hubs (mini PC, dev Mac). The
+      # Dockerfile defaults CLOUD_MODE=true / HOME_TYPE=cloud for the
+      # per-home cloud VM image (set explicitly by relay/app/provisioner.py).
+      # Override both here so a self-hosted hub doesn't inherit cloud-mode
+      # semantics (skipped config validation, env-var-driven setup, etc.).
+      - CLOUD_MODE=${CLOUD_MODE:-false}
+      - HOME_TYPE=${HOME_TYPE:-hub}
       - HOME_ID=${HOME_ID:-home-ziggy-dev}
       - RELAY_URL=${RELAY_URL:-}
       - RELAY_SECRET=${RELAY_SECRET:-}
