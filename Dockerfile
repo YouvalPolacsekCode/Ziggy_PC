@@ -55,6 +55,14 @@ COPY utils/        ./utils/
 # Frontend build output — FastAPI serves these as static files
 COPY --from=frontend-build /frontend/dist ./frontend/dist
 
+# Build-time provenance — scripts/update.ps1 / update.sh pass --build-arg
+# GIT_SHA=<sha>. The /api/version endpoint reads this so you can verify
+# which commit is running ("did my push actually deploy?").
+ARG GIT_SHA=dev
+ENV ZIGGY_GIT_SHA=$GIT_SHA
+ARG BUILD_TIME=unknown
+ENV ZIGGY_BUILD_TIME=$BUILD_TIME
+
 # Cloud home env vars (all overridable at runtime)
 ENV CLOUD_MODE=true
 ENV HOME_ID=""

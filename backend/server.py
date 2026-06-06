@@ -518,6 +518,25 @@ from fastapi.responses import HTMLResponse as _HTMLResponse
 # Justification: stateless HTML page that sets Clear-Site-Data header and
 # redirects to /. No data exposure, no state mutation beyond the browser's
 # own caches/localStorage (which the caller is implicitly opting into).
+@app.get("/api/version")
+async def get_version():
+    """Build provenance — git SHA the running container was built from.
+
+    PUBLIC, unauthenticated. Lets `./scripts/update.ps1` / `update.sh`
+    verify "did my push actually deploy?" with a single curl, before the
+    user logs in. Values come from ZIGGY_GIT_SHA / ZIGGY_BUILD_TIME env
+    vars set in the Dockerfile from build-args. Defaults to "dev" when
+    running outside a build (e.g., `uvicorn` directly on the Mac).
+
+    No state mutation, no data exposure beyond a short hex string and a
+    build timestamp — both of which are also discoverable via `git log`.
+    """
+    return {
+        "git_sha":    _os.getenv("ZIGGY_GIT_SHA",    "dev"),
+        "build_time": _os.getenv("ZIGGY_BUILD_TIME", "unknown"),
+    }
+
+
 @app.get("/reset")
 async def reset_client():
     html = (

@@ -25,7 +25,14 @@ services:
     depends_on: [mosquitto]
 
   ziggy:
-    build: .
+    build:
+      context: .
+      args:
+        # Surfaced by /api/version so you can confirm "did my push actually
+        # deploy?" without trusting cache/SHA in the logs. scripts/update.ps1
+        # sets $env:GIT_SHA before `docker compose up --build`; if unset,
+        # falls back to "dev".
+        GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
     # Bridge networking + published port. Works on every Docker host
     # (Linux, Docker Desktop for Mac / Windows).
