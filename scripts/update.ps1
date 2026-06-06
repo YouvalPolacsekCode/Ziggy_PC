@@ -29,8 +29,11 @@ function Write-Log {
     Add-Content -Path $UpdateLog -Value $line
 }
 
-# Refuse to deploy on top of a dirty working tree.
-$dirty = git status --porcelain
+# Refuse to deploy on top of a dirty working tree -- but only flag
+# MODIFIED tracked files. Untracked junk (e.g., stray files from
+# PowerShell sc/del/copy command aliases) shouldn't block deploys since
+# git pull won't touch them.
+$dirty = git status --porcelain --untracked-files=no
 if ($dirty) {
     Write-Log "ABORT: working tree not clean. Commit/stash/revert first."
     exit 1
