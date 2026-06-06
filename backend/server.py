@@ -329,9 +329,31 @@ app.add_middleware(RelayAuthMiddleware)
 # and sees the real client-visible request/response, including auth rejections.
 # Starlette runs middleware bottom-up, so the outer-most call wraps the rest.
 app.add_middleware(RequestLoggerMiddleware)
+# Tightened from allow_origins=["*"]. Same-origin requests (the prod PWA at
+# app.ziggy-home.com hitting itself, or the dev frontend at localhost:3000
+# proxying via Vite) never trigger CORS — they just won't be blocked. The
+# allowlist matters for:
+#   - Native Capacitor app (origin capacitor://localhost on iOS,
+#     http://localhost on Android) — add the actual origin when wiring
+#     the mobile app
+#   - Cross-origin XHR from other web tools (now blocked by default,
+#     which is the security win)
+# Override via env var ZIGGY_CORS_ORIGINS="https://a.com,https://b.com" if
+# you need to add hosts without a code change.
+import os as _cors_os
+_cors_env = _cors_os.getenv("ZIGGY_CORS_ORIGINS", "").strip()
+if _cors_env:
+    _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    _cors_origins = [
+        "https://app.ziggy-home.com",
+        "http://localhost:3000",      # vite dev server
+        "capacitor://localhost",      # iOS native app
+        "http://localhost",           # Android native app
+    ]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
