@@ -48,6 +48,11 @@ services:
       - HOME_ID=${HOME_ID:-home-ziggy-dev}
       - RELAY_URL=${RELAY_URL:-}
       - RELAY_SECRET=${RELAY_SECRET:-}
+      # Override the Dockerfile's cloud-default. Self-hosted hubs keep
+      # config at /app/config/settings.yaml (mounted from ./config on the
+      # host), NOT inside /app/user_files (which is the cloud-VM pattern
+      # where the relay's provisioner writes the file at first boot).
+      - ZIGGY_CONFIG_PATH=/app/config/settings.yaml
     volumes:
       - ./config:/app/config
       - ./user_files:/app/user_files
