@@ -1,15 +1,39 @@
-# Ziggy Windows mini-PC update script.
-# Pure ASCII to avoid Git-for-Windows encoding mangling.
+# Ziggy Windows mini-PC update script. Pure ASCII to avoid Git-for-Windows
+# encoding mangling.
+#
+# Two-track release model (canary vs production), with auto-rollback and
+# opt-in GPG-signed-tag enforcement.
+#
+# Selection (set in this home's .env, picked up by docker compose env):
+#   ZIGGY_COHORT=canary       -> follows origin/main (default).
+#                                Every push to main auto-deploys here.
+#   ZIGGY_COHORT=production   -> follows the most recently created tag
+#                                matching 'release-*'. To ship, the operator
+#                                tags + pushes: `git tag release-2026.06.06
+#                                && git push origin release-2026.06.06`.
+#                                Bare pushes to main DO NOT deploy here.
+#
+# Opt-in integrity (for production homes whose threat model warrants it):
+#   ZIGGY_REQUIRE_SIGNED_TAGS=true -> before checkout, runs `git verify-tag`.
+#                                If the tag isn't signed by a trusted key,
+#                                the update is aborted and the home stays
+#                                on its previous tag. Default off.
+#
+# Auto-rollback:
+#   After `docker compose --build`, the script polls /api/version. If the
+#   new SHA doesn't show within ~60s, the script reverts to the last
+#   verified SHA from user_files\deploy_log and rebuilds from there. The
+#   rollback is itself recorded in deploy_log with kind: rollback so a
+#   future run can tell rolled-back deploys apart from successful ones.
 #
 # Designed for BOTH manual invocation and unattended use (scheduled task):
 #   - Silent on no-op so polling every 5 min doesn't spam logs.
 #   - Detects "git is in sync but container is behind" via /api/version
-#     and rebuilds anyway (catches the case where someone manually
-#     pulled but never rebuilt).
-#   - On `docker compose --build` failure, the OLD container keeps
-#     running (Docker only recreates if the image rebuild succeeded).
-#   - All meaningful events go to user_files\update.log; the deploy
-#     SHA breadcrumbs go to user_files\deploy_log for rollback.
+#     and rebuilds anyway.
+#   - Short status -> user_files\update.log. Noisy build output ->
+#     user_files\deploy-logs\<ts>-build.log (one file per deploy).
+#   - All meaningful events go to user_files\update.log; the SHA
+#     breadcrumbs go to user_files\deploy_log for rollback.
 
 # Continue rather than Stop: native commands (git, docker compose) write
 # progress to stderr, which 2>&1 wraps as ErrorRecord objects. With EAP=Stop
@@ -35,27 +59,81 @@ function Write-Log {
     Add-Content -Path $UpdateLog -Value $line
 }
 
-# Refuse to deploy on top of a dirty working tree -- but only flag
-# MODIFIED tracked files. Untracked junk (e.g., stray files from
-# PowerShell sc/del/copy command aliases) shouldn't block deploys since
-# git pull won't touch them.
+# ---------------------------------------------------------------------------
+# Cohort selection
+# ---------------------------------------------------------------------------
+$Cohort = if ($env:ZIGGY_COHORT) { $env:ZIGGY_COHORT.Trim().ToLower() } else { "canary" }
+if ($Cohort -ne "canary" -and $Cohort -ne "production") {
+    Write-Log ("ABORT: unknown ZIGGY_COHORT='" + $Cohort + "' (expected 'canary' or 'production')")
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Last-good SHA from deploy_log (read once up front for rollback).
+# ---------------------------------------------------------------------------
+function Get-LastVerifiedSha {
+    if (-not (Test-Path $DeployLog)) { return $null }
+    $lines = Get-Content $DeployLog
+    $foundVerified = $false
+    $foundNonRollback = $true
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $line = $lines[$i].Trim()
+        if ($line -eq "---") {
+            $foundVerified = $false
+            $foundNonRollback = $true
+            continue
+        }
+        if ($line -match "^kind:\s*rollback") { $foundNonRollback = $false; continue }
+        if ($line -match "^verified:\s*(\w+)") {
+            if ($Matches[1] -eq "True" -or $Matches[1] -eq "true") { $foundVerified = $true }
+            continue
+        }
+        if ($foundVerified -and $foundNonRollback -and $line -match "^new:\s*([0-9a-f]{7,40})") {
+            return $Matches[1]
+        }
+    }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
+# Dirty-check (modified tracked files only -- untracked is fine)
+# ---------------------------------------------------------------------------
 $dirty = git status --porcelain --untracked-files=no
 if ($dirty) {
     Write-Log "ABORT: working tree not clean. Commit/stash/revert first."
     exit 1
 }
 
-$fetchOut = & git fetch --prune origin 2>&1
+# ---------------------------------------------------------------------------
+# Fetch + resolve target ref based on cohort
+# ---------------------------------------------------------------------------
+$fetchOut = & git fetch --prune --tags origin 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Log "ABORT: git fetch failed"
     exit 1
 }
 
-$GitSha    = (git rev-parse HEAD).Trim()
-$RemoteSha = (git rev-parse origin/main).Trim()
+$GitSha = (git rev-parse HEAD).Trim()
 
-# Ask the running container what SHA it's serving. If unreachable, we
-# rebuild to recover (container may be crashed).
+if ($Cohort -eq "production") {
+    # Latest tag matching release-* by creation date.
+    $TargetTag = (& git for-each-ref --sort=-creatordate --format='%(refname:short)' 'refs/tags/release-*' 2>$null | Select-Object -First 1)
+    if ($TargetTag) { $TargetTag = $TargetTag.Trim() }
+    if (-not $TargetTag) {
+        # No release tag exists yet. Production homes wait silently.
+        exit 0
+    }
+    $RemoteSha = (git rev-parse "refs/tags/$TargetTag").Trim()
+    $TargetDesc = "tag $TargetTag"
+} else {
+    $RemoteSha = (git rev-parse origin/main).Trim()
+    $TargetDesc = "origin/main"
+}
+
+# ---------------------------------------------------------------------------
+# Query the running container for its SHA. If unreachable, force a rebuild
+# (the container may have crashed).
+# ---------------------------------------------------------------------------
 $ContainerSha = "unknown"
 try {
     $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
@@ -64,33 +142,58 @@ try {
     # Container down or pre-/api/version build. Force rebuild.
 }
 
-# Steady state: everything matches. Silent exit.
+# Steady state: nothing to do. Silent exit (keeps polling logs clean).
 if ($GitSha -eq $RemoteSha -and $ContainerSha -eq $RemoteSha) {
     exit 0
 }
 
-Write-Log "Update needed: git=$GitSha remote=$RemoteSha container=$ContainerSha"
+Write-Log ("Update needed [cohort=$Cohort target=$TargetDesc]: git=$GitSha remote=$RemoteSha container=$ContainerSha")
 
-# Per-deploy verbose log lives in user_files\deploy-logs\<ts>-<sha>.log;
-# update.log only sees short status lines. Keeps update.log readable as a
-# timeline of "what happened when" while the noisy build output is
-# parked next door for when you actually need to debug a build.
+# ---------------------------------------------------------------------------
+# Optional: GPG-verify the target tag before touching anything.
+# ---------------------------------------------------------------------------
+if ($Cohort -eq "production" -and ($env:ZIGGY_REQUIRE_SIGNED_TAGS -eq "true")) {
+    $verifyOut = & git verify-tag $TargetTag 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log ("ABORT: git verify-tag $TargetTag failed -- tag is unsigned or signed by an untrusted key. Staying on $GitSha.")
+        $verifyOut | ForEach-Object { Add-Content -Path $UpdateLog -Value ("  " + $_.ToString()) }
+        exit 1
+    }
+    Write-Log ("Tag $TargetTag verified against trusted key.")
+}
+
+# Per-deploy verbose log for the noisy stuff.
 $DeployVerbose = Join-Path $DeployLogsDir ($Ts.Replace(":", "-") + "-build.log")
 
-# Pull if remote is ahead. Capture both streams so PowerShell doesn't
-# treat native command stderr lines as terminating errors.
+# ---------------------------------------------------------------------------
+# Pull / checkout target
+# ---------------------------------------------------------------------------
 if ($GitSha -ne $RemoteSha) {
-    Write-Log "Pulling $GitSha -> $RemoteSha"
-    $pullOut = & git pull --ff-only origin main 2>&1
-    $pullOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
-    $pullOut | ForEach-Object { Write-Host $_.ToString() }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?). See $DeployVerbose"
-        exit 1
+    if ($Cohort -eq "production") {
+        Write-Log ("Checking out $TargetTag ($RemoteSha)")
+        $checkoutOut = & git -c advice.detachedHead=false checkout "refs/tags/$TargetTag" 2>&1
+        $checkoutOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
+        $checkoutOut | ForEach-Object { Write-Host $_.ToString() }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "ABORT: git checkout of tag failed. See $DeployVerbose"
+            exit 1
+        }
+    } else {
+        Write-Log ("Pulling $GitSha -> $RemoteSha")
+        $pullOut = & git pull --ff-only origin main 2>&1
+        $pullOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
+        $pullOut | ForEach-Object { Write-Host $_.ToString() }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?). See $DeployVerbose"
+            exit 1
+        }
     }
     $GitSha = (git rev-parse HEAD).Trim()
 }
 
+# ---------------------------------------------------------------------------
+# Build + restart
+# ---------------------------------------------------------------------------
 Write-Log "Rebuilding container at $GitSha (build log: $DeployVerbose)"
 $env:GIT_SHA = $GitSha
 $buildOut = & docker compose up -d --build --no-deps ziggy 2>&1
@@ -102,10 +205,12 @@ if ($buildExit -ne 0) {
     exit 1
 }
 
-# Verify the new container reports the new SHA (with retry loop for slow starts).
+# ---------------------------------------------------------------------------
+# Verify post-deploy. Up to ~60s.
+# ---------------------------------------------------------------------------
 Start-Sleep -Seconds 3
 $verifyOk = $false
-for ($i = 0; $i -lt 15; $i++) {
+for ($i = 0; $i -lt 30; $i++) {
     try {
         $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
         if ($resp.git_sha -eq $GitSha) {
@@ -116,14 +221,79 @@ for ($i = 0; $i -lt 15; $i++) {
     Start-Sleep -Seconds 2
 }
 
+# ---------------------------------------------------------------------------
+# Record the deploy attempt either way (verified=true or false).
+# ---------------------------------------------------------------------------
 Add-Content -Path $DeployLog -Value "---"
 Add-Content -Path $DeployLog -Value ("ts:        " + $Ts)
+Add-Content -Path $DeployLog -Value ("cohort:    " + $Cohort)
+Add-Content -Path $DeployLog -Value ("target:    " + $TargetDesc)
 Add-Content -Path $DeployLog -Value ("old:       " + $ContainerSha)
 Add-Content -Path $DeployLog -Value ("new:       " + $GitSha)
 Add-Content -Path $DeployLog -Value ("verified:  " + $verifyOk)
 
 if ($verifyOk) {
     Write-Log "Deploy complete: $ContainerSha -> $GitSha"
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# AUTO-ROLLBACK
+# ---------------------------------------------------------------------------
+Write-Log "WARNING: post-deploy /api/version did not return $GitSha within 60s. Rolling back."
+
+$LastGoodSha = Get-LastVerifiedSha
+if (-not $LastGoodSha -or $LastGoodSha -eq $GitSha) {
+    Write-Log "ROLLBACK SKIPPED: no prior verified SHA in deploy_log. Check 'docker compose logs ziggy'."
+    exit 1
+}
+
+Write-Log "ROLLBACK: $GitSha -> $LastGoodSha (last verified deploy)"
+$rbTs = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+$RollbackVerbose = Join-Path $DeployLogsDir ($rbTs.Replace(":", "-") + "-rollback.log")
+
+$rbCheckoutOut = & git -c advice.detachedHead=false checkout $LastGoodSha 2>&1
+$rbCheckoutOut | ForEach-Object { Add-Content -Path $RollbackVerbose -Value $_.ToString() }
+if ($LASTEXITCODE -ne 0) {
+    Write-Log "ROLLBACK FAILED: git checkout $LastGoodSha did not succeed. See $RollbackVerbose"
+    exit 1
+}
+
+$env:GIT_SHA = $LastGoodSha
+$rbBuildOut = & docker compose up -d --build --no-deps ziggy 2>&1
+$rbBuildExit = $LASTEXITCODE
+$rbBuildOut | ForEach-Object { Add-Content -Path $RollbackVerbose -Value $_.ToString() }
+if ($rbBuildExit -ne 0) {
+    Write-Log "ROLLBACK FAILED: rebuild at $LastGoodSha returned $rbBuildExit. See $RollbackVerbose"
+    exit 1
+}
+
+# Verify the rollback container is healthy.
+Start-Sleep -Seconds 3
+$rbVerifyOk = $false
+for ($i = 0; $i -lt 30; $i++) {
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
+        if ($resp.git_sha -eq $LastGoodSha) {
+            $rbVerifyOk = $true
+            break
+        }
+    } catch {}
+    Start-Sleep -Seconds 2
+}
+
+Add-Content -Path $DeployLog -Value "---"
+Add-Content -Path $DeployLog -Value ("ts:        " + $rbTs)
+Add-Content -Path $DeployLog -Value ("cohort:    " + $Cohort)
+Add-Content -Path $DeployLog -Value ("kind:      rollback")
+Add-Content -Path $DeployLog -Value ("old:       " + $GitSha)
+Add-Content -Path $DeployLog -Value ("new:       " + $LastGoodSha)
+Add-Content -Path $DeployLog -Value ("verified:  " + $rbVerifyOk)
+
+if ($rbVerifyOk) {
+    Write-Log "ROLLBACK complete: now running $LastGoodSha. INVESTIGATE the bad deploy at $GitSha."
+    exit 1
 } else {
-    Write-Log "WARNING: deploy applied but /api/version did not confirm within 33s. Check 'docker compose logs ziggy'."
+    Write-Log "ROLLBACK applied but $LastGoodSha also failed /api/version verify. Manual intervention required."
+    exit 1
 }
