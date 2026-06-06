@@ -63,3 +63,20 @@ dump/
 # --- Stray runtime state created when CWD is the frontend dir ---
 # Real runtime files live in the top-level user_files/.
 frontend/user_files/
+
+# --- Dev HA runtime state ---
+# docker/ha-config-dev/ holds the Mac dev HA's config. Keep the seed
+# files (configuration.yaml, automations.yaml, etc.) but ignore the
+# runtime DB, logs, .storage, and onboarding token state — they're
+# regenerated on first boot.
+docker/ha-config-dev/.storage/
+docker/ha-config-dev/.cloud/
+docker/ha-config-dev/deps/
+docker/ha-config-dev/tts/
+docker/ha-config-dev/blueprints/
+docker/ha-config-dev/custom_components/
+docker/ha-config-dev/.HA_VERSION
+docker/ha-config-dev/.uuid
+docker/ha-config-dev/home-assistant.log*
+docker/ha-config-dev/home-assistant_v2.db*
+docker/ha-config-dev/secrets.yaml

@@ -1,0 +1,45 @@
+# docker-compose.dev.yml — Mac dev stack.
+#
+# Runs ONLY Home Assistant + Mosquitto on the Mac, in bridge networking
+# mode (Docker Desktop for Mac doesn't fully support host networking).
+# Ziggy itself does NOT run in a container in dev — you run it natively
+# with `uvicorn` + `npm run dev` so the reload loop is fast.
+#
+# Usage:
+#   ./scripts/dev-up.sh        # start the dev HA + Mosquitto
+#   ./scripts/dev-down.sh      # stop them
+#   ./scripts/dev-down.sh -v   # stop AND wipe HA state (full reset)
+#
+# This is completely isolated from your real home's HA on the mini PC.
+
+services:
+  mosquitto-dev:
+    image: eclipse-mosquitto:2
+    container_name: ziggy-dev-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1884:1883"     # Host port 1884 to avoid colliding with any LAN
+                        # MQTT broker if you also run one on your network.
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_dev_data:/mosquitto/data
+      - mosquitto_dev_log:/mosquitto/log
+
+  homeassistant-dev:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: ziggy-dev-ha
+    restart: unless-stopped
+    ports:
+      - "8123:8123"     # Reach the dev HA at http://localhost:8123
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      # Bind-mount a SEPARATE config dir (NOT docker/ha-config/, which the
+      # prod stack uses). Survives `dev-down.sh` so onboarding + your
+      # long-lived token persist. Pass -v to dev-down.sh for a clean wipe.
+      - ./docker/ha-config-dev:/config
+    depends_on: [mosquitto-dev]
+
+volumes:
+  mosquitto_dev_data:
+  mosquitto_dev_log:

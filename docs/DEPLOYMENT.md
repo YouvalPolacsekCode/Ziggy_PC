@@ -48,53 +48,67 @@ The same code runs on both — only the config differs.
 
 ## Mac setup (one-time)
 
+The Mac runs its **own** isolated HA in Docker (NOT the real home's HA).
+Pre-seeded with a `Dev Test Light` you can toggle to verify the wiring.
+
 ```bash
+# 1) Install Docker Desktop if not already present:
+#      https://www.docker.com/products/docker-desktop/
+#    Launch it once, wait for the whale icon to stop animating.
+
 cd /Users/YouvalPolacsek/ziggy_pc
 
-# 1) Make sure your real-home config is off the repo path
-#    (the repo's config/settings.yaml is git-ignored, but it's still the
-#    fallback the loader uses if ~/.ziggy/home.yaml is missing)
-mkdir -p ~/.ziggy
-# Only do this if you ALSO want to be able to point Mac at real HA
-# manually. Skip if you want Mac to be 100% local-only.
-cp config/settings.yaml ~/.ziggy/home.yaml   # optional
+# 2) Bring up the dev HA stack (HA + Mosquitto in Docker, NO Ziggy container)
+./scripts/dev-up.sh
+# First boot pulls the HA image (~1 GB) and takes ~30-60s to become healthy.
 
-# 2) Replace the repo's config/settings.yaml with the dev-safe template
-cp config/settings.dev.yaml.example config/settings.yaml
-#    config/settings.yaml is git-ignored, so this stays local.
+# 3) Open http://localhost:8123 in your browser. Complete HA onboarding —
+#    any name/password/location values are fine, this is a throwaway dev HA.
 
-# 3) Frontend deps
+# 4) Profile (avatar, bottom-left) -> Security -> Long-Lived Access Tokens
+#    -> Create Token. Name it "ziggy-dev-mac". Copy the token.
+
+# 5) Inject the token into your Mac .env
+./scripts/dev-set-ha-token.sh <paste-token-here>
+
+# 6) Frontend + Python deps (skip if already installed)
 cd frontend && npm install --legacy-peer-deps && cd ..
-
-# 4) Python deps
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+You're now set up. The dev HA persists across reboots; you only do steps 3-5
+once. To stop the dev stack: `./scripts/dev-down.sh`. To wipe and start
+fresh: `./scripts/dev-down.sh -v`.
 
 ---
 
 ## Mac day-to-day
 
 ```bash
-# Terminal 1 — backend
+# Terminal 0 — dev HA (only if it's not already running)
+cd /Users/YouvalPolacsek/ziggy_pc
+./scripts/dev-up.sh
+
+# Terminal 1 — Ziggy backend
 cd /Users/YouvalPolacsek/ziggy_pc
 source .venv/bin/activate
 uvicorn backend.server:app --host 127.0.0.1 --port 8001 --reload
-# Note: --host 127.0.0.1 keeps it loopback-only. Use 0.0.0.0 only if you
-# need another LAN device to hit your dev backend.
 
-# Terminal 2 — frontend
+# Terminal 2 — Ziggy frontend
 cd /Users/YouvalPolacsek/ziggy_pc/frontend
 npm run dev
 # → http://localhost:3000
 # Vite proxies /api and /ws → localhost:8001 (see vite.config.js)
+# The Ziggy UI should show "Dev Living Room Light" — toggle it and watch
+# the state flip in HA at http://localhost:8123.
 ```
 
-If `Ziggy` ever logs `[Ziggy] DEV WARNING: home.type=hub but relay.url/secret
-is set` at startup — your local config has drifted toward production. Open
-the active config file (whichever `_config_path` resolved to) and remove
-the `relay:` block.
+If `Ziggy` ever logs `[Ziggy] DEV WARNING: home.type=hub but relay config is
+populated` at startup — your local config has drifted toward production.
+Open the active config file (whichever `_config_path` resolved to) and
+remove the `relay:` block.
 
 ---
 

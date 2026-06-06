@@ -29,13 +29,12 @@ system:
   timezone: UTC
 
 # ── Home Assistant ──────────────────────────────────────────────────────────
-# Two choices:
-#   a) Leave token blank — Ziggy boots in degraded mode, HA-dependent features
-#      are unavailable. Best for pure frontend/intent-parser dev.
-#   b) Point at a local/dev HA instance — never at your real home from the Mac.
+# Points at the Mac dev HA container (docker-compose.dev.yml). NOT the
+# real home's HA. .env overrides these (HA_URL, HA_TOKEN); the dev-set-ha-token.sh
+# script writes the token there after you mint it in the dev HA's UI.
 home_assistant:
-  url: http://homeassistant.local:8123/
-  token: ""                    # blank = no HA control from Mac dev
+  url: http://localhost:8123/
+  token: ""                    # populated via scripts/dev-set-ha-token.sh
 
 # ── OpenAI ──────────────────────────────────────────────────────────────────
 # Leave blank to disable LLM features. If you set a key, it spends real
