@@ -56,7 +56,9 @@ web_interface/frontend/.turbo/
 # --- Mongo (if using dumps) ---
 dump/
 *.bson
-*.json
+# NOTE: do NOT add `*.json` here — it would shadow frontend/package.json
+# and any other JSON files we need to track. dump/ already covers Mongo
+# dumps, and node_modules/ + .venv/ already cover dependency JSON.
 
 .gstack/
 
