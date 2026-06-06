@@ -11,7 +11,11 @@
 #   - All meaningful events go to user_files\update.log; the deploy
 #     SHA breadcrumbs go to user_files\deploy_log for rollback.
 
-$ErrorActionPreference = "Stop"
+# Continue rather than Stop: native commands (git, docker compose) write
+# progress to stderr, which 2>&1 wraps as ErrorRecord objects. With EAP=Stop
+# those terminate the script. We check $LASTEXITCODE explicitly after every
+# native command, so we don't lose any error detection.
+$ErrorActionPreference = "Continue"
 
 $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RepoDir
