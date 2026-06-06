@@ -39,7 +39,7 @@ if ($dirty) {
     exit 1
 }
 
-git fetch --prune origin 2>&1 | Out-Null
+$fetchOut = & git fetch --prune origin 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Log "ABORT: git fetch failed"
     exit 1
