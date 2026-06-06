@@ -275,6 +275,39 @@ If something is unclear or missing from the codebase, Claude must explicitly sta
 
 ---
 
+# Deployment & operations (READ THIS BEFORE SUGGESTING ANYTHING THAT TOUCHES PROD)
+
+**Every push to `origin/main` auto-deploys to the user's home (canary) within ~5 minutes** via a Windows scheduled task on the mini PC. There is no "staging" between the Mac dev environment and the user's real home — canary IS the user's home.
+
+## Cohort model
+
+- **Canary** (default; the user's house): home's `.env` has no `ZIGGY_COHORT` or `ZIGGY_COHORT=canary`. Follows `origin/main`.
+- **Production** (future / other homes): home's `.env` has `ZIGGY_COHORT=production`. Follows the most recently created tag matching `release-*`. Bare pushes to `main` never deploy here.
+
+To ship to production, the operator runs: `git tag release-YYYY.MM.DD -m "..." && git push origin release-YYYY.MM.DD`.
+
+## Auto-rollback
+
+`scripts/update.ps1` verifies `/api/version` returns the new SHA within ~60s post-deploy. If not, it reverts to the last verified SHA from `user_files/deploy_log` and rebuilds. Rollback is recorded with `kind: rollback`. This only catches "container won't start"; logic bugs in a healthy container won't trigger it.
+
+## Signed releases (opt-in per home)
+
+If `ZIGGY_REQUIRE_SIGNED_TAGS=true` in a production home's `.env`, the script runs `git verify-tag` before checkout. Default off.
+
+## Fleet visibility
+
+`scripts/fleet-status.sh` reads `scripts/fleet.yml` and prints per-home SHA / uptime / HA status. Non-zero exit on drift.
+
+## Posture for Claude
+
+- Pushes to `main` hit the user's real home in 5 min. Treat every push as a production deploy. Do not push experimental or risky changes without the user's sign-off.
+- Reversible local edits (`Edit`, `Write`) and `git commit` (local) are fine to do autonomously. `git push origin main` is the line — pause to confirm unless the user has already authorized the scope.
+- For multi-home / staged rollouts, use tags: `git tag release-*` is the production lever. `main` is for canary only.
+- The user's canonical day-to-day cheat sheet is [`RUNBOOK.md`](RUNBOOK.md) at the repo root. The full architecture and runbook is [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Read both before suggesting a deployment workflow.
+- Mini PC is Windows. Scripts that run there are PowerShell (`scripts/update.ps1`, `scripts/install-auto-update.ps1`). Mac-side scripts are bash. Don't propose `apt-get` / `systemctl` for the mini PC.
+
+---
+
 ## Skill routing
 
 When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
