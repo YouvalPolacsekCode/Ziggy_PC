@@ -62,9 +62,13 @@ if ($GitSha -eq $RemoteSha -and $ContainerSha -eq $RemoteSha) {
 
 Write-Log "Update needed: git=$GitSha remote=$RemoteSha container=$ContainerSha"
 
-# Pull if remote is ahead.
+# Pull if remote is ahead. Capture both streams into a string array so
+# PowerShell doesn't render stderr lines as red ErrorRecord objects (which
+# trips $ErrorActionPreference = "Stop" even on benign progress output).
 if ($GitSha -ne $RemoteSha) {
-    git pull --ff-only origin main 2>&1 | Tee-Object -FilePath $UpdateLog -Append
+    $pullOut = & git pull --ff-only origin main 2>&1
+    $pullOut | ForEach-Object { Add-Content -Path $UpdateLog -Value $_.ToString() }
+    $pullOut | ForEach-Object { Write-Host $_.ToString() }
     if ($LASTEXITCODE -ne 0) {
         Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?)"
         exit 1
@@ -74,9 +78,12 @@ if ($GitSha -ne $RemoteSha) {
 
 Write-Log "Rebuilding container at $GitSha"
 $env:GIT_SHA = $GitSha
-docker compose up -d --build --no-deps ziggy 2>&1 | Tee-Object -FilePath $UpdateLog -Append
-if ($LASTEXITCODE -ne 0) {
-    Write-Log "FAILED: docker compose --build returned $LASTEXITCODE. Previous container left running."
+$buildOut = & docker compose up -d --build --no-deps ziggy 2>&1
+$buildExit = $LASTEXITCODE
+$buildOut | ForEach-Object { Add-Content -Path $UpdateLog -Value $_.ToString() }
+$buildOut | ForEach-Object { Write-Host $_.ToString() }
+if ($buildExit -ne 0) {
+    Write-Log "FAILED: docker compose --build returned $buildExit. Previous container left running."
     exit 1
 }
 
