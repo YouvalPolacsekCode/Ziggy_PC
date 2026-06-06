@@ -9,7 +9,10 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Stage 2: Python backend with embedded frontend ────────────────────────────
-FROM python:3.11-slim
+# Python 3.12 matches the Mac dev venv. Required: aioswitcher>=6.0 and
+# zha-quirks>=0.0.113 both ship Python 3.12 wheels only, and pinning the
+# container behind would break the lockstep with dev.
+FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc build-essential \
