@@ -532,8 +532,9 @@ async def get_version():
     build timestamp — both of which are also discoverable via `git log`.
     """
     return {
-        "git_sha":    _os.getenv("ZIGGY_GIT_SHA",    "dev"),
-        "build_time": _os.getenv("ZIGGY_BUILD_TIME", "unknown"),
+        "git_sha":        _os.getenv("ZIGGY_GIT_SHA",    "dev"),
+        "build_time":     _os.getenv("ZIGGY_BUILD_TIME", "unknown"),
+        "release_marker": "ota-test-1",
     }
 
 
