@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import socket as _socket
+import time as _time
 
 import uvicorn
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
@@ -540,23 +542,43 @@ from fastapi.responses import HTMLResponse as _HTMLResponse
 # Justification: stateless HTML page that sets Clear-Site-Data header and
 # redirects to /. No data exposure, no state mutation beyond the browser's
 # own caches/localStorage (which the caller is implicitly opting into).
+_ZIGGY_BOOT_TS = _time.time()
+
+
 @app.get("/api/version")
 async def get_version():
-    """Build provenance — git SHA the running container was built from.
+    """Build provenance + runtime liveness.
 
-    PUBLIC, unauthenticated. Lets `./scripts/update.ps1` / `update.sh`
-    verify "did my push actually deploy?" with a single curl, before the
-    user logs in. Values come from ZIGGY_GIT_SHA / ZIGGY_BUILD_TIME env
-    vars set in the Dockerfile from build-args. Defaults to "dev" when
-    running outside a build (e.g., `uvicorn` directly on the Mac).
+    PUBLIC, unauthenticated. Used by:
+      - scripts/update.ps1 to verify "did my push actually deploy?"
+      - a future multi-home dashboard ("which home is on which SHA?")
+      - external uptime monitors
 
-    No state mutation, no data exposure beyond a short hex string and a
-    build timestamp — both of which are also discoverable via `git log`.
+    No data exposure beyond a hex SHA, hostname, uptime seconds, and a
+    boolean for HA connectivity — all derivable from a normal Ziggy
+    session anyway.
     """
+    # HA reachability check: cached _ha_connected if the subscriber set
+    # it; otherwise infer from settings (token present and url reachable
+    # is a "configured" hint, not a "connected" guarantee). Cheap, non-
+    # blocking; never fail the version endpoint on this.
+    ha_connected = False
+    try:
+        from core.settings_loader import settings as _s
+        ha_url   = (_s.get("home_assistant") or {}).get("url")
+        ha_token = (_s.get("home_assistant") or {}).get("token")
+        ha_connected = bool(ha_url and ha_token)
+    except Exception:
+        pass
+
     return {
         "git_sha":        _os.getenv("ZIGGY_GIT_SHA",    "dev"),
         "build_time":     _os.getenv("ZIGGY_BUILD_TIME", "unknown"),
         "release_marker": "ota-test-3-unattended",
+        "hostname":       _socket.gethostname(),
+        "uptime_s":       int(_time.time() - _ZIGGY_BOOT_TS),
+        "ha_configured":  ha_connected,
+        "home_id":        (_os.getenv("HOME_ID") or "dev").strip(),
     }
 
 
