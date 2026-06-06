@@ -1,82 +1,107 @@
 # Ziggy Windows mini-PC update script.
-# Pure ASCII to avoid Git-for-Windows encoding mangling of em-dashes.
+# Pure ASCII to avoid Git-for-Windows encoding mangling.
 #
-# Records every deploy in user_files\deploy_log so rollback is one cmd:
-#   git checkout <sha-from-log>
-#   $env:GIT_SHA = '<sha-from-log>'
-#   docker compose up -d --build --no-deps ziggy
-#
-# Run on the WINDOWS mini PC (over SSH or directly), not Mac.
+# Designed for BOTH manual invocation and unattended use (scheduled task):
+#   - Silent on no-op so polling every 5 min doesn't spam logs.
+#   - Detects "git is in sync but container is behind" via /api/version
+#     and rebuilds anyway (catches the case where someone manually
+#     pulled but never rebuilt).
+#   - On `docker compose --build` failure, the OLD container keeps
+#     running (Docker only recreates if the image rebuild succeeded).
+#   - All meaningful events go to user_files\update.log; the deploy
+#     SHA breadcrumbs go to user_files\deploy_log for rollback.
 
 $ErrorActionPreference = "Stop"
 
 $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RepoDir
 
-$LogFile = Join-Path $RepoDir "user_files\deploy_log"
-New-Item -ItemType Directory -Path (Split-Path $LogFile) -Force | Out-Null
+$DeployLog = Join-Path $RepoDir "user_files\deploy_log"
+$UpdateLog = Join-Path $RepoDir "user_files\update.log"
+New-Item -ItemType Directory -Path (Split-Path $DeployLog) -Force | Out-Null
 
-$OldSha    = (git rev-parse HEAD).Trim()
-$OldBranch = (git rev-parse --abbrev-ref HEAD).Trim()
-$Ts        = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+$Ts = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
 
-Write-Host "=== Ziggy update at $Ts ==="
-Write-Host "Repo:       $RepoDir"
-Write-Host "Branch:     $OldBranch"
-Write-Host "Old SHA:    $OldSha"
-Write-Host ""
+function Write-Log {
+    param([string]$msg)
+    $line = "[$Ts] $msg"
+    Write-Host $line
+    Add-Content -Path $UpdateLog -Value $line
+}
 
 # Refuse to deploy on top of a dirty working tree.
-$dirty = (git status --porcelain)
+$dirty = git status --porcelain
 if ($dirty) {
-    Write-Host "ERROR: working tree is not clean. Commit, stash, or revert first."
-    Write-Host ""
-    git status --short
+    Write-Log "ABORT: working tree not clean. Commit/stash/revert first."
     exit 1
 }
 
-Write-Host "Fetching origin..."
-git fetch --prune origin
-if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+git fetch --prune origin 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Log "ABORT: git fetch failed"
+    exit 1
+}
 
-$NewSha = (git rev-parse origin/main).Trim()
+$GitSha    = (git rev-parse HEAD).Trim()
+$RemoteSha = (git rev-parse origin/main).Trim()
 
-if ($OldSha -eq $NewSha) {
-    Write-Host "Already at origin/main ($NewSha). Nothing to do."
+# Ask the running container what SHA it's serving. If unreachable, we
+# rebuild to recover (container may be crashed).
+$ContainerSha = "unknown"
+try {
+    $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
+    $ContainerSha = $resp.git_sha
+} catch {
+    # Container down or pre-/api/version build. Force rebuild.
+}
+
+# Steady state: everything matches. Silent exit.
+if ($GitSha -eq $RemoteSha -and $ContainerSha -eq $RemoteSha) {
     exit 0
 }
 
-Write-Host ""
-Write-Host "Incoming commits:"
-git log --oneline "$OldSha..$NewSha"
-Write-Host ""
+Write-Log "Update needed: git=$GitSha remote=$RemoteSha container=$ContainerSha"
 
-git pull --ff-only origin main
-if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed" }
+# Pull if remote is ahead.
+if ($GitSha -ne $RemoteSha) {
+    git pull --ff-only origin main 2>&1 | Tee-Object -FilePath $UpdateLog -Append
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?)"
+        exit 1
+    }
+    $GitSha = (git rev-parse HEAD).Trim()
+}
 
-$NewSha = (git rev-parse HEAD).Trim()
-Write-Host "New SHA:    $NewSha"
-Write-Host ""
+Write-Log "Rebuilding container at $GitSha"
+$env:GIT_SHA = $GitSha
+docker compose up -d --build --no-deps ziggy 2>&1 | Tee-Object -FilePath $UpdateLog -Append
+if ($LASTEXITCODE -ne 0) {
+    Write-Log "FAILED: docker compose --build returned $LASTEXITCODE. Previous container left running."
+    exit 1
+}
 
-Write-Host "Rebuilding container..."
-$env:GIT_SHA = $NewSha
-docker compose up -d --build --no-deps ziggy
-if ($LASTEXITCODE -ne 0) { throw "docker compose up --build failed" }
+# Verify the new container reports the new SHA (with retry loop for slow starts).
+Start-Sleep -Seconds 3
+$verifyOk = $false
+for ($i = 0; $i -lt 15; $i++) {
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
+        if ($resp.git_sha -eq $GitSha) {
+            $verifyOk = $true
+            break
+        }
+    } catch {}
+    Start-Sleep -Seconds 2
+}
 
-Add-Content -Path $LogFile -Value "---"
-Add-Content -Path $LogFile -Value ("ts:     " + $Ts)
-Add-Content -Path $LogFile -Value ("old:    " + $OldSha)
-Add-Content -Path $LogFile -Value ("new:    " + $NewSha)
-Add-Content -Path $LogFile -Value ("branch: " + $OldBranch)
+Add-Content -Path $DeployLog -Value "---"
+Add-Content -Path $DeployLog -Value ("ts:        " + $Ts)
+Add-Content -Path $DeployLog -Value ("old:       " + $ContainerSha)
+Add-Content -Path $DeployLog -Value ("new:       " + $GitSha)
+Add-Content -Path $DeployLog -Value ("verified:  " + $verifyOk)
 
-Write-Host ""
-Write-Host "Deploy logged to $LogFile"
-Write-Host ""
-Write-Host "Recent Ziggy logs:"
-docker compose logs --tail=20 ziggy
-
-Write-Host ""
-Write-Host "Done. To roll back, run:"
-Write-Host ("  git checkout " + $OldSha)
-Write-Host ("  " + '$env:GIT_SHA' + " = '" + $OldSha + "'")
-Write-Host "  docker compose up -d --build --no-deps ziggy"
+if ($verifyOk) {
+    Write-Log "Deploy complete: $ContainerSha -> $GitSha"
+} else {
+    Write-Log "WARNING: deploy applied but /api/version did not confirm within 33s. Check 'docker compose logs ziggy'."
+}
