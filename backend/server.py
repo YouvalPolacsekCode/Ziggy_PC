@@ -534,7 +534,7 @@ async def get_version():
     return {
         "git_sha":        _os.getenv("ZIGGY_GIT_SHA",    "dev"),
         "build_time":     _os.getenv("ZIGGY_BUILD_TIME", "unknown"),
-        "release_marker": "ota-test-1",
+        "release_marker": "ota-test-2-auto",
     }
 
 
