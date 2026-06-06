@@ -191,6 +191,198 @@ docker compose up -d --build
 
 ---
 
+## Release management
+
+Ziggy uses a two-track release model so you can keep iterating on `main`
+without every push landing in every home.
+
+```
+          ┌──────────────┐     git push origin main       ┌────────────────┐
+   main ──┤ canary homes │ ◀───────────────────────────── │  Mac dev (you) │
+          │ (your house) │                                └────────────────┘
+          └──────────────┘                                        │
+                                                          git tag release-*
+                                                          git push --tags
+                                                                  ▼
+          ┌──────────────────┐                            ┌───────────────────┐
+release-* │ production homes │ ◀───────────────────────── │ origin/release-*  │
+          └──────────────────┘                            └───────────────────┘
+```
+
+### The two tracks
+
+* **Canary** -- follows `origin/main`. Every push auto-deploys within
+  ~5 min (the `update.ps1` tick interval). Your own house runs here so
+  you eat your own dog food before anyone else does.
+* **Production** -- follows the latest `release-YYYY.MM.DD` tag. Homes
+  on this track only move when you cut a new tag. If no tag exists yet,
+  `update.ps1` exits silently and the home stays put.
+
+Cutting a release from the Mac:
+
+```bash
+cd /Users/YouvalPolacsek/ziggy_pc
+git checkout main
+git pull origin main
+git tag release-2026.06.06 -m "ship: weekly cut"
+git push origin release-2026.06.06
+# Production homes pick it up on their next 5-min tick.
+```
+
+### Promoting a home from canary to production
+
+The cohort is selected by the `ZIGGY_COHORT` env var read by
+`scripts/update.ps1`. Default is `canary` (so existing homes keep their
+current behavior with no change required).
+
+On the home's mini PC, edit the repo-local `.env` (docker-compose passes
+env-vars through more reliably than the YAML loader):
+
+```bash
+# On the mini PC
+cd ~/ziggy
+nano .env
+# Add (or change):
+#   ZIGGY_COHORT=production
+# Default if unset: canary
+
+# Take effect immediately:
+docker compose up -d
+# ...or just wait up to 5 min for the next auto-update tick.
+```
+
+To demote a home back to canary, set `ZIGGY_COHORT=canary` (or remove
+the line) and restart.
+
+### Auto-rollback
+
+After every `docker compose --build`, `update.ps1` polls
+`/api/version` for up to 60s. If the running container doesn't report
+the SHA it just built, the script:
+
+1. Reads the last verified SHA from `user_files/deploy_log`.
+2. Checks out that SHA and rebuilds.
+3. Appends a `kind: rollback` entry to `user_files/deploy_log`:
+   `ts, old=<failed-sha>, new=<rollback-sha>, branch=<branch>, verified=true, kind=rollback`
+4. Writes a `ROLLBACK` line to `update.log` with details.
+
+What this catches: **the container won't come up** (boot failure,
+import error, port conflict, broken Dockerfile change). What it does
+**not** catch: logic bugs that successfully start the container but
+break behavior. Treat auto-rollback as a safety net for "it's totally
+broken," not as a substitute for testing on canary first.
+
+Manual rollback is still supported and useful for the latter case:
+
+```powershell
+# On the mini PC
+cd ~/ziggy
+Get-Content user_files/deploy_log | Select-Object -Last 5    # find the SHA
+git checkout <sha>
+$env:GIT_SHA = '<sha>'
+docker compose up -d --build --no-deps ziggy
+```
+
+### Signed releases (opt-in)
+
+Anyone with push access to `origin` can ship code to every home that
+follows the cohort. If that's a concern, enforce GPG-signed tags on
+production homes.
+
+**On the Mac (one-time, operator setup):**
+
+```bash
+# Find your KEY-ID (the long form, e.g. ABCD1234EF567890)
+gpg --list-secret-keys --keyid-format=long
+
+# Tell git to sign by default
+git config --global commit.gpgsign true
+git config --global tag.gpgsign true
+git config --global user.signingkey <KEY-ID>
+
+# From now on, `git tag release-...` produces a signed tag.
+```
+
+**On each production home (one-time, trust setup):**
+
+```bash
+# On the Mac: export your public key
+gpg --export <KEY-ID> | base64 > pubkey.b64
+# Copy pubkey.b64 to the home however you like (scp, paste, etc.)
+
+# On the home: import it
+base64 -d pubkey.b64 | gpg --import
+# Windows mini PC: install Gpg4win first (https://gpg4win.org/),
+# then run the same `gpg --import` from a Gpg4win shell.
+```
+
+**Enforcement per home** -- add to the home's `.env`:
+
+```
+ZIGGY_REQUIRE_SIGNED_TAGS=true
+```
+
+When set, `update.ps1` runs `git verify-tag <tag>` before checkout.
+If the tag isn't signed by a trusted key, the rollout is aborted and
+the home stays on its previous tag. Default is off (the script warns
+but doesn't enforce), so adopting GPG signing is opt-in per home.
+
+Recommendation: turn this on for production homes once your threat
+model warrants it. Keep canary unsigned for developer agility (you
+push small fixes too often for the signing ceremony to be worth it
+there).
+
+### Fleet status
+
+`scripts/fleet-status.sh` (Mac-side) reads `scripts/fleet.yml` and
+prints a one-line-per-home table of SHA, uptime, HA-configured, and
+last-deploy timestamp:
+
+```bash
+cd /Users/YouvalPolacsek/ziggy_pc
+./scripts/fleet-status.sh
+# NAME              SHA       UPTIME    HA   LAST DEPLOY
+# home-youval       3794789   2d 4h     OK   2026-06-04 09:12
+# home-cousin       42fe393   6h 11m    OK   2026-06-03 18:44
+# ...
+```
+
+`scripts/fleet.yml` is the home registry -- a list of
+`{name, url}` entries. Add a new home there when you onboard it. The
+script exits non-zero if any home is drifting (e.g. SHA doesn't match
+its cohort's expected ref), which makes it cron/launchd-friendly:
+
+```bash
+# Example launchd plist or cron entry, runs hourly:
+0 * * * * cd /Users/YouvalPolacsek/ziggy_pc && ./scripts/fleet-status.sh \
+  || osascript -e 'display notification "Ziggy fleet drift" with title "Ziggy"'
+```
+
+### Day-to-day rhythm
+
+```bash
+# Quick fix -- lands in canary in ~5 min, production untouched
+git commit -m "fix: stop the thing from doing the bad thing"
+git push origin main
+
+# Ship to production -- production homes pick it up in ~5 min
+git tag release-2026.06.06 -m "ship: weekly cut + AC scene fixes"
+git push origin release-2026.06.06
+
+# "Roll back" production -- note the gotcha:
+git tag -d release-2026.06.06
+git push --delete origin release-2026.06.06
+# This does NOT move production homes back. They already pulled the
+# tag and update.ps1 only moves forward -- deleting the tag just stops
+# *new* homes from pulling it. To actually retreat, cut a fresh
+# release-* tag pointing at a known-good SHA:
+git tag release-2026.06.06-hotfix <last-good-sha> -m "revert: ..."
+git push origin release-2026.06.06-hotfix
+# Easier rule of thumb: don't push a bad tag. Soak it on canary first.
+```
+
+---
+
 ## `ziggy-home.com` routing
 
 `app.ziggy-home.com` currently resolves to Cloudflare IPs
