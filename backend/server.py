@@ -582,6 +582,57 @@ async def get_version():
     }
 
 
+@app.get("/api/__deploy__")
+async def get_deploy_history(limit: int = 20):
+    """Recent deploys this host has applied. Reads user_files/deploy_log.
+
+    PUBLIC, unauthenticated. The deploy log is a flat YAML-ish ledger
+    of `(ts, old_sha, new_sha, branch, verified)` tuples written by
+    scripts/update.ps1 / update.sh after each successful rebuild.
+
+    Useful for:
+      - A future cross-home admin view ("which homes are behind?").
+      - On-call debugging ("when did SHA X land here?").
+
+    Caps to last `limit` entries (default 20) to keep the response small.
+    Returns an empty list if the log doesn't exist yet (fresh hub).
+    """
+    log_path = _os.path.join(
+        _os.path.dirname(__file__), "..", "user_files", "deploy_log"
+    )
+    if not _os.path.exists(log_path):
+        return {"entries": [], "count": 0}
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except OSError:
+        return {"entries": [], "count": 0, "error": "log_unreadable"}
+
+    # Parse "---" separated blocks of "key: value" lines.
+    entries = []
+    current = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if line == "---":
+            if current:
+                entries.append(current)
+                current = {}
+            continue
+        if ":" in line:
+            k, _, v = line.partition(":")
+            current[k.strip()] = v.strip()
+    if current:
+        entries.append(current)
+
+    # Newest first, capped.
+    entries.reverse()
+    if limit > 0:
+        entries = entries[:limit]
+
+    return {"entries": entries, "count": len(entries)}
+
+
 @app.get("/reset")
 async def reset_client():
     html = (
