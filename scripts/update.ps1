@@ -65,15 +65,14 @@ $env:GIT_SHA = $NewSha
 docker compose up -d --build --no-deps ziggy
 if ($LASTEXITCODE -ne 0) { throw "docker compose up --build failed" }
 
-# Record this deploy so rollback is trivial.
-$entry = @"
----
-ts:     $Ts
-old:    $OldSha
-new:    $NewSha
-branch: $OldBranch
-"@
-Add-Content -Path $LogFile -Value $entry
+# Record this deploy so rollback is trivial. Plain Add-Content avoids
+# the here-string parser pitfalls when git rewrites line endings on
+# Windows checkout.
+Add-Content -Path $LogFile -Value "---"
+Add-Content -Path $LogFile -Value ("ts:     " + $Ts)
+Add-Content -Path $LogFile -Value ("old:    " + $OldSha)
+Add-Content -Path $LogFile -Value ("new:    " + $NewSha)
+Add-Content -Path $LogFile -Value ("branch: " + $OldBranch)
 
 Write-Host ""
 Write-Host "Deploy logged to $LogFile"
@@ -82,5 +81,7 @@ Write-Host "Recent Ziggy logs:"
 docker compose logs --tail=20 ziggy
 
 Write-Host ""
-Write-Host "Done. To roll back:"
-Write-Host "  git checkout $OldSha; `$env:GIT_SHA = '$OldSha'; docker compose up -d --build --no-deps ziggy"
+Write-Host "Done. To roll back, run:"
+Write-Host ("  git checkout " + $OldSha)
+Write-Host ("  `$env:GIT_SHA = '" + $OldSha + "'")
+Write-Host "  docker compose up -d --build --no-deps ziggy"
