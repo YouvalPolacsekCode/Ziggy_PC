@@ -27,14 +27,22 @@ services:
   ziggy:
     build: .
     restart: unless-stopped
-    ports:
-      - "8001:8001"
+    # network_mode: host so Ziggy can reach an EXISTING HA + Mosquitto on
+    # the mini PC's localhost (they're in separate Docker containers /
+    # native daemons, not in this compose project). Works on Linux mini
+    # PCs (and the Hetzner/Oracle VMs). DOES NOT WORK on Docker Desktop
+    # for Mac — Mac dev uses docker-compose.dev.yml instead.
+    #
+    # Side effect of host networking: the `ports:` directive is ignored,
+    # so port 8001 binds directly on the host (which is what we want for
+    # the Cloudflare Tunnel anyway).
+    network_mode: host
     environment:
-      # This compose file is for self-hosted hubs (mini PC, dev Mac). The
-      # Dockerfile defaults CLOUD_MODE=true / HOME_TYPE=cloud for the
-      # per-home cloud VM image (set explicitly by relay/app/provisioner.py).
-      # Override both here so a self-hosted hub doesn't inherit cloud-mode
-      # semantics (skipped config validation, env-var-driven setup, etc.).
+      # This compose file is for self-hosted hubs (mini PC). The Dockerfile
+      # defaults CLOUD_MODE=true / HOME_TYPE=cloud for the per-home cloud
+      # VM image (set explicitly by relay/app/provisioner.py). Override
+      # both here so a self-hosted hub doesn't inherit cloud-mode semantics
+      # (skipped config validation, env-var-driven setup, etc.).
       - CLOUD_MODE=${CLOUD_MODE:-false}
       - HOME_TYPE=${HOME_TYPE:-hub}
       - HOME_ID=${HOME_ID:-home-ziggy-dev}
@@ -51,7 +59,9 @@ services:
       # in a follow-up if multi-tenancy lands.
       - /var/run/docker.sock:/var/run/docker.sock
       - ./docker-compose.yml:/host/docker-compose.yml
-    depends_on: [mosquitto, homeassistant]
+    # No depends_on — HA + Mosquitto live in their own containers on this
+    # mini PC, started independently. Start Ziggy with:
+    #   docker compose up -d --build --no-deps ziggy
 
 volumes:
   mosquitto_data:
