@@ -38,12 +38,19 @@ RUN grep -v -E "^(pyaudio|sounddevice|pvporcupine|openwakeword|RPi\.GPIO|gpiozer
     pip install --no-cache-dir anthropic httpx paho-mqtt
 
 # Source code
-COPY backend/    ./backend/
-COPY core/       ./core/
-COPY services/   ./services/
-COPY interfaces/ ./interfaces/
-COPY config/     ./config/
-COPY user_files/ ./user_files/
+COPY backend/      ./backend/
+COPY core/         ./core/
+COPY services/     ./services/
+COPY interfaces/   ./interfaces/
+COPY integrations/ ./integrations/
+COPY config/       ./config/
+COPY user_files/   ./user_files/
+# Tracked-but-runtime-loaded dirs: memory/ holds memory_log.json + task_log.json
+# referenced by settings.paths.memory_log / .task_log; routines/ + utils/ are
+# imported indirectly via dynamic module loading.
+COPY memory/       ./memory/
+COPY routines/     ./routines/
+COPY utils/        ./utils/
 
 # Frontend build output — FastAPI serves these as static files
 COPY --from=frontend-build /frontend/dist ./frontend/dist
