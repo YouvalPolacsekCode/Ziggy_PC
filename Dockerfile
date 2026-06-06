@@ -17,12 +17,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Python deps
-COPY requirements.txt* ./
-RUN pip install --no-cache-dir fastapi uvicorn pydantic aiofiles \
-    paho-mqtt requests websockets httpx PyYAML python-multipart \
-    openai anthropic feedparser trafilatura yfinance python-dotenv \
-    2>/dev/null || pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+# Python deps — install from requirements.txt, but skip packages that need
+# host-level mic / GPIO passthrough we don't grant the container:
+#   pyaudio, sounddevice    — need /dev/snd
+#   pvporcupine, openwakeword — need a live mic stream
+#   RPi.GPIO, gpiozero      — need /dev/gpiomem (Raspberry Pi only)
+#
+# Voice STT on the backend uses faster-whisper on uploaded audio blobs,
+# not the mic libs above. Wake-word inference lives at the edge / native
+# host process when used at all (memory: PTT-default).
+#
+# `anthropic` was in the old hardcoded list but isn't in requirements.txt
+# — we install it explicitly so the LLM gateway has both providers.
+COPY requirements.txt ./
+RUN grep -v -E "^(pyaudio|sounddevice|pvporcupine|openwakeword|RPi\.GPIO|gpiozero)" requirements.txt > /tmp/requirements.txt && \
+    pip install --no-cache-dir -r /tmp/requirements.txt && \
+    pip install --no-cache-dir anthropic httpx paho-mqtt
 
 # Source code
 COPY backend/    ./backend/
