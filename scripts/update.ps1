@@ -20,9 +20,11 @@ $ErrorActionPreference = "Continue"
 $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RepoDir
 
-$DeployLog = Join-Path $RepoDir "user_files\deploy_log"
-$UpdateLog = Join-Path $RepoDir "user_files\update.log"
+$DeployLog        = Join-Path $RepoDir "user_files\deploy_log"
+$UpdateLog        = Join-Path $RepoDir "user_files\update.log"
+$DeployLogsDir    = Join-Path $RepoDir "user_files\deploy-logs"
 New-Item -ItemType Directory -Path (Split-Path $DeployLog) -Force | Out-Null
+New-Item -ItemType Directory -Path $DeployLogsDir         -Force | Out-Null
 
 $Ts = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
 
@@ -69,28 +71,34 @@ if ($GitSha -eq $RemoteSha -and $ContainerSha -eq $RemoteSha) {
 
 Write-Log "Update needed: git=$GitSha remote=$RemoteSha container=$ContainerSha"
 
-# Pull if remote is ahead. Capture both streams into a string array so
-# PowerShell doesn't render stderr lines as red ErrorRecord objects (which
-# trips $ErrorActionPreference = "Stop" even on benign progress output).
+# Per-deploy verbose log lives in user_files\deploy-logs\<ts>-<sha>.log;
+# update.log only sees short status lines. Keeps update.log readable as a
+# timeline of "what happened when" while the noisy build output is
+# parked next door for when you actually need to debug a build.
+$DeployVerbose = Join-Path $DeployLogsDir ($Ts.Replace(":", "-") + "-build.log")
+
+# Pull if remote is ahead. Capture both streams so PowerShell doesn't
+# treat native command stderr lines as terminating errors.
 if ($GitSha -ne $RemoteSha) {
+    Write-Log "Pulling $GitSha -> $RemoteSha"
     $pullOut = & git pull --ff-only origin main 2>&1
-    $pullOut | ForEach-Object { Add-Content -Path $UpdateLog -Value $_.ToString() }
+    $pullOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
     $pullOut | ForEach-Object { Write-Host $_.ToString() }
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?)"
+        Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?). See $DeployVerbose"
         exit 1
     }
     $GitSha = (git rev-parse HEAD).Trim()
 }
 
-Write-Log "Rebuilding container at $GitSha"
+Write-Log "Rebuilding container at $GitSha (build log: $DeployVerbose)"
 $env:GIT_SHA = $GitSha
 $buildOut = & docker compose up -d --build --no-deps ziggy 2>&1
 $buildExit = $LASTEXITCODE
-$buildOut | ForEach-Object { Add-Content -Path $UpdateLog -Value $_.ToString() }
+$buildOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
 $buildOut | ForEach-Object { Write-Host $_.ToString() }
 if ($buildExit -ne 0) {
-    Write-Log "FAILED: docker compose --build returned $buildExit. Previous container left running."
+    Write-Log "FAILED: docker compose --build returned $buildExit. Previous container still running. See $DeployVerbose"
     exit 1
 }
 
