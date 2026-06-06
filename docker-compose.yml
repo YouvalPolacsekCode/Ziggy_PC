@@ -27,16 +27,16 @@ services:
   ziggy:
     build: .
     restart: unless-stopped
-    # network_mode: host so Ziggy can reach an EXISTING HA + Mosquitto on
-    # the mini PC's localhost (they're in separate Docker containers /
-    # native daemons, not in this compose project). Works on Linux mini
-    # PCs (and the Hetzner/Oracle VMs). DOES NOT WORK on Docker Desktop
-    # for Mac — Mac dev uses docker-compose.dev.yml instead.
+    # Bridge networking + published port. Works on every Docker host
+    # (Linux, Docker Desktop for Mac / Windows).
     #
-    # Side effect of host networking: the `ports:` directive is ignored,
-    # so port 8001 binds directly on the host (which is what we want for
-    # the Cloudflare Tunnel anyway).
-    network_mode: host
+    # IMPORTANT: from inside this container, "localhost" is the container
+    # itself, NOT the mini PC. To reach an external HA (e.g. running in a
+    # VirtualBox VM at 10.100.102.21, or anywhere else on the LAN), set
+    # home_assistant.url in ~/.ziggy/home.yaml to the LAN IP of HA, not
+    # localhost.
+    ports:
+      - "8001:8001"
     environment:
       # This compose file is for self-hosted hubs (mini PC). The Dockerfile
       # defaults CLOUD_MODE=true / HOME_TYPE=cloud for the per-home cloud
@@ -51,16 +51,14 @@ services:
     volumes:
       - ./config:/app/config
       - ./user_files:/app/user_files
-      # HA installer (Prompt 4): Ziggy recreates the homeassistant container
-      # at a pinned tag from the OTA manifest. The compose file lives on the
-      # host; the installer reads + edits it and runs `docker compose up -d`
-      # via the host's docker daemon. Bind grants root-equivalent on the host
-      # — acceptable for single-tenant hubs, will tighten via a socket-proxy
-      # in a follow-up if multi-tenancy lands.
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./docker-compose.yml:/host/docker-compose.yml
-    # No depends_on — HA + Mosquitto live in their own containers on this
-    # mini PC, started independently. Start Ziggy with:
+      # NOTE: the OTA HA-installer bind mounts (docker.sock + host compose
+      # file) are intentionally omitted here. They're Linux-only paths
+      # (/var/run/docker.sock) and the self-hosted "git pull + docker
+      # compose up" deploy path doesn't use the OTA installer. If we ever
+      # ship the OTA installer on Linux hubs, add a separate
+      # docker-compose.ota.yml override that re-adds those mounts.
+    # No depends_on — HA + Mosquitto live in their own containers / VMs on
+    # this mini PC, started independently. Start Ziggy with:
     #   docker compose up -d --build --no-deps ziggy
 
 volumes:
