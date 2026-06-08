@@ -11,6 +11,26 @@ Paths below show Linux first (production target: Ubuntu mini PC). The
 founder dev box is Windows, so Windows paths appear in parentheses where
 they differ.
 
+---
+
+## Current state on `home-ziggy-primary` (founder's house)
+
+Steps already done as of 2026-06-08:
+
+- ✅ Relay deployed at `https://ziggy-relay.fly.dev` (Fly.io app `ziggy-relay`).
+- ✅ Home record provisioned in the relay's DB:
+  `id=home-ziggy-primary`, `tunnel_url=https://app.ziggy-home.com`,
+  `subscription_state=active`, `relay_secret=c86aeb11...`.
+- ✅ Mini PC `settings.yaml` `relay:` block restored (url + secret + tunnel_url).
+- ✅ Mini PC `home.id = home-ziggy-primary` (matches relay record).
+- ❌ `home_backup_keys` table empty -- no master data_key sealed yet.
+- ❌ No Backblaze B2 bucket provisioned.
+- ❌ `backup.enabled: false`.
+
+To go live, start at step 1 below. Steps 5 (kit manifest), 6 (env vars),
+7 (seal data_key) can use the existing relay secret above -- no
+re-provisioning of the home record is needed.
+
 ## 1. Provision Backblaze B2 bucket
 
 1. Log into the Backblaze console as the ops user.
