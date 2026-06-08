@@ -10,17 +10,26 @@ import requests
 
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
+from services import ha_client
 
-HA_URL = settings.get("home_assistant", {}).get("url", "").rstrip("/")
-HA_TOKEN = settings.get("home_assistant", {}).get("token", "")
 DEFAULT_CAST = settings.get("media", {}).get("default_cast_device", None)
 DEFAULT_SPEAKER = settings.get("media", {}).get("default_speaker", None)
 DEFAULT_VOL = settings.get("media", {}).get("default_volume", 0.35)
 
-HEADERS = {
-    "Authorization": f"Bearer {HA_TOKEN}",
-    "Content-Type": "application/json",
-}
+
+# Callable shims so credential reads stay dynamic. Existing truthiness checks
+# (`if not (HA_URL() and HA_TOKEN() and dev): ...`) keep working because url()/
+# token() return "" when HA is unconfigured.
+def HA_URL() -> str:  # noqa: N802
+    return ha_client.url()
+
+
+def HA_TOKEN() -> str:  # noqa: N802
+    return ha_client.token()
+
+
+def HEADERS() -> dict:  # noqa: N802
+    return ha_client.headers()
 
 
 # ---------- Alias/entity helpers ----------
@@ -163,7 +172,7 @@ async def stream_youtube_to_chromecast_hd(input_text: str, device_hint: Optional
 
         # HA media_player path
         dev = target.ha_entity or DEFAULT_CAST
-        if not (HA_URL and HA_TOKEN and dev):
+        if not (HA_URL() and HA_TOKEN() and dev):
             return _todo("Home Assistant URL/token/default media_player not set. "
                          "Set HA_BASE_URL, HA_TOKEN in .env and media.default_cast_device in settings.yaml.")
         if not _ensure_device_on(dev):
@@ -184,7 +193,7 @@ async def play_spotify_playlist(target: str, device_hint: Optional[str] = None) 
     from services.target_resolver import resolve
     t = resolve(device_hint, required_capability="audio")
     dev = t.ha_entity or DEFAULT_SPEAKER or DEFAULT_CAST
-    if not (HA_URL and HA_TOKEN and dev):
+    if not (HA_URL() and HA_TOKEN() and dev):
         return _todo("Configure Spotify integration in Home Assistant and set media.default_speaker or default_cast_device.")
 
     payload = {"entity_id": dev, "media_content_id": target.strip(), "media_content_type": "music"}
@@ -211,7 +220,7 @@ async def start_movie_in_app(title: str, app: str, device_hint: Optional[str] = 
         return {"ok": False, "message": "Cannot launch streaming apps on a browser display. Use a smart TV target.", "data": {}}
 
     dev = target.ha_entity or DEFAULT_CAST
-    if not (HA_URL and HA_TOKEN and dev):
+    if not (HA_URL() and HA_TOKEN() and dev):
         return _todo("Set up AndroidTV/Google TV integration and media.default_cast_device in settings.yaml.")
 
     ok, status, text = _ha_call_detail("media_player", "select_source", {"entity_id": dev, "source": app})
@@ -250,7 +259,7 @@ async def cast_camera_live(camera_name: str, device_hint: Optional[str] = None) 
         return _todo("Enable camera streaming in HA. Check HA stream component and camera entity.")
 
     dev = target.ha_entity or DEFAULT_CAST
-    if not (HA_URL and HA_TOKEN and dev):
+    if not (HA_URL() and HA_TOKEN() and dev):
         return _todo("Configure HA and default cast device in settings.yaml > media.default_cast_device.")
 
     res = _cast_generic_stream(stream_url, dev)
@@ -264,7 +273,7 @@ async def play_podcast_episode(podcast_name: str, episode_hint: Optional[str] = 
     from services.target_resolver import resolve
     target = resolve(device_hint, required_capability="audio")
     dev = target.ha_entity or DEFAULT_SPEAKER or DEFAULT_CAST
-    if not (HA_URL and HA_TOKEN and dev):
+    if not (HA_URL() and HA_TOKEN() and dev):
         return _todo("Set HA URL/token and media.default_speaker in settings.yaml.")
 
     search = _podcast_search(podcast_name, episode_hint)
@@ -352,7 +361,7 @@ def _set_media_volume(entity_id: str, level: Optional[float] = None) -> None:
 async def _confirm_playback(entity_id: str) -> bool:
     try:
         await asyncio.sleep(1.2)
-        st = requests.get(f"{HA_URL}/api/states/{entity_id}", headers=HEADERS, timeout=5)
+        st = requests.get(f"{HA_URL()}/api/states/{entity_id}", headers=HEADERS(), timeout=5)
         if st.ok:
             return st.json().get("state") in {"playing", "on", "idle"}
     except Exception as e:
@@ -424,8 +433,8 @@ def _cast_generic_stream(url: str, entity_id: str) -> Dict[str, Any]:
 
 def _ha_call(domain: str, service: str, payload: Dict[str, Any]) -> tuple[int, str]:
     try:
-        url = f"{HA_URL}/api/services/{domain}/{service}"
-        r = requests.post(url, json=payload, headers=HEADERS, timeout=8)
+        url = f"{HA_URL()}/api/services/{domain}/{service}"
+        r = requests.post(url, json=payload, headers=HEADERS(), timeout=8)
         if r.ok:
             log_info(f"[HA call] {domain}.{service} -> {r.status_code}")
         else:
@@ -438,8 +447,8 @@ def _ha_call(domain: str, service: str, payload: Dict[str, Any]) -> tuple[int, s
 
 def _ha_call_detail(domain: str, service: str, payload: Dict[str, Any]) -> tuple[bool, Optional[int], Optional[str]]:
     try:
-        url = f"{HA_URL}/api/services/{domain}/{service}"
-        r = requests.post(url, json=payload, headers=HEADERS, timeout=8)
+        url = f"{HA_URL()}/api/services/{domain}/{service}"
+        r = requests.post(url, json=payload, headers=HEADERS(), timeout=8)
         if not r.ok:
             log_error(f"[HA call] {domain}.{service} -> {r.status_code} {r.text}")
         return (r.ok, r.status_code, r.text if not r.ok else "OK")

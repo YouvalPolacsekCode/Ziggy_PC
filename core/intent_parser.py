@@ -4,9 +4,9 @@ from core.settings_loader import settings
 from core.tools_schema import TOOLS, SYSTEM_PROMPT
 from integrations.openai_client import (
     CloudLLMUnavailable,
-    get_client,
     require_cloud_llm_active,
 )
+from integrations.llm_gateway import chat_completion
 
 # ---------------------------------------------------------------------------
 # Fast path — answered locally, no API call
@@ -317,9 +317,9 @@ def _parse_with_tools(text: str, chat_history: list | None = None) -> dict:
                    history_turns=len(chat_history) if chat_history else 0)
         t0 = _time.perf_counter()
 
-        response = get_client().chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
+        response = chat_completion(
+            "intent_parse",
+            messages,
             tools=TOOLS,
             tool_choice="auto",
             parallel_tool_calls=True,

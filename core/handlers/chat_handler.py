@@ -7,9 +7,9 @@ from core.logger_module import log_info, log_error
 from core.response_templates import get_response_for
 from integrations.openai_client import (
     CloudLLMUnavailable,
-    get_client,
     require_cloud_llm_active,
 )
+from integrations.llm_gateway import chat_completion
 
 # ── Web search tool — GPT decides when to use it ──────────────────────────────
 
@@ -122,9 +122,9 @@ async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict
 
     try:
         # First call — GPT may invoke web_search if it needs current data.
-        response = get_client().chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
+        response = chat_completion(
+            "chat",
+            messages,
             tools=[_WEB_SEARCH_TOOL],
             tool_choice="auto",
             temperature=0.6,
@@ -161,9 +161,9 @@ async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict
                 "tool_call_id": call.id,
             })
 
-            synthesis = get_client().chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
+            synthesis = chat_completion(
+                "chat",
+                messages,
                 temperature=0.6,
                 max_tokens=400,
             )

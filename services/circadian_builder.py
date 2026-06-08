@@ -35,10 +35,15 @@ import requests
 
 from core.settings_loader import settings
 from core.logger_module import log_error, log_info
+from services import ha_client
 
-HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
-HA_TOKEN: str = settings["home_assistant"]["token"]
-HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+
+def HA_URL() -> str:  # noqa: N802 — callable shim so credential reads stay dynamic
+    return ha_client.url()
+
+
+def HEADERS() -> dict:  # noqa: N802
+    return ha_client.headers()
 
 
 # ── Phase table ──────────────────────────────────────────────────────────────
@@ -138,8 +143,8 @@ def save_bundle(lights: list[str], bedtime: str = "22:00") -> dict:
         auto_id = cfg["id"]
         try:
             resp = requests.post(
-                f"{HA_URL}/api/config/automation/config/{auto_id}",
-                headers=HEADERS,
+                f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                headers=HEADERS(),
                 json=cfg,
                 timeout=10,
             )
@@ -168,8 +173,8 @@ def delete_bundle() -> dict:
         auto_id = _automation_id(phase_id)
         try:
             resp = requests.delete(
-                f"{HA_URL}/api/config/automation/config/{auto_id}",
-                headers=HEADERS, timeout=10,
+                f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                headers=HEADERS(), timeout=10,
             )
             if resp.status_code in (200, 204):
                 deleted.append(auto_id)
@@ -188,8 +193,8 @@ def get_bundle() -> dict:
         auto_id = _automation_id(phase_id)
         try:
             resp = requests.get(
-                f"{HA_URL}/api/config/automation/config/{auto_id}",
-                headers=HEADERS, timeout=5,
+                f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                headers=HEADERS(), timeout=5,
             )
             phases[phase_id] = {"installed": resp.status_code == 200, "id": auto_id}
         except Exception:

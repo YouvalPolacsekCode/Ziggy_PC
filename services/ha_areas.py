@@ -3,44 +3,13 @@ HA Area Registry — all operations via WebSocket (template API blocks .append i
 """
 from __future__ import annotations
 import asyncio
-import json
 import time
-import websockets
 
-from core.settings_loader import settings
 from core.logger_module import log_error, log_info
+from services.ha_client import ws as _ws  # short-lived WS helper lives in ha_client now
 
-HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
-HA_TOKEN: str = settings["home_assistant"]["token"]
-WS_URL = HA_URL.replace("https://", "wss://").replace("http://", "ws://") + "/api/websocket"
-
-
-async def _ws(*commands: dict, timeout: float = 4.0) -> list[dict]:
-    """Open one WS connection, authenticate, send N commands, return N results.
-
-    Aggressive timeout (default 4s) — when HA's WS is stalled, every caller
-    of _ws() blocks for ~10s on the default handshake timeout. Backend
-    endpoints (capabilities, areas, pairing) all pile up behind a single
-    unresponsive HA, locking the whole app. Fail fast here so callers can
-    return a cached/empty result and the FE stays usable.
-    """
-    async with websockets.connect(
-        WS_URL,
-        open_timeout=timeout,
-        ping_interval=None,
-        close_timeout=2,
-    ) as ws:
-        await asyncio.wait_for(ws.recv(), timeout=timeout)  # auth_required
-        await ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
-        auth = json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout))
-        if auth.get("type") != "auth_ok":
-            raise RuntimeError(f"HA WS auth failed: {auth}")
-        results = []
-        for i, cmd in enumerate(commands, start=1):
-            await ws.send(json.dumps({"id": i, **cmd}))
-        for _ in commands:
-            results.append(json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout)))
-        return results
+# _ws is re-exported so existing importers (ha_zha, ha_pairing, ha_flow_driver,
+# ha_capabilities) keep working without churn.
 
 
 # ─── Registry snapshot cache ─────────────────────────────────────────────────

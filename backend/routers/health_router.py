@@ -1,10 +1,12 @@
 """
 /api/health — structured system health snapshot.
 
-GET  /api/health          — live health state (cheap, reads in-memory cache only)
-POST /api/health/reload-zigbee — reload the Zigbee coordinator integration via HA services
+GET  /api/health                       — live health state (cheap, reads in-memory cache only)
+POST /api/health/reload-zigbee         — reload the Zigbee coordinator integration via HA services
+POST /api/health/recover               — user-tapped Retry: re-check + reload-if-needed, no cooldown
+POST /api/health/acknowledge-offline   — user-tapped "It's OK, I know" on 50–80% device-offline warning
 
-GET response fields:
+Legacy fields (kept for backwards-compat with older FE caches):
   ha_connected          bool   — HA WebSocket is authenticated and live
   offline_count         int    — physical devices currently reporting unavailable/unknown
   offline_with_deps     list   — devices that are offline AND used by enabled automations
@@ -12,12 +14,18 @@ GET response fields:
   coordinator_warning   bool   — ≥3 physical devices offline simultaneously
   coordinator_title     str    — friendly name of the coordinator integration
   coordinator_entry_id  str    — config entry id used by the reload endpoint (empty = not found)
+
+NEW layered field:
+  system_health         dict   — structured failure model produced by services.ha_health
+                                 (level / primary / ha / zigbee / devices / recovery / ack).
+                                 The Dashboard banner renders off this; the legacy fields above
+                                 stay populated so the existing flag-based UI keeps working.
 """
 from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 
 from core.debug_bus import bus as _dbus, BASIC
 from core.errors import ErrorCode, ZiggyError
@@ -246,6 +254,33 @@ async def get_health():
             coordinator_entry_id = coord["entry_id"]
             coordinator_title    = coord["title"]
 
+    # ── Layered system_health (new) ──────────────────────────────────────────
+    # Always computed (cheap when HA is healthy: returns the LEVEL_OK shape).
+    # The recovery state machine + cached coordinator query live inside
+    # services.ha_health, so this call is non-blocking even when HA is down.
+    try:
+        from services import ha_health
+        offline_primary_ids: set[str] = {r["entity_id"] for r in offline_all}
+        # `_offline_primaries_seen` already collapsed multi-entity groups, so
+        # primary IDs are the right denominator alongside the group count.
+        # We approximate total_devices by the group count we built above; if
+        # device_groups wasn't available, fall back to "0" so share thresholds
+        # are skipped (compute() guards on MIN_DEVICES_FOR_SHARE).
+        total_devices = len(primary_by_eid) if primary_by_eid else 0
+        coord_state_obj = ha_health.fetch_coordinator_state() if ha_connected else None
+        system_health = ha_health.compute_system_health(
+            ha_connected=ha_connected,
+            offline_primary_ids=offline_primary_ids,
+            total_devices=total_devices,
+            coordinator=coord_state_obj,
+        )
+    except Exception as e:
+        # Never let system_health computation crash the whole /api/health
+        # response — the legacy fields above are still useful by themselves.
+        from core.logger_module import log_error
+        log_error(f"[Health] system_health compute failed: {e}")
+        system_health = None
+
     return {
         "ha_connected":         ha_connected,
         "offline_count":        len(offline_all),
@@ -255,6 +290,7 @@ async def get_health():
         "coordinator_warning":  coordinator_warning,
         "coordinator_entry_id": coordinator_entry_id,
         "coordinator_title":    coordinator_title,
+        "system_health":        system_health,
     }
 
 
@@ -309,6 +345,62 @@ async def reload_zigbee(_user: dict = Depends(require_role("admin"))):
             details={"entry_id": entry_id, "cause": repr(e)},
             cause=e,
         )
+
+
+@router.post("/api/health/recover")
+async def health_recover(_user: dict = Depends(require_role("admin"))):
+    """User-tapped 'Retry' on the system-health banner.
+
+    Re-checks the coordinator state, runs ONE reload attempt if unhealthy
+    (bypassing the auto-recovery cooldown — this is an explicit user ask),
+    and returns the latest health snapshot.
+    """
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/health/recover",
+               user=_user.get("username"), auth_added=True)
+    from services import ha_health
+    try:
+        result = await ha_health.trigger_recover_now()
+        return result
+    except Exception as e:
+        raise ZiggyError(
+            code=ErrorCode.HA_UNAVAILABLE,
+            log_message=f"health_recover failed: {type(e).__name__}: {e}",
+            cause=e,
+        )
+
+
+@router.post("/api/health/acknowledge-offline")
+async def health_acknowledge_offline(
+    payload: dict | None = Body(default=None),
+    _user: dict = Depends(require_role("admin")),
+):
+    """User-tapped 'It's OK, I know' on the 50–80% devices-offline warning.
+
+    Body: {"offline_ids": ["light.x", "switch.y", ...]}
+    If absent, the server uses the current offline primary set as the snapshot.
+    The acknowledgement is invalidated automatically when (a) new devices go
+    offline beyond this set, or (b) overall offline share crosses 80%.
+    """
+    payload = payload or {}
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/health/acknowledge-offline",
+               user=_user.get("username"), auth_added=True)
+    from services import ha_health
+    offline_ids = set(payload.get("offline_ids") or [])
+    if not offline_ids:
+        # Fall back to whatever the current offline set is — single round-trip
+        # UX. The FE can pass an explicit list when it wants snapshot-by-id.
+        try:
+            from services.ha_subscriber import state_cache
+            from services.entity_filter import _should_hide as _eh
+            offline_ids = {
+                eid for eid, e in state_cache.items()
+                if not _eh(eid) and (e.get("state") in ("unavailable", "unknown"))
+            }
+        except Exception:
+            pass
+    return ha_health.acknowledge_offline(offline_ids)
 
 
 @router.get("/api/health/debug-coordinator")

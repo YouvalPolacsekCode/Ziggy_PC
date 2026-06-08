@@ -7,10 +7,15 @@ import requests
 
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings
+from services import ha_client
 
-HA_URL: str = settings.get("home_assistant", {}).get("url", "").rstrip("/")
-HA_TOKEN: str = settings.get("home_assistant", {}).get("token", "")
-HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+
+def HA_URL() -> str:  # noqa: N802 — callable shim so credential reads stay dynamic
+    return ha_client.url()
+
+
+def HEADERS() -> dict:  # noqa: N802
+    return ha_client.headers()
 
 
 def _resolve_cast_device(hint: Optional[str]) -> Optional[str]:
@@ -25,8 +30,8 @@ def _resolve_cast_device(hint: Optional[str]) -> Optional[str]:
 def _cast_stream(url: str, entity_id: str, media_type: str = "video") -> Dict[str, Any]:
     try:
         resp = requests.post(
-            f"{HA_URL}/api/services/media_player/play_media",
-            headers=HEADERS,
+            f"{HA_URL()}/api/services/media_player/play_media",
+            headers=HEADERS(),
             json={"entity_id": entity_id, "media_content_id": url, "media_content_type": media_type},
             timeout=8,
         )
@@ -77,8 +82,8 @@ def cast_today_calendar(device_hint: str = "") -> Dict[str, Any]:
     for eid in entity_ids:
         try:
             resp = requests.get(
-                f"{HA_URL}/api/calendars/{eid}",
-                headers=HEADERS,
+                f"{HA_URL()}/api/calendars/{eid}",
+                headers=HEADERS(),
                 params={"start": today, "end": tomorrow},
                 timeout=10,
             )

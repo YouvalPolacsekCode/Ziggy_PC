@@ -211,12 +211,29 @@ function SystemStatusCard() {
   const bridgeOk     = health?.ha_connected ?? false
   const offlineCount = health?.offline_count ?? 0
   const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', fontSize: 12 }
+  // Debug-only details from the new layered health model (services/ha_health.py).
+  // Surface them HERE in Settings → Advanced so the main dashboard banner can
+  // stay plain-English while the operator/admin can still see the raw HA terms.
+  const sh           = health?.system_health
+  const coordState   = sh?.zigbee?.coordinator_state || null
+  const coordRawTitle = sh?.zigbee?.coordinator_raw_title || null
+  const lastRecovery = sh?.recovery?.last_attempt_at || null
+  const recoveryResult = sh?.recovery?.last_result || null
+  const coordStateColor = coordState === 'loaded' ? 'var(--ok)' :
+                          coordState === 'setup_in_progress' ? 'var(--warn)' :
+                          coordState && coordState !== 'unknown' ? 'var(--err)' : 'var(--ink-mute)'
 
   return (
     <Card>
       <div className="divide-y divide-line">
         <StatusRow icon={Cloud}    label="Ziggy"      value="Online"                                            valueColor="var(--ok)" />
         <StatusRow icon={Wifi}     label="Bridge"     value={bridgeOk ? 'Connected' : 'Offline'}                valueColor={bridgeOk ? 'var(--ok)' : 'var(--accent)'} />
+        {coordState && coordRawTitle && (
+          <StatusRow icon={Radio} label={coordRawTitle} value={coordState} valueColor={coordStateColor} />
+        )}
+        {lastRecovery && (
+          <StatusRow icon={Activity} label="Last recovery" value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok)' : 'var(--ink-mute)'} />
+        )}
 
         {/* Zigbee row — device count and offline count are separate links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>

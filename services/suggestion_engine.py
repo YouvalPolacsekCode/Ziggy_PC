@@ -184,8 +184,11 @@ def _quality_gate(
     if not cfg.get("llm_synthesis", True):
         return _heuristic_enrich(candidates)
 
+    # Ollama availability + heuristic fallback are policy that lives here,
+    # not in the gateway. Keep the is_available() check before invoking the
+    # gateway — the gateway itself does not retry or fall back.
     try:
-        from integrations.ollama_client import get_client, is_available, default_model
+        from integrations.ollama_client import is_available
     except ImportError:
         log_info("[SuggestionEngine] Ollama client not importable. Using heuristic fallback.")
         return _heuristic_enrich(candidates)
@@ -193,8 +196,6 @@ def _quality_gate(
     if not is_available():
         log_info("[SuggestionEngine] Ollama not reachable. Using heuristic fallback.")
         return _heuristic_enrich(candidates)
-
-    model = settings.get("ollama", {}).get("model", default_model())
 
     # Build structured input — no raw event data, only derived stats
     payload = []
@@ -219,10 +220,10 @@ def _quality_gate(
     user_content = json.dumps(payload, ensure_ascii=False)
 
     try:
-        client = get_client()
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
+        from integrations.llm_gateway import chat_completion
+        response = chat_completion(
+            "suggestion_quality_gate",
+            [
                 {"role": "system", "content": _QUALITY_GATE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],

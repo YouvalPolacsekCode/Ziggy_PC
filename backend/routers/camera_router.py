@@ -8,13 +8,25 @@ from fastapi.responses import Response, StreamingResponse
 
 from core.logger_module import log_error
 from core.settings_loader import settings
+from services import ha_client
 
 router = APIRouter()
 
-_HA_URL: str = settings.get("home_assistant", {}).get("url", "").rstrip("/")
-_HA_TOKEN: str = settings.get("home_assistant", {}).get("token", "")
-_HEADERS = {"Authorization": f"Bearer {_HA_TOKEN}", "Content-Type": "application/json"}
-_STREAM_HEADERS = {"Authorization": f"Bearer {_HA_TOKEN}"}
+
+def _ha_url() -> str:
+    return ha_client.url()
+
+
+def _ha_token() -> str:
+    return ha_client.token()
+
+
+def _headers() -> dict:
+    return ha_client.headers()
+
+
+def _stream_headers() -> dict:
+    return {"Authorization": f"Bearer {ha_client.token()}"}
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +34,7 @@ _STREAM_HEADERS = {"Authorization": f"Bearer {_HA_TOKEN}"}
 # ---------------------------------------------------------------------------
 
 def _ha_ok() -> bool:
-    return bool(_HA_URL and _HA_TOKEN)
+    return bool(_ha_url() and _ha_token())
 
 
 # ---------------------------------------------------------------------------
@@ -70,8 +82,8 @@ def camera_motion_events(hours: int = 24):
 
     try:
         resp = requests.get(
-            f"{_HA_URL}/api/history/period/{start}",
-            headers=_HEADERS,
+            f"{_ha_url()}/api/history/period/{start}",
+            headers=_headers(),
             params={"filter_entity_id": ",".join(all_ids), "minimal_response": "true"},
             timeout=15,
         )
@@ -110,8 +122,8 @@ def camera_snapshot(entity_id: str):
         raise HTTPException(status_code=503, detail="HA not configured")
     try:
         r = requests.get(
-            f"{_HA_URL}/api/camera_proxy/{entity_id}",
-            headers=_HEADERS,
+            f"{_ha_url()}/api/camera_proxy/{entity_id}",
+            headers=_headers(),
             timeout=10,
         )
         if not r.ok:
@@ -135,8 +147,8 @@ def camera_stream(entity_id: str):
 
     try:
         r = requests.get(
-            f"{_HA_URL}/api/camera_proxy_stream/{entity_id}",
-            headers=_STREAM_HEADERS,
+            f"{_ha_url()}/api/camera_proxy_stream/{entity_id}",
+            headers=_stream_headers(),
             stream=True,
             timeout=10,
         )

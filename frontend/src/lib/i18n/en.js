@@ -2067,7 +2067,38 @@ export default {
   'dashboard.manyPeopleHome':     '{list} & {last} home',
   'dashboard.personIsHome':       '{name} is home',
 
-  // ── Activity intent labels ──────────────────────────────────────────
+  // ── System health banner ───────────────────────────────────────────
+  //     Layered failure messages from services/ha_health.py. Keep copy
+  //     plain-English, no "ZHA" / "Home Assistant" / "config entry" — those
+  //     terms live only in Settings → Advanced.
+  'health.haUnreachable.title':       'Smart home system is offline',
+  'health.haUnreachable.body':        'Ziggy can’t reach your smart home hub. Retrying automatically.',
+  'health.coordinatorLoading.title':  'Zigbee connection problem',
+  'health.coordinatorLoading.body':   'Ziggy is reconnecting the Zigbee hub…',
+  'health.coordinatorFailed.title':   'Zigbee connection problem',
+  'health.coordinatorFailed.body':    'Ziggy is trying to reconnect the Zigbee hub…',
+  'health.coordinatorDevsGone.title': 'Zigbee connection problem',
+  'health.coordinatorDevsGone.body':  'Most of your Zigbee devices stopped responding. Ziggy is trying to reconnect.',
+  'health.devicesOfflineMany.title':  '{n} devices offline',
+  'health.devicesOfflineMany.body':   'Several devices stopped responding. Tap to review, or acknowledge if you know.',
+  'health.devicesOfflineOne.title':   '{n} device offline',
+  'health.devicesOfflineOne.body':    'One device isn’t responding. Tap to review.',
+  'health.action.retry':              'Retry',
+  'health.action.retrying':           'Retrying…',
+  'health.action.review':             'Review',
+  'health.action.itsOk':              'It’s OK, I know',
+  'health.action.dismiss':            'Dismiss',
+  'health.manual.replug_zigbee_dongle.title': 'Manual action needed',
+  'health.manual.replug_zigbee_dongle.body':  'Ziggy couldn’t reconnect the Zigbee hub. Please unplug the Zigbee USB dongle from your Ziggy device, wait 5 seconds, plug it back in, then tap Retry.',
+  // Settings → Advanced → System status: technical details (debug-only).
+  'health.debug.coordinator':         'Coordinator',
+  'health.debug.coordinatorState':    'State',
+  'health.debug.coordinatorEntry':    'Entry ID',
+  'health.debug.lastReconnect':       'Last reconnect',
+  'health.debug.lastRecovery':        'Last recovery attempt',
+  'health.debug.autoRecoverDisabled': 'Auto-recovery disabled (ZIGGY_HEALTH_AUTORECOVER=0)',
+
+  // ── Activity intent labels ────────────────────
   'activity.device':              'Device',
   'activity.tv':                  'TV',
   'activity.ir':                  'IR',

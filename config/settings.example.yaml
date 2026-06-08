@@ -272,6 +272,19 @@ ollama:
 openai:
   api_key: REPLACE_WITH_OPENAI_API_KEY
 
+# Optional. Every LLM call routes through integrations/llm_gateway.py and
+# resolves (backend, model) per purpose. Omit this block to use the baked-in
+# defaults (shown below — these match what was previously hardcoded).
+# Backends: openai | ollama | openai_whisper
+models:
+  intent_parse:            {backend: openai,         model: gpt-4o-mini}
+  chat:                    {backend: openai,         model: gpt-4o}
+  translate:               {backend: openai,         model: gpt-4o-mini}
+  # If model is omitted for ollama, falls back to ollama.model above.
+  suggestion_quality_gate: {backend: ollama,         model: qwen2.5:3b}
+  map_render:              {backend: openai,         model: gpt-4o}
+  stt:                     {backend: openai_whisper, model: whisper-1}
+
 paths:
   file_store: files/
   logs: logs/

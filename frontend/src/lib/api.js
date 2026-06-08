@@ -588,6 +588,12 @@ export const testEmail          = ()     => post('/settings/email/test')
 // System health — HA connectivity, offline devices, battery warnings
 export const getHealth  = () => get('/health')
 export const reloadZigbee = () => post('/health/reload-zigbee')
+// Layered system_health (services/ha_health.py) — user-tapped Retry runs one
+// reload attempt ignoring the auto-recovery cooldown. acknowledgeOfflineDevices
+// records "It's OK, I know these are off"; the server invalidates the ack when
+// new devices go offline or share crosses 80%.
+export const recoverHealth          = ()            => post('/health/recover')
+export const acknowledgeOffline     = (offlineIds)  => post('/health/acknowledge-offline', { offline_ids: offlineIds || [] })
 
 // Debug mode
 export const getDebugConfig   = ()       => get('/debug/config')

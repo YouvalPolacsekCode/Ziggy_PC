@@ -421,6 +421,13 @@ def init() -> None:
       - IR merge (reads ir_devices.json — local, fast)
     """
     global _registry, _initialized
+    # Two startup paths call this: core/ziggy_main.py (so voice/sensor/dashboard
+    # threads see a populated registry immediately) and the FastAPI lifespan in
+    # backend/server.py. Without this guard, both paths re-ran JSON load + YAML
+    # migration + dedupe + IR merge and emitted a duplicate "Phase 1 initialized"
+    # line on every startup.
+    if _initialized:
+        return
     with _lock:
         devices = _load_persistent()
         # First-run YAML migration (no-op on subsequent boots — see comment

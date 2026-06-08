@@ -196,8 +196,11 @@ def remove_task(task_name: str) -> str:
 
 
 def start_reminder_thread():
-    thread = Thread(target=check_reminders, daemon=True, name="Reminder")
-    thread.start()
+    # Caller (ziggy_main) already wraps this in its own daemon Thread named
+    # "Reminder". Spawning another inner Thread here made the wrapper exit
+    # immediately, producing a misleading "[Thread:Reminder] Exited." line on
+    # every startup. Run the loop directly in the caller's thread instead.
+    check_reminders()
 
 
 def check_reminders():

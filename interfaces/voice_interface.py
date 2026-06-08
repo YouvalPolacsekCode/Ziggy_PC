@@ -159,13 +159,9 @@ def _transcribe_api(audio_path: str) -> tuple[str, str]:
     """Fallback: transcribe Hebrew audio via OpenAI Whisper API."""
     t0 = time.time()
     try:
-        from integrations.openai_client import get_client
+        from integrations.llm_gateway import transcribe
         with open(audio_path, "rb") as f:
-            result = get_client().audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                language="he",
-            )
+            result = transcribe("stt", f, language="he")
         text = result.text.strip()
         print(f"[TIMING] openai-whisper-api: {time.time() - t0:.2f}s")
         return text, "he"
@@ -542,10 +538,10 @@ def _translate(text: str) -> str:
 def _translate_via_gpt_cached(text: str) -> str | None:
     t0 = time.time()
     try:
-        from integrations.openai_client import get_client
-        resp = get_client().chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
+        from integrations.llm_gateway import chat_completion
+        resp = chat_completion(
+            "translate",
+            [
                 {"role": "system", "content": _TRANSLATE_SYSTEM},
                 {"role": "user", "content": text},
             ],
@@ -589,17 +585,13 @@ def transcribe_web(audio_path: str) -> tuple[str, str]:
         return "", "en"
 
     try:
-        from integrations.openai_client import get_client
+        from integrations.llm_gateway import transcribe
         t0 = time.time()
         with open(audio_path, "rb") as f:
-            result = get_client().audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                # Vocabulary hint — dramatically improves accuracy for Hebrew
-                # smart home commands (כבה/הדלק/מזגן/etc.) and prevents Whisper
-                # from mishearing them as similar-sounding nonsense words.
-                prompt=_HE_INITIAL_PROMPT,
-            )
+            # Vocabulary hint via prompt= dramatically improves accuracy for
+            # Hebrew smart-home commands (כבה/הדלק/מזגן/etc.) and prevents
+            # Whisper from mishearing them as similar-sounding nonsense words.
+            result = transcribe("stt", f, prompt=_HE_INITIAL_PROMPT)
         text = (result.text or "").strip()
         # Determine language from character content — no extra model call needed.
         he_chars = sum(1 for c in text if '֐' <= c <= 'ת')

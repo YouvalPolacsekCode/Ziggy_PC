@@ -194,13 +194,13 @@ def _enhance_svg_sync(base_svg: str, room_descriptions: list[str]) -> str:
     Blocking call to GPT-4o. Run in a thread executor to avoid blocking the event loop.
     Returns enhanced SVG, or base_svg on any error.
     """
+    # The key presence check is preserved as a fast early-out — without a key
+    # the gateway would still try and raise. This matches today's behavior:
+    # no behavior change for users who haven't configured OpenAI.
     api_key = settings.get("openai", {}).get("api_key", "")
     if not api_key:
         log_error("[MapRenderer] No OpenAI API key — returning base SVG")
         return base_svg
-
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
 
     rooms_list = "\n".join(f"- {d}" for d in room_descriptions)
 
@@ -237,9 +237,10 @@ BASE SVG:
 {base_svg}"""
 
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+        from integrations.llm_gateway import chat_completion
+        resp = chat_completion(
+            "map_render",
+            [{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=8000,
         )

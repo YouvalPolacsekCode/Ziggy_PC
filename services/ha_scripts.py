@@ -12,10 +12,15 @@ import requests
 
 from core.settings_loader import settings
 from core.logger_module import log_error
+from services import ha_client
 
-HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
-HA_TOKEN: str = settings["home_assistant"]["token"]
-HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+
+def HA_URL() -> str:  # noqa: N802 — callable shim so credential reads stay dynamic
+    return ha_client.url()
+
+
+def HEADERS() -> dict:  # noqa: N802
+    return ha_client.headers()
 
 # ── Routine-only sidecar metadata ─────────────────────────────────────────────
 # HA scripts have no `icon` field, so the user's icon choice would otherwise be
@@ -149,7 +154,7 @@ def list_scripts() -> list:
 
     try:
         if cache_items is None:
-            resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
+            resp = requests.get(f"{HA_URL()}/api/states", headers=HEADERS(), timeout=10)
             if resp.status_code != 200:
                 return []
             cache_items = [(s.get("entity_id", ""), s) for s in resp.json()]
@@ -180,8 +185,8 @@ def list_scripts() -> list:
 
 def get_script_for_ui(script_id: str) -> Optional[dict]:
     try:
-        resp = requests.get(f"{HA_URL}/api/config/script/config/{script_id}",
-                            headers=HEADERS, timeout=10)
+        resp = requests.get(f"{HA_URL()}/api/config/script/config/{script_id}",
+                            headers=HEADERS(), timeout=10)
         if resp.status_code != 200:
             return None
         cfg = resp.json()
@@ -217,8 +222,8 @@ def save_script(data: dict, script_id: Optional[str] = None) -> dict:
         "mode": "single",
     }
     try:
-        resp = requests.post(f"{HA_URL}/api/config/script/config/{script_id}",
-                             headers=HEADERS, json=ha_cfg, timeout=10)
+        resp = requests.post(f"{HA_URL()}/api/config/script/config/{script_id}",
+                             headers=HEADERS(), json=ha_cfg, timeout=10)
         if resp.status_code in (200, 201):
             # HA has no icon field on scripts — persist it in our own sidecar
             # so the user's wizard pick survives reload. Stored even when
@@ -233,8 +238,8 @@ def save_script(data: dict, script_id: Optional[str] = None) -> dict:
 
 def delete_script(script_id: str) -> bool:
     try:
-        resp = requests.delete(f"{HA_URL}/api/config/script/config/{script_id}",
-                               headers=HEADERS, timeout=10)
+        resp = requests.delete(f"{HA_URL()}/api/config/script/config/{script_id}",
+                               headers=HEADERS(), timeout=10)
         ok = resp.status_code in (200, 204)
         if ok:
             _delete_routine_meta(script_id)
@@ -246,8 +251,8 @@ def delete_script(script_id: str) -> bool:
 
 def run_script(script_id: str) -> bool:
     try:
-        resp = requests.post(f"{HA_URL}/api/services/script/turn_on",
-                             headers=HEADERS,
+        resp = requests.post(f"{HA_URL()}/api/services/script/turn_on",
+                             headers=HEADERS(),
                              json={"entity_id": f"script.{script_id}"},
                              timeout=10)
         return resp.status_code == 200

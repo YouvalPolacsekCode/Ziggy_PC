@@ -16,10 +16,16 @@ import requests
 
 from core.settings_loader import settings
 from core.logger_module import log_error
+from services import ha_client
 
-HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
-HA_TOKEN: str = settings["home_assistant"]["token"]
-HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+# Local aliases so the call sites below stay readable. Each call resolves
+# the current URL/headers — no import-time credential snapshot.
+def HA_URL() -> str:  # noqa: N802 — preserved as a callable shim for now
+    return ha_client.url()
+
+
+def HEADERS() -> dict:  # noqa: N802
+    return ha_client.headers()
 
 
 def _slug(name: str) -> str:
@@ -237,7 +243,7 @@ def list_automations() -> list:
                     "source": "ha",
                 })
         else:
-            resp = requests.get(f"{HA_URL}/api/states", headers=HEADERS, timeout=10)
+            resp = requests.get(f"{HA_URL()}/api/states", headers=HEADERS(), timeout=10)
             if resp.status_code == 200:
                 for s in resp.json():
                     eid = s.get("entity_id", "")
@@ -283,8 +289,8 @@ def get_automation_for_ui(auto_id: str) -> Optional[dict]:
 
     # Try HA first.
     try:
-        resp = requests.get(f"{HA_URL}/api/config/automation/config/{auto_id}",
-                            headers=HEADERS, timeout=10)
+        resp = requests.get(f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                            headers=HEADERS(), timeout=10)
         if resp.status_code == 200:
             cfg = resp.json()
             # HA 2024+ uses plural keys ("triggers", "actions"); older HA uses singular.
@@ -402,8 +408,8 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         "mode": "single",
     }
     try:
-        resp = requests.post(f"{HA_URL}/api/config/automation/config/{auto_id}",
-                             headers=HEADERS, json=ha_cfg, timeout=10)
+        resp = requests.post(f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                             headers=HEADERS(), json=ha_cfg, timeout=10)
         if resp.status_code in (200, 201):
             save_ziggy_actions(auto_id, ziggy_actions)
             # Cache trigger + name so list_automations() can display them without
@@ -507,8 +513,8 @@ def _save_paired_automation(data: dict, base_auto_id: Optional[str] = None) -> d
 
 def delete_automation(auto_id: str) -> bool:
     try:
-        resp = requests.delete(f"{HA_URL}/api/config/automation/config/{auto_id}",
-                               headers=HEADERS, timeout=10)
+        resp = requests.delete(f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                               headers=HEADERS(), timeout=10)
         return resp.status_code in (200, 204)
     except Exception as e:
         log_error(f"[HA Automations] delete {auto_id}: {e}")
@@ -518,8 +524,8 @@ def delete_automation(auto_id: str) -> bool:
 def toggle_automation(auto_id: str, enable: bool) -> bool:
     service = "turn_on" if enable else "turn_off"
     try:
-        resp = requests.post(f"{HA_URL}/api/services/automation/{service}",
-                             headers=HEADERS,
+        resp = requests.post(f"{HA_URL()}/api/services/automation/{service}",
+                             headers=HEADERS(),
                              json={"entity_id": f"automation.{auto_id}"},
                              timeout=10)
         return resp.status_code == 200
@@ -530,8 +536,8 @@ def toggle_automation(auto_id: str, enable: bool) -> bool:
 
 def trigger_automation(auto_id: str) -> bool:
     try:
-        resp = requests.post(f"{HA_URL}/api/services/automation/trigger",
-                             headers=HEADERS,
+        resp = requests.post(f"{HA_URL()}/api/services/automation/trigger",
+                             headers=HEADERS(),
                              json={"entity_id": f"automation.{auto_id}"},
                              timeout=10)
         return resp.status_code == 200

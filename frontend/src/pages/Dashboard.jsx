@@ -9,14 +9,14 @@ import { useUIStore } from '../stores/uiStore'
 import { useFeature } from '../stores/featuresStore'
 import { useWsMessages } from '../hooks/useWebSocket'
 import { greetingByTime, humanizeSlug, entityDisplayName } from '../lib/utils'
-import { getActivity, getActiveAnomalies, getHealth, reloadZigbee, getPresencePersons, sendDirectIntent } from '../lib/api'
+import { getActivity, getActiveAnomalies, getHealth, getPresencePersons, sendDirectIntent } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
 import { findRoomMetric, deviceFacts, sendDeviceCommand, kindMeta } from '../lib/devices'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
+import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
 import { Pencil, Play, Sparkles, Check, ChevronRight } from 'lucide-react'
 import { useT, t as tt } from '../lib/i18n'
-import { describeError } from '../lib/errors'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
@@ -806,11 +806,6 @@ export default function Dashboard() {
   const [activity,          setActivity]          = useState([])
   const [anomalies,         setAnomalies]         = useState([])
   const [health,            setHealth]            = useState(null)
-  const [reloading,         setReloading]         = useState(false)
-  const [reloadMsg,         setReloadMsg]         = useState(null)
-  const [coordDismissedAt,  setCoordDismissedAt]  = useState(() => {
-    try { return parseInt(localStorage.getItem('coordWarnDismissed') || '0', 10) } catch { return 0 }
-  })
   const [presencePersons,   setPresencePersons]   = useState([])
 
   const loadAnomalies = useCallback(() => {
@@ -965,8 +960,7 @@ export default function Dashboard() {
       pickKind(e => e.domain === 'lock'),
     ].filter(Boolean)
   }, [entities, entityMap, quickControlIds])
-  const haOffline    = health !== null && health.ha_connected === false
-  const coordWarning = health?.coordinator_warning && !haOffline
+  const haOffline = health !== null && health.ha_connected === false
 
   const alerts = [
     ...(haOffline ? [{ id: 'ha-offline', sev: 'critical', text: t('dashboard.haOffline'), to: '/settings' }] : []),
@@ -981,21 +975,6 @@ export default function Dashboard() {
     : t('dashboard.homeCalm')
 
   const homePersons = presencePersons.filter(p => (p.effective_state ?? p.state) === 'home')
-
-  const handleReloadZigbee = async () => {
-    setReloading(true); setReloadMsg(null)
-    try {
-      const r = await reloadZigbee()
-      // Backend returns a localized success message in r.message. If the
-      // shape is missing it (unexpected), still render the localized
-      // "action didn't complete" instead of "undefined".
-      setReloadMsg({ ok: true, text: r?.message || tt('common.success') })
-    } catch (e) {
-      // describeError filters raw exception/HTTP text — user sees a friendly
-      // localized string regardless of what the backend or network coughed up.
-      setReloadMsg({ ok: false, text: describeError(e).message })
-    } finally { setReloading(false) }
-  }
 
   // Presence string: "Maya & kids home" style
   const homeNames = homePersons.map(p => p.name)
@@ -1059,24 +1038,15 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* System health banners */}
-      {haOffline && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--err) 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--err) 30%, transparent)', fontSize: 12, color: 'var(--ink)' }}>
-          <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
-          <span style={{ fontWeight: 600 }}>Home Assistant is offline.</span>
-          <span style={{ color: 'var(--ink-mute)' }}>Device control will not work.</span>
-        </div>
-      )}
-      {coordWarning && coordDismissedAt !== health?.offline_count && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--err) 10%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--err) 30%, transparent)', fontSize: 12, color: 'var(--ink)' }}>
-          <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
-          <span style={{ fontWeight: 600 }}>{health.offline_count} device{health.offline_count === 1 ? '' : 's'} offline.</span>
-          <span style={{ color: 'var(--ink-mute)', flex: 1 }}>Some devices may be unreachable.</span>
-          <button onClick={handleReloadZigbee} disabled={reloading} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--err)', color: 'var(--on-accent)', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}>
-            {reloading ? 'Reconnecting…' : 'Reconnect'}
-          </button>
-          <button onClick={() => { try { localStorage.setItem('coordWarnDismissed', String(health.offline_count)) } catch {} setCoordDismissedAt(health.offline_count) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, padding: '0 2px' }}>×</button>
-        </div>
+      {/* System health banner (services/ha_health.py drives the layered
+          failure model — HA-down / coordinator-down / devices-offline / manual
+          replug — and its own retry + ack actions live inside the component).
+          The two inline banners that used to live here are subsumed by it. */}
+      {health?.system_health && (
+        <SystemHealthBanner
+          health={health}
+          onRefresh={() => { getHealth().then(setHealth).catch(() => {}) }}
+        />
       )}
 
       {/* ── 2. Rooms carousel ── */}

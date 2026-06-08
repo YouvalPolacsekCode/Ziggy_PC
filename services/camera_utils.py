@@ -3,9 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from core.settings_loader import settings
-
-_HA_URL: str = settings.get("home_assistant", {}).get("url", "").rstrip("/")
-_HA_TOKEN: str = settings.get("home_assistant", {}).get("token", "")
+from services import ha_client
 
 
 def resolve_camera_entity(name: str) -> Optional[str]:
@@ -17,8 +15,10 @@ def resolve_camera_entity(name: str) -> Optional[str]:
 
 def ha_camera_stream_url(entity_id: str) -> Optional[str]:
     """Raw HA stream URL — contains the HA token. Do NOT send to frontend."""
-    if _HA_URL and _HA_TOKEN and entity_id:
-        return f"{_HA_URL}/api/camera_proxy_stream/{entity_id}?token={_HA_TOKEN}"
+    ha_url = ha_client.url()
+    ha_token = ha_client.token()
+    if ha_url and ha_token and entity_id:
+        return f"{ha_url}/api/camera_proxy_stream/{entity_id}?token={ha_token}"
     return None
 
 

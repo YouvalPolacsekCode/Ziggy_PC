@@ -32,12 +32,11 @@ import requests
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE, TRACE
+from services import ha_client
 
-HA_URL: str = settings["home_assistant"]["url"].rstrip("/")
-HA_TOKEN: str = settings["home_assistant"]["token"]
-WS_URL = HA_URL.replace("https://", "wss://").replace("http://", "ws://") + "/api/websocket"
-REST_STATES_URL = f"{HA_URL}/api/states"
-REST_HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+# Credentials are read live inside _run_once / _refresh_with_retry. Snapshotting
+# them at import time would mean a token rotation only takes effect after a full
+# process restart — ha_runtime.set_ha_credentials + kick_reconnect now suffices.
 
 # Shared in-memory state cache.  Read by anomaly_engine and /api/rooms/summary.
 # { entity_id: { "state": str, "attributes": dict, "last_changed": str } }
@@ -50,8 +49,14 @@ active_anomalies: dict[str, list] = {}
 # Becomes False when the connection drops.  Read by /api/health.
 ha_connected: bool = False
 # Timestamp of the most recent successful reconnect — used by anomaly engine
-# to suppress false device-offline alerts caused by HA hiccups.
+# to suppress false device-offline alerts caused by HA hiccups. MONOTONIC
+# (compared with time.monotonic() in anomaly_engine; do not change to wall
+# clock without updating the comparison there).
 ha_last_reconnect: float = 0.0
+# Same event in wall-clock time, for UIs that need an absolute timestamp
+# (System health banner / Settings → Advanced). Updated alongside
+# ha_last_reconnect; both are best-effort hints, never used for control flow.
+ha_last_reconnect_wall: float = 0.0
 
 _BACKOFF_BASE = 2
 _BACKOFF_MAX = 60
@@ -77,7 +82,7 @@ def _full_state_refresh() -> bool:
     showing ghost entries.
     """
     try:
-        resp = requests.get(REST_STATES_URL, headers=REST_HEADERS, timeout=15)
+        resp = requests.get(f"{ha_client.url()}/api/states", headers=ha_client.headers(), timeout=15)
         resp.raise_for_status()
         pre_keys = set(state_cache.keys())
         seen: set[str] = set()
@@ -267,11 +272,15 @@ async def _process_event(event: dict) -> None:
 
 async def _run_once() -> None:
     """One connection attempt: connect, auth, subscribe, refresh, process events."""
-    global ha_connected
-    async with websockets.connect(WS_URL, ping_interval=30, ping_timeout=10) as ws:
+    global ha_connected, ha_last_reconnect, ha_last_reconnect_wall
+    # Resolve creds at connect time so a credential rotation is picked up on
+    # the next reconnect without a process restart.
+    ws_url = ha_client.ws_url()
+    ha_token = ha_client.token()
+    async with websockets.connect(ws_url, ping_interval=30, ping_timeout=10) as ws:
         # Auth handshake
         await ws.recv()  # auth_required
-        await ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
+        await ws.send(json.dumps({"type": "auth", "access_token": ha_token}))
         auth_resp = json.loads(await ws.recv())
         if auth_resp.get("type") != "auth_ok":
             raise RuntimeError(f"HA auth failed: {auth_resp}")
@@ -286,8 +295,9 @@ async def _run_once() -> None:
         log_info("[HASubscriber] Connected and subscribed. Loading state snapshot…")
         ha_connected = True
         ha_last_reconnect = _time_mod.monotonic()
+        ha_last_reconnect_wall = _time_mod.time()
         _dbus.emit("ha", BASIC, "ha_subscriber_connected",
-                   url=WS_URL, result="ok")
+                   url=ws_url, result="ok")
 
         # Full state refresh before processing any buffered events
         loop = asyncio.get_event_loop()
