@@ -1,5 +1,5 @@
 # scripts/fleet.yml -- list of homes to query for fleet-status.sh.
 # Each entry: { name, url }. Add more as you onboard new homes.
 homes:
-  - name: home-youval-primary
+  - name: home-ziggy-primary
     url: https://app.ziggy-home.com
