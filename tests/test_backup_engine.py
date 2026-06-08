@@ -821,3 +821,166 @@ def test_cli_failure_returns_nonzero(monkeypatch, capsys, ctx, tmp_path):
                         lambda *a, **kw: ctx)
     code = be._main(["--once"])
     assert code == 1
+
+
+# ---------- relay status POST ----------
+#
+# Coverage for _report_status_to_relay: the hub posts the run outcome
+# (success OR failure) to the relay so the founder GET sees an audit
+# trail. The POST is signed with the per-home relay_secret and must not
+# crash the backup if the relay is unreachable.
+
+
+def _wire_relay(ctx, posted: list, status: int = 200):
+    """Attach mock relay config + a capturing _relay_post hook to ctx.
+
+    The hook appends (url, headers, body) to `posted` so tests can assert
+    what the engine tried to send.
+    """
+    ctx.relay_url = "https://ziggy-relay.fly.dev"
+    ctx.relay_secret = "test-secret"
+
+    def _fake_post(url, headers, body, timeout):
+        posted.append({"url": url, "headers": headers, "body": body, "timeout": timeout})
+        return status
+
+    ctx._relay_post = _fake_post
+
+
+def test_relay_status_post_fires_on_success(ctx, mock_storage):
+    posted: list = []
+    _wire_relay(ctx, posted)
+    res = be.run_daily_backup(ctx)
+    assert res["ok"] is True
+    assert len(posted) == 1
+    call = posted[0]
+    assert call["url"] == "https://ziggy-relay.fly.dev/api/homes/home-1/backup-status"
+    assert "X-Ziggy-Signature" in call["headers"]
+    body = json.loads(call["body"])
+    assert body["outcome"] == "success"
+    assert body["stage"] == "done"
+    assert body["uploaded_bytes"] > 0
+    assert body["error_reason"] is None
+    assert body["skipped_reason"] is None
+    assert body["dry_run"] is False
+    assert "ha-config.tar.gz.enc" in body["files"]
+
+
+def test_relay_status_post_fires_on_failure(ctx):
+    """Pre-flight failure still produces a status POST with outcome=failure."""
+    posted: list = []
+    _wire_relay(ctx, posted)
+    ctx._ntp_skew_provider = lambda: 999.0  # force pre-flight failure
+    res = be.run_daily_backup(ctx)
+    assert res["ok"] is False
+    assert res["stage"] == "preflight"
+    assert len(posted) == 1
+    body = json.loads(posted[0]["body"])
+    assert body["outcome"] == "failure"
+    assert body["stage"] == "preflight"
+    assert "Clock skew" in body["error_reason"]
+
+
+def test_relay_status_post_failure_does_not_crash_backup(ctx, mock_storage):
+    """Relay round-trip failure must NOT poison a successful backup."""
+    posted: list = []
+
+    def _broken_post(url, headers, body, timeout):
+        posted.append(body)
+        raise RuntimeError("simulated relay network outage")
+
+    ctx.relay_url = "https://ziggy-relay.fly.dev"
+    ctx.relay_secret = "test-secret"
+    ctx._relay_post = _broken_post
+
+    res = be.run_daily_backup(ctx)
+    # The backup itself still succeeded — uploaded bytes, files in result.
+    assert res["ok"] is True, res
+    assert res["stage"] == "done"
+    assert res["uploaded_bytes"] > 0
+    # The POST was attempted (proves we entered the reporter) and the
+    # raise propagated up to the swallowing try/except in run_daily_backup.
+    assert len(posted) == 1
+
+
+def test_relay_status_post_skipped_when_creds_missing(ctx, mock_storage):
+    """No relay_url/relay_secret => no POST attempted, no log noise."""
+    posted: list = []
+    # Hook is set but should never be invoked because creds are absent.
+    ctx._relay_post = lambda *a, **k: posted.append(a) or 200
+    # Explicitly leave relay_url/relay_secret as None (default).
+    assert ctx.relay_url is None
+    assert ctx.relay_secret is None
+    res = be.run_daily_backup(ctx)
+    assert res["ok"] is True
+    assert posted == []
+
+
+def test_relay_status_post_non_2xx_logged_but_swallowed(ctx, mock_storage, caplog):
+    """Relay returning 500 is a warning, not a crash."""
+    import logging
+    posted: list = []
+    _wire_relay(ctx, posted, status=500)
+    with caplog.at_level(logging.WARNING, logger="services.backup_engine"):
+        res = be.run_daily_backup(ctx)
+    assert res["ok"] is True
+    assert len(posted) == 1
+    assert any("HTTP 500" in rec.message or "backup-status" in rec.message
+               for rec in caplog.records)
+
+
+def test_relay_status_post_signature_verifies(ctx, mock_storage):
+    """Signed body must validate with the same HMAC the relay uses."""
+    import hashlib
+    import hmac as _hmac
+    posted: list = []
+    _wire_relay(ctx, posted)
+    res = be.run_daily_backup(ctx)
+    assert res["ok"] is True
+    call = posted[0]
+    sig_header = call["headers"]["X-Ziggy-Signature"]
+    assert sig_header.startswith("t=") and ",v1=" in sig_header
+    ts_part, v1_part = sig_header.split(",")
+    ts = ts_part[len("t="):]
+    v1 = v1_part[len("v1="):]
+    expected = _hmac.new(
+        b"test-secret",
+        f"{ts}.".encode() + call["body"],
+        hashlib.sha256,
+    ).hexdigest()
+    assert _hmac.compare_digest(expected, v1)
+
+
+def test_relay_status_post_skipped_outcome_on_subscription_gate(ctx, mock_storage, monkeypatch):
+    """Subscription-gated skip reports outcome=skipped, not failure."""
+    posted: list = []
+    _wire_relay(ctx, posted)
+    monkeypatch.setattr(
+        "services.subscription_state.is_backup_allowed",
+        lambda: False,
+    )
+    res = be.run_daily_backup(ctx)
+    assert res["ok"] is False
+    assert res["skipped_reason"] == "subscription_gated"
+    assert len(posted) == 1
+    body = json.loads(posted[0]["body"])
+    assert body["outcome"] == "skipped"
+    assert body["skipped_reason"] == "subscription_gated"
+    assert body["error_reason"] is None
+
+
+def test_from_settings_propagates_relay_config(tmp_path, _b2_env):
+    settings, _ = _good_settings(tmp_path)
+    settings["relay"] = {"url": "https://relay.example", "secret": "s3cr3t"}
+    ctx = be.BackupContext.from_settings(settings)
+    assert ctx.relay_url == "https://relay.example"
+    assert ctx.relay_secret == "s3cr3t"
+
+
+def test_from_settings_relay_missing_leaves_none(tmp_path, _b2_env):
+    """Hubs without relay config get None — POST is silently skipped."""
+    settings, _ = _good_settings(tmp_path)
+    settings.pop("relay", None)
+    ctx = be.BackupContext.from_settings(settings)
+    assert ctx.relay_url is None
+    assert ctx.relay_secret is None

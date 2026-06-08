@@ -50,6 +50,7 @@ from typing import Optional
 
 import requests
 
+from core.relay_signing import sign as sign_relay_signature
 from services import backup_keys
 from services.backup_storage import BackupStorage
 
@@ -152,11 +153,25 @@ class BackupContext:
     lock_path: str = DEFAULT_LOCK_PATH
     dry_run: bool = False
 
+    # Relay status-report config. Optional: when relay_url + relay_secret are
+    # both present, the engine POSTs the run outcome to
+    #   {relay_url}/api/homes/{home_id}/backup-status
+    # signed with X-Ziggy-Signature so the founder GET sees an audit trail.
+    # Left as None on dev/test hubs that aren't paired with a relay yet; the
+    # POST is skipped and the backup itself is unaffected.
+    relay_url: Optional[str] = None
+    relay_secret: Optional[str] = None
+
     # Tests inject substitutes via these hooks. Production leaves them None
     # and the real subprocess/requests/socket calls run.
     _ntp_skew_provider: Optional[callable] = None
     _ha_post: Optional[callable] = None
     _now: Optional[callable] = None
+    # Hook for the relay status POST. Signature:
+    #   (url: str, headers: dict, body: bytes, timeout: float) -> int
+    # Returns the HTTP status code. Tests inject a mock; production leaves
+    # this None and requests.post is used.
+    _relay_post: Optional[callable] = None
 
 
 def run_daily_backup(ctx: BackupContext) -> dict:
@@ -243,6 +258,16 @@ def run_daily_backup(ctx: BackupContext) -> dict:
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
         log.error("backup failed at stage=%s: %s", result["stage"], e, exc_info=True)
+
+    # Report outcome to the relay (success OR failure). Wrapped in a broad
+    # try/except so a relay outage cannot poison an otherwise successful
+    # backup. Skipped silently when relay creds are not configured so the
+    # backup engine remains usable on dev hubs not paired with the relay.
+    try:
+        _report_status_to_relay(ctx, result)
+    except Exception as e:
+        log.warning("relay backup-status POST failed (non-fatal): %s", e)
+
     return result
 
 
@@ -680,6 +705,80 @@ def _promote_to_latest(ctx: BackupContext, filenames: list[str]) -> None:
         )
 
 
+# ---------- relay status report ----------
+
+def _report_status_to_relay(ctx: BackupContext, result: dict) -> None:
+    """POST the run outcome to the relay's backup-status endpoint.
+
+    Mirrors services/ota_client.py's signing pattern: serialize the body
+    once, sign those exact bytes with the per-home relay_secret, send the
+    same bytes with the X-Ziggy-Signature header.
+
+    Dev hubs without relay creds (relay_url or relay_secret missing) are
+    silently skipped. A dry-run is reported with dry_run=true so the
+    founder can tell apart a real upload from a simulated one.
+
+    Body shape matches relay/app/routers/backup_keys.py::report_backup_status
+    which accepts a free-form JSON object. We send:
+      outcome           "success" | "failure" | "skipped"
+      stage             last stage reached (preflight/zha/.../done/lock)
+      uploaded_bytes    bytes successfully pushed to B2 this run
+      files             list of bundle filenames in the manifest
+      optional_skipped  list of bundles deliberately omitted (e.g. oversized recorder.db)
+      ha_version        HA version at backup time (informational)
+      ziggy_version     hub version at backup time (informational)
+      error_reason      short error tag if outcome=="failure"; null otherwise
+      skipped_reason    why we skipped (e.g. subscription_gated); null otherwise
+      dry_run           true iff this was a dry-run (no real upload)
+    """
+    if not ctx.relay_url or not ctx.relay_secret:
+        log.debug("relay creds missing; skipping backup-status POST")
+        return
+
+    if result.get("ok"):
+        outcome = "success"
+    elif result.get("skipped_reason"):
+        outcome = "skipped"
+    else:
+        outcome = "failure"
+
+    payload = {
+        "outcome": outcome,
+        "stage": result.get("stage"),
+        "uploaded_bytes": result.get("uploaded_bytes", 0),
+        "files": result.get("files", []),
+        "optional_skipped": result.get("optional_skipped", []),
+        "ha_version": ctx.ha_version,
+        "ziggy_version": ctx.ziggy_version,
+        "error_reason": result.get("error"),
+        "skipped_reason": result.get("skipped_reason"),
+        "dry_run": bool(ctx.dry_run),
+    }
+    # Serialize once; sign the exact bytes we send so the relay's HMAC
+    # verify (which hashes the raw request body) matches deterministically.
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    sig = sign_relay_signature(ctx.relay_secret, body)
+    url = ctx.relay_url.rstrip("/") + f"/api/homes/{ctx.home_id}/backup-status"
+    headers = {
+        "X-Ziggy-Signature": sig,
+        "Content-Type": "application/json",
+    }
+    poster = ctx._relay_post or _real_relay_post
+    status = poster(url, headers, body, 15.0)
+    if not (200 <= status < 300):
+        # Caller's try/except will log this as a warning; we raise so the
+        # outer wrapper records the actual HTTP code in the log line.
+        raise RuntimeError(f"relay returned HTTP {status} from backup-status")
+    log.info("backup-status reported to relay: outcome=%s home=%s",
+             outcome, ctx.home_id)
+
+
+def _real_relay_post(url: str, headers: dict, body: bytes, timeout: float) -> int:
+    """Default transport for _report_status_to_relay. Returns HTTP status."""
+    resp = requests.post(url, headers=headers, data=body, timeout=timeout)
+    return resp.status_code
+
+
 # ---------- file lock with stale-PID cleanup ----------
 #
 # Chunk #5 impl flag (DESIGN_BACKUP_DR.md §13): on lock acquisition,
@@ -870,6 +969,7 @@ def _build_context_from_settings(
     backup_cfg = (settings or {}).get("backup") or {}
     home_cfg = (settings or {}).get("home") or {}
     ha_cfg = (settings or {}).get("home_assistant") or {}
+    relay_cfg = (settings or {}).get("relay") or {}
 
     home_id = home_cfg.get("id")
     if not home_id:
@@ -920,6 +1020,8 @@ def _build_context_from_settings(
         lock_path=backup_cfg.get("lock_path", DEFAULT_LOCK_PATH),
         dry_run=dry_run,
         today=today or dt.date.today(),
+        relay_url=relay_cfg.get("url"),
+        relay_secret=relay_cfg.get("secret"),
     )
 
 
