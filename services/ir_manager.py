@@ -25,6 +25,14 @@ from typing import Optional
 from core.logger_module import log_info, log_error
 from core.debug_bus import bus as _debug_bus, BASIC, VERBOSE
 from services.home_automation import call_service, get_all_states, get_state
+from services.device_state_compat import (
+    ac_state_to_dict,
+    apply_button as _state_apply_button,
+    apply_decoded_state as _state_apply_decoded,
+    ensure_state as _state_ensure,
+    state_snapshot as _state_snapshot,
+    template_for_device_type as _template_for_type,
+)
 
 IR_DEVICES_FILE = "user_files/ir_devices.json"
 
@@ -38,10 +46,19 @@ def _load() -> list[dict]:
         return []
     try:
         with open(IR_DEVICES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            devices = json.load(f)
     except Exception as e:
         log_error(f"[IR] Failed to load {IR_DEVICES_FILE}: {e}")
         return []
+    # Auto-migrate legacy records to the universal state engine on every read.
+    # Idempotent — devices that already have `state` are untouched. The
+    # promotion is purely in-memory until something mutates and saves.
+    for d in devices:
+        try:
+            _state_ensure(d)
+        except Exception as e:
+            log_error(f"[IR] state migration failed for {d.get('id')}: {e}")
+    return devices
 
 
 def _save(devices: list[dict]) -> None:
@@ -189,6 +206,15 @@ def create_ir_device(
         },
         "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
+    # Initialize the universal state record from the device type's template.
+    # This is the new canonical state surface; legacy fields (ac_memory,
+    # assumed_state) stay populated as mirrors via the compat shim.
+    try:
+        tpl = _template_for_type(device_type)
+        from services.device_state import make_state_record
+        device["state"] = make_state_record(tpl)
+    except Exception as e:
+        log_error(f"[IR] Failed to init state record for new device: {e}")
     devices = _load()
     devices.append(device)
     _save(devices)
@@ -206,6 +232,11 @@ def update_ir_device(device_id: str, updates: dict) -> Optional[dict]:
         "last_command_sent", "last_command_sent_at",
         # Free-form user-defined buttons (managed via add/remove_custom_command).
         "custom_commands",
+        # Universal state engine record — written by the compat shim.
+        "state",
+        # Blaster vendor selector (broadlink | avatto | ...) — picked by the
+        # blaster abstraction registry. Falls back to broadlink when missing.
+        "blaster_vendor", "blaster_model",
     }
     # normalise device_type → type (frontend uses device_type, storage uses type)
     if "device_type" in updates:
@@ -507,7 +538,10 @@ def get_device_state_with_confidence(device: dict) -> tuple[str, str]:
 
     confidence values:
       "confirmed"  — live HA entity state
-      "estimated"  — Ziggy sent a command and assumed state updated
+      "live"       — IR-confirmed within the last 30s (physical-remote press
+                     decoded or stateful payload decoded)
+      "estimated"  — Ziggy-initiated command or older IR-confirmed observation
+      "stale"      — no observation for hours
       "unknown"    — no state information available
     """
     ha_eid = device.get("ha_entity_id")
@@ -520,10 +554,39 @@ def get_device_state_with_confidence(device: dict) -> tuple[str, str]:
             if raw in ("off", "unavailable"):
                 return "off", "confirmed"
 
+    # Engine-driven confidence — uses live_at / estimated_at on device["state"].
+    try:
+        snap = _state_snapshot(device)
+        power = snap.get("values", {}).get("power")
+        if power is True:
+            return "on", snap.get("confidence", "unknown")
+        if power is False:
+            return "off", snap.get("confidence", "unknown")
+    except Exception:
+        pass
+
+    # Legacy fallback
     assumed = device.get("assumed_state", "unknown")
     if assumed in ("on", "off"):
         return assumed, "estimated"
     return "unknown", "unknown"
+
+
+def get_device_state_snapshot(device: dict) -> dict:
+    """Full state snapshot for the UI — values + confidence + age.
+
+    Includes:
+      - template: "ac" | "tv" | "streamer" | ...
+      - values:   field-keyed state (e.g. {"power": True, "temp": 24, ...})
+      - confidence: "live" | "estimated" | "stale" | "unknown"
+      - age_seconds: how old the chosen-band observation is
+      - device_id, name, type, room (denormalized for the UI)
+    """
+    snap = _state_snapshot(device)
+    snap["name"] = device.get("name")
+    snap["type"] = device.get("type")
+    snap["room"] = device.get("room")
+    return snap
 
 
 def _record_last_command(device_id: str, command: str) -> None:
@@ -563,57 +626,50 @@ def _update_ac_memory(device_id: str, **kwargs) -> None:
 def apply_decoded_ac_command(device_id: str, ac_command) -> bool:
     """
     Apply a decoded short-packet AC command (TEMP+, TEMP-, FAN, SWING) as
-    an increment against the device's ac_memory. Distinct from
-    apply_decoded_ac_state — short packets carry only the action, not the
-    resulting state, so we mutate the locally tracked memory.
+    an increment against device state via the universal engine.
+
+    Short packets carry only the action, not the resulting state — so we
+    map the action to a logical button name and let the engine apply the
+    template's mutation. Idempotent across stateful and stateless devices.
 
     Stops short of any change for action='unknown' — those captures get
     logged at the listener and the user pastes them back so we can map
-    the command-encoding bits. After that mapping lands, action will
-    arrive as a concrete value and this method does its job.
+    the command-encoding bits.
 
     `ac_command` is a services.ir_protocol.AcCommand. Accepted as plain
     object to avoid an import cycle.
     """
     action = getattr(ac_command, "action", None)
     if not action or action == "unknown":
-        return False  # nothing actionable to apply
+        return False
+
+    # Map decoder action names to template button names. The engine handles
+    # the rest (incr/decr/cycle/toggle with proper clamping).
+    action_to_button = {
+        "temp_up":   "temp_up",
+        "temp_down": "temp_down",
+        "fan_cycle": "fan_cycle",   # template's button_mutations may handle as cycle
+        "swing":     "swing",
+    }
+    button = action_to_button.get(action)
+    if not button:
+        return False
 
     devices = _load()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    fan_cycle = ["auto", "low", "medium", "high"]
-
     for d in devices:
         if d["id"] != device_id:
             continue
-        mem = d.get("ac_memory") or {}
-        prev_temp = mem.get("temp")
-        prev_fan  = mem.get("fan")
-
-        if action == "temp_up":
-            if prev_temp is None:
-                prev_temp = 24  # default starting point if we never saw a full-state packet
-            mem["temp"] = min(30, int(prev_temp) + 1)
-        elif action == "temp_down":
-            if prev_temp is None:
-                prev_temp = 24
-            mem["temp"] = max(16, int(prev_temp) - 1)
-        elif action == "fan_cycle":
-            idx = fan_cycle.index(prev_fan) if prev_fan in fan_cycle else -1
-            mem["fan"] = fan_cycle[(idx + 1) % len(fan_cycle)]
-        elif action == "swing":
-            mem["swing"] = "on" if mem.get("swing") != "on" else "off"
-        else:
-            return False  # action recognized in dataclass but not yet handled
-
-        d["ac_memory"] = mem
+        # Physical-remote press = live observation
+        _state_apply_button(d, button, source="live")
         brand = getattr(ac_command, "brand", "") or "unknown"
         d["last_command_sent"] = f"physical_remote_{action}"
         d["last_command_sent_at"] = timestamp
         _save(devices)
+        values = d.get("state", {}).get("values", {})
         log_info(
             f"[IR] Applied AC command {action} to {d.get('name')}: "
-            f"ac_memory={mem} brand={brand}"
+            f"values={values} brand={brand}"
         )
         return True
     return False
@@ -624,38 +680,28 @@ def apply_decoded_ac_state(device_id: str, ac_state) -> bool:
     Apply state extracted from a physical-remote AC IR packet to the device.
 
     Called by ir_listener when an AC protocol packet (Mitsubishi, Daikin,
-    Gree/Tadiran, ...) is decoded but no exact code matches. Updates the
-    assumed_state, ac_memory, and last-command tracking so Ziggy's
-    next-command logic (power-first if off, ac_memory-based mode/temp
-    preservation) reflects what the physical remote just did.
+    Gree/Tadiran, ...) is decoded but no exact code matches. The stateful-
+    protocol payload carries the FULL desired state, so this is a state-
+    replace via the universal engine. live_at gets bumped, confidence
+    goes to 'live', and the compat shim mirrors legacy fields.
 
     `ac_state` is a services.ir_protocol.AcState dataclass. Accepted as
     plain object here to avoid an import cycle (ir_protocol stays pure).
     """
     devices = _load()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    decoded = ac_state_to_dict(ac_state)
     for d in devices:
         if d["id"] != device_id:
             continue
-        if getattr(ac_state, "power", None) in ("on", "off"):
-            d["assumed_state"] = ac_state.power
-            d["assumed_state_at"] = timestamp
-        mem = d.get("ac_memory") or {}
-        for field in ("mode", "temp", "fan"):
-            val = getattr(ac_state, field, None)
-            if val is not None:
-                mem[field] = val
-        d["ac_memory"] = mem
+        _state_apply_decoded(d, decoded)
         brand = getattr(ac_state, "brand", "") or "unknown"
         d["last_command_sent"] = f"physical_remote_{brand}"
         d["last_command_sent_at"] = timestamp
         _save(devices)
         log_info(
             f"[IR] Applied decoded AC state to {d.get('name')}: "
-            f"power={getattr(ac_state, 'power', None)} "
-            f"mode={getattr(ac_state, 'mode', None)} "
-            f"temp={getattr(ac_state, 'temp', None)} "
-            f"fan={getattr(ac_state, 'fan', None)} brand={brand}"
+            f"decoded={decoded} brand={brand}"
         )
         return True
     return False
@@ -813,38 +859,21 @@ def _direct_send(host: str, code_b64: str, repeats: int = 1) -> dict:
 
 def _after_command(device_id: str, device: dict, logical_command: str) -> None:
     """Update assumed state, AC memory, and last-sent tracking after a successful command."""
-    dtype = device.get("type", "")
-    current = device.get("assumed_state", "unknown")
-
     # Always record what was sent and when, regardless of command type
     _record_last_command(device_id, logical_command)
 
-    if logical_command == "power_on":
-        # Explicit on — AC remotes send different codes for on vs off
-        _set_assumed_state(device_id, "on")
-
-    elif logical_command == "power_off":
-        # Explicit off
-        _set_assumed_state(device_id, "off")
-
-    elif logical_command == "power":
-        # Toggle: on→off, off→on, unknown→on (optimistic)
-        new_state = "off" if current == "on" else "on"
-        _set_assumed_state(device_id, new_state)
-
-    elif dtype == "ac":
-        if logical_command.startswith("mode_"):
-            _update_ac_memory(device_id, mode=logical_command.replace("mode_", ""))
-            _set_assumed_state(device_id, "on")
-        elif logical_command.startswith("temp_"):
-            try:
-                temp = int(logical_command.split("_")[1])
-                _update_ac_memory(device_id, temp=temp)
-            except ValueError:
-                pass
-            _set_assumed_state(device_id, "on")
-        elif logical_command.startswith("fan_"):
-            _update_ac_memory(device_id, fan=logical_command.replace("fan_", ""))
+    # Route the mutation through the universal state engine. This handles
+    # power_on / power_off / power / mode_* / temp_* / fan_* / vol_up /
+    # mute / ch_up / play_pause / ... uniformly per the device's template.
+    # The compat shim mirrors back to assumed_state and ac_memory so
+    # existing consumers don't notice the change.
+    devices = _load()
+    for d in devices:
+        if d["id"] != device_id:
+            continue
+        _state_apply_button(d, logical_command, source="estimated")
+        _save(devices)
+        break
 
 
 # ---------------------------------------------------------------------------

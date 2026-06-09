@@ -183,6 +183,11 @@ def _ac_template() -> DeviceTemplate:
         "fan_medium": [Mutation("fan", "set", value="medium")],
         "fan_high":   [Mutation("fan", "set", value="high")],
         "fan_auto":   [Mutation("fan", "set", value="auto")],
+        # Single-button fan cycle on many remotes: advances through the
+        # values list (low → medium → high → auto → low). Mirrors the
+        # legacy fan_cycle = ["auto","low","medium","high"] sequence, since
+        # cycling from "auto" wraps to "low" (first in the schema's values).
+        "fan_cycle":  [Mutation("fan", "cycle")],
         "swing":      [Mutation("swing", "toggle")],
     }
     # Discrete temperature buttons — Tadiran-style remotes can have these.
