@@ -624,12 +624,16 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                 f"payload={payload_hex}"
             )
             try:
-                from services.ir_manager import apply_decoded_ac_state, get_ir_device
+                from services.ir_manager import (
+                    apply_decoded_ac_state, get_ir_device,
+                    get_device_state_snapshot,
+                )
                 applied = apply_decoded_ac_state(device_id, ac_state)
                 updated = get_ir_device(device_id) if applied else None
                 new_state = (
                     updated.get("assumed_state", "unknown") if updated else "unknown"
                 )
+                snapshot = get_device_state_snapshot(updated) if updated else None
                 from backend.ws_manager import manager
                 await manager.broadcast({
                     "type": "ir_command_detected",
@@ -638,6 +642,7 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                     "new_assumed_state": new_state,
                     "source": "physical_remote",
                     "match_method": method,
+                    "state": snapshot,
                     "ac_state": {
                         "power": ac_state.power,
                         "mode": ac_state.mode,
@@ -663,9 +668,13 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                 f"({method}) payload={payload_hex}"
             )
             try:
-                from services.ir_manager import apply_decoded_ac_command, get_ir_device
+                from services.ir_manager import (
+                    apply_decoded_ac_command, get_ir_device,
+                    get_device_state_snapshot,
+                )
                 applied = apply_decoded_ac_command(device_id, ac_command)
                 updated = get_ir_device(device_id) if applied else None
+                snapshot = get_device_state_snapshot(updated) if updated else None
                 from backend.ws_manager import manager
                 await manager.broadcast({
                     "type": "ir_command_detected",
@@ -674,6 +683,7 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                     "new_assumed_state": (updated or {}).get("assumed_state", "unknown") if updated else "unknown",
                     "source": "physical_remote",
                     "match_method": method,
+                    "state": snapshot,
                     # Send the full ac_memory snapshot so the frontend chip
                     # reflects the incremented value immediately. The
                     # decoder only knows "+1 temp" — the manager applied
@@ -734,17 +744,26 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         f"match={match_method}"
     )
 
-    # Re-use the same post-command logic as Ziggy's own sends
+    # Re-use the same post-command logic as Ziggy's own sends — but pass
+    # source="live" so the state engine sets live_at (RX-confirmed) rather
+    # than estimated_at. This is what flips the UI's confidence chip to
+    # "live" the moment a physical-remote button is pressed.
     try:
-        from services.ir_manager import get_ir_device
+        from services.ir_manager import get_ir_device, get_device_state_snapshot
         from services.ir_manager import _after_command  # type: ignore[attr-defined]
         device = get_ir_device(device_id)
         if device:
-            _after_command(device_id, device, logical_cmd)
+            _after_command(device_id, device, logical_cmd, source="live")
 
         # Reload to get the state _after_command just wrote
         updated = get_ir_device(device_id)
         new_state = updated.get("assumed_state", "unknown") if updated else "unknown"
+
+        # Full state snapshot for the device card — includes confidence band
+        # and the per-template values (volume for TV, temp/mode/fan for AC,
+        # playing for streamer, etc.). The UI doesn't have to know the
+        # device class to render correctly anymore.
+        snapshot = get_device_state_snapshot(updated) if updated else None
 
         # Broadcast so the frontend updates the device card immediately — no refresh needed
         from backend.ws_manager import manager
@@ -755,6 +774,7 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
             "new_assumed_state": new_state,
             "source": "physical_remote",
             "match_method": match_method,
+            "state": snapshot,
         })
     except Exception as e:
         log_error(f"[IRListener] State update after detection failed: {e}")

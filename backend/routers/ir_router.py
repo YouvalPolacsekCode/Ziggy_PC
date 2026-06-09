@@ -247,11 +247,20 @@ async def get_single_ir_device(device_id: str):
 
 @router.get("/api/ir/devices/{device_id}/state")
 async def get_ir_device_state(device_id: str):
-    """Return current state + confidence + diagnostics for a single IR device."""
+    """Return current state + confidence + diagnostics for a single IR device.
+
+    Includes the full universal state snapshot (template-keyed values + the
+    live/estimated/stale confidence band) so the device card can render the
+    right control surface regardless of device class (AC, TV, streamer, ...).
+    """
     device = get_ir_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="IR device not found")
+    from services.ir_manager import get_device_state_snapshot
+    from services.ir_blaster import describe_capabilities
     state, confidence = get_device_state_with_confidence(device)
+    snapshot = get_device_state_snapshot(device)
+    blaster_caps = describe_capabilities(device)
     ir_caps = device.get("ir_capabilities") or {}
     return {
         "device_id": device_id,
@@ -266,6 +275,10 @@ async def get_ir_device_state(device_id: str):
         "blaster_host": device.get("blaster_host"),
         "can_receive_ir": ir_caps.get("can_receive_ir", False),
         "supports_feedback": ir_caps.get("supports_feedback", False),
+        # Universal state snapshot — template + per-field values + confidence band
+        "state_snapshot": snapshot,
+        # Blaster capabilities — drives the UI's "live feedback available" badge
+        "blaster": blaster_caps,
     }
 
 

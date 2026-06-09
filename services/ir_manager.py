@@ -857,8 +857,17 @@ def _direct_send(host: str, code_b64: str, repeats: int = 1) -> dict:
         return {"ok": False, "message": f"Direct IR send failed: {e}"}
 
 
-def _after_command(device_id: str, device: dict, logical_command: str) -> None:
-    """Update assumed state, AC memory, and last-sent tracking after a successful command."""
+def _after_command(device_id: str, device: dict, logical_command: str,
+                    *, source: str = "estimated") -> None:
+    """Update assumed state, AC memory, and last-sent tracking after a command.
+
+    `source`:
+      "estimated" — Ziggy initiated this command (default; classic call site).
+      "live"      — physical-remote press just matched a learned code via the
+                    listener. The state mutation is RX-confirmed, so the
+                    engine sets live_at instead of estimated_at and the UI
+                    can flip the confidence chip to "live".
+    """
     # Always record what was sent and when, regardless of command type
     _record_last_command(device_id, logical_command)
 
@@ -871,7 +880,7 @@ def _after_command(device_id: str, device: dict, logical_command: str) -> None:
     for d in devices:
         if d["id"] != device_id:
             continue
-        _state_apply_button(d, logical_command, source="estimated")
+        _state_apply_button(d, logical_command, source=source)
         _save(devices)
         break
 
