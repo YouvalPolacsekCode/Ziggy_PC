@@ -791,19 +791,58 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   const totalCount = Object.keys(device.commands || {}).length
   const room = (device.room || '').replace(/_/g, ' ')
   const [showStatePicker, setShowStatePicker] = useState(false)
-  const assumedState = device.assumed_state && device.assumed_state !== 'unknown'
-    ? device.assumed_state : null
+
+  // Universal state engine — derives values + confidence band from the
+  // canonical device.state record. Falls back to legacy fields when the
+  // record is missing (devices migrated server-side before this client
+  // refresh). The confidence band drives the live/estimated/stale UX
+  // distinction; without it the card can't tell if the AC card's "24°C
+  // cool" is "I just confirmed this from the physical remote" or "I sent
+  // this command 3 days ago and have no idea what the AC is doing now".
+  const stateRec = device.state || {}
+  const stateValues = stateRec.values || {}
+  const confidence = (() => {
+    const live = stateRec.live_at
+    const est = stateRec.estimated_at
+    if (!live && !est) return 'unknown'
+    const now = Date.now() / 1000
+    if (live && now - live <= 30) return 'live'
+    if (est && now - est <= 6 * 3600) return 'estimated'
+    if (live && now - live <= 6 * 3600) return 'estimated'
+    return 'stale'
+  })()
+
+  const assumedState = (() => {
+    if (typeof stateValues.power === 'boolean') {
+      return stateValues.power ? 'on' : 'off'
+    }
+    return device.assumed_state && device.assumed_state !== 'unknown'
+      ? device.assumed_state : null
+  })()
   const stateOptions = IR_STATE_OPTIONS[device.device_type ?? device.type] || IR_STATE_OPTIONS.default
-  // AC state — populated by protocol decoders when a physical-remote packet
-  // is recognized (currently Mitsubishi, Daikin, Gree-vanilla). Tadiran
-  // packets decode but state-bit mapping isn't implemented yet, so this
-  // stays empty for Tadiran until the bit-position pass lands.
+
+  // Per-device-class state facts surfaced inline on the chip. Generic over
+  // template — AC shows temp/mode/fan; TV shows volume/muted; streamer
+  // shows playing/app; STB shows channel; soundbar shows volume/muted.
   const isAc = (device.device_type ?? device.type) === 'ac'
   const acMemory = isAc ? (device.ac_memory || {}) : null
-  const acFacts = []
-  if (acMemory?.temp != null) acFacts.push(`${acMemory.temp}°C`)
-  if (acMemory?.mode) acFacts.push(String(acMemory.mode).toLowerCase())
-  if (acMemory?.fan) acFacts.push(`fan ${String(acMemory.fan).toLowerCase()}`)
+  const stateFacts = []
+  if (stateValues.temp != null) stateFacts.push(`${stateValues.temp}°C`)
+  else if (acMemory?.temp != null) stateFacts.push(`${acMemory.temp}°C`)
+  if (stateValues.mode) stateFacts.push(String(stateValues.mode).toLowerCase())
+  else if (acMemory?.mode) stateFacts.push(String(acMemory.mode).toLowerCase())
+  if (stateValues.fan && !stateValues.fan.toString().includes('auto')) {
+    stateFacts.push(`fan ${String(stateValues.fan).toLowerCase()}`)
+  } else if (acMemory?.fan) stateFacts.push(`fan ${String(acMemory.fan).toLowerCase()}`)
+  if (stateValues.volume != null) stateFacts.push(`vol ${stateValues.volume}`)
+  if (stateValues.muted === true) stateFacts.push(t('common.muted') || 'muted')
+  if (stateValues.channel != null && (device.device_type === 'stb' || stateRec.template === 'stb')) {
+    stateFacts.push(`ch ${stateValues.channel}`)
+  }
+  if (stateValues.playing === true) stateFacts.push('▶')
+  // Keep AC's legacy chip-suffix alias name so the rest of the component
+  // (which still reads acFacts) doesn't change shape.
+  const acFacts = stateFacts
 
   return (
     <Card className="p-4">
@@ -817,8 +856,14 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
           {room && <p dir="auto" className="text-xs text-ink-mute mt-0.5 capitalize">{room}</p>}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className="text-xs text-ink-mute">{t('devices.commandsCount', { learned: learnedCount, total: totalCount })}</span>
-            {/* Interactive assumed-state chip — for AC, the state line also
-                surfaces decoded temp/mode/fan from physical-remote packets. */}
+            {/* Interactive assumed-state chip — surfaces decoded values
+                from physical-remote packets (AC: temp/mode/fan; TV: volume,
+                muted; streamer: playing; STB: channel) plus a confidence
+                indicator: pulsing green dot for 'live' (RX-confirmed in the
+                last 30s), amber dot for 'estimated' (Ziggy command or older
+                RX), no dot for 'unknown'/'stale'. The dot is what lets the
+                user see at a glance that Ziggy actually heard the physical
+                remote press they just made. */}
             <div className="relative">
               <button
                 onClick={() => setShowStatePicker((v) => !v)}
@@ -832,6 +877,24 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
                     : 'bg-surface-2/50 border-dashed border-line text-ink-mute'
                 )}
               >
+                {confidence === 'live' && (
+                  <span
+                    title="Live: physical-remote press confirmed in the last 30s"
+                    className="inline-block w-1.5 h-1.5 rounded-full bg-ok animate-pulse"
+                  />
+                )}
+                {confidence === 'estimated' && (
+                  <span
+                    title="Estimated: from Ziggy's last command (no recent RX)"
+                    className="inline-block w-1.5 h-1.5 rounded-full bg-warn-soft border border-warn"
+                  />
+                )}
+                {confidence === 'stale' && (
+                  <span
+                    title="Stale: no observation for hours"
+                    className="inline-block w-1.5 h-1.5 rounded-full bg-ink-mute opacity-40"
+                  />
+                )}
                 <span>{assumedState ?? t('common.unknown')}</span>
                 {acFacts.length > 0 && (
                   <span className="opacity-80">· {acFacts.join(' · ')}</span>

@@ -182,6 +182,7 @@ function AppRoutes() {
   // stable Zustand refs, so selecting them never re-renders this component.
   const updateEntityState           = useDeviceStore(s => s.updateEntityState)
   const updateIrDeviceFromAcPacket  = useDeviceStore(s => s.updateIrDeviceFromAcPacket)
+  const updateIrDeviceFromStateSnapshot = useDeviceStore(s => s.updateIrDeviceFromStateSnapshot)
   const removeEntity                = useDeviceStore(s => s.removeEntity)
   const renameEntity                = useDeviceStore(s => s.renameEntity)
   const fetchAll                    = useDeviceStore(s => s.fetchAll)
@@ -282,6 +283,12 @@ function AppRoutes() {
       const cmd = last.command?.replace(/_/g, ' ')
       // IR entities live in the store as entity_id = `ir.${device_id}`
       if (last.device_id) {
+        // Universal state snapshot — works for any device class (AC, TV,
+        // streamer, ...). Carries template + values + confidence. Flips
+        // the confidence chip to "live" immediately.
+        if (last.state) {
+          updateIrDeviceFromStateSnapshot(last.device_id, last.state)
+        }
         // For AC packets that carried decoded state, merge it into
         // _irDevice.ac_memory so the card chip shows the fresh
         // temp/mode/fan. Otherwise just patch state + assumed_state.

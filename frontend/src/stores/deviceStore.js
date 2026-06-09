@@ -669,6 +669,37 @@ export const useDeviceStore = create((set, get) => ({
     }))
   },
 
+  // Merge a universal state snapshot (template + values + confidence
+  // timestamps) into an IR device. Called by App.jsx when an
+  // ir_command_detected event arrives carrying a `state` field — the
+  // canonical path that works regardless of device class (AC, TV,
+  // streamer, ...). Bumps live_at so the device card's confidence chip
+  // flips to "live" on the next render.
+  updateIrDeviceFromStateSnapshot: (irId, snapshot) => {
+    if (!snapshot || !snapshot.template) return
+    set((s) => {
+      const idx = s.entities.findIndex((e) => e._ir && e._irDevice?.id === irId)
+      if (idx === -1) return s
+      const prev = s.entities[idx]
+      const nowSec = Date.now() / 1000
+      const newState = {
+        template: snapshot.template,
+        values: { ...(prev._irDevice?.state?.values || {}), ...(snapshot.values || {}) },
+        // The snapshot is built from the engine's own live_at/estimated_at;
+        // confidence === 'live' means we just observed RX, so reflect that.
+        live_at: snapshot.confidence === 'live' ? nowSec : prev._irDevice?.state?.live_at,
+        estimated_at: snapshot.confidence === 'estimated' ? nowSec : prev._irDevice?.state?.estimated_at,
+      }
+      const nextEntity = {
+        ...prev,
+        _irDevice: { ...prev._irDevice, state: newState },
+      }
+      const next = [...s.entities]
+      next[idx] = nextEntity
+      return { entities: next }
+    })
+  },
+
   // Merge decoded AC state (from a physical-remote IR packet) into an IR
   // device's ac_memory + assumed_state. Called by App.jsx when an
   // ir_command_detected event arrives carrying an `ac_state` field — so
