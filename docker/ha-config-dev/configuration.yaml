@@ -1,7 +1,13 @@
-# Ziggy dev HA — minimal config seeded with test entities.
+# Ziggy dev HA -- realistic-feeling home seeded with ~20 entities across
+# 5 rooms. NOT the real home. Sits in docker/ha-config-dev/ so it never
+# touches docker/ha-config/.
 #
-# This is the Mac developer's isolated HA. NOT your real home's HA.
-# Sits in docker/ha-config-dev/ so it never touches docker/ha-config/.
+# After editing this file, restart the container to pick up changes:
+#   docker compose -f docker-compose.dev.yml restart homeassistant-dev
+#
+# Areas (Living Room, Bedroom, Kitchen, Bathroom, Office, Outside) are
+# created via WS API by scripts/dev-seed-rooms.py — run that once after
+# the first boot. Idempotent on re-runs.
 
 default_config:
 
@@ -14,10 +20,13 @@ http:
     - 192.168.0.0/16
     - 127.0.0.1
 
-# ── Test devices ────────────────────────────────────────────────────────────
-# These show up in Ziggy immediately so you can verify the wiring works:
-# Mac browser → Ziggy UI → toggle → Ziggy backend → dev HA → entity state flips.
+# ── Backing inputs ─────────────────────────────────────────────────────────
+# All "devices" are input_booleans (on/off) or input_numbers (analog).
+# Template entities below wrap them so they look like real lights / sensors
+# / switches to Ziggy.
 input_boolean:
+  # ── Original wiring-test entities (kept for the legacy "Dev Test Light"
+  #    flow we used to verify Ziggy <-> HA early on) ────────────────────────
   test_light:
     name: Dev Test Light
     icon: mdi:lightbulb
@@ -28,23 +37,185 @@ input_boolean:
     name: Dev Test Motion
     icon: mdi:motion-sensor
 
-# A template light wraps the input_boolean so Ziggy classifies it as a
-# light (matters for the light handler + circadian bundle tests).
+  # ── Living Room ───────────────────────────────────────────────────────────
+  livingroom_main_light:   { name: Living Room Light,        icon: mdi:ceiling-light }
+  livingroom_lamp:         { name: Living Room Lamp,         icon: mdi:lamp }
+  livingroom_tv:           { name: Living Room TV,           icon: mdi:television }
+  livingroom_motion_raw:   { name: Living Room Motion Raw,   icon: mdi:motion-sensor }
+
+  # ── Bedroom ───────────────────────────────────────────────────────────────
+  bedroom_main_light:      { name: Bedroom Light,            icon: mdi:ceiling-light }
+  bedroom_lamp:            { name: Bedroom Lamp,             icon: mdi:lamp }
+  bedroom_fan:             { name: Bedroom Fan,              icon: mdi:fan }
+  bedroom_motion_raw:      { name: Bedroom Motion Raw,       icon: mdi:motion-sensor }
+
+  # ── Kitchen ───────────────────────────────────────────────────────────────
+  kitchen_ceiling_light:   { name: Kitchen Light,            icon: mdi:ceiling-light }
+  kitchen_under_cabinet:   { name: Kitchen Under Cabinet,    icon: mdi:led-strip-variant }
+  kitchen_kettle:          { name: Kitchen Kettle,           icon: mdi:kettle }
+
+  # ── Bathroom ──────────────────────────────────────────────────────────────
+  bathroom_light:          { name: Bathroom Light,           icon: mdi:ceiling-light }
+  bathroom_fan:            { name: Bathroom Fan,             icon: mdi:fan }
+
+  # ── Office ────────────────────────────────────────────────────────────────
+  office_light:            { name: Office Light,             icon: mdi:desk-lamp }
+  office_monitor:          { name: Office Monitor,           icon: mdi:monitor }
+
+  # ── Front door (binary_sensor wraps this) ────────────────────────────────
+  front_door_raw:          { name: Front Door Raw,           icon: mdi:door }
+
+input_number:
+  livingroom_temperature:
+    name: Living Room Temperature
+    min: 15
+    max: 35
+    step: 0.5
+    initial: 22
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+  bedroom_temperature:
+    name: Bedroom Temperature
+    min: 15
+    max: 35
+    step: 0.5
+    initial: 21
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+  outdoor_temperature:
+    name: Outdoor Temperature
+    min: -10
+    max: 45
+    step: 0.5
+    initial: 26
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+# ── Template entities (what Ziggy actually classifies as lights / sensors) ──
 template:
   - light:
+      # Legacy wiring-test light (kept for backwards compat with old docs).
       - name: "Dev Living Room Light"
         unique_id: dev_living_room_light
         state: "{{ is_state('input_boolean.test_light', 'on') }}"
         turn_on:
           service: input_boolean.turn_on
-          target:
-            entity_id: input_boolean.test_light
+          target: {entity_id: input_boolean.test_light}
         turn_off:
           service: input_boolean.turn_off
-          target:
-            entity_id: input_boolean.test_light
+          target: {entity_id: input_boolean.test_light}
 
-# Empty hooks so HA stops complaining on first boot
+      - name: "Living Room Ceiling Light"
+        unique_id: livingroom_ceiling_light
+        state: "{{ is_state('input_boolean.livingroom_main_light', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.livingroom_main_light}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.livingroom_main_light}}
+
+      - name: "Living Room Lamp"
+        unique_id: livingroom_lamp_light
+        state: "{{ is_state('input_boolean.livingroom_lamp', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.livingroom_lamp}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.livingroom_lamp}}
+
+      - name: "Bedroom Ceiling Light"
+        unique_id: bedroom_ceiling_light
+        state: "{{ is_state('input_boolean.bedroom_main_light', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.bedroom_main_light}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.bedroom_main_light}}
+
+      - name: "Bedroom Lamp"
+        unique_id: bedroom_lamp_light
+        state: "{{ is_state('input_boolean.bedroom_lamp', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.bedroom_lamp}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.bedroom_lamp}}
+
+      - name: "Kitchen Ceiling Light"
+        unique_id: kitchen_ceiling_light_light
+        state: "{{ is_state('input_boolean.kitchen_ceiling_light', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.kitchen_ceiling_light}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.kitchen_ceiling_light}}
+
+      - name: "Kitchen Under Cabinet Lights"
+        unique_id: kitchen_under_cabinet_light
+        state: "{{ is_state('input_boolean.kitchen_under_cabinet', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.kitchen_under_cabinet}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.kitchen_under_cabinet}}
+
+      - name: "Bathroom Light"
+        unique_id: bathroom_light_light
+        state: "{{ is_state('input_boolean.bathroom_light', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.bathroom_light}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.bathroom_light}}
+
+      - name: "Office Light"
+        unique_id: office_light_light
+        state: "{{ is_state('input_boolean.office_light', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.office_light}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.office_light}}
+
+  - switch:
+      - name: "Living Room TV"
+        unique_id: livingroom_tv_switch
+        state: "{{ is_state('input_boolean.livingroom_tv', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.livingroom_tv}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.livingroom_tv}}
+
+      - name: "Bedroom Fan"
+        unique_id: bedroom_fan_switch
+        state: "{{ is_state('input_boolean.bedroom_fan', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.bedroom_fan}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.bedroom_fan}}
+
+      - name: "Kitchen Kettle"
+        unique_id: kitchen_kettle_switch
+        state: "{{ is_state('input_boolean.kitchen_kettle', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.kitchen_kettle}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.kitchen_kettle}}
+
+      - name: "Bathroom Fan"
+        unique_id: bathroom_fan_switch
+        state: "{{ is_state('input_boolean.bathroom_fan', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.bathroom_fan}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.bathroom_fan}}
+
+      - name: "Office Monitor"
+        unique_id: office_monitor_switch
+        state: "{{ is_state('input_boolean.office_monitor', 'on') }}"
+        turn_on:  {service: input_boolean.turn_on,  target: {entity_id: input_boolean.office_monitor}}
+        turn_off: {service: input_boolean.turn_off, target: {entity_id: input_boolean.office_monitor}}
+
+  - binary_sensor:
+      - name: "Living Room Motion"
+        unique_id: livingroom_motion_sensor
+        device_class: motion
+        state: "{{ is_state('input_boolean.livingroom_motion_raw', 'on') }}"
+      - name: "Bedroom Motion"
+        unique_id: bedroom_motion_sensor
+        device_class: motion
+        state: "{{ is_state('input_boolean.bedroom_motion_raw', 'on') }}"
+      - name: "Front Door"
+        unique_id: front_door_sensor
+        device_class: door
+        state: "{{ is_state('input_boolean.front_door_raw', 'on') }}"
+
+  - sensor:
+      - name: "Living Room Temperature"
+        unique_id: livingroom_temperature_sensor
+        device_class: temperature
+        unit_of_measurement: "°C"
+        state: "{{ states('input_number.livingroom_temperature') }}"
+      - name: "Bedroom Temperature"
+        unique_id: bedroom_temperature_sensor
+        device_class: temperature
+        unit_of_measurement: "°C"
+        state: "{{ states('input_number.bedroom_temperature') }}"
+      - name: "Outdoor Temperature"
+        unique_id: outdoor_temperature_sensor
+        device_class: temperature
+        unit_of_measurement: "°C"
+        state: "{{ states('input_number.outdoor_temperature') }}"
+
+# Empty hooks so HA stops complaining on first boot.
 automation: !include automations.yaml
 script:     !include scripts.yaml
 scene:      !include scenes.yaml
