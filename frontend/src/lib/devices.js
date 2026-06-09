@@ -27,14 +27,19 @@ import { t as i18nT } from './i18n'
 
 export const KIND = {
   LIGHT:        'light',
+  LAMP:         'lamp',
+  LED_STRIP:    'led_strip',
   SWITCH:       'switch',
   PLUG:         'plug',
   TV:           'tv',
   SOUNDBAR:     'soundbar',
   RECEIVER:     'receiver',
   PROJECTOR:    'projector',
+  MONITOR:      'monitor',
   AC:           'ac',
   FAN:          'fan',
+  KETTLE:       'kettle',
+  COFFEE:       'coffee',
   COVER:        'cover',
   LOCK:         'lock',
   ALARM:        'alarm',
@@ -76,14 +81,19 @@ export const KIND = {
 //     with sensor entries and they read as the same thing.
 const KIND_META = {
   light:        { label: 'Light',      tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '💡' },
+  lamp:         { label: 'Lamp',       tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '🪔' },
+  led_strip:    { label: 'LED Strip',  tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '🪩' },
   switch:       { label: 'Switch',     tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🎛️' },
   plug:         { label: 'Plug',       tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },
   tv:           { label: 'TV',         tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📺' },
   soundbar:     { label: 'Soundbar',   tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🔊' },
   receiver:     { label: 'Receiver',   tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🎚️' },
   projector:    { label: 'Projector',  tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📽️' },
+  monitor:      { label: 'Monitor',    tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🖥️' },
   ac:           { label: 'AC',         tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '❄️' },
   fan:          { label: 'Fan',        tint: 'var(--info)',   group: 'climate',  toggle: true,  controllable: true,  icon: '💨' },
+  kettle:       { label: 'Kettle',     tint: 'var(--warn)',   group: 'appliance', toggle: true, controllable: true,  icon: '🫖' },
+  coffee:       { label: 'Coffee',     tint: 'var(--warn)',   group: 'appliance', toggle: true, controllable: true,  icon: '☕' },
   cover:        { label: 'Blind',      tint: 'var(--ink-mute)', group: 'cover',  toggle: false, controllable: true,  icon: '🪟' },
   lock:         { label: 'Lock',       tint: 'var(--warn)',   group: 'security', toggle: false, controllable: true,  icon: '🔒' },
   alarm:        { label: 'Alarm',      tint: 'var(--err)',    group: 'security', toggle: false, controllable: true,  icon: '🛡️' },
@@ -286,6 +296,43 @@ function _isWaterHeaterEntity(entity) {
   return false
 }
 
+// Keyword table for refining lights / switches / input_booleans into more
+// specific kinds based on the entity's friendly name + entity_id slug.
+// Order matters — first match wins. Word-boundary regex prevents false
+// positives ("lamp" inside "lampshade" still matches; "fan" inside "infant"
+// does not because of \b boundary).
+//
+// Used by getKind() to differentiate, e.g., switch.kitchen_kettle (🫖) from
+// switch.bedroom_fan (💨) from switch.living_room_tv (📺), all of which
+// would otherwise be the generic switch icon 🎛️.
+const _NAME_KIND_TABLE = [
+  // Lights (only apply when domain == 'light')
+  { domains: ['light'], re: /\b(led[_\s-]?strip|under[_\s-]?cabinet|strip)\b/, kind: 'led_strip' },
+  { domains: ['light'], re: /\b(lamp|sconce)\b/,                                kind: 'lamp' },
+  // Switches / input_booleans
+  { domains: ['switch', 'input_boolean'], re: /\b(kettle)\b/,                   kind: 'kettle' },
+  { domains: ['switch', 'input_boolean'], re: /\b(coffee|espresso|moka)\b/,     kind: 'coffee' },
+  { domains: ['switch', 'input_boolean'], re: /\b(monitor|display|screen)\b/,   kind: 'monitor' },
+  { domains: ['switch', 'input_boolean'], re: /\b(tv|television)\b/,            kind: 'tv' },
+  { domains: ['switch', 'input_boolean'], re: /\b(fan)\b/,                      kind: 'fan' },
+  { domains: ['switch', 'input_boolean'], re: /\b(ac|air[_\s-]?con(ditioner)?)\b/, kind: 'ac' },
+  { domains: ['switch', 'input_boolean'], re: /\b(plug|outlet|socket)\b/,       kind: 'plug' },
+]
+
+function _kindFromName(entity, domain) {
+  const hay = [
+    entity.entity_id || '',
+    entity.friendly_name || '',
+    entity.attributes?.friendly_name || '',
+  ].join(' ').toLowerCase().replace(/_/g, ' ')
+  if (!hay.trim()) return null
+  for (const row of _NAME_KIND_TABLE) {
+    if (!row.domains.includes(domain)) continue
+    if (row.re.test(hay)) return row.kind
+  }
+  return null
+}
+
 export function getKind(entity) {
   if (!entity) return KIND.UNKNOWN
   if (entity._ir && entity._irDevice) {
@@ -297,9 +344,9 @@ export function getKind(entity) {
   const eid = entity.entity_id || ''
   const domain = entity.domain || eid.split('.')[0]
   switch (domain) {
-    case 'light':               return KIND.LIGHT
-    case 'switch':              return KIND.SWITCH
-    case 'input_boolean':       return KIND.SWITCH
+    case 'light':               return _kindFromName(entity, 'light') || KIND.LIGHT
+    case 'switch':              return _kindFromName(entity, 'switch') || KIND.SWITCH
+    case 'input_boolean':       return _kindFromName(entity, 'input_boolean') || KIND.SWITCH
     case 'climate':             return KIND.AC
     case 'fan':                 return KIND.FAN
     case 'media_player':        return KIND.TV

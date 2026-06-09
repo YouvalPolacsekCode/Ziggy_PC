@@ -113,3 +113,11 @@ paths:
   logs: logs/
   memory_log: memory/memory_log.json
   task_log: memory/task_log.json
+
+# Hide the internal-plumbing input_booleans that back the template
+# binary_sensors / lights / switches in docker/ha-config-dev/configuration.yaml.
+# Pattern matches anything ending in "_raw" (e.g., front_door_raw).
+entity_filter:
+  extra_hidden_patterns:
+    - "_raw$"
+
