@@ -969,6 +969,217 @@ def _try_decode_tadiran_short(pulses: list[int]) -> Optional[ProtocolDecode]:
 
 
 # ---------------------------------------------------------------------------
+# Toshiba AC (4400/4400 leader, pulse-distance) — 72 bits / 9 bytes.
+#
+# Israel-first relevance: Electra units are commonly Toshiba- or Hitachi-
+# derived internals. This decoder targets the Toshiba RAS family, which is
+# also what many Electra inverters speak.
+#
+# Frame structure (from IRremoteESP8266 / k3a/toshiba-ac references):
+#   bytes 0-1: signature 0xF2 0x0D     (used as magic-byte filter)
+#   byte  2:  0x03 (length field, lower nibble = state byte count - 5)
+#   byte  3:  reserved / sub-state
+#   byte  4:  reserved
+#   byte  5:  temperature in upper nibble — temp = 17 + (b5 >> 4)
+#             (so b5=0x00 → 17°C, b5=0xD0 → 30°C)
+#   byte  6:  mode (bits 5-7) + fan (bits 0-2) + power state
+#             - mode bits:  0=auto, 1=cool, 2=dry, 3=heat, 4=fan
+#             - fan bits:   0=auto, 2=low, 5=medium, 7=high
+#             - power: this protocol family encodes power as "off" via
+#                      a separate short frame (kToshibaAcLengthByte == 4
+#                      with mode=fan=0xff) and "on" via the normal frame.
+#   byte  7:  reserved / vane (swing) bits
+#   byte  8:  XOR checksum of bytes 0-7
+#
+# Bit positions can vary across Toshiba RAS sub-families. The state
+# extractor below is best-effort; until we have real Electra captures it
+# should be considered experimental — it'll identify the frame family and
+# extract a canonical payload_hex for matching, with state bits surfaced
+# where confident. Sub-protocol fix-ups are a fast follow-up once real
+# beta captures land.
+# ---------------------------------------------------------------------------
+
+_TOSHIBA_LEADER_MARK = 4400
+_TOSHIBA_LEADER_SPACE = 4400
+_TOSHIBA_BIT_MARK = 543
+_TOSHIBA_BIT_ZERO_SPACE = 543
+_TOSHIBA_BIT_ONE_SPACE = 1623
+_TOSHIBA_BITS = 72                 # 9 bytes; some variants emit 80 or 112
+_TOSHIBA_MAGIC = (0xF2, 0x0D)
+
+
+def _decode_toshiba_ac_state(payload: bytes) -> Optional[AcState]:
+    """Best-effort Toshiba/Electra state extractor.
+
+    Returns brand='toshiba'. Mode/temp confidence is reasonable across
+    documented RAS variants; fan is more variable. Power is not extracted
+    here because the Toshiba family encodes power as a separate short
+    frame, not a bit in the state frame — Ziggy infers power=on from
+    receiving any state frame and uses the legacy short-frame as off.
+    """
+    if len(payload) < 7:
+        return None
+    # Temp: upper nibble of byte 5, value = (T - 17). Clamp to documented range.
+    temp_raw = (payload[5] >> 4) & 0x0F
+    temp = 17 + temp_raw if temp_raw <= 13 else None  # 17-30°C valid
+
+    # Mode: bits 5-7 of byte 6
+    mode_raw = (payload[6] >> 5) & 0x07
+    mode_map = {0: "auto", 1: "cool", 2: "dry", 3: "heat", 4: "fan"}
+    mode = mode_map.get(mode_raw)
+
+    # Fan: bits 0-2 of byte 6
+    fan_raw = payload[6] & 0x07
+    fan_map = {0: "auto", 2: "low", 5: "medium", 7: "high",
+               1: "low", 3: "medium", 4: "high"}
+    fan = fan_map.get(fan_raw)
+
+    # State-frame receipt implies power=on; explicit off arrives as a
+    # different-shaped short frame the decoder doesn't accept as state.
+    return AcState(power="on", mode=mode, temp=temp, fan=fan, brand="toshiba")
+
+
+def _try_decode_toshiba_ac(pulses: list[int]) -> Optional[ProtocolDecode]:
+    if len(pulses) < 2 + _TOSHIBA_BITS * 2:
+        return None
+    if not (_near(pulses[0], _TOSHIBA_LEADER_MARK, 0.18)
+            and _near(pulses[1], _TOSHIBA_LEADER_SPACE, 0.18)):
+        return None
+    # Try standard 72-bit frame first; some variants emit longer state.
+    for n_bits in (_TOSHIBA_BITS, 80, 112):
+        if len(pulses) < 2 + n_bits * 2:
+            continue
+        bits = _decode_pulse_distance_bits(
+            pulses, start=2, n_bits=n_bits,
+            mark_us=_TOSHIBA_BIT_MARK,
+            zero_space_us=_TOSHIBA_BIT_ZERO_SPACE,
+            one_space_us=_TOSHIBA_BIT_ONE_SPACE,
+        )
+        if bits is None:
+            continue
+        payload = _bits_to_bytes(bits, lsb_first=True)
+        if not _matches_magic(payload, _TOSHIBA_MAGIC):
+            continue
+        ac = _decode_toshiba_ac_state(payload)
+        return ProtocolDecode(
+            family="toshiba_ac",
+            payload_hex=payload.hex(),
+            payload_bits=n_bits,
+            ac_state=ac,
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Midea AC (4480/4480 leader, pulse-distance) — 48 bits / 6 bytes, sent twice.
+#
+# Israel-first relevance: Tornado units are commonly Midea- or Hisense-
+# derived internals. This decoder targets the canonical Midea protocol
+# (also covers many Tornado inverters and the Pioneer/Comfee rebrands).
+#
+# Frame structure (from IRremoteESP8266 + mpetroff.net analysis):
+#   byte 0: 0xB2 (state command) or 0xB5 (extended). Used as magic.
+#   byte 1: inverted byte 0
+#   byte 2: fan (bits 5-7) + sleep flag (bit 4) + constant low nibble
+#           fan bits: 1=high, 5=medium, 9=low, 7=auto (encoded reversed-MSB)
+#   byte 3: inverted byte 2
+#   byte 4: temp (bits 0-3, value = T - 17 in reversed-MSB) +
+#           mode (bits 5-7) + on/off flag (bit 4)
+#           mode: 0=cool, 1=dry, 2=auto, 3=heat, 4=fan
+#   byte 5: inverted byte 4
+#
+# Frame is transmitted twice with a 5ms gap between halves; second half is
+# an exact replica of the first. We decode the first half only.
+# ---------------------------------------------------------------------------
+
+_MIDEA_LEADER_MARK = 4480
+_MIDEA_LEADER_SPACE = 4480
+_MIDEA_BIT_MARK = 560
+_MIDEA_BIT_ZERO_SPACE = 560
+_MIDEA_BIT_ONE_SPACE = 1680
+_MIDEA_BITS = 48
+_MIDEA_MAGIC = (0xB2,)              # accept any 0xB? byte 0 → command class
+
+
+def _decode_midea_ac_state(payload: bytes) -> Optional[AcState]:
+    """Best-effort Midea/Tornado state extractor.
+
+    The fan/mode/temp bit positions are documented but Midea's
+    reversed-MSB encoding makes the temp extraction fragile across
+    sub-protocols. Like Toshiba, treat as experimental until real
+    Tornado captures arrive during beta.
+    """
+    if len(payload) < 6:
+        return None
+
+    # Sanity check: bytes 1, 3, 5 should be the bitwise inverse of bytes 0, 2, 4.
+    # Tolerate single-bit corruption (allow up to 2 mismatching bits per pair
+    # to survive light capture noise without false-positive matching on
+    # arbitrary frames that share Midea's leader timing).
+    for i in (0, 2, 4):
+        a, b = payload[i], payload[i + 1]
+        if bin((a ^ b) ^ 0xFF).count("1") > 2:
+            return None
+
+    # Power: byte 4 bit 4 (0 = off, 1 = on) — matches mpetroff.net analysis
+    power = "on" if (payload[4] & 0x10) else "off"
+
+    # Mode: bits 5-7 of byte 4
+    mode_raw = (payload[4] >> 5) & 0x07
+    mode_map = {0: "cool", 1: "dry", 2: "auto", 3: "heat", 4: "fan"}
+    mode = mode_map.get(mode_raw)
+
+    # Temp: bits 0-3 of byte 4. Midea stores T as (T - 17) bit-reversed in
+    # some variants and direct in others. Try direct first; if it's out of
+    # range, try reversed.
+    temp_raw = payload[4] & 0x0F
+    temp = 17 + temp_raw if temp_raw <= 13 else None
+    if temp is None:
+        # Try bit-reversed: 0xF - raw
+        rev = (0x0F - temp_raw) & 0x0F
+        if rev <= 13:
+            temp = 17 + rev
+
+    # Fan: bits 5-7 of byte 2 (Midea fan codes are sparse and reversed)
+    fan_raw = (payload[2] >> 5) & 0x07
+    fan_map = {1: "high", 2: "high", 4: "medium", 5: "medium",
+               6: "low", 7: "auto", 0: "auto"}
+    fan = fan_map.get(fan_raw)
+
+    return AcState(power=power, mode=mode, temp=temp, fan=fan, brand="midea")
+
+
+def _try_decode_midea_ac(pulses: list[int]) -> Optional[ProtocolDecode]:
+    if len(pulses) < 2 + _MIDEA_BITS * 2:
+        return None
+    if not (_near(pulses[0], _MIDEA_LEADER_MARK, 0.15)
+            and _near(pulses[1], _MIDEA_LEADER_SPACE, 0.15)):
+        return None
+    bits = _decode_pulse_distance_bits(
+        pulses, start=2, n_bits=_MIDEA_BITS,
+        mark_us=_MIDEA_BIT_MARK,
+        zero_space_us=_MIDEA_BIT_ZERO_SPACE,
+        one_space_us=_MIDEA_BIT_ONE_SPACE,
+    )
+    if bits is None:
+        return None
+    payload = _bits_to_bytes(bits, lsb_first=True)
+    if (payload[0] & 0xF0) != 0xB0:
+        # Not a Midea command class — could be a coincidental leader match.
+        return None
+    ac = _decode_midea_ac_state(payload)
+    if ac is None:
+        # Inverse-pair check failed → not really a Midea frame.
+        return None
+    return ProtocolDecode(
+        family="midea_ac",
+        payload_hex=payload.hex(),
+        payload_bits=_MIDEA_BITS,
+        ac_state=ac,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
@@ -989,6 +1200,12 @@ _DECODERS = (
     # false-positive on partial captures of other frames otherwise.
     _try_decode_mitsubishi_ac,
     _try_decode_daikin_ac,
+    # Israel-first additions: Electra (Toshiba internals) and Tornado
+    # (Midea/Hisense internals). Magic-byte filters keep these safe even
+    # though their leader timings (4400, 4480) are similar to each other
+    # and to the existing Mitsubishi (3400) leader.
+    _try_decode_toshiba_ac,
+    _try_decode_midea_ac,
 )
 
 
@@ -1085,4 +1302,28 @@ def _encode_gree_pulses(payload_bits: list[int]) -> list[int]:
     while len(out) < 110:
         out.append(_GREE_BIT_MARK)
         out.append(_GREE_BIT_ZERO_SPACE)
+    return out
+
+
+def _encode_toshiba_pulses(payload_bytes: bytes) -> list[int]:
+    """Synthetic Toshiba/Electra AC frame. Tests use this to validate decode."""
+    out = [_TOSHIBA_LEADER_MARK, _TOSHIBA_LEADER_SPACE]
+    for byte in payload_bytes:
+        for i in range(8):  # LSB-first
+            bit = (byte >> i) & 1
+            out.append(_TOSHIBA_BIT_MARK)
+            out.append(_TOSHIBA_BIT_ONE_SPACE if bit else _TOSHIBA_BIT_ZERO_SPACE)
+    out.append(_TOSHIBA_BIT_MARK)
+    return out
+
+
+def _encode_midea_pulses(payload_bytes: bytes) -> list[int]:
+    """Synthetic Midea/Tornado AC frame. Tests use this to validate decode."""
+    out = [_MIDEA_LEADER_MARK, _MIDEA_LEADER_SPACE]
+    for byte in payload_bytes:
+        for i in range(8):  # LSB-first
+            bit = (byte >> i) & 1
+            out.append(_MIDEA_BIT_MARK)
+            out.append(_MIDEA_BIT_ONE_SPACE if bit else _MIDEA_BIT_ZERO_SPACE)
+    out.append(_MIDEA_BIT_MARK)
     return out
