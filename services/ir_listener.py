@@ -597,6 +597,15 @@ def _find_ac_command_match(received_bytes: bytes, host: str) -> Optional[tuple[s
 
 async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     """Called when the listener captures a code. Matches and updates state."""
+    # Always count the capture before matching — the "captures in last hour"
+    # metric drives the placement diagnostic. A blaster catching no signals
+    # for an hour while it's been listening is a placement problem.
+    try:
+        from services.ir_metrics import record_capture
+        record_capture(host)
+    except Exception:
+        pass
+
     match = _find_code_match(received_bytes)
 
     # Pass 5: if no learned code matches but the packet decodes to a known AC
@@ -607,6 +616,11 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         ac_match = _find_ac_state_match(received_bytes, host)
         if ac_match:
             device_id, ac_state, method = ac_match
+            try:
+                from services.ir_metrics import record_match
+                record_match(host, "matched_ac_state")
+            except Exception:
+                pass
             # Also log the raw payload so the user can paste it back when
             # the decoded state looks wrong — needed to reverse-engineer
             # remaining bit positions (mode, fan, checksum) and verify
@@ -662,6 +676,11 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         cmd_match = _find_ac_command_match(received_bytes, host)
         if cmd_match:
             device_id, ac_command, method, payload_hex = cmd_match
+            try:
+                from services.ir_metrics import record_match
+                record_match(host, "matched_ac_command")
+            except Exception:
+                pass
             log_info(
                 f"[IRListener] AC command inferred: device={device_id} "
                 f"action={ac_command.action} brand={ac_command.brand} "
@@ -704,6 +723,11 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     if not match:
         # Unknown code — persist to the unassigned queue and broadcast so the
         # UI's "Unassigned signals" panel can offer to bind it to a device.
+        try:
+            from services.ir_metrics import record_unmatched
+            record_unmatched(host)
+        except Exception:
+            pass
         code_b64 = base64.b64encode(received_bytes).decode()
         try:
             from services.ir_protocol import fingerprint_bytes, parse_broadlink_raw
@@ -739,6 +763,15 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         return
 
     device_id, logical_cmd, match_method = match
+    # Record by match method so the diagnostics endpoint can show which
+    # passes are actually firing — useful for spotting jitter regressions
+    # (e.g. fingerprint suddenly carrying 100% of traffic = something
+    # changed in the capture timing).
+    try:
+        from services.ir_metrics import record_match
+        record_match(host, f"matched_{match_method}")
+    except Exception:
+        pass
     log_info(
         f"[IRListener] Physical remote: device={device_id} command={logical_cmd} "
         f"match={match_method}"
@@ -815,6 +848,11 @@ async def _listen_loop(host: str) -> None:
             return None
 
     log_info(f"[IRListener] Starting listener for {host}")
+    try:
+        from services.ir_metrics import record_listener_started
+        record_listener_started(host)
+    except Exception:
+        pass
 
     _fail_count = 0          # consecutive connection failures
     _retry_delay = 10        # starts at 10s, caps at 300s
@@ -883,6 +921,14 @@ async def start_listener() -> None:
     we kick off listener loops — listeners would otherwise burn their
     first iteration on a 10s timeout against the dead IP.
     """
+    # Restore RX reliability counters from disk so cross-restart trends are
+    # preserved (e.g. yesterday's match-rate visible in this morning's UI).
+    try:
+        from services.ir_metrics import load_persisted
+        load_persisted()
+    except Exception as e:
+        log_error(f"[IRListener] Failed to restore metrics: {e}")
+
     by_host = _all_ir_devices_by_host()
     if not by_host:
         log_info("[IRListener] No blaster_host configured — IR receive not active. "

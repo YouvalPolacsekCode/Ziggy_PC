@@ -229,6 +229,46 @@ async def ir_discover():
 
 
 # ---------------------------------------------------------------------------
+# RX reliability diagnostics — placement + capture-rate sanity check
+# ---------------------------------------------------------------------------
+
+@router.get("/api/ir/diagnostics")
+async def ir_diagnostics():
+    """Per-blaster RX reliability snapshot for all known hosts.
+
+    Returns counters + derived placement_hint (good | marginal | poor | unknown)
+    used by the admin UI's blaster card to call out "this blaster hasn't
+    caught anything in the last hour — check its placement". Surfaces:
+
+      - captures_in_hour: rolling 60-minute capture count
+      - match_rate:       fraction of captures that produced a learned-button
+                          match (low rate = lots of unknown signals, often a
+                          sign of cross-room interference or noise pickup)
+      - idle_seconds:     time since last received signal (None if never)
+      - breakdown:        per-pass match counters; reveals when one matching
+                          strategy is carrying all the traffic (e.g. fuzzy
+                          alone = decoders are missing the dominant brand)
+    """
+    from services.ir_metrics import snapshot
+    return snapshot()
+
+
+@router.get("/api/ir/diagnostics/{host}")
+async def ir_diagnostics_for_host(host: str):
+    from services.ir_metrics import snapshot
+    return snapshot(host)
+
+
+@router.post("/api/ir/diagnostics/reset")
+async def ir_diagnostics_reset(host: Optional[str] = None):
+    """Zero counters. Used during placement-tuning ("move the blaster, reset,
+    press 10 buttons, check the snapshot")."""
+    from services.ir_metrics import reset
+    reset_count = reset(host)
+    return {"ok": True, "reset_hosts": reset_count}
+
+
+# ---------------------------------------------------------------------------
 # IR device CRUD
 # ---------------------------------------------------------------------------
 
