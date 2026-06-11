@@ -131,16 +131,37 @@ if ($Cohort -eq "production") {
 }
 
 # ---------------------------------------------------------------------------
-# Query the running container for its SHA. If unreachable, force a rebuild
-# (the container may have crashed).
+# Query the running container for its SHA. Primary source is `docker inspect`
+# of the ZIGGY_GIT_SHA env var the container was built with (set on line ~198
+# via $env:GIT_SHA -> compose -> Dockerfile). This is authoritative and does
+# not depend on the backend process being responsive -- the previous version
+# polled /api/version with `localhost`:8001 and a 3s timeout, which silently
+# rolled to "unknown" whenever (a) the Windows IPv6->IPv4 fallback on
+# `localhost` added ~2s, or (b) the HA-subscriber blocked the event loop just
+# long enough to miss the window. That caused perpetual rebuilds every 5 min.
+# HTTP probe is kept as a fallback in case the docker CLI is unavailable.
 # ---------------------------------------------------------------------------
-$ContainerSha = "unknown"
-try {
-    $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
-    $ContainerSha = $resp.git_sha
-} catch {
-    # Container down or pre-/api/version build. Force rebuild.
+function Get-ContainerSha {
+    try {
+        $envOut = & docker inspect ziggy-ziggy-1 --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $envOut) {
+            foreach ($line in ($envOut -split "`n")) {
+                if ($line -match '^ZIGGY_GIT_SHA=([0-9a-f]{7,40})') { return $Matches[1] }
+            }
+        }
+    } catch {}
+
+    for ($i = 0; $i -lt 3; $i++) {
+        try {
+            $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8001/api/version" -TimeoutSec 5 -ErrorAction Stop
+            if ($resp.git_sha) { return $resp.git_sha }
+        } catch {}
+        Start-Sleep -Seconds 2
+    }
+    return "unknown"
 }
+
+$ContainerSha = Get-ContainerSha
 
 # Steady state: nothing to do. Silent exit (keeps polling logs clean).
 if ($GitSha -eq $RemoteSha -and $ContainerSha -eq $RemoteSha) {
@@ -212,7 +233,7 @@ Start-Sleep -Seconds 3
 $verifyOk = $false
 for ($i = 0; $i -lt 30; $i++) {
     try {
-        $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
+        $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
         if ($resp.git_sha -eq $GitSha) {
             $verifyOk = $true
             break
@@ -273,7 +294,7 @@ Start-Sleep -Seconds 3
 $rbVerifyOk = $false
 for ($i = 0; $i -lt 30; $i++) {
     try {
-        $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
+        $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8001/api/version" -TimeoutSec 3 -ErrorAction Stop
         if ($resp.git_sha -eq $LastGoodSha) {
             $rbVerifyOk = $true
             break
