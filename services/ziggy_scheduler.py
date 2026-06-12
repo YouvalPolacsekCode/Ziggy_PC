@@ -247,6 +247,39 @@ async def _maybe_apply_ha_install(now: datetime) -> None:
         log_error(f"[Scheduler] HA installer tick error: {exc}")
 
 
+async def _health_watchdog_tick() -> None:
+    """Call compute_system_health from the scheduler so the auto-recovery
+    state machine fires even when no dashboard tab is open and no external
+    pinger is hitting /health. compute_system_health has side effects
+    (schedules fire-and-forget recovery tasks via asyncio.create_task) gated
+    by the cooldown inside ha_health, which prevents duplicate attempts when
+    this tick races a real /api/health poll.
+
+    Why this exists: today the recovery state machine was only triggered by
+    polls. During an overnight Windows-update reboot, the dashboard wasn't
+    open and the Zigbee coordinator stayed in "setup_retry" indefinitely
+    until the operator noticed manually.
+    """
+    try:
+        from services import ha_health
+        from services.ha_subscriber import ha_connected, state_cache
+        from services.entity_filter import _should_hide
+        offline_ids = {
+            eid for eid, e in state_cache.items()
+            if not _should_hide(eid) and (e.get("state") in ("unavailable", "unknown"))
+        }
+        total = sum(1 for eid in state_cache if not _should_hide(eid))
+        coord = ha_health.fetch_coordinator_state() if ha_connected else None
+        ha_health.compute_system_health(
+            ha_connected=ha_connected,
+            offline_primary_ids=offline_ids,
+            total_devices=total,
+            coordinator=coord,
+        )
+    except Exception as exc:
+        log_error(f"[Health] watchdog tick compute failed: {exc}")
+
+
 async def _fire_presence_automation(trigger_type: str, name: str) -> None:
     """Fire all enabled automations matching the given presence trigger_type and person."""
     try:
@@ -381,6 +414,19 @@ async def run_scheduler() -> None:
             await fake_occupancy_scheduler.tick(now)
         except Exception as exc:
             log_error(f"[Scheduler] Fake occupancy tick failed: {exc}")
+
+        # ── Every 2 minutes: system-health watchdog tick ─────────────────────
+        # Drives the ha_health auto-recovery state machine even when nobody
+        # is polling /api/health. Without this tick, the Zigbee-coordinator
+        # auto-reload only fires when a dashboard tab is open OR an external
+        # pinger (UptimeRobot) is hitting /health. Cooldown inside
+        # compute_system_health (RECOVERY_COOLDOWN_S = 5 min) prevents
+        # duplicate recovery attempts when both this tick and a poll coincide.
+        if _tick % 2 == 0:
+            try:
+                await _health_watchdog_tick()
+            except Exception as exc:
+                log_error(f"[Scheduler] Health watchdog tick failed: {exc}")
 
         # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
         # Time-of-day gated, off unless backup.enabled=true in settings.

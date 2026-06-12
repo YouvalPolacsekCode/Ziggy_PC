@@ -16,16 +16,26 @@ Wire shape:
     "ha_reachable":           bool,
     "ziggy_version":          str,
     "ha_version":             str | null,
-    "last_telemetry_post_at": iso8601 | null
+    "last_telemetry_post_at": iso8601 | null,
+    "coordinator_status":     "ok" | "loading" | "failed" | "unknown",
+    "manual_action":          null | {"code": str, "title_key": str, "body_key": str}
   }
 
 Status rubric:
   ok        — HA WebSocket connected AND a telemetry post has succeeded
               within the last 15 minutes (3× the 5-min cadence — allows
-              one missed tick without flapping).
+              one missed tick without flapping) AND Zigbee coordinator is
+              loaded (when one is configured).
   degraded  — HA WebSocket connected but telemetry never posted or last
-              post is older than 15 minutes, OR HA disconnected briefly.
-  down      — HA WebSocket has never connected since process start.
+              post is older than 15 minutes, OR HA disconnected briefly,
+              OR Zigbee coordinator is loading.
+  down      — HA WebSocket has never connected since process start, OR
+              Zigbee coordinator is in a failed state.
+
+`coordinator_status` + `manual_action` let an external pinger (e.g.
+UptimeRobot) keyword-match on "failed" or "replug_zigbee_dongle" without
+needing a session token — the auth-gated /api/health surface is still the
+canonical source for the dashboard banner.
 
 The endpoint never raises into FastAPI's exception handler — any
 collector failure becomes "down" with the other fields best-effort.
@@ -104,13 +114,60 @@ def _build_health_snapshot() -> dict:
     except Exception:
         pass
 
+    # System health: maps the structured ha_health failure model into the
+    # public payload. Best-effort — any failure here degrades to "unknown"
+    # rather than 500ing the liveness endpoint. compute_system_health has
+    # side effects (schedules recovery via asyncio.create_task gated by the
+    # 5-min cooldown), which is desirable: even an UptimeRobot poll drives
+    # auto-recovery when the dashboard tab is closed.
+    coordinator_status = "unknown"
+    manual_action = None
+    sh_level: str | None = None
+    try:
+        from services import ha_health
+        from services.ha_subscriber import state_cache as _state_cache
+        from services.entity_filter import _should_hide
+        offline_ids = {
+            eid for eid, e in _state_cache.items()
+            if not _should_hide(eid) and (e.get("state") in ("unavailable", "unknown"))
+        }
+        total = sum(1 for eid in _state_cache if not _should_hide(eid))
+        coord = ha_health.fetch_coordinator_state() if ha_reachable else None
+        sh = ha_health.compute_system_health(
+            ha_connected=ha_reachable,
+            offline_primary_ids=offline_ids,
+            total_devices=total,
+            coordinator=coord,
+        )
+        sh_level = sh.get("level")
+        coord_state = (sh.get("zigbee") or {}).get("coordinator_state") or "unknown"
+        if coord_state == "loaded":
+            coordinator_status = "ok"
+        elif coord_state == "setup_in_progress":
+            coordinator_status = "loading"
+        elif coord_state in (
+            "setup_retry", "setup_error", "migration_error",
+            "failed_unload", "not_loaded",
+        ):
+            coordinator_status = "failed"
+        elif coord is None:
+            coordinator_status = "unknown"
+        else:
+            coordinator_status = coord_state
+        manual_action = (sh.get("recovery") or {}).get("manual_action")
+    except Exception:
+        pass
+
     fresh = _last_post_is_fresh(last_post)
-    if ha_reachable and fresh:
-        status = "ok"
-    elif ha_reachable or fresh:
+    # Status escalation rubric: hardest signal wins. coordinator_status=failed
+    # and sh_level=down both promote to "down" even when HA WS is technically
+    # reachable, because from the user's perspective the home is broken.
+    if not ha_reachable or sh_level == "down" or coordinator_status == "failed":
+        status = "down"
+    elif not fresh or sh_level == "degraded" or coordinator_status == "loading":
         status = "degraded"
     else:
-        status = "down"
+        status = "ok"
 
     return {
         "status":                 status,
@@ -118,6 +175,8 @@ def _build_health_snapshot() -> dict:
         "ziggy_version":          ziggy_version,
         "ha_version":             ha_version,
         "last_telemetry_post_at": last_post,
+        "coordinator_status":     coordinator_status,
+        "manual_action":          manual_action,
     }
 
 
@@ -144,4 +203,6 @@ async def edge_health() -> dict:
             "ziggy_version":          "unknown",
             "ha_version":             None,
             "last_telemetry_post_at": None,
+            "coordinator_status":     "unknown",
+            "manual_action":          None,
         }

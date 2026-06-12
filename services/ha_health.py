@@ -470,6 +470,7 @@ def _finalize_recovery(
     coordinator: CoordinatorState,
 ) -> None:
     global _recovery
+    previous_manual_action = _recovery.manual_action_code  # capture BEFORE mutating
     latency_ms = int((time.time() - t0) * 1000)
     if success:
         _recovery.last_result        = "success"
@@ -479,11 +480,39 @@ def _finalize_recovery(
         _recovery.last_result        = "failed"
         _recovery.manual_action_code = MANUAL_REPLUG_DONGLE
         log_info(f"[Health] auto-recover FAILED ({latency_ms} ms) — manual action queued: {note}")
+
+    # Fire push when manual_action_code transitions None -> MANUAL_REPLUG_DONGLE.
+    # Otherwise the user only sees the banner in-app; with a closed tab they'd
+    # never know. Web push is best-effort (fire-and-forget, swallows errors)
+    # so a missing push subscription can't break the recovery state machine.
+    if previous_manual_action is None and _recovery.manual_action_code == MANUAL_REPLUG_DONGLE:
+        _push_replug_alert()
+
     _dbus.emit("health", BASIC, "auto_recover_result",
                entry_id=coordinator.entry_id, ok=success,
                latency_ms=latency_ms, note=note,
                manual_action=_recovery.manual_action_code)
     _recovery.in_progress = False
+
+
+def _push_replug_alert() -> None:
+    """Notify the user the Zigbee coordinator needs physical replug.
+
+    Wired here (inside the recovery state machine) rather than in the FE
+    because the banner is only seen when a dashboard tab is open. Real-world
+    scenario: Zigbee dies overnight after a Windows update; user discovers it
+    next morning. With this push the user gets a phone alert within minutes.
+    """
+    try:
+        from services.push_notify import push_notify_fire_and_forget
+        push_notify_fire_and_forget(
+            title="Zigbee needs a hand",
+            body="Unplug the Zigbee dongle on the hub, wait 5 seconds, plug it back in. Devices will come back automatically.",
+            url="/",
+            category="system_health",
+        )
+    except Exception as exc:
+        log_error(f"[Health] push_notify_fire_and_forget failed: {exc}")
 
 
 async def trigger_recover_now() -> dict:
