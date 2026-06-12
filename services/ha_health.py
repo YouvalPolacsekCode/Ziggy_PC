@@ -29,8 +29,6 @@ import os
 import time
 from dataclasses import dataclass, field
 
-import requests
-
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 from core.logger_module import log_info, log_error
 
@@ -141,11 +139,18 @@ def _raw_coord_title(domain: str) -> str:
     }.get(domain, domain.upper() or "Unknown")
 
 
-def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | None:
+async def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | None:
     """Query HA for the best-ranked Zigbee coordinator config entry.
 
+    Uses the HA WebSocket API (`config_entries/get`) -- the REST endpoint
+    `/api/config/config_entries` returns 404 on modern HA and silently broke
+    this function for an unknown stretch of time. Without a CoordinatorState
+    the classifier never reached ISSUE_COORDINATOR_FAILED and the auto-
+    recovery state machine never fired in production. Caught 2026-06-12
+    during the post-outage health-watchdog work.
+
     Cached for COORDINATOR_CACHE_TTL_S so 20-second /api/health polling
-    doesn't translate into 20-second HA REST polling. Force refresh after a
+    doesn't translate into 20-second HA WS polling. Force refresh after a
     reload attempt or on an explicit user "Retry".
     """
     global _coord_cache, _coord_cache_at
@@ -153,16 +158,14 @@ def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | None:
     if not force and _coord_cache and (now - _coord_cache_at) < COORDINATOR_CACHE_TTL_S:
         return _coord_cache
     try:
-        from services import ha_client
-        resp = requests.get(
-            f"{ha_client.url()}/api/config/config_entries",
-            headers=ha_client.headers(),
-            timeout=COORDINATOR_QUERY_TIMEOUT_S,
-        )
-        resp.raise_for_status()
-        entries = resp.json()
+        from services.ha_client import ws as _ws
+        res, = await _ws({"type": "config_entries/get"}, timeout=COORDINATOR_QUERY_TIMEOUT_S)
+        if not res.get("success"):
+            log_error(f"[Health] config_entries/get WS returned non-success: {res}")
+            return _coord_cache
+        entries = res.get("result") or []
     except Exception as e:
-        # HA REST unreachable — return last-known, do NOT poison the cache.
+        # HA WS unreachable — return last-known, do NOT poison the cache.
         log_error(f"[Health] coordinator state fetch failed: {e}")
         return _coord_cache
 
@@ -448,7 +451,7 @@ async def _run_auto_recover(coordinator: CoordinatorState) -> None:
         # then either "loaded" (success) or back to "setup_retry" (dongle still
         # wedged — manual action needed).
         await asyncio.sleep(RECOVERY_VERIFY_DELAY_S)
-        fresh = fetch_coordinator_state(force=True)
+        fresh = await fetch_coordinator_state(force=True)
         if fresh and fresh.state == "loaded":
             _finalize_recovery(success=True,
                                note="coordinator loaded after reload",
@@ -527,7 +530,7 @@ async def trigger_recover_now() -> dict:
         return {"ok": False, "in_progress": True,
                 "message": "Recovery already in progress."}
 
-    coord = fetch_coordinator_state(force=True)
+    coord = await fetch_coordinator_state(force=True)
     if coord is None:
         # No coordinator → nothing to reload. Clear any stale manual_action.
         _recovery.manual_action_code = None

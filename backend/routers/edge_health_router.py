@@ -82,9 +82,14 @@ def _last_post_is_fresh(last_post_at: Optional[str], *,
     return (now - parsed) <= timedelta(seconds=window_s)
 
 
-def _build_health_snapshot() -> dict:
+async def _build_health_snapshot() -> dict:
     """Read in-memory state from sibling modules. All reads tolerate
-    missing modules — local-dev hubs may not have every service running."""
+    missing modules — local-dev hubs may not have every service running.
+
+    Async because fetch_coordinator_state opens a short-lived HA WebSocket
+    (the REST `/api/config/config_entries` endpoint returns 404 on modern
+    HA, see ha_health.fetch_coordinator_state for the full story).
+    """
     # Ziggy version — telemetry_client owns the resolution logic.
     try:
         from services.telemetry_client import _get_ziggy_version, LAST_POST_AT_UTC
@@ -132,7 +137,7 @@ def _build_health_snapshot() -> dict:
             if not _should_hide(eid) and (e.get("state") in ("unavailable", "unknown"))
         }
         total = sum(1 for eid in _state_cache if not _should_hide(eid))
-        coord = ha_health.fetch_coordinator_state() if ha_reachable else None
+        coord = (await ha_health.fetch_coordinator_state()) if ha_reachable else None
         sh = ha_health.compute_system_health(
             ha_connected=ha_reachable,
             offline_primary_ids=offline_ids,
@@ -192,7 +197,7 @@ async def edge_health() -> dict:
     can distinguish "hub not reachable on the LAN" from "hub running but
     HA is unreachable."""
     try:
-        return _build_health_snapshot()
+        return await _build_health_snapshot()
     except Exception:
         # Defense-in-depth — the snapshot helper already catches its own
         # collector failures, but if something explodes BEFORE the helper

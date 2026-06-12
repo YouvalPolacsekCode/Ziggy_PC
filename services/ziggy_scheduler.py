@@ -269,7 +269,7 @@ async def _health_watchdog_tick() -> None:
             if not _should_hide(eid) and (e.get("state") in ("unavailable", "unknown"))
         }
         total = sum(1 for eid in state_cache if not _should_hide(eid))
-        coord = ha_health.fetch_coordinator_state() if ha_connected else None
+        coord = (await ha_health.fetch_coordinator_state()) if ha_connected else None
         ha_health.compute_system_health(
             ha_connected=ha_connected,
             offline_primary_ids=offline_ids,

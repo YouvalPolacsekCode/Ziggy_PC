@@ -267,7 +267,7 @@ async def get_health():
         # device_groups wasn't available, fall back to "0" so share thresholds
         # are skipped (compute() guards on MIN_DEVICES_FOR_SHARE).
         total_devices = len(primary_by_eid) if primary_by_eid else 0
-        coord_state_obj = ha_health.fetch_coordinator_state() if ha_connected else None
+        coord_state_obj = (await ha_health.fetch_coordinator_state()) if ha_connected else None
         system_health = ha_health.compute_system_health(
             ha_connected=ha_connected,
             offline_primary_ids=offline_primary_ids,
