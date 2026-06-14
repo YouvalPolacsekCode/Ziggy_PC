@@ -17,7 +17,7 @@ const PRIMARY = [
   { to: '/rooms',       Icon: Grid2x2,        labelKey: 'nav.rooms' },
   { to: '/chat',        Icon: MessageCircle,  labelKey: 'nav.askZiggy' },
   { to: '/devices',     Icon: Cpu,            labelKey: 'nav.devices' },
-  { to: '/automations', Icon: Zap,            labelKey: 'nav.automations' },
+  { to: '/actions',     Icon: Zap,            labelKey: 'nav.automations' },
 ]
 
 const SECONDARY_BASE = [

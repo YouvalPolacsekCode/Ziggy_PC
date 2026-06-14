@@ -112,7 +112,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
             top-left now that hover actions moved out of there. */}
         {!hovered && (
           <span style={{
-            position: 'absolute', top: 10, right: 10,
+            position: 'absolute', top: 10, insetInlineEnd: 10,
             width: 8, height: 8, borderRadius: '50%',
             background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.4)',
             boxShadow: hasActive ? '0 0 0 3px rgba(108,191,140,0.35)' : 'none',
@@ -129,7 +129,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
             normalize to °C for the threshold comparison so the chip behaves
             sensibly regardless of locale. */}
         {(room.tempSensor || room.humSensor) && (
-          <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 5 }}>
+          <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 5 }}>
             {room.tempSensor && (() => {
               const raw = parseFloat(room.tempSensor.state)
               const unit = room.tempSensor.unit_of_measurement
@@ -160,7 +160,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
           <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
           <p className="z-mono" style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
             {room.entityCount} · {hasActive ? t('rooms.someOn', { n: room.activeCount }) : t('rooms.idle')}
-            {room.offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 4 }}>· {t('rooms.nOff', { n: room.offlineCount })}</span>}
+            {room.offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginInlineStart: 4 }}>· {t('rooms.nOff', { n: room.offlineCount })}</span>}
           </p>
         </div>
       </button>
@@ -169,7 +169,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
           chips that live in the top-left corner. Status dot above is
           suppressed while hovered so the cluster owns this corner cleanly. */}
       {hovered && (onEditPhoto || onDelete) && (
-        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4, zIndex: 1 }}>
+        <div style={{ position: 'absolute', top: 8, insetInlineEnd: 8, display: 'flex', gap: 4, zIndex: 1 }}>
           {onEditPhoto && (
             <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title={t('rooms.editRoomAria')} aria-label={t('rooms.editRoomAria')} style={{ padding: '5px 6px', borderRadius: 8, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex' }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -252,7 +252,7 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
             <div style={{ marginBottom: 10 }}>
               <div style={{ position: 'relative', borderRadius: 11, overflow: 'hidden', height: 120, marginBottom: 6 }}>
                 <img src={customPhoto} alt={t('rooms.customAlt')} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                <button onClick={() => setCustomPhoto(null)} style={{ position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                <button onClick={() => setCustomPhoto(null)} style={{ position: 'absolute', top: 8, insetInlineEnd: 8, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>
               </div>
             </div>
           )}
@@ -347,7 +347,7 @@ function RoomReorderRow({ room }) {
       <div style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', flexShrink: 0, position: 'relative' }}>
         <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         <span style={{
-          position: 'absolute', top: 5, right: 5,
+          position: 'absolute', top: 5, insetInlineEnd: 5,
           width: 6, height: 6, borderRadius: '50%',
           background: hasActive ? 'var(--ok)' : 'rgba(255,255,255,0.5)',
           boxShadow: hasActive ? '0 0 0 2px rgba(108,191,140,0.35)' : 'none',
@@ -357,7 +357,7 @@ function RoomReorderRow({ room }) {
         <p dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
         <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
           {room.entityCount === 1 ? t('rooms.deviceCountSingular', { n: room.entityCount }) : t('rooms.deviceCount', { n: room.entityCount })}
-          {hasActive && <span style={{ color: 'var(--ok)', marginLeft: 6 }}>· {t('rooms.someOn', { n: room.activeCount })}</span>}
+          {hasActive && <span style={{ color: 'var(--ok)', marginInlineStart: 6 }}>· {t('rooms.someOn', { n: room.activeCount })}</span>}
         </p>
       </div>
       <GripVertical size={18} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} aria-hidden />
@@ -497,7 +497,7 @@ export function RoomsList() {
               ? t('rooms.dragToReorder')
               : <>
                   {rooms.length === 1 ? t('rooms.roomsCountSingular', { n: rooms.length }) : t('rooms.roomsCount', { n: rooms.length })}
-                  {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {t('rooms.unassignedCount', { n: unassigned.length })}</span>}
+                  {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginInlineStart: 4 }}>· {t('rooms.unassignedCount', { n: unassigned.length })}</span>}
                 </>}
           </p>
         </div>
@@ -551,14 +551,14 @@ export function RoomsList() {
           steals focus from drag gestures on mobile). */}
       {!reorderMode && (
         <div style={{ position: 'relative', marginBottom: 16 }}>
-          <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
           </svg>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder={t('rooms.searchPlaceholder')}
             dir="auto"
-            style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 36, height: 40, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
+            style={{ width: '100%', boxSizing: 'border-box', paddingInlineStart: 36, height: 40, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
             onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
             onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }}
           />
@@ -639,7 +639,7 @@ export function RoomsList() {
                 <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)', marginBottom: 2 }}>{unassigned.length === 1 ? t('rooms.unassignedDeviceCountSingular', { n: unassigned.length }) : t('rooms.unassignedDevicesCount', { n: unassigned.length })}</p>
                 <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('rooms.tapToAssign')}</p>
               </div>
-              <ChevronRight size={14} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+              <ChevronRight size={14} className="icon-flip-rtl" style={{ color: 'var(--warn)', flexShrink: 0 }} />
             </Link>
           )}
           {noRoomDevices.length > 0 && (
@@ -653,7 +653,7 @@ export function RoomsList() {
                 <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length === 1 ? t('rooms.noRoomDeviceCountSingular', { n: noRoomDevices.length }) : t('rooms.noRoomDevicesCount', { n: noRoomDevices.length })}</p>
                 <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('rooms.intentionalNoRoom')}</p>
               </div>
-              <ChevronRight size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+              <ChevronRight size={14} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
             </Link>
           )}
         </div>
@@ -741,7 +741,7 @@ function CameraPreview({ entityId }) {
         onError={e => { e.target.style.opacity = 0 }}
       />
       <div style={{
-        position: 'absolute', bottom: 5, right: 5,
+        position: 'absolute', bottom: 5, insetInlineEnd: 5,
         padding: '2px 7px', borderRadius: 6,
         background: 'rgba(0,0,0,0.45)', color: '#fff',
         fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
@@ -1147,7 +1147,7 @@ export function RoomDetail() {
             background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)',
             border: 'none', color: '#fff', cursor: 'pointer',
           }}>
-            <ArrowLeft size={16} />
+            <ArrowLeft size={16} className="icon-flip-rtl" />
           </button>
           <div ref={menuRef} style={{ position: 'relative' }}>
             <button
@@ -1165,7 +1165,7 @@ export function RoomDetail() {
               <div
                 role="menu"
                 style={{
-                  position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                  position: 'absolute', top: 'calc(100% + 6px)', insetInlineEnd: 0,
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
                   borderRadius: 12, boxShadow: 'var(--shadow-lg)',
                   padding: 4, minWidth: 160, zIndex: 10,
@@ -1290,13 +1290,13 @@ export function RoomDetail() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <p className="z-eyebrow">{t('rooms.automations')}</p>
-              <button onClick={() => navigate('/automations')} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('rooms.viewAll')}</button>
+              <button onClick={() => navigate('/actions')} style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('rooms.viewAll')}</button>
             </div>
             <div style={{ borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
               {roomAutomations.map((a, i) => (
                 <div key={a.id} style={{ borderBottom: i < roomAutomations.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px' }}>
-                    <button onClick={() => navigate('/automations')} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', padding: 0 }}>
+                    <button onClick={() => navigate('/actions')} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', padding: 0 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: a.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)' }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={a.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
                       </div>
@@ -1309,7 +1309,7 @@ export function RoomDetail() {
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ok)', padding: 6 }} title={t('rooms.runNow')}>
                       <Play size={13} />
                     </button>
-                    <span style={{ color: 'var(--ink-faint)' }}><ChevronRight size={12} /></span>
+                    <span style={{ color: 'var(--ink-faint)' }}><ChevronRight size={12} className="icon-flip-rtl" /></span>
                   </div>
                 </div>
               ))}

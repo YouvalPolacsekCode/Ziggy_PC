@@ -15,7 +15,7 @@ const RoomDetail      = lazy(() => import('./pages/Rooms').then(m => ({ default:
 const Devices         = lazy(() => import('./pages/Devices'))
 const DeviceDetail    = lazy(() => import('./pages/DeviceDetail'))
 const Remote          = lazy(() => import('./pages/Remote'))
-const Automations     = lazy(() => import('./pages/Automations'))
+const Actions         = lazy(() => import('./pages/Actions'))
 const Routines        = lazy(() => import('./pages/Routines'))
 const AIChat          = lazy(() => import('./pages/AIChat'))
 const Tasks           = lazy(() => import('./pages/Tasks'))
@@ -335,7 +335,9 @@ function AppRoutes() {
         <Route path="devices" element={<Devices />} />
         <Route path="devices/:entityId" element={<DeviceDetail />} />
         <Route path="remote/:irId" element={<Remote />} />
-        <Route path="automations" element={<Automations />} />
+        <Route path="actions" element={<Actions />} />
+        {/* Old /automations URL still works — redirects to the new umbrella page. */}
+        <Route path="automations" element={<Navigate to="/actions" replace />} />
         <Route path="routines" element={<Routines />} />
         <Route path="scenes" element={<Navigate to="/routines" replace />} />
         <Route path="chat" element={<AIChat />} />
@@ -364,7 +366,7 @@ function AppRoutes() {
         <Route path="admin"           element={<Navigate to="/settings" replace />} />
         <Route path="memory"          element={<Navigate to="/settings/memory" replace />} />
         <Route path="virtual-devices" element={<Navigate to="/settings" replace />} />
-        <Route path="quick-asks"      element={<Navigate to="/automations" replace />} />
+        <Route path="quick-asks"      element={<Navigate to="/actions" replace />} />
         {mediaMusicEnabled && (
           <Route path="settings/music" element={<MediaSettings />} />
         )}

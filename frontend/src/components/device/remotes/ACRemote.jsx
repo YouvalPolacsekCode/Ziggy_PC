@@ -393,7 +393,7 @@ function ScheduleCard({ automation }) {
   const trigger = describeAutomationTrigger(automation)
   return (
     <a
-      href="/automations"
+      href="/actions"
       style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 12,
         padding: '12px 14px', borderRadius: 14,
@@ -423,7 +423,7 @@ function ScheduleCard({ automation }) {
 function SuggestionCard({ suggestion }) {
   return (
     <a
-      href="/automations"
+      href="/actions"
       style={{
         width: '100%', display: 'flex', alignItems: 'flex-start', gap: 12,
         padding: '12px 14px', borderRadius: 14,

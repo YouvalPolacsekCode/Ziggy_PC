@@ -130,7 +130,7 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <button onClick={() => navigate(-1)} className="z-icon-btn"
           style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }} aria-label={t('deviceDetail.back')}>
-          <ArrowLeft size={16} />
+          <ArrowLeft size={16} className="icon-flip-rtl" />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="z-eyebrow" style={{ color: 'var(--warn)' }}>{t('deviceDetail.ghost.eyebrow')}</p>
@@ -622,7 +622,7 @@ export default function DeviceDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
             <button onClick={() => navigate(-1)} className="z-icon-btn"
               style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }} aria-label={t('deviceDetail.back')}>
-              <ArrowLeft size={16} />
+              <ArrowLeft size={16} className="icon-flip-rtl" />
             </button>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p className="z-eyebrow" style={{ color: 'var(--warn)' }}>{t('deviceDetail.couldntLoad')}</p>
@@ -648,7 +648,7 @@ export default function DeviceDetail() {
       <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px' }}>
         <div className="flex items-center gap-3 mb-6">
           <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-surface-2 text-ink-mute transition-colors">
-            <ArrowLeft size={18} />
+            <ArrowLeft size={18} className="icon-flip-rtl" />
           </button>
           <div className="h-5 w-32 bg-surface-2 rounded animate-pulse" />
         </div>
@@ -742,7 +742,7 @@ export default function DeviceDetail() {
           style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
           aria-label={t('deviceDetail.back')}
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft size={16} className="icon-flip-rtl" />
         </button>
         <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
           {/* Parent-device crumb when viewing a non-primary sibling. Tapping
@@ -759,7 +759,7 @@ export default function DeviceDetail() {
               }}
               title={t('devices.openParentDevice')}
             >
-              <ArrowLeft size={9} />
+              <ArrowLeft size={9} className="icon-flip-rtl" />
               {groupName || t('devices.parentDevice')}
             </button>
           )}
@@ -1083,7 +1083,7 @@ export default function DeviceDetail() {
                     </p>
                   </div>
                 </div>
-                <ChevronRight size={14} className="text-ink-faint group-hover:text-ink-mute transition-colors" />
+                <ChevronRight size={14} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
               </Link>
             ))}
           </div>
@@ -1100,7 +1100,7 @@ export default function DeviceDetail() {
             {automations_using.map(auto => (
               <Link
                 key={auto.id}
-                to="/automations"
+                to="/actions"
                 className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
               >
                 <div className="flex items-center gap-2.5">
@@ -1111,7 +1111,7 @@ export default function DeviceDetail() {
                   <Badge variant={auto.enabled ? 'success' : 'default'} size="sm">
                     {auto.enabled ? t('deviceDetail.autoOn') : t('deviceDetail.autoOff')}
                   </Badge>
-                  <ChevronRight size={14} className="text-ink-faint group-hover:text-ink-mute transition-colors" />
+                  <ChevronRight size={14} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
                 </div>
               </Link>
             ))}

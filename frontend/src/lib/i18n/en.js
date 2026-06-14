@@ -140,7 +140,7 @@ export default {
   'nav.home':         'Home',
   'nav.rooms':        'Rooms',
   'nav.devices':      'Devices',
-  'nav.automations':  'Automations',
+  'nav.automations':  'Actions',
   'nav.routines':     'Routines',
   'nav.askZiggy':     'Ask Ziggy',
   'nav.ziggy':        'Ziggy',
@@ -691,7 +691,7 @@ export default {
   'rooms.noEntitySet':      'No device linked',
 
   // ── Automations / Routines ──────────────────────────────────────────
-  'automations.title':       'Automations',
+  'automations.title':       'Actions',
   'automations.add':         'New automation',
   'automations.empty':       'No automations yet',
   'automations.name':        'Name',
@@ -725,7 +725,7 @@ export default {
   'automations.assignToRoom':'Assign to room',
   'automations.unassigned':  'Unassigned',
   // Page chrome
-  'automations.eyebrow':       'React to events automatically',
+  'automations.eyebrow':       'Automations, routines, and quick asks',
   'automations.countSummary':  '{enabled} enabled · {total} total',
   'automations.library':       'Library',
   'automations.libraryTitle':  'Automation Library',

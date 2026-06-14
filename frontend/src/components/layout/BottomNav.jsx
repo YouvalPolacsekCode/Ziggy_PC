@@ -31,7 +31,7 @@ const PRIMARY_TABS = [
   { to: '/devices', name: 'devices', labelKey: 'nav.devices' },
 ]
 const MORE_BASE = [
-  { to: '/automations', Icon: Zap,         labelKey: 'nav.automations' },
+  { to: '/actions',     Icon: Zap,         labelKey: 'nav.automations' },
   { to: '/alerts',      Icon: Bell,        labelKey: 'nav.alerts' },
   { to: '/tasks',       Icon: CheckSquare, labelKey: 'nav.tasks',    feature: 'task_tracking' },
   { to: '/settings',    Icon: Settings,    labelKey: 'nav.settings' },
