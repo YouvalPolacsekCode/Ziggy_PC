@@ -44,6 +44,16 @@ def loaded_coord():
                             raw_title="Zigbee Home Automation")
 
 
+def _stub_fetch_coordinator_state(value):
+    """Helper to monkeypatch the now-async fetch_coordinator_state with a
+    callable that returns a coroutine resolving to `value`. monkeypatch
+    needs a regular function pointer, but the production code awaits the
+    result, so we return a coroutine on each call."""
+    async def _impl(*, force=False):
+        return value
+    return _impl
+
+
 @pytest.fixture
 def failed_coord():
     return CoordinatorState(entry_id="ent_zha", domain="zha",
@@ -261,10 +271,10 @@ class TestRecoveryBody:
         # After reload, fetch_coordinator_state(force=True) returns a "loaded" entry.
         monkeypatch.setattr(
             ha_health, "fetch_coordinator_state",
-            lambda *, force=False: CoordinatorState(
+            _stub_fetch_coordinator_state(CoordinatorState(
                 entry_id="ent_zha", domain="zha", title="Zigbee hub",
                 state="loaded", raw_title="Zigbee Home Automation",
-            ),
+            )),
         )
         await ha_health._run_auto_recover(failed_coord)
         state = ha_health._peek_state_for_tests()["recovery"]
@@ -284,10 +294,10 @@ class TestRecoveryBody:
         monkeypatch.setattr(ha_health, "RECOVERY_VERIFY_DELAY_S", 0)
         monkeypatch.setattr(
             ha_health, "fetch_coordinator_state",
-            lambda *, force=False: CoordinatorState(
+            _stub_fetch_coordinator_state(CoordinatorState(
                 entry_id="ent_zha", domain="zha", title="Zigbee hub",
                 state="setup_retry", raw_title="Zigbee Home Automation",
-            ),
+            )),
         )
         await ha_health._run_auto_recover(failed_coord)
         state = ha_health._peek_state_for_tests()["recovery"]
@@ -315,10 +325,10 @@ class TestRecoveryBody:
         # Simulate: by the time the user taps Retry, HA reports loaded.
         monkeypatch.setattr(
             ha_health, "fetch_coordinator_state",
-            lambda *, force=False: CoordinatorState(
+            _stub_fetch_coordinator_state(CoordinatorState(
                 entry_id="ent_zha", domain="zha", title="Zigbee hub",
                 state="loaded", raw_title="Zigbee Home Automation",
-            ),
+            )),
         )
         out = await ha_health.trigger_recover_now()
         assert out["ok"] is True
@@ -378,6 +388,35 @@ class TestAcknowledgement:
             total_devices=10, coordinator=loaded_coord,
         )
         assert out["ack"]["active"] is True
+
+    def test_ack_suppresses_small_offline_banner(self, loaded_coord, stub_no_create_task):
+        """Acknowledgement also works for the small (< 50%) offline case.
+
+        Previously the banner's body said "Tap to review, or acknowledge if
+        you know" but no Ack button rendered because `ack_can_show` only
+        flipped True for ISSUE_DEVICES_OFFLINE_MANY. Same suppression now
+        applies to ISSUE_DEVICES_OFFLINE so dead batteries etc can be
+        dismissed without the misleading body copy.
+        """
+        offline = {"dev.1", "dev.2", "dev.3"}  # 3/20 = 15% → DEVICES_OFFLINE
+        ha_health.acknowledge_offline(offline)
+        out = ha_health.compute_system_health(
+            ha_connected=True, offline_primary_ids=offline,
+            total_devices=20, coordinator=loaded_coord,
+        )
+        assert out["primary"]      == ISSUE_OK
+        assert out["ack"]["active"] is True
+
+    def test_small_offline_exposes_can_acknowledge(self, loaded_coord, stub_no_create_task):
+        """Without an ack in place, the small-offline banner offers the Ack
+        button (`ack.can_acknowledge=True`)."""
+        out = ha_health.compute_system_health(
+            ha_connected=True,
+            offline_primary_ids={"dev.1", "dev.2", "dev.3"},
+            total_devices=20, coordinator=loaded_coord,
+        )
+        assert out["primary"] == ISSUE_DEVICES_OFFLINE
+        assert out["ack"]["can_acknowledge"] is True
 
     def test_ack_cleared_when_ha_drops(self, loaded_coord, stub_no_create_task):
         offline_initial = {f"dev.{i}" for i in range(6)}

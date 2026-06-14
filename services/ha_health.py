@@ -8,7 +8,7 @@ banner renders:
   Coordinator setup_retry/error   → "Zigbee connection problem" + auto-reload
   Coordinator devices unavailable → "Zigbee connection problem" (≥80% offline)
   Many devices offline            → "N devices offline" + "It's OK, I know"
-  A few devices offline           → small note, no system banner
+  A few devices offline           → small note + "It's OK, I know"
 
 The recovery state machine attempts ONE coordinator reload per cooldown window
 (default 5 minutes) when a coordinator-level failure is detected. If that
@@ -245,12 +245,17 @@ def compute_system_health(
         offline_share=offline_share,
         primary=primary,
     )
-    if ack_active and primary == ISSUE_DEVICES_OFFLINE_MANY:
+    if ack_active and primary in (ISSUE_DEVICES_OFFLINE, ISSUE_DEVICES_OFFLINE_MANY):
         # Hide the banner — counts still appear in devices.offline.
         primary = ISSUE_OK
         level   = LEVEL_OK
 
-    ack_can_show = (primary == ISSUE_DEVICES_OFFLINE_MANY) and not ack_active
+    # Allow Ack on BOTH small and large device-offline cases. The body copy
+    # for the small case already invited it ("Tap to review, or acknowledge
+    # if you know") but the button was suppressed — banner text lied to the
+    # user. Invalidation rules in _apply_acknowledgement are identical for
+    # both: a new offline device clears the ack so the user is re-alerted.
+    ack_can_show = (primary in (ISSUE_DEVICES_OFFLINE, ISSUE_DEVICES_OFFLINE_MANY)) and not ack_active
 
     # 3. Trigger auto-recovery if appropriate (cooldown-gated; once per window).
     #    Cooldown bookkeeping happens HERE (synchronously) so that two close-
