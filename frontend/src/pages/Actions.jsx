@@ -44,31 +44,32 @@ export default function Automations() {
     }
     return s
   }, [entities])
-  const [tab,               setTab]               = useState('active')
+  const [tab,               setTab]               = useState('automations')
   const [showWizard,        setShowWizard]        = useState(false)
   const [editTarget,        setEditTarget]        = useState(null)
   const [viewTarget,        setViewTarget]        = useState(null)
   const [suggestedTemplates, setSuggestedTemplates] = useState(suggestedTemplatesCache || [])
   const [showLibrary,       setShowLibrary]       = useState(false)
   // Circadian bundle wizard — opened by Configure on the Smart Light Schedule
-  // template, or by Edit on the grouped Active-tab row. Carries the prefill
-  // (defaults.lights, defaults.bedtime) and an _isInstalled flag so the
-  // wizard can show "Update" + "Remove" rather than "Activate".
+  // template, or by Edit on the grouped row in the Your-Automations section.
+  // Carries the prefill (defaults.lights, defaults.bedtime) and an
+  // _isInstalled flag so the wizard can show "Update" + "Remove" rather than
+  // "Activate".
   const [circadianTarget,   setCircadianTarget]   = useState(null)
-  // Collapsed by default — the Recommended-by-Ziggy block is helpful but
-  // not the user's primary intent when landing on the Suggested tab. They
-  // came to review pending suggestions; the templates banner is secondary.
-  // Keeping it closed unless explicitly opened keeps the tab compact.
-  const [suggestionsOpen,   setSuggestionsOpen]   = useState(false)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
   const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
+  // Templates the user hasn't already configured. Used by the Recommended
+  // section in the Automations tab and to decide whether to skip the
+  // 0-automations empty state (when there are templates to try, the empty
+  // state would just be noise above them).
+  const recommendedTemplates = suggestedTemplates.filter(tpl => !tpl.already_exists)
 
   // Group the 4 ziggy_circadian_* automations behind a single "Smart Light
-  // Schedule" row on the Active tab. The user sees one toggleable feature,
-  // not 4 cryptic clock entries. Member IDs and shared lights/bedtime are
-  // derived from the bedtime automation's trigger time and any member's
-  // light targets (all 4 share the same light set on save).
+  // Schedule" row in the Your-Automations section. The user sees one
+  // toggleable feature, not 4 cryptic clock entries. Member IDs and shared
+  // lights/bedtime are derived from the bedtime automation's trigger time
+  // and any member's light targets (all 4 share the same light set on save).
   const { circadianGroup, visibleAutomations } = useMemo(() => {
     const members = automations.filter(a => a.id?.startsWith('ziggy_circadian_'))
     if (members.length === 0) return { circadianGroup: null, visibleAutomations: automations }
@@ -152,7 +153,7 @@ export default function Automations() {
   }
 
   // Open the circadian wizard in edit mode for an installed bundle. Called
-  // from the grouped Smart Light Schedule row on the Active tab.
+  // from the grouped Smart Light Schedule row in the Your-Automations section.
   const handleEditCircadianBundle = (group) => {
     setCircadianTarget({
       _isInstalled: true,
@@ -245,13 +246,16 @@ export default function Automations() {
         </div>
       </div>
 
-      {/* Tab switcher — segmented pill style */}
+      {/* Tab switcher — segmented pill style. Three tabs: the umbrella's
+          three concepts (automations / routines / quick-asks). Suggested
+          and Recommended-by-Ziggy live as sections INSIDE the Automations
+          tab so users don't have to bounce between tabs to see what Ziggy
+          thinks they should set up. */}
       <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20 }}>
         {[
-          { id: 'active',     label: t('automations.tabActive'),     count: automations.filter(a => a.enabled).length },
-          { id: 'suggested',  label: t('automations.tabSuggested'),  count: pendingSuggestions.length },
-          { id: 'routines',   label: t('automations.tabRoutines'),   count: routines.length },
-          { id: 'quick-asks', label: t('automations.tabQuickAsks'),  count: 0 },
+          { id: 'automations', label: t('automations.tabActive'),     count: automations.filter(a => a.enabled).length },
+          { id: 'routines',    label: t('automations.tabRoutines'),   count: routines.length },
+          { id: 'quick-asks',  label: t('automations.tabQuickAsks'),  count: 0 },
         ].map(tabDef => (
           <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
             flex: 1, padding: '8px 0', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
@@ -273,85 +277,103 @@ export default function Automations() {
           so the page never reflows mid-transition. Snappy 140ms each way. */}
       <AnimatePresence mode="wait">
 
-      {/* ─── Suggested tab ─── */}
-      {tab === 'suggested' && (
+      {/* ─── Automations tab ─── */}
+      {tab === 'automations' && (
         <motion.div
-          key="suggested"
+          key="automations"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.14, ease: 'easeOut' }}
         >
 
-      {/* ── Recommended by Ziggy — banner at the top of Suggested tab.
-            Templates already configured are filtered out (they live in the
-            Active tab). Expanded by default so users see suggestions instead
-            of having to find them behind a collapsed chip. ─────────────── */}
-      {(() => {
-        // Hide templates the user has already created — they belong in Active.
-        const recommended = suggestedTemplates.filter(tpl => !tpl.already_exists)
-        if (recommended.length === 0) return null
-        const readyCount = recommended.filter(tpl => tpl.tier === 'ready').length
-        const partialCount = recommended.filter(tpl => tpl.tier === 'partial').length
-        return (
-          <div style={{
-            marginBottom: 20,
-            borderRadius: 14,
-            border: `0.5px solid color-mix(in srgb, var(--info) 35%, var(--line))`,
-            background: `linear-gradient(180deg, color-mix(in srgb, var(--info) 6%, var(--surface)) 0%, var(--surface) 100%)`,
-            overflow: 'hidden',
-          }}>
-            <button
-              onClick={() => setSuggestionsOpen(v => !v)}
-              style={{ width: '100%', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', textAlign: 'start' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                  <span style={{ fontSize: 18 }}>✨</span>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
-                      {t('automations.recommended')}
-                    </p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 1 }}>
-                      {readyCount > 0 && <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{t('automations.recommendedReady', { n: readyCount })}</span>}
-                      {readyCount > 0 && partialCount > 0 && <span style={{ color: 'var(--ink-faint)' }}> · </span>}
-                      {partialCount > 0 && <span style={{ color: 'var(--warn)', fontWeight: 600 }}>{t('automations.recommendedNeed', { n: partialCount })}</span>}
-                      {readyCount === 0 && partialCount === 0 && <span>{t('automations.recommendedSubtitle')}</span>}
-                    </p>
-                  </div>
-                </div>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-mute)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: suggestionsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><path d="M6 9l6 6 6-6"/></svg>
-              </div>
-            </button>
-            <AnimatePresence>
-              {suggestionsOpen && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
-                  <div style={{ padding: '0 12px 12px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {recommended.slice(0, 5).map(tpl => (
-                      <TemplateCard key={tpl.id} template={tpl} onConfigure={handleConfigureTemplate} />
-                    ))}
-                    {recommended.length > 5 && (
-                      <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
-                        {t('automations.moreInLibrary', { n: recommended.length - 5 })}
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )
-      })()}
+      {/* Loading skeleton — only the first paint. Once any data has loaded
+          (even an empty list), the real sections take over so we don't flash
+          skeletons on every WS reconnect. */}
+      {loading && automations.length === 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+        </div>
+      )}
 
-      <SuggestedTab
-        suggestions={suggestions}
-        loading={sugLoading}
-        analyzing={analyzing}
-        onConfigure={handleConfigureSuggestion}
-        onReject={async id => { try { await reject(id); addToast(t('automations.suggested.dismissed'), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
-        onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
-        onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? t(r.new_count === 1 ? 'automations.suggested.foundNewOne' : 'automations.suggested.foundNew', { n: r.new_count }) : t('automations.suggested.noNewPatterns'), 'success') } catch { addToast(t('automations.suggested.analysisFailed'), 'error') } }}
-      />
+      {/* Empty state — only when there's *nothing* to show. If recommended
+          templates exist, we skip the empty state since the Recommended
+          section below acts as the gentle onboarding nudge. */}
+      {!loading && automations.length === 0 && recommendedTemplates.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('automations.empty')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('automations.emptyHint')}</p>
+          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.createAutomation')}</button>
+        </div>
+      )}
+
+      {/* ── Section: Your automations ───────────────────────────────────── */}
+      {automations.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.myAutomations')}</p>
+          <AnimatePresence mode="popLayout">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {circadianGroup && (
+                <CircadianGroupRow
+                  group={circadianGroup}
+                  onToggleAll={async (toEnabled) => {
+                    try {
+                      await Promise.all(circadianGroup.members.map(m => toggleAutomation(m.id, toEnabled)))
+                    } catch { addToast(t('automations.circadian.failed'), 'error') }
+                  }}
+                  onEdit={() => handleEditCircadianBundle(circadianGroup)}
+                  onDelete={async () => {
+                    try {
+                      await deleteCircadianBundle()
+                      addToast(t('automations.circadian.deleted'), 'success')
+                      await fetchAutomations({ force: true })
+                    } catch { addToast(t('automations.circadian.failed'), 'error') }
+                  }}
+                />
+              )}
+              {visibleAutomations.map(a => (
+                <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
+                  onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
+                  onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }} />
+              ))}
+            </div>
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* ── Section: Suggested by Ziggy (habit-based) ───────────────────── */}
+      {pendingSuggestions.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.tabSuggested')}</p>
+          <SuggestedTab
+            suggestions={suggestions}
+            loading={sugLoading}
+            analyzing={analyzing}
+            onConfigure={handleConfigureSuggestion}
+            onReject={async id => { try { await reject(id); addToast(t('automations.suggested.dismissed'), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+            onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+            onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? t(r.new_count === 1 ? 'automations.suggested.foundNewOne' : 'automations.suggested.foundNew', { n: r.new_count }) : t('automations.suggested.noNewPatterns'), 'success') } catch { addToast(t('automations.suggested.analysisFailed'), 'error') } }}
+          />
+        </div>
+      )}
+
+      {/* ── Section: Recommended templates (OOTB, device-matched) ───────── */}
+      {recommendedTemplates.length > 0 && (
+        <div>
+          <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.recommended')}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {recommendedTemplates.slice(0, 5).map(tpl => (
+              <TemplateCard key={tpl.id} template={tpl} onConfigure={handleConfigureTemplate} />
+            ))}
+            {recommendedTemplates.length > 5 && (
+              <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
+                {t('automations.moreInLibrary', { n: recommendedTemplates.length - 5 })}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
         </motion.div>
       )}
 
@@ -378,63 +400,6 @@ export default function Automations() {
           transition={{ duration: 0.14, ease: 'easeOut' }}
         >
           <QuickAsks embedded />
-        </motion.div>
-      )}
-
-      {/* ─── Active tab ─── */}
-      {tab === 'active' && (
-        <motion.div
-          key="active"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.14, ease: 'easeOut' }}
-        >
-
-      {/* ── My Automations ───────────────────────────────────────────────── */}
-      {automations.length > 0 && <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.myAutomations')}</p>}
-
-      {loading && automations.length === 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
-        </div>
-      )}
-
-      {!loading && automations.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('automations.empty')}</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('automations.emptyHint')}</p>
-          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.createAutomation')}</button>
-        </div>
-      )}
-
-      <AnimatePresence mode="popLayout">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {circadianGroup && (
-            <CircadianGroupRow
-              group={circadianGroup}
-              onToggleAll={async (toEnabled) => {
-                try {
-                  await Promise.all(circadianGroup.members.map(m => toggleAutomation(m.id, toEnabled)))
-                } catch { addToast(t('automations.circadian.failed'), 'error') }
-              }}
-              onEdit={() => handleEditCircadianBundle(circadianGroup)}
-              onDelete={async () => {
-                try {
-                  await deleteCircadianBundle()
-                  addToast(t('automations.circadian.deleted'), 'success')
-                  await fetchAutomations({ force: true })
-                } catch { addToast(t('automations.circadian.failed'), 'error') }
-              }}
-            />
-          )}
-          {visibleAutomations.map(a => (
-            <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
-              onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
-              onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }} />
-          ))}
-        </div>
-      </AnimatePresence>
         </motion.div>
       )}
 
