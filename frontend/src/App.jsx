@@ -20,13 +20,26 @@ const Routines        = lazy(() => import('./pages/Routines'))
 const AIChat          = lazy(() => import('./pages/AIChat'))
 const Tasks           = lazy(() => import('./pages/Tasks'))
 const Settings        = lazy(() => import('./pages/Settings'))
-const Memory          = lazy(() => import('./pages/Memory'))
-const VirtualDevices  = lazy(() => import('./pages/VirtualDevices'))
+// Settings sub-pages — each section of the old monolithic Settings page is now
+// route-mounted at /settings/<slug>. Co-located in Settings.jsx as named exports.
+const AppearancePage   = lazy(() => import('./pages/Settings').then(m => ({ default: m.AppearancePage })))
+const LanguagePage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.LanguagePage })))
+const AccountPage      = lazy(() => import('./pages/Settings').then(m => ({ default: m.AccountPage })))
+const NotificationsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.NotificationsPage })))
+const HomeSensingPage  = lazy(() => import('./pages/Settings').then(m => ({ default: m.HomeSensingPage })))
+const MobilePage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MobilePage })))
+const UsersPage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.UsersPage })))
+const MemoryPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MemoryPage })))
+const IrHubsPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.IrHubsPage })))
+// Ops sub-pages migrated out of the old /admin route during the 2026-06 refactor
+const SystemDiagnosticsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SystemDiagnosticsPage })))
+const PresenceDebugPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.PresenceDebugPage })))
+const ApiKeysPage       = lazy(() => import('./pages/AdminSettings').then(m => ({ default: m.ApiKeysPage })))
+const EmailPage         = lazy(() => import('./pages/AdminSettings').then(m => ({ default: m.EmailPage })))
+const EngineTuningPage  = lazy(() => import('./pages/AdminSettings').then(m => ({ default: m.EngineTuningPage })))
 const Suggestions     = lazy(() => import('./pages/Suggestions'))
 const Anomalies       = lazy(() => import('./pages/Anomalies'))
-const QuickAsks       = lazy(() => import('./pages/QuickAsks'))
 const Cameras         = lazy(() => import('./pages/Cameras'))
-const AdminSettings   = lazy(() => import('./pages/AdminSettings'))
 const AdminConsole    = lazy(() => import('./pages/AdminConsole'))
 const CloudAdmin      = lazy(() => import('./pages/CloudAdmin'))
 const DebugPage       = lazy(() => import('./pages/DebugPage'))
@@ -38,6 +51,9 @@ const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
 const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
 const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
+// Public client-facing marketing site. Lazy so none of it ships in the
+// authenticated app's initial bundle — only the /welcome branch in App() loads it.
+const MarketingSite     = lazy(() => import('./marketing/MarketingSite'))
 import MobilePresenceBridge from './lib/mobilePresenceBridge'
 import { useUIStore } from './stores/uiStore'
 import { useWsConnected, useWsMessages } from './hooks/useWebSocket'
@@ -326,15 +342,29 @@ function AppRoutes() {
         {taskTrackingEnabled && (
           <Route path="tasks" element={<Tasks />} />
         )}
-        <Route path="memory" element={<Memory />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="virtual-devices" element={<VirtualDevices />} />
+        {/* Settings sub-pages — each old section now has its own URL so
+            the user can deep-link / hit back to the hub */}
+        <Route path="settings/appearance"    element={<AppearancePage />} />
+        <Route path="settings/language"      element={<LanguagePage />} />
+        <Route path="settings/account"       element={<AccountPage />} />
+        <Route path="settings/notifications" element={<NotificationsPage />} />
+        <Route path="settings/home-sensing"  element={<HomeSensingPage />} />
+        <Route path="settings/mobile"        element={<MobilePage />} />
+        <Route path="settings/users"         element={<UsersPage />} />
+        <Route path="settings/memory"        element={<MemoryPage />} />
+        <Route path="settings/ir-hubs"       element={<IrHubsPage />} />
         <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
         <Route path="anomalies" element={<Navigate to="/alerts" replace />} />
-        <Route path="quick-asks" element={<QuickAsks />} />
         <Route path="cameras" element={<Cameras />} />
-        <Route path="admin" element={<AdminSettings />} />
+        {/* 2026-06 settings refactor: /admin, /memory, /virtual-devices,
+            /quick-asks routes were removed. Old bookmarks redirect to the
+            nearest replacement so they don't 404 silently. */}
+        <Route path="admin"           element={<Navigate to="/settings" replace />} />
+        <Route path="memory"          element={<Navigate to="/settings/memory" replace />} />
+        <Route path="virtual-devices" element={<Navigate to="/settings" replace />} />
+        <Route path="quick-asks"      element={<Navigate to="/automations" replace />} />
         {mediaMusicEnabled && (
           <Route path="settings/music" element={<MediaSettings />} />
         )}
@@ -364,6 +394,22 @@ function AppRoutes() {
         </Route>
         <Route element={<OpsPageWrapper title="Audit Log" />}>
           <Route path="audit" element={<AuditLog />} />
+        </Route>
+        {/* Migrated from /admin in the 2026-06 settings refactor */}
+        <Route element={<OpsPageWrapper title="System Diagnostics" />}>
+          <Route path="system-diagnostics" element={<SystemDiagnosticsPage />} />
+        </Route>
+        <Route element={<OpsPageWrapper title="API Keys" />}>
+          <Route path="api-keys" element={<ApiKeysPage />} />
+        </Route>
+        <Route element={<OpsPageWrapper title="Email (SMTP)" />}>
+          <Route path="email" element={<EmailPage />} />
+        </Route>
+        <Route element={<OpsPageWrapper title="Engine Tuning" />}>
+          <Route path="engine-tuning" element={<EngineTuningPage />} />
+        </Route>
+        <Route element={<OpsPageWrapper title="Presence Debug" />}>
+          <Route path="presence-debug" element={<PresenceDebugPage />} />
         </Route>
         {mediaMusicEnabled && (
           <Route element={<OpsPageWrapper title="Media Diagnostics" />}>
@@ -637,6 +683,18 @@ export default function App() {
     }
     register()
   }, [authenticated])
+
+  // Public client-facing marketing site — rendered before the auth wall so
+  // prospective customers never hit the login page. Mirrors the public
+  // `/invite/` escape hatch below; self-contained under src/marketing/.
+  if (window.location.pathname === '/welcome' ||
+      window.location.pathname.startsWith('/welcome/')) {
+    return (
+      <Suspense fallback={null}>
+        <MarketingSite />
+      </Suspense>
+    )
+  }
 
   // Invite acceptance is public — render before auth wall
   if (window.location.pathname.startsWith('/invite/')) {

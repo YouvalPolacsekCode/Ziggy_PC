@@ -16,6 +16,7 @@ import IRDeviceSelect from '../components/IRDeviceSelect'
 import MediaPlayActionEditor from '../components/media/MediaPlayActionEditor'
 import { useFeature } from '../stores/featuresStore'
 import { RoutinesListPanel } from './Routines'
+import QuickAsks from './QuickAsks'
 import { useT, t as tStatic } from '../lib/i18n'
 
 // Module-level cache so the Recommended-by-Ziggy block doesn't re-flash empty
@@ -2532,9 +2533,10 @@ export default function Automations() {
       {/* Tab switcher — segmented pill style */}
       <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20 }}>
         {[
-          { id: 'active',    label: t('automations.tabActive'),    count: automations.filter(a => a.enabled).length },
-          { id: 'suggested', label: t('automations.tabSuggested'), count: pendingSuggestions.length },
-          { id: 'routines',  label: t('automations.tabRoutines'),  count: routines.length },
+          { id: 'active',     label: t('automations.tabActive'),     count: automations.filter(a => a.enabled).length },
+          { id: 'suggested',  label: t('automations.tabSuggested'),  count: pendingSuggestions.length },
+          { id: 'routines',   label: t('automations.tabRoutines'),   count: routines.length },
+          { id: 'quick-asks', label: t('automations.tabQuickAsks'),  count: 0 },
         ].map(tabDef => (
           <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
             flex: 1, padding: '8px 0', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
@@ -2648,6 +2650,19 @@ export default function Automations() {
           transition={{ duration: 0.14, ease: 'easeOut' }}
         >
           <RoutinesListPanel />
+        </motion.div>
+      )}
+
+      {/* ─── Quick Asks tab ─── */}
+      {tab === 'quick-asks' && (
+        <motion.div
+          key="quick-asks"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+        >
+          <QuickAsks embedded />
         </motion.div>
       )}
 

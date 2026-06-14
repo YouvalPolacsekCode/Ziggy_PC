@@ -1,20 +1,31 @@
+// Settings: drill-down hub.
+//
+// Each section is a clickable card that navigates to a dedicated sub-route at
+// /settings/<slug>. Sub-page components are named exports consumed by App.jsx's
+// lazy-route table — keeping them co-located here keeps the section logic
+// (PresenceSection, UsersAndAccessSection, etc.) reused without duplication.
+//
+// System Diagnostics and Presence Debug are also exported from here because
+// /ops surfaces them — they share data/components with this file's
+// SystemStatusCard, ZigbeeBridgeSection, and the debug fields formerly inside
+// PresenceSection.
+
 import { useEffect, useState, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sun, Moon, User, Lock, LogOut, RefreshCw,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
-  Smartphone,
+  Smartphone, Bell, ChevronLeft,
 } from 'lucide-react'
 import { PairWithPhone } from '../components/PairWithPhone'
 import { MobileDevicesList } from '../components/MobileDevicesList'
+import BlastersSection from '../components/settings/BlastersSection'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
-import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
-import { Modal } from '../components/ui/Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
 import {
@@ -23,15 +34,12 @@ import {
   getAuthStatus, changePassword,
   getUsers, updateUser, deleteUser,
   createInvite, listInvites, revokeInvite,
-  getPresencePersons, createPresencePerson, deletePresencePerson,
-  getPresenceZone, savePresenceZone, getPresenceDebug, setPresenceLanHost,
+  getPresenceZone, savePresenceZone, getPresenceDebug,
   pingMePresence, getMyPresencePerson,
   listPresenceZones, createPresenceZone, updatePresenceZone, deletePresenceZone,
 } from '../lib/api'
-import AdminSettings from './AdminSettings'
 import { MemoryPanel } from './Memory'
-import QuickAsks from './QuickAsks'
-import VirtualDevices from './VirtualDevices'
+import { PushPreferenceCenter } from './AdminSettings'
 import { useT, setLang as setI18nLang, LANGS } from '../lib/i18n'
 import { useFeature } from '../stores/featuresStore'
 
@@ -100,53 +108,6 @@ function SectionTitle({ icon: Icon, children }) {
   )
 }
 
-// Collapsed-by-default "Advanced" container. Holds the diagnostics + network
-// panes that most users never touch (System Status, Zigbee bridge, etc.).
-// Keeping them in the DOM tree — just visually collapsed — means existing
-// deep-links / scroll-into-view still work after a user expands once.
-function AdvancedSettingsSection({ children }) {
-  const t = useT()
-  const [open, setOpen] = useState(false)
-  return (
-    <div style={{ marginBottom: 22, marginTop: 6 }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 14px', borderRadius: 12, background: 'var(--surface)',
-          border: '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
-          color: 'var(--ink)', textAlign: 'left',
-        }}
-        aria-expanded={open}
-      >
-        <span>
-          <p style={{ fontSize: 13, fontWeight: 600 }}>{t('settings.advanced')}</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{t('settings.advancedHint')}</p>
-        </span>
-        <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-        </span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div style={{ paddingTop: 14 }}>
-              {children}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
 function SettingRow({ icon: Icon, label, subtitle, children }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
@@ -159,6 +120,85 @@ function SettingRow({ icon: Icon, label, subtitle, children }) {
       </div>
       {children}
     </div>
+  )
+}
+
+// ─── Sub-page chrome — breadcrumb + back to /settings ────────────────────────
+
+function SettingsPageWrapper({ title, eyebrow, children }) {
+  const navigate = useNavigate()
+  const t = useT()
+  useEffect(() => {
+    document.title = `Ziggy · ${title}`
+    return () => { document.title = 'Ziggy' }
+  }, [title])
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <button
+        onClick={() => navigate('/settings')}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--ink-faint)', fontSize: 12, fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '4px 0', marginBottom: 14,
+        }}
+      >
+        <ChevronLeft size={13} />
+        {t('settings.title')}
+      </button>
+      <div style={{ marginBottom: 20 }}>
+        {eyebrow && <p className="z-eyebrow" style={{ marginBottom: 4 }}>{eyebrow}</p>}
+        <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{title}</h1>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ─── Hub card — clickable section title + chevron ─────────────────────────────
+
+function HubCard({ icon: Icon, title, subtitle, to, badge }) {
+  return (
+    <Link
+      to={to}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 16px', textDecoration: 'none', color: 'var(--ink)',
+        background: 'var(--surface)', borderRadius: 13,
+        border: '0.5px solid var(--line)',
+        transition: 'border-color 0.12s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--ink-mute)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        {Icon && (
+          <div style={{
+            width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--bg-2)',
+          }}>
+            <Icon size={15} style={{ color: 'var(--ink-mute)' }} />
+          </div>
+        )}
+        <div style={{ minWidth: 0 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+            {title}
+            {badge && (
+              <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
+                {badge}
+              </span>
+            )}
+          </p>
+          {subtitle && (
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+      </div>
+      <span style={{ color: 'var(--ink-faint)', fontSize: 18, flexShrink: 0, marginLeft: 8 }}>›</span>
+    </Link>
   )
 }
 
@@ -211,9 +251,6 @@ function SystemStatusCard() {
   const bridgeOk     = health?.ha_connected ?? false
   const offlineCount = health?.offline_count ?? 0
   const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', fontSize: 12 }
-  // Debug-only details from the new layered health model (services/ha_health.py).
-  // Surface them HERE in Settings → Advanced so the main dashboard banner can
-  // stay plain-English while the operator/admin can still see the raw HA terms.
   const sh           = health?.system_health
   const coordState   = sh?.zigbee?.coordinator_state || null
   const coordRawTitle = sh?.zigbee?.coordinator_raw_title || null
@@ -235,7 +272,6 @@ function SystemStatusCard() {
           <StatusRow icon={Activity} label="Last recovery" value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok)' : 'var(--ink-mute)'} />
         )}
 
-        {/* Zigbee row — device count and offline count are separate links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
           <Radio size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
           <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>Zigbee</span>
@@ -310,7 +346,6 @@ function ZigbeeBridgeSection({ isAdmin }) {
     <Card>
       <div className="divide-y divide-line">
 
-        {/* Coordinator status */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <Wifi size={16} style={{ color: connected ? 'var(--ok)' : 'var(--ink-faint)', flexShrink: 0 }} />
@@ -331,7 +366,6 @@ function ZigbeeBridgeSection({ isAdmin }) {
           </span>
         </div>
 
-        {/* Device count */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Radio size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
@@ -346,7 +380,6 @@ function ZigbeeBridgeSection({ isAdmin }) {
           )}
         </div>
 
-        {/* Pairing mode — admin+ only */}
         {isAdmin && (
           <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -376,36 +409,28 @@ function ZigbeeBridgeSection({ isAdmin }) {
   )
 }
 
-// ─── Presence Section ─────────────────────────────────────────────────────────
+// ─── Presence Section (Home Sensing) ──────────────────────────────────────────
+// Trimmed: only Track-my-location, Home zone editor, Additional zones.
+// People list, LAN-probe field, and Presence debug were removed — household
+// members get a presence record auto-created on first /api/presence/me/ping,
+// and the debug card moved to /ops/presence-debug.
 
 function PresenceSection() {
   const { addToast } = useUIStore()
-  const [persons,    setPersons]   = useState([])
   const [loading,    setLoading]   = useState(true)
-  const [newName,    setNewName]   = useState('')
-  const [adding,     setAdding]    = useState(false)
-  const [copiedId,   setCopiedId]  = useState(null)
   const [zone,       setZone]      = useState(null)
   const [zoneEdit,   setZoneEdit]  = useState(false)
   const [zoneDraft,  setZoneDraft] = useState({ lat: '', lon: '', radius_m: 100 })
   const [zoneSaving, setZoneSaving] = useState(false)
   const [locating,   setLocating]  = useState(false)
-  const [debugOpen,  setDebugOpen] = useState(false)
-  const [debug,      setDebug]     = useState(null)
-  const [myPersonId, setMyPersonId] = useState(null)
   const [extraZones, setExtraZones] = useState([])
   const [zoneAdding,  setZoneAdding]  = useState(false)
   const [zoneNewName, setZoneNewName] = useState('')
   const [zoneNewRadius, setZoneNewRadius] = useState('500')
   const [editingZoneId, setEditingZoneId] = useState(null)
   const [zoneEditDraft, setZoneEditDraft] = useState({ name: '', lat: '', lon: '', radius_m: '' })
-  const [editingTrackerId, setEditingTrackerId] = useState(null)
-  const [trackerDraft, setTrackerDraft] = useState('')
-  const [trackerSaving, setTrackerSaving] = useState(false)
 
   // ── "Track my location" — JWT-authenticated self-tracking ───────────────
-  // No invite link needed. Persists across reloads via localStorage so the
-  // toggle survives the user closing/reopening the PWA.
   const TRACK_ME_KEY = 'ziggy_track_me_on'
   const [trackMe,        setTrackMe]        = useState(() => localStorage.getItem(TRACK_ME_KEY) === '1')
   const [trackMeStatus,  setTrackMeStatus]  = useState('idle')
@@ -427,9 +452,6 @@ function PresenceSection() {
       return
     }
     if (!('geolocation' in navigator)) {
-      // Use a short status code rather than building an error string with
-      // raw exception text. The render step (see below) maps these codes
-      // to user-friendly labels — no leakage of raw err.message into the UI.
       setTrackMeStatus('unavailable')
       return
     }
@@ -443,10 +465,7 @@ function PresenceSection() {
         const r = await pingMePresence(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, pos.timestamp || now)
         setTrackMeStatus(r.state === 'home' ? 'home' : r.state === 'not_home' ? 'away' : 'pinging')
         setTrackMePerson(r.person)
-        load()  // refresh the people list in the UI
       } catch {
-        // Network / backend errors all collapse to a generic state — the
-        // render step shows "Connection issue", not raw HTTP text.
         setTrackMeStatus('error')
       }
     }
@@ -465,33 +484,12 @@ function PresenceSection() {
     setTrackMe(next)
   }
 
-  const beginEditTracker = (p) => {
-    setEditingTrackerId(p.id)
-    setTrackerDraft(p.lan_host || '')
-  }
-  const saveTracker = async (p) => {
-    setTrackerSaving(true)
-    try {
-      await setPresenceLanHost(p.id, trackerDraft.trim() || null)
-      await load()
-      setEditingTrackerId(null)
-      addToast(trackerDraft.trim() ? `LAN probe → ${trackerDraft.trim()}` : 'LAN probe cleared', 'success')
-    } catch (e) { addToast(e.message || 'Failed to save', 'error') }
-    finally { setTrackerSaving(false) }
-  }
-
   const load = async () => {
     try {
-      const [p, z] = await Promise.all([getPresencePersons(), getPresenceZone()])
-      setPersons(p.persons ?? [])
+      const z = await getPresenceZone()
       setZone(z)
       if (z?.lat != null) setZoneDraft({ lat: z.lat, lon: z.lon, radius_m: z.radius ?? 200 })
     } catch {}
-    // "(you)" identification — best-effort, ignore 404 (no linked person yet).
-    try {
-      const me = await getMyPresencePerson()
-      setMyPersonId(me?.person?.id ?? null)
-    } catch { setMyPersonId(null) }
     try {
       const z = await listPresenceZones()
       setExtraZones(z.zones ?? [])
@@ -550,47 +548,7 @@ function PresenceSection() {
     } catch (e) { addToast(e.message || 'Failed to delete', 'error') }
   }
 
-  const loadDebug = async () => {
-    try { setDebug(await getPresenceDebug()) } catch {}
-  }
-  useEffect(() => {
-    if (!debugOpen) return
-    loadDebug()
-    const t = setInterval(loadDebug, 5000)
-    return () => clearInterval(t)
-  }, [debugOpen])
-
   useEffect(() => { load() }, [])
-
-  const handleAdd = async () => {
-    const name = newName.trim()
-    if (!name) return
-    setAdding(true)
-    try {
-      await createPresencePerson(name)
-      setNewName('')
-      await load()
-      addToast(`${name} added`, 'success')
-    } catch (e) { addToast(e.message || 'Failed to add person', 'error') }
-    finally { setAdding(false) }
-  }
-
-  const handleDelete = async (p) => {
-    if (!window.confirm(`Remove ${p.name} from presence tracking?`)) return
-    try {
-      await deletePresencePerson(p.id)
-      await load()
-      addToast(`${p.name} removed`, 'success')
-    } catch (e) { addToast(e.message || 'Failed', 'error') }
-  }
-
-  const copyInvite = (p) => {
-    const url = `${window.location.origin}/presence/join/${p.token}`
-    navigator.clipboard.writeText(url).catch(() => {})
-    setCopiedId(p.id)
-    setTimeout(() => setCopiedId(null), 2000)
-    addToast('Invite link copied', 'success')
-  }
 
   const useMyLocation = () => {
     if (!navigator.geolocation) { addToast('Geolocation not available', 'error'); return }
@@ -628,7 +586,7 @@ function PresenceSection() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-      {/* Track my location card — JWT-authenticated self-tracking */}
+      {/* Track my location card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px' }}>
           <div style={{ minWidth: 0 }}>
@@ -701,9 +659,6 @@ function PresenceSection() {
             <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
               Tip: click "Use my location" while at home to auto-fill. 100 m radius is the default; the engine adds GPS-jitter hysteresis on top.
             </p>
-            <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5, paddingTop: 4, borderTop: '0.5px solid var(--line)', marginTop: 4 }}>
-              <strong style={{ color: 'var(--ink-mute)' }}>Want a head-start automation?</strong> Add a second zone below — e.g. a "Near Home" zone at 2–3 km — and Ziggy will track entry/exit for that zone alongside the primary Home zone.
-            </p>
           </div>
         )}
       </div>
@@ -769,134 +724,75 @@ function PresenceSection() {
         </div>
       </div>
 
-      {/* People card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
-        {persons.length === 0 ? (
-          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '20px 16px', textAlign: 'center' }}>
-            No persons configured. Add a person to start tracking presence.
-          </p>
-        ) : (
-          persons.map((p, i) => (
-            <div key={p.id} style={{ borderBottom: i < persons.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', flexWrap: 'wrap' }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: presenceStateColor(p), flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 60 }}>
-                  {p.name}
-                  {p.id === myPersonId && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>(you)</span>}
-                </span>
-                <span style={{ fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>{presenceStateLabel(p)}</span>
-                <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{timeAgo(p.last_seen)}</span>
-                <button onClick={() => copyInvite(p)} title="Copy invite link" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedId === p.id ? 'var(--ok)' : 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
-                  {copiedId === p.id ? <Check size={13} /> : <Copy size={13} />}
-                </button>
-                <button onClick={() => handleDelete(p)} title="Remove person" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
-                  <Trash2 size={13} />
-                </button>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px 11px 32px', fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-                {editingTrackerId === p.id ? (
-                  <>
-                    <input
-                      autoFocus
-                      placeholder="youval-iphone.local or 192.168.1.42"
-                      value={trackerDraft}
-                      onChange={e => setTrackerDraft(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') saveTracker(p); if (e.key === 'Escape') setEditingTrackerId(null) }}
-                      className="z-input"
-                      style={{ flex: 1, height: 26, padding: '0 8px', fontSize: 11 }}
-                    />
-                    <button onClick={() => saveTracker(p)} disabled={trackerSaving} className="z-btn-primary" style={{ height: 26, padding: '0 10px', borderRadius: 6, fontSize: 11 }}>
-                      {trackerSaving ? '…' : 'Save'}
-                    </button>
-                    <button onClick={() => setEditingTrackerId(null)} className="z-btn-secondary" style={{ height: 26, padding: '0 8px', borderRadius: 6, fontSize: 11 }}>
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      LAN probe: {p.lan_host || <span style={{ color: 'var(--ink-faint)' }}>(none — GPS only)</span>}
-                      {p.lan_last_seen && <span style={{ color: 'var(--ok)', paddingLeft: 6 }}>· last seen {timeAgo(p.lan_last_seen)}</span>}
-                    </span>
-                    <button onClick={() => beginEditTracker(p)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>
-                      {p.lan_host ? 'edit' : 'add'}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-        <div style={{ padding: '12px 16px', display: 'flex', gap: 6, borderTop: persons.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
-          <input
-            placeholder="Name (e.g. Youval)"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            className="z-input"
-            style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }}
-          />
-          <button onClick={handleAdd} disabled={adding || !newName.trim()} className="z-btn-primary" style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12 }}>
-            {adding ? '…' : 'Add'}
-          </button>
-        </div>
-        <p style={{ fontSize: 10, color: 'var(--ink-faint)', padding: '0 16px 12px', lineHeight: 1.6 }}>
-          Add each household member, then copy their invite link and open it on their phone.
-        </p>
-      </div>
+    </div>
+  )
+}
 
-      {/* Debug card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
-        <button
-          onClick={() => setDebugOpen(v => !v)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }}
-        >
-          <span style={{ fontSize: 13, fontWeight: 500 }}>Presence debug</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-            {debugOpen ? 'hide' : 'show'}
-          </span>
-        </button>
-        {debugOpen && (
-          <div style={{ borderTop: '0.5px solid var(--line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {!debug ? (
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Loading…</p>
-            ) : (
-              <>
-                {/* Tunables */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4, fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-                  {Object.entries(debug.tunables || {}).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                      <span>{k}</span><span style={{ color: 'var(--ink)' }}>{String(v)}</span>
-                    </div>
-                  ))}
-                </div>
-                {/* Per-person debug */}
-                {(debug.persons ?? []).map(p => (
-                  <div key={p.id} style={{ borderTop: '0.5px solid var(--line)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                      <span style={{ fontWeight: 600 }}>{p.name}</span>
-                      <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>
-                        {presenceStateLabel(p)} · {p.last_distance_m != null ? `${p.last_distance_m}m` : '—'} · acc {p.last_accuracy != null ? `${Math.round(p.last_accuracy)}m` : '—'}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-                      cand: {p.candidate_state ?? '—'} since {p.candidate_since ? new Date(p.candidate_since).toLocaleTimeString() : '—'}
-                      {' · '}
-                      last txn: {p.last_transition_to ?? '—'} at {p.last_transition_at ? new Date(p.last_transition_at).toLocaleTimeString() : '—'}
-                    </div>
-                    {(p.history ?? []).slice().reverse().slice(0, 6).map((h, idx) => (
-                      <div key={idx} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {new Date(h.ts).toLocaleTimeString()} · {h.src} · raw={h.raw} · d={h.dist ?? '—'}m · {h.result} · {h.reason}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </>
-            )}
+// ─── Presence Debug (ops-only) ────────────────────────────────────────────────
+// Engine internals: candidate state, transitions, distance/accuracy history.
+// Surfaced via /ops/presence-debug — never on a user-facing page.
+
+function PresenceDebugCard() {
+  const [debug,   setDebug]   = useState(null)
+  const [persons, setPersons] = useState([])
+
+  const loadDebug = async () => {
+    try { setDebug(await getPresenceDebug()) } catch {}
+  }
+
+  useEffect(() => {
+    loadDebug()
+    const t = setInterval(loadDebug, 5000)
+    // Lazy import the persons list so we can show names beside their debug
+    // history rows. If it fails, the cards still render with raw IDs.
+    import('../lib/api').then(({ getPresencePersons }) =>
+      getPresencePersons().then(r => setPersons(r.persons ?? [])).catch(() => {})
+    )
+    return () => clearInterval(t)
+  }, [])
+
+  if (!debug) {
+    return (
+      <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-faint)' }}>Loading…</div>
+    )
+  }
+
+  // Backend debug may not include name; merge from /persons list as a fallback.
+  const merged = (debug.persons ?? []).map(p => {
+    if (p.name) return p
+    const match = persons.find(x => x.id === p.id) || {}
+    return { ...match, ...p }
+  })
+
+  return (
+    <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4, fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+        {Object.entries(debug.tunables || {}).map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+            <span>{k}</span><span style={{ color: 'var(--ink)' }}>{String(v)}</span>
           </div>
-        )}
+        ))}
       </div>
-
+      {merged.map(p => (
+        <div key={p.id} style={{ borderTop: '0.5px solid var(--line)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+            <span style={{ fontWeight: 600 }}>{p.name || p.id}</span>
+            <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>
+              {presenceStateLabel(p)} · {p.last_distance_m != null ? `${p.last_distance_m}m` : '—'} · acc {p.last_accuracy != null ? `${Math.round(p.last_accuracy)}m` : '—'}
+            </span>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            cand: {p.candidate_state ?? '—'} since {p.candidate_since ? new Date(p.candidate_since).toLocaleTimeString() : '—'}
+            {' · '}
+            last txn: {p.last_transition_to ?? '—'} at {p.last_transition_at ? new Date(p.last_transition_at).toLocaleTimeString() : '—'}
+          </div>
+          {(p.history ?? []).slice().reverse().slice(0, 6).map((h, idx) => (
+            <div key={idx} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {new Date(h.ts).toLocaleTimeString()} · {h.src} · raw={h.raw} · d={h.dist ?? '—'}m · {h.result} · {h.reason}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -964,7 +860,6 @@ function UsersAndAccessSection({ currentUsername }) {
     <Card>
       <div className="divide-y divide-line">
 
-        {/* Active users */}
         {users.map(u => {
           const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.user
           const isSelf = u.username.toLowerCase() === currentUsername?.toLowerCase()
@@ -998,7 +893,6 @@ function UsersAndAccessSection({ currentUsername }) {
           )
         })}
 
-        {/* Pending invites */}
         {invites.map(inv => (
           <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', opacity: 0.75 }}>
             <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
@@ -1014,7 +908,6 @@ function UsersAndAccessSection({ currentUsername }) {
           </div>
         ))}
 
-        {/* Invite new user */}
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>Invite user</p>
           {inviteLink ? (
@@ -1064,124 +957,19 @@ function UsersAndAccessSection({ currentUsername }) {
   )
 }
 
-// ─── Tab bar ──────────────────────────────────────────────────────────────────
+// ─── Account form (used inside AccountPage) ───────────────────────────────────
 
-function TabBar({ tabs, active, onChange }) {
-  return (
-    <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '0.5px solid var(--line)' }}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            padding: '8px 14px', fontSize: 13, fontWeight: 500,
-            color: active === tab.id ? 'var(--ink)' : 'var(--ink-faint)',
-            borderBottom: active === tab.id ? '2px solid var(--ink)' : '2px solid transparent',
-            marginBottom: -1, transition: 'color 0.12s',
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontFamily: 'inherit',
-          }}
-        >
-          {tab.icon && <tab.icon size={13} />}
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// ─── Music settings entry card (flag-gated) ───────────────────────────────────
-
-function MusicSettingsLink() {
-  const enabled = useFeature('media_music')
+function AccountForms({ username, role, logout }) {
   const t = useT()
-  if (!enabled) return null
-  return (
-    <div style={{ marginBottom: 22 }}>
-      <SectionTitle>{t('media.settingsLinkSection')}</SectionTitle>
-      <Card>
-        <Link
-          to="/settings/music"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '14px 16px', textDecoration: 'none', color: 'var(--ink)',
-          }}
-        >
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 500 }}>{t('media.settingsLinkTitle')}</p>
-            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{t('media.settingsLinkSubtitle')}</p>
-          </div>
-          <span style={{ color: 'var(--ink-faint)' }}>›</span>
-        </Link>
-      </Card>
-    </div>
-  )
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
-
-export default function Settings() {
-  const { theme, toggleTheme, addToast } = useUIStore()
-  const { logout, role, setRole } = useAuthStore()
-  const t = useT()
-
-  const [activeTab,    setActiveTab]    = useState('general')
-  const [refreshing,   setRefreshing]   = useState(false)
-  const [username,     setUsername]     = useState('')
-  const [general,      setGeneral]      = useState({ language: 'en', timezone: 'UTC' })
-  const [savingGeneral, setSavingGeneral] = useState(false)
+  const { addToast } = useUIStore()
   const [showChangePw, setShowChangePw] = useState(false)
-  const [pwForm,       setPwForm]       = useState({ username: '', password: '', confirm: '' })
-  const [pwError,      setPwError]      = useState('')
-  const [savingPw,     setSavingPw]     = useState(false)
+  const [pwForm, setPwForm] = useState({ username: username || '', password: '', confirm: '' })
+  const [pwError, setPwError] = useState('')
+  const [savingPw, setSavingPw] = useState(false)
 
-  const isAdmin      = hasRole(role, 'admin')
-  const isSuperAdmin = hasRole(role, 'super_admin')
-
-  const TABS = [
-    { id: 'general', label: t('settings.tabGeneral') },
-    ...(isAdmin ? [{ id: 'admin', label: t('settings.tabAdmin'), icon: Shield }] : []),
-  ]
-
-  // Drives <html dir>/<html lang> AND swaps the in-memory i18n dictionary.
-  // The selector below calls this immediately on change so the UI flips before
-  // we even round-trip to the server.
-  const applyLanguage = (lang) => {
-    setI18nLang(lang)
-  }
-
-  const loadAll = () => {
-    getGeneralSettings().then(g => {
-      const merged = { language: 'en', timezone: 'UTC', ...g }
-      setGeneral(merged)
-      applyLanguage(merged.language)
-    }).catch(() => {})
-    getAuthStatus().then(auth => {
-      setUsername(auth?.username || '')
-      setPwForm(f => ({ ...f, username: auth?.username || '' }))
-      if (auth?.role) setRole(auth.role)
-    }).catch(() => {})
-  }
-
-  useEffect(() => { loadAll() }, [])
-
-  const handleRefresh = () => {
-    setRefreshing(true)
-    loadAll()
-    setTimeout(() => setRefreshing(false), 1000)
-  }
-
-  const saveGeneral = async () => {
-    setSavingGeneral(true)
-    try {
-      await patchGeneralSettings(general)
-      applyLanguage(general.language)
-      addToast(t('common.saved'), 'success')
-    }
-    catch { addToast(t('common.failedToSave'), 'error') }
-    finally { setSavingGeneral(false) }
-  }
+  useEffect(() => {
+    setPwForm(f => ({ ...f, username: username || '' }))
+  }, [username])
 
   const handleChangePassword = async () => {
     if (!pwForm.username.trim()) { setPwError(t('settings.usernameRequired')); return }
@@ -1199,188 +987,314 @@ export default function Settings() {
   }
 
   return (
+    <Card>
+      <div>
+        <SettingRow icon={User} label={t('settings.profile')} subtitle={username || t('settings.account')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {role && (
+              <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: ROLE_LABELS[role]?.color || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
+                {ROLE_LABELS[role]?.label || role}
+              </span>
+            )}
+            <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>Local</span>
+          </div>
+        </SettingRow>
+
+        <div style={{ borderTop: '0.5px solid var(--line)' }}>
+          <button
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            onClick={() => { setShowChangePw(v => !v); setPwError('') }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Lock size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
+            </div>
+            <span style={{ color: 'var(--ink-faint)', transform: showChangePw ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </button>
+          <AnimatePresence>
+            {showChangePw && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
+                <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <Input label={t('common.username')} placeholder={t('common.username')} value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
+                  <Input label={t('settings.newPassword')} type="password" placeholder="••••••••" value={pwForm.password} onChange={e => setPwForm(s => ({ ...s, password: e.target.value }))} />
+                  <Input label={t('common.confirmPassword')} type="password" placeholder="••••••••" value={pwForm.confirm} onChange={e => setPwForm(s => ({ ...s, confirm: e.target.value }))} error={pwError} />
+                  <button onClick={handleChangePassword} disabled={savingPw} className="z-btn-primary" style={{ width: '100%' }}>
+                    {savingPw ? t('common.saving') : t('settings.changePassword')}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div style={{ borderTop: '0.5px solid var(--line)' }}>
+          <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--accent)' }}>
+            <LogOut size={16} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{t('common.signOut')}</span>
+          </button>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sub-page exports — each is route-mounted under /settings/<slug> in App.jsx
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function AppearancePage() {
+  const t = useT()
+  const theme = useUIStore(s => s.theme)
+  const toggleTheme = useUIStore(s => s.toggleTheme)
+  return (
+    <SettingsPageWrapper title={t('settings.appearance')}>
+      <Card>
+        <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
+          <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+        </SettingRow>
+      </Card>
+    </SettingsPageWrapper>
+  )
+}
+
+export function LanguagePage() {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const [general, setGeneral] = useState({ language: 'en', timezone: 'UTC' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getGeneralSettings().then(g => {
+      const merged = { language: 'en', timezone: 'UTC', ...g }
+      setGeneral(merged)
+      setI18nLang(merged.language)
+    }).catch(() => {})
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await patchGeneralSettings(general)
+      setI18nLang(general.language)
+      addToast(t('common.saved'), 'success')
+    } catch { addToast(t('common.failedToSave'), 'error') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <SettingsPageWrapper title={t('settings.languageRegion')}>
+      <Card>
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Select
+            label={t('settings.language')}
+            value={general.language}
+            onChange={e => {
+              const v = e.target.value
+              setGeneral(s => ({ ...s, language: v }))
+              setI18nLang(v)
+            }}
+            options={LANGUAGES}
+          />
+          <Select label={t('settings.timezone')} value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
+          <button onClick={save} disabled={saving} className="z-btn-primary" style={{ width: '100%' }}>
+            {saving ? t('common.saving') : t('common.save')}
+          </button>
+        </div>
+      </Card>
+    </SettingsPageWrapper>
+  )
+}
+
+export function AccountPage() {
+  const t = useT()
+  const logout = useAuthStore(s => s.logout)
+  const role   = useAuthStore(s => s.role)
+  const setRole = useAuthStore(s => s.setRole)
+  const [username, setUsername] = useState('')
+
+  useEffect(() => {
+    getAuthStatus().then(auth => {
+      setUsername(auth?.username || '')
+      if (auth?.role) setRole(auth.role)
+    }).catch(() => {})
+  }, [setRole])
+
+  return (
+    <SettingsPageWrapper title={t('settings.account')}>
+      <AccountForms username={username} role={role} logout={logout} />
+    </SettingsPageWrapper>
+  )
+}
+
+export function NotificationsPage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('adminSettings.sectionNotifications')}>
+      <PushPreferenceCenter />
+    </SettingsPageWrapper>
+  )
+}
+
+export function HomeSensingPage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('settings.homeSensing')}>
+      <PresenceSection />
+    </SettingsPageWrapper>
+  )
+}
+
+export function MobilePage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('settings.mobileApp')}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <PairWithPhone />
+        <MobileDevicesList />
+      </div>
+    </SettingsPageWrapper>
+  )
+}
+
+export function UsersPage() {
+  const t = useT()
+  const role = useAuthStore(s => s.role)
+  const [username, setUsername] = useState('')
+  useEffect(() => {
+    getAuthStatus().then(a => setUsername(a?.username || '')).catch(() => {})
+  }, [])
+  if (!hasRole(role, 'super_admin')) {
+    return (
+      <SettingsPageWrapper title={t('settings.usersAndAccess')}>
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: 16 }}>Restricted to super admins.</p>
+      </SettingsPageWrapper>
+    )
+  }
+  return (
+    <SettingsPageWrapper title={t('settings.usersAndAccess')}>
+      <UsersAndAccessSection currentUsername={username} />
+    </SettingsPageWrapper>
+  )
+}
+
+export function MemoryPage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('settings.memory')}>
+      <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
+        <MemoryPanel />
+      </div>
+    </SettingsPageWrapper>
+  )
+}
+
+export function IrHubsPage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('settings.irHubs')}>
+      <BlastersSection />
+    </SettingsPageWrapper>
+  )
+}
+
+// ─── /ops sub-pages — wrapped by App.jsx's OpsPageWrapper, no extra chrome ──
+
+export function SystemDiagnosticsPage() {
+  const role = useAuthStore(s => s.role)
+  const isAdmin = hasRole(role, 'admin')
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <div style={{ marginBottom: 22 }}>
+        <SectionTitle icon={Activity}>System status</SectionTitle>
+        <SystemStatusCard />
+      </div>
+      <div>
+        <SectionTitle icon={Radio}>Zigbee bridge</SectionTitle>
+        <ZigbeeBridgeSection isAdmin={isAdmin} />
+      </div>
+    </div>
+  )
+}
+
+export function PresenceDebugPage() {
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <div style={{ marginBottom: 8 }}>
+        <SectionTitle icon={MapPin}>Presence engine internals</SectionTitle>
+      </div>
+      <Card>
+        <PresenceDebugCard />
+      </Card>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Settings hub (default export, mounted at /settings)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export default function Settings() {
+  const t = useT()
+  const role = useAuthStore(s => s.role)
+  const setRole = useAuthStore(s => s.setRole)
+  const [refreshing, setRefreshing] = useState(false)
+  const musicEnabled = useFeature('media_music')
+
+  const isSuperAdmin = hasRole(role, 'super_admin')
+
+  useEffect(() => {
+    getAuthStatus().then(a => { if (a?.role) setRole(a.role) }).catch(() => {})
+  }, [setRole])
+
+  const handleRefresh = () => {
+    setRefreshing(true)
+    setTimeout(() => setRefreshing(false), 600)
+  }
+
+  return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('settings.eyebrow')}</p>
           <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('settings.title')}</h1>
         </div>
-        {activeTab === 'general' && (
-          <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
-            <RefreshCw size={14} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-          </button>
+        <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
+          <RefreshCw size={14} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <HubCard icon={Moon}        title={t('settings.appearance')}      subtitle={t('settings.appearanceSub')}      to="/settings/appearance" />
+        <HubCard icon={MapPin}      title={t('settings.languageRegion')}  subtitle={t('settings.languageSub')}        to="/settings/language" />
+        <HubCard icon={User}        title={t('settings.account')}         subtitle={t('settings.accountSub')}         to="/settings/account" />
+        <HubCard icon={Bell}        title={t('adminSettings.sectionNotifications')} subtitle={t('settings.notificationsSub')} to="/settings/notifications" />
+        <HubCard icon={MapPin}      title={t('settings.homeSensing')}     subtitle={t('settings.homeSensingSub')}     to="/settings/home-sensing" />
+        <HubCard icon={Smartphone}  title={t('settings.mobileApp')}       subtitle={t('settings.mobileSub')}          to="/settings/mobile" />
+        {isSuperAdmin && (
+          <HubCard icon={Users}     title={t('settings.usersAndAccess')}  subtitle={t('settings.usersSub')}           to="/settings/users" />
+        )}
+        <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
+        <HubCard icon={Radio}       title={t('settings.irHubs')}          subtitle={t('settings.irHubsSub')}          to="/settings/ir-hubs" />
+        {musicEnabled && (
+          <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />
         )}
       </div>
 
-      {TABS.length > 1 && <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />}
-
-      {/* ── General tab ───────────────────────────────────────────────────────── */}
-      {activeTab === 'general' && (
-        <>
-          <MusicSettingsLink />
-          {/* Appearance */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle>{t('settings.appearance')}</SectionTitle>
-            <Card>
-              <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
-                <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
-              </SettingRow>
-            </Card>
-          </div>
-
-          {/* Language & Region */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle>{t('settings.languageRegion')}</SectionTitle>
-            <Card>
-              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <Select
-                  label={t('settings.language')}
-                  value={general.language}
-                  onChange={e => {
-                    const v = e.target.value
-                    setGeneral(s => ({ ...s, language: v }))
-                    // Flip the in-memory dict immediately — don't wait for Save.
-                    // The persisted store keeps it across reloads even if the
-                    // user navigates away without hitting Save.
-                    applyLanguage(v)
-                  }}
-                  options={LANGUAGES}
-                />
-                <Select label={t('settings.timezone')} value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
-                <button onClick={saveGeneral} disabled={savingGeneral} className="z-btn-primary" style={{ width: '100%' }}>
-                  {savingGeneral ? t('common.saving') : t('common.save')}
-                </button>
-              </div>
-            </Card>
-          </div>
-
-          {/* Account */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle>{t('settings.account')}</SectionTitle>
-            <Card>
-              <div>
-                <SettingRow icon={User} label={t('settings.profile')} subtitle={username || t('settings.account')}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {role && (
-                      <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: ROLE_LABELS[role]?.color || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
-                        {ROLE_LABELS[role]?.label || role}
-                      </span>
-                    )}
-                    <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>Local</span>
-                  </div>
-                </SettingRow>
-
-                <div style={{ borderTop: '0.5px solid var(--line)' }}>
-                  <button
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-                    onClick={() => { setShowChangePw(v => !v); setPwError('') }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Lock size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-                      <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
-                    </div>
-                    <span style={{ color: 'var(--ink-faint)', transform: showChangePw ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-                    </span>
-                  </button>
-                  <AnimatePresence>
-                    {showChangePw && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
-                        <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          <Input label={t('common.username')} placeholder={t('common.username')} value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
-                          <Input label={t('settings.newPassword')} type="password" placeholder="••••••••" value={pwForm.password} onChange={e => setPwForm(s => ({ ...s, password: e.target.value }))} />
-                          <Input label={t('common.confirmPassword')} type="password" placeholder="••••••••" value={pwForm.confirm} onChange={e => setPwForm(s => ({ ...s, confirm: e.target.value }))} error={pwError} />
-                          <button onClick={handleChangePassword} disabled={savingPw} className="z-btn-primary" style={{ width: '100%' }}>
-                            {savingPw ? t('common.saving') : t('settings.changePassword')}
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <div style={{ borderTop: '0.5px solid var(--line)' }}>
-                  <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--accent)' }}>
-                    <LogOut size={16} style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{t('common.signOut')}</span>
-                  </button>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Home Sensing (was: Presence tracking) — kept top-level because
-              the main on/off toggle is something normal users do want to find. */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle icon={MapPin}>{t('settings.homeSensing')}</SectionTitle>
-            <PresenceSection />
-          </div>
-
-          {/* Ziggy Home (mobile app) */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle icon={Smartphone}>{t('settings.mobileApp')}</SectionTitle>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <PairWithPhone />
-              <MobileDevicesList />
+      {isSuperAdmin && (
+        <div style={{ marginTop: 22 }}>
+          <SectionTitle icon={Shield}>{t('settings.advanced')}</SectionTitle>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 10 }}>{t('settings.advancedHint')}</p>
+          <Link to="/ops" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 13, textDecoration: 'none', color: 'var(--ink)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Shield size={14} style={{ color: 'var(--ink-mute)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{t('nav.opsConsole')}</span>
             </div>
-          </div>
-
-          {/* Users & Access — super_admin only */}
-          {isSuperAdmin && (
-            <div style={{ marginBottom: 22 }}>
-              <SectionTitle icon={Users}>{t('settings.usersAndAccess')}</SectionTitle>
-              <UsersAndAccessSection currentUsername={username} />
-            </div>
-          )}
-
-          {/* Quick Asks */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle>{t('settings.quickAsks')}</SectionTitle>
-            <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: '16px 16px 8px' }}>
-              <QuickAsks embedded />
-            </div>
-          </div>
-
-          {/* Memory */}
-          <div style={{ marginBottom: 22 }}>
-            <SectionTitle>{t('settings.memory')}</SectionTitle>
-            <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
-              <MemoryPanel />
-            </div>
-          </div>
-
-          {/* ── Advanced (collapsed by default) ─────────────────────────────
-              Diagnostics + network-y panes that most users never need.
-              Sections kept intact (not removed) — just folded out of the
-              default scroll path so the General tab feels lighter. */}
-          <AdvancedSettingsSection>
-            <div style={{ marginBottom: 16 }}>
-              <SectionTitle icon={Activity}>{t('settings.systemStatus')}</SectionTitle>
-              <SystemStatusCard />
-            </div>
-            <div>
-              <SectionTitle icon={Radio}>{t('settings.zigbeeBridge')}</SectionTitle>
-              <ZigbeeBridgeSection isAdmin={isAdmin} />
-            </div>
-          </AdvancedSettingsSection>
-
-        </>
-      )}
-
-      {/* ── Admin tab ──────────────────────────────────────────────────────────── */}
-      {activeTab === 'admin' && isAdmin && (
-        <>
-          <AdminSettings />
-
-          {/* Capabilities (Virtual Devices) — admin only */}
-          <div style={{ marginTop: 32 }}>
-            <SectionTitle>{t('settings.capabilities')}</SectionTitle>
-            <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14 }}>{t('settings.capabilitiesDesc')}</p>
-            <VirtualDevices embedded />
-          </div>
-        </>
+            <span style={{ color: 'var(--ink-faint)', fontSize: 18 }}>›</span>
+          </Link>
+        </div>
       )}
 
     </div>

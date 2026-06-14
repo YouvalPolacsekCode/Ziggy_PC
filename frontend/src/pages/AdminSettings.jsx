@@ -1,10 +1,21 @@
+// Operator-tier settings library.
+//
+// After the 2026-06 settings refactor this file is no longer mounted as a
+// standalone page. It exports:
+//
+//   PushPreferenceCenter  — consumed by Settings/NotificationsPage (user-facing)
+//   ApiKeysPage           — mounted at /ops/api-keys
+//   EmailPage             — mounted at /ops/email          (super_admin only)
+//   EngineTuningPage      — mounted at /ops/engine-tuning  (Ollama + Pattern Learning)
+//
+// IR Blasters and System Diagnostics moved out: IR Blasters now lives in
+// Settings/IrHubsPage (it's a homeowner concern), System Diagnostics lives in
+// Settings.jsx and is route-mounted at /ops/system-diagnostics.
+
 import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
-  RefreshCw, Bot, Key, Wifi, Sliders,
-  Brain, Trash2, AlertTriangle, Check, Mail, Radio,
+  RefreshCw, Bot, Key, Sliders, Brain, Trash2, AlertTriangle, Check, Mail,
 } from 'lucide-react'
-import BlastersSection from '../components/settings/BlastersSection'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Slider } from '../components/ui/Slider'
@@ -135,7 +146,7 @@ function parseOS(ua) {
   return ''
 }
 
-function PushPreferenceCenter() {
+export function PushPreferenceCenter() {
   const t = useT()
   const { addToast } = useUIStore()
   const [categories,  setCategories]  = useState([])
@@ -224,7 +235,6 @@ function PushPreferenceCenter() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* Browser status + test */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <div>
@@ -251,7 +261,6 @@ function PushPreferenceCenter() {
         </div>
       </div>
 
-      {/* Quiet hours */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: qh.enabled ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
           <div style={{ flex: 1 }}>
@@ -270,7 +279,6 @@ function PushPreferenceCenter() {
         )}
       </div>
 
-      {/* System category toggles */}
       {!loadingCats && systemCats.length > 0 && (
         <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
           <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
@@ -291,7 +299,6 @@ function PushPreferenceCenter() {
         </div>
       )}
 
-      {/* Sensor categories — each with presence + time conditions */}
       {!loadingCats && sensorCats.length > 0 && (
         <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
           <div style={{ padding: '8px 16px 6px', borderBottom: '0.5px solid var(--line)' }}>
@@ -303,10 +310,12 @@ function PushPreferenceCenter() {
             const timeEnabled = !!(cond.time_start && cond.time_end)
             return (
               <div key={cat.id} style={{ padding: '12px 16px', borderBottom: i < sensorCats.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+                {/* CLAUDE.md memory: user must never see HA entity_ids.
+                    Sensor label is human-friendly; the raw entity_id row was
+                    removed in the 2026-06 settings refactor. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: cond ? 10 : 0 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{cat.label}</p>
-                    <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>{cat.entity_id}</p>
                   </div>
                   <button className="z-toggle" aria-checked={!!cat.enabled} onClick={() => toggleCategory(cat.id)} />
                 </div>
@@ -347,7 +356,6 @@ function PushPreferenceCenter() {
         </div>
       )}
 
-      {/* Subscribed devices */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ padding: '8px 16px 6px', borderBottom: devices.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
           <p className="z-eyebrow">{t('adminSettings.subscribedDevices')}</p>
@@ -384,69 +392,34 @@ function PushPreferenceCenter() {
   )
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Shared toolbar (refresh button) for ops sub-pages ───────────────────────
 
-export default function AdminSettings() {
+function OpsToolbar({ refreshing, onRefresh }) {
   const t = useT()
-  const { addToast } = useUIStore()
-  const { role: myRole } = useAuthStore()
-  const isSuperAdmin = myRole === 'super_admin'
-
-  const [refreshing, setRefreshing] = useState(false)
-
-  const [integrations,   setIntegrations]   = useState({})
-  const [ollama,         setOllama]         = useState({ base_url: '', model: '', timeout: 30 })
-  const [patternLearning, setPatternLearning] = useState({})
-  const [email,          setEmail]          = useState({ enabled: false, host: '', port: 587, username: '', password_configured: false, password_masked: '', from_address: '', from_name: 'Ziggy' })
-
-  const [saving, setSaving] = useState({})
-  const setSav = (key, val) => setSaving(s => ({ ...s, [key]: val }))
-
-  const loadAll = () => {
-    getIntegrationsSettings().then(setIntegrations).catch(() => {})
-    getOllamaSettings().then(setOllama).catch(() => {})
-    getPatternLearningSettings().then(pl => setPatternLearning({
-      enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30,
-      min_occurrences: 5, max_pending_suggestions: 3, time_window_minutes: 45,
-      sequence_gap_minutes: 5, ...pl
-    })).catch(() => {})
-    if (isSuperAdmin) {
-      getEmailSettings().then(setEmail).catch(() => {})
-    }
-  }
-
-  useEffect(() => { loadAll() }, [])
-
-  const handleRefresh = () => {
-    setRefreshing(true)
-    loadAll()
-    setTimeout(() => setRefreshing(false), 1000)
-  }
-
-  const save = async (key, apiFn, payload) => {
-    setSav(key, true)
-    try { await apiFn(payload); addToast(t('adminSettings.saved'), 'success') }
-    catch { addToast(t('adminSettings.failedSave'), 'error') }
-    finally { setSav(key, false) }
-  }
-
   return (
-    <div>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('adminSettings.restartHint')}</p>
-        <button onClick={handleRefresh} disabled={refreshing} title={t('adminSettings.refresh')} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
-          <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-        </button>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('adminSettings.restartHint')}</p>
+      <button onClick={onRefresh} disabled={refreshing} title={t('adminSettings.refresh')} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
+        <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+      </button>
+    </div>
+  )
+}
 
-      {/* ── Notifications ──────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Bot}>{t('adminSettings.sectionNotifications')}</SectionTitle>
-        <PushPreferenceCenter />
-      </div>
+// ═══════════════════════════════════════════════════════════════════════════════
+// /ops sub-page exports
+// ═══════════════════════════════════════════════════════════════════════════════
 
-      {/* ── API Keys ───────────────────────────────────────────────────────────── */}
+export function ApiKeysPage() {
+  const t = useT()
+  const [integrations, setIntegrations] = useState({})
+  const [refreshing, setRefreshing] = useState(false)
+  const load = () => getIntegrationsSettings().then(setIntegrations).catch(() => {})
+  useEffect(() => { load() }, [])
+  const onRefresh = () => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 600) }
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <OpsToolbar refreshing={refreshing} onRefresh={onRefresh} />
       <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Key}>{t('adminSettings.sectionApiKeys')}</SectionTitle>
         <Card>
@@ -458,7 +431,7 @@ export default function AdminSettings() {
               configured={integrations.openai_configured}
               placeholder={t('adminSettings.openaiPh')}
               onSave={(v) => patchIntegrationsSettings({ openai_key: v })}
-              onRefresh={() => getIntegrationsSettings().then(setIntegrations)}
+              onRefresh={load}
             />
             <SecretField
               label={t('adminSettings.serpapi')}
@@ -467,7 +440,7 @@ export default function AdminSettings() {
               configured={integrations.serpapi_configured}
               placeholder={t('adminSettings.serpapiPh')}
               onSave={(v) => patchIntegrationsSettings({ serpapi_key: v })}
-              onRefresh={() => getIntegrationsSettings().then(setIntegrations)}
+              onRefresh={load}
             />
             <SecretField
               label={t('adminSettings.ifttt')}
@@ -476,99 +449,139 @@ export default function AdminSettings() {
               configured={integrations.ifttt_configured}
               placeholder={t('adminSettings.iftttPh')}
               onSave={(v) => patchIntegrationsSettings({ ifttt_key: v })}
-              onRefresh={() => getIntegrationsSettings().then(setIntegrations)}
+              onRefresh={load}
             />
           </div>
         </Card>
       </div>
+    </div>
+  )
+}
 
-      {/* ── Email (SMTP) — super_admin only ────────────────────────────────────── */}
-      {isSuperAdmin && (
-        <div style={{ marginBottom: 22 }}>
-          <SectionTitle icon={Mail}>{t('adminSettings.sectionEmail')}</SectionTitle>
-          <Card>
-            <div className="divide-y divide-line">
-              <SettingRow label={t('adminSettings.enableEmail')} subtitle={t('adminSettings.emailReq')}>
-                <Toggle
-                  checked={!!email.enabled}
-                  onCheckedChange={(v) => {
-                    setEmail(s => ({ ...s, enabled: v }))
-                    patchEmailSettings({ enabled: v }).catch(() => {})
-                  }}
-                />
-              </SettingRow>
-              {email.enabled && (
-                <>
-                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 2 }}>
-                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.smtpHost')}</p>
-                        <input value={email.host} onChange={e => setEmail(s => ({ ...s, host: e.target.value }))} placeholder={t('adminSettings.smtpHostPh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.port')}</p>
-                        <input type="number" value={email.port} onChange={e => setEmail(s => ({ ...s, port: parseInt(e.target.value) || 587 }))} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
-                      </div>
-                    </div>
-                    <div>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.smtpUsername')}</p>
-                      <input type="email" value={email.username} onChange={e => setEmail(s => ({ ...s, username: e.target.value }))} placeholder={t('adminSettings.smtpUserPh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
-                    </div>
-                    <div>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.fromName')}</p>
-                      <input value={email.from_name} onChange={e => setEmail(s => ({ ...s, from_name: e.target.value }))} placeholder={t('adminSettings.fromNamePh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
-                    </div>
-                    <Button variant="primary" onClick={() => save('email-smtp', patchEmailSettings, { host: email.host, port: email.port, username: email.username, from_name: email.from_name, from_address: email.username })} disabled={saving['email-smtp']} className="w-full">
-                      {saving['email-smtp'] ? t('adminSettings.saving') : t('adminSettings.saveSmtp')}
-                    </Button>
-                  </div>
-                  <SecretField
-                    label={t('adminSettings.appPassword')}
-                    subtitle={t('adminSettings.appPasswordDesc')}
-                    masked={email.password_masked}
-                    configured={email.password_configured}
-                    placeholder={t('adminSettings.appPasswordPh')}
-                    onSave={(v) => patchEmailSettings({ password: v })}
-                    onRefresh={() => getEmailSettings().then(setEmail)}
-                  />
-                  <div style={{ padding: '12px 16px' }}>
-                    <Button variant="secondary" onClick={async () => {
-                      try { await testEmail(); addToast(t('adminSettings.testEmailSent'), 'success') }
-                      catch (e) { addToast(e.message || t('adminSettings.testFailed'), 'error') }
-                    }} className="w-full">
-                      {t('adminSettings.sendTestEmail')}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </Card>
-        </div>
-      )}
+export function EmailPage() {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const myRole = useAuthStore(s => s.role)
+  const isSuperAdmin = myRole === 'super_admin'
 
-      {/* ── IR Blasters ─────────────────────────────────────────────────────────── */}
+  const [email, setEmail] = useState({ enabled: false, host: '', port: 587, username: '', password_configured: false, password_masked: '', from_address: '', from_name: 'Ziggy' })
+  const [refreshing, setRefreshing] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const load = () => { if (isSuperAdmin) getEmailSettings().then(setEmail).catch(() => {}) }
+  useEffect(() => { load() }, [isSuperAdmin])
+  const onRefresh = () => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 600) }
+
+  if (!isSuperAdmin) {
+    return <p style={{ padding: 24, fontSize: 12, color: 'var(--ink-faint)' }}>Restricted to super admins.</p>
+  }
+
+  const saveSmtp = async () => {
+    setSaving(true)
+    try { await patchEmailSettings({ host: email.host, port: email.port, username: email.username, from_name: email.from_name, from_address: email.username }); addToast(t('adminSettings.saved'), 'success') }
+    catch { addToast(t('adminSettings.failedSave'), 'error') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <OpsToolbar refreshing={refreshing} onRefresh={onRefresh} />
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Radio}>{t('adminSettings.sectionBlasters') || 'IR Blasters'}</SectionTitle>
-        <BlastersSection />
-      </div>
-
-      {/* ── Developer Tools ─────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Sliders}>{t('adminSettings.sectionDevTools')}</SectionTitle>
+        <SectionTitle icon={Mail}>{t('adminSettings.sectionEmail')}</SectionTitle>
         <Card>
-          <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.devToolsLabel')}</p>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{t('adminSettings.devToolsDesc')}</p>
-            </div>
-            <a href="/ops" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500, textDecoration: 'none', flexShrink: 0 }}>
-              {t('adminSettings.openLink')}
-            </a>
+          <div className="divide-y divide-line">
+            <SettingRow label={t('adminSettings.enableEmail')} subtitle={t('adminSettings.emailReq')}>
+              <Toggle
+                checked={!!email.enabled}
+                onCheckedChange={(v) => {
+                  setEmail(s => ({ ...s, enabled: v }))
+                  patchEmailSettings({ enabled: v }).catch(() => {})
+                }}
+              />
+            </SettingRow>
+            {email.enabled && (
+              <>
+                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 2 }}>
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.smtpHost')}</p>
+                      <input value={email.host} onChange={e => setEmail(s => ({ ...s, host: e.target.value }))} placeholder={t('adminSettings.smtpHostPh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.port')}</p>
+                      <input type="number" value={email.port} onChange={e => setEmail(s => ({ ...s, port: parseInt(e.target.value) || 587 }))} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.smtpUsername')}</p>
+                    <input type="email" value={email.username} onChange={e => setEmail(s => ({ ...s, username: e.target.value }))} placeholder={t('adminSettings.smtpUserPh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('adminSettings.fromName')}</p>
+                    <input value={email.from_name} onChange={e => setEmail(s => ({ ...s, from_name: e.target.value }))} placeholder={t('adminSettings.fromNamePh')} dir="auto" className="z-input" style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                  </div>
+                  <Button variant="primary" onClick={saveSmtp} disabled={saving} className="w-full">
+                    {saving ? t('adminSettings.saving') : t('adminSettings.saveSmtp')}
+                  </Button>
+                </div>
+                <SecretField
+                  label={t('adminSettings.appPassword')}
+                  subtitle={t('adminSettings.appPasswordDesc')}
+                  masked={email.password_masked}
+                  configured={email.password_configured}
+                  placeholder={t('adminSettings.appPasswordPh')}
+                  onSave={(v) => patchEmailSettings({ password: v })}
+                  onRefresh={load}
+                />
+                <div style={{ padding: '12px 16px' }}>
+                  <Button variant="secondary" onClick={async () => {
+                    try { await testEmail(); addToast(t('adminSettings.testEmailSent'), 'success') }
+                    catch (e) { addToast(e.message || t('adminSettings.testFailed'), 'error') }
+                  }} className="w-full">
+                    {t('adminSettings.sendTestEmail')}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </Card>
       </div>
+    </div>
+  )
+}
 
-      {/* ── Ollama ─────────────────────────────────────────────────────────────── */}
+export function EngineTuningPage() {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const [ollama, setOllama] = useState({ base_url: '', model: '', timeout: 30 })
+  const [patternLearning, setPatternLearning] = useState({})
+  const [saving, setSaving] = useState({})
+  const [refreshing, setRefreshing] = useState(false)
+
+  const setSav = (key, val) => setSaving(s => ({ ...s, [key]: val }))
+
+  const load = () => {
+    getOllamaSettings().then(setOllama).catch(() => {})
+    getPatternLearningSettings().then(pl => setPatternLearning({
+      enabled: true, llm_synthesis: true, analysis_hour: 9, lookback_days: 30,
+      min_occurrences: 5, max_pending_suggestions: 3, time_window_minutes: 45,
+      sequence_gap_minutes: 5, ...pl
+    })).catch(() => {})
+  }
+  useEffect(() => { load() }, [])
+  const onRefresh = () => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 600) }
+
+  const save = async (key, apiFn, payload) => {
+    setSav(key, true)
+    try { await apiFn(payload); addToast(t('adminSettings.saved'), 'success') }
+    catch { addToast(t('adminSettings.failedSave'), 'error') }
+    finally { setSav(key, false) }
+  }
+
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <OpsToolbar refreshing={refreshing} onRefresh={onRefresh} />
+
       <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Brain}>{t('adminSettings.sectionOllama')}</SectionTitle>
         <Card>
@@ -592,7 +605,6 @@ export default function AdminSettings() {
         </Card>
       </div>
 
-      {/* ── Pattern Learning ───────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Sliders}>{t('adminSettings.sectionPattern')}</SectionTitle>
         <Card>
@@ -666,3 +678,5 @@ export default function AdminSettings() {
     </div>
   )
 }
+
+// No default export — /admin route was removed in the 2026-06 settings refactor.

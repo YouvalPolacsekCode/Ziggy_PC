@@ -223,6 +223,64 @@ export default function AdminConsole() {
             ]}
             onOpen={() => navigate('/ops/audit')}
           />
+
+          {/* Cards added in the 2026-06 settings refactor — content migrated
+              out of the old /admin AdminSettings page into operator-tier ops */}
+          <ToolCard
+            badge={t('adminConsole.systemBadge')}
+            title={t('adminConsole.diagnosticsTitle')}
+            description={t('adminConsole.diagnosticsDesc')}
+            bullets={[
+              t('adminConsole.diagnosticsBullet1'),
+              t('adminConsole.diagnosticsBullet2'),
+              t('adminConsole.diagnosticsBullet3'),
+            ]}
+            onOpen={() => navigate('/ops/system-diagnostics')}
+          />
+          <ToolCard
+            badge={t('adminConsole.adminBadge')}
+            title={t('adminConsole.apiKeysTitle')}
+            description={t('adminConsole.apiKeysDesc')}
+            bullets={[
+              t('adminConsole.apiKeysBullet1'),
+              t('adminConsole.apiKeysBullet2'),
+              t('adminConsole.apiKeysBullet3'),
+            ]}
+            onOpen={() => navigate('/ops/api-keys')}
+          />
+          <ToolCard
+            badge={t('adminConsole.adminBadge')}
+            title={t('adminConsole.emailTitle')}
+            description={t('adminConsole.emailDesc')}
+            bullets={[
+              t('adminConsole.emailBullet1'),
+              t('adminConsole.emailBullet2'),
+              t('adminConsole.emailBullet3'),
+            ]}
+            onOpen={() => navigate('/ops/email')}
+          />
+          <ToolCard
+            badge={t('adminConsole.systemBadge')}
+            title={t('adminConsole.engineTitle')}
+            description={t('adminConsole.engineDesc')}
+            bullets={[
+              t('adminConsole.engineBullet1'),
+              t('adminConsole.engineBullet2'),
+              t('adminConsole.engineBullet3'),
+            ]}
+            onOpen={() => navigate('/ops/engine-tuning')}
+          />
+          <ToolCard
+            badge={t('adminConsole.devToolsBadge')}
+            title={t('adminConsole.presenceDebugTitle')}
+            description={t('adminConsole.presenceDebugDesc')}
+            bullets={[
+              t('adminConsole.presenceDebugBullet1'),
+              t('adminConsole.presenceDebugBullet2'),
+              t('adminConsole.presenceDebugBullet3'),
+            ]}
+            onOpen={() => navigate('/ops/presence-debug')}
+          />
         </div>
       </main>
     </div>
