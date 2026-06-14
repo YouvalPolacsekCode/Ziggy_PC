@@ -526,6 +526,35 @@ app.include_router(push_action_router)
 import os as _os
 from fastapi.staticfiles import StaticFiles as _StaticFiles
 from fastapi.responses import HTMLResponse as _HTMLResponse
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+
+
+# StaticFiles' built-in `html=True` only handles directory→index.html — it
+# does NOT do SPA history-mode fallback. So a hard refresh on /rooms (or any
+# React Router path) used to 404, which then got wrapped in the unified
+# error envelope and shown as a JSON error page. Subclassing to fall through
+# to index.html for non-API 404s is the standard fix; the client-side router
+# then takes the URL from there.
+class _SPAStaticFiles(_StaticFiles):
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except _StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            # Leave /api/* and /ws untouched — API clients need a real 404,
+            # not HTML. (Both are also normally matched by FastAPI routers
+            # registered before the mount; this guards the edge case where
+            # an API path falls through.)
+            if path.startswith(("api/", "ws")) or path == "api":
+                raise
+            # Asset-shaped paths (any segment with a dot) stay 404. A missing
+            # /assets/foo-abc123.js must not silently become an HTML page —
+            # that would mask cache-busting failures.
+            last_segment = path.rsplit("/", 1)[-1]
+            if "." in last_segment:
+                raise
+            return await super().get_response("index.html", scope)
 
 
 # ---------------------------------------------------------------------------
@@ -653,7 +682,7 @@ async def reset_client():
 
 _FRONTEND_DIST = _os.path.join(_os.path.dirname(__file__), '..', 'frontend', 'dist')
 if _os.path.isdir(_FRONTEND_DIST):
-    app.mount("/", _StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
+    app.mount("/", _SPAStaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
 
 
 # ---------------------------------------------------------------------------
