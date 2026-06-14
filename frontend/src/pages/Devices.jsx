@@ -20,7 +20,7 @@ import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
 import UnassignedSignalsPanel from '../components/UnassignedSignalsPanel'
 import { getRoomPhoto } from '../lib/roomPhotos'
-import { useT } from '../lib/i18n'
+import { useT, useLang, translateNamePhrase } from '../lib/i18n'
 
 function _fmtAgo(isoOrDateStr) {
   if (!isoOrDateStr) return ''
@@ -944,7 +944,7 @@ function CollapsibleGroup({ label, count, open, onToggle, children, action, room
             <img src={photo} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         )}
-        <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+        <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'start' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <span dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
             {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginLeft: 6 }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
@@ -1002,7 +1002,7 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
           >
             <div style={{ padding: '4px 0', maxHeight: 192, overflowY: 'auto' }}>
               <button onClick={() => { onAssign(entityId, null); setOpen(false) }}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '0.5px solid var(--line)', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--ink-faint)', fontFamily: 'inherit' }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '0.5px solid var(--line)', cursor: 'pointer', textAlign: 'start', fontSize: 12, color: 'var(--ink-faint)', fontFamily: 'inherit' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
@@ -1011,7 +1011,7 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
               </button>
               {rooms.map(r => (
                 <button key={r.id} onClick={() => { onAssign(entityId, r.id); setOpen(false) }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--ink-2)', fontFamily: 'inherit' }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontSize: 12, color: 'var(--ink-2)', fontFamily: 'inherit' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
@@ -1623,6 +1623,7 @@ const DeviceCard = forwardRef(function DeviceCard({
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Devices() {
   const t = useT()
+  const lang = useLang()
   // Per-field selectors: subscribing to one large destructure caused this
   // page to re-render on every WS-driven store change, even when none of
   // the fields it actually reads had changed.
@@ -1939,7 +1940,7 @@ export default function Devices() {
           onClick={() => setDomain('unassigned')}
           style={{
             width: '100%', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 14px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+            padding: '12px 14px', borderRadius: 11, textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
             background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))',
           }}
         >
@@ -2000,8 +2001,8 @@ export default function Devices() {
                 >
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.status === 'lost' ? 'var(--accent)' : 'var(--line-2)', flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p dir="auto" style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.display_name || eid || d.device_type}</p>
-                    <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{d.roomName ? `${d.roomName} · ` : ''}{getStatusLabel(t, d.status) || d.status}</p>
+                    <p dir="auto" style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{translateNamePhrase(d.display_name || eid || d.device_type, lang)}</p>
+                    <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }} dir="auto">{d.roomName ? `${translateNamePhrase(d.roomName, lang)} · ` : ''}{getStatusLabel(t, d.status) || d.status}</p>
                   </div>
                   {eid && (
                     <button
@@ -2073,14 +2074,14 @@ export default function Devices() {
       {/* Unassigned section info */}
       {domain === 'unassigned' && (
         <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))` }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>Devices not assigned to any room</p>
-          <p style={{ fontSize: 11, color: 'var(--warn)' }}>Use "Assign to room" on each card to organize them.</p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('devices.unassignedTitle')}</p>
+          <p style={{ fontSize: 11, color: 'var(--warn)' }}>{t('devices.unassignedHint')}</p>
         </div>
       )}
       {domain === 'noroom' && (
         <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>Devices with no room</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>These devices are intentionally left without a room. Use the ··· menu to assign one.</p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('devices.noRoomTitle')}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('devices.noRoomHint')}</p>
         </div>
       )}
 
@@ -2129,7 +2130,7 @@ export default function Devices() {
         return (
           <>
             {roomGroups.map(({ room, items }) => (
-              <CollapsibleGroup key={room.id} label={room.name} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
+              <CollapsibleGroup key={room.id} label={translateNamePhrase(room.name, lang)} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}

@@ -34,7 +34,7 @@ import { deviceFacts, sendDeviceCommand, kindMeta, KIND, commandAvailable } from
 import { useUIStore } from '../../stores/uiStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import logger from '../../lib/logger'
-import { useT, t as i18nT } from '../../lib/i18n'
+import { useT, t as i18nT, useTranslatedName } from '../../lib/i18n'
 
 // ─── Icon mapping ───────────────────────────────────────────────────────────
 const KIND_ICONS = {
@@ -325,6 +325,7 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
   const isOnState    = facts.isOn
   const tint         = facts.tint
   const isToggleable = facts.meta.toggle && facts.isAvailable
+  const deviceName   = useTranslatedName(facts.name)
 
   // Two visual modes:
   //   'tinted'   — original behavior. Each device kind tints the whole tile
@@ -417,14 +418,14 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
             a slightly smaller font AND tighter tracking so longer names like
             "Living Room Lamp" pack onto line 2 instead of ellipsizing where
             "Living Room TV" wouldn't. State line below stays single-line. */}
-        <div style={{
+        <div dir="auto" style={{
           fontSize: dense ? 10 : nameSize,
           fontWeight: 600, lineHeight: 1.15,
           letterSpacing: dense ? '-0.025em' : '-0.01em',
           overflow: 'hidden',
           display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
           wordBreak: 'break-word' }}>
-          {facts.name}
+          {deviceName}
         </div>
         <div className="z-mono" style={{ fontSize: stateSize, color: subColor, letterSpacing: '0.04em',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -458,6 +459,7 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
 
 function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
   const tint = facts.tint
+  const deviceName = useTranslatedName(facts.name)
   const iconBg = facts.isOn
     ? `color-mix(in srgb, ${tint} 14%, var(--surface-2))`
     : 'var(--surface-2)'
@@ -489,11 +491,11 @@ function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
 
       {/* Name + state + (optional) metric pills */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
+        <div dir="auto" style={{
           fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.01em',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {facts.name}
+          {deviceName}
         </div>
         <div className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2 }}>
           {secondaryLine(facts)}
@@ -586,6 +588,7 @@ function MetricPills({ metrics }) {
 // ─── Compact variant — small chip for pickers ───────────────────────────────
 
 function CompactCard({ facts, onCommand, onOpen }) {
+  const deviceName = useTranslatedName(facts.name)
   return (
     <button
       onClick={onOpen}
@@ -595,7 +598,7 @@ function CompactCard({ facts, onCommand, onOpen }) {
       <span style={{ color: facts.isOn ? facts.tint : 'var(--ink-mute)', display: 'flex' }}>
         <KindIcon kind={facts.kind} size={12} />
       </span>
-      <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink)' }}>{facts.name}</span>
+      <span dir="auto" style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink)' }}>{deviceName}</span>
       <span className="z-mono" style={{ fontSize: 9.5, color: 'var(--ink-faint)' }}>{facts.stateLabel}</span>
     </button>
   )

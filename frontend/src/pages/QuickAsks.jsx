@@ -6,85 +6,112 @@ import { IntentParamForm, validateIntentParams } from '../components/ui/IntentPa
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { sendDirectIntent } from '../lib/api'
-import { useT } from '../lib/i18n'
+import { useT, useLang, translateNamePhrase } from '../lib/i18n'
 
-// Curated list of useful intents — unchanged
-const INTENT_OPTIONS = [
-  { group: 'Lights — global', intents: [
-    { value: 'turn_off_all_lights',       label: 'Turn off all lights' },
-    { value: 'turn_off_everything',       label: 'Turn off everything (lights + media)' },
-  ]},
-  { group: 'Lights — room', intents: [
-    { value: 'toggle_all_lights_in_room', label: 'Toggle all lights in room' },
-    { value: 'toggle_light',              label: 'Toggle a single light' },
-    { value: 'set_light_brightness',      label: 'Set brightness' },
-    { value: 'set_light_color_temp',      label: 'Set color temperature' },
-    { value: 'set_light_color',           label: 'Set RGB color' },
-    { value: 'set_light_effect',          label: 'Set light effect' },
-  ]},
-  { group: 'Climate / AC', intents: [
-    { value: 'report_all_temperatures',   label: 'All room temperatures' },
-    { value: 'get_temperature',           label: 'Temperature in room' },
-    { value: 'get_humidity',              label: 'Humidity in room' },
-    { value: 'control_ac',               label: 'AC on/off' },
-    { value: 'set_ac_temperature',        label: 'Set AC temperature' },
-    { value: 'set_ac_mode',              label: 'Set AC mode' },
-    { value: 'set_climate_fan_mode',      label: 'Set fan mode' },
-    { value: 'set_climate_preset',        label: 'Set preset' },
-  ]},
-  { group: 'Media & TV', intents: [
-    { value: 'control_tv',               label: 'TV on/off' },
-    { value: 'set_tv_volume',            label: 'Set TV volume' },
-    { value: 'tv_select_source',         label: 'Select TV source' },
-    { value: 'media_play',               label: 'Play/resume' },
-    { value: 'media_pause',              label: 'Pause' },
-  ]},
-  { group: 'Covers & Blinds', intents: [
-    { value: 'open_cover',               label: 'Open cover' },
-    { value: 'close_cover',              label: 'Close cover' },
-    { value: 'set_cover_position',       label: 'Set cover position' },
-  ]},
-  { group: 'Presence & Status', intents: [
-    { value: 'is_someone_home',           label: "Who's home?" },
-    { value: 'list_active_devices',       label: 'List active devices' },
-    { value: 'get_system_status',         label: 'System status' },
-    { value: 'get_sun_times',             label: 'Sunrise / sunset times' },
-  ]},
-  { group: 'Tasks & Lists', intents: [
-    { value: 'task_summary',              label: 'Task summary' },
-    { value: 'list_tasks',               label: 'All tasks' },
-    { value: 'get_shopping_list',         label: 'Shopping list' },
-  ]},
-  { group: 'Info & Web', intents: [
-    { value: 'get_weather',               label: 'Weather' },
-    { value: 'web_news_brief',            label: 'News brief' },
-    { value: 'get_time',                  label: 'Current time' },
-    { value: 'list_events',              label: 'Upcoming events' },
-  ]},
-]
+// Curated list of useful intents. Each group has a stable `kind` so the
+// chip-tint logic in KIND_LABEL doesn't depend on the (now-translated)
+// group label string.
+function getIntentOptions(t) {
+  return [
+    { kind: 'lights_global', group: t('quickAsks.group.lightsGlobal'), intents: [
+      { value: 'turn_off_all_lights',       label: t('quickAsks.intent.turn_off_all_lights') },
+      { value: 'turn_off_everything',       label: t('quickAsks.intent.turn_off_everything') },
+    ]},
+    { kind: 'lights_room', group: t('quickAsks.group.lightsRoom'), intents: [
+      { value: 'toggle_all_lights_in_room', label: t('quickAsks.intent.toggle_all_lights_in_room') },
+      { value: 'toggle_light',              label: t('quickAsks.intent.toggle_light') },
+      { value: 'set_light_brightness',      label: t('quickAsks.intent.set_light_brightness') },
+      { value: 'set_light_color_temp',      label: t('quickAsks.intent.set_light_color_temp') },
+      { value: 'set_light_color',           label: t('quickAsks.intent.set_light_color') },
+      { value: 'set_light_effect',          label: t('quickAsks.intent.set_light_effect') },
+    ]},
+    { kind: 'climate', group: t('quickAsks.group.climate'), intents: [
+      { value: 'report_all_temperatures',   label: t('quickAsks.intent.report_all_temperatures') },
+      { value: 'get_temperature',           label: t('quickAsks.intent.get_temperature') },
+      { value: 'get_humidity',              label: t('quickAsks.intent.get_humidity') },
+      { value: 'control_ac',                label: t('quickAsks.intent.control_ac') },
+      { value: 'set_ac_temperature',        label: t('quickAsks.intent.set_ac_temperature') },
+      { value: 'set_ac_mode',               label: t('quickAsks.intent.set_ac_mode') },
+      { value: 'set_climate_fan_mode',      label: t('quickAsks.intent.set_climate_fan_mode') },
+      { value: 'set_climate_preset',        label: t('quickAsks.intent.set_climate_preset') },
+    ]},
+    { kind: 'media', group: t('quickAsks.group.media'), intents: [
+      { value: 'control_tv',                label: t('quickAsks.intent.control_tv') },
+      { value: 'set_tv_volume',             label: t('quickAsks.intent.set_tv_volume') },
+      { value: 'tv_select_source',          label: t('quickAsks.intent.tv_select_source') },
+      { value: 'media_play',                label: t('quickAsks.intent.media_play') },
+      { value: 'media_pause',               label: t('quickAsks.intent.media_pause') },
+    ]},
+    { kind: 'cover', group: t('quickAsks.group.covers'), intents: [
+      { value: 'open_cover',                label: t('quickAsks.intent.open_cover') },
+      { value: 'close_cover',               label: t('quickAsks.intent.close_cover') },
+      { value: 'set_cover_position',        label: t('quickAsks.intent.set_cover_position') },
+    ]},
+    { kind: 'presence', group: t('quickAsks.group.presence'), intents: [
+      { value: 'is_someone_home',           label: t('quickAsks.intent.is_someone_home') },
+      { value: 'list_active_devices',       label: t('quickAsks.intent.list_active_devices') },
+      { value: 'get_system_status',         label: t('quickAsks.intent.get_system_status') },
+      { value: 'get_sun_times',             label: t('quickAsks.intent.get_sun_times') },
+    ]},
+    { kind: 'tasks', group: t('quickAsks.group.tasks'), intents: [
+      { value: 'task_summary',              label: t('quickAsks.intent.task_summary') },
+      { value: 'list_tasks',                label: t('quickAsks.intent.list_tasks') },
+      { value: 'get_shopping_list',         label: t('quickAsks.intent.get_shopping_list') },
+    ]},
+    { kind: 'info', group: t('quickAsks.group.info'), intents: [
+      { value: 'get_weather',               label: t('quickAsks.intent.get_weather') },
+      { value: 'web_news_brief',            label: t('quickAsks.intent.web_news_brief') },
+      { value: 'get_time',                  label: t('quickAsks.intent.get_time') },
+      { value: 'list_events',               label: t('quickAsks.intent.list_events') },
+    ]},
+  ]
+}
+
+// Stable intent→kind map. Built once at module load so KIND_LABEL stays
+// cheap and works without a translator (e.g. for sort orderings).
+const INTENT_KIND = (() => {
+  const map = new Map()
+  for (const g of getIntentOptions((k) => k)) {
+    for (const it of g.intents) map.set(it.value, g.kind)
+  }
+  return map
+})()
+
+const KIND_TINT = {
+  lights_global: 'var(--warn)',
+  lights_room:   'var(--warn)',
+  climate:       'var(--info)',
+  media:         'var(--ok)',
+  cover:         'var(--ink-mute)',
+  presence:      'var(--ok)',
+  tasks:         'var(--accent)',
+  info:          'var(--info)',
+}
+const KIND_LABEL_KEY = {
+  lights_global: 'quickAsks.kind.light',
+  lights_room:   'quickAsks.kind.light',
+  climate:       'quickAsks.kind.climate',
+  media:         'quickAsks.kind.media',
+  cover:         'quickAsks.kind.cover',
+  presence:      'quickAsks.kind.presence',
+  tasks:         'quickAsks.kind.tasks',
+  info:          'quickAsks.kind.info',
+}
 
 const EMOJI_OPTIONS = ['💡', '🌡️', '👤', '✅', '🌙', '📋', '🌤️', '📰', '🔒', '🛋️', '🌀', '🎵', '⚙️', '📦', '🏠', '⚡', '🔔', '🛒']
 const EMPTY_FORM   = { label: '', icon: '⚡', intent: 'turn_off_all_lights', params: {} }
 
-// Kind label based on intent group
-const KIND_LABEL = (intent) => {
-  for (const g of INTENT_OPTIONS) {
-    if (g.intents.some(i => i.value === intent)) {
-      if (g.group.includes('Light'))    return { label: 'light',    tint: 'var(--warn)' }
-      if (g.group.includes('Climate'))  return { label: 'climate',  tint: 'var(--info)' }
-      if (g.group.includes('Media'))    return { label: 'media',    tint: 'var(--ok)' }
-      if (g.group.includes('Cover'))    return { label: 'cover',    tint: 'var(--ink-mute)' }
-      if (g.group.includes('Presence')) return { label: 'presence', tint: 'var(--ok)' }
-      if (g.group.includes('Task'))     return { label: 'tasks',    tint: 'var(--accent)' }
-      return { label: 'info', tint: 'var(--info)' }
-    }
-  }
-  return { label: 'action', tint: 'var(--accent)' }
+// Kind label for chip rendering — resolved against the active i18n table.
+function getKindLabel(intent, t) {
+  const kind = INTENT_KIND.get(intent)
+  if (!kind) return { label: t('quickAsks.kind.action'), tint: 'var(--accent)' }
+  return { label: t(KIND_LABEL_KEY[kind]), tint: KIND_TINT[kind] }
 }
 
 // ── Quick ask form ────────────────────────────────────────────────────────────
 function QuickAskForm({ initial, onSave, onCancel, saving }) {
   const t = useT()
+  const intentOptions = getIntentOptions(t)
   const [form,        setForm]        = useState(initial || EMPTY_FORM)
   const [paramsError, setParamsError] = useState(null)
 
@@ -136,8 +163,8 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
           className="z-input"
           style={{ height: 40, padding: '0 12px' }}
         >
-          {INTENT_OPTIONS.map(({ group, intents }) => (
-            <optgroup key={group} label={group}>
+          {intentOptions.map(({ kind, group, intents }) => (
+            <optgroup key={kind} label={group}>
               {intents.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </optgroup>
           ))}
@@ -169,6 +196,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function QuickAsks({ embedded = false }) {
   const t = useT()
+  const lang = useLang()
   const { items, loading, fetch, create, update, remove } = useQuickAskStore()
   const { addToast } = useUIStore()
   const [showCreate, setShowCreate] = useState(false)
@@ -194,7 +222,7 @@ export default function QuickAsks({ embedded = false }) {
     catch (e) { addToast(e.message || t('common.failed'), 'error') }
   }
   const handleFire = async (qa) => {
-    try { await sendDirectIntent(qa.intent, qa.params || {}); addToast(qa.label, 'success') }
+    try { await sendDirectIntent(qa.intent, qa.params || {}); addToast(translateNamePhrase(qa.label, lang), 'success') }
     catch (e) { addToast(e.message || t('quickAsks.failedFire'), 'error') }
   }
 
@@ -241,7 +269,7 @@ export default function QuickAsks({ embedded = false }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
         <AnimatePresence>
           {items.map(qa => {
-            const kind = KIND_LABEL(qa.intent)
+            const kind = getKindLabel(qa.intent, t)
             return (
               <motion.div
                 key={qa.id}
@@ -268,8 +296,8 @@ export default function QuickAsks({ embedded = false }) {
                   </span>
                 </div>
                 <div>
-                  <p style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, marginBottom: 4 }}>
-                    "{qa.label}"
+                  <p dir="auto" style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, marginBottom: 4 }}>
+                    "{translateNamePhrase(qa.label, lang)}"
                   </p>
                 </div>
                 <div data-qa-stop style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>

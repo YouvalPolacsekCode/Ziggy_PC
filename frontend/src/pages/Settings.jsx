@@ -217,6 +217,7 @@ function StatusRow({ icon: Icon, label, value, valueColor }) {
 }
 
 function SystemStatusCard() {
+  const t = useT()
   const [loaded, setLoaded] = useState(false)
   const [health, setHealth] = useState(null)
   const [deviceCount, setDeviceCount] = useState(null)
@@ -263,38 +264,38 @@ function SystemStatusCard() {
   return (
     <Card>
       <div className="divide-y divide-line">
-        <StatusRow icon={Cloud}    label="Ziggy"      value="Online"                                            valueColor="var(--ok)" />
-        <StatusRow icon={Wifi}     label="Bridge"     value={bridgeOk ? 'Connected' : 'Offline'}                valueColor={bridgeOk ? 'var(--ok)' : 'var(--accent)'} />
+        <StatusRow icon={Cloud}    label={t('systemStatus.ziggyLabel')}  value={t('systemStatus.online')}                                                            valueColor="var(--ok)" />
+        <StatusRow icon={Wifi}     label={t('systemStatus.bridgeLabel')} value={bridgeOk ? t('systemStatus.bridgeConnected') : t('systemStatus.bridgeOffline')}     valueColor={bridgeOk ? 'var(--ok)' : 'var(--accent)'} />
         {coordState && coordRawTitle && (
           <StatusRow icon={Radio} label={coordRawTitle} value={coordState} valueColor={coordStateColor} />
         )}
         {lastRecovery && (
-          <StatusRow icon={Activity} label="Last recovery" value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok)' : 'var(--ink-mute)'} />
+          <StatusRow icon={Activity} label={t('systemStatus.lastRecovery')} value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok)' : 'var(--ink-mute)'} />
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
           <Radio size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>Zigbee</span>
+          <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>{t('systemStatus.zigbeeLabel')}</span>
           {deviceCount !== null ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Link to="/devices" style={{ ...linkStyle, color: 'var(--ink-2)' }}>
-                {deviceCount} device{deviceCount !== 1 ? 's' : ''}
+                {deviceCount === 1 ? t('systemStatus.deviceCount', { n: deviceCount }) : t('systemStatus.deviceCountPlural', { n: deviceCount })}
               </Link>
               {offlineCount > 0 && (
                 <>
                   <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>·</span>
                   <Link to="/devices?filter=offline" style={{ ...linkStyle, color: 'var(--warn)' }}>
-                    {offlineCount} offline
+                    {t('systemStatus.offlineCount', { n: offlineCount })}
                   </Link>
                 </>
               )}
             </span>
           ) : (
-            <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>Unavailable</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('systemStatus.unavailable')}</span>
           )}
         </div>
 
-        <StatusRow icon={Activity} label="Last event" value={lastEventTs ? timeAgo(lastEventTs) : 'No events'} valueColor="var(--ink-mute)" />
+        <StatusRow icon={Activity} label={t('systemStatus.lastEvent')} value={lastEventTs ? timeAgo(lastEventTs) : t('systemStatus.noEvents')} valueColor="var(--ink-mute)" />
       </div>
     </Card>
   )
@@ -303,6 +304,7 @@ function SystemStatusCard() {
 // ─── Zigbee Bridge Section ────────────────────────────────────────────────────
 
 function ZigbeeBridgeSection({ isAdmin }) {
+  const t = useT()
   const { addToast } = useUIStore()
   const [health, setHealth]           = useState(null)
   const [deviceCount, setDeviceCount] = useState(null)
@@ -331,16 +333,19 @@ function ZigbeeBridgeSection({ isAdmin }) {
           return c - 1
         })
       }, 1000)
-      addToast('Pairing mode active — press the button on your device', 'success')
+      addToast(t('zigbeeBridge.pairingStartedToast'), 'success')
     } catch (e) {
-      addToast(e.message || 'Failed to start pairing', 'error')
+      addToast(e.message || t('zigbeeBridge.pairingFailedToast'), 'error')
     } finally {
       setPairing(false)
     }
   }
 
   const connected        = health?.ha_connected ?? false
-  const coordinatorName  = health?.coordinator_title || (connected ? 'ZHA / Coordinator' : null)
+  // Per CLAUDE.md baseline, user-visible surfaces never use HA terminology.
+  // The HA-reported title (when present) is shown verbatim; the local fallback
+  // is the neutral "Coordinator" label, not "ZHA / Coordinator".
+  const coordinatorName  = health?.coordinator_title || (connected ? t('zigbeeBridge.coordinatorFallback') : null)
 
   return (
     <Card>
@@ -350,9 +355,9 @@ function ZigbeeBridgeSection({ isAdmin }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <Wifi size={16} style={{ color: connected ? 'var(--ok)' : 'var(--ink-faint)', flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Coordinator</p>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
-                {coordinatorName ?? 'Not detected'}
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.coordinatorLabel')}</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }} dir="auto">
+                {coordinatorName ?? t('zigbeeBridge.notDetected')}
               </p>
             </div>
           </div>
@@ -362,14 +367,14 @@ function ZigbeeBridgeSection({ isAdmin }) {
             color:      connected ? 'var(--ok)' : 'var(--ink-faint)',
             background: connected ? 'color-mix(in srgb, var(--ok) 12%, var(--surface))' : 'var(--bg-2)',
           }}>
-            {connected ? 'paired' : 'offline'}
+            {connected ? t('zigbeeBridge.statusPaired') : t('zigbeeBridge.statusOffline')}
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Radio size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Devices on network</p>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.devicesOnNetwork')}</p>
           </div>
           {deviceCount !== null ? (
             <Link to="/devices" style={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-2)', textDecoration: 'none', fontWeight: 600 }}>
@@ -385,11 +390,11 @@ function ZigbeeBridgeSection({ isAdmin }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
               <Zap size={16} style={{ color: pairingActive ? 'var(--accent)' : 'var(--ink-faint)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Pairing mode</p>
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.pairingMode')}</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
                   {pairingActive
-                    ? `Open for ${countdown}s — press the button on your device`
-                    : 'Allow new devices to join the network'}
+                    ? t('zigbeeBridge.pairingActive', { n: countdown })
+                    : t('zigbeeBridge.pairingIdle')}
                 </p>
               </div>
             </div>
@@ -399,7 +404,7 @@ function ZigbeeBridgeSection({ isAdmin }) {
               className={pairingActive ? 'z-btn-primary' : 'z-btn-secondary'}
               style={{ padding: '5px 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
-              {pairing ? '…' : pairingActive ? `${countdown}s` : 'Add device'}
+              {pairing ? '…' : pairingActive ? `${countdown}s` : t('zigbeeBridge.addDevice')}
             </button>
           </div>
         )}
@@ -590,18 +595,18 @@ function PresenceSection() {
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Track my location</p>
-            <p style={{ fontSize: 11, color: trackMe ? 'var(--ok)' : 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.trackMe.title')}</p>
+            <p style={{ fontSize: 11, color: trackMe ? 'var(--ok)' : 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
               {trackMe
-                ? (trackMeStatus === 'home'  ? `Active · home${trackMePerson ? ' · ' + trackMePerson.name : ''}`
-                  : trackMeStatus === 'away'  ? `Active · away${trackMePerson ? ' · ' + trackMePerson.name : ''}`
-                  : trackMeStatus === 'permission_denied' ? 'Location permission denied'
-                  : trackMeStatus === 'unavailable'      ? 'Location unavailable on this device'
-                  : trackMeStatus === 'error'            ? 'Connection issue — will retry'
-                  : trackMeStatus === 'requesting'       ? 'Requesting permission…'
-                  : trackMeStatus === 'pinging'          ? 'Updating location…'
-                  : `Active · ${trackMeStatus}`)
-                : 'Off — turn on to let this device report its GPS to Ziggy'}
+                ? (trackMeStatus === 'home'  ? `${t('homeSensing.trackMe.activeHome')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
+                  : trackMeStatus === 'away'  ? `${t('homeSensing.trackMe.activeAway')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
+                  : trackMeStatus === 'permission_denied' ? t('homeSensing.trackMe.permDenied')
+                  : trackMeStatus === 'unavailable'      ? t('homeSensing.trackMe.unavailable')
+                  : trackMeStatus === 'error'            ? t('homeSensing.trackMe.error')
+                  : trackMeStatus === 'requesting'       ? t('homeSensing.trackMe.requesting')
+                  : trackMeStatus === 'pinging'          ? t('homeSensing.trackMe.pinging')
+                  : t('homeSensing.trackMe.activeOther', { status: trackMeStatus }))
+                : t('homeSensing.trackMe.off')}
             </p>
           </div>
           <Toggle checked={trackMe} onCheckedChange={toggleTrackMe} />
@@ -612,22 +617,22 @@ function PresenceSection() {
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Home zone</p>
-            <p style={{ fontSize: 11, color: zone?.configured ? 'var(--ok)' : 'var(--warn)', marginTop: 1 }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.homeZone.title')}</p>
+            <p style={{ fontSize: 11, color: zone?.configured ? 'var(--ok)' : 'var(--warn)', marginTop: 1 }} dir="auto">
               {zone?.configured
-                ? `${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)} · ${zone.radius}m radius`
+                ? t('homeSensing.homeZone.summary', { lat: zone.lat?.toFixed(4), lon: zone.lon?.toFixed(4), radius: zone.radius })
                 : zone?.lat != null
-                  ? `Using detected location (${zone.lat?.toFixed(4)}, ${zone.lon?.toFixed(4)}) — save to confirm`
-                  : 'Not configured — set your home location'}
+                  ? t('homeSensing.homeZone.detected', { lat: zone.lat?.toFixed(4), lon: zone.lon?.toFixed(4) })
+                  : t('homeSensing.homeZone.notConfigured')}
             </p>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
             <button onClick={useMyLocation} disabled={locating} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
-              {locating ? '…' : 'Use my location'}
+              {locating ? '…' : t('homeSensing.useMyLocation')}
             </button>
             {!zoneEdit && (
               <button onClick={() => setZoneEdit(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
-                Edit
+                {t('homeSensing.edit')}
               </button>
             )}
           </div>
@@ -636,28 +641,28 @@ function PresenceSection() {
           <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6 }}>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Latitude</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>{t('homeSensing.latitude')}</p>
                 <input value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="32.0853" />
               </div>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Longitude</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>{t('homeSensing.longitude')}</p>
                 <input value={zoneDraft.lon} onChange={e => setZoneDraft(d => ({ ...d, lon: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="34.7818" />
               </div>
               <div style={{ width: 90 }}>
-                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>Radius (m)</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>{t('homeSensing.radiusM')}</p>
                 <input type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={saveZone} disabled={zoneSaving || !zoneDraft.lat || !zoneDraft.lon} className="z-btn-primary" style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12 }}>
-                {zoneSaving ? '…' : 'Save zone'}
+                {zoneSaving ? '…' : t('homeSensing.saveZone')}
               </button>
               <button onClick={() => setZoneEdit(false)} className="z-btn-secondary" style={{ height: 32, padding: '0 10px', borderRadius: 8, fontSize: 12 }}>
-                Cancel
+                {t('homeSensing.cancel')}
               </button>
             </div>
             <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
-              Tip: click "Use my location" while at home to auto-fill. 100 m radius is the default; the engine adds GPS-jitter hysteresis on top.
+              {t('homeSensing.zoneTip')}
             </p>
           </div>
         )}
@@ -666,40 +671,40 @@ function PresenceSection() {
       {/* Additional zones card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
         <div style={{ padding: '11px 16px', borderBottom: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
-          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>Additional zones</p>
+          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.extraZones.title')}</p>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
-            Extra named zones for automations (e.g. "Near Home", "Work").
+            {t('homeSensing.extraZones.desc')}
           </p>
         </div>
         {extraZones.map((z, i) => (
           <div key={z.id} style={{ padding: '10px 16px', borderBottom: i < extraZones.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
             {editingZoneId === z.id ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))}
-                       className="z-input" placeholder="Name" style={{ height: 28, padding: '0 8px', fontSize: 12 }} />
+                <input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))} dir="auto"
+                       className="z-input" placeholder={t('homeSensing.extraZones.namePh')} style={{ height: 28, padding: '0 8px', fontSize: 12 }} />
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input value={zoneEditDraft.lat} onChange={e => setZoneEditDraft(d => ({ ...d, lat: e.target.value }))}
-                         className="z-input" placeholder="Latitude" style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
+                         className="z-input" placeholder={t('homeSensing.extraZones.latPh')} style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
                   <input value={zoneEditDraft.lon} onChange={e => setZoneEditDraft(d => ({ ...d, lon: e.target.value }))}
-                         className="z-input" placeholder="Longitude" style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
+                         className="z-input" placeholder={t('homeSensing.extraZones.lonPh')} style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
                   <input type="number" value={zoneEditDraft.radius_m} onChange={e => setZoneEditDraft(d => ({ ...d, radius_m: e.target.value }))}
-                         className="z-input" placeholder="Radius (m)" style={{ width: 100, height: 28, padding: '0 8px', fontSize: 12 }} />
+                         className="z-input" placeholder={t('homeSensing.extraZones.radiusPh')} style={{ width: 100, height: 28, padding: '0 8px', fontSize: 12 }} />
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => saveZoneEdit(z)} className="z-btn-primary" style={{ height: 28, padding: '0 12px', borderRadius: 7, fontSize: 12 }}>Save</button>
-                  <button onClick={() => setEditingZoneId(null)} className="z-btn-secondary" style={{ height: 28, padding: '0 10px', borderRadius: 7, fontSize: 12 }}>Cancel</button>
+                  <button onClick={() => saveZoneEdit(z)} className="z-btn-primary" style={{ height: 28, padding: '0 12px', borderRadius: 7, fontSize: 12 }}>{t('homeSensing.extraZones.save')}</button>
+                  <button onClick={() => setEditingZoneId(null)} className="z-btn-secondary" style={{ height: 28, padding: '0 10px', borderRadius: 7, fontSize: 12 }}>{t('homeSensing.extraZones.cancel')}</button>
                 </div>
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>{z.name}</p>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }} dir="auto">{z.name}</p>
                   <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
                     {z.lat?.toFixed(4)}, {z.lon?.toFixed(4)} · {z.radius_m}m
                   </p>
                 </div>
-                <button onClick={() => beginEditZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 11, padding: '4px 8px' }}>edit</button>
-                <button onClick={() => removeZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }} title="Delete">
+                <button onClick={() => beginEditZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 11, padding: '4px 8px' }}>{t('homeSensing.extraZones.editAction')}</button>
+                <button onClick={() => removeZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }} title={t('homeSensing.extraZones.deleteAria')}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -708,18 +713,18 @@ function PresenceSection() {
         ))}
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
           <div style={{ display: 'flex', gap: 6 }}>
-            <input value={zoneNewName} onChange={e => setZoneNewName(e.target.value)}
+            <input value={zoneNewName} onChange={e => setZoneNewName(e.target.value)} dir="auto"
                    onKeyDown={e => e.key === 'Enter' && addZone()}
-                   className="z-input" placeholder="Zone name (e.g. Near Home, Work)" style={{ flex: 1, height: 32, padding: '0 10px', fontSize: 12 }} />
+                   className="z-input" placeholder={t('homeSensing.extraZones.newNamePh')} style={{ flex: 1, height: 32, padding: '0 10px', fontSize: 12 }} />
             <input type="number" min={50} max={50000} value={zoneNewRadius} onChange={e => setZoneNewRadius(e.target.value)}
-                   className="z-input" placeholder="Radius (m)" style={{ width: 100, height: 32, padding: '0 10px', fontSize: 12 }} />
+                   className="z-input" placeholder={t('homeSensing.extraZones.radiusPh')} style={{ width: 100, height: 32, padding: '0 10px', fontSize: 12 }} />
             <button onClick={addZone} disabled={zoneAdding || !zoneNewName.trim()} className="z-btn-primary"
                     style={{ height: 32, padding: '0 12px', borderRadius: 8, fontSize: 12 }}>
-              {zoneAdding ? '…' : 'Add at current location'}
+              {zoneAdding ? '…' : t('homeSensing.extraZones.add')}
             </button>
           </div>
           <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
-            Adds a zone centred on this device's GPS. Edit lat/lon afterwards if you need a different centre.
+            {t('homeSensing.extraZones.help')}
           </p>
         </div>
       </div>
@@ -733,6 +738,7 @@ function PresenceSection() {
 // Surfaced via /ops/presence-debug — never on a user-facing page.
 
 function PresenceDebugCard() {
+  const t = useT()
   const [debug,   setDebug]   = useState(null)
   const [persons, setPersons] = useState([])
 
@@ -742,18 +748,18 @@ function PresenceDebugCard() {
 
   useEffect(() => {
     loadDebug()
-    const t = setInterval(loadDebug, 5000)
+    const intervalId = setInterval(loadDebug, 5000)
     // Lazy import the persons list so we can show names beside their debug
     // history rows. If it fails, the cards still render with raw IDs.
     import('../lib/api').then(({ getPresencePersons }) =>
       getPresencePersons().then(r => setPersons(r.persons ?? [])).catch(() => {})
     )
-    return () => clearInterval(t)
+    return () => clearInterval(intervalId)
   }, [])
 
   if (!debug) {
     return (
-      <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-faint)' }}>Loading…</div>
+      <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-faint)' }}>{t('common.loading')}</div>
     )
   }
 
@@ -898,8 +904,8 @@ function UsersAndAccessSection({ currentUsername }) {
             <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
               {inv.email || '(open invite)'} · {ROLE_OPT_LABELS[inv.role] || inv.role}
             </span>
-            <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>pending</span>
-            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(() => {}); addToast('Link copied', 'success') }} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, cursor: 'pointer', padding: '4px 6px', color: 'var(--ink-faint)', display: 'flex' }}>
+            <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>{t('members.pending')}</span>
+            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(() => {}); addToast(t('members.linkCopied'), 'success') }} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, cursor: 'pointer', padding: '4px 6px', color: 'var(--ink-faint)', display: 'flex' }}>
               <Copy size={11} />
             </button>
             <button onClick={() => handleRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
@@ -909,25 +915,25 @@ function UsersAndAccessSection({ currentUsername }) {
         ))}
 
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>Invite user</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>{t('members.inviteUser')}</p>
           {inviteLink ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Share this link — expires in 72h, single use.</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('members.linkShare')}</p>
               <div style={{ display: 'flex', gap: 6 }}>
                 <div style={{ flex: 1, background: 'var(--bg-2)', borderRadius: 9, padding: '0 10px', height: 34, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
                   <span style={{ fontSize: 11, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
                 </div>
-                <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast('Copied!', 'success') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Copy size={12} /> Copy
+                <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast(t('members.copied'), 'success') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Copy size={12} /> {t('members.copy')}
                 </button>
-                <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12 }}>New</button>
+                <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12 }}>{t('members.newLink')}</button>
               </div>
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type="email"
-                placeholder="Email (optional)"
+                placeholder={t('members.emailPh')}
                 value={inviteEmail}
                 onChange={e => setInviteEmail(e.target.value)}
                 className="z-input"
@@ -946,7 +952,7 @@ function UsersAndAccessSection({ currentUsername }) {
                 className="z-btn-primary"
                 style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
               >
-                {inviteSaving ? '…' : <><Plus size={12} /> Invite</>}
+                {inviteSaving ? '…' : <><Plus size={12} /> {t('members.invite')}</>}
               </button>
             </div>
           )}
@@ -996,7 +1002,7 @@ function AccountForms({ username, role, logout }) {
                 {ROLE_LABELS[role]?.label || role}
               </span>
             )}
-            <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>Local</span>
+            <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>{t('members.local')}</span>
           </div>
         </SettingRow>
 
@@ -1202,16 +1208,17 @@ export function IrHubsPage() {
 // ─── /ops sub-pages — wrapped by App.jsx's OpsPageWrapper, no extra chrome ──
 
 export function SystemDiagnosticsPage() {
+  const t = useT()
   const role = useAuthStore(s => s.role)
   const isAdmin = hasRole(role, 'admin')
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
       <div style={{ marginBottom: 22 }}>
-        <SectionTitle icon={Activity}>System status</SectionTitle>
+        <SectionTitle icon={Activity}>{t('opsPage.systemStatus')}</SectionTitle>
         <SystemStatusCard />
       </div>
       <div>
-        <SectionTitle icon={Radio}>Zigbee bridge</SectionTitle>
+        <SectionTitle icon={Radio}>{t('opsPage.zigbeeBridge')}</SectionTitle>
         <ZigbeeBridgeSection isAdmin={isAdmin} />
       </div>
     </div>
@@ -1219,10 +1226,11 @@ export function SystemDiagnosticsPage() {
 }
 
 export function PresenceDebugPage() {
+  const t = useT()
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
       <div style={{ marginBottom: 8 }}>
-        <SectionTitle icon={MapPin}>Presence engine internals</SectionTitle>
+        <SectionTitle icon={MapPin}>{t('opsPage.presenceInternals')}</SectionTitle>
       </div>
       <Card>
         <PresenceDebugCard />

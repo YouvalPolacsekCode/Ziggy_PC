@@ -17,6 +17,7 @@ import { hubTabletHeartbeat, claimHubPairCode } from '../lib/api'
 import LayoutRenderer from '../components/hub/LayoutRenderer'
 import { SectionPickerModal } from '../components/hub/EditOverlay'
 import { SectionConfigSheet } from '../components/hub/SectionConfigSheet'
+import { useT } from '../lib/i18n'
 import '../components/hub/Hub.css'
 
 function PairDialog({ onClose, onPaired }) {
@@ -137,6 +138,7 @@ function StatusStrip({ layoutName, error, onRetry, tabletId, editing, onEdit, on
 }
 
 export default function Hub() {
+  const t = useT()
   const layout      = useHubStore(s => s.layout)
   const draft       = useHubStore(s => s.draft)
   const loading     = useHubStore(s => s.loading)
@@ -229,7 +231,7 @@ export default function Hub() {
         </div>
       )}
       {editing && (
-        <button className="z-hub-add-fab" onClick={() => setPickerOpen(true)} aria-label="Add section">+</button>
+        <button className="z-hub-add-fab" onClick={() => setPickerOpen(true)} aria-label={t('hub.addSection')}>+</button>
       )}
       <SectionPickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} />
       {editing && configuringSectionId && (

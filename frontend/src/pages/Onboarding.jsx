@@ -652,10 +652,10 @@ function StepHomeZone({ onNext, onBack, addToast, t }) {
         {locating ? (t('onboarding.zone.locating') || 'Locating…') : (t('onboarding.zone.useMyLocation') || 'Use my location')}
       </PrimaryBtn>
       <Row>
-        <FormField label="Lat" style={{ flex: 1 }}>
+        <FormField label={t('onboarding.zone.lat') || 'Lat'} style={{ flex: 1 }}>
           <input value={lat} onChange={e => setLat(e.target.value)} style={inputStyle} dir="ltr" />
         </FormField>
-        <FormField label="Lon" style={{ flex: 1 }}>
+        <FormField label={t('onboarding.zone.lon') || 'Lon'} style={{ flex: 1 }}>
           <input value={lon} onChange={e => setLon(e.target.value)} style={inputStyle} dir="ltr" />
         </FormField>
       </Row>
@@ -743,12 +743,12 @@ function StepRooms({ onNext, onBack, addToast, t }) {
                 padding: '12px 14px', borderRadius: 12,
                 background: on ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface)',
                 border: on ? '1.5px solid var(--accent)' : '1px solid var(--line)',
-                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start',
               }}
             >
               <span style={{ fontSize: 22 }}>{p.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{name}</span>
-              {on && <Check size={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
+              {on && <Check size={14} style={{ marginInlineStart: 'auto', color: 'var(--accent)' }} />}
             </button>
           )
         })}
@@ -1027,7 +1027,7 @@ function ChoiceCard({ title, body, selected, onClick }) {
     <button
       onClick={onClick}
       style={{
-        width: '100%', textAlign: 'left',
+        width: '100%', textAlign: 'start',
         padding: 14, borderRadius: 12,
         background: selected ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface)',
         border: selected ? '1.5px solid var(--accent)' : '1px solid var(--line)',

@@ -17,7 +17,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react'
 import { Stage, Layer, Line, Text, Group, Circle, Image as KonvaImage } from 'react-konva'
 import { getMapCanvas, putMapCanvasPosition, getMapRender, triggerMapRender } from '../lib/api'
-import { useT } from '../lib/i18n'
+import { useT, useTranslatedName } from '../lib/i18n'
 
 // ─── Projection (mirrors map_renderer.py + HomeMapCanvas constants) ───────
 const ISO_X   = 30
@@ -147,6 +147,7 @@ function autoFitPositions(stageRef, positions, sw, sh) {
 
 // ─── Isometric room geometry (fallback only — no device pins) ─────────────
 function IsoRoomFallback({ room, pos, selected, locked, viewOnly, groupRef, onSelect, onDragEnd, t }) {
+  const roomDisplayName = useTranslatedName(room.name)
   const [topC,southC,eastC]=roomPal(room.name)
   const dark=document.documentElement.classList.contains('dark')
   const {x:mx,y:my,w:mw,h:mh}=pos
@@ -178,7 +179,7 @@ function IsoRoomFallback({ room, pos, selected, locked, viewOnly, groupRef, onSe
         closed fill={southC} stroke={edgeWall} strokeWidth={sw} listening={false}/>
       <Line points={[tTL.x,tTL.y,tTR.x,tTR.y,tBR.x,tBR.y,tBL.x,tBL.y]}
         closed fill={presColor||topC} stroke={edgeTop} strokeWidth={sw}/>
-      <Text x={cx-50} y={cy-10} width={100} text={room.name}
+      <Text x={cx-50} y={cy-10} width={100} text={roomDisplayName}
         fontSize={Math.max(9,Math.min(13,(mw+mh)*2.2))} fontStyle="bold"
         fill={dark?'rgba(255,255,255,0.88)':'rgba(0,0,0,0.68)'} align="center" wrap="none" ellipsis/>
       <Text x={cx-40} y={cy+5} width={80}
@@ -222,6 +223,7 @@ function RoomDevicePins({ room, pos }) {
 // ─── Measurement panel ─────────────────────────────────────────────────────
 function MeasurementPanel({room,pos,onResize,onClose}) {
   const t = useT()
+  const roomDisplayName = useTranslatedName(room.name)
   const [w,setW]=useState(String(pos.w)), [h,setH]=useState(String(pos.h))
   useEffect(()=>{setW(String(pos.w))},[pos.w])
   useEffect(()=>{setH(String(pos.h))},[pos.h])
@@ -231,7 +233,7 @@ function MeasurementPanel({room,pos,onResize,onClose}) {
   return (
     <div className="p-3 rounded-xl border border-accent-soft bg-accent-soft">
       <div className="flex items-center justify-between mb-2">
-        <p dir="auto" className="text-xs font-semibold text-accent">{room.name}</p>
+        <p dir="auto" className="text-xs font-semibold text-accent">{roomDisplayName}</p>
         <button onClick={onClose} aria-label={t('common.close')} className="text-xs text-ink-mute hover:text-ink-2">✕</button>
       </div>
       <div className="flex items-center gap-3">

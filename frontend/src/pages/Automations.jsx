@@ -17,7 +17,7 @@ import MediaPlayActionEditor from '../components/media/MediaPlayActionEditor'
 import { useFeature } from '../stores/featuresStore'
 import { RoutinesListPanel } from './Routines'
 import QuickAsks from './QuickAsks'
-import { useT, t as tStatic } from '../lib/i18n'
+import { useT, t as tStatic, useTranslatedName } from '../lib/i18n'
 
 // Module-level cache so the Recommended-by-Ziggy block doesn't re-flash empty
 // every time the user navigates away and back. SuggestedTemplates lives in
@@ -81,12 +81,39 @@ function getActionTypes(opts = {}) {
 }
 
 // Keys to identify groups; localized labels resolved at render time
-const SEND_INTENT_GROUPS = [
-  { key: 'gLights',  items: ['Turn off all lights', 'Turn on the lights in [room]', 'Set brightness in [room] to 50%', 'Set lights in [room] to warm white'] },
-  { key: 'gClimate', items: ['Set AC in [room] to 22 degrees', 'Turn on AC in [room]', 'Turn off AC in [room]', 'Set AC mode to cool in [room]'] },
-  { key: 'gTvMedia', items: ['Turn on the TV in [room]', 'Turn off the TV in [room]', 'Set volume to 30 on TV in [room]'] },
-  { key: 'gCovers',  items: ['Open the blinds in [room]', 'Close the blinds in [room]'] },
-  { key: 'gGeneral', items: ['Turn off everything', 'Good night', 'Good morning'] },
+// Per-locale template phrases for the "send intent" quick-pick. The strings
+// are what the user inserts into the textarea AND what the NLU receives, so
+// they intentionally come from the i18n table — Hebrew users get Hebrew
+// templates, English users get English. tStatic() reads the current lang
+// at call time, so this resolves correctly when invoked from inside a
+// component render.
+const getSendIntentGroups = (t) => [
+  { key: 'gLights',  items: [
+    t('automations.sendIntent.tpl.lights.turnOffAll'),
+    t('automations.sendIntent.tpl.lights.turnOnRoom'),
+    t('automations.sendIntent.tpl.lights.setBrightness'),
+    t('automations.sendIntent.tpl.lights.setWarmWhite'),
+  ]},
+  { key: 'gClimate', items: [
+    t('automations.sendIntent.tpl.climate.set22'),
+    t('automations.sendIntent.tpl.climate.turnOn'),
+    t('automations.sendIntent.tpl.climate.turnOff'),
+    t('automations.sendIntent.tpl.climate.modeCool'),
+  ]},
+  { key: 'gTvMedia', items: [
+    t('automations.sendIntent.tpl.tv.turnOn'),
+    t('automations.sendIntent.tpl.tv.turnOff'),
+    t('automations.sendIntent.tpl.tv.setVolume'),
+  ]},
+  { key: 'gCovers',  items: [
+    t('automations.sendIntent.tpl.covers.open'),
+    t('automations.sendIntent.tpl.covers.close'),
+  ]},
+  { key: 'gGeneral', items: [
+    t('automations.sendIntent.tpl.general.allOff'),
+    t('automations.sendIntent.tpl.general.goodnight'),
+    t('automations.sendIntent.tpl.general.morning'),
+  ]},
 ]
 
 const SENSOR_DOMAINS  = new Set(['sensor', 'binary_sensor'])
@@ -237,6 +264,7 @@ const selectStyle = {
 // ── SendIntentEditor ──────────────────────────────────────────────────────────
 function SendIntentEditor({ value, onChange }) {
   const t = useT()
+  const sendIntentGroups = getSendIntentGroups(t)
   const [showTemplates, setShowTemplates] = useState(false)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -256,14 +284,14 @@ function SendIntentEditor({ value, onChange }) {
       </div>
       {showTemplates && (
         <div style={{ borderRadius: 11, border: '0.5px solid var(--line)', overflow: 'hidden', background: 'var(--surface)' }}>
-          {SEND_INTENT_GROUPS.map(({ key, items }) => (
+          {sendIntentGroups.map(({ key, items }) => (
             <div key={key}>
               <p className="z-eyebrow" style={{ padding: '8px 10px 4px' }}>{t(`automations.sendIntent.${key}`)}</p>
               {items.map(tpl => (
-                <button key={tpl} onClick={() => { onChange(tpl); setShowTemplates(false) }}
+                <button key={tpl} onClick={() => { onChange(tpl); setShowTemplates(false) }} dir="auto"
                   style={{
                     display: 'block', width: '100%', padding: '6px 10px',
-                    background: 'none', border: 'none', textAlign: 'left',
+                    background: 'none', border: 'none', textAlign: 'start',
                     fontSize: 12, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit',
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
@@ -1381,7 +1409,7 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '8px 10px', borderRadius: 8,
                     background: checked ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'transparent',
-                    border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                    border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit',
                   }}
                 >
                   <span style={{
@@ -1637,6 +1665,8 @@ function AutomationWizard({ initial, onSave, onClose }) {
 // ── AutomationViewModal ───────────────────────────────────────────────────────
 function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClose }) {
   const t = useT()
+  const automationName = useTranslatedName(automation?.name)
+  const automationDesc = useTranslatedName(automation?.description)
   if (!automation) return null
   const lastRun = formatRelativeTime(automation.last_triggered)
   // numeric_state belongs to the "Device State" trigger family in the UI.
@@ -1654,8 +1684,8 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{automation.name}</p>
-          {automation.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">{automation.description}</p>}
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{automationName}</p>
+          {automation.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">{automationDesc}</p>}
         </div>
       </div>
 
@@ -1768,6 +1798,8 @@ const AutomationCard = React.memo(function AutomationCard({
   automation, offlineEntityIds, onToggle, onView, onEdit, onDelete, onTrigger,
 }) {
   const t = useT()
+  const automationName = useTranslatedName(automation.name)
+  const automationDesc = useTranslatedName(automation.description)
   const triggerLabel = getTriggerTypes().find(tt => tt.value === automation.trigger?.type)?.label
 
   // Check if any action entity is currently unavailable. offlineEntityIds is
@@ -1805,8 +1837,8 @@ const AutomationCard = React.memo(function AutomationCard({
           )
         })()}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automation.name}</p>
-          {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automation.description}</p>}
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationName}</p>
+          {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationDesc}</p>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
             {triggerLabel && (
               <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--info)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--info)' : 'var(--ink-faint)' }}>
@@ -2588,7 +2620,7 @@ export default function Automations() {
           }}>
             <button
               onClick={() => setSuggestionsOpen(v => !v)}
-              style={{ width: '100%', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}
+              style={{ width: '100%', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', textAlign: 'start' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>

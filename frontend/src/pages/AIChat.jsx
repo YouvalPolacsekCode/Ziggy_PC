@@ -10,7 +10,7 @@ import { useVoiceStore } from '../stores/voiceStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { formatTime, isHebrew } from '../lib/utils'
-import { useT } from '../lib/i18n'
+import { useT, useLang, translateNamePhrase } from '../lib/i18n'
 
 // Hold-to-talk uses MediaRecorder exclusively. The Web Speech API was
 // previously the "fast path" but its auto-end behavior (even with
@@ -177,6 +177,7 @@ function ThinkingBubble() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AIChat() {
   const t = useT()
+  const lang = useLang()
   const location  = useLocation()
   const navigate  = useNavigate()
   const { addToast }                              = useUIStore()
@@ -678,7 +679,7 @@ export default function AIChat() {
                     }}
                   >
                     {qa.icon && <span style={{ fontSize: 14 }}>{qa.icon}</span>}
-                    {qa.label}
+                    <span dir="auto">{translateNamePhrase(qa.label, lang)}</span>
                   </button>
                 ))}
               </div>
@@ -720,7 +721,7 @@ export default function AIChat() {
               fontSize: 11, color: 'var(--ink-2)', fontWeight: 500,
             }}>
               {qa.icon && <span style={{ marginRight: 4 }}>{qa.icon}</span>}
-              {qa.label}
+              <span dir="auto">{translateNamePhrase(qa.label, lang)}</span>
             </div>
           ))}
           {!quickAsks.length && [t('chat.suggestGoodnight'), t('chat.suggestMovie'), t('chat.suggestWhoHome')].map(s => (

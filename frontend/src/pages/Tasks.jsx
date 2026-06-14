@@ -6,7 +6,7 @@ import { Select } from '../components/ui/Select'
 import { useTaskStore } from '../stores/taskStore'
 import { useUIStore } from '../stores/uiStore'
 import { formatDate, isHebrew } from '../lib/utils'
-import { useT } from '../lib/i18n'
+import { useT, useTranslatedName } from '../lib/i18n'
 
 const PRIORITY_COLOR = { high: 'var(--accent)', medium: 'var(--warn)', low: 'var(--line-2)' }
 
@@ -58,6 +58,8 @@ function SubItem({ item, onToggle }) {
 // ── Task row ──────────────────────────────────────────────────────────────────
 const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }, ref) {
   const [expanded, setExpanded] = useState(false)
+  const rawTitle = task.task || task.title
+  const displayTitle = useTranslatedName(rawTitle)
   const isDone  = task.done || task.completed
   const items   = task.items || []
   const doneItems = items.filter(i => i.done).length
@@ -95,7 +97,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <p
-            dir={isHebrew(task.task || task.title) ? 'rtl' : 'ltr'}
+            dir="auto"
             style={{
               fontSize: 14, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
               color: isDone ? 'var(--ink-faint)' : 'var(--ink)',
@@ -103,7 +105,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
               textDecoration: isDone ? 'line-through' : 'none',
             }}
           >
-            {task.task || task.title}
+            {displayTitle}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
             {task.due && (

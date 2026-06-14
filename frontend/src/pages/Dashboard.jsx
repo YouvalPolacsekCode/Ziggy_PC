@@ -16,7 +16,7 @@ import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
 import { Pencil, Play, Sparkles, Check, ChevronRight } from 'lucide-react'
-import { useT, t as tt } from '../lib/i18n'
+import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18n'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
@@ -188,7 +188,7 @@ function QuickControlTile({ entity }) {
   const emoji      = kindMeta(facts.kind).icon
 
   const sub = (() => {
-    if (!facts.isAvailable) return 'Offline'
+    if (!facts.isAvailable) return tt('common.offline')
     if (facts.brightness != null && on) return `${facts.stateLabel} · ${facts.brightness}%`
     return facts.stateLabel
   })()
@@ -215,7 +215,7 @@ function QuickControlTile({ entity }) {
         background: tileBg, color: tileFg,
         border: '0.5px solid var(--line)',
         display: 'flex', flexDirection: 'column', gap: 14,
-        textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
+        textAlign: 'start', fontFamily: 'inherit', cursor: 'pointer',
         transition: 'background 0.16s, color 0.16s',
         opacity: pending ? 0.7 : 1,
       }}
@@ -253,7 +253,7 @@ function QuickControlTile({ entity }) {
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } }}
         role="button"
         tabIndex={0}
-        aria-label="Open details"
+        aria-label={tt('dashboard.openDetails')}
         style={{
           position: 'absolute', top: 10, right: 10,
           width: 24, height: 24, borderRadius: 8,
@@ -279,6 +279,7 @@ const C_PAD = 20    // horizontal padding inside scroll container
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const t = useT()
+  const lang = useLang()
   const navigate  = useNavigate()
   const scrollRef = useRef(null)
   const tileRefs  = useRef([])
@@ -382,7 +383,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                   transformOrigin: 'center center',
                 }}
               >
-                <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <img src={photo} alt={translateNamePhrase(room.name, lang)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
 
                 {/* Active dot — same criteria as the greeting's "N rooms active"
@@ -442,7 +443,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
 
                 {/* Name + status */}
                 <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14 }}>
-                  <p style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{room.name}</p>
+                  <p dir="auto" style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{translateNamePhrase(room.name, lang)}</p>
                   <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
                     {/* Same condition as the dot and greeting count: a room with
                         motion but zero on-devices is still "active" to the user. */}
@@ -489,6 +490,7 @@ function roomsGridShape(n) {
 
 function RoomsGrid({ sortedRooms, ziggyRooms }) {
   const t = useT()
+  const lang = useLang()
   const navigate = useNavigate()
   if (!sortedRooms.length) return null
   const { cols, rows } = roomsGridShape(sortedRooms.length)
@@ -539,7 +541,7 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
                 e.currentTarget.style.borderColor = 'var(--line)'
               }}
             >
-              <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              <img src={photo} alt={translateNamePhrase(room.name, lang)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
 
               <span style={{
@@ -575,7 +577,7 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
               )}
 
               <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
-                <p style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{room.name}</p>
+                <p dir="auto" style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{translateNamePhrase(room.name, lang)}</p>
                 <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {summary.activeCount > 0
                     ? t('dashboard.activeShort', { n: summary.activeCount })
@@ -662,9 +664,11 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
 // inactive (surface bg) and active (inverted ink bg) so the personality of
 // the routine survives the press.
 function ShortcutPill({ type, record, onFire }) {
+  const lang = useLang()
   const [pending, setPending] = useState(false)
   const icon  = record.icon || (type === 'routine' ? '⚡' : '✦')
-  const label = type === 'routine' ? record.name : record.label
+  const rawLabel = type === 'routine' ? record.name : record.label
+  const label = translateNamePhrase(rawLabel, lang)
   const tint  = type === 'routine' ? 'var(--ok)' : 'var(--accent)'
 
   const handle = async () => {
@@ -719,7 +723,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
           padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
           background: isPinned ? 'color-mix(in srgb, var(--ok) 8%, var(--surface))' : 'var(--surface)',
           border: '0.5px solid ' + (isPinned ? 'color-mix(in srgb, var(--ok) 30%, var(--line))' : 'var(--line)'),
-          opacity: disabled ? 0.4 : 1, fontFamily: 'inherit', textAlign: 'left',
+          opacity: disabled ? 0.4 : 1, fontFamily: 'inherit', textAlign: 'start',
         }}
       >
         <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{icon}</span>
@@ -1018,7 +1022,11 @@ export default function Dashboard() {
             ? <span className="z-dot z-dot-on" style={{ flexShrink: 0 }} />
             : <span className="z-dot" style={{ background: 'var(--line-2)', flexShrink: 0 }} />}
           <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
-            {activeRooms.length > 0 ? `${activeRooms.length} room${activeRooms.length > 1 ? 's' : ''} active` : 'All quiet'}
+            {activeRooms.length > 0
+              ? (activeRooms.length === 1
+                  ? t('dashboard.roomsActiveOne', { n: activeRooms.length })
+                  : t('dashboard.roomsActiveMany', { n: activeRooms.length }))
+              : t('dashboard.allQuiet')}
           </span>
           {homePersons.length > 0 && (
             <>
@@ -1093,7 +1101,7 @@ export default function Dashboard() {
         onFireAsk={async (qa) => {
           try {
             await sendDirectIntent(qa.intent, qa.params || {})
-            addToast(qa.label, 'success')
+            addToast(translateNamePhrase(qa.label, getLang()), 'success')
             // Same catch-up refresh — quick-ask intents like
             // `turn_off_all_lights` mutate many entities at once, and the
             // pinned tiles need the new state to show through. WS events
@@ -1119,14 +1127,14 @@ export default function Dashboard() {
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
           }}
         >
-          <Pencil size={12} /> Pin routines & quick asks as shortcuts
+          <Pencil size={12} /> {t('dashboard.pinShortcutsHint')}
         </button>
       )}
 
       {/* ── 4. Quick controls — user-pinned, up to 4. Falls back to auto-pick ── */}
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-          <p className="z-eyebrow">Pinned devices</p>
+          <p className="z-eyebrow">{t('dashboard.pinnedDevicesLabel')}</p>
           <button
             onClick={() => setShowQuickPicker(true)}
             style={{
@@ -1136,7 +1144,7 @@ export default function Dashboard() {
               padding: '2px 4px',
             }}
           >
-            <Pencil size={11} /> Edit
+            <Pencil size={11} /> {t('common.edit')}
           </button>
         </div>
         {quickControlPicks.length === 0 ? (
@@ -1183,7 +1191,7 @@ export default function Dashboard() {
       {anomalies.length > 0 && (
         <div className="hide-lg z-card" style={{ padding: '12px 14px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-            <p className="z-eyebrow" style={{ margin: 0 }}>Alerts</p>
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.alertsLabel')}</p>
             <button
               onClick={() => navigate('/alerts')}
               style={{
@@ -1206,7 +1214,7 @@ export default function Dashboard() {
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '8px 4px', borderRadius: 8,
                     background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontFamily: 'inherit', textAlign: 'left', width: '100%',
+                    fontFamily: 'inherit', textAlign: 'start', width: '100%',
                   }}
                 >
                   <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
@@ -1231,7 +1239,7 @@ export default function Dashboard() {
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '11px 14px', borderRadius: 13,
             background: 'var(--surface)', border: '0.5px solid var(--line)',
-            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%',
+            cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%',
           }}
         >
           <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1257,7 +1265,7 @@ export default function Dashboard() {
       <div className="hide-lg">
       {activity.length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>Just now</p>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('dashboard.justNow')}</p>
           {/* Card wrapper kept for visual parity with the Alerts card sitting
               directly above it. The clean redesign mock drew this surface
               without a wrapper, but in our actual page the adjacent Alerts
@@ -1306,7 +1314,7 @@ export default function Dashboard() {
         {anomalies.length > 0 && (
           <div className="z-card" style={{ padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-              <p className="z-eyebrow" style={{ margin: 0 }}>Alerts</p>
+              <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.alertsLabel')}</p>
               <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>· {anomalies.length}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1320,7 +1328,7 @@ export default function Dashboard() {
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '8px 6px', borderRadius: 8,
                       background: 'transparent', border: 'none', cursor: 'pointer',
-                      fontFamily: 'inherit', textAlign: 'left', width: '100%',
+                      fontFamily: 'inherit', textAlign: 'start', width: '100%',
                       transition: 'background 0.12s',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
@@ -1338,7 +1346,7 @@ export default function Dashboard() {
                   style={{
                     fontFamily: 'inherit', fontSize: 11, color: 'var(--ink-faint)',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '6px', textAlign: 'left',
+                    padding: '6px', textAlign: 'start',
                   }}
                 >
                   See all {anomalies.length} →
@@ -1363,7 +1371,7 @@ export default function Dashboard() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
               <Sparkles size={11} style={{ color: 'var(--accent)' }} />
-              <p className="z-eyebrow" style={{ margin: 0, color: 'var(--accent-3)' }}>Suggested</p>
+              <p className="z-eyebrow" style={{ margin: 0, color: 'var(--accent-3)' }}>{t('dashboard.suggestedLabel')}</p>
             </div>
             <p style={{
               fontSize: 13, lineHeight: 1.45, color: 'var(--ink)',

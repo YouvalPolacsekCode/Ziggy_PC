@@ -323,18 +323,18 @@ export default function Suggestions() {
       {/* Empty */}
       {!loading && displayed.length === 0 && tab === 'pending' && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>No pending suggestions</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{t('suggestions.noPending')}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto 16px' }}>
-            Ziggy learns from your daily actions. After a few days of use, patterns will appear here.
+            {t('suggestions.noPendingHint')}
           </p>
           <button onClick={handleAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>
-            {analyzing ? 'Analyzing…' : 'Run analysis now'}
+            {analyzing ? t('suggestions.analyzing') : t('suggestions.runAnalysisNow')}
           </button>
         </div>
       )}
       {!loading && displayed.length === 0 && tab === 'history' && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p className="z-eyebrow">No history yet</p>
+          <p className="z-eyebrow">{t('suggestions.noHistory')}</p>
         </div>
       )}
 
@@ -359,13 +359,13 @@ export default function Suggestions() {
       {!loading && suggestions.length === 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} style={{ marginTop: 24 }}>
           <div style={{ padding: '18px 20px', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
-            <p className="z-eyebrow" style={{ marginBottom: 12 }}>How it works</p>
+            <p className="z-eyebrow" style={{ marginBottom: 12 }}>{t('suggestions.howItWorks')}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
-                'Ziggy silently logs every action you take',
-                'Once a day it scans for repeated patterns',
-                'Patterns become automation suggestions',
-                'You review and approve — nothing is created silently',
+                t('suggestions.howItWorks1'),
+                t('suggestions.howItWorks2'),
+                t('suggestions.howItWorks3'),
+                t('suggestions.howItWorks4'),
               ].map((text, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

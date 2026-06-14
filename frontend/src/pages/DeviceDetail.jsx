@@ -19,7 +19,7 @@ import { DOMAIN_REGISTRY } from '../lib/domainRegistry'
 import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
-import { useT } from '../lib/i18n'
+import { useT, useTranslatedName } from '../lib/i18n'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -100,7 +100,8 @@ function TimeAgo({ iso }) {
 function GhostDevicePage({ details, entityId, navigate, addToast }) {
   const t = useT()
   const [removing, setRemoving] = useState(false)
-  const name = details?.ghost_name || details?.attributes?.friendly_name || entityId
+  const rawName = details?.ghost_name || details?.attributes?.friendly_name || entityId
+  const name = useTranslatedName(rawName)
   const room = details?.ghost_room
   const status = details?.ghost_status || 'lost'
 

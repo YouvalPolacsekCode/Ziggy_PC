@@ -23,7 +23,7 @@ import {
   ytmusicDisconnect,
   listMusicProfiles,
 } from '../lib/api'
-import { useT } from '../lib/i18n'
+import { useT, useTranslatedName } from '../lib/i18n'
 
 const CLASS_LABEL = {
   cast:            'media.class.cast',
@@ -226,7 +226,9 @@ const KNOWN_PLAYER_STATES = new Set(['playing', 'paused', 'idle', 'off', 'unavai
 
 function SpeakerRow({ sp, t, busy, onToggle, onRename, onForget }) {
   const isSupported = sp.class !== 'unsupported'
-  const speakerName = sp.display_name || t('media.unnamedSpeaker')
+  const rawSpeakerName = sp.display_name || t('media.unnamedSpeaker')
+  const speakerName = useTranslatedName(rawSpeakerName)
+  const roomName = useTranslatedName(sp.room)
   // Hide raw/unknown HA states; map known ones to friendly i18n labels.
   const friendlyState = sp.state && KNOWN_PLAYER_STATES.has(sp.state)
     ? t(`media.state.${sp.state}`)
@@ -237,7 +239,7 @@ function SpeakerRow({ sp, t, busy, onToggle, onRename, onForget }) {
         <div style={rowTitle} dir="auto">{speakerName}</div>
         <div style={rowSub} dir="auto">
           <span>{t(CLASS_LABEL[sp.class] || CLASS_LABEL.unsupported)}</span>
-          {sp.room && <span> · {sp.room}</span>}
+          {sp.room && <span> · {roomName}</span>}
           {friendlyState && <span> · {friendlyState}</span>}
         </div>
         <div style={{ ...rowSub, marginTop: 2, fontStyle: 'italic' }}>

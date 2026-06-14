@@ -143,7 +143,7 @@ function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
                   key={opt.minutes}
                   onClick={() => doSnooze(opt.minutes)}
                   style={{
-                    display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left',
+                    display: 'block', width: '100%', padding: '9px 14px', textAlign: 'start',
                     background: 'none', border: 'none', cursor: 'pointer',
                     fontSize: 12, fontWeight: 500, color: 'var(--ink)', fontFamily: 'inherit',
                     borderBottom: '0.5px solid var(--line)',
@@ -704,9 +704,9 @@ export default function Anomalies() {
                   anomaly_engine.exemptions in settings.yaml. */}
               <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: '12px 16px' }}>
                 <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Always-on devices</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.alwaysOn')}</p>
                   <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
-                    Fridges, routers, NAS — devices that are supposed to stay on. Excluded from "Device left on" alerts.
+                    {t('anomalies.alwaysOnHint')}
                   </p>
                 </div>
 

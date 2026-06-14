@@ -11,7 +11,7 @@ import { getEntityState, getSuggestedRoutines } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
 import MediaPlayActionEditor from '../components/media/MediaPlayActionEditor'
 import { useFeature } from '../stores/featuresStore'
-import { useT } from '../lib/i18n'
+import { useT, useTranslatedName } from '../lib/i18n'
 
 const ICONS = ['⚡', '☀️', '🌙', '🏠', '🎬', '🏋️', '🛏️', '☕', '🌿', '🔒', '💡', '🎵']
 
@@ -205,9 +205,9 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
   return (
     <div style={{ border: `0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))`, borderRadius: 11, padding: 12, display: 'flex', flexDirection: 'column', gap: 10, background: `color-mix(in srgb, var(--ok) 4%, var(--surface))` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <p className="z-eyebrow">Step {index + 1}</p>
+        <p className="z-eyebrow">{t('routines.stepN', { n: index + 1 })}</p>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 7 }}>Collapse</button>
+          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 7 }}>{t('routines.collapse')}</button>
           <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
           </button>
@@ -240,7 +240,7 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
       )}
       {step.type === 'device' && (
         <>
-          <EntitySelect value={step.entity_id || ''} onChange={v => onChange({ ...step, entity_id: v, action: 'turn_on', ha_service: 'turn_on', service_data: undefined })} placeholder="Select entity…" />
+          <EntitySelect value={step.entity_id || ''} onChange={v => onChange({ ...step, entity_id: v, action: 'turn_on', ha_service: 'turn_on', service_data: undefined })} placeholder={t('common.placeholderSelect')} />
           {linkedIr && step.entity_id ? (
             <MergedActionPicker
               haActions={availableActions} irDevice={linkedIr} haValue={step.action || 'turn_on'}
@@ -256,11 +256,11 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
           })()}
         </>
       )}
-      {step.type === 'delay'   && <Input type="number" placeholder="Seconds to wait" value={step.delay_seconds || ''} onChange={e => onChange({ ...step, delay_seconds: parseInt(e.target.value) })} />}
+      {step.type === 'delay'   && <Input type="number" placeholder={t('routines.delayPlaceholder')} value={step.delay_seconds || ''} onChange={e => onChange({ ...step, delay_seconds: parseInt(e.target.value) })} />}
       {step.type === 'notify'  && (
         <>
-          <Input label="Title (optional)" placeholder="e.g. Morning" value={step.title || ''} onChange={e => onChange({ ...step, title: e.target.value })} />
-          <Input label="Message" placeholder="Notification text" value={step.message || ''} onChange={e => onChange({ ...step, message: e.target.value })} />
+          <Input label={t('routines.titleLabel')} placeholder={t('routines.titlePlaceholder')} value={step.title || ''} onChange={e => onChange({ ...step, title: e.target.value })} dir="auto" />
+          <Input label={t('routines.messageLabel')} placeholder={t('routines.messagePlaceholder')} value={step.message || ''} onChange={e => onChange({ ...step, message: e.target.value })} dir="auto" />
         </>
       )}
       {step.type === 'message' && <SendIntentEditor value={step.text || ''} onChange={text => onChange({ ...step, text })} />}
@@ -291,6 +291,7 @@ function StepIndicator({ current }) {
 
 // ── RoutineWizard ─────────────────────────────────────────────────────────────
 export function RoutineWizard({ initial, onSave, onClose }) {
+  const t = useT()
   const [wizardStep,     setWizardStep]    = useState(0)
   const [name,           setName]          = useState(initial?.name || '')
   const [description,    setDescription]   = useState(initial?.description || '')
@@ -351,7 +352,7 @@ export function RoutineWizard({ initial, onSave, onClose }) {
           {wizardStep === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>Icon</p>
+                <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('routines.iconLabel')}</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {ICONS.map(ic => (
                     <button key={ic} onClick={() => setIcon(ic)} style={{
@@ -364,8 +365,8 @@ export function RoutineWizard({ initial, onSave, onClose }) {
                   ))}
                 </div>
               </div>
-              <Input label="Routine name" placeholder="e.g. Good Morning" value={name} onChange={e => setName(e.target.value)} autoFocus />
-              <Textarea label="Description (optional)" placeholder="What does this routine do?" value={description} onChange={e => setDescription(e.target.value)} rows={2} />
+              <Input label={t('routines.nameLabel')} placeholder={t('routines.namePh')} dir="auto" value={name} onChange={e => setName(e.target.value)} autoFocus />
+              <Textarea label={t('routines.descLabel')} placeholder={t('routines.descPh')} dir="auto" value={description} onChange={e => setDescription(e.target.value)} rows={2} />
             </div>
           )}
           {wizardStep === 1 && (
@@ -384,11 +385,11 @@ export function RoutineWizard({ initial, onSave, onClose }) {
               ))}
               <button onClick={addStep} className="z-btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Add step
+                {t('routines.addStep')}
               </button>
               {showErrors && firstInvalidIdx !== -1 && (
                 <p style={{ fontSize: 11.5, color: 'var(--err)', textAlign: 'center', marginTop: 4 }}>
-                  Step {firstInvalidIdx + 1} needs to be completed before saving.
+                  {t('routines.stepInvalid', { n: firstInvalidIdx + 1 })}
                 </p>
               )}
             </div>
@@ -399,12 +400,12 @@ export function RoutineWizard({ initial, onSave, onClose }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                   <span style={{ fontSize: 22 }}>{icon}</span>
                   <div>
-                    <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }}>{name}</p>
-                    {description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{description}</p>}
+                    <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{name}</p>
+                    {description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">{description}</p>}
                   </div>
                 </div>
               </div>
-              <p className="z-eyebrow">{steps.length} step{steps.length !== 1 ? 's' : ''}</p>
+              <p className="z-eyebrow">{steps.length === 1 ? t('routines.stepsOne', { n: steps.length }) : t('routines.stepsPlural', { n: steps.length })}</p>
               {steps.map((s, i) => (
                 <div key={i} style={{ fontSize: 12, color: 'var(--ink-mute)', display: 'flex', gap: 6 }}>
                   <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-faint)' }}>{i + 1}</span>
@@ -417,7 +418,7 @@ export function RoutineWizard({ initial, onSave, onClose }) {
         </motion.div>
       </AnimatePresence>
       <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-        {wizardStep > 0 && <button onClick={() => setWizardStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>Back</button>}
+        {wizardStep > 0 && <button onClick={() => setWizardStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.back')}</button>}
         {wizardStep < STEPS_WIZARD.length - 1
           ? (
               <button
@@ -432,10 +433,10 @@ export function RoutineWizard({ initial, onSave, onClose }) {
                 className="z-btn-primary"
                 style={{ flex: 1 }}
               >
-                Next
+                {t('common.next')}
               </button>
             )
-          : <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ flex: 1 }}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Create routine'}</button>
+          : <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ flex: 1 }}>{saving ? t('routines.saving') : initial ? t('routines.saveChanges') : t('routines.create')}</button>
         }
       </div>
     </div>
@@ -450,6 +451,8 @@ export function RoutineWizard({ initial, onSave, onClose }) {
 // React.memo so a parent re-render (WS bumps, sibling state) doesn't drag
 // every row in the list through an unnecessary render.
 const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, onDelete, onRun }) {
+  const routineName = useTranslatedName(routine.name)
+  const routineDesc = useTranslatedName(routine.description)
   const stepCount = (routine.steps || []).length
   // Use the same tint family AutomationCard uses for the most prominent state
   // (ok/green): routines are "ready, manual, on-demand".
@@ -474,12 +477,12 @@ const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, o
 
         {/* Name + description + meta pills */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {routine.name}
+          <p dir="auto" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {routineName}
           </p>
           {routine.description && (
-            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {routine.description}
+            <p dir="auto" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {routineDesc}
             </p>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
@@ -521,6 +524,9 @@ const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, o
 // Read-only view of a routine. Mirrors AutomationViewModal's structure so
 // "View" feels the same across both surfaces, with quick Run / Edit footer.
 function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
+  const t = useT()
+  const routineName = useTranslatedName(routine?.name)
+  const routineDesc = useTranslatedName(routine?.description)
   if (!routine) return null
   const steps = routine.steps || []
   const stepSummary = (s) => {
@@ -541,15 +547,15 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
           {routine.icon || '⚡'}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }}>{routine.name}</p>
-          {routine.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{routine.description}</p>}
+          <p dir="auto" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }}>{routineName}</p>
+          {routine.description && <p dir="auto" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{routineDesc}</p>}
         </div>
       </div>
 
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>Steps ({steps.length})</p>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('routines.stepsCount', { n: steps.length })}</p>
         {steps.length === 0
-          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>No steps configured.</p>
+          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('routines.noStepsConfigured')}</p>
           : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {steps.map((s, i) => (
@@ -761,9 +767,9 @@ export function RoutinesListPanel() {
 
       {!loading && routines.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>No routines yet</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>Build sequences of actions to run on demand</p>
-          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>Create routine</button>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('routines.empty')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('routines.emptyHint')}</p>
+          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('routines.create')}</button>
         </div>
       )}
 

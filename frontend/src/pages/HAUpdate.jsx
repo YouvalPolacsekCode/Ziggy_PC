@@ -59,7 +59,7 @@ function RiskCard({ risk }) {
     <div style={{ borderRadius: 10, background: 'var(--bg)', border: '0.5px solid var(--line)', overflow: 'hidden' }}>
       <button
         onClick={() => setOpen(v => !v)}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
       >
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: weightColor, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>

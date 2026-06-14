@@ -126,13 +126,15 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
 
 // ─── Push notification preference center ─────────────────────────────────────
 
-function parseBrowser(ua) {
-  if (!ua) return 'Unknown browser'
+// Brand strings (Edge / Chrome / Firefox / Safari) are universal across
+// locales and stay as-is; only the two fallbacks are translated.
+function parseBrowser(ua, t) {
+  if (!ua) return t('adminSettings.parseBrowserUnknown')
   if (ua.includes('Edg/'))    return 'Edge'
   if (ua.includes('Chrome/')) return 'Chrome'
   if (ua.includes('Firefox/'))return 'Firefox'
   if (ua.includes('Safari/') && !ua.includes('Chrome')) return 'Safari'
-  return 'Browser'
+  return t('adminSettings.parseBrowserGeneric')
 }
 
 function parseOS(ua) {
@@ -364,7 +366,7 @@ export function PushPreferenceCenter() {
           <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '14px 16px' }}>{t('adminSettings.noDevicesSubbed')}</p>
         ) : (
           devices.map((d, i) => {
-            const browser   = parseBrowser(d.user_agent)
+            const browser   = parseBrowser(d.user_agent, t)
             const os        = parseOS(d.user_agent)
             const isCurrent = d.endpoint === currentEp
             const ago = d.subscribed_at
@@ -473,7 +475,7 @@ export function EmailPage() {
   const onRefresh = () => { setRefreshing(true); load(); setTimeout(() => setRefreshing(false), 600) }
 
   if (!isSuperAdmin) {
-    return <p style={{ padding: 24, fontSize: 12, color: 'var(--ink-faint)' }}>Restricted to super admins.</p>
+    return <p style={{ padding: 24, fontSize: 12, color: 'var(--ink-faint)' }}>{t('adminSettings.superAdminOnly')}</p>
   }
 
   const saveSmtp = async () => {

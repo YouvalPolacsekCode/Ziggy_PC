@@ -207,8 +207,8 @@ export function MemoryPanel() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <div style={{ position: 'relative', flex: 1 }}>
-          <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingLeft: 34, height: 36, fontSize: 12 }} />
+          <svg style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingInlineStart: 34, height: 36, fontSize: 12 }} />
         </div>
         <button onClick={() => s.setShowAdd(true)} className="z-btn-primary" style={{ padding: '0 14px', height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, flexShrink: 0 }}>
           + {t('common.add')}
@@ -299,10 +299,10 @@ export default function Memory() {
 
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: 18 }}>
-        <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
+        <span style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         </span>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingLeft: 34 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingInlineStart: 34 }} />
       </div>
 
       {/* Loading skeleton — only on cold start; cached entries stay visible

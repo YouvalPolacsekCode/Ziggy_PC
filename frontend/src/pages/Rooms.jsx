@@ -22,7 +22,7 @@ import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
 import { findRoomMetric, inferBinarySensorClass } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
-import { useT } from '../lib/i18n'
+import { useT, useTranslatedName } from '../lib/i18n'
 
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
@@ -85,6 +85,7 @@ function resolveRoomDeviceToEntity(roomDev, entities) {
 
 function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   const t = useT()
+  const roomName = useTranslatedName(room.name)
   const [hovered, setHovered] = useState(false)
   const photo = getRoomPhoto(room)
   const hasActive = room.activeCount > 0
@@ -101,7 +102,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
         cursor: 'pointer', display: 'block', position: 'relative',
       }}>
         {/* Full-bleed photo */}
-        <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <img src={photo} alt={roomName} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         {/* Gradient */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.55) 100%)' }} />
 
@@ -155,8 +156,8 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
         {/* Name + count — bottom. Explicit textAlign overrides the parent
             <button>'s UA-default `text-align: center`, which would otherwise
             cascade to these <p>s and center the room name + count. */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px', textAlign: 'left' }}>
-          <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px', textAlign: 'start' }}>
+          <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
           <p className="z-mono" style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
             {room.entityCount} · {hasActive ? t('rooms.someOn', { n: room.activeCount }) : t('rooms.idle')}
             {room.offlineCount > 0 && <span style={{ color: 'rgba(252,165,165,0.9)', marginLeft: 4 }}>· {t('rooms.nOff', { n: room.offlineCount })}</span>}
@@ -321,6 +322,7 @@ export function RoomDeleteConfirm({ room, onClose, onConfirm }) {
 // in the row starts the drag — the simplest, most forgiving touch UX.
 function RoomReorderRow({ room }) {
   const t = useT()
+  const roomName = useTranslatedName(room.name)
   const photo = getRoomPhoto(room)
   const hasActive = room.activeCount > 0
   return (
@@ -352,7 +354,7 @@ function RoomReorderRow({ room }) {
         }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.name}</p>
+        <p dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
         <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
           {room.entityCount === 1 ? t('rooms.deviceCountSingular', { n: room.entityCount }) : t('rooms.deviceCount', { n: room.entityCount })}
           {hasActive && <span style={{ color: 'var(--ok)', marginLeft: 6 }}>· {t('rooms.someOn', { n: room.activeCount })}</span>}
@@ -989,6 +991,7 @@ export function RoomDetail() {
   }, [roomId])
 
   const room = ziggyRooms.find((r) => r.id === roomId)
+  const roomName = useTranslatedName(room?.name)
 
   // Memoize the per-device adapter + derived counts. Without this, every
   // render of RoomDetail (and on a busy install there are many — every WS
@@ -1134,7 +1137,7 @@ export function RoomDetail() {
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
       {/* Hero photo — 220px, rounded bottom */}
       <div style={{ position: 'relative', height: 220, overflow: 'hidden', borderRadius: '0 0 22px 22px' }}>
-        <img src={photo} alt={room.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <img src={photo} alt={roomName} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.12) 35%, rgba(0,0,0,0.72) 100%)' }} />
 
         {/* Back + more buttons */}
@@ -1176,7 +1179,7 @@ export function RoomDetail() {
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '9px 12px', borderRadius: 8,
                     background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'left',
+                    fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -1191,7 +1194,7 @@ export function RoomDetail() {
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '9px 12px', borderRadius: 8,
                     background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontFamily: 'inherit', fontSize: 13, color: 'var(--accent)', textAlign: 'left',
+                    fontFamily: 'inherit', fontSize: 13, color: 'var(--accent)', textAlign: 'start',
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = `color-mix(in srgb, var(--accent) 8%, var(--surface))`}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -1207,7 +1210,7 @@ export function RoomDetail() {
         {/* Title bottom */}
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, color: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
-            <h1 dir="auto" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{room.name}</h1>
+            <h1 dir="auto" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.1 }}>{roomName}</h1>
             {(tempSensor || humSensor) && (
               <span className="z-mono" style={{ fontSize: 11, opacity: 0.85 }}>
                 {tempSensor && `${parseFloat(tempSensor.state).toFixed(1)}°`}
@@ -1293,7 +1296,7 @@ export function RoomDetail() {
               {roomAutomations.map((a, i) => (
                 <div key={a.id} style={{ borderBottom: i < roomAutomations.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px' }}>
-                    <button onClick={() => navigate('/automations')} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', padding: 0 }}>
+                    <button onClick={() => navigate('/automations')} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', padding: 0 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: a.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)' }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={a.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
                       </div>
