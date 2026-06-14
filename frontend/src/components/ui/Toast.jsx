@@ -31,7 +31,7 @@ function Toast({ t, onDismiss }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
-        <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>{t.message}</span>
+        <span dir="auto" style={{ flex: 1, fontSize: 13, color: 'var(--ink)', lineHeight: 1.4, unicodeBidi: 'plaintext' }}>{t.message}</span>
         {hasDetail && (
           <button
             onClick={() => setExpanded(v => !v)}
@@ -48,7 +48,7 @@ function Toast({ t, onDismiss }) {
         </button>
       </div>
       {hasDetail && expanded && (
-        <div style={{ padding: '0 14px 10px 30px', fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+        <div dir="auto" style={{ paddingBlockStart: 0, paddingBlockEnd: 10, paddingInlineEnd: 14, paddingInlineStart: 30, fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>
           {t.detail}
         </div>
       )}

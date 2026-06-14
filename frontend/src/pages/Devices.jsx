@@ -947,7 +947,7 @@ function CollapsibleGroup({ label, count, open, onToggle, children, action, room
         <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'start' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <span dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
-            {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginLeft: 6 }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
+            {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginInlineStart: 6 }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
           </div>
           <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -1427,7 +1427,7 @@ const DeviceCard = forwardRef(function DeviceCard({
               className="p-1 rounded-lg text-ink-faint hover:text-ink-mute hover:bg-surface-2 transition-colors"
               title={t('devices.deviceDetailsTooltip')}
             >
-              <ChevronRight size={14} />
+              <ChevronRight size={14} className="icon-flip-rtl" />
             </button>
             {isToggleable && (
               <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />
@@ -1894,8 +1894,8 @@ export default function Devices() {
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
             {t('devices.subtitleActive', { active: activeCount, total: getTotalControllable(), totalEntities: entities.length })}
             {hiddenCount > 0 && ` · ${t('devices.subtitleHidden', { n: hiddenCount })}`}
-            {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginLeft: 4 }}>· {t('devices.subtitleUnassigned', { n: unassigned.length })}</span>}
-            {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginLeft: 4 }}>· {t('devices.subtitleNoRoom', { n: noRoomEntities.length })}</span>}
+            {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginInlineStart: 4 }}>· {t('devices.subtitleUnassigned', { n: unassigned.length })}</span>}
+            {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginInlineStart: 4 }}>· {t('devices.subtitleNoRoom', { n: noRoomEntities.length })}</span>}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -2028,10 +2028,10 @@ export default function Devices() {
       {/* Search */}
       {domain !== 'unassigned' && (
         <div style={{ position: 'relative', marginBottom: 14 }}>
-          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
+          <span style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           </span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('devices.searchPlaceholderShort')} dir="auto" className="z-input" style={{ paddingLeft: 34 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('devices.searchPlaceholderShort')} dir="auto" className="z-input" style={{ paddingInlineStart: 34 }} />
         </div>
       )}
 
@@ -2062,10 +2062,10 @@ export default function Devices() {
           }}>
             {f.label}
             {f.id === 'unassigned' && unassigned.length > 0 && (
-              <span style={{ marginLeft: 4, background: 'var(--warn)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{unassigned.length}</span>
+              <span style={{ marginInlineStart: 4, background: 'var(--warn)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{unassigned.length}</span>
             )}
             {f.id === 'noroom' && noRoomEntities.length > 0 && (
-              <span style={{ marginLeft: 4, background: 'var(--ink-faint)', color: 'var(--bg)', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{noRoomEntities.length}</span>
+              <span style={{ marginInlineStart: 4, background: 'var(--ink-faint)', color: 'var(--bg)', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{noRoomEntities.length}</span>
             )}
           </button>
         ))}

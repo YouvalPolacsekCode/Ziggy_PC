@@ -255,14 +255,14 @@ function QuickControlTile({ entity }) {
         tabIndex={0}
         aria-label={tt('dashboard.openDetails')}
         style={{
-          position: 'absolute', top: 10, right: 10,
+          position: 'absolute', top: 10, insetInlineEnd: 10,
           width: 24, height: 24, borderRadius: 8,
           background: arrowBg, color: arrowColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer',
         }}
       >
-        <ChevronRight size={14} />
+        <ChevronRight size={14} className="icon-flip-rtl" />
       </span>
     </button>
   )
@@ -395,7 +395,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                   const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
                   return (
                     <span style={{
-                      position: 'absolute', top: 12, right: 12,
+                      position: 'absolute', top: 12, insetInlineEnd: 12,
                       width: 8, height: 8, borderRadius: '50%',
                       // Active dot reads --ok (palette-aware green); inactive
                       // stays a white tint because it sits over a photo, not
@@ -413,7 +413,7 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                     sniffed from HA's unit_of_measurement attribute so the
                     threshold stays sensible whether the sensor reports °C or °F. */}
                 {isActive && (summary.tempSensor || summary.humSensor) && (
-                  <div style={{ position: 'absolute', top: 11, left: 12, display: 'flex', gap: 5 }}>
+                  <div style={{ position: 'absolute', top: 11, insetInlineStart: 12, display: 'flex', gap: 5 }}>
                     {summary.tempSensor && (() => {
                       const raw = parseFloat(summary.tempSensor.state)
                       const unit = summary.tempSensor.unit_of_measurement
@@ -545,14 +545,14 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
               <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
 
               <span style={{
-                position: 'absolute', top: 10, right: 10,
+                position: 'absolute', top: 10, insetInlineEnd: 10,
                 width: 7, height: 7, borderRadius: '50%',
                 background: isActiveRoom ? 'var(--ok)' : 'rgba(255,255,255,0.3)',
                 boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
               }} />
 
               {(summary.tempSensor || summary.humSensor) && (
-                <div style={{ position: 'absolute', top: 9, left: 10, display: 'flex', gap: 4 }}>
+                <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 4 }}>
                   {summary.tempSensor && (() => {
                     const raw = parseFloat(summary.tempSensor.state)
                     const unit = summary.tempSensor.unit_of_measurement

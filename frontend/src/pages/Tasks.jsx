@@ -295,7 +295,7 @@ function TaskGroup({ label, count, tint, tasks, ...rowProps }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ width: 4, height: 14, borderRadius: 2, background: tint, flexShrink: 0 }} />
         <p className="z-eyebrow">{label}</p>
-        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginLeft: 'auto' }}>{count}</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginInlineStart: 'auto' }}>{count}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <AnimatePresence mode="popLayout">

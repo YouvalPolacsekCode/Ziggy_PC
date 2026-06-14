@@ -1,6 +1,14 @@
 import * as Switch from '@radix-ui/react-switch'
+import { useIsRTL } from '../../lib/i18n'
 
 export function Toggle({ checked, onCheckedChange, disabled, className }) {
+  // translateX is a physical-axis transform, so the on/off positions don't
+  // mirror automatically in RTL — without this, the thumb still slides
+  // left→right in Hebrew mode and reads inverted (checked thumb on the
+  // wrong side of the track). Flip the sign in RTL.
+  const isRtl = useIsRTL()
+  const offX  = isRtl ? -2  : 2
+  const onX   = isRtl ? -18 : 18
   return (
     <Switch.Root
       checked={checked}
@@ -26,7 +34,7 @@ export function Toggle({ checked, onCheckedChange, disabled, className }) {
           // instead of staying flat-black on a dark surface.
           boxShadow: '0 1px 3px color-mix(in srgb, var(--ink) 22%, transparent)',
           transition: 'transform 0.15s',
-          transform: checked ? 'translateX(18px)' : 'translateX(2px)',
+          transform: `translateX(${checked ? onX : offX}px)`,
         }}
       />
     </Switch.Root>

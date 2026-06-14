@@ -550,7 +550,7 @@ function UserRow({
             <Trash2 size={12} />
           </button>
         )}
-        {expanded ? <ChevronDown size={12} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={12} style={{ color: 'var(--ink-faint)' }} />}
+        {expanded ? <ChevronDown size={12} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={12} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)' }} />}
       </div>
       {expanded && (
         <div style={{ padding: '10px 20px 14px', background: 'var(--bg-2)', borderTop: '0.5px solid var(--line)' }}>
@@ -904,7 +904,7 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
               <Trash2 size={13} />
             </button>
           )}
-          {expanded ? <ChevronDown size={14} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={14} style={{ color: 'var(--ink-faint)' }} />}
+          {expanded ? <ChevronDown size={14} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={14} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)' }} />}
         </div>
       </button>
 

@@ -54,7 +54,7 @@ export default function HomeMapBuilder() {
           onClick={() => navigate('/map')}
           className="flex items-center gap-1.5 text-sm text-ink-mute hover:text-ink"
         >
-          <ArrowLeft size={15} />
+          <ArrowLeft size={15} className="icon-flip-rtl" />
           {t('homeMap.viewMap')}
         </button>
         <motion.h1

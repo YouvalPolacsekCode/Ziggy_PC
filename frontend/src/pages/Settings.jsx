@@ -143,7 +143,7 @@ function SettingsPageWrapper({ title, eyebrow, children }) {
           padding: '4px 0', marginBottom: 14,
         }}
       >
-        <ChevronLeft size={13} />
+        <ChevronLeft size={13} className="icon-flip-rtl" />
         {t('settings.title')}
       </button>
       <div style={{ marginBottom: 20 }}>

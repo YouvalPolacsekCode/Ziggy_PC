@@ -449,7 +449,7 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
-        <ChevronRight size={dense ? 13 : 15} strokeWidth={2} />
+        <ChevronRight size={dense ? 13 : 15} strokeWidth={2} className="icon-flip-rtl" />
       </span>
     </button>
   )
@@ -507,7 +507,7 @@ function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
       <InlineControl facts={facts} onCommand={onCommand} variant="row" />
 
       {/* Chevron to detail */}
-      <ChevronRight size={14} strokeWidth={1.8} style={{ color: 'var(--ink-ghost)', flexShrink: 0 }} />
+      <ChevronRight size={14} strokeWidth={1.8} className="icon-flip-rtl" style={{ color: 'var(--ink-ghost)', flexShrink: 0 }} />
     </div>
   )
 }

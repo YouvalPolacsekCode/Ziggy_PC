@@ -714,7 +714,7 @@ export default function IRWizard({ onClose, onCreated }) {
       <div className="flex items-center justify-between mt-6">
         {step > 1 && step < 4 ? (
           <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1">
-            <ChevronLeft className="w-4 h-4" /> {t('wizard.back')}
+            <ChevronLeft className="w-4 h-4 icon-flip-rtl" /> {t('wizard.back')}
           </Button>
         ) : <div />}
 
@@ -728,7 +728,7 @@ export default function IRWizard({ onClose, onCreated }) {
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (
               <>
                 {step === 2 ? t('wizard.saveContinue') : t('wizard.next')}
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4 icon-flip-rtl" />
               </>
             )}
           </Button>

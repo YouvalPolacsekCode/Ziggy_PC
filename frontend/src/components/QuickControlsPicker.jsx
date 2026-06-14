@@ -158,7 +158,7 @@ export function QuickControlsPicker({ open, onClose }) {
                   <ArrowDown size={13} />
                 </button>
                 <button onClick={() => setEditingSlot(idx)} style={iconBtn} aria-label={t('quickControls.change')}>
-                  <ChevronRight size={13} />
+                  <ChevronRight size={13} className="icon-flip-rtl" />
                 </button>
                 <button onClick={() => clearSlot(idx)} style={iconBtn} aria-label={t('common.remove')}>
                   <X size={13} />

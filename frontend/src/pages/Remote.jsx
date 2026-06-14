@@ -138,7 +138,7 @@ function Header({ title, subtitle, onBack }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '24px 20px 16px' }}>
       <button onClick={onBack} className="z-icon-btn" style={{ width: 36, height: 36, borderRadius: 12 }}>
-        <ArrowLeft size={16} />
+        <ArrowLeft size={16} className="icon-flip-rtl" />
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p className="z-eyebrow" style={{ marginBottom: 2 }}>{i18nT('remote.title')}</p>

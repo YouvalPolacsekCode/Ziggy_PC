@@ -108,7 +108,7 @@ function Message({ msg }) {
         <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
       )}
       <div
-        dir={rtl ? 'rtl' : 'ltr'}
+        dir="auto"
         style={{
           padding: '10px 14px',
           borderRadius: 18,
@@ -120,11 +120,17 @@ function Message({ msg }) {
             ? '0.5px solid color-mix(in srgb, var(--err) 60%, var(--line))'
             : isUser ? 'none' : '0.5px solid var(--line)',
           fontSize: 14.5, lineHeight: 1.45,
-          textAlign: rtl ? 'right' : 'left',
+          // Bubble text aligns with the bubble's bidi direction (which `dir="auto"`
+          // resolves from the message content — Hebrew → rtl, English → ltr,
+          // mixed → first strong character wins). Timestamp goes on the
+          // trailing edge of the bubble using the logical `end` keyword so it
+          // mirrors automatically.
+          textAlign: 'start',
+          unicodeBidi: 'plaintext',
         }}
       >
         <p style={{ margin: 0, color: isError ? 'var(--err)' : undefined }}>{msg.text}</p>
-        <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: rtl ? 'left' : 'right' }}>
+        <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: 'end' }}>
           {formatTime(msg.ts)}
         </p>
       </div>
@@ -720,7 +726,7 @@ export default function AIChat() {
               background: 'var(--surface)', border: '0.5px solid var(--line)',
               fontSize: 11, color: 'var(--ink-2)', fontWeight: 500,
             }}>
-              {qa.icon && <span style={{ marginRight: 4 }}>{qa.icon}</span>}
+              {qa.icon && <span style={{ marginInlineEnd: 4 }}>{qa.icon}</span>}
               <span dir="auto">{translateNamePhrase(qa.label, lang)}</span>
             </div>
           ))}

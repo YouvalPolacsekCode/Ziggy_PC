@@ -275,14 +275,14 @@ export default function AuditLog() {
           <div style={{ padding: '8px 12px', borderTop: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--ink-faint)', flexShrink: 0 }}>
             <button onClick={() => load(Math.max(0, offset - PAGE_SIZE))} disabled={loading || offset === 0}
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, padding: '4px 8px', cursor: offset === 0 ? 'default' : 'pointer', color: 'var(--ink-mute)', fontSize: 11 }}>
-              <ChevronLeft size={11} /> {t('auditPage.prev')}
+              <ChevronLeft size={11} className="icon-flip-rtl" /> {t('auditPage.prev')}
             </button>
             <span style={{ flex: 1, textAlign: 'center', fontFamily: '"IBM Plex Mono", monospace', fontSize: 10 }}>
               {t('auditPage.rangeLabel', { from: offset + 1, to: offset + rows.length })}
             </span>
             <button onClick={() => load(offset + PAGE_SIZE)} disabled={loading || !hasMore}
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, padding: '4px 8px', cursor: hasMore ? 'pointer' : 'default', color: 'var(--ink-mute)', fontSize: 11 }}>
-              {t('auditPage.next')} <ChevronRight size={11} />
+              {t('auditPage.next')} <ChevronRight size={11} className="icon-flip-rtl" />
             </button>
           </div>
         </div>

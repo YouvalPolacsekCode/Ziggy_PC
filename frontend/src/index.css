@@ -264,10 +264,79 @@ html, body, #root {
     font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
     color: var(--ink-faint); font-weight: 500;
   }
+
+  /* ── Hebrew-specific typography overrides ──────────────────────────────
+     Heebo (the Hebrew font) is drawn for an `letter-spacing: 0` baseline.
+     Negative tracking that flatters Inter ("-0.025em" on the display face,
+     "-0.015em" on titles) crushes Hebrew letters into each other and
+     destroys the visual rhythm of stems like ב/ד/ה/ם that rely on internal
+     whitespace. Positive tracking on the eyebrow (.14em) similarly
+     disconnects Hebrew letters that don't ligate the way Latin spacing
+     assumes.
+
+     Hebrew also has no case, so `text-transform: uppercase` is a no-op for
+     pure Hebrew strings. It still affects mixed content (an English token
+     embedded in a Hebrew eyebrow), so we leave it on — the inconsistency
+     reads as intentional emphasis on the Latin tokens.
+
+     Line-height: Heebo's descenders sit lower than Inter's, so the same
+     1.04 / 1.5 values feel cramped in Hebrew. A small bump per role
+     restores comfortable rhythm without breaking the visual hierarchy. */
+  [dir="rtl"] .z-display { letter-spacing: 0; line-height: 1.12; }
+  [dir="rtl"] .z-title   { letter-spacing: 0; }
+  [dir="rtl"] .z-eyebrow { letter-spacing: 0.04em; }
+  /* Tracking on inline tags & long body copy can use a touch of positive
+     tracking for legibility, but stays much lower than the eyebrow. */
+  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3 { letter-spacing: 0; }
+  [dir="rtl"] body  { line-height: 1.55; }
+  [dir="rtl"] p     { line-height: 1.55; }
   .z-mono {
     font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-feature-settings: "ss01", "tnum";
+    /* Mono blocks are timestamps / versions / counts / IDs — content that
+       always reads left-to-right regardless of the surrounding paragraph
+       direction. `isolate` keeps the surrounding RTL bidi context from
+       reordering the digits and punctuation inside the mono span. */
+    unicode-bidi: isolate;
   }
+
+  /* ── Bidi isolation utilities ────────────────────────────────────────────
+     A Hebrew sentence with an English word or number in the middle is
+     handled correctly by the browser's bidi algorithm *only* if the
+     embedded fragment is isolated from the surrounding context — otherwise
+     trailing punctuation, runs of digits, and Latin-script tokens leak
+     into the wrong side of the line. <bdi> + `dir="auto"` on inputs and
+     these utility classes cover the inline cases the i18n format helper
+     can't reach (e.g. literal JSX `<span>{name}</span>` next to Hebrew
+     copy). */
+  .bdi      { unicode-bidi: isolate; }
+  .bdi-ltr  { unicode-bidi: isolate; direction: ltr; }
+  /* HTML5 <bdi> ships with `unicode-bidi: isolate` + `dir="auto"` from the
+     UA stylesheet, but we set it again here for browsers that ship outdated
+     defaults (older Safari/iOS), and to prevent reset styles from undoing
+     it. */
+  bdi { unicode-bidi: isolate; }
+
+  /* Numeric badges / version strings / port numbers / IDs that aren't using
+     the mono class. Adding `dir="ltr"` in JSX is more explicit, but tagging
+     `data-num` is a lighter touch when the surrounding flexbox layout is
+     already correct. */
+  [data-num] { unicode-bidi: isolate; direction: ltr; }
+
+  /* ── Directional icon flipping ─────────────────────────────────────────
+     Lucide ChevronRight, ArrowRight, ArrowLeft, etc. encode their
+     pointing direction in the glyph itself. Wrapping a container in
+     `dir="rtl"` does NOT mirror the SVG content — a back button using
+     <ArrowLeft> still visually points left, which in Hebrew reads as
+     "forward" (toward the inline-end of the line), opposite of intent.
+     The user perceives "back arrow that points forward" as broken.
+
+     `transform: scaleX(-1)` mirrors the glyph horizontally without
+     affecting layout or accessibility. Apply this class to any directional
+     icon whose semantic meaning is "this points toward the next/previous
+     screen, list item, page, or step." DO NOT apply to play/pause/eject/
+     volume icons — those have universal meaning that doesn't flip. */
+  [dir="rtl"] .icon-flip-rtl { transform: scaleX(-1); }
 
   /* Placeholder text — global tint so every input across the app reads
      clearly as "example / hint" vs actual user-entered text. Browser
