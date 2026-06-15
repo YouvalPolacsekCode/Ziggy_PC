@@ -56,7 +56,17 @@ async def detect_stack(force_refresh: bool = False) -> Stack:
         return _DETECTED
     try:
         res, = await _ws({"type": "config_entries/get"})
-        domains = {(c or {}).get("domain") for c in (res.get("result") or [])}
+        entries = res.get("result") or []
+        # Only count entries that are actually serving — disabled or
+        # not_loaded entries can't dispatch their service. The ZHA→Z2M
+        # cut-over window leaves a disabled ZHA entry in the registry
+        # for ~1 week of rollback; without this filter, detection picks
+        # ZHA and the permit_join call hits a service that no longer
+        # exists.
+        active = [c for c in entries
+                  if (c or {}).get("state") == "loaded"
+                  and not (c or {}).get("disabled_by")]
+        domains = {(c or {}).get("domain") for c in active}
         if "zha" in domains:
             _DETECTED = "zha"
         elif "zigbee2mqtt" in domains:
