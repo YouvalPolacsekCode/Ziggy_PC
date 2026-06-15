@@ -8,7 +8,7 @@ import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import {
-  zhaPermit, getHaDevices, renameHaDevice, assignDeviceToArea,
+  zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, getConfigFlows,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
@@ -309,7 +309,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
     logger.action('pairing_start', { protocol: 'zigbee', duration_s: ZIGBEE_DURATION })
     await snapshotDevices()
     try {
-      const res = await zhaPermit(ZIGBEE_DURATION)
+      const res = await zigbeePermit(ZIGBEE_DURATION)
       if (!res.ok) {
         logger.error('pairing_permit_failed', new Error(res.error || 'permit failed'),
                      { protocol: 'zigbee' })

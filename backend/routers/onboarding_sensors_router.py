@@ -29,7 +29,7 @@ from core.logger_module import log_error, log_info
 import asyncio
 
 from services import (
-    auth_db, first_boot, ha_areas, ha_zha, kit_manifest, mobile_app, starter_pack,
+    auth_db, first_boot, ha_areas, ha_zigbee, kit_manifest, mobile_app, starter_pack,
     telemetry_client,
 )
 from services.auth_hashing import hash_password_bcrypt
@@ -269,7 +269,7 @@ async def confirm_sensors(
     Idempotent — applying the same payload twice is a no-op.
 
     For each entry:
-      1. If `name` is provided, rename the HA device via ha_zha.rename_device
+      1. If `name` is provided, rename the HA device via ha_zigbee.rename_device
          (single source of truth; covers all entities under the device).
       2. If `room_name` is provided, find a matching HA area by name
          (case-insensitive). Create it if missing, then assign the device
@@ -325,7 +325,7 @@ async def confirm_sensors(
         # 1. Rename the HA device, if a name was given.
         new_name = (s.name or "").strip()
         if new_name:
-            res = await ha_zha.rename_device(ha_id, new_name)
+            res = await ha_zigbee.rename_device(ha_id, new_name)
             if not res.get("ok"):
                 failed.append({
                     "ha_device_id": ha_id,

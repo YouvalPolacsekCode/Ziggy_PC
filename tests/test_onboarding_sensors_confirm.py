@@ -71,7 +71,7 @@ def _stub_ha_ops(
     create_area_result: dict = None,
     assign_results: dict[tuple[str, str], dict] = None,
 ) -> dict:
-    """Wire fakes for ha_zha.rename_device, ha_areas.create_area, and
+    """Wire fakes for ha_zigbee.rename_device, ha_areas.create_area, and
     ha_areas.assign_device_to_area. Returns a `calls` dict the tests can
     inspect.
     """
@@ -91,7 +91,7 @@ def _stub_ha_ops(
         calls["assign"].append((device_id, area_id))
         return (assign_results or {}).get((device_id, area_id), {"ok": True})
 
-    monkeypatch.setattr(osr.ha_zha,   "rename_device",          fake_rename)
+    monkeypatch.setattr(osr.ha_zigbee, "rename_device",          fake_rename)
     monkeypatch.setattr(osr.ha_areas, "create_area",            fake_create_area)
     monkeypatch.setattr(osr.ha_areas, "assign_device_to_area",  fake_assign)
     return calls

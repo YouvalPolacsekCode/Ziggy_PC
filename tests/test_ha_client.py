@@ -112,7 +112,7 @@ def test_no_import_time_credential_snapshots_in_migrated_modules():
 
 def test_ha_areas_ws_is_an_alias(monkeypatch):
     """ha_areas._ws is re-exported from ha_client so existing importers
-    (ha_zha, ha_pairing, ha_flow_driver, ha_capabilities) keep working
+    (ha_zigbee, ha_pairing, ha_flow_driver, ha_capabilities) keep working
     without churn."""
     import services.ha_areas as ha_areas
     assert ha_areas._ws is ha_client.ws

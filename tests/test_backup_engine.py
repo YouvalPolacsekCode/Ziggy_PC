@@ -82,6 +82,17 @@ def ziggy_dirs(tmp_path):
 
 
 @pytest.fixture
+def z2m_dir(tmp_path):
+    """Empty z2m data dir — present-but-empty means stack detection
+    falls through to ZHA (no database.db). Tests that want the z2m path
+    populate this dir explicitly.
+    """
+    d = tmp_path / "z2m-data"
+    d.mkdir()
+    return d
+
+
+@pytest.fixture
 def mock_storage():
     m = MagicMock()
     m.bucket = "ziggy-backups-prod"
@@ -90,7 +101,7 @@ def mock_storage():
 
 
 @pytest.fixture
-def ctx(ha_dir, ziggy_dirs, mock_storage, data_key):
+def ctx(ha_dir, ziggy_dirs, z2m_dir, mock_storage, data_key):
     user_files, config = ziggy_dirs
     return be.BackupContext(
         home_id="home-1",
@@ -98,6 +109,7 @@ def ctx(ha_dir, ziggy_dirs, mock_storage, data_key):
         coordinator_type="smlight",
         data_key=data_key,
         ha_config_dir=ha_dir,
+        z2m_data_dir=z2m_dir,
         user_files_dir=user_files,
         config_dir=config,
         storage=mock_storage,
@@ -248,6 +260,114 @@ def test_trigger_zha_backup_no_file_raises(ctx, ha_dir):
         p.unlink()
     with pytest.raises(RuntimeError, match="did not produce"):
         be._trigger_and_read_zha_backup(ctx)
+
+
+# ---------- stack detection ----------
+
+def test_detect_zigbee_stack_zha_marker(ctx):
+    """Default fixture: .storage/zha exists, no z2m database — picks zha."""
+    assert be._detect_zigbee_stack(ctx) == "zha"
+
+
+def test_detect_zigbee_stack_z2m_database(ctx, z2m_dir):
+    (z2m_dir / "database.db").write_text("fake-sqlite")
+    assert be._detect_zigbee_stack(ctx) == "z2m"
+
+
+def test_detect_zigbee_stack_z2m_preferred_when_both_present(ctx, z2m_dir):
+    """Mid-rollback window state: leftover ZHA storage AND new Z2M data dir.
+    Backup should follow Z2M — the post-migration source of truth."""
+    (z2m_dir / "database.db").write_text("fake-sqlite")
+    # .storage/zha already exists from ha_dir fixture
+    assert be._detect_zigbee_stack(ctx) == "z2m"
+
+
+def test_detect_zigbee_stack_none(ctx, ha_dir):
+    """No Zigbee evidence on disk — IR-only / Switcher-only / Matter-only hub."""
+    (ha_dir / ".storage" / "zha").unlink()
+    assert be._detect_zigbee_stack(ctx) == "none"
+
+
+# ---------- Z2M data collection ----------
+
+def _seed_z2m_dir(z2m_dir, *, with_state=True, with_external=False):
+    (z2m_dir / "database.db").write_text("fake-sqlite-z2m-db")
+    (z2m_dir / "coordinator_backup.json").write_text(
+        '{"metadata": {"version": 1}, "stack_specific": {}}'
+    )
+    (z2m_dir / "configuration.yaml").write_text(
+        "homeassistant: true\nmqtt:\n  server: mqtt://mosquitto:1883\n"
+    )
+    if with_state:
+        (z2m_dir / "state.json").write_text('{"zigbee2mqtt/x":"on"}')
+    if with_external:
+        ext = z2m_dir / "external_converters"
+        ext.mkdir()
+        (ext / "hobeian.js").write_text("module.exports = [{ /* converter */ }];")
+    # Noise that should NOT make it into the tarball.
+    (z2m_dir / "log").mkdir()
+    (z2m_dir / "log" / "z2m.log").write_text("x" * 1024)
+
+
+def test_collect_z2m_data_happy(ctx, z2m_dir):
+    _seed_z2m_dir(z2m_dir)
+    blob, included = be._collect_z2m_data(ctx)
+    names = _tar_names(blob)
+    assert "database.db" in names
+    assert "coordinator_backup.json" in names
+    assert "configuration.yaml" in names
+    assert "state.json" in names
+    # Excluded:
+    assert not any(n.startswith("log") for n in names)
+    assert "database.db" in included
+    assert "state.json" in included
+
+
+def test_collect_z2m_data_with_external_converters(ctx, z2m_dir):
+    _seed_z2m_dir(z2m_dir, with_external=True)
+    blob, included = be._collect_z2m_data(ctx)
+    names = _tar_names(blob)
+    assert "external_converters" in names
+    assert "external_converters/hobeian.js" in names
+    assert "external_converters/" in included
+
+
+def test_collect_z2m_data_missing_required_raises(ctx, z2m_dir):
+    # Only the optional file present; required (database.db etc.) missing.
+    (z2m_dir / "state.json").write_text("{}")
+    with pytest.raises(RuntimeError, match="missing required"):
+        be._collect_z2m_data(ctx)
+
+
+def test_collect_z2m_data_no_data_dir_raises(ctx, tmp_path):
+    ctx.z2m_data_dir = tmp_path / "does-not-exist"
+    with pytest.raises(RuntimeError, match="does not exist"):
+        be._collect_z2m_data(ctx)
+
+
+# ---------- end-to-end with Z2M stack ----------
+
+def test_run_daily_backup_z2m_path(ctx, z2m_dir, mock_storage):
+    """Detection picks z2m, bundle name swaps, manifest stamps stack."""
+    _seed_z2m_dir(z2m_dir)
+    res = be.run_daily_backup(ctx)
+    assert res["ok"], res
+    assert res["zigbee_stack"] == "z2m"
+    assert "z2m-data.tar.gz.enc" in res["files"]
+    assert "zha-network-backup.json.enc" not in res["files"]
+    upload_keys = {call.args[1] for call in mock_storage.upload.call_args_list}
+    assert "home-1/daily/2026-05-27/z2m-data.tar.gz.enc" in upload_keys
+
+
+def test_run_daily_backup_no_zigbee_succeeds_with_skip(ctx, ha_dir, mock_storage):
+    """Hub with no Zigbee stack at all (IR/Switcher only) still backs up cleanly."""
+    (ha_dir / ".storage" / "zha").unlink()
+    res = be.run_daily_backup(ctx)
+    assert res["ok"], res
+    assert res["zigbee_stack"] == "none"
+    assert "zigbee-backup" in res["optional_skipped"]
+    assert "zha-network-backup.json.enc" not in res["files"]
+    assert "z2m-data.tar.gz.enc" not in res["files"]
 
 
 # ---------- NTP ----------
@@ -460,7 +580,7 @@ def test_run_daily_backup_zha_failure_aborts(ctx):
     ctx._ha_post = lambda *a, **k: 500
     res = be.run_daily_backup(ctx)
     assert res["ok"] is False
-    assert res["stage"] == "zha"
+    assert res["stage"] == "zigbee"
     assert "HTTP 500" in res["error"]
 
 

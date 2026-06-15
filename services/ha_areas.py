@@ -8,7 +8,7 @@ import time
 from core.logger_module import log_error, log_info
 from services.ha_client import ws as _ws  # short-lived WS helper lives in ha_client now
 
-# _ws is re-exported so existing importers (ha_zha, ha_pairing, ha_flow_driver,
+# _ws is re-exported so existing importers (ha_zigbee, ha_pairing, ha_flow_driver,
 # ha_capabilities) keep working without churn.
 
 

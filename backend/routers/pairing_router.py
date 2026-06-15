@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.errors import ErrorCode, ZiggyError, pairing_failed
-from services.ha_zha import (
-    start_permit_join, get_devices as zha_get_devices,
-    get_device_entities, rename_device as zha_rename_device,
+from services.ha_zigbee import (
+    start_permit_join, get_devices as zigbee_get_devices,
+    get_device_entities, rename_device as zigbee_rename_device,
 )
 from services.ha_pairing import (
     start_zwave_inclusion, stop_zwave_inclusion,
@@ -63,10 +63,10 @@ def _schedule_registry_refresh(delay_s: float = 5.0) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ZHA pairing
+# Zigbee pairing (stack-agnostic: dispatches to ZHA or Z2M via ha_zigbee)
 # ---------------------------------------------------------------------------
 
-class ZhaPermitBody(BaseModel):
+class ZigbeePermitBody(BaseModel):
     duration: int = 60
 
 
@@ -74,10 +74,10 @@ class DeviceRename(BaseModel):
     name: str
 
 
-@router.post("/api/ha/zha/permit")
-async def zha_permit(body: ZhaPermitBody, _user: dict = Depends(require_role("admin"))):
+@router.post("/api/ha/zigbee/permit")
+async def zigbee_permit(body: ZigbeePermitBody, _user: dict = Depends(require_role("admin"))):
     _dbus.emit("auth", BASIC, "auth_promoted_route_called",
-               route="POST /api/ha/zha/permit",
+               route="POST /api/ha/zigbee/permit",
                user=_user.get("username"), auth_added=True)
     _dbus.emit("ha", BASIC, "pairing_permit_join_started",
                duration_s=body.duration,
@@ -86,19 +86,21 @@ async def zha_permit(body: ZhaPermitBody, _user: dict = Depends(require_role("ad
     if not result.get("ok"):
         _dbus.emit("ha", BASIC, "pairing_permit_join_failed",
                    error=result.get("error"), result="error",
-                   suggestion="Check ZHA integration is enabled in Home Assistant.")
+                   stack=result.get("stack"),
+                   suggestion="Check the active Zigbee integration in Home Assistant.")
         raise pairing_failed("zigbee", upstream_detail=result.get("error"))
     # Refresh registry shortly after the permit window closes so new devices appear immediately.
     _schedule_registry_refresh(delay_s=body.duration + 5)
     _dbus.emit("ha", BASIC, "pairing_permit_join_ok",
                duration_s=body.duration, result="ok",
+               stack=result.get("stack"),
                message=f"Permit join active. Pair your device within {body.duration}s.")
     return result
 
 
 @router.get("/api/ha/devices")
 async def ha_devices():
-    devices = await zha_get_devices()
+    devices = await zigbee_get_devices()
     _dbus.emit("ha", VERBOSE, "pairing_devices_listed", count=len(devices))
     return {"devices": devices}
 
@@ -111,7 +113,7 @@ async def ha_device_entities(device_id: str):
 
 @router.patch("/api/ha/devices/{device_id}/rename")
 async def ha_rename_device(device_id: str, body: DeviceRename):
-    result = await zha_rename_device(device_id, body.name)
+    result = await zigbee_rename_device(device_id, body.name)
     if not result.get("ok"):
         raise ZiggyError(
             code=ErrorCode.HA_SERVICE_FAILED,

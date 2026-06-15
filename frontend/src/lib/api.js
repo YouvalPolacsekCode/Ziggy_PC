@@ -379,8 +379,8 @@ export const createRoutine = (data) => post('/routines', data)
 export const runRoutine = (id) => post(`/routines/${id}/run`)
 export const deleteRoutine = (id) => del(`/routines/${id}`)
 
-// ZHA pairing
-export const zhaPermit = (duration = 60) => post('/ha/zha/permit', { duration })
+// Zigbee pairing (stack-agnostic: backend dispatches to ZHA or Z2M)
+export const zigbeePermit = (duration = 60) => post('/ha/zigbee/permit', { duration })
 export const getHaDevices = () => get('/ha/devices')
 export const getDeviceEntities = (deviceId) => get(`/ha/devices/${encodeURIComponent(deviceId)}/entities`)
 export const renameHaDevice = (deviceId, name) => patch(`/ha/devices/${encodeURIComponent(deviceId)}/rename`, { name })

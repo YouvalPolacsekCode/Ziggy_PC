@@ -29,7 +29,7 @@ import { Select } from '../components/ui/Select'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
 import {
-  getHealth, getHaDevices, getActivity, zhaPermit,
+  getHealth, getHaDevices, getActivity, zigbeePermit,
   getGeneralSettings, patchGeneralSettings,
   getAuthStatus, changePassword,
   getUsers, updateUser, deleteUser,
@@ -324,7 +324,7 @@ function ZigbeeBridgeSection({ isAdmin }) {
   const handlePermitJoin = async () => {
     setPairing(true)
     try {
-      await zhaPermit(60)
+      await zigbeePermit(60)
       setPairingActive(true)
       setCountdown(60)
       timerRef.current = setInterval(() => {

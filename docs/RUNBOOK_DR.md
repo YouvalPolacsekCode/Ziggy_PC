@@ -34,7 +34,7 @@ Do **not** run this for:
 | 4. Verify HA + Ziggy + first sensor reports | 4 min |
 | **Total** | **~30 min** |
 
-Sensor mesh re-formation is **asynchronous** and not counted in the 30 min — ZHA adopts the network parameters at HA startup, then each sensor checks in over the next ~1 hour as it wakes from its sleep cycle. The customer's home is "online" before the first sensor reports because Ziggy state + automations are restored at HA start.
+Sensor mesh re-formation is **asynchronous** and not counted in the 30 min — the active Zigbee stack (ZHA or Z2M, as recorded in the manifest's `zigbee_stack` field) adopts the network parameters at startup, then each sensor checks in over the next ~1 hour as it wakes from its sleep cycle. The customer's home is "online" before the first sensor reports because Ziggy state + automations are restored at HA start. See [RUNBOOK_ZHA_TO_Z2M_CUTOVER.md](RUNBOOK_ZHA_TO_Z2M_CUTOVER.md) for the canary's stack-migration procedure (one-time).
 
 ---
 
@@ -110,6 +110,7 @@ After unseal, the script prints a summary like:
   HA version:         2026.5
   coordinator_type:   smlight
   coordinator_ieee:   00:12:4b:00:11:22:33:44
+  zigbee_stack:       zha    # or "z2m" / "none"
   file count:         4
   optional_skipped:   ["recorder.db"]
 ======================================
@@ -120,7 +121,14 @@ PROCEED with restore? [y/N]:
 
 - `backup date` is recent (within last 24h on a healthy hub).
 - `coordinator_type` matches what you're holding.
-- `file count ≥ 3` (the must-haves: ha-config, ziggy-state, zha-network-backup).
+- `zigbee_stack` matches what the replacement hub will run (must match the
+  customer's existing stack to avoid a forced re-pair). Per-stack file
+  expectations:
+  - `zha` → bundle must include `zha-network-backup.json.enc`
+  - `z2m` → bundle must include `z2m-data.tar.gz.enc`
+  - `none` → no Zigbee bundle (IR-only / Switcher-only / Matter-only hub)
+- `file count ≥ 2` always (ha-config, ziggy-state). Add one more for the
+  zigbee bundle unless `zigbee_stack` is `none`.
 - If `optional_skipped` lists `recorder.db`, that's normal for hubs whose history file grew past 500 MB — see §3 of the design doc.
 
 Type `y` only after the summary looks right. Type `n` (or anything else) to abort — the script has not written anything yet.
@@ -148,7 +156,7 @@ Before leaving the customer:
 
 - [ ] HA reachable in the customer's app (their existing PWA / mobile credentials still work).
 - [ ] Ziggy reachable — touch any well-known automation, e.g. ask "what's the temperature in the living room" or trigger a previously-existing scene.
-- [ ] At least one Zigbee sensor reports a fresh state within ~10 minutes. (Don't wait for all of them. Wait for one; that proves the ZHA network adoption worked.)
+- [ ] At least one Zigbee sensor reports a fresh state within ~10 minutes. (Don't wait for all of them. Wait for one; that proves the active stack's network adoption worked — `zha.network_backup` adoption for ZHA, `coordinator_backup.json` adoption for Z2M.)
 - [ ] Push notifications work — send a test from `interfaces/push_test.py`.
 - [ ] First successful daily backup lands in B2 within 24h:
   ```bash

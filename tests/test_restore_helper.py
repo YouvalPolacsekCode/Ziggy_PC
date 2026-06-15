@@ -63,6 +63,8 @@ def _build_manifest_blob(data_key: bytes) -> tuple[bytes, dict]:
     (storage_dir / "core.zigbee_network_backup_2026-05-27.json").write_text(
         '{"network_key": "abcd"}'
     )
+    # Stack-detection marker: tells backup_engine the active stack is ZHA.
+    (storage_dir / "zha").write_text('{"network_settings": {"channel": 15}}')
 
     user_files = Path(tmp) / "user_files"
     user_files.mkdir()
@@ -75,10 +77,13 @@ def _build_manifest_blob(data_key: bytes) -> tuple[bytes, dict]:
     storage = MagicMock()
     storage.list_prefix.return_value = []
 
+    z2m_dir = Path(tmp) / "z2m-data"
+    z2m_dir.mkdir()  # empty — falls through to ZHA stack detection
     ctx = BackupContext(
         home_id="home-1", device_id="dev-1",
         coordinator_type="smlight", data_key=data_key,
-        ha_config_dir=ha_dir, user_files_dir=user_files, config_dir=config,
+        ha_config_dir=ha_dir, z2m_data_dir=z2m_dir,
+        user_files_dir=user_files, config_dir=config,
         storage=storage, ha_url="http://h", ha_token="t",
         today=dt.date(2026, 5, 27),
         _ntp_skew_provider=lambda: 0.0,

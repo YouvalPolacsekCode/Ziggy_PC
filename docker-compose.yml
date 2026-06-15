@@ -24,6 +24,34 @@ services:
       - ./docker/ha-config:/config
     depends_on: [mosquitto]
 
+  # Zigbee2MQTT — opt-in until cut-over. Stays dormant unless explicitly
+  # enabled via:
+  #     COMPOSE_PROFILES=zigbee-z2m docker compose up -d
+  # or:
+  #     docker compose --profile zigbee-z2m up -d
+  #
+  # Talks to the SLZB-06 coordinator over the LAN (network mode, NOT USB) —
+  # the coordinator IP comes from kit_manifest.coordinator_ip. ZHA MUST be
+  # disabled in HA before bringing Z2M up; both stacks claim the coordinator
+  # exclusively. Cut-over flow is in docs/RUNBOOK_DR.md ("ZHA → Z2M cut-over").
+  #
+  # First start requires a configuration.yaml in ./docker/z2m-data/. Copy
+  # from ./docker/z2m-data.example/ and edit coordinator + network key
+  # (the migration script scripts/migrate_zha_to_z2m.py extracts the key
+  # from the most recent ZHA network backup).
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    restart: unless-stopped
+    profiles: ["zigbee-z2m"]
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./docker/z2m-data:/app/data
+      - /run/udev:/run/udev:ro
+    ports:
+      - "8099:8099"  # Z2M web UI (operator-only; not Ziggy's user surface)
+    depends_on: [mosquitto]
+
   ziggy:
     build:
       context: .

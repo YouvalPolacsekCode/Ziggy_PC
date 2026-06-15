@@ -1,0 +1,45 @@
+# Zigbee2MQTT configuration template.
+#
+# Copy this directory to ../z2m-data/ on the canary before the cut-over.
+# scripts/migrate_zha_to_z2m.py fills in pan_id / ext_pan_id / network_key
+# from the most recent ZHA network backup so the new mesh adopts the same
+# parameters (and devices that haven't been re-paired yet can still
+# rejoin — though we still expect a full re-pair).
+#
+# Z2M writes its own state (database.db, coordinator_backup.json,
+# state.json, log files) alongside this file in /app/data. We back that
+# whole directory up nightly via backup_engine.py.
+
+homeassistant: true       # auto-publish MQTT discovery for HA's MQTT integration
+permit_join: false        # never auto-open the network; permit is driver-initiated
+mqtt:
+  base_topic: zigbee2mqtt
+  server: 'mqtt://mosquitto:1883'
+
+# SLZB-06 in network coordinator mode (TCP). Replace the IP with the
+# coordinator's LAN address (same value as kit_manifest.coordinator_ip).
+# Default TCP port for the SLZB-06 native mode is 6638.
+serial:
+  port: 'tcp://10.0.0.0:6638'
+  adapter: ezsp
+
+# Web UI on port 8099. Operator-only — Ziggy's customer surface never
+# links here.
+frontend:
+  port: 8099
+
+# Network parameters — the migration script fills these in from the most
+# recent ZHA network backup (.storage/core.zigbee_network_backup_*.json)
+# so an extended network key + pan_id continuity is preserved.
+advanced:
+  channel: 15
+  # pan_id, ext_pan_id, network_key — set by migration script
+  log_level: info
+
+# Devices that fail Z2M's auto-detection (e.g. HOBEIAN CK-BL702-MWS-01
+# and ZG-303Z — both Tuya-OEM mmWave radars under the hood) need an
+# external converter. Drop a .js file into /app/data/external_converters/
+# and reference it here. We expect to need this for the HOBEIAN trio
+# based on the preflight; the file is created during the cut-over if
+# Z2M doesn't recognise them out of the box.
+external_converters: []

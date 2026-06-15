@@ -86,6 +86,11 @@ broadlink>=0.18.0
 # inside Ziggy UI so every subsequent device pairing is one-click.
 aioswitcher>=6.0
 
+# MQTT — used by services/mqtt_client.py to drive Zigbee2MQTT bridge topics
+# (permit-join, rename, restart). One-shot connect-publish-disconnect; no
+# persistent client lifecycle to manage.
+paho-mqtt>=2.0
+
 # Testing
 pytest>=8.0
 pytest-asyncio>=0.23

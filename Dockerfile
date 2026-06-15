@@ -35,7 +35,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN grep -v -E "^(pyaudio|sounddevice|pvporcupine|openwakeword|RPi\.GPIO|gpiozero)" requirements.txt > /tmp/requirements.txt && \
     pip install --no-cache-dir -r /tmp/requirements.txt && \
-    pip install --no-cache-dir anthropic httpx paho-mqtt
+    pip install --no-cache-dir anthropic httpx
 
 # Source code
 COPY backend/      ./backend/
