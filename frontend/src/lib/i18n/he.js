@@ -735,7 +735,7 @@ export default {
   'automations.libraryUnavailable':'לא זמינות ({n})',
   'automations.libraryNoMatch':'אין תבניות התואמות לחיפוש.',
   'automations.headerAdd':     'אוטומציה',
-  'automations.tabActive':     'פעילות',
+  'automations.tabActive':     'אוטומציות',
   'automations.tabSuggested':  'מוצעות',
   'automations.tabRoutines':   'שגרות',
   'automations.tabQuickAsks':  'בקשות מהירות',

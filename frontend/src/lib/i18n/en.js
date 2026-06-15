@@ -738,7 +738,7 @@ export default {
   'automations.libraryUnavailable':'Not available ({n})',
   'automations.libraryNoMatch':'No templates match your search.',
   'automations.headerAdd':     'Automation',
-  'automations.tabActive':     'Active',
+  'automations.tabActive':     'Automations',
   'automations.tabSuggested':  'Suggested',
   'automations.tabRoutines':   'Routines',
   'automations.tabQuickAsks':  'Quick asks',

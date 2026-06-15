@@ -56,6 +56,11 @@ export default function Automations() {
   // _isInstalled flag so the wizard can show "Update" + "Remove" rather than
   // "Activate".
   const [circadianTarget,   setCircadianTarget]   = useState(null)
+  // Recommended section sits at the top of the Automations tab but is
+  // COLLAPSED by default — users come here for their own automations, not to
+  // be sold templates. The header strip is enough of a discoverability hint;
+  // clicking it expands the template cards.
+  const [recommendedOpen,   setRecommendedOpen]   = useState(false)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
   const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
@@ -307,6 +312,52 @@ export default function Automations() {
         </div>
       )}
 
+      {/* ── Section: Recommended templates (OOTB, device-matched) ─────────
+            Top of the Automations tab — collapsed by default. The clickable
+            eyebrow + count + chevron acts as a peek; expanding reveals the
+            first 5 templates plus a link to the full Library. */}
+      {recommendedTemplates.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <button
+            onClick={() => setRecommendedOpen(v => !v)}
+            aria-expanded={recommendedOpen}
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+              fontFamily: 'inherit',
+            }}
+          >
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.recommended')}</p>
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{recommendedTemplates.length}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-mute)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: recommendedOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+          <AnimatePresence>
+            {recommendedOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {recommendedTemplates.slice(0, 5).map(tpl => (
+                    <TemplateCard key={tpl.id} template={tpl} onConfigure={handleConfigureTemplate} />
+                  ))}
+                  {recommendedTemplates.length > 5 && (
+                    <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
+                      {t('automations.moreInLibrary', { n: recommendedTemplates.length - 5 })}
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
       {/* ── Section: Your automations ───────────────────────────────────── */}
       {automations.length > 0 && (
         <div style={{ marginBottom: 24 }}>
@@ -354,23 +405,6 @@ export default function Automations() {
             onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
             onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? t(r.new_count === 1 ? 'automations.suggested.foundNewOne' : 'automations.suggested.foundNew', { n: r.new_count }) : t('automations.suggested.noNewPatterns'), 'success') } catch { addToast(t('automations.suggested.analysisFailed'), 'error') } }}
           />
-        </div>
-      )}
-
-      {/* ── Section: Recommended templates (OOTB, device-matched) ───────── */}
-      {recommendedTemplates.length > 0 && (
-        <div>
-          <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.recommended')}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {recommendedTemplates.slice(0, 5).map(tpl => (
-              <TemplateCard key={tpl.id} template={tpl} onConfigure={handleConfigureTemplate} />
-            ))}
-            {recommendedTemplates.length > 5 && (
-              <button onClick={() => setShowLibrary(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', padding: '8px 0', fontFamily: 'inherit' }}>
-                {t('automations.moreInLibrary', { n: recommendedTemplates.length - 5 })}
-              </button>
-            )}
-          </div>
         </div>
       )}
 
