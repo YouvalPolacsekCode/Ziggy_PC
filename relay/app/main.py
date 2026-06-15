@@ -14,7 +14,7 @@ from .database import init_db
 from .routers.audit_log import router as audit_log_router
 from .routers.mobile_admin import router as mobile_admin_router
 from .routers.support_session import router as support_session_router
-from .routers.auth import router as auth_router, ensure_relay_admin
+from .routers.auth import router as auth_router, ensure_relay_admin, ensure_relay_monitor
 from .routers.backup_keys import router as backup_keys_router
 from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
@@ -30,6 +30,7 @@ from .telemetry_retention import run_retention_loop
 async def lifespan(app: FastAPI):
     await init_db()
     await ensure_relay_admin()
+    await ensure_relay_monitor()
     # Telemetry retention runs once a day in the background. Cancellation on
     # shutdown is best-effort — the loop awaits sleep(86400) most of its
     # life, so a cancel during sleep is the common case and tidy.

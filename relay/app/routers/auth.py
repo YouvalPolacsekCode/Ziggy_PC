@@ -18,6 +18,9 @@ router = APIRouter(prefix="/auth")
 RELAY_ADMIN_EMAIL    = os.getenv("RELAY_ADMIN_EMAIL", "admin@relay.local")
 RELAY_ADMIN_PASSWORD = os.getenv("RELAY_ADMIN_PASSWORD", "changeme")
 
+RELAY_MONITOR_EMAIL    = os.getenv("RELAY_MONITOR_EMAIL")
+RELAY_MONITOR_PASSWORD = os.getenv("RELAY_MONITOR_PASSWORD")
+
 # ---------------------------------------------------------------------------
 # Bootstrap — create the relay-level super admin on first run
 # ---------------------------------------------------------------------------
@@ -37,6 +40,42 @@ async def ensure_relay_admin():
                VALUES (?,?,?,?,?,NULL,?,?)""",
             (new_id(), RELAY_ADMIN_EMAIL,
              hash_password_bcrypt(RELAY_ADMIN_PASSWORD),
+             "", "relay_admin", "bcrypt",
+             datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+
+async def ensure_relay_monitor():
+    """Idempotently provision a dedicated monitor account.
+
+    Separate from ensure_relay_admin() because that one early-returns the
+    moment *any* relay_admin exists, which means once the founder is
+    bootstrapped a second relay_admin can never be created from env. The
+    monitor account uses its own env pair and is keyed on email so it's
+    safe to re-run on every boot and across credential rotations of the
+    founder account.
+
+    If RELAY_MONITOR_EMAIL/PASSWORD are unset, this is a no-op so other
+    deployments don't accidentally bootstrap a placeholder. Password
+    rotation requires manually deleting the row (matches existing admin
+    bootstrap semantics).
+    """
+    if not RELAY_MONITOR_EMAIL or not RELAY_MONITOR_PASSWORD:
+        return
+    email = RELAY_MONITOR_EMAIL.strip().lower()
+    async with get_db() as db:
+        row = await db.execute_fetchall(
+            "SELECT id FROM users WHERE email=?", (email,)
+        )
+        if row:
+            return
+        await db.execute(
+            """INSERT OR IGNORE INTO users
+               (id, email, password_hash, salt, role, home_id, hash_algo, created_at)
+               VALUES (?,?,?,?,?,NULL,?,?)""",
+            (new_id(), email,
+             hash_password_bcrypt(RELAY_MONITOR_PASSWORD),
              "", "relay_admin", "bcrypt",
              datetime.now(timezone.utc).isoformat()),
         )
