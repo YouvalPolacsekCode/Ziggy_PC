@@ -3,9 +3,11 @@
 **Purpose:** Founder-executable runbook for the §14 acceptance test of [DESIGN_BACKUP_DR.md](../DESIGN_BACKUP_DR.md). Run end-to-end on **Beta Unit #1** during its imaging week — that hub is the first time all eleven implementation chunks meet a real Ubuntu mini-PC, real Backblaze B2, a real Fly.io relay, and a real Zigbee coordinator at the same time.
 
 **Status:** Not yet executed. Beta Unit #1 hardware lands in ~3 weeks.
-**Last updated:** 2026-05-27.
+**Last updated:** 2026-06-15.
 **Time budget:** ~26 hours wall-clock (step 5 requires a 24h wait). Active time ≈ 90 min.
 **Related:** [DESIGN_BACKUP_DR.md §14](../DESIGN_BACKUP_DR.md), [RUNBOOK_DR.md](RUNBOOK_DR.md), [SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md](SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md).
+
+> **Zigbee stack note (2026-06-15):** This doc was authored when ZHA was the only supported Zigbee stack. The backup engine is now stack-aware (see `services/backup_engine.py:_detect_zigbee_stack`). When you read `zha-network-backup.json.enc` below, substitute `z2m-data.tar.gz.enc` if the manifest's `zigbee_stack` field is `"z2m"`. The "file count ≥ 3" assertion becomes `≥ 2` plus one stack-specific file (or just `≥ 2` if `zigbee_stack == "none"` on an IR-only / Switcher-only / Matter-only hub).
 
 ---
 

@@ -30,15 +30,15 @@ services:
   # or:
   #     docker compose --profile zigbee-z2m up -d
   #
-  # Talks to the SLZB-06 coordinator over the LAN (network mode, NOT USB) —
-  # the coordinator IP comes from kit_manifest.coordinator_ip. ZHA MUST be
-  # disabled in HA before bringing Z2M up; both stacks claim the coordinator
-  # exclusively. Cut-over flow is in docs/RUNBOOK_DR.md ("ZHA → Z2M cut-over").
+  # Talks to the Sonoff Zigbee 3.0 USB Dongle Plus V2 over a host USB
+  # device mount. ZHA MUST be disabled in HA before bringing Z2M up —
+  # the kernel allows only one process to open the serial device.
+  # Cut-over flow is in docs/RUNBOOK_ZHA_TO_Z2M_CUTOVER.md.
   #
-  # First start requires a configuration.yaml in ./docker/z2m-data/. Copy
-  # from ./docker/z2m-data.example/ and edit coordinator + network key
-  # (the migration script scripts/migrate_zha_to_z2m.py extracts the key
-  # from the most recent ZHA network backup).
+  # First start requires a configuration.yaml in ./docker/z2m-data/.
+  # The cutover runbook walks through creating it; the gitignored
+  # docker/z2m-data/ holds the live config + secrets (network key).
+  # docker/z2m-data.example/ is a template only.
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
     restart: unless-stopped
@@ -48,6 +48,14 @@ services:
     volumes:
       - ./docker/z2m-data:/app/data
       - /run/udev:/run/udev:ro
+    devices:
+      # Sonoff Zigbee 3.0 USB Dongle Plus V2 — canonical by-id path is
+      # stable across reboots. The actual canary node uses:
+      #   /dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_<serial>-if00-port0
+      # Override via ZIGBEE_COORDINATOR_DEVICE if a hub ships a different
+      # stick. ZHA's HA-side config has the live path under
+      # /api/zha/network/settings.
+      - ${ZIGBEE_COORDINATOR_DEVICE:-/dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_50efc7c9e773ef11af7ae61e313510fd-if00-port0}:/dev/ttyACM0
     ports:
       - "8099:8099"  # Z2M web UI (operator-only; not Ziggy's user surface)
     depends_on: [mosquitto]

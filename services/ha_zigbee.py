@@ -107,13 +107,15 @@ async def _z2m_permit(duration: int) -> dict:
     """Open Z2M permit-join via MQTT bridge request.
 
     Z2M subscribes to `zigbee2mqtt/bridge/request/permit_join` with
-    payload {"value": true, "time": <seconds>}. The bridge auto-closes
-    after `time` seconds — no follow-up publish needed.
+    payload {"time": <seconds>}. The bridge auto-closes after `time`
+    seconds — no follow-up publish needed. Z2M caps time at 254 seconds
+    (the Zigbee spec maximum for a single permit window).
     """
     try:
+        capped = min(max(int(duration), 0), 254)
         await mqtt_publish(
             "zigbee2mqtt/bridge/request/permit_join",
-            {"value": True, "time": duration},
+            {"time": capped},
         )
         return {"ok": True, "stack": "z2m"}
     except Exception as e:

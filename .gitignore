@@ -82,3 +82,10 @@ docker/ha-config-dev/.uuid
 docker/ha-config-dev/home-assistant.log*
 docker/ha-config-dev/home-assistant_v2.db*
 docker/ha-config-dev/secrets.yaml
+
+# --- Z2M live data dir ---
+# docker/z2m-data/ holds the canary's Zigbee2MQTT live config + state:
+# configuration.yaml (with the network key), database.db, state.json,
+# external_converters/. These are per-hub secrets/state and must not
+# be in git. The .example/ template stays tracked.
+docker/z2m-data/

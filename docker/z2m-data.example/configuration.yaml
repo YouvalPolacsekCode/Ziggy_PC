@@ -16,11 +16,12 @@ mqtt:
   base_topic: zigbee2mqtt
   server: 'mqtt://mosquitto:1883'
 
-# SLZB-06 in network coordinator mode (TCP). Replace the IP with the
-# coordinator's LAN address (same value as kit_manifest.coordinator_ip).
-# Default TCP port for the SLZB-06 native mode is 6638.
+# Sonoff Zigbee 3.0 USB Dongle Plus V2 over USB. The docker-compose
+# zigbee2mqtt service maps the host's stable by-id path to /dev/ttyACM0
+# inside the container — so this stays /dev/ttyACM0 regardless of which
+# physical stick this hub ships.
 serial:
-  port: 'tcp://10.0.0.0:6638'
+  port: /dev/ttyACM0
   adapter: ezsp
 
 # Web UI on port 8099. Operator-only — Ziggy's customer surface never
@@ -28,13 +29,15 @@ serial:
 frontend:
   port: 8099
 
-# Network parameters — the migration script fills these in from the most
-# recent ZHA network backup (.storage/core.zigbee_network_backup_*.json)
-# so an extended network key + pan_id continuity is preserved.
+# Network parameters — left UNSET so Z2M generates a fresh network on
+# first start. Devices get factory-reset during the cut-over walk
+# anyway, so they don't need continuity with the old ZHA network key.
+# If you ever want to preserve a Z2M network across reinstalls,
+# coordinator_backup.json (auto-written by Z2M to this dir) carries it.
 advanced:
-  channel: 15
-  # pan_id, ext_pan_id, network_key — set by migration script
+  channel: 20            # match ZHA's channel to minimise Wi-Fi co-channel surprises
   log_level: info
+  # pan_id, ext_pan_id, network_key: auto-generated on first start
 
 # Devices that fail Z2M's auto-detection (e.g. HOBEIAN CK-BL702-MWS-01
 # and ZG-303Z — both Tuya-OEM mmWave radars under the hood) need an

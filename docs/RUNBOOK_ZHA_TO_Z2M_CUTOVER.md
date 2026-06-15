@@ -73,34 +73,22 @@ docker compose exec ziggy python -m services.backup_engine --once
 
 Verify the run completed and uploaded `zha-network-backup.json.enc`.
 
-### 3. Extract the ZHA network key
+### 3. Stand up the Z2M data dir
 
-The Z2M configuration.yaml needs `pan_id`, `ext_pan_id`, and `network_key`
-to (a) match the network parameters of the existing mesh and (b) skip
-re-encryption when devices rejoin during the re-pair walk.
-
-```bash
-docker compose exec homeassistant \
-  jq '.data.network_settings | {network_key: .network_info.network_key.key,
-                                 pan_id: .network_info.pan_id,
-                                 ext_pan_id: .network_info.extended_pan_id,
-                                 channel: .network_info.channel.channel}' \
-  /config/.storage/core.zigbee_network_backup_*.json
-```
-
-Copy these into `docker/z2m-data.example/configuration.yaml`'s `advanced:`
-block (you'll move this into the live data dir below).
-
-### 4. Stand up the Z2M data dir
+The template is already correct for the canary's hardware (Sonoff USB
+stick, channel 20). No edits needed unless your hub has different
+hardware. Z2M generates a fresh network key on first start — we don't
+preserve the ZHA key because every device is being factory-reset in
+step 5 anyway, so continuity buys nothing.
 
 ```bash
 cp -r docker/z2m-data.example docker/z2m-data
-# edit docker/z2m-data/configuration.yaml — fill in:
-#   - serial.port: tcp://<coordinator_ip>:6638
-#   - advanced.network_key, pan_id, ext_pan_id, channel from step 3
+# Sanity check: docker/z2m-data/configuration.yaml says
+#   serial.port: /dev/ttyACM0
+#   advanced.channel: 20
 ```
 
-### 5. Prime the empty mapping.yaml
+### 4. Prime the empty mapping.yaml
 
 Create `~/cutover-mapping.yaml`. You'll fill the `entities:` list as
 you walk the house. Example skeleton:

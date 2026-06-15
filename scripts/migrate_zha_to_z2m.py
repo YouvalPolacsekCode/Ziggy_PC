@@ -248,10 +248,21 @@ def remap_ha_automations(mapping: dict[str, str], ha_url: str,
 
 
 def _walk_and_remap(node: Any, mapping: dict[str, str]) -> tuple[Any, int]:
-    """Return (new_node, count_of_substitutions). Treats any string value
-    that matches an old entity_id as a substitution target — automations
-    embed entity_ids in many places (`entity_id`, `target.entity_id`,
-    template strings, etc.); we trade narrow precision for completeness."""
+    """Return (new_node, count_of_substitutions).
+
+    Two kinds of substitution:
+
+    1. Exact-match string: a value whose entire string IS an old entity_id
+       (`entity_id: light.kitchen`, `target.entity_id: [light.kitchen]`).
+
+    2. Embedded Jinja templates: a value that CONTAINS an old entity_id
+       somewhere inside it (`'{{ states("light.kitchen") }}'`,
+       `'{% if is_state("binary_sensor.foo", "on") %}'`). HA stores
+       these as plain strings; we substring-replace each old → new where
+       the old appears as a whole identifier (bounded by non-id chars on
+       both sides). Identifier-boundary check keeps us from rewriting
+       `light.kitchen_island` when the mapping has `light.kitchen`.
+    """
     changes = 0
     if isinstance(node, dict):
         out_d: dict = {}
@@ -267,9 +278,36 @@ def _walk_and_remap(node: Any, mapping: dict[str, str]) -> tuple[Any, int]:
             out_l.append(new_v)
             changes += c
         return out_l, changes
-    if isinstance(node, str) and node in mapping:
-        return mapping[node], 1
+    if isinstance(node, str):
+        # Whole-string match (the common case).
+        if node in mapping:
+            return mapping[node], 1
+        # Embedded match — only attempt if the string is template-ish or
+        # carries multiple entity ids in a CSV/list. Cheaper than always
+        # scanning every string field.
+        if "{" in node or "," in node or " " in node:
+            new_node, embedded_changes = _substitute_embedded(node, mapping)
+            return new_node, embedded_changes
     return node, 0
+
+
+def _substitute_embedded(text: str, mapping: dict[str, str]) -> tuple[str, int]:
+    """Replace each old entity_id with its new value, as whole tokens.
+
+    A token boundary is any char that's NOT [A-Za-z0-9_.]. So
+    `light.kitchen` inside `is_state('light.kitchen', 'on')` matches
+    (quote and paren are boundaries) but `light.kitchen_2` does not.
+    Returns (new_text, count_of_replacements).
+    """
+    import re
+    out = text
+    total = 0
+    for old, new in mapping.items():
+        # Escape regex metachars in the entity_id (mostly the dot).
+        pat = r"(?<![A-Za-z0-9_.])" + re.escape(old) + r"(?![A-Za-z0-9_.])"
+        out, n = re.subn(pat, new, out)
+        total += n
+    return out, total
 
 
 # ── phase 5: reset learning state ─────────────────────────────────────────
