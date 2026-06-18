@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 from typing import Any
 from urllib.parse import urlparse
 
@@ -58,19 +59,56 @@ def _parse_broker(url: str) -> tuple[str, int, bool, str | None, str | None]:
 
 
 def _publish_sync(topic: str, payload: bytes, qos: int) -> None:
+    """Connect, wait for CONNACK, publish, disconnect.
+
+    Why we wait for CONNACK instead of just calling client.connect():
+    paho's `connect()` only performs the TCP handshake — it does NOT
+    block until the broker accepts the CONNECT packet. So if the
+    broker rejects credentials (rc=5 "Not authorised"), the publish
+    call further down silently no-ops (the message gets queued on a
+    disconnected client). The caller sees no error.
+
+    This bit Ziggy on the ZHA→Z2M cut-over: settings.yaml had
+    `mqtt://host:1883` with no credentials after a fresh Mosquitto
+    user was created; every Ziggy-side permit-join publish vanished
+    into the void while `_publish_sync` returned cleanly. Switching
+    to loop_start + on_connect wait makes auth failures raise loudly.
+    """
     host, port, tls, user, pw = _parse_broker(_broker_url())
     client = mqtt_client.Client(callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
     if user is not None:
         client.username_pw_set(user, pw or "")
     if tls:
         client.tls_set()
+
+    connack: dict = {"rc": None}
+    ready = threading.Event()
+
+    def _on_connect(_c, _u, _flags, reason_code, _props):
+        connack["rc"] = reason_code
+        ready.set()
+
+    client.on_connect = _on_connect
+
     client.connect(host, port, keepalive=int(_CONNECT_TIMEOUT_S * 2))
+    client.loop_start()
     try:
+        if not ready.wait(timeout=_CONNECT_TIMEOUT_S):
+            raise RuntimeError("MQTT connect timeout (no CONNACK)")
+        rc = connack["rc"]
+        # In paho v2 CallbackAPIVersion.VERSION2 the reason_code is a
+        # ReasonCode object — check is_failure (True for any non-Success
+        # CONNACK including auth rejection). Fall back to int compare
+        # for older paho behavior.
+        is_fail = getattr(rc, "is_failure", None)
+        if is_fail is True or (is_fail is None and int(rc) != 0):
+            raise RuntimeError(f"MQTT connect failed: {rc}")
         info = client.publish(topic, payload, qos=qos)
         info.wait_for_publish(timeout=_PUBLISH_TIMEOUT_S)
         if info.rc != mqtt_client.MQTT_ERR_SUCCESS:
             raise RuntimeError(f"publish rc={info.rc}")
     finally:
+        client.loop_stop()
         client.disconnect()
 
 

@@ -58,7 +58,14 @@ from core.logger_module import log_info, log_error
 from services.ha_areas import _ws
 
 
-# Priority order: lower index wins.
+# Priority order: lower index wins. `light` outranks `switch` because
+# many smart bulbs (especially Tuya/Z2M-converted ones — TS0505B,
+# GLEDOPTO) expose ancillary feature switches alongside the actual
+# light entity: `switch.<id>_do_not_disturb`, `switch.<id>_effect`,
+# etc. Without this ordering, Ziggy's device card would surface the
+# feature toggle and the bulb itself would only be reachable from the
+# device detail drawer. Pure smart plugs / wall switches have no
+# `light.*` entity, so they continue to surface via `switch`.
 _CONTROLLABLE_DOMAIN_PRIORITY: list[str] = [
     "climate",
     "water_heater",
@@ -68,8 +75,8 @@ _CONTROLLABLE_DOMAIN_PRIORITY: list[str] = [
     "fan",
     "vacuum",
     "humidifier",
-    "switch",
     "light",
+    "switch",
 ]
 _CONTROLLABLE_DOMAINS: frozenset[str] = frozenset(_CONTROLLABLE_DOMAIN_PRIORITY)
 
