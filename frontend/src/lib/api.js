@@ -289,6 +289,26 @@ async function _voicePost(path, blob) {
 export const sendVoice           = (blob) => _voicePost('/voice', blob)
 export const sendVoiceTranscribe = (blob) => _voicePost('/voice/transcribe', blob)
 
+// ─── TTS voice picker (settings page) ────────────────────────────────────────
+// Returns { engine, available: [...], active: {he, en}, configured: bool }
+export const getTtsVoices = () => get('/voice/tts/voices')
+// Body: { he?: voice_id, en?: voice_id }
+export const setActiveTtsVoices = (sel) => patch('/voice/tts/active', sel)
+// Returns audio/mpeg blob — picker plays this without persisting the choice.
+// Bypasses the JSON envelope in request(); the response body is raw audio.
+export async function previewTtsVoice({ voice_id, text, lang }) {
+  const res = await fetchWithTimeout(`${BASE}/voice/tts/preview`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ voice_id, text, lang }),
+  }, { timeoutMs: 30_000 })
+  if (!res.ok) throw await _toZiggyError(res)
+  return res.blob()
+}
+
 // Devices / HA entities
 export const getEntities = (domain) =>
   get(domain ? `/ha/entities?domain=${domain}` : '/ha/entities')

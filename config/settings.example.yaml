@@ -385,6 +385,104 @@ voice:
     speech_region: eastus
     voice_en: en-US-JennyNeural
     voice_he: he-IL-HilaNeural
+  # ---- Cartesia Sonic (PRIMARY cloud TTS — native Hebrew) ----
+  # Chosen as default 2026-06-19 after live auditioning. 7 native Hebrew
+  # voices (Yardena, Adi, Gil, Eitan, etc.) vs ElevenLabs' English voices
+  # reading Hebrew phonetically. Also ~2.5x cheaper per character.
+  #
+  # API key lives in config/secrets.yaml — never here. The path
+  # voice.cartesia.api_key is in _SECRET_PATHS so settings_loader strips
+  # it on save even if pasted in by mistake.
+  cartesia:
+    # api_key: REPLACE_IN_SECRETS_YAML — do not put it here.
+    model_id: sonic-3.5             # only model supporting Hebrew today
+    output_format:
+      container: mp3
+      sample_rate: 44100
+      bit_rate: 128000
+    selected_voice_he: c5bc902c-bc31-40a8-b81f-7d3a1e1920bd  # Yardena (default)
+    selected_voice_en: db6b0ed5-d5d3-463d-ae85-518a07d3c2b4  # Skylar (default)
+    cache:
+      enabled: true
+      max_entries: 200
+    available_voices:
+      - id: c5bc902c-bc31-40a8-b81f-7d3a1e1920bd
+        name: "Yardena"
+        languages: [he]
+        description: "Expert Facilitator — professional female (default HE)"
+      - id: 2821fd0c-35c7-4adf-9c42-32e394bf85cb
+        name: "Adi"
+        languages: [he]
+        description: "Efficient Expert — energetic female"
+      - id: 84b969ad-19c7-428d-b742-48d387f7f138
+        name: "Gil"
+        languages: [he]
+        description: "Friendly Host — warm male"
+      - id: daa4d6bb-da62-4e16-8065-76cd87942475
+        name: "Eitan"
+        languages: [he]
+        description: "Modern Communicator — contemporary male"
+      - id: db6b0ed5-d5d3-463d-ae85-518a07d3c2b4
+        name: "Skylar"
+        languages: [en]
+        description: "Friendly Guide — American female (default EN)"
+      - id: 62ae83ad-4f6a-430b-af41-a9bede9286ca
+        name: "Gemma"
+        languages: [en]
+        description: "Decisive Agent — confident British female"
+      - id: 65209f8e-6140-4a20-b819-3cc2e21da19b
+        name: "Nolan"
+        languages: [en]
+        description: "Expressive Agent — warm American male"
+      - id: ef191366-f52f-447a-a398-ed8c0f2943a1
+        name: "Archie"
+        languages: [en]
+        description: "Approachable Mate — warm British male"
+  # ---- ElevenLabs (Premium tier upsell — not the default) ----
+  # API key lives in config/secrets.yaml (or ELEVENLABS_API_KEY env var) —
+  # NEVER paste it here. settings.yaml is git-tracked; keys here leak via
+  # every push. settings_loader.save_settings() strips this path on save
+  # as a belt-and-suspenders guard.
+  #
+  # Discover Hebrew voices:
+  #     python scripts/discover_elevenlabs_voices.py
+  # Audition a candidate:
+  #     python scripts/discover_elevenlabs_voices.py --audition <voice_id>
+  # Then paste the chosen voice_ids into selected_voice_he/en and
+  # available_voices below.
+  elevenlabs:
+    # api_key: REPLACE_IN_SECRETS_YAML — do not put it here.
+    #
+    # Model choice (verified Jun 2026 against live API):
+    #   eleven_multilingual_v2  — DEFAULT. Hebrew works (engine omits
+    #                             language_code for HE — model auto-detects).
+    #                             ~1s render for short replies. All premade
+    #                             voices available. Best assistant fit.
+    #   eleven_v3               — Slower (~2s) but more expressive. Accepts
+    #                             language_code='he' explicitly. Reserve for
+    #                             content/marketing voiceovers, not assistant.
+    #   eleven_flash_v2_5       — Fastest (~75ms TTFB) but Hebrew is NOT
+    #                             supported on this model — returns 400
+    #                             unsupported_language. English-only.
+    model_id: eleven_multilingual_v2
+    output_format: mp3_44100_128    # plays via playsound on all platforms
+    selected_voice_he: ""           # voice_id used for Hebrew replies
+    selected_voice_en: ""           # voice_id used for English replies
+    voice_settings:
+      stability: 0.5                # 0-1. Lower = more expressive; higher = monotone
+      similarity_boost: 0.75        # 0-1. Higher = closer to source speaker
+      style: 0.0                    # 0-1. Style exaggeration; 0 is best for assistant
+      use_speaker_boost: true       # sharpens timbre
+    cache:
+      enabled: true                 # caches rendered audio under cache/tts/elevenlabs/
+      max_entries: 200              # LRU eviction beyond this count
+    available_voices: []            # curated picker list, e.g.:
+    #  - id: voice_id_here
+    #    name: "Yael"
+    #    languages: [he, en]
+    #  - id: voice_id_here
+    #    name: "Roi"
+    #    languages: [he, en]
   enabled: true
   hebrew_model: ivrit-ai/whisper-large-v3-turbo-ct2
   language: en
@@ -393,10 +491,10 @@ voice:
   stt_language: auto
   # ---- TTS ----
   # v1 ships with TTS OFF. Voice responses are delivered via push notification
-  # + in-app text only. tts_engine + the Azure key stay configured so v1.1
+  # + in-app text only. tts_engine + credentials stay configured so v1.1
   # can re-enable as a cloud-gated paid feature. See docs/RUNBOOK_VOICE.md.
   tts_enabled: false
-  tts_engine: azure       # azure | piper (Piper Hebrew voice is not bundled)
+  tts_engine: cartesia    # cartesia | elevenlabs | azure | piper
   tts_language: en
   # ---- Wake word ----
   # v1 ships PUSH-TO-TALK ONLY. Wake-word inference is experimental and

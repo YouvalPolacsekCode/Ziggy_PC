@@ -156,6 +156,16 @@ def load_settings() -> dict:
     if os.getenv("AZURE_SPEECH_REGION"):
         azure["speech_region"] = os.getenv("AZURE_SPEECH_REGION")
 
+    # ElevenLabs (premium neural TTS, Hebrew-first).
+    elevenlabs = voice.setdefault("elevenlabs", {})
+    if os.getenv("ELEVENLABS_API_KEY"):
+        elevenlabs["api_key"] = os.getenv("ELEVENLABS_API_KEY")
+
+    # Cartesia Sonic (primary TTS — native Hebrew voices).
+    cartesia = voice.setdefault("cartesia", {})
+    if os.getenv("CARTESIA_API_KEY"):
+        cartesia["api_key"] = os.getenv("CARTESIA_API_KEY")
+
     # IFTTT webhook key.
     ifttt = data.setdefault("ifttt", {})
     if os.getenv("IFTTT_WEBHOOK_KEY"):
@@ -211,6 +221,8 @@ _SECRET_PATHS: list[tuple[str, ...]] = [
     ("serpapi", "api_key"),
     ("email", "password"),
     ("voice", "azure", "speech_key"),
+    ("voice", "elevenlabs", "api_key"),
+    ("voice", "cartesia", "api_key"),
     ("ifttt", "webhook_key"),
     ("relay", "secret"),
 ]

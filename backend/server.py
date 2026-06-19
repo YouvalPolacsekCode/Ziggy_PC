@@ -50,6 +50,7 @@ from backend.routers.first_boot_router import router as first_boot_router
 from backend.routers.onboarding_sensors_router import router as onboarding_sensors_router
 from backend.routers.push_action_router import router as push_action_router
 from backend.routers.media_router import router as media_router
+from backend.routers.tts_router import router as tts_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -493,6 +494,9 @@ app.include_router(push_router,          dependencies=_auth)
 app.include_router(debug_router,         dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
 app.include_router(ui_prefs_router,      dependencies=_auth)
+# TTS picker + audition + selection persistence. All routes touch ElevenLabs
+# or settings, so they require auth.
+app.include_router(tts_router,           dependencies=_auth)
 # media_router intentionally registered WITHOUT global _auth: every route
 # declares its own Depends(get_current_user) or Depends(require_role), AND
 # the Spotify OAuth callback (/api/media/spotify/callback) is reachable

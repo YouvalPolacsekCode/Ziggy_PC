@@ -17,11 +17,12 @@ import {
   Sun, Moon, User, Lock, LogOut, RefreshCw,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
-  Smartphone, Bell, ChevronLeft,
+  Smartphone, Bell, ChevronLeft, Volume2,
 } from 'lucide-react'
 import { PairWithPhone } from '../components/PairWithPhone'
 import { MobileDevicesList } from '../components/MobileDevicesList'
 import BlastersSection from '../components/settings/BlastersSection'
+import VoiceSection from '../components/settings/VoiceSection'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
@@ -1205,6 +1206,15 @@ export function IrHubsPage() {
   )
 }
 
+export function VoicePage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('settings.voice')}>
+      <VoiceSection />
+    </SettingsPageWrapper>
+  )
+}
+
 // ─── /ops sub-pages — wrapped by App.jsx's OpsPageWrapper, no extra chrome ──
 
 export function SystemDiagnosticsPage() {
@@ -1286,6 +1296,7 @@ export default function Settings() {
         )}
         <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
         <HubCard icon={Radio}       title={t('settings.irHubs')}          subtitle={t('settings.irHubsSub')}          to="/settings/ir-hubs" />
+        <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
         {musicEnabled && (
           <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />
         )}

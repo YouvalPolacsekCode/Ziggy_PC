@@ -171,7 +171,30 @@ def _transcribe_api(audio_path: str) -> tuple[str, str]:
 
 # ===== TTS engine config =====
 _REPO_ROOT = Path(__file__).parent.parent
+# Engine preference order is fixed: elevenlabs → azure → piper → gTTS. The
+# tts_engine setting picks the *primary* — whichever is named tries first, the
+# others fill in as fallbacks. "elevenlabs" is the new top-priority option;
+# leaving it on "azure" or "piper" preserves prior behavior.
 TTS_ENGINE       = VOICE_CFG.get("tts_engine", "piper").lower()
+
+# ── Cartesia Sonic (cloud, primary engine — native Hebrew voices) ──────────
+# Import-safe even without the SDK installed. Picked over ElevenLabs as
+# default 2026-06-19 because Cartesia has 7 native Hebrew voices (Yardena,
+# Adi, Gil, Eitan, etc.) vs ElevenLabs' English-trained voices reading
+# Hebrew phonetically. Also ~2.5x cheaper per character.
+try:
+    from interfaces.tts import cartesia_tts as _cartesia
+except Exception:
+    _cartesia = None  # type: ignore
+
+# ── ElevenLabs (cloud, kept as Premium tier upsell) ────────────────────────
+# Available when user opts into a Premium tier — v3 Sarah-style expressive
+# voice. Not the default because Hebrew is English-accented on v2 and v3 is
+# both slower and 2.5x more expensive than Cartesia.
+try:
+    from interfaces.tts import elevenlabs_tts as _eleven
+except Exception:
+    _eleven = None  # type: ignore
 
 # ── Piper ──────────────────────────────────────────────────────────────────
 _PIPER_EXE      = shutil.which("piper") or shutil.which("piper.exe")
@@ -843,16 +866,33 @@ def speak(text: str, lang: str = "en"):
         est_sec = max(1.0, len(text.split()) / 2.3 + 0.6)
         _tts_guard_until = time.time() + est_sec
 
-        # Azure Neural TTS — best quality, requires API key
+        # Cartesia Sonic — primary cloud TTS, native Hebrew voices. Opt-in
+        # via voice.tts_engine: cartesia. is_available() returns False fast
+        # when the SDK isn't installed or no key is set, so a misconfigured
+        # primary falls cleanly through to ElevenLabs/Azure/Piper/gTTS rather
+        # than going silent.
+        if TTS_ENGINE == "cartesia" and _cartesia is not None and _cartesia.speak(text, lang=lang):
+            if is_verbose():
+                print("[Voice] Cartesia TTS used.")
+            return
+
+        # ElevenLabs — kept as Premium tier upsell. Opt-in via
+        # voice.tts_engine: elevenlabs.
+        if TTS_ENGINE == "elevenlabs" and _eleven is not None and _eleven.speak(text, lang=lang):
+            if is_verbose():
+                print("[Voice] ElevenLabs TTS used.")
+            return
+
+        # Azure Neural TTS — best quality on Azure, requires API key
         if TTS_ENGINE == "azure" and _speak_azure(text, lang=lang):
             if is_verbose():
                 print("[Voice] Azure TTS used.")
             return
 
         # Piper — local, no internet; Hebrew voice used if available.
-        # Try Piper even when TTS_ENGINE=azure if Azure fell through, so we
-        # don't drop to network gTTS for a transient Azure failure. Piper is
-        # ~0.3 s local vs gTTS ~2 s round-trip on common short replies.
+        # Try Piper even when TTS_ENGINE=elevenlabs/azure if the primary fell
+        # through, so we don't drop to network gTTS for a transient cloud
+        # failure. Piper is ~0.3 s local vs gTTS ~2 s round-trip.
         if _speak_piper(text, lang=lang):
             if is_verbose():
                 print("[Voice] Piper TTS used.")

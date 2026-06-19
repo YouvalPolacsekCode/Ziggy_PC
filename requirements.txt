@@ -6,10 +6,17 @@ pyaudio
 langdetect
 gTTS
 playsound==1.2.2
-pvporcupine 
+pvporcupine
 sounddevice
 onnxruntime
 openwakeword
+# Cartesia Sonic TTS — DEFAULT cloud engine. Native Hebrew voices (Yardena,
+# Adi, Gil, Eitan, etc.) at ~$40/M chars vs ElevenLabs ~$100/M. Module is
+# import-safe even if this dep is missing.
+cartesia>=2.0
+# ElevenLabs neural TTS — kept as Premium tier upsell. Module is
+# import-safe even if this dep is missing (degrades to engine-off).
+elevenlabs>=2.0
 
 # Dashboard
 Flask
