@@ -1,3 +1,9 @@
+// MUST be first — installs the native-shell fetch/WebSocket shim that
+// rewrites relative '/api/...' calls to the prod backend when running
+// inside Capacitor. Any module imported before this could fire a request
+// against the WebView's local origin during eval and miss the rewrite.
+import './lib/nativeApiBase'
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

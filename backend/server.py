@@ -337,8 +337,8 @@ app.add_middleware(RequestLoggerMiddleware)
 # proxying via Vite) never trigger CORS — they just won't be blocked. The
 # allowlist matters for:
 #   - Native Capacitor app (origin capacitor://localhost on iOS,
-#     http://localhost on Android) — add the actual origin when wiring
-#     the mobile app
+#     https://localhost on Android because capacitor.config.ts sets
+#     androidScheme:'https'; http://localhost left in for older builds)
 #   - Cross-origin XHR from other web tools (now blocked by default,
 #     which is the security win)
 # Override via env var ZIGGY_CORS_ORIGINS="https://a.com,https://b.com" if
@@ -352,7 +352,8 @@ else:
         "https://app.ziggy-home.com",
         "http://localhost:3000",      # vite dev server
         "capacitor://localhost",      # iOS native app
-        "http://localhost",           # Android native app
+        "https://localhost",          # Android native app (androidScheme:'https')
+        "http://localhost",           # Android native app (legacy)
     ]
 app.add_middleware(
     CORSMiddleware,
