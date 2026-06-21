@@ -2001,6 +2001,7 @@ export default {
 
   // ── Dashboard additions ─────────────────────────────────────────────
   'dashboard.homeCalm':           'Home is calm',
+  'dashboard.homeAwake':          'Home is awake',
   'dashboard.allQuiet':           'All quiet',
   'dashboard.roomsActiveOne':     '{n} room active',
   'dashboard.roomsActiveMany':    '{n} rooms active',

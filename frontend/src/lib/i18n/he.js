@@ -1630,6 +1630,7 @@ export default {
 
   // ── Dashboard additions ─────────────────────────────────────────────
   'dashboard.homeCalm':           'הבית רגוע',
+  'dashboard.homeAwake':          'הבית ער',
   'dashboard.allQuiet':           'הכל שקט',
   'dashboard.roomsActiveOne':     'חדר אחד פעיל',
   'dashboard.roomsActiveMany':    '{n} חדרים פעילים',

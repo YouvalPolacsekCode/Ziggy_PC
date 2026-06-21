@@ -15,7 +15,7 @@ import { findRoomMetric, deviceFacts, sendDeviceCommand, kindMeta } from '../lib
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
-import { Pencil, Play, Sparkles, Check, ChevronRight } from 'lucide-react'
+import { Pencil, Play, Sparkles, Check, ChevronRight, ChevronDown } from 'lucide-react'
 import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18n'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
@@ -800,6 +800,11 @@ export default function Dashboard() {
   const togglePinnedShortcut    = useDeviceStore(s => s.togglePinnedShortcut)
   const [showQuickPicker,     setShowQuickPicker]     = useState(false)
   const [showShortcutsPicker, setShowShortcutsPicker] = useState(false)
+  // Mobile-only Recent Activity card — collapsed by default so the home
+  // screen lands on shortcuts + pinned devices, not a scrolling log of
+  // background events. Desktop still shows the same data in the rail's
+  // always-open card.
+  const [recentOpen,          setRecentOpen]          = useState(false)
   const { tasks, fetch: fetchTasks }                  = useTaskStore()
   const { fetchAutomations, fetchRoutines, routines, runRoutine } = useAutomationStore()
   const { fetch: fetchSuggestions, pendingCount, pending: pendingSuggestions, accept: acceptSuggestionAction, reject: rejectSuggestionAction } = useSuggestionStore()
@@ -974,8 +979,11 @@ export default function Dashboard() {
     ...(taskTrackingEnabled && overdueTasks.length > 0 ? [{ id: 'tasks', sev: 'warn', text: overdueTasks.length === 1 ? t('dashboard.overdueTasksOne', { n: overdueTasks.length }) : t('dashboard.overdueTasksMany', { n: overdueTasks.length }), to: '/tasks' }] : []),
   ]
 
+  // The flat status row below (dot + "N rooms active" + presence) already
+  // shows the count. The big H1 above just communicates calm-vs-awake at a
+  // glance — duplicating the count here read as repetition on mobile.
   const statusText = activeRooms.length > 0
-    ? (activeRooms.length === 1 ? t('dashboard.roomsActiveOne', { n: activeRooms.length }) : t('dashboard.roomsActiveMany', { n: activeRooms.length }))
+    ? t('dashboard.homeAwake')
     : t('dashboard.homeCalm')
 
   const homePersons = presencePersons.filter(p => (p.effective_state ?? p.state) === 'home')
@@ -1265,32 +1273,54 @@ export default function Dashboard() {
       <div className="hide-lg">
       {activity.length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('dashboard.justNow')}</p>
-          {/* Card wrapper kept for visual parity with the Alerts card sitting
-              directly above it. The clean redesign mock drew this surface
-              without a wrapper, but in our actual page the adjacent Alerts
-              card creates a box-vs-no-box asymmetry that reads as broken. */}
-          <div className="z-card" style={{ padding: '4px 6px' }}>
-            <div
-              className="scrollbar-thin"
-              style={{
-                maxHeight: 156,
-                overflowY: 'auto',
-                display: 'flex', flexDirection: 'column', gap: 4,
-              }}
-            >
-              {activity.slice(0, 10).map((entry, i) => {
-                const { label, timeStr, ok } = formatActivity(entry, entityMap)
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px', flexShrink: 0 }}>
-                    <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                    <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
-                  </div>
-                )
-              })}
+          {/* Collapsed by default — see recentOpen state declaration for why.
+              Header is the full-width tap target so the chevron and label
+              act as one control, matching the iOS settings disclosure feel. */}
+          <button
+            type="button"
+            onClick={() => setRecentOpen(o => !o)}
+            aria-expanded={recentOpen}
+            style={{
+              background: 'none', border: 'none', padding: 0, marginBottom: 8,
+              width: '100%', display: 'flex', alignItems: 'center', gap: 6,
+              cursor: 'pointer', color: 'var(--ink-faint)',
+            }}
+          >
+            {recentOpen
+              ? <ChevronDown size={12} />
+              : <ChevronRight size={12} className="icon-flip-rtl" />}
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.justNow')}</p>
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginInlineStart: 'auto' }}>
+              · {activity.length}
+            </span>
+          </button>
+          {recentOpen && (
+            /* Card wrapper kept for visual parity with the Alerts card sitting
+               directly above it. The clean redesign mock drew this surface
+               without a wrapper, but in our actual page the adjacent Alerts
+               card creates a box-vs-no-box asymmetry that reads as broken. */
+            <div className="z-card" style={{ padding: '4px 6px' }}>
+              <div
+                className="scrollbar-thin"
+                style={{
+                  maxHeight: 156,
+                  overflowY: 'auto',
+                  display: 'flex', flexDirection: 'column', gap: 4,
+                }}
+              >
+                {activity.slice(0, 10).map((entry, i) => {
+                  const { label, timeStr, ok } = formatActivity(entry, entityMap)
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px', flexShrink: 0 }}>
+                      <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                      <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
       </div>
