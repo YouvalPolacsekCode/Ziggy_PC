@@ -119,6 +119,41 @@ async def preview_voice(req: PreviewRequest):
 
 
 # ---------------------------------------------------------------------------
+# POST /speak — synthesize a reply for the mobile/web client
+# ---------------------------------------------------------------------------
+class SpeakRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+    lang: str = Field("en", pattern="^(en|he)$")
+
+
+@router.post("/speak")
+async def speak_reply(req: SpeakRequest):
+    """Render `text` in the user's configured voice for `lang` and return
+    audio bytes. Cache-aware: identical (text, voice, lang) pairs hit the
+    same on-disk MP3 the host-side speak() uses, so repeated phrases don't
+    re-bill Cartesia. Different from /preview, which always renders fresh
+    against a specific candidate voice."""
+    # Only Cartesia supports the bytes-return synthesize() right now; the
+    # mobile/web TTS path is Cartesia-only by design (it's the production
+    # primary). ElevenLabs stays a host-side Premium upsell.
+    if not cartesia_tts.is_available():
+        raise HTTPException(503, "Cartesia not configured "
+                                 "(set voice.cartesia.api_key).")
+    audio = cartesia_tts.synthesize(req.text, req.lang)
+    if audio is None:
+        # Two common causes: no voice configured for this lang, or upstream
+        # render failure. The module logs the specific cause.
+        raise HTTPException(502, f"Could not synthesize audio for lang={req.lang}.")
+    # 1-hour private cache covers short repeated replies ("ok", "done") in
+    # the session without risking stale voices after picker changes.
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # PATCH /active — persist the active voice per language
 # ---------------------------------------------------------------------------
 class SetActiveRequest(BaseModel):

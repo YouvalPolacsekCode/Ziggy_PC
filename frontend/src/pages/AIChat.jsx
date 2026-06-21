@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { sendChat, sendVoiceTranscribe, sendDirectIntent } from '../lib/api'
+import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTts } from '../lib/api'
 import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
@@ -220,6 +220,9 @@ export default function AIChat() {
   // Set on pointerdown, cleared on pointerup/cancel. Used to abort if
   // getUserMedia resolves after the user has already released.
   const intentRef      = useRef(false)
+  // Currently-playing TTS reply, if any. We pause + revoke its object URL
+  // when a new hold-to-talk starts so we never overlap audio.
+  const ttsAudioRef    = useRef(null)
 
   useEffect(() => { fetchQuickAsks() }, [])
   useEffect(() => { fetchVoiceStatus() }, [])
@@ -241,8 +244,54 @@ export default function AIChat() {
       try { mediaRef.current?.stop() } catch {}
       try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
       mediaRef.current = null
+      stopTtsPlayback()
     }
   }, [])
+
+  // Stop any in-flight TTS reply and release its object URL. Safe to call
+  // multiple times; safe to call when nothing is playing.
+  const stopTtsPlayback = () => {
+    const a = ttsAudioRef.current
+    if (!a) return
+    try { a.pause() } catch {}
+    try { URL.revokeObjectURL(a.src) } catch {}
+    a.src = ''
+    ttsAudioRef.current = null
+  }
+
+  // Render `text` server-side in `lang`, then play it through the device's
+  // own audio out. Drives the 'speaking' orb state by real audio events so
+  // the orb stops the moment playback ends, not on a guessed timer.
+  // Falls back to a brief visual 'speaking' blip if TTS is unavailable —
+  // chat should never feel broken because the voice failed.
+  const playTtsReply = async (text, lang) => {
+    if (!text) return
+    stopTtsPlayback()
+    let url = null
+    try {
+      const blob = await speakTts({ text, lang: lang === 'he' ? 'he' : 'en' })
+      url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      ttsAudioRef.current = audio
+      const onDone = () => {
+        if (ttsAudioRef.current === audio) {
+          stopTtsPlayback()
+          setOrbState(prev => prev === 'speaking' ? 'idle' : prev)
+        }
+      }
+      audio.onended = onDone
+      audio.onerror = onDone
+      setOrbState('speaking')
+      await audio.play()
+    } catch {
+      // Server has no Cartesia key, or render/network failed. Don't break
+      // the chat — just give a short visual ack and move on.
+      if (url) try { URL.revokeObjectURL(url) } catch {}
+      ttsAudioRef.current = null
+      setOrbState('speaking')
+      setTimeout(() => setOrbState(prev => prev === 'speaking' ? 'idle' : prev), 1500)
+    }
+  }
 
   // Pin the chat container to an exact pixel height at all times.
   //
@@ -399,6 +448,13 @@ export default function AIChat() {
   const startRecording = async () => {
     if (intentRef.current) return  // already holding
     intentRef.current = true
+    // Cut off any TTS playback the moment the user starts a new turn —
+    // overlapping the assistant's last reply with their next utterance
+    // feels off and confuses Whisper.
+    stopTtsPlayback()
+    // Subtle haptic on press (Android PWA / Capacitor). iOS Safari ignores
+    // — that's fine, no fallback needed.
+    try { navigator.vibrate?.(10) } catch {}
     setRecording(true); setOrbState('listening')
 
     let stream
@@ -442,9 +498,11 @@ export default function AIChat() {
       // client-side SR path used to give us.
       setOrbState('transcribing')
       let transcription = ''
+      let detectedLang = 'en'
       try {
         const tr = await sendVoiceTranscribe(blob)
         transcription = (tr?.transcription || '').trim()
+        if (tr?.lang === 'he' || tr?.lang === 'en') detectedLang = tr.lang
       } catch (e) {
         addToast(e?.message || t('chat.transcribeFailed'), 'error')
         setOrbState('idle')
@@ -476,8 +534,11 @@ export default function AIChat() {
             isPattern: true,
           })
         }
-        setOrbState('speaking')
-        setTimeout(() => setOrbState(prev => prev === 'speaking' ? 'idle' : prev), 2500)
+        // Voice in → voice out. Use the language Whisper detected on the
+        // user's utterance, not the UI locale — answers should match the
+        // question's language even if the user types Hebrew in an English
+        // UI or vice versa.
+        playTtsReply(res.reply || '', detectedLang)
       } catch (e) {
         const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : t('chat.somethingWrongShort')
         addMessage('assistant', msg, false)

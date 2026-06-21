@@ -296,6 +296,37 @@ def speak(text: str, lang: str = "en") -> bool:
         return False
 
 
+def synthesize(text: str, lang: str = "en") -> bytes | None:
+    """Render TTS audio and return raw MP3 bytes (no local playback).
+
+    Used by the /api/tts endpoint to ship audio to the mobile/web client,
+    where the browser plays it. Cache-aware: identical (text, voice, lang)
+    pairs hit the same on-disk MP3 as speak(), so a voice reply spoken on
+    the host one moment and on the phone the next doesn't re-bill Cartesia.
+    """
+    if not is_available():
+        return None
+    voice_id = _resolve_voice_id(lang)
+    if not voice_id:
+        return None
+    model_id = _model_id()
+    fmt = _output_format()
+    key = _cache_key(text, voice_id, model_id, lang, fmt)
+
+    cached = _cache_get(key)
+    if cached is not None:
+        try:
+            return Path(cached).read_bytes()
+        except OSError as e:
+            print(f"[Cartesia] Cache read failed ({e}) — re-rendering")
+
+    audio = _render(text, voice_id, lang)
+    if audio is None:
+        return None
+    _cache_put(key, audio)
+    return audio
+
+
 # ---------------------------------------------------------------------------
 # Voice management
 # ---------------------------------------------------------------------------

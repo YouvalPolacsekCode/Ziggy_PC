@@ -365,11 +365,40 @@ def _reconcile(devices: list[dict], live_ids: set[str]) -> list[dict]:
     return keep
 
 
-def _add_unclaimed(devices: list[dict], live_ids: set[str], states: list[dict] | None = None) -> list[dict]:
+def _infer_device_type(entity_id: str, attrs: dict) -> str:
+    """Map an HA entity to Ziggy's device_type taxonomy.
+
+    Ziggy keys mappings by semantic type — "temperature", "humidity", "motion" —
+    not by HA domain. For `sensor.*` and `binary_sensor.*`, the semantic type
+    lives in `attributes.device_class` (HA's own taxonomy). Falling back to
+    the domain ("sensor") loses that signal and is why `resolve_entity(room,
+    "temperature")` used to miss every Z2M temp sensor (entity_ids are MAC
+    addresses with no name hints).
+    """
+    domain = entity_id.split(".")[0]
+    if domain in ("sensor", "binary_sensor"):
+        dc = (attrs.get("device_class") or "").strip().lower()
+        if dc:
+            return dc
+    return domain
+
+
+def _add_unclaimed(devices: list[dict], live_ids: set[str],
+                   states: list[dict] | None = None,
+                   entity_areas: dict[str, str] | None = None) -> list[dict]:
     """Append UNCLAIMED entries for live HA entities the registry doesn't yet know.
 
     `states` may be supplied by the caller to avoid a duplicate HA REST round-trip
     (init() previously fetched /api/states twice: once for live_ids, once here).
+
+    `entity_areas` is `entity_id → ziggy-room-key`, derived from HA's area
+    registry by the async caller. When provided and the entity has an area,
+    the new row lands as CONNECTED with room set — no manual mapping needed.
+    Without an area, the row stays UNCLAIMED so the Devices page can prompt.
+
+    Also normalises device_type from HA's device_class so chat handlers can
+    look up `(room, "temperature")` instead of `(room, "sensor")` (see
+    _infer_device_type doc).
     """
     if not live_ids:
         return devices
@@ -380,24 +409,71 @@ def _add_unclaimed(devices: list[dict], live_ids: set[str], states: list[dict] |
             states = get_all_states()
         filtered = filter_entities(states)
         filtered_ids = {s["entity_id"] for s in filtered}
+        # entity_id → attributes dict, for device_class lookup
+        attrs_by_id = {s["entity_id"]: (s.get("attributes") or {}) for s in filtered}
     except Exception as e:
         log_error(f"[DeviceRegistry] Unclaimed scan failed: {e}")
         return devices
 
     claimed = {d["entity_id"] for d in devices if d.get("entity_id")}
     existing_unclaimed = {d["entity_id"] for d in devices if d["status"] == UNCLAIMED}
+    entity_areas = entity_areas or {}
 
     for eid in filtered_ids:
         if eid in claimed or eid in existing_unclaimed:
             continue
+        attrs = attrs_by_id.get(eid, {})
+        device_type = _infer_device_type(eid, attrs)
+        room = entity_areas.get(eid)
         devices.append({
-            "room": None,
-            "device_type": eid.split(".")[0],
+            "room": room,
+            "device_type": device_type,
             "entity_id": eid,
             "ir_device_id": None,
-            "status": UNCLAIMED,
+            # Known room → fully usable from chat. No area → still surfaces
+            # in the Devices page for manual claim.
+            "status": CONNECTED if room else UNCLAIMED,
             "name": eid,
         })
+    return devices
+
+
+def _heal_unclaimed(devices: list[dict],
+                    states: list[dict] | None = None,
+                    entity_areas: dict[str, str] | None = None) -> list[dict]:
+    """Re-evaluate existing UNCLAIMED entries with the dynamic-mapping rules.
+
+    Covers the migration case where a sensor was added before this code existed
+    — it's already in the registry as ("sensor", room=None), so chat lookups
+    miss it. On every reconcile we walk the UNCLAIMED set, infer device_type
+    from attributes, look up the HA area, and promote rows that now have both
+    to CONNECTED. Idempotent — entries without an HA area stay UNCLAIMED.
+    """
+    if not entity_areas and not states:
+        return devices
+    attrs_by_id = {s["entity_id"]: (s.get("attributes") or {})
+                   for s in (states or [])}
+    entity_areas = entity_areas or {}
+    promoted = 0
+    for d in devices:
+        if d.get("status") != UNCLAIMED:
+            continue
+        eid = d.get("entity_id")
+        if not eid:
+            continue
+        room = entity_areas.get(eid)
+        attrs = attrs_by_id.get(eid, {})
+        new_type = _infer_device_type(eid, attrs)
+        # Refine device_type even if there's no room yet — "sensor" → "temperature"
+        # is still better for ops UIs and future area assignments.
+        if new_type and new_type != d.get("device_type"):
+            d["device_type"] = new_type
+        if room and not d.get("room"):
+            d["room"] = room
+            d["status"] = CONNECTED
+            promoted += 1
+    if promoted:
+        log_info(f"[DeviceRegistry] Healed {promoted} unclaimed entities via HA area mapping")
     return devices
 
 
@@ -454,11 +530,35 @@ async def reconcile_with_ha() -> None:
     Idempotent: re-running just refreshes the status field. Used by the
     60-second background loop too.
 
+    Also pulls HA area assignments (entity_id → area_name) and uses them to
+    auto-map newly-added entities to Ziggy rooms — and to heal already-
+    UNCLAIMED rows whose room never got set. This is what makes
+    `resolve_entity(room, "temperature")` work without manual mapping on
+    Z2M setups, where entity_ids are MAC-addressed and have no name hints.
+
     Cold start: HA may not be reachable yet (relay tunnel still waking, etc.).
     On a failed snapshot we leave the registry as-is and rely on the periodic
     refresh() loop to retry.
     """
     import asyncio as _asyncio
+
+    # HA area registry → entity_id → ziggy-room-key. The area registry lives
+    # behind a WebSocket call so it has to be awaited up here, before we drop
+    # into the sync `_do` worker.
+    entity_areas: dict[str, str] = {}
+    try:
+        from services.ha_areas import get_areas
+        for area in await get_areas():
+            area_key = (area.get("name") or "").lower().replace(" ", "_").strip()
+            if not area_key:
+                continue
+            for eid in area.get("entities") or ():
+                entity_areas[eid] = area_key
+    except Exception as e:
+        # HA may be reachable for /api/states but not for the registry WS yet
+        # (different transport). Don't fail reconcile — fall through with no
+        # area data; next loop will retry.
+        log_info(f"[DeviceRegistry] HA area registry unavailable: {e}")
 
     def _do() -> int:
         global _registry
@@ -469,7 +569,10 @@ async def reconcile_with_ha() -> None:
             return 0
         with _lock:
             devices = _reconcile(_registry, live_ids)
-            devices = _add_unclaimed(devices, live_ids, states=states)
+            devices = _add_unclaimed(devices, live_ids, states=states,
+                                     entity_areas=entity_areas)
+            devices = _heal_unclaimed(devices, states=states,
+                                      entity_areas=entity_areas)
             devices = _merge_ir_devices(devices)
             _save_persistent(devices)
             _registry = devices

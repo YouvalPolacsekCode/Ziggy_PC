@@ -309,6 +309,23 @@ export async function previewTtsVoice({ voice_id, text, lang }) {
   return res.blob()
 }
 
+// Synthesize a chat reply in the user's configured voice for `lang`.
+// Used by the hold-to-talk path so voice input gets a voice reply. Server
+// cache makes repeated short phrases ("ok", "done") near-free. Returns a
+// Blob the caller turns into an <audio> src via URL.createObjectURL.
+export async function speakTts({ text, lang }) {
+  const res = await fetchWithTimeout(`${BASE}/voice/tts/speak`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ text, lang }),
+  }, { timeoutMs: 30_000 })
+  if (!res.ok) throw await _toZiggyError(res)
+  return res.blob()
+}
+
 // Devices / HA entities
 export const getEntities = (domain) =>
   get(domain ? `/ha/entities?domain=${domain}` : '/ha/entities')
