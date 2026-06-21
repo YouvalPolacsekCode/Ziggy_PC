@@ -13,7 +13,15 @@ from collections import deque
 from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
+# sounddevice needs /dev/snd and libportaudio2 — neither is granted to the
+# Docker container (see Dockerfile note). The chat-side STT path uses
+# faster-whisper on uploaded audio blobs and never touches sd; only the
+# on-host wake-word listener at line ~1085 needs a live mic stream. Keep the
+# import optional so this module loads cleanly in headless deployments.
+try:
+    import sounddevice as sd
+except ImportError:
+    sd = None
 import speech_recognition as sr
 from gtts import gTTS
 import playsound
