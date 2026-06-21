@@ -422,6 +422,7 @@ function ZigbeeBridgeSection({ isAdmin }) {
 // and the debug card moved to /ops/presence-debug.
 
 function PresenceSection() {
+  const t = useT()
   const { addToast } = useUIStore()
   const [loading,    setLoading]   = useState(true)
   const [zone,       setZone]      = useState(null)
@@ -807,6 +808,7 @@ function PresenceDebugCard() {
 // ─── Users & Access Section ───────────────────────────────────────────────────
 
 function UsersAndAccessSection({ currentUsername }) {
+  const t = useT()
   const { addToast } = useUIStore()
   const [users,        setUsers]        = useState([])
   const [invites,      setInvites]      = useState([])
