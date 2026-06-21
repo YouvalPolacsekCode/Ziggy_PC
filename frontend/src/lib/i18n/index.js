@@ -18,6 +18,7 @@
 // Hebrew strings here cover the WHOLE UI. If a key is missing in he.js the
 // English string is shown verbatim — never a raw key.
 
+import { useCallback } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import en from './en'
@@ -111,10 +112,13 @@ export function t(key, params, lang) {
   return format(value, params)
 }
 
-// React hook — returns a stable-ish function that closes over the current lang
+// React hook — returns a stable function whose identity only changes when
+// `lang` changes. Identity stability matters because consumers occasionally
+// pass `t` as a dep to useCallback/useEffect/useMemo; without useCallback,
+// every render produces a new closure and any such dep array spins.
 export function useT() {
   const lang = useLangStore((s) => s.lang)
-  return (key, params) => t(key, params, lang)
+  return useCallback((key, params) => t(key, params, lang), [lang])
 }
 
 export function useLang() {

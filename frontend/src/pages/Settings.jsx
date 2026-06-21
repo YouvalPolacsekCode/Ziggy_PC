@@ -1053,23 +1053,10 @@ function AccountForms({ username, role, logout }) {
 // Sub-page exports — each is route-mounted under /settings/<slug> in App.jsx
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function AppearancePage() {
+export function DisplayPage() {
   const t = useT()
   const theme = useUIStore(s => s.theme)
   const toggleTheme = useUIStore(s => s.toggleTheme)
-  return (
-    <SettingsPageWrapper title={t('settings.appearance')}>
-      <Card>
-        <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
-          <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
-        </SettingRow>
-      </Card>
-    </SettingsPageWrapper>
-  )
-}
-
-export function LanguagePage() {
-  const t = useT()
   const { addToast } = useUIStore()
   const [general, setGeneral] = useState({ language: 'en', timezone: 'UTC' })
   const [saving, setSaving] = useState(false)
@@ -1093,25 +1080,33 @@ export function LanguagePage() {
   }
 
   return (
-    <SettingsPageWrapper title={t('settings.languageRegion')}>
+    <SettingsPageWrapper title={t('settings.display')}>
       <Card>
-        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Select
-            label={t('settings.language')}
-            value={general.language}
-            onChange={e => {
-              const v = e.target.value
-              setGeneral(s => ({ ...s, language: v }))
-              setI18nLang(v)
-            }}
-            options={LANGUAGES}
-          />
-          <Select label={t('settings.timezone')} value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
-          <button onClick={save} disabled={saving} className="z-btn-primary" style={{ width: '100%' }}>
-            {saving ? t('common.saving') : t('common.save')}
-          </button>
-        </div>
+        <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
+          <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+        </SettingRow>
       </Card>
+      <div style={{ marginTop: 22 }}>
+        <SectionTitle icon={MapPin}>{t('settings.languageRegion')}</SectionTitle>
+        <Card>
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Select
+              label={t('settings.language')}
+              value={general.language}
+              onChange={e => {
+                const v = e.target.value
+                setGeneral(s => ({ ...s, language: v }))
+                setI18nLang(v)
+              }}
+              options={LANGUAGES}
+            />
+            <Select label={t('settings.timezone')} value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
+            <button onClick={save} disabled={saving} className="z-btn-primary" style={{ width: '100%' }}>
+              {saving ? t('common.saving') : t('common.save')}
+            </button>
+          </div>
+        </Card>
+      </div>
     </SettingsPageWrapper>
   )
 }
@@ -1146,22 +1141,17 @@ export function NotificationsPage() {
   )
 }
 
-export function HomeSensingPage() {
+export function LocationPage() {
   const t = useT()
   return (
-    <SettingsPageWrapper title={t('settings.homeSensing')}>
+    <SettingsPageWrapper title={t('settings.location')}>
       <PresenceSection />
-    </SettingsPageWrapper>
-  )
-}
-
-export function MobilePage() {
-  const t = useT()
-  return (
-    <SettingsPageWrapper title={t('settings.mobileApp')}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <PairWithPhone />
-        <MobileDevicesList />
+      <div style={{ marginTop: 22 }}>
+        <SectionTitle icon={Smartphone}>{t('settings.mobileApp')}</SectionTitle>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <PairWithPhone />
+          <MobileDevicesList />
+        </div>
       </div>
     </SettingsPageWrapper>
   )
@@ -1287,17 +1277,14 @@ export default function Settings() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <HubCard icon={Moon}        title={t('settings.appearance')}      subtitle={t('settings.appearanceSub')}      to="/settings/appearance" />
-        <HubCard icon={MapPin}      title={t('settings.languageRegion')}  subtitle={t('settings.languageSub')}        to="/settings/language" />
+        <HubCard icon={Sun}         title={t('settings.display')}         subtitle={t('settings.displaySub')}         to="/settings/display" />
         <HubCard icon={User}        title={t('settings.account')}         subtitle={t('settings.accountSub')}         to="/settings/account" />
         <HubCard icon={Bell}        title={t('adminSettings.sectionNotifications')} subtitle={t('settings.notificationsSub')} to="/settings/notifications" />
-        <HubCard icon={MapPin}      title={t('settings.homeSensing')}     subtitle={t('settings.homeSensingSub')}     to="/settings/home-sensing" />
-        <HubCard icon={Smartphone}  title={t('settings.mobileApp')}       subtitle={t('settings.mobileSub')}          to="/settings/mobile" />
+        <HubCard icon={MapPin}      title={t('settings.location')}        subtitle={t('settings.locationSub')}        to="/settings/location" />
         {isSuperAdmin && (
           <HubCard icon={Users}     title={t('settings.usersAndAccess')}  subtitle={t('settings.usersSub')}           to="/settings/users" />
         )}
         <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
-        <HubCard icon={Radio}       title={t('settings.irHubs')}          subtitle={t('settings.irHubsSub')}          to="/settings/ir-hubs" />
         <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
         {musicEnabled && (
           <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />

@@ -22,12 +22,10 @@ const Tasks           = lazy(() => import('./pages/Tasks'))
 const Settings        = lazy(() => import('./pages/Settings'))
 // Settings sub-pages — each section of the old monolithic Settings page is now
 // route-mounted at /settings/<slug>. Co-located in Settings.jsx as named exports.
-const AppearancePage   = lazy(() => import('./pages/Settings').then(m => ({ default: m.AppearancePage })))
-const LanguagePage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.LanguagePage })))
+const DisplayPage      = lazy(() => import('./pages/Settings').then(m => ({ default: m.DisplayPage })))
 const AccountPage      = lazy(() => import('./pages/Settings').then(m => ({ default: m.AccountPage })))
 const NotificationsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.NotificationsPage })))
-const HomeSensingPage  = lazy(() => import('./pages/Settings').then(m => ({ default: m.HomeSensingPage })))
-const MobilePage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MobilePage })))
+const LocationPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.LocationPage })))
 const UsersPage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.UsersPage })))
 const MemoryPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MemoryPage })))
 const IrHubsPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.IrHubsPage })))
@@ -348,12 +346,16 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
         {/* Settings sub-pages — each old section now has its own URL so
             the user can deep-link / hit back to the hub */}
-        <Route path="settings/appearance"    element={<AppearancePage />} />
-        <Route path="settings/language"      element={<LanguagePage />} />
+        <Route path="settings/display"       element={<DisplayPage />} />
         <Route path="settings/account"       element={<AccountPage />} />
         <Route path="settings/notifications" element={<NotificationsPage />} />
-        <Route path="settings/home-sensing"  element={<HomeSensingPage />} />
-        <Route path="settings/mobile"        element={<MobilePage />} />
+        <Route path="settings/location"      element={<LocationPage />} />
+        {/* 2026-06 settings merge: appearance+language → display, home-sensing+mobile → location.
+            Redirects keep old bookmarks/deep-links alive. */}
+        <Route path="settings/appearance"    element={<Navigate to="/settings/display" replace />} />
+        <Route path="settings/language"      element={<Navigate to="/settings/display" replace />} />
+        <Route path="settings/home-sensing"  element={<Navigate to="/settings/location" replace />} />
+        <Route path="settings/mobile"        element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/users"         element={<UsersPage />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
         <Route path="settings/ir-hubs"       element={<IrHubsPage />} />
