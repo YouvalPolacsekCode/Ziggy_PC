@@ -682,17 +682,33 @@ export default function AIChat() {
     } finally { setThinking(false) }
   }
 
-  // ── Hold-to-talk recording (MediaRecorder only) ──
+  // ── Hold-to-talk recording ──
   //
-  // Contract: recording starts on pointerdown and ends on pointerup/cancel.
-  // Nothing else stops it — no silence detection, no engine watchdog, no
-  // network fallback path. This is what makes the press/release feel
-  // deterministic to the user.
+  // Two paths, picked at press time based on whether SR can run alone:
   //
-  // Race safety: getUserMedia is async (browser permission prompt can take
-  // many seconds the first time). `intentRef` is the source of truth for
-  // "the user's finger is still down." If they release before the stream
-  // resolves, we release the tracks and never start MediaRecorder.
+  //   - DESKTOP (Chrome, Edge, Safari ≥14.5): MediaRecorder + SR run in
+  //     parallel. Mic stream is shared, no contention. SR delivers
+  //     interim results word-by-word for the live bubble. Whisper backs
+  //     it up if SR returns nothing on release.
+  //
+  //   - MOBILE (Android Chrome / Capacitor WebView / mobile Safari): the
+  //     second getUserMedia for MediaRecorder steals SR's mic, which
+  //     silently kills interim delivery — user sees the pulsing dot for
+  //     the whole hold and then the full sentence on release (Whisper
+  //     fallback). To avoid this we run SR-only on mobile and skip
+  //     MediaRecorder entirely. Mirrors the 880c864 architecture that
+  //     used to feel "alive" on phone PWAs before the security-hardening
+  //     checkpoint re-added MediaRecorder for the Whisper fallback.
+  //
+  // Race safety: `intentRef` is the single source of truth for "finger
+  // still down." Released-before-mic-resolved aborts cleanly on both
+  // paths.
+
+  const isMobileDevice = () => {
+    if (typeof navigator === 'undefined') return false
+    const ua = (navigator.userAgent || '').toLowerCase()
+    return /android|iphone|ipad|ipod|capacitor/i.test(ua)
+  }
 
   const startRecording = async () => {
     if (intentRef.current) return  // already holding
@@ -709,17 +725,30 @@ export default function AIChat() {
     interimRef.current = ''
     srStartedRef.current = false
     setRecording(true); setOrbState('listening')
-    // SR is the primary text-capture path on supported browsers; words
-    // land in `input` as the user speaks. MediaRecorder still runs as
-    // backup so we can fall through to Whisper on release if SR returned
-    // nothing (Firefox / iOS PWA / mic-permission edge cases).
-    startLivePreview()
+    // Start SR first. On mobile we'll stop here and not touch the mic
+    // again — that's what gives SR the clean stream it needs to deliver
+    // interims word-by-word.
+    const srStarted = startLivePreview()
+    const SR = typeof window !== 'undefined'
+      && (window.SpeechRecognition || window.webkitSpeechRecognition)
 
+    if (isMobileDevice() && srStarted) {
+      // Mobile SR-only path. Haptic now (SR is already capturing); no
+      // MediaRecorder, no shared stream, no contention.
+      try { navigator.vibrate?.(8) } catch {}
+      mediaRef.current = null
+      chunksRef.current = []
+      return
+    }
+
+    // Desktop path OR SR-unavailable mobile fallback: run MediaRecorder
+    // for the Whisper safety net.
     let stream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (e) {
       intentRef.current = false
+      stopLivePreview()
       setRecording(false); setOrbState('idle')
       addToast(t('chat.micDenied'), 'error')
       return
@@ -728,6 +757,7 @@ export default function AIChat() {
     // User released before the permission prompt / hardware came back. Abort.
     if (!intentRef.current) {
       stream.getTracks().forEach(t => t.stop())
+      stopLivePreview()
       setRecording(false); setOrbState('idle')
       return
     }
@@ -842,10 +872,68 @@ export default function AIChat() {
     if (mr && mr.state === 'recording') {
       try { mr.stop() } catch {}
       // onstop will clear `recording` and route through transcription.
+      return
+    }
+    // No MediaRecorder — either user released before getUserMedia resolved,
+    // OR we're on the mobile SR-only path. Distinguish via srStartedRef:
+    // if SR is running, drain it and ship whatever it gave us; otherwise
+    // just reset UI.
+    if (srStartedRef.current) {
+      finishSrOnlyRecording()
     } else {
-      // No MR active yet — user released while getUserMedia was still
-      // resolving. Reset UI here since onstop will never fire.
+      stopLivePreview()
+      setLiveTranscript('')
       setRecording(false); setOrbState('idle')
+    }
+  }
+
+  // Mobile SR-only release path. SR keeps delivering results briefly after
+  // stop(), so we give it a short grace window before promoting whatever
+  // we got to a real message. Empty result = misfire; nothing posted.
+  const finishSrOnlyRecording = async () => {
+    setRecording(false)
+    setOrbState('transcribing')
+    // Tell SR to stop and let pending finals trickle in.
+    stopLivePreview()
+    await new Promise(r => setTimeout(r, 250))
+    const dictated = composeBuffer()
+    if (!dictated) {
+      setLiveTranscript('')
+      setOrbState('idle')
+      return
+    }
+    const detectedLang = (speechRef.current?.lang || '').startsWith('he')
+      ? 'he'
+      : (lang === 'he' ? 'he' : 'en')
+    const historyForApi = messages.map((m) => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.text,
+    }))
+    setLiveTranscript('')
+    addMessage('user', dictated)
+    setThinking(true); setOrbState('thinking')
+    try {
+      const res = await sendChat(dictated, historyForApi)
+      const actions = res.actions?.map(a => {
+        if (typeof a === 'string') return a
+        if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
+        if (a.label) return a.label
+        return String(a)
+      }) || []
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      if (res.pattern_suggestion) {
+        addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
+          patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
+          isPattern: true,
+        })
+      }
+      playTtsReply(res.reply || '', detectedLang)
+    } catch (e) {
+      const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : t('chat.somethingWrongShort')
+      addMessage('assistant', msg, false)
+      setOrbState('idle')
+    } finally {
+      setThinking(false)
     }
   }
 
