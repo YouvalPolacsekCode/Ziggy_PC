@@ -14,14 +14,16 @@
 //   2. Check for a newer bundle and stage it for the NEXT launch via next().
 //      next() (not set()) avoids a mid-session WebView reload.
 //
-// Importing @capgo/capacitor-updater (rather than going through
-// window.Capacitor.Plugins) is the canonical Capacitor 7 pattern — the
-// package's web shim auto-registers the JS-side proxy that bridges to the
-// native plugin. On PWA / non-native the web shim no-ops cleanly.
+// Plugin accessed via window.Capacitor.Plugins.CapacitorUpdater (the
+// runtime bridge) — NOT via `import { CapacitorUpdater } from '@capgo/...'`.
+// The package depends on @capacitor/core which isn't in the frontend's
+// node_modules (only in ziggy_mobile/), so a direct import breaks the
+// Vite build with "Rollup failed to resolve import @capacitor/core".
+// The runtime bridge works without the import — when the native APK
+// includes the plugin, Capacitor.Plugins.CapacitorUpdater is populated
+// by the bridge on init. Same pattern as lib/native.js for other plugins.
 
-import { CapacitorUpdater } from '@capgo/capacitor-updater'
-
-import { isNative } from './native'
+import { isNative, plugin } from './native'
 
 const HEALTH_CHECK_TIMEOUT_MS = 5_000
 
@@ -36,6 +38,13 @@ export function initOtaWatchdog() {
   setTimeout(async () => {
     log('start')
 
+    const updater = plugin('CapacitorUpdater')
+    if (!updater) {
+      warn('CapacitorUpdater plugin not on bridge — APK likely missing the plugin')
+      return
+    }
+    log('plugin lookup ok')
+
     // ── Step 1: health-check the backend ──────────────────────────────────
     const healthy = await _healthCheck()
     log('health check:', healthy ? 'OK' : 'FAIL')
@@ -43,7 +52,7 @@ export function initOtaWatchdog() {
 
     // ── Step 2: confirm THIS bundle is good ───────────────────────────────
     try {
-      await CapacitorUpdater.notifyAppReady()
+      await updater.notifyAppReady()
       log('notifyAppReady ok')
     } catch (e) {
       warn('notifyAppReady failed:', String(e))
@@ -51,14 +60,14 @@ export function initOtaWatchdog() {
 
     // ── Step 3: check for a newer bundle, stage it for next launch ───────
     try {
-      const latest = await CapacitorUpdater.getLatest()
+      const latest = await updater.getLatest()
       log('latest:', latest?.version, '→', latest?.url)
       if (!latest || !latest.url || !latest.version) {
         log('no latest version available')
         return
       }
 
-      const current = await CapacitorUpdater.current().catch(() => null)
+      const current = await updater.current().catch(() => null)
       const currentVersion = current?.bundle?.version || current?.version || null
       log('current version:', currentVersion)
       if (currentVersion && currentVersion === latest.version) {
@@ -67,14 +76,14 @@ export function initOtaWatchdog() {
       }
 
       log('downloading bundle...')
-      const downloaded = await CapacitorUpdater.download({
+      const downloaded = await updater.download({
         url: latest.url,
         version: latest.version,
       })
       log('downloaded:', downloaded?.id, downloaded?.version)
       if (!downloaded || !downloaded.id) return
 
-      await CapacitorUpdater.next({ id: downloaded.id })
+      await updater.next({ id: downloaded.id })
       log('staged for next launch ✓')
     } catch (e) {
       warn('update flow failed:', String(e))
