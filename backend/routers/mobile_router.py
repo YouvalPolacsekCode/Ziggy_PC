@@ -18,9 +18,13 @@ backend/server.py is one additive `app.include_router(mobile_router)` line.
 from __future__ import annotations
 
 import asyncio
+import os as _os
+import zipfile as _zipfile
+from pathlib import Path as _PathLib
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from backend.routers.auth_deps import get_current_user
@@ -357,3 +361,144 @@ async def _kick(device_id: str) -> None:
     """Close any active WS for a device — used after revoke."""
     # mobile_ws.send_to_device returns False if not connected; that's fine.
     await mobile_ws.send_to_device(device_id, {"type": "revoked"})
+
+
+# ─── OTA: bundled-UI update channel for the native app ──────────────────────
+# The native Capacitor app ships with a bundled www/ for instant cold-start
+# (Phase 1 — capacitor.config.ts no longer sets server.url). Phase 2 restores
+# the push-to-main → live freshness loop by exposing the current frontend
+# build as a downloadable bundle that @capgo/capacitor-updater consumes:
+#
+#   GET /api/mobile/version           (device-authed)
+#     → { version: <git_sha>, url: "https://.../api/mobile/bundles/<sha>.zip" }
+#
+#   GET /api/mobile/bundles/<sha>.zip (public — SHA is the credential)
+#     → zip of frontend/dist
+#
+# The plugin polls /version on launch, downloads the zip if the SHA differs
+# from what it has, and hot-swaps next cold start. If the new bundle fails
+# to render within appReadyTimeout (10s), the plugin auto-rolls back to the
+# previous bundle. See project_mobile_cold_start_plan.md Phase 2.
+#
+# Graceful degradation: if frontend/dist is missing (rare — local dev without
+# a build) /version returns null, the plugin treats it as "no update", app
+# keeps using its bundled UI. No feature flag needed.
+
+# Cached on disk so concurrent requests share the same zip and a container
+# restart triggers exactly one re-zip. The SHA is fixed per image, so this
+# never goes stale within a container lifetime.
+_BUNDLE_CACHE_DIR = _PathLib("/tmp/ziggy_mobile_bundles")
+_BUNDLE_LOCK = asyncio.Lock()
+
+
+def _frontend_dist_path() -> _PathLib:
+    # Matches the resolution used by the static-files mount in server.py
+    # (see _FRONTEND_DIST). Re-deriving rather than importing to keep this
+    # module decoupled from server.py's load-order.
+    return _PathLib(_os.path.dirname(__file__)).parent.parent / "frontend" / "dist"
+
+
+def _build_bundle_zip(sha: str, dist_dir: _PathLib, out_path: _PathLib) -> None:
+    """Zip the entire frontend/dist tree into out_path.
+
+    Runs in a thread (called via asyncio.to_thread) — zipping ~2MB of static
+    assets takes ~200-500ms and would otherwise pin the event loop. The
+    result is written atomically by zipping into a sibling .tmp file first
+    and renaming, so concurrent readers never see a partial zip.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    # ZIP_DEFLATED at default compression — ~50% size reduction on JS/CSS,
+    # negligible CPU. Don't bother with ZIP_LZMA: marginal gain, much slower
+    # decompression on the phone.
+    with _zipfile.ZipFile(tmp_path, "w", compression=_zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in _os.walk(dist_dir):
+            for fname in files:
+                abs_path = _PathLib(root) / fname
+                # capacitor-updater expects index.html at the zip root.
+                rel = abs_path.relative_to(dist_dir)
+                zf.write(abs_path, str(rel))
+    tmp_path.replace(out_path)
+
+
+async def _ensure_bundle(sha: str) -> Optional[_PathLib]:
+    """Return the path to the bundle zip for `sha`, building it on demand.
+
+    Returns None if frontend/dist doesn't exist (the local-dev case where
+    the backend runs without a frontend build). Callers should treat that
+    as "OTA not available right now".
+    """
+    dist = _frontend_dist_path()
+    if not dist.is_dir():
+        return None
+
+    out = _BUNDLE_CACHE_DIR / f"{sha}.zip"
+    if out.exists():
+        return out
+
+    async with _BUNDLE_LOCK:
+        # Re-check inside the lock — another request may have built it
+        # while we were waiting.
+        if out.exists():
+            return out
+        await asyncio.to_thread(_build_bundle_zip, sha, dist, out)
+        return out
+
+
+@router.get("/version")
+async def mobile_bundle_version(request: Request, device: dict = Depends(get_current_device)):
+    """Current frontend bundle pointer for @capgo/capacitor-updater.
+
+    Response shape matches the plugin's LatestVersion interface — `version`
+    is the identifier the plugin compares against what it has on disk, `url`
+    is what it downloads when they differ.
+
+    Device-authed so unpaired clients can't probe deployment state. The
+    bundle endpoint itself is public (the SHA in the URL is the credential).
+    """
+    sha = _os.getenv("ZIGGY_GIT_SHA", "dev")
+    # Mirror back the host the request came in on (same pattern as the pair
+    # endpoint). Lets a single backend serve multiple homes / domains
+    # without hardcoding app.ziggy-home.com.
+    base = str(request.base_url).rstrip("/")
+    # Probe (don't build) — if no dist is present we explicitly tell the
+    # client "no bundle" rather than handing out a URL that would 404.
+    if not _frontend_dist_path().is_dir():
+        return {"version": sha, "url": None, "available": False}
+    return {
+        "version": sha,
+        "url": f"{base}/api/mobile/bundles/{sha}.zip",
+        "available": True,
+    }
+
+
+# PUBLIC ENDPOINT — reviewed in this Phase 2 OTA change on 2026-06-22.
+# Justification: the SHA in the URL is itself the credential. Paired devices
+# learn it via /api/mobile/version (device-authed); an attacker who knew the
+# exact SHA could only download the same JavaScript that's already public
+# at https://app.ziggy-home.com/. No state, no secrets in the bundle.
+@router.get("/bundles/{sha}.zip")
+async def mobile_bundle_download(sha: str):
+    """Serve the zipped frontend build for the given git SHA.
+
+    Only the current build is served — historical SHAs return 404. The
+    plugin's rollback path uses bundles cached on the device, not the
+    server, so we don't need to keep old bundles around.
+    """
+    current = _os.getenv("ZIGGY_GIT_SHA", "dev")
+    if sha != current:
+        # Stale request from a phone whose plugin polled before our deploy.
+        # 404 makes capacitor-updater retry on next launch; no rollback fires.
+        raise HTTPException(status_code=404, detail="Bundle for that SHA is not available.")
+
+    path = await _ensure_bundle(sha)
+    if path is None:
+        raise HTTPException(status_code=404, detail="No frontend build available.")
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"ziggy-frontend-{sha}.zip",
+        # Cache aggressively: the SHA is in the URL, so a hit on (sha) means
+        # the bytes never change. Immutable lets CDNs / phones avoid revalidation.
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
