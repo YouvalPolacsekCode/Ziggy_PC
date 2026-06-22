@@ -347,6 +347,32 @@ export default function AIChat() {
     return () => { cancelled = true }
   }, [])
 
+  // "New chat" — clears the message log AND every piece of in-flight
+  // voice state, because clearMessages alone left intentRef / sttRef /
+  // speechRef from any preceding hold lingering. After a quick mic-tap
+  // before the previous response arrived, the new-chat button would
+  // wipe the visible bubbles but leave a stuck intentRef=true, so the
+  // next press was rejected by `if (intentRef.current) return` until
+  // the user navigated away and back to remount the component. Same
+  // cleanup the unmount effect runs, just without unmounting.
+  const resetChat = () => {
+    intentRef.current = false
+    try { mediaRef.current?.stop() } catch {}
+    try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
+    mediaRef.current = null
+    stopLivePreview()
+    stopTtsPlayback()
+    accumulatedSrRef.current = ''
+    sttRef.current = ''
+    interimRef.current = ''
+    srStartedRef.current = false
+    setLiveTranscript('')
+    setRecording(false)
+    setThinking(false)
+    setOrbState('idle')
+    clearMessages()
+  }
+
   const onToggleMic = async () => {
     try {
       await setMicEnabled(!micEnabled)
@@ -1028,9 +1054,15 @@ export default function AIChat() {
   const finishSrOnlyRecording = async () => {
     setRecording(false)
     setOrbState('transcribing')
-    // Tell SR to stop and let pending finals trickle in.
+    // Tell SR to stop and let pending finals trickle in. The grace
+    // window covers the gap between SR.stop() and the onresult that
+    // delivers the last syllable — too short and the user releases
+    // mid-word and that word vanishes; too long and the chat feels
+    // sluggish to send. 700 ms is long enough to catch the trailing
+    // final on every device we've tested, short enough that the user
+    // doesn't notice the pause before "Thinking…" lights up.
     stopLivePreview()
-    await new Promise(r => setTimeout(r, 250))
+    await new Promise(r => setTimeout(r, 700))
     const dictated = composeBuffer()
     if (!dictated) {
       setLiveTranscript('')
@@ -1201,7 +1233,7 @@ export default function AIChat() {
           )}
           {hasMessages && (
             <button
-              onClick={clearMessages}
+              onClick={resetChat}
               style={{
                 background: 'transparent', border: '0.5px solid var(--line)',
                 borderRadius: 8, padding: '5px 10px',
