@@ -221,6 +221,37 @@ function ThinkingBubble() {
   )
 }
 
+// Concatenate two transcript fragments while removing the longest
+// token-aligned overlap between prev's suffix and next's prefix.
+// Used to fold each finished SR-session's text into the running
+// accumulated buffer without duplicating the words mobile Chrome
+// re-recognises across the restart boundary.
+function joinDeduped(prev, next) {
+  const p = (prev || '').trim()
+  const n = (next || '').trim()
+  if (!p) return n
+  if (!n) return p
+  const pTok = p.split(/\s+/)
+  const nTok = n.split(/\s+/)
+  const max = Math.min(pTok.length, nTok.length)
+  for (let len = max; len > 0; len--) {
+    let match = true
+    for (let i = 0; i < len; i++) {
+      // Case-insensitive token compare — SR can return the same word
+      // with different capitalisation across results.
+      if (pTok[pTok.length - len + i].toLowerCase() !== nTok[i].toLowerCase()) {
+        match = false
+        break
+      }
+    }
+    if (match) {
+      const trimmed = nTok.slice(len).join(' ')
+      return trimmed ? p + ' ' + trimmed : p
+    }
+  }
+  return p + ' ' + n
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AIChat() {
   const t = useT()
@@ -436,10 +467,17 @@ export default function AIChat() {
         // accumulated buffer so the text carries forward when we
         // restart, then reset the per-session refs so the next SR's
         // first onresult fire doesn't double the old finals.
-        if (sttRef.current) {
-          accumulatedSrRef.current = (accumulatedSrRef.current
-            ? accumulatedSrRef.current + ' ' + sttRef.current
-            : sttRef.current)
+        //
+        // De-overlap: Android Chrome SR re-recognises the trailing
+        // audio of the previous utterance on restart, so the new
+        // session's first chunk routinely starts with words already
+        // sitting at the tail of accumulated. Trim the longest token
+        // prefix of newChunk that matches accumulated's suffix.
+        const newChunk = sttRef.current.trim()
+        if (newChunk) {
+          accumulatedSrRef.current = joinDeduped(
+            accumulatedSrRef.current, newChunk
+          )
         }
         sttRef.current = ''
         interimRef.current = ''
