@@ -257,28 +257,43 @@ export default function AIChat() {
     }
   }, [])
 
-  // Live transcript via the browser's SpeechRecognition API. Runs in
-  // parallel with MediaRecorder — SR is the live preview (interim results
-  // stream while the user speaks), MediaRecorder is the authoritative
-  // capture for Whisper. SR has spotty browser coverage (Chrome / Edge /
-  // recent Safari yes; Firefox no), spotty Hebrew accuracy, and zero
-  // back-pressure handling — we lean on it for visual feedback only and
-  // never trust its output as the final transcript. If it's missing, the
-  // PTT flow degrades gracefully to the no-preview behaviour.
+  // Hold-to-talk dictation via the browser's SpeechRecognition API.
+  // When supported, SR is the PRIMARY path — words land in the chat input
+  // field live as the user speaks, like Apple/Google dictation. The user
+  // sees what they're saying as they say it, and release sends. No
+  // "Listening… release to send" pill, because there's nothing to wait
+  // for: the text is already on screen.
+  //
+  // SR.continuous=true + interimResults=true so we keep getting interims
+  // across pauses; SR auto-ends on long silence and we restart while the
+  // user is still holding (intentRef stays true).
+  //
+  // MediaRecorder runs in parallel as a backup. If SR delivered nothing
+  // by release (unsupported browser, error, or just no result), we send
+  // the audio blob to Whisper instead. Worst case is the previous flow,
+  // best case is sub-second feedback.
+  //
+  // sttRef holds the accumulated final transcript chunks; interimRef
+  // holds the not-yet-final partial. Together they form the running
+  // input value while the user is dictating.
+  const sttRef         = useRef('')   // accumulated FINAL transcripts so far
+  const interimRef     = useRef('')   // current INTERIM (not yet final)
+  const srStartedRef   = useRef(false)
+  const composeBuffer  = () => (sttRef.current + ' ' + interimRef.current).trim()
+
   const startLivePreview = () => {
     const SR = typeof window !== 'undefined'
       && (window.SpeechRecognition || window.webkitSpeechRecognition)
-    if (!SR) return
-    // SR doesn't auto-detect. We pick the most likely spoken language by
-    // checking BOTH the UI lang (user-picked) AND the OS lang
-    // (navigator.language) — covers the common case where the user has an
-    // Israeli device but kept the Ziggy UI in English, and would still
-    // speak Hebrew. Wrong-lang utterances still get captured by Whisper
-    // for the final transcript; the preview just won't be useful for them.
+    if (!SR) return false
+    // SR doesn't auto-detect. Pick the most likely spoken language by
+    // checking the UI lang (user-picked) AND the OS lang
+    // (navigator.language). Common case: Israeli user, OS in Hebrew,
+    // Ziggy UI in English — they speak Hebrew, so we use he-IL.
     const osHebrew = typeof navigator !== 'undefined'
       && (navigator.language || '').toLowerCase().startsWith('he')
     const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
-    let started = false
+    sttRef.current = ''
+    interimRef.current = ''
     const mkRec = () => {
       const rec = new SR()
       rec.continuous = true
@@ -287,24 +302,34 @@ export default function AIChat() {
       rec.onresult = (e) => {
         let interim = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          interim += e.results[i][0].transcript
+          const r = e.results[i]
+          const piece = r[0]?.transcript || ''
+          if (r.isFinal) {
+            sttRef.current = (sttRef.current + ' ' + piece).trim()
+          } else {
+            interim += piece
+          }
         }
-        setLivePreview(interim.trim())
+        interimRef.current = interim
+        // Mirror the running transcript into the input field so the user
+        // sees their words appear live. This is the entire point of
+        // SR-primary — no separate pill, no "Listening" placeholder.
+        setInput(composeBuffer())
       }
       rec.onerror = (e) => {
-        // 'no-speech' fires constantly on silence and is harmless. Everything
-        // else (not-allowed, audio-capture, network, aborted) gets logged so
-        // we can debug if the preview never lights up on a given device.
+        // 'no-speech' fires on silence and is harmless. Everything else
+        // (not-allowed, audio-capture, network, aborted) logs so we can
+        // diagnose if dictation never lights up on a given device.
         if (e?.error && e.error !== 'no-speech') {
           // eslint-disable-next-line no-console
           console.warn('[SR] error', e.error)
         }
       }
       rec.onend = () => {
-        // SR auto-ends after ~3–5 s of silence even with continuous=true on
-        // Chrome — if the user is still holding the mic, restart so the
-        // preview keeps updating across pauses. We stop explicitly in
-        // stopLivePreview, which clears speechRef so this no-ops.
+        // SR auto-ends after ~3–5 s of silence on Chrome even with
+        // continuous=true. While the user is still holding, restart so
+        // dictation keeps flowing across pauses. stopLivePreview() clears
+        // speechRef so this no-ops on explicit stop.
         if (intentRef.current && speechRef.current === rec) {
           try {
             const next = mkRec()
@@ -319,15 +344,15 @@ export default function AIChat() {
       const rec = mkRec()
       speechRef.current = rec
       rec.start()
-      started = true
+      srStartedRef.current = true
+      return true
     } catch (e) {
-      // SR can throw 'not allowed' or 'aborted' synchronously on some
-      // browsers if a previous instance hasn't fully released. Best effort.
       // eslint-disable-next-line no-console
       console.warn('[SR] start failed', e?.message || e)
       speechRef.current = null
+      srStartedRef.current = false
+      return false
     }
-    return started
   }
   const stopLivePreview = () => {
     const rec = speechRef.current
@@ -596,11 +621,15 @@ export default function AIChat() {
     // Subtle haptic on press (Android PWA / Capacitor). iOS Safari ignores
     // — that's fine, no fallback needed.
     try { navigator.vibrate?.(10) } catch {}
-    setLivePreview('')
+    setInput('')                 // dictation will fill this live
+    sttRef.current = ''
+    interimRef.current = ''
+    srStartedRef.current = false
     setRecording(true); setOrbState('listening')
-    // Live preview runs in parallel with the MediaRecorder capture below.
-    // Whisper still owns the authoritative transcript; SR is the moment-to-
-    // moment 'you're being heard' UI. Safe to fire-and-forget.
+    // SR is the primary text-capture path on supported browsers; words
+    // land in `input` as the user speaks. MediaRecorder still runs as
+    // backup so we can fall through to Whisper on release if SR returned
+    // nothing (Firefox / iOS PWA / mic-permission edge cases).
     startLivePreview()
 
     let stream
@@ -627,38 +656,50 @@ export default function AIChat() {
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop())
       mediaRef.current = null
-      // Stop SR before showing 'transcribing' so we don't pile up interim
-      // results from the trailing silence after the user releases.
+      // Stop SR right after recording stops so we capture any final result
+      // that was still in flight, then move on to send.
       stopLivePreview()
       setRecording(false)
 
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
       // Misfire guard: too-quick taps. Empirically anything under ~1.5 KB of
       // webm/opus is well under ~150 ms of audio — almost certainly a
-      // mis-tap and the backend would just return an empty transcript
-      // (and burn a Whisper API call). Silently drop.
-      if (blob.size < 1500) { setOrbState('idle'); setLivePreview(''); return }
-
-      // Two phases, so the user's words land on screen the moment Whisper
-      // returns — *before* the chat-reply pipeline runs:
-      //   Phase 1: /api/voice/transcribe → addMessage('user', transcript)
-      //   Phase 2: sendChat(transcript)   → addMessage('assistant', reply)
-      // Restores the old "release → I see what I said" feel that the
-      // client-side SR path used to give us.
-      setOrbState('transcribing')
-      let transcription = ''
-      let detectedLang = 'en'
-      try {
-        const tr = await sendVoiceTranscribe(blob)
-        transcription = (tr?.transcription || '').trim()
-        if (tr?.lang === 'he' || tr?.lang === 'en') detectedLang = tr.lang
-      } catch (e) {
-        addToast(e?.message || t('chat.transcribeFailed'), 'error')
+      // mis-tap. Drop both blob and any partial SR text.
+      if (blob.size < 1500) {
+        setInput('')
         setOrbState('idle')
-        setLivePreview('')
         return
       }
-      if (!transcription) { setOrbState('idle'); setLivePreview(''); return }
+
+      // SR primary path: if dictation gave us text, use it directly and
+      // skip Whisper entirely. Saves ~1–2 s + a Whisper API call. The
+      // text is already on screen in the input field, so the user has
+      // already seen what they said.
+      const dictated = composeBuffer()
+      let transcription = ''
+      let detectedLang = 'en'
+      if (srStartedRef.current && dictated) {
+        transcription = dictated
+        // SR locale is the strongest hint for the reply lang here.
+        detectedLang = (speechRef.current?.lang || '').startsWith('he')
+          ? 'he'
+          : ((lang === 'he') ? 'he' : 'en')
+      } else {
+        // Fallback: SR unavailable or returned nothing. Send the audio
+        // through Whisper like the old flow.
+        setOrbState('transcribing')
+        try {
+          const tr = await sendVoiceTranscribe(blob)
+          transcription = (tr?.transcription || '').trim()
+          if (tr?.lang === 'he' || tr?.lang === 'en') detectedLang = tr.lang
+        } catch (e) {
+          addToast(e?.message || t('chat.transcribeFailed'), 'error')
+          setOrbState('idle')
+          setInput('')
+          return
+        }
+      }
+      if (!transcription) { setOrbState('idle'); setInput(''); return }
 
       // History = previous messages only. Backend appends transcription as
       // the final user turn (matches the text-input handleSend flow).
@@ -666,9 +707,10 @@ export default function AIChat() {
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text,
       }))
-      // Whisper has the authoritative transcript — drop the SR preview the
-      // moment we have it so the user message renders the real text.
-      setLivePreview('')
+      // Promote the dictation buffer to a real user message and clear
+      // the input — the input is the dictation surface, not a permanent
+      // home for the text.
+      setInput('')
       addMessage('user', transcription)
 
       setThinking(true); setOrbState('thinking')
@@ -825,7 +867,10 @@ export default function AIChat() {
               the pill so the user sees their words appear in real time. We
               keep the preview visible through 'transcribing' too so the text
               doesn't flash off in the gap between release and Whisper return. */}
-          {(listening || busy) && (
+          {/* While dictating (listening), no pill — the input field IS the
+              feedback as words land in it. Only show status when actually
+              busy with a post-release stage (transcribing/thinking/speaking). */}
+          {busy && !listening && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 10px', borderRadius: 999,
@@ -833,30 +878,16 @@ export default function AIChat() {
               fontSize: 11, color: 'var(--ink-mute)',
               maxWidth: '70vw',
             }}>
-              {listening && (
-                <>
-                  <VoiceWave active size={14} />
-                  <span
-                    style={{ overflow: 'hidden', textOverflow: 'ellipsis',
-                             whiteSpace: 'nowrap', minWidth: 0 }}
-                    dir="auto"
-                  >
-                    {livePreview || t('chat.listening')}
-                  </span>
-                </>
-              )}
-              {busy && !listening && (
-                <span
-                  style={{ fontFamily: '"IBM Plex Mono", monospace',
-                           overflow: 'hidden', textOverflow: 'ellipsis',
-                           whiteSpace: 'nowrap', minWidth: 0 }}
-                  dir="auto"
-                >
-                  {transcribing
-                    ? (livePreview || t('chat.transcribing'))
-                    : orbState === 'thinking' ? t('chat.thinking') : t('chat.speaking')}
-                </span>
-              )}
+              <span
+                style={{ fontFamily: '"IBM Plex Mono", monospace',
+                         overflow: 'hidden', textOverflow: 'ellipsis',
+                         whiteSpace: 'nowrap', minWidth: 0 }}
+                dir="auto"
+              >
+                {transcribing ? t('chat.transcribing')
+                  : orbState === 'thinking' ? t('chat.thinking')
+                  : t('chat.speaking')}
+              </span>
             </span>
           )}
           {hasMessages && (
@@ -1045,24 +1076,31 @@ export default function AIChat() {
               }}
             />
           )}
+          {/* Mic button has two modes: PTT (no input text) or Send (input
+              has text). While the user is HOLDING for dictation the input
+              fills with their words, which would normally swap the mode to
+              Send mid-hold — that drops the pointerup handler and breaks
+              release. `recording` keeps us in PTT mode for the duration of
+              the hold so the release handler fires reliably. */}
+          {(() => { const ptt = recording || !input.trim(); return (
           <motion.button
             type="button"
-            onClick={input.trim() ? () => handleSend() : undefined}
-            onPointerDown={!input.trim() ? handleMicPointerDown : undefined}
-            onPointerUp={!input.trim() ? handleMicPointerEnd : undefined}
-            onPointerCancel={!input.trim() ? handleMicPointerEnd : undefined}
-            onContextMenu={!input.trim() ? (e) => e.preventDefault() : undefined}
-            aria-label={input.trim() ? t('chat.sendMessage') : (recording ? t('chat.releaseToSendAria') : t('chat.holdToSpeak'))}
-            title={input.trim() ? t('chat.sendTitle') : t('chat.holdToSpeakTitle')}
-            whileTap={input.trim() ? { scale: 0.9 } : undefined}
+            onClick={ptt ? undefined : () => handleSend()}
+            onPointerDown={ptt ? handleMicPointerDown : undefined}
+            onPointerUp={ptt ? handleMicPointerEnd : undefined}
+            onPointerCancel={ptt ? handleMicPointerEnd : undefined}
+            onContextMenu={ptt ? (e) => e.preventDefault() : undefined}
+            aria-label={ptt ? (recording ? t('chat.releaseToSendAria') : t('chat.holdToSpeak')) : t('chat.sendMessage')}
+            title={ptt ? t('chat.holdToSpeakTitle') : t('chat.sendTitle')}
+            whileTap={ptt ? undefined : { scale: 0.9 }}
             style={{
               position: 'relative', zIndex: 1,
               width: 44, height: 44, borderRadius: '50%',
-              background: input.trim()
-                ? 'var(--ink)'
-                : recording
-                  ? 'color-mix(in srgb, var(--accent) 80%, var(--ink))'
-                  : 'var(--accent)',
+              background: ptt
+                ? (recording
+                    ? 'color-mix(in srgb, var(--accent) 80%, var(--ink))'
+                    : 'var(--accent)')
+                : 'var(--ink)',
               color: '#fff',
               border: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1076,14 +1114,15 @@ export default function AIChat() {
               transition: 'transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease',
             }}
           >
-            {input.trim() ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            ) : recording ? (
+            {recording ? (
               <VoiceWave active size={18} />
+            ) : input.trim() ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             ) : (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
             )}
           </motion.button>
+          )})()}
         </div>
       </div>
     </div>
