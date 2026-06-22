@@ -95,7 +95,12 @@ async function _healthCheck() {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), HEALTH_CHECK_TIMEOUT_MS)
   try {
-    const res = await fetch('/api/health', { signal: ctrl.signal })
+    // /api/mobile/health (not /api/health): the latter requires an
+    // authenticated dashboard session — we're pre-login here, so it
+    // 401s and the OTA would refuse to download forever. The /mobile/
+    // variant is the purpose-built public liveness ping (see
+    // mobile_router.py:health), returns `{ ok: true, ... }`.
+    const res = await fetch('/api/mobile/health', { signal: ctrl.signal })
     return res.ok
   } catch (e) {
     warn('health fetch threw:', String(e))
