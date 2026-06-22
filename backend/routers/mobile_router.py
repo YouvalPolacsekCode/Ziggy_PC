@@ -447,9 +447,16 @@ async def _ensure_bundle(sha: str) -> Optional[_PathLib]:
 
 async def _version_payload(request: Request) -> dict:
     sha = _os.getenv("ZIGGY_GIT_SHA", "dev")
-    base = str(request.base_url).rstrip("/")
     if not _frontend_dist_path().is_dir():
         return {"version": sha, "url": None, "available": False}
+    # request.base_url uses the raw scheme uvicorn saw on the socket — Cloudflare
+    # Tunnel terminates HTTPS and forwards http:// to the container, so without
+    # --proxy-headers the URL we hand back is http://, which Android blocks under
+    # the default cleartext-traffic policy. Honor X-Forwarded-Proto / -Host
+    # explicitly so the bundle download stays HTTPS.
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host  = request.headers.get("x-forwarded-host",  request.url.netloc)
+    base  = f"{proto}://{host}"
     return {
         "version": sha,
         "url": f"{base}/api/mobile/bundles/{sha}.zip",
