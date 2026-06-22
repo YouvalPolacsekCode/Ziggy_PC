@@ -45,7 +45,7 @@
 # The value itself isn't read at runtime — it just makes this file's content
 # differ from a previous deploy so the next git pull notices a real change.
 # v2 (2026-06-22): switch to docker compose build --no-cache --pull
-$_SchemaVersion = "v2"
+$_SchemaVersion = "v3-reset-hard"
 $ErrorActionPreference = "Continue"
 
 $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
