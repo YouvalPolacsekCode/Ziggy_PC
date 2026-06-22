@@ -445,24 +445,9 @@ async def _ensure_bundle(sha: str) -> Optional[_PathLib]:
         return out
 
 
-@router.get("/version")
-async def mobile_bundle_version(request: Request, device: dict = Depends(get_current_device)):
-    """Current frontend bundle pointer for @capgo/capacitor-updater.
-
-    Response shape matches the plugin's LatestVersion interface — `version`
-    is the identifier the plugin compares against what it has on disk, `url`
-    is what it downloads when they differ.
-
-    Device-authed so unpaired clients can't probe deployment state. The
-    bundle endpoint itself is public (the SHA in the URL is the credential).
-    """
+async def _version_payload(request: Request) -> dict:
     sha = _os.getenv("ZIGGY_GIT_SHA", "dev")
-    # Mirror back the host the request came in on (same pattern as the pair
-    # endpoint). Lets a single backend serve multiple homes / domains
-    # without hardcoding app.ziggy-home.com.
     base = str(request.base_url).rstrip("/")
-    # Probe (don't build) — if no dist is present we explicitly tell the
-    # client "no bundle" rather than handing out a URL that would 404.
     if not _frontend_dist_path().is_dir():
         return {"version": sha, "url": None, "available": False}
     return {
@@ -470,6 +455,27 @@ async def mobile_bundle_version(request: Request, device: dict = Depends(get_cur
         "url": f"{base}/api/mobile/bundles/{sha}.zip",
         "available": True,
     }
+
+
+# PUBLIC ENDPOINTS — reviewed in Phase 2 OTA change on 2026-06-22.
+# Justification: returns only the public deployment SHA + a public bundle
+# download URL. The same SHA is already exposed on /api/version (also
+# public). No state, no auth-sensitive info. Made public after observing
+# that @capgo/capacitor-updater calls /version BEFORE the user logs in,
+# so a device-authed endpoint would deadlock the OTA flow on first install.
+@router.get("/version")
+@router.post("/version")
+async def mobile_bundle_version(request: Request):
+    """Current frontend bundle pointer for @capgo/capacitor-updater.
+
+    The plugin POSTs device info (platform, app_id, version_*) in the body;
+    we don't use it server-side but accept both GET and POST so any
+    capacitor-updater version line works. Response shape matches the
+    plugin's LatestVersion interface — `version` is the identifier the
+    plugin compares against what it has on disk, `url` is what it
+    downloads when they differ.
+    """
+    return await _version_payload(request)
 
 
 # PUBLIC ENDPOINT — reviewed in this Phase 2 OTA change on 2026-06-22.
