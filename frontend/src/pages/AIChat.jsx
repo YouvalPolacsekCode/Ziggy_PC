@@ -404,9 +404,15 @@ export default function AIChat() {
   const sttRef         = useRef('')
   const interimRef     = useRef('')
   const srStartedRef   = useRef(false)
-  const composeBuffer  = () => (
-    accumulatedSrRef.current + ' ' + sttRef.current + ' ' + interimRef.current
-  ).replace(/\s+/g, ' ').trim()
+  // Triple-layer overlap dedup: accumulated ⨁ current-final ⨁ interim.
+  // Each pair runs through joinDeduped so any token overlap at the join
+  // gets trimmed — final-vs-interim was the missing case after the
+  // session-boundary fix landed (Android Chrome re-emits interims that
+  // start with the same words that just became final).
+  const composeBuffer = () => joinDeduped(
+    joinDeduped(accumulatedSrRef.current, sttRef.current),
+    interimRef.current
+  )
 
   const startLivePreview = () => {
     const SR = typeof window !== 'undefined'
@@ -440,8 +446,15 @@ export default function AIChat() {
           const r = e.results[i]
           const piece = (r[0]?.transcript || '').trim()
           if (!piece) continue
-          if (r.isFinal) final = final ? final + ' ' + piece : piece
-          else interim += (interim ? ' ' : '') + piece
+          // joinDeduped per entry. Android Chrome packs duplicate
+          // entries into the results array within a single fire — e.g.
+          // [{"let's see how", final}, {"well", final},
+          //  {"let's see how well", final}] — and a blind concat
+          // produces "let's see how well let's see how well". This
+          // trims the overlap each time, so the third entry collapses
+          // into the running text instead of repeating it.
+          if (r.isFinal) final = final ? joinDeduped(final, piece) : piece
+          else interim = interim ? joinDeduped(interim, piece) : piece
         }
         sttRef.current = final
         interimRef.current = interim
