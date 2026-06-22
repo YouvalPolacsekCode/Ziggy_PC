@@ -239,12 +239,20 @@ if ($GitSha -ne $RemoteSha) {
             exit 1
         }
     } else {
-        Write-Log ("Pulling $GitSha -> $RemoteSha")
-        $pullOut = & git pull --ff-only origin main 2>&1
-        $pullOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
-        $pullOut | ForEach-Object { Write-Host $_.ToString() }
+        # `git pull --ff-only` moves HEAD but in the wild has been observed
+        # to leave the working tree out of sync (stash/lock interactions on
+        # Windows). /api/version then reports the new SHA but the BUILD
+        # uses stale source files, producing the previous bundle and making
+        # "is my push deployed?" answer wrong for any modified file.
+        # `fetch + reset --hard` is unambiguous: HEAD AND working tree both
+        # land on origin/main, every tracked file regenerated from the
+        # commit. Untracked files are preserved by reset.
+        Write-Log ("Force-syncing $GitSha -> $RemoteSha (fetch + reset --hard origin/main)")
+        $resetOut = & git reset --hard origin/main 2>&1
+        $resetOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
+        $resetOut | ForEach-Object { Write-Host $_.ToString() }
         if ($LASTEXITCODE -ne 0) {
-            Write-Log "ABORT: git pull --ff-only failed (non-fast-forward?). See $DeployVerbose"
+            Write-Log "ABORT: git reset --hard origin/main failed. See $DeployVerbose"
             exit 1
         }
     }
