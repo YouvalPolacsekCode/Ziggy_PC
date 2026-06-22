@@ -9,6 +9,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { WebSocketProvider } from './hooks/useWebSocket'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { initOtaWatchdog } from './lib/nativeOtaWatchdog'
 import './index.css'
 
 // In dev mode, unregister any stale SWs and wipe caches so they don't serve
@@ -40,3 +41,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </ErrorBoundary>
   </React.StrictMode>
 )
+
+// Tell @capgo/capacitor-updater the new bundle booted successfully — must
+// happen within appReadyTimeout (10s in capacitor.config.ts) on the very
+// first launch after a hot-swap, otherwise the plugin reverts to the
+// previous bundle as broken. PWA / non-native is a no-op.
+initOtaWatchdog()
