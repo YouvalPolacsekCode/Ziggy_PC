@@ -157,6 +157,47 @@ function Message({ msg }) {
 }
 
 // ── Thinking bubble ───────────────────────────────────────────────────────────
+// Live-dictation bubble — same shape as a sent user bubble, but ephemeral.
+// Shows the SR interim transcript while the user holds the mic and
+// disappears the moment the recording stops (the parent promotes the
+// text to a real Message). A subtle pulsing dot indicates "still
+// listening, words coming" so an empty bubble doesn't look broken.
+function LiveUserBubble({ text }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.12 }}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+        gap: 4, maxWidth: '88%', alignSelf: 'flex-end',
+      }}
+    >
+      <div
+        dir="auto"
+        style={{
+          padding: '10px 14px', borderRadius: 18, borderEndEndRadius: 4,
+          background: 'var(--ink)', color: 'var(--bg)',
+          fontSize: 14.5, lineHeight: 1.45,
+          textAlign: 'start', unicodeBidi: 'plaintext',
+          minWidth: 36,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}
+      >
+        {text
+          ? <span style={{ opacity: 0.92 }}>{text}</span>
+          : <motion.span
+              style={{ width: 6, height: 6, borderRadius: '50%',
+                       background: 'var(--bg)', display: 'inline-block' }}
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 0.9, repeat: Infinity }}
+            />}
+      </div>
+    </motion.div>
+  )
+}
+
 function ThinkingBubble() {
   const t = useT()
   return (
@@ -209,11 +250,12 @@ export default function AIChat() {
   const [orbState,  setOrbState]  = useState('idle')
   const [thinking,  setThinking]  = useState(false)
   const [recording, setRecording] = useState(false)
-  // Live interim transcript from the browser's SpeechRecognition while the
-  // user holds the mic. Whisper still does the authoritative pass after
-  // release — this is just a 'you're being heard' visualization, equivalent
-  // to the iOS dictation strip. Empty when no SR available or when idle.
-  const [livePreview, setLivePreview] = useState('')
+  // Live transcript while the user holds the mic. Rendered as a pending
+  // user chat bubble that fills word-by-word — NOT into the typed-text
+  // input field, because (a) typing and dictating shouldn't fight over
+  // the same surface, (b) seeing your words land in the conversation
+  // matches the "I'm being heard" mental model of iOS Messages dictation.
+  const [liveTranscript, setLiveTranscript] = useState('')
 
   const mediaRef       = useRef(null)
   const chunksRef      = useRef([])
@@ -311,10 +353,12 @@ export default function AIChat() {
           }
         }
         interimRef.current = interim
-        // Mirror the running transcript into the input field so the user
-        // sees their words appear live. This is the entire point of
-        // SR-primary — no separate pill, no "Listening" placeholder.
-        setInput(composeBuffer())
+        // Mirror the running transcript into the live-bubble state — the
+        // chat renders it as a pending user message that fills word-by-word
+        // until release. Input field stays untouched so the user can still
+        // type something else AND the mic button doesn't swap to Send
+        // mid-hold (which happens when input has text).
+        setLiveTranscript(composeBuffer())
       }
       rec.onerror = (e) => {
         // 'no-speech' fires on silence and is harmless. Everything else
@@ -621,7 +665,10 @@ export default function AIChat() {
     // Subtle haptic on press (Android PWA / Capacitor). iOS Safari ignores
     // — that's fine, no fallback needed.
     try { navigator.vibrate?.(10) } catch {}
-    setInput('')                 // dictation will fill this live
+    // Live transcript renders in a pending chat bubble — input stays as
+    // whatever the user had typed (if anything) so dictation doesn't
+    // clobber it.
+    setLiveTranscript('')
     sttRef.current = ''
     interimRef.current = ''
     srStartedRef.current = false
@@ -666,14 +713,14 @@ export default function AIChat() {
       // webm/opus is well under ~150 ms of audio — almost certainly a
       // mis-tap. Drop both blob and any partial SR text.
       if (blob.size < 1500) {
-        setInput('')
+        setLiveTranscript('')
         setOrbState('idle')
         return
       }
 
       // SR primary path: if dictation gave us text, use it directly and
       // skip Whisper entirely. Saves ~1–2 s + a Whisper API call. The
-      // text is already on screen in the input field, so the user has
+      // text is already on screen in the live bubble, so the user has
       // already seen what they said.
       const dictated = composeBuffer()
       let transcription = ''
@@ -695,11 +742,11 @@ export default function AIChat() {
         } catch (e) {
           addToast(e?.message || t('chat.transcribeFailed'), 'error')
           setOrbState('idle')
-          setInput('')
+          setLiveTranscript('')
           return
         }
       }
-      if (!transcription) { setOrbState('idle'); setInput(''); return }
+      if (!transcription) { setOrbState('idle'); setLiveTranscript(''); return }
 
       // History = previous messages only. Backend appends transcription as
       // the final user turn (matches the text-input handleSend flow).
@@ -707,10 +754,9 @@ export default function AIChat() {
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text,
       }))
-      // Promote the dictation buffer to a real user message and clear
-      // the input — the input is the dictation surface, not a permanent
-      // home for the text.
-      setInput('')
+      // Promote the live transcript bubble to a real persisted user
+      // message and clear the live-bubble state.
+      setLiveTranscript('')
       addMessage('user', transcription)
 
       setThinking(true); setOrbState('thinking')
@@ -862,15 +908,11 @@ export default function AIChat() {
             </button>
           )}
 
-          {/* Hold-to-talk status — only while actively recording/processing.
-              When SR delivers an interim transcript, the live text takes over
-              the pill so the user sees their words appear in real time. We
-              keep the preview visible through 'transcribing' too so the text
-              doesn't flash off in the gap between release and Whisper return. */}
-          {/* While dictating (listening), no pill — the input field IS the
-              feedback as words land in it. Only show status when actually
-              busy with a post-release stage (transcribing/thinking/speaking). */}
-          {busy && !listening && (
+          {/* Top status pill: shows during listening AND post-release stages.
+              The dictation itself lives in the LiveUserBubble in the chat;
+              this pill is just the steady "what stage am I in" indicator
+              (Listening → Transcribing → Thinking → Speaking). */}
+          {(listening || busy) && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 10px', borderRadius: 999,
@@ -878,13 +920,15 @@ export default function AIChat() {
               fontSize: 11, color: 'var(--ink-mute)',
               maxWidth: '70vw',
             }}>
+              {listening && <VoiceWave active size={14} />}
               <span
                 style={{ fontFamily: '"IBM Plex Mono", monospace',
                          overflow: 'hidden', textOverflow: 'ellipsis',
                          whiteSpace: 'nowrap', minWidth: 0 }}
                 dir="auto"
               >
-                {transcribing ? t('chat.transcribing')
+                {listening ? t('chat.listening')
+                  : transcribing ? t('chat.transcribing')
                   : orbState === 'thinking' ? t('chat.thinking')
                   : t('chat.speaking')}
               </span>
@@ -974,12 +1018,19 @@ export default function AIChat() {
       </AnimatePresence>
 
       {/* ── Messages ── */}
-      {hasMessages && (
+      {(hasMessages || recording) && (
         <div
           className="scrollbar-thin"
           style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}
         >
           {messages.map(msg => <Message key={msg.id} msg={msg} />)}
+          {/* Pending live-dictation bubble: rendered as a normal user
+              bubble that fills word-by-word while the mic is held. On
+              release we promote it to a real persisted message and clear
+              this state. Empty during the brief delay before SR delivers
+              its first interim result — show a single bouncing dot then
+              so the user sees acknowledgement of the hold. */}
+          {recording && <LiveUserBubble text={liveTranscript} />}
           {thinking && <ThinkingBubble />}
           <div ref={scrollRef} />
         </div>
@@ -1004,30 +1055,10 @@ export default function AIChat() {
         </div>
       )}
 
-      {/* ── Hold-to-talk banner — only visible while recording ── */}
-      <AnimatePresence>
-        {recording && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.15 }}
-            style={{
-              flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: '8px 16px',
-              borderTop: '0.5px solid color-mix(in srgb, var(--accent) 35%, var(--line))',
-              background: 'color-mix(in srgb, var(--accent) 10%, var(--surface))',
-              color: 'var(--accent)',
-              fontSize: 12, fontWeight: 500, letterSpacing: '0.01em',
-            }}
-            aria-live="polite"
-          >
-            <VoiceWave active size={14} />
-            <span>{t('chat.releaseToSend')}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Hold-to-talk banner removed in favor of:
+          - the LiveUserBubble in the chat which shows actual dictation
+          - the small "Listening…" chip in the header status area
+          The red "release to send" banner duplicated both and felt loud. */}
 
       {/* ── Composer ── */}
       <div style={{
@@ -1077,12 +1108,10 @@ export default function AIChat() {
             />
           )}
           {/* Mic button has two modes: PTT (no input text) or Send (input
-              has text). While the user is HOLDING for dictation the input
-              fills with their words, which would normally swap the mode to
-              Send mid-hold — that drops the pointerup handler and breaks
-              release. `recording` keeps us in PTT mode for the duration of
-              the hold so the release handler fires reliably. */}
-          {(() => { const ptt = recording || !input.trim(); return (
+              has text). Dictation now lands in the LiveUserBubble in the
+              chat, not the input — so the input stays empty during the
+              hold and the button stays in PTT mode naturally. */}
+          {(() => { const ptt = !input.trim(); return (
           <motion.button
             type="button"
             onClick={ptt ? undefined : () => handleSend()}
