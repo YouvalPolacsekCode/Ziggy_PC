@@ -5,17 +5,21 @@ WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps
 COPY frontend/ ./
-# Cache-bust: BuildKit was hashing `COPY frontend/ ./` and concluding the
-# layer was unchanged across commits even when AIChat / Settings had
-# obviously different bytes. Result: silently stale dist/ in the final
-# image while /api/version reported the new SHA, which made "is my push
-# deployed?" answer wrong. Plumbing the same GIT_SHA arg the final stage
-# uses into a no-op ENV here forces the next layer's cache key to change
-# on every commit, so `npm run build` is guaranteed to rerun.
+# Cache-bust: BuildKit was concluding the `RUN npm run build` layer was
+# unchanged across commits even when AIChat / Settings had obviously
+# different bytes — `COPY frontend/ ./` was hashing identically when no
+# layer above it had changed (npm install layer pinned by lockfile),
+# and the subsequent RUN didn't reference any per-commit input.
+# Result: silently stale dist/ in the final image while /api/version
+# reported the new SHA. Wrong answer to "is my push deployed?".
+#
+# BuildKit's cache key for a RUN step includes the *values* of ARGs the
+# RUN actually references. So we declare ARG GIT_SHA inside this stage
+# AND reference it in the RUN command — every commit changes the SHA,
+# which changes the cache key, which forces `npm run build` to rerun.
+# (ENV alone doesn't do it: the RUN has to read the ARG.)
 ARG GIT_SHA=dev
-ENV FRONTEND_BUILD_SHA=$GIT_SHA
-# Vite production build — output goes to dist/
-RUN npm run build
+RUN echo "frontend build for $GIT_SHA" && npm run build
 
 # ── Stage 2: Python backend with embedded frontend ────────────────────────────
 # Python 3.12 matches the Mac dev venv. Required: aioswitcher>=6.0 and
