@@ -293,6 +293,15 @@ export default function AIChat() {
   // SpeechRecognition handle — paired with MediaRecorder in startRecording,
   // stopped in onstop. Stored in a ref because nothing renders from it.
   const speechRef      = useRef(null)
+  // Capacitor native SpeechRecognition listener handles. The native plugin
+  // (Android Speech Recognizer / iOS SFSpeechRecognizer) is the preferred
+  // mobile path — lower start latency, more reliable interim delivery
+  // than Web SR through Capacitor's WebView. These hold the
+  // PluginListenerHandle returned by addListener so we can detach on
+  // release / unmount without leaking events.
+  const capSrPartialRef = useRef(null)
+  const capSrErrorRef   = useRef(null)
+  const capSrActiveRef  = useRef(false)
   const scrollRef      = useRef(null)
   const inputRef       = useRef(null)
   const sentPrefillRef = useRef(false)
@@ -361,6 +370,11 @@ export default function AIChat() {
     try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
     mediaRef.current = null
     stopLivePreview()
+    // Fire-and-forget: stopCapacitorSr is async but resetChat is sync
+    // for snappier feedback. Worst case is the listener detaches a
+    // moment later, which is harmless because capSrActiveRef is set
+    // false synchronously by the call.
+    stopCapacitorSr()
     stopTtsPlayback()
     accumulatedSrRef.current = ''
     sttRef.current = ''
@@ -391,6 +405,7 @@ export default function AIChat() {
       try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
       mediaRef.current = null
       stopLivePreview()
+      stopCapacitorSr()
       stopTtsPlayback()
     }
   }, [])
@@ -870,6 +885,76 @@ export default function AIChat() {
     return /android|iphone|ipad|ipod|capacitor/i.test(ua)
   }
 
+  // Native SR via the Capacitor plugin. Available ONLY in the mobile app
+  // (the plugin's native Android/iOS code is bundled into the APK / IPA).
+  // Returns null in browser/PWA, where we fall back to Web SR. Accessed
+  // via window.Capacitor.Plugins so the frontend doesn't need the
+  // @capacitor-community/speech-recognition npm dep in its bundle.
+  const getCapacitorSR = () => {
+    if (typeof window === 'undefined') return null
+    return window.Capacitor?.Plugins?.SpeechRecognition || null
+  }
+
+  const startCapacitorSr = async () => {
+    const capSR = getCapacitorSR()
+    if (!capSR) return false
+    try {
+      // Permission gate. If never granted, request once. If user denies,
+      // bail with the standard "mic denied" toast and let the caller
+      // fall back to the Web SR path (which may also fail, but that's
+      // covered).
+      const cur = await capSR.checkPermissions()
+      if (cur?.speechRecognition !== 'granted') {
+        const req = await capSR.requestPermissions()
+        if (req?.speechRecognition !== 'granted') return false
+      }
+      const osHebrew = typeof navigator !== 'undefined'
+        && (navigator.language || '').toLowerCase().startsWith('he')
+      const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
+      // Wire partial-result listener BEFORE start so we don't miss the
+      // first emission. partialResults.matches[0] is the highest-
+      // confidence transcript; that's the one we render.
+      capSrPartialRef.current = await capSR.addListener('partialResults', (data) => {
+        if (!data?.matches?.length) return
+        sttRef.current = data.matches[0] || ''
+        setLiveTranscript(composeBuffer())
+      })
+      capSrErrorRef.current = await capSR.addListener('listeningState', (data) => {
+        // 'stopped' fires when the engine gives up (silence / error).
+        // Stay quiet — the explicit release path handles cleanup.
+        if (data?.status === 'stopped') capSrActiveRef.current = false
+      })
+      await capSR.start({
+        language: srLang,
+        maxResults: 1,
+        partialResults: true,
+        popup: false,
+      })
+      capSrActiveRef.current = true
+      srStartedRef.current = true
+      return true
+    } catch {
+      // Plugin failure → caller falls back to Web SR.
+      return false
+    }
+  }
+
+  const stopCapacitorSr = async () => {
+    const capSR = getCapacitorSR()
+    if (capSrPartialRef.current) {
+      try { await capSrPartialRef.current.remove() } catch {}
+      capSrPartialRef.current = null
+    }
+    if (capSrErrorRef.current) {
+      try { await capSrErrorRef.current.remove() } catch {}
+      capSrErrorRef.current = null
+    }
+    if (capSR && capSrActiveRef.current) {
+      try { await capSR.stop() } catch {}
+    }
+    capSrActiveRef.current = false
+  }
+
   const startRecording = async () => {
     if (intentRef.current) return  // already holding
     intentRef.current = true
@@ -886,6 +971,23 @@ export default function AIChat() {
     interimRef.current = ''
     srStartedRef.current = false
     setRecording(true); setOrbState('listening')
+    // Native Capacitor SR first when available — Android/iOS native STT
+    // is ~150-300ms first-result vs Web SR's ~500ms in the WebView, and
+    // delivers interims more reliably. Falls through to Web SR if the
+    // plugin isn't present (browser, PWA) or its permission was denied.
+    if (isMobileDevice() && getCapacitorSR()) {
+      const capOk = await startCapacitorSr()
+      if (capOk) {
+        mediaRef.current = null
+        chunksRef.current = []
+        try { navigator.vibrate?.(8) } catch {}
+        return
+      }
+      // Native plugin failed (permission denied, engine unavailable,
+      // etc.) — fall through to the Web SR path so the user still gets
+      // SOME transcription rather than a silent dot.
+    }
+
     // Start SR first. On mobile we'll stop here and not touch the mic
     // again — that's what gives SR the clean stream it needs to deliver
     // interims word-by-word.
@@ -1054,14 +1156,13 @@ export default function AIChat() {
   const finishSrOnlyRecording = async () => {
     setRecording(false)
     setOrbState('transcribing')
-    // Tell SR to stop and let pending finals trickle in. The grace
-    // window covers the gap between SR.stop() and the onresult that
-    // delivers the last syllable — too short and the user releases
-    // mid-word and that word vanishes; too long and the chat feels
-    // sluggish to send. 700 ms is long enough to catch the trailing
-    // final on every device we've tested, short enough that the user
-    // doesn't notice the pause before "Thinking…" lights up.
+    // Tell SR (native or web) to stop and let pending finals trickle in.
+    // The grace window covers the gap between SR.stop() and the
+    // onresult/partialResults event that delivers the last syllable —
+    // too short and the user releases mid-word and that word vanishes;
+    // too long and the chat feels sluggish to send.
     stopLivePreview()
+    await stopCapacitorSr()
     await new Promise(r => setTimeout(r, 700))
     const dictated = composeBuffer()
     if (!dictated) {
