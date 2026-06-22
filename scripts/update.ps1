@@ -47,6 +47,12 @@ Set-Location $RepoDir
 $DeployLog        = Join-Path $RepoDir "user_files\deploy_log"
 $UpdateLog        = Join-Path $RepoDir "user_files\update.log"
 $DeployLogsDir    = Join-Path $RepoDir "user_files\deploy-logs"
+# Heartbeat: rewritten on every poll start regardless of whether anything
+# updates. /api/admin/deploy/health surfaces this so we can tell from outside
+# whether the scheduled task is firing at all. Without it, a silent
+# no-op-on-every-cycle bug (dirty tree, network, etc.) looks identical to
+# "task never runs". With it, mtime on heartbeat answers that in one curl.
+$HeartbeatFile    = Join-Path $RepoDir "user_files\update.heartbeat"
 New-Item -ItemType Directory -Path (Split-Path $DeployLog) -Force | Out-Null
 New-Item -ItemType Directory -Path $DeployLogsDir         -Force | Out-Null
 
@@ -58,6 +64,16 @@ function Write-Log {
     Write-Host $line
     Add-Content -Path $UpdateLog -Value $line
 }
+
+# Write heartbeat immediately, before any check that could exit. Format is
+# `<utc-ts> <status>` so the health endpoint can show "last seen + last
+# outcome" in one read.
+function Write-Heartbeat {
+    param([string]$status)
+    $line = "$Ts $status"
+    try { Set-Content -Path $HeartbeatFile -Value $line -Encoding ASCII } catch {}
+}
+Write-Heartbeat "starting"
 
 # ---------------------------------------------------------------------------
 # Cohort selection
@@ -96,12 +112,25 @@ function Get-LastVerifiedSha {
 }
 
 # ---------------------------------------------------------------------------
-# Dirty-check (modified tracked files only -- untracked is fine)
+# Dirty-check (modified tracked files only -- untracked is fine).
+# Previously this aborted hard. That converted any stray edit into a silent
+# polling death — every cycle aborts, nothing in the log louder than a
+# single line, no telemetry. The mini-PC SHOULD never have local edits,
+# but if it does, we'd rather stash them with a timestamp and keep
+# polling than freeze the whole deploy pipeline forever.
 # ---------------------------------------------------------------------------
 $dirty = git status --porcelain --untracked-files=no
 if ($dirty) {
-    Write-Log "ABORT: working tree not clean. Commit/stash/revert first."
-    exit 1
+    $stashMsg = "auto-stash-$Ts"
+    Write-Log "Working tree dirty -- auto-stashing as '$stashMsg' and continuing"
+    $dirty | ForEach-Object { Add-Content -Path $UpdateLog -Value ("  " + $_.ToString()) }
+    $stashOut = & git stash push -m $stashMsg 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $stashOut | ForEach-Object { Add-Content -Path $UpdateLog -Value ("  " + $_.ToString()) }
+        Write-Heartbeat "abort-stash-failed"
+        Write-Log "ABORT: git stash push failed. Manual cleanup required."
+        exit 1
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -163,8 +192,11 @@ function Get-ContainerSha {
 
 $ContainerSha = Get-ContainerSha
 
-# Steady state: nothing to do. Silent exit (keeps polling logs clean).
+# Steady state: nothing to do. Heartbeat records the no-op so external
+# observers (the deploy/health endpoint) can confirm the loop is alive
+# without us spamming update.log on every 5-minute tick.
 if ($GitSha -eq $RemoteSha -and $ContainerSha -eq $RemoteSha) {
+    Write-Heartbeat "idle git=$GitSha"
     exit 0
 }
 
@@ -254,6 +286,7 @@ Add-Content -Path $DeployLog -Value ("new:       " + $GitSha)
 Add-Content -Path $DeployLog -Value ("verified:  " + $verifyOk)
 
 if ($verifyOk) {
+    Write-Heartbeat "deployed $GitSha"
     Write-Log "Deploy complete: $ContainerSha -> $GitSha"
     exit 0
 }
@@ -312,9 +345,11 @@ Add-Content -Path $DeployLog -Value ("new:       " + $LastGoodSha)
 Add-Content -Path $DeployLog -Value ("verified:  " + $rbVerifyOk)
 
 if ($rbVerifyOk) {
+    Write-Heartbeat "rolledback to=$LastGoodSha bad=$GitSha"
     Write-Log "ROLLBACK complete: now running $LastGoodSha. INVESTIGATE the bad deploy at $GitSha."
     exit 1
 } else {
+    Write-Heartbeat "rollback-verify-failed last=$LastGoodSha"
     Write-Log "ROLLBACK applied but $LastGoodSha also failed /api/version verify. Manual intervention required."
     exit 1
 }
