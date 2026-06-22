@@ -38,6 +38,18 @@ export function initOtaWatchdog() {
   setTimeout(async () => {
     log('start')
 
+    // Dev-mode escape hatch — when we're iterating locally and pushing
+    // APKs by hand, the cloud OTA bundle is stale by definition. Setting
+    // localStorage.ZIGGY_OTA_DISABLED = '1' from devtools (or having it
+    // present from a previous dev session) skips the entire flow so the
+    // freshly-bundled APK assets keep running across reopens.
+    try {
+      if (localStorage.getItem('ZIGGY_OTA_DISABLED') === '1') {
+        log('disabled via localStorage.ZIGGY_OTA_DISABLED — using APK bundle')
+        return
+      }
+    } catch {}
+
     const updater = plugin('CapacitorUpdater')
     if (!updater) {
       warn('CapacitorUpdater plugin not on bridge — APK likely missing the plugin')

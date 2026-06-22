@@ -302,6 +302,12 @@ export default function AIChat() {
   const capSrPartialRef = useRef(null)
   const capSrErrorRef   = useRef(null)
   const capSrActiveRef  = useRef(false)
+  // Plugin.start() returns a Promise that resolves with the final
+  // {matches: string[]} when recognition ends — that's how the plugin
+  // surfaces the authoritative final transcript. We stash the promise
+  // here at press time and await it in finishSrOnlyRecording AFTER
+  // stop() so the resolved matches[0] becomes the message we send.
+  const capSrStartPromiseRef = useRef(null)
   const scrollRef      = useRef(null)
   const inputRef       = useRef(null)
   const sentPrefillRef = useRef(false)
@@ -908,6 +914,8 @@ export default function AIChat() {
         const req = await capSR.requestPermissions()
         if (req?.speechRecognition !== 'granted') return false
       }
+      // User released during the perm-check await? Don't bother starting.
+      if (!intentRef.current) return false
       const osHebrew = typeof navigator !== 'undefined'
         && (navigator.language || '').toLowerCase().startsWith('he')
       const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
@@ -924,12 +932,22 @@ export default function AIChat() {
         // Stay quiet — the explicit release path handles cleanup.
         if (data?.status === 'stopped') capSrActiveRef.current = false
       })
-      await capSR.start({
+      // Listeners are now installed — finishSrOnlyRecording can find &
+      // detach them via capSrPartialRef / capSrErrorRef even if the user
+      // already released and we're about to return early.
+      if (!intentRef.current) return false
+      // CRITICAL: don't await — start() doesn't resolve until recognition
+      // ENDS (either via our stop() call or silence detection), with the
+      // final matches as its value. Stash the promise; finishSrOnlyRecording
+      // awaits it after calling stop() to harvest the final transcript.
+      // Awaiting here blocks startCapacitorSr until release, leaving the
+      // user holding with no React-visible state advancement.
+      capSrStartPromiseRef.current = capSR.start({
         language: srLang,
         maxResults: 1,
         partialResults: true,
         popup: false,
-      })
+      }).catch(() => null)  // swallow rejection so finish's await doesn't throw
       capSrActiveRef.current = true
       srStartedRef.current = true
       return true
@@ -953,6 +971,13 @@ export default function AIChat() {
       try { await capSR.stop() } catch {}
     }
     capSrActiveRef.current = false
+    // Drain the start() promise so it can't surface later (its result
+    // is moot once we've stopped without consuming it via the release
+    // path). Catches reject too.
+    if (capSrStartPromiseRef.current) {
+      capSrStartPromiseRef.current.catch(() => {})
+      capSrStartPromiseRef.current = null
+    }
   }
 
   const startRecording = async () => {
@@ -976,16 +1001,24 @@ export default function AIChat() {
     // delivers interims more reliably. Falls through to Web SR if the
     // plugin isn't present (browser, PWA) or its permission was denied.
     if (isMobileDevice() && getCapacitorSR()) {
+      // CRITICAL: claim the SR-only path SYNCHRONOUSLY before awaiting
+      // startCapacitorSr(). Otherwise a fast tap-and-release races the
+      // permission check + addListener awaits inside startCapacitorSr,
+      // leaving srStartedRef=false when stopRecording fires — which
+      // routes to the silent reset branch and eats the release.
+      srStartedRef.current = true
+      mediaRef.current = null
+      chunksRef.current = []
       const capOk = await startCapacitorSr()
       if (capOk) {
-        mediaRef.current = null
-        chunksRef.current = []
         try { navigator.vibrate?.(8) } catch {}
         return
       }
       // Native plugin failed (permission denied, engine unavailable,
       // etc.) — fall through to the Web SR path so the user still gets
-      // SOME transcription rather than a silent dot.
+      // SOME transcription rather than a silent dot. Reset our optimistic
+      // flag so the Web SR path can manage it from scratch.
+      srStartedRef.current = false
     }
 
     // Start SR first. On mobile we'll stop here and not touch the mic
@@ -1156,15 +1189,72 @@ export default function AIChat() {
   const finishSrOnlyRecording = async () => {
     setRecording(false)
     setOrbState('transcribing')
-    // Tell SR (native or web) to stop and let pending finals trickle in.
-    // The grace window covers the gap between SR.stop() and the
-    // onresult/partialResults event that delivers the last syllable —
-    // too short and the user releases mid-word and that word vanishes;
-    // too long and the chat feels sluggish to send.
+    // Tell SR (native or web) to stop. For the native plugin, stop()
+    // is what makes the start() promise resolve with the final matches;
+    // we await that promise next so we can use the authoritative final
+    // transcript (rather than relying solely on the last partial we
+    // happened to receive). For Web SR, stopLivePreview triggers the
+    // engine's natural end + the 700 ms grace catches the trailing
+    // onresult.
     stopLivePreview()
-    await stopCapacitorSr()
-    await new Promise(r => setTimeout(r, 700))
-    const dictated = composeBuffer()
+    let finalNativeMatches = null
+    const capSR = getCapacitorSR()
+    // "Capacitor path was claimed" = any of these refs exist. Covers the
+    // case where the user released so fast that startCapacitorSr() was
+    // still mid-await (listeners maybe attached, start() not yet kicked
+    // off) — we still need to clean up whatever DID get attached.
+    const usingCapPath = !!(
+      capSR && (
+        capSrActiveRef.current ||
+        capSrStartPromiseRef.current ||
+        capSrPartialRef.current ||
+        capSrErrorRef.current
+      )
+    )
+    if (usingCapPath) {
+      if (capSrActiveRef.current) {
+        // CRITICAL: do NOT await stop() — on Android (One UI / Samsung),
+        // SpeechRecognition.stop() never resolves and hangs forever, which
+        // freezes the entire send path. Fire-and-forget; the partial-
+        // results buffer is our source of truth anyway.
+        capSR.stop().catch(() => {})
+        capSrActiveRef.current = false
+      }
+      // The plugin's start() promise is also unreliable: sometimes
+      // rejects, sometimes never resolves. Race against a tight 300ms
+      // window so we don't add perceptible latency. Even if it resolves
+      // with matches, we prefer the partial-result buffer because it's
+      // the same data the user already saw in the live bubble.
+      if (capSrStartPromiseRef.current) {
+        try {
+          const res = await Promise.race([
+            capSrStartPromiseRef.current,
+            new Promise((r) => setTimeout(() => r(null), 300)),
+          ])
+          if (res?.matches?.length) finalNativeMatches = res.matches
+        } catch {}
+        capSrStartPromiseRef.current = null
+      }
+      // Detach listeners. Fire-and-forget for the same reason — Android
+      // removeListener can also stall.
+      if (capSrPartialRef.current) {
+        try { capSrPartialRef.current.remove().catch(() => {}) } catch {}
+        capSrPartialRef.current = null
+      }
+      if (capSrErrorRef.current) {
+        try { capSrErrorRef.current.remove().catch(() => {}) } catch {}
+        capSrErrorRef.current = null
+      }
+    } else {
+      // Web SR path: small grace so the trailing onresult lands before
+      // composeBuffer runs.
+      await new Promise(r => setTimeout(r, 700))
+    }
+    // Authoritative final from the native plugin wins. Otherwise fall
+    // back to whatever the partial-results listener last wrote into
+    // sttRef / composeBuffer.
+    const dictated = (finalNativeMatches && finalNativeMatches[0])
+      || composeBuffer()
     if (!dictated) {
       setLiveTranscript('')
       setOrbState('idle')
