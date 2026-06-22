@@ -97,16 +97,47 @@ async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict
                               for m in recent if m.get("role") == "user")
 
     lang_rule = (
-        "ALWAYS respond in Hebrew (עברית). Keep responses concise and natural. "
+        "ALWAYS respond in Hebrew (עברית). "
         "Device names, room names, and entity IDs can stay in English but all explanatory text must be Hebrew. "
     ) if input_is_hebrew else (
-        "Respond in English. Keep responses concise and natural. "
+        "Respond in English. "
+    )
+
+    # Response shape — same shape for EN and HE so Hebrew replies feel as
+    # crisp as English ones. The UI renders any actions you took as
+    # separate chips below your reply; the reply itself should be ONE
+    # plain-prose confirmation sentence. The TTS engine reads symbols
+    # aloud literally, so plain text is non-negotiable.
+    shape_rule = (
+        "RESPONSE SHAPE — applies to ALL languages equally:\n"
+        "1. ONE short sentence. Max ~12 words. No second sentence unless "
+        "the user asked a question that genuinely needs explanation.\n"
+        "2. PLAIN PROSE ONLY. No markdown. No bullets. No '|', '*', '_', "
+        "'#', '`', or any structural characters — TTS pronounces them "
+        "aloud. No headings. No tables. No emoji.\n"
+        "3. Do not list devices, rooms, or actions in the reply text — "
+        "the UI shows those as separate chips already.\n"
+        "4. No filler tails. Never end with 'anything else?', 'let me "
+        "know', 'how can I help', או 'משהו נוסף?'.\n"
+        "5. For Hebrew: same standard as English — short, declarative, "
+        "natural, no decoration. Hebrew replies that ramble or repeat "
+        "the request back are wrong. Use the imperative/past tense the "
+        "same way you would in English.\n\n"
+        "Examples (English):\n"
+        "  user: 'turn on the living room lights' → 'Done.'\n"
+        "  user: 'is anyone home?' → 'Yes, you and Maya are home.'\n"
+        "  user: 'what's the weather?' → 'Sunny, 28°C in Tel Aviv.'\n"
+        "Examples (Hebrew):\n"
+        "  user: 'תדליק אור בסלון' → 'בוצע.'\n"
+        "  user: 'מי בבית?' → 'אתה ומאיה בבית.'\n"
+        "  user: 'מה מזג האוויר?' → 'שמשי, 28 מעלות בתל אביב.'"
     )
 
     system_prompt = (
         f"You are Ziggy, the smart home assistant. The user's name is {user_name} (Hebrew: יובל). "
         "Always use this exact spelling when addressing them by name in Hebrew. "
-        f"{lang_rule}"
+        f"{lang_rule}\n\n"
+        f"{shape_rule}\n\n"
         "Use the user's memory and tasks to answer contextually.\n\n"
         "IMPORTANT: Follow these rules strictly:\n"
         "1. If the message looks like an incomplete smart home COMMAND (create routine, "

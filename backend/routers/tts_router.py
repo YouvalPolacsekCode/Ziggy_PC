@@ -12,6 +12,7 @@ auth (enforced at include_router time in backend/server.py).
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -20,6 +21,32 @@ from pydantic import BaseModel, Field
 
 from core.settings_loader import settings
 from interfaces.tts import cartesia_tts, elevenlabs_tts
+
+
+# Strip characters TTS reads aloud as their literal name. The model
+# tends to leak "|" (pipe), "*" (asterisk), and markdown noise into
+# replies — especially in Hebrew where the engine sometimes pronounces
+# punctuation by name instead of as silent structure. Bullets render
+# as action chips in the UI; they should never reach the synthesizer.
+_TTS_STRIP_PATTERN = re.compile(r"[|*_`#]+")
+_TTS_BULLET_PATTERN = re.compile(r"^\s*[-•·]\s+", re.MULTILINE)
+_TTS_WHITESPACE_PATTERN = re.compile(r"\s+")
+
+
+def _sanitize_for_tts(text: str) -> str:
+    """Strip markdown punctuation and structural characters that some
+    Cartesia voices pronounce literally (notably the pipe character).
+
+    Conservative: only removes characters that have no semantic value
+    when spoken. Leaves Hebrew punctuation (״, ׳), parentheses, and
+    standard sentence terminators alone.
+    """
+    if not text:
+        return text
+    out = _TTS_BULLET_PATTERN.sub("", text)
+    out = _TTS_STRIP_PATTERN.sub(" ", out)
+    out = _TTS_WHITESPACE_PATTERN.sub(" ", out).strip()
+    return out or text
 
 
 router = APIRouter(prefix="/api/voice/tts")
@@ -148,7 +175,8 @@ async def speak_reply(req: SpeakRequest):
     if not cartesia_tts.is_available():
         raise HTTPException(503, "Cartesia not configured "
                                  "(set voice.cartesia.api_key).")
-    stream = cartesia_tts.synthesize_stream(req.text, req.lang)
+    spoken_text = _sanitize_for_tts(req.text)
+    stream = cartesia_tts.synthesize_stream(spoken_text, req.lang)
     if stream is None:
         # Two common causes: no voice configured for this lang, or the
         # engine declined to start (rare — bad api key / sdk import). The
