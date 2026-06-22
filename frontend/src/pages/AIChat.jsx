@@ -357,10 +357,25 @@ export default function AIChat() {
   // sttRef holds the accumulated final transcript chunks; interimRef
   // holds the not-yet-final partial. Together they form the running
   // input value while the user is dictating.
-  const sttRef         = useRef('')   // accumulated FINAL transcripts so far
-  const interimRef     = useRef('')   // current INTERIM (not yet final)
+  // Transcript state, split across SR session lifetimes:
+  //   accumulatedSrRef: text from PREVIOUS SR instances (each instance
+  //     auto-ends after ~3-5 s of silence on Chrome; onend then restarts
+  //     a new one if the user is still holding).
+  //   sttRef:           FINAL text from the CURRENT SR instance — REPLACED
+  //     (not appended) on every onresult fire, because mobile Chrome
+  //     delivers the full results array with resultIndex=0 each time
+  //     instead of pointing past already-emitted finals. Appending caused
+  //     the "let's see does this let's see does this" duplication in the
+  //     bubble. Replacing makes sttRef = "current SR session's full text"
+  //     and the cross-session continuity is provided by accumulatedSrRef.
+  //   interimRef:       current INTERIM partial from CURRENT SR instance.
+  const accumulatedSrRef = useRef('')
+  const sttRef         = useRef('')
+  const interimRef     = useRef('')
   const srStartedRef   = useRef(false)
-  const composeBuffer  = () => (sttRef.current + ' ' + interimRef.current).trim()
+  const composeBuffer  = () => (
+    accumulatedSrRef.current + ' ' + sttRef.current + ' ' + interimRef.current
+  ).replace(/\s+/g, ' ').trim()
 
   const startLivePreview = () => {
     const SR = typeof window !== 'undefined'
@@ -373,6 +388,7 @@ export default function AIChat() {
     const osHebrew = typeof navigator !== 'undefined'
       && (navigator.language || '').toLowerCase().startsWith('he')
     const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
+    accumulatedSrRef.current = ''
     sttRef.current = ''
     interimRef.current = ''
     const mkRec = () => {
@@ -381,16 +397,22 @@ export default function AIChat() {
       rec.interimResults = true
       rec.lang = srLang
       rec.onresult = (e) => {
+        // Rebuild from the FULL results array each fire instead of
+        // appending the new slice. Mobile Chrome (Android) reports
+        // resultIndex=0 on every fire — so the spec's "process only
+        // new results" pattern duplicates the same finals over and
+        // over. Cross-session continuity is handled by accumulatedSrRef
+        // when this SR instance ends.
+        let final = ''
         let interim = ''
-        for (let i = e.resultIndex; i < e.results.length; i++) {
+        for (let i = 0; i < e.results.length; i++) {
           const r = e.results[i]
-          const piece = r[0]?.transcript || ''
-          if (r.isFinal) {
-            sttRef.current = (sttRef.current + ' ' + piece).trim()
-          } else {
-            interim += piece
-          }
+          const piece = (r[0]?.transcript || '').trim()
+          if (!piece) continue
+          if (r.isFinal) final = final ? final + ' ' + piece : piece
+          else interim += (interim ? ' ' : '') + piece
         }
+        sttRef.current = final
         interimRef.current = interim
         // Mirror the running transcript into the live-bubble state — the
         // chat renders it as a pending user message that fills word-by-word
@@ -410,9 +432,20 @@ export default function AIChat() {
       }
       rec.onend = () => {
         // SR auto-ends after ~3–5 s of silence on Chrome even with
-        // continuous=true. While the user is still holding, restart so
-        // dictation keeps flowing across pauses. stopLivePreview() clears
-        // speechRef so this no-ops on explicit stop.
+        // continuous=true. Fold this session's final into the
+        // accumulated buffer so the text carries forward when we
+        // restart, then reset the per-session refs so the next SR's
+        // first onresult fire doesn't double the old finals.
+        if (sttRef.current) {
+          accumulatedSrRef.current = (accumulatedSrRef.current
+            ? accumulatedSrRef.current + ' ' + sttRef.current
+            : sttRef.current)
+        }
+        sttRef.current = ''
+        interimRef.current = ''
+        // While the user is still holding, restart so dictation keeps
+        // flowing across pauses. stopLivePreview() clears speechRef so
+        // this no-ops on explicit stop.
         if (intentRef.current && speechRef.current === rec) {
           try {
             const next = mkRec()
@@ -721,6 +754,7 @@ export default function AIChat() {
     // whatever the user had typed (if anything) so dictation doesn't
     // clobber it.
     setLiveTranscript('')
+    accumulatedSrRef.current = ''
     sttRef.current = ''
     interimRef.current = ''
     srStartedRef.current = false
