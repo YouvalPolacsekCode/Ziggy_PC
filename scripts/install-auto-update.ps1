@@ -39,10 +39,15 @@ $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$UpdateScript`""
 
-# Trigger: fire once now, then repeat every 5 min for the next year.
-# (Windows recreates the trigger when the task fires near the end of the duration.)
+# Trigger: fire once now, then repeat every 2 min for the next year.
+# Tightened from 5 min after observed lag — with --no-cache rebuilds
+# eating ~6 min and `-MultipleInstances IgnoreNew` skipping overlapping
+# triggers, the effective cadence stretched to ~10 min between deploys.
+# A 2-min interval keeps idle polling cheap (most cycles are no-ops in
+# steady state) and means a fresh push picks up within 2 min of build
+# completion instead of 5.
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-    -RepetitionInterval (New-TimeSpan -Minutes 5) `
+    -RepetitionInterval (New-TimeSpan -Minutes 2) `
     -RepetitionDuration (New-TimeSpan -Days 365)
 
 # S4U = run with the user's credentials, even when they're not logged in.
