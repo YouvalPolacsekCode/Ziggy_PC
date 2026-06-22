@@ -5,6 +5,15 @@ WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps
 COPY frontend/ ./
+# Cache-bust: BuildKit was hashing `COPY frontend/ ./` and concluding the
+# layer was unchanged across commits even when AIChat / Settings had
+# obviously different bytes. Result: silently stale dist/ in the final
+# image while /api/version reported the new SHA, which made "is my push
+# deployed?" answer wrong. Plumbing the same GIT_SHA arg the final stage
+# uses into a no-op ENV here forces the next layer's cache key to change
+# on every commit, so `npm run build` is guaranteed to rerun.
+ARG GIT_SHA=dev
+ENV FRONTEND_BUILD_SHA=$GIT_SHA
 # Vite production build — output goes to dist/
 RUN npm run build
 
