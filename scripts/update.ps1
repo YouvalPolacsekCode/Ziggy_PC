@@ -39,6 +39,13 @@
 # progress to stderr, which 2>&1 wraps as ErrorRecord objects. With EAP=Stop
 # those terminate the script. We check $LASTEXITCODE explicitly after every
 # native command, so we don't lose any error detection.
+#
+# Schema version: bump this string when changing the script in a way that
+# requires the next polling cycle to re-rebuild even if main hasn't moved.
+# The value itself isn't read at runtime — it just makes this file's content
+# differ from a previous deploy so the next git pull notices a real change.
+# v2 (2026-06-22): switch to docker compose build --no-cache --pull
+$_SchemaVersion = "v2"
 $ErrorActionPreference = "Continue"
 
 $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
