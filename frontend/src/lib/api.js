@@ -332,7 +332,7 @@ export async function speakTts({ text, lang }) {
 // (~500–1500 ms) to ~one chunk (~200 ms). Used by the chat PTT path.
 // Browsers without MediaSource support should fall back to .blob() on the
 // returned Response and play that.
-export async function speakTtsStream({ text, lang }) {
+export async function speakTtsStream({ text, lang, signal }) {
   const res = await fetchWithTimeout(`${BASE}/voice/tts/speak`, {
     method: 'POST',
     headers: {
@@ -340,6 +340,7 @@ export async function speakTtsStream({ text, lang }) {
       Authorization: `Bearer ${getToken()}`,
     },
     body: JSON.stringify({ text, lang }),
+    signal,
   }, { timeoutMs: 30_000 })
   if (!res.ok) throw await _toZiggyError(res)
   return res

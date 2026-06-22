@@ -477,9 +477,23 @@ export default function AIChat() {
     try { rec.stop() } catch {}
   }
 
+  // Tokens + abort handle for hard-stopping TTS at any phase (fetch in
+  // flight, audio playing, MediaSource still streaming). Every call to
+  // playTtsReply bumps the token; older in-flight plays self-cancel by
+  // comparing their captured token to the current one. stopTtsPlayback
+  // also bumps the token so a subsequent slow fetch-resolve can't
+  // accidentally restart playback after we've explicitly stopped.
+  const ttsPlayIdRef   = useRef(0)
+  const ttsAbortRef    = useRef(null)
+
   // Stop any in-flight TTS reply and release its object URL. Safe to call
   // multiple times; safe to call when nothing is playing.
   const stopTtsPlayback = () => {
+    ttsPlayIdRef.current += 1
+    if (ttsAbortRef.current) {
+      try { ttsAbortRef.current.abort() } catch {}
+      ttsAbortRef.current = null
+    }
     const a = ttsAudioRef.current
     if (!a) return
     try { a.pause() } catch {}
@@ -487,6 +501,13 @@ export default function AIChat() {
     a.src = ''
     ttsAudioRef.current = null
   }
+
+  // Detect lang of a reply from its actual characters. Trumps any
+  // detectedLang we got from SR/Whisper on the USER's input — the LLM
+  // may reply in Hebrew even when the question was in English, or vice
+  // versa, and we want the Cartesia voice to match the reply text so
+  // we don't end up with the English voice phonetically reading Hebrew.
+  const detectReplyLang = (text) => /[א-ת]/.test(text || '') ? 'he' : 'en'
 
   // Render `text` server-side in `lang`, then play it through the device's
   // own audio out. Two paths:
@@ -501,8 +522,16 @@ export default function AIChat() {
   // failure never breaks chat: short visual blip and we move on.
   const playTtsReply = async (text, lang) => {
     if (!text) return
+    // Hard-stop any current playback BEFORE setting up the new one. This
+    // also bumps the play-token so any stale fetch from a previous call
+    // can't accidentally start playing in parallel.
     stopTtsPlayback()
-    const langKey = lang === 'he' ? 'he' : 'en'
+    const myToken = ++ttsPlayIdRef.current
+    // Reply lang is authoritative — detect from the reply text itself so
+    // an English-speaking user who got a Hebrew reply still gets the
+    // Hebrew voice. The `lang` argument is now just a fallback.
+    const langKey = detectReplyLang(text) === 'he' ? 'he'
+      : (lang === 'he' ? 'he' : 'en')
     const supportsMSE = typeof MediaSource !== 'undefined'
       && typeof MediaSource.isTypeSupported === 'function'
       && MediaSource.isTypeSupported('audio/mpeg')
@@ -518,13 +547,25 @@ export default function AIChat() {
     audio.onended = onDone
     audio.onerror = onDone
 
+    // Abort signal lets stopTtsPlayback cut the fetch mid-flight if the
+    // user navigates away or starts a new turn before the audio arrived.
+    const ctl = new AbortController()
+    ttsAbortRef.current = ctl
+
     try {
-      const res = await speakTtsStream({ text, lang: langKey })
+      const res = await speakTtsStream({ text, lang: langKey, signal: ctl.signal })
+      // Newer play started OR user navigated away while we were awaiting
+      // the fetch → bail. Don't even create the Audio source.
+      if (myToken !== ttsPlayIdRef.current) return
 
       if (supportsMSE && res.body) {
         const mediaSource = new MediaSource()
         audio.src = URL.createObjectURL(mediaSource)
         mediaSource.addEventListener('sourceopen', () => {
+          if (myToken !== ttsPlayIdRef.current) {
+            try { if (mediaSource.readyState === 'open') mediaSource.endOfStream() } catch {}
+            return
+          }
           let sb
           try {
             sb = mediaSource.addSourceBuffer('audio/mpeg')
@@ -534,7 +575,7 @@ export default function AIChat() {
             // eslint-disable-next-line no-console
             console.warn('[TTS] MSE sourceBuffer failed, falling back', e?.message)
             res.blob().then((blob) => {
-              if (ttsAudioRef.current !== audio) return
+              if (myToken !== ttsPlayIdRef.current) return
               try { URL.revokeObjectURL(audio.src) } catch {}
               audio.src = URL.createObjectURL(blob)
               audio.play().catch(() => {})
@@ -543,6 +584,11 @@ export default function AIChat() {
           }
           const reader = res.body.getReader()
           const pump = async () => {
+            if (myToken !== ttsPlayIdRef.current) {
+              try { await reader.cancel() } catch {}
+              try { if (mediaSource.readyState === 'open') mediaSource.endOfStream() } catch {}
+              return
+            }
             try {
               const { done, value } = await reader.read()
               if (done) {
@@ -562,11 +608,15 @@ export default function AIChat() {
       } else {
         // Blob fallback — older browsers / Safari without audio/mpeg MSE
         const blob = await res.blob()
+        if (myToken !== ttsPlayIdRef.current) return
         audio.src = URL.createObjectURL(blob)
       }
+      if (myToken !== ttsPlayIdRef.current) return
       setOrbState('speaking')
       await audio.play()
-    } catch {
+    } catch (e) {
+      // Aborted by stopTtsPlayback → silent exit, that was deliberate.
+      if (e?.name === 'AbortError' || myToken !== ttsPlayIdRef.current) return
       // Network / render failure. Don't break chat — visual blip.
       if (audio.src) try { URL.revokeObjectURL(audio.src) } catch {}
       if (ttsAudioRef.current === audio) ttsAudioRef.current = null
