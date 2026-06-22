@@ -277,6 +277,45 @@ export default function AIChat() {
   useEffect(() => { fetchQuickAsks() }, [])
   useEffect(() => { fetchVoiceStatus() }, [])
 
+  // Mic pipeline warm-up. The first getUserMedia call after page load
+  // takes 500ms-1s on Capacitor WebView and mobile browsers — initialising
+  // the audio capture stack from cold. That cold-start is what makes
+  // press-to-record feel laggy and pushes the system mic indicator's
+  // appearance to ~a second after the hold. Subsequent getUserMedia calls
+  // are <100ms.
+  //
+  // Doing a fire-and-forget acquire + immediate release here on mount
+  // warms that pipeline so the first real PTT hold feels instant. We
+  // ONLY warm when permission is already granted — never request perms
+  // proactively, since that'd surface a permission prompt the user
+  // didn't ask for.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        if (navigator.permissions?.query) {
+          const p = await navigator.permissions.query({ name: 'microphone' })
+          if (p.state !== 'granted') return
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop())
+          return
+        }
+        // Hold for one frame so the audio stack actually initialises,
+        // then release. Subsequent getUserMedia stays fast.
+        await new Promise(r => requestAnimationFrame(r))
+        stream.getTracks().forEach(t => t.stop())
+      } catch {
+        // Warm-up is best-effort — if it fails (denied, browser quirk,
+        // navigator.permissions not implemented), the first real hold
+        // just pays the cold-start cost like before.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   const onToggleMic = async () => {
     try {
       await setMicEnabled(!micEnabled)
@@ -662,9 +701,6 @@ export default function AIChat() {
     // overlapping the assistant's last reply with their next utterance
     // feels off and confuses Whisper.
     stopTtsPlayback()
-    // Subtle haptic on press (Android PWA / Capacitor). iOS Safari ignores
-    // — that's fine, no fallback needed.
-    try { navigator.vibrate?.(10) } catch {}
     // Live transcript renders in a pending chat bubble — input stays as
     // whatever the user had typed (if anything) so dictation doesn't
     // clobber it.
@@ -791,6 +827,12 @@ export default function AIChat() {
     // 100 ms timeslice → ondataavailable fires steadily so the final blob
     // has all chunks even if stop() fires very quickly after start().
     mr.start(100)
+    // Haptic fires AFTER the recorder actually starts (not on pointerdown)
+    // so the buzz signals "you are now being recorded" — matches the
+    // moment the system mic indicator lights up, instead of feeling like
+    // a buzz-then-wait-then-record sequence. Android PWA / Capacitor
+    // only; iOS Safari ignores silently, no fallback needed.
+    try { navigator.vibrate?.(8) } catch {}
   }
 
   const stopRecording = () => {
