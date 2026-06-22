@@ -545,7 +545,7 @@ from starlette.exceptions import HTTPException as _StarletteHTTPException
 class _SPAStaticFiles(_StaticFiles):
     async def get_response(self, path: str, scope):
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except _StarletteHTTPException as exc:
             if exc.status_code != 404:
                 raise
@@ -561,7 +561,20 @@ class _SPAStaticFiles(_StaticFiles):
             last_segment = path.rsplit("/", 1)[-1]
             if "." in last_segment:
                 raise
-            return await super().get_response("index.html", scope)
+            response = await super().get_response("index.html", scope)
+        # Cache strategy:
+        #   - /assets/* (Vite content-hashed) → long max-age, immutable.
+        #     Filename changes whenever content does, so this is safe.
+        #   - everything else (index.html, manifest, SW) → no-cache so
+        #     a deploy is visible the moment the user reloads. The previous
+        #     blanket 4h CDN TTL was masking real deploys: even after the
+        #     canary rebuilt with a fresh dist, Cloudflare kept serving the
+        #     stale index.html that pointed at the old chunk names.
+        if path.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 # ---------------------------------------------------------------------------

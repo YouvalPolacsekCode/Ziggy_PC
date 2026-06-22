@@ -249,7 +249,22 @@ if ($GitSha -ne $RemoteSha) {
 # ---------------------------------------------------------------------------
 Write-Log "Rebuilding container at $GitSha (build log: $DeployVerbose)"
 $env:GIT_SHA = $GitSha
-$buildOut = & docker compose up -d --build --no-deps ziggy 2>&1
+# --no-cache: skip BuildKit layer cache entirely. Past incidents had the
+# frontend-build stage hitting cache across commits even after Dockerfile
+# ARG changes (BuildKit's content-key only invalidates when the actual RUN
+# command text or referenced ARG values change, and even then we saw
+# silent re-use in the wild). The build cost is ~30 s extra per deploy on
+# a warm machine; the cost of a stale frontend reaching users is hours of
+# "my push deployed but nothing changed" debugging. Always-no-cache wins.
+$buildOut = & docker compose build --no-cache --pull ziggy 2>&1
+$buildExit = $LASTEXITCODE
+$buildOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
+if ($buildExit -ne 0) {
+    Write-Log "FAILED: docker compose build --no-cache returned $buildExit. Previous container still running. See $DeployVerbose"
+    exit 1
+}
+# Start (or restart) the freshly-built image.
+$buildOut = & docker compose up -d --no-deps ziggy 2>&1
 $buildExit = $LASTEXITCODE
 $buildOut | ForEach-Object { Add-Content -Path $DeployVerbose -Value $_.ToString() }
 $buildOut | ForEach-Object { Write-Host $_.ToString() }
@@ -314,7 +329,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $env:GIT_SHA = $LastGoodSha
-$rbBuildOut = & docker compose up -d --build --no-deps ziggy 2>&1
+# Same --no-cache rationale as the forward-deploy build above: never let
+# a layer cache resurrect a known-bad bundle during a rollback.
+$rbBuildOut = & docker compose build --no-cache --pull ziggy 2>&1
+$rbBuildExit = $LASTEXITCODE
+$rbBuildOut | ForEach-Object { Add-Content -Path $RollbackVerbose -Value $_.ToString() }
+if ($rbBuildExit -ne 0) {
+    Write-Log "ROLLBACK FAILED: build --no-cache at $LastGoodSha returned $rbBuildExit. See $RollbackVerbose"
+    exit 1
+}
+$rbBuildOut = & docker compose up -d --no-deps ziggy 2>&1
 $rbBuildExit = $LASTEXITCODE
 $rbBuildOut | ForEach-Object { Add-Content -Path $RollbackVerbose -Value $_.ToString() }
 if ($rbBuildExit -ne 0) {
