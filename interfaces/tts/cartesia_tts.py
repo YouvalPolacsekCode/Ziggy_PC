@@ -327,6 +327,84 @@ def synthesize(text: str, lang: str = "en") -> bytes | None:
     return audio
 
 
+def synthesize_stream(text: str, lang: str = "en"):
+    """Yield MP3 bytes as Cartesia produces them.
+
+    Time-to-first-byte from this is sub-300ms vs ~500–1000ms for synthesize()
+    waiting on the full render. The mobile/web client pipes the chunks into
+    a MediaSource so playback starts before the synth is done — the previous
+    'text visible long before audio' gap shrinks to ~one chunk's worth.
+
+    Cache write happens AFTER the stream completes so subsequent identical
+    phrases hit synthesize() / the on-disk cache and skip Cartesia entirely.
+    Returns None when the engine isn't configured for the requested lang
+    (caller should 503).
+    """
+    if not is_available():
+        return None
+    voice_id = _resolve_voice_id(lang)
+    if not voice_id:
+        return None
+    model_id = _model_id()
+    fmt = _output_format()
+    key = _cache_key(text, voice_id, model_id, lang, fmt)
+
+    cached = _cache_get(key)
+    if cached is not None:
+        try:
+            data = Path(cached).read_bytes()
+            # Single-chunk generator so the consumer's loop shape is the same
+            # whether we hit the cache or a live render.
+            return iter([data])
+        except OSError as e:
+            print(f"[Cartesia] Cache read failed ({e}) — re-rendering")
+
+    client = _get_client()
+    if client is None:
+        return None
+
+    def _gen():
+        collected: list[bytes] = []
+        try:
+            t0 = time.time()
+            chunks_iter = client.tts.bytes(
+                model_id=model_id,
+                transcript=text,
+                voice={"mode": "id", "id": voice_id},
+                language=lang,
+                output_format=fmt,
+            )
+            if isinstance(chunks_iter, (bytes, bytearray)):
+                b = bytes(chunks_iter)
+                collected.append(b)
+                yield b
+            else:
+                for c in chunks_iter:
+                    if isinstance(c, (bytes, bytearray)):
+                        b = bytes(c)
+                        collected.append(b)
+                        yield b
+            print(f"[TIMING] cartesia-tts-stream: {time.time() - t0:.2f}s "
+                  f"({sum(len(b) for b in collected)} bytes, "
+                  f"voice={voice_id[:8]}…, lang={lang})")
+        except Exception as e:
+            # Same failure surface as _render — log and stop the stream. The
+            # client treats EOF as "synth done" and continues with whatever
+            # bytes already played.
+            print(f"[Cartesia] Stream render failed: {e}")
+        finally:
+            # Persist whatever we got so partial renders aren't lost — empty
+            # streams just no-op.
+            audio = b"".join(collected)
+            if audio:
+                try:
+                    _cache_put(key, audio)
+                except Exception as e:
+                    print(f"[Cartesia] Cache write failed: {e}")
+
+    return _gen()
+
+
 # ---------------------------------------------------------------------------
 # Voice management
 # ---------------------------------------------------------------------------

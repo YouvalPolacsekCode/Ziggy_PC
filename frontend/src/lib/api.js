@@ -326,6 +326,25 @@ export async function speakTts({ text, lang }) {
   return res.blob()
 }
 
+// Streaming variant: returns the raw Response so the caller can pipe
+// `res.body` into a MediaSource and start playback as soon as the first
+// chunk arrives — playback latency drops from ~the full synth time
+// (~500–1500 ms) to ~one chunk (~200 ms). Used by the chat PTT path.
+// Browsers without MediaSource support should fall back to .blob() on the
+// returned Response and play that.
+export async function speakTtsStream({ text, lang }) {
+  const res = await fetchWithTimeout(`${BASE}/voice/tts/speak`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ text, lang }),
+  }, { timeoutMs: 30_000 })
+  if (!res.ok) throw await _toZiggyError(res)
+  return res
+}
+
 // Devices / HA entities
 export const getEntities = (domain) =>
   get(domain ? `/ha/entities?domain=${domain}` : '/ha/entities')

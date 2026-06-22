@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.settings_loader import settings
@@ -128,26 +128,36 @@ class SpeakRequest(BaseModel):
 
 @router.post("/speak")
 async def speak_reply(req: SpeakRequest):
-    """Render `text` in the user's configured voice for `lang` and return
-    audio bytes. Cache-aware: identical (text, voice, lang) pairs hit the
-    same on-disk MP3 the host-side speak() uses, so repeated phrases don't
-    re-bill Cartesia. Different from /preview, which always renders fresh
-    against a specific candidate voice."""
-    # Only Cartesia supports the bytes-return synthesize() right now; the
-    # mobile/web TTS path is Cartesia-only by design (it's the production
-    # primary). ElevenLabs stays a host-side Premium upsell.
+    """Stream `text` rendered in the user's configured voice for `lang`.
+
+    Returns audio/mpeg as a chunked StreamingResponse so the mobile/web
+    client can pipe chunks into a MediaSource and start playback as soon
+    as the first chunk arrives — closing the "text visible long before
+    audio plays" gap from the original synth-and-download path.
+
+    Cache-aware: identical (text, voice, lang) tuples hit the same on-disk
+    MP3 the host-side speak() uses, so repeated phrases don't re-bill
+    Cartesia. The cache write happens after the stream completes so the
+    NEXT request can serve from disk in one chunk.
+
+    Different from /preview, which always renders fresh against a specific
+    candidate voice (no streaming, no cache)."""
+    # Only Cartesia supports streaming synthesis right now; the mobile/web
+    # TTS path is Cartesia-only by design (it's the production primary).
+    # ElevenLabs stays a host-side Premium upsell.
     if not cartesia_tts.is_available():
         raise HTTPException(503, "Cartesia not configured "
                                  "(set voice.cartesia.api_key).")
-    audio = cartesia_tts.synthesize(req.text, req.lang)
-    if audio is None:
-        # Two common causes: no voice configured for this lang, or upstream
-        # render failure. The module logs the specific cause.
+    stream = cartesia_tts.synthesize_stream(req.text, req.lang)
+    if stream is None:
+        # Two common causes: no voice configured for this lang, or the
+        # engine declined to start (rare — bad api key / sdk import). The
+        # module logs the specific cause.
         raise HTTPException(502, f"Could not synthesize audio for lang={req.lang}.")
     # 1-hour private cache covers short repeated replies ("ok", "done") in
     # the session without risking stale voices after picker changes.
-    return Response(
-        content=audio,
+    return StreamingResponse(
+        stream,
         media_type="audio/mpeg",
         headers={"Cache-Control": "private, max-age=3600"},
     )

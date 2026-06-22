@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTts } from '../lib/api'
+import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream } from '../lib/api'
 import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
@@ -269,19 +269,21 @@ export default function AIChat() {
     const SR = typeof window !== 'undefined'
       && (window.SpeechRecognition || window.webkitSpeechRecognition)
     if (!SR) return
-    try {
+    // SR doesn't auto-detect. We pick the most likely spoken language by
+    // checking BOTH the UI lang (user-picked) AND the OS lang
+    // (navigator.language) — covers the common case where the user has an
+    // Israeli device but kept the Ziggy UI in English, and would still
+    // speak Hebrew. Wrong-lang utterances still get captured by Whisper
+    // for the final transcript; the preview just won't be useful for them.
+    const osHebrew = typeof navigator !== 'undefined'
+      && (navigator.language || '').toLowerCase().startsWith('he')
+    const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
+    let started = false
+    const mkRec = () => {
       const rec = new SR()
       rec.continuous = true
       rec.interimResults = true
-      // SR doesn't auto-detect. We pick the most likely spoken language by
-      // checking BOTH the UI lang (user-picked) AND the OS lang
-      // (navigator.language) — covers the common case where the user has an
-      // Israeli device but kept the Ziggy UI in English, and would still
-      // speak Hebrew. Wrong-lang utterances still get captured by Whisper
-      // for the final transcript; the preview just won't be useful for them.
-      const osHebrew = typeof navigator !== 'undefined'
-        && (navigator.language || '').toLowerCase().startsWith('he')
-      rec.lang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
+      rec.lang = srLang
       rec.onresult = (e) => {
         let interim = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -289,25 +291,49 @@ export default function AIChat() {
         }
         setLivePreview(interim.trim())
       }
-      // SR fires `error` for permission denials, no-speech, network drops, etc.
-      // None of those should kill the PTT flow — Whisper picks up the slack.
-      // We silently swallow and let the recogniser auto-end.
-      rec.onerror = () => {}
-      rec.onend = () => { /* end-of-speech — leave livePreview visible
-                            until Whisper supersedes it */ }
+      rec.onerror = (e) => {
+        // 'no-speech' fires constantly on silence and is harmless. Everything
+        // else (not-allowed, audio-capture, network, aborted) gets logged so
+        // we can debug if the preview never lights up on a given device.
+        if (e?.error && e.error !== 'no-speech') {
+          // eslint-disable-next-line no-console
+          console.warn('[SR] error', e.error)
+        }
+      }
+      rec.onend = () => {
+        // SR auto-ends after ~3–5 s of silence even with continuous=true on
+        // Chrome — if the user is still holding the mic, restart so the
+        // preview keeps updating across pauses. We stop explicitly in
+        // stopLivePreview, which clears speechRef so this no-ops.
+        if (intentRef.current && speechRef.current === rec) {
+          try {
+            const next = mkRec()
+            speechRef.current = next
+            next.start()
+          } catch {}
+        }
+      }
+      return rec
+    }
+    try {
+      const rec = mkRec()
       speechRef.current = rec
       rec.start()
-    } catch {
+      started = true
+    } catch (e) {
       // SR can throw 'not allowed' or 'aborted' synchronously on some
       // browsers if a previous instance hasn't fully released. Best effort.
+      // eslint-disable-next-line no-console
+      console.warn('[SR] start failed', e?.message || e)
       speechRef.current = null
     }
+    return started
   }
   const stopLivePreview = () => {
     const rec = speechRef.current
+    speechRef.current = null
     if (!rec) return
     try { rec.stop() } catch {}
-    speechRef.current = null
   }
 
   // Stop any in-flight TTS reply and release its object URL. Safe to call
@@ -322,34 +348,87 @@ export default function AIChat() {
   }
 
   // Render `text` server-side in `lang`, then play it through the device's
-  // own audio out. Drives the 'speaking' orb state by real audio events so
-  // the orb stops the moment playback ends, not on a guessed timer.
-  // Falls back to a brief visual 'speaking' blip if TTS is unavailable —
-  // chat should never feel broken because the voice failed.
+  // own audio out. Two paths:
+  //   - MediaSource streaming (Chrome/Edge/Firefox): chunks pipe in and
+  //     playback starts on the first one, ~200ms vs ~1500ms for the
+  //     fetch-blob path. This is what closes the "text visible long
+  //     before audio" gap.
+  //   - Blob fallback (Safari, anywhere MSE 'audio/mpeg' isn't supported):
+  //     same shape as before — wait for full response, then play.
+  // Either way the 'speaking' orb tracks real audio events so it stops
+  // the moment playback actually ends, not on a guessed timer. TTS
+  // failure never breaks chat: short visual blip and we move on.
   const playTtsReply = async (text, lang) => {
     if (!text) return
     stopTtsPlayback()
-    let url = null
-    try {
-      const blob = await speakTts({ text, lang: lang === 'he' ? 'he' : 'en' })
-      url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      ttsAudioRef.current = audio
-      const onDone = () => {
-        if (ttsAudioRef.current === audio) {
-          stopTtsPlayback()
-          setOrbState(prev => prev === 'speaking' ? 'idle' : prev)
-        }
+    const langKey = lang === 'he' ? 'he' : 'en'
+    const supportsMSE = typeof MediaSource !== 'undefined'
+      && typeof MediaSource.isTypeSupported === 'function'
+      && MediaSource.isTypeSupported('audio/mpeg')
+
+    const audio = new Audio()
+    ttsAudioRef.current = audio
+    const onDone = () => {
+      if (ttsAudioRef.current === audio) {
+        stopTtsPlayback()
+        setOrbState(prev => prev === 'speaking' ? 'idle' : prev)
       }
-      audio.onended = onDone
-      audio.onerror = onDone
+    }
+    audio.onended = onDone
+    audio.onerror = onDone
+
+    try {
+      const res = await speakTtsStream({ text, lang: langKey })
+
+      if (supportsMSE && res.body) {
+        const mediaSource = new MediaSource()
+        audio.src = URL.createObjectURL(mediaSource)
+        mediaSource.addEventListener('sourceopen', () => {
+          let sb
+          try {
+            sb = mediaSource.addSourceBuffer('audio/mpeg')
+          } catch (e) {
+            // Some browsers report isTypeSupported true but reject the
+            // sourceBuffer creation — fall back to blob mid-flight.
+            // eslint-disable-next-line no-console
+            console.warn('[TTS] MSE sourceBuffer failed, falling back', e?.message)
+            res.blob().then((blob) => {
+              if (ttsAudioRef.current !== audio) return
+              try { URL.revokeObjectURL(audio.src) } catch {}
+              audio.src = URL.createObjectURL(blob)
+              audio.play().catch(() => {})
+            })
+            return
+          }
+          const reader = res.body.getReader()
+          const pump = async () => {
+            try {
+              const { done, value } = await reader.read()
+              if (done) {
+                if (mediaSource.readyState === 'open') mediaSource.endOfStream()
+                return
+              }
+              sb.appendBuffer(value)
+            } catch {
+              if (mediaSource.readyState === 'open') {
+                try { mediaSource.endOfStream() } catch {}
+              }
+            }
+          }
+          sb.addEventListener('updateend', pump)
+          pump()
+        }, { once: true })
+      } else {
+        // Blob fallback — older browsers / Safari without audio/mpeg MSE
+        const blob = await res.blob()
+        audio.src = URL.createObjectURL(blob)
+      }
       setOrbState('speaking')
       await audio.play()
     } catch {
-      // Server has no Cartesia key, or render/network failed. Don't break
-      // the chat — just give a short visual ack and move on.
-      if (url) try { URL.revokeObjectURL(url) } catch {}
-      ttsAudioRef.current = null
+      // Network / render failure. Don't break chat — visual blip.
+      if (audio.src) try { URL.revokeObjectURL(audio.src) } catch {}
+      if (ttsAudioRef.current === audio) ttsAudioRef.current = null
       setOrbState('speaking')
       setTimeout(() => setOrbState(prev => prev === 'speaking' ? 'idle' : prev), 1500)
     }
