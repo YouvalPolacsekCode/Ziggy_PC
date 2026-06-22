@@ -484,13 +484,19 @@ def _add_unclaimed(devices: list[dict], live_ids: set[str],
 def _heal_unclaimed(devices: list[dict],
                     states: list[dict] | None = None,
                     entity_areas: dict[str, str] | None = None) -> list[dict]:
-    """Re-evaluate existing UNCLAIMED entries with the dynamic-mapping rules.
+    """Re-evaluate registry entries with the dynamic-mapping rules.
 
-    Covers the migration case where a sensor was added before this code existed
-    — it's already in the registry as ("sensor", room=None), so chat lookups
-    miss it. On every reconcile we walk the UNCLAIMED set, infer device_type
-    from attributes, look up the HA area, and promote rows that now have both
-    to CONNECTED. Idempotent — entries without an HA area stay UNCLAIMED.
+    Covers two migration cases that surfaced after the auto-discovery shipped:
+
+    1) Sensor sitting in the registry as UNCLAIMED, room=None — we now try
+       HA area, friendly_name and entity_id slug and promote to CONNECTED
+       when we land a room.
+
+    2) Sensor already CONNECTED with a user-assigned room, BUT with the
+       stale device_type="sensor" the old code stored. Chat looks up
+       (room, "temperature") and misses because the registry has
+       (room, "sensor"). This pass refines device_type on CONNECTED rows
+       too — never touches their user-set room.
     """
     if not entity_areas and not states:
         return devices
@@ -498,25 +504,34 @@ def _heal_unclaimed(devices: list[dict],
                    for s in (states or [])}
     entity_areas = entity_areas or {}
     promoted = 0
+    reclassified = 0
     for d in devices:
-        if d.get("status") != UNCLAIMED:
-            continue
+        status = d.get("status")
         eid = d.get("entity_id")
-        if not eid:
+        if not eid or status not in (UNCLAIMED, CONNECTED):
             continue
         attrs = attrs_by_id.get(eid, {})
-        room = _infer_room(eid, attrs, entity_areas)
         new_type = _infer_device_type(eid, attrs)
-        # Refine device_type even if there's no room yet — "sensor" → "temperature"
-        # is still better for ops UIs and future area assignments.
+        # Refine device_type on every reconcile — this is what makes
+        # `resolve_entity(room, "temperature")` start working for sensors
+        # that were claimed back when _add_unclaimed stored "sensor" as the
+        # device_type. Safe on CONNECTED rows because device_type is a
+        # derived classification, not a user choice (room is the user choice).
         if new_type and new_type != d.get("device_type"):
             d["device_type"] = new_type
+            reclassified += 1
+        if status != UNCLAIMED:
+            continue
+        # The room-promotion below only runs for UNCLAIMED — never overrides
+        # a user's room assignment on CONNECTED rows.
+        room = _infer_room(eid, attrs, entity_areas)
         if room and not d.get("room"):
             d["room"] = room
             d["status"] = CONNECTED
             promoted += 1
-    if promoted:
-        log_info(f"[DeviceRegistry] Healed {promoted} unclaimed entities via HA area mapping")
+    if promoted or reclassified:
+        log_info(f"[DeviceRegistry] heal pass: promoted={promoted}, "
+                 f"device_type reclassified={reclassified}")
     return devices
 
 

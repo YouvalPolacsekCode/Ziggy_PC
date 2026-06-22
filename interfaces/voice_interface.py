@@ -650,9 +650,12 @@ _MIN_AUDIO_BYTES = 1_000  # anything smaller is an empty/corrupt recording
 def transcribe_web(audio_path: str) -> tuple[str, str]:
     """Fast STT for web push-to-talk via OpenAI Whisper API.
 
-    - OpenAI API (whisper-1): ~1-2s for Hebrew and English with smart home prompt
-    - prompt=_HE_INITIAL_PROMPT primes Whisper with home-automation vocabulary so
-      it correctly transcribes 'כבה את האור' instead of 'חבא את האור'
+    - OpenAI API (whisper-1): ~1-2s for Hebrew and English
+    - Two-pass when the first pass looks Hebrew: re-transcribe with the
+      home-automation vocabulary prompt for command accuracy. English
+      passes never see the Hebrew prompt — it biases output toward
+      Hebrew tokens and was the root cause of English speech coming
+      back as Hebrew text.
     - Falls back to local transcribe() only on non-400 errors (network, auth, etc.)
       A 400 means the file itself is bad — local will fail the same way, so we skip.
     """
@@ -669,15 +672,25 @@ def transcribe_web(audio_path: str) -> tuple[str, str]:
     try:
         from integrations.llm_gateway import transcribe
         t0 = time.time()
+        # Pass 1: no prompt — clean auto-detect so English audio stays English.
         with open(audio_path, "rb") as f:
-            # Vocabulary hint via prompt= dramatically improves accuracy for
-            # Hebrew smart-home commands (כבה/הדלק/מזגן/etc.) and prevents
-            # Whisper from mishearing them as similar-sounding nonsense words.
-            result = transcribe("stt", f, prompt=_HE_INITIAL_PROMPT)
+            result = transcribe("stt", f)
         text = (result.text or "").strip()
-        # Determine language from character content — no extra model call needed.
+        # Character-content heuristic. Threshold lifted to 30% — at 10% a
+        # single misrecognised Hebrew letter in an English transcript
+        # ("the temperaטure in the office") was enough to flip lang to "he"
+        # and route the reply through the Hebrew translator.
         he_chars = sum(1 for c in text if '֐' <= c <= 'ת')
-        lang = "he" if he_chars > max(1, len(text) * 0.1) else "en"
+        lang = "he" if (text and he_chars > len(text) * 0.30) else "en"
+        # Pass 2: re-transcribe Hebrew utterances with the home-automation
+        # vocabulary prompt for command accuracy ('כבה את האור' instead of
+        # 'חבא את האור'). English skips this — the prompt biases Whisper
+        # toward Hebrew tokens.
+        if lang == "he":
+            with open(audio_path, "rb") as f:
+                result = transcribe("stt", f, language="he",
+                                    prompt=_HE_INITIAL_PROMPT)
+            text = (result.text or text).strip()
         print(f"[TIMING] whisper-api: {time.time() - t0:.2f}s, detected={lang!r}")
         return text, lang
     except Exception as e:

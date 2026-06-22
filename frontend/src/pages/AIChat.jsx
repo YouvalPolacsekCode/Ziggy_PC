@@ -273,12 +273,15 @@ export default function AIChat() {
       const rec = new SR()
       rec.continuous = true
       rec.interimResults = true
-      // Pick the SR locale to match the UI language. SR has no auto-detect
-      // mode that works reliably across browsers, and our user's lang preference
-      // is the best single hint available. Wrong-lang utterances still get
-      // captured by Whisper post-release; we just don't get a useful preview
-      // for those — that's fine.
-      rec.lang = lang === 'he' ? 'he-IL' : 'en-US'
+      // SR doesn't auto-detect. We pick the most likely spoken language by
+      // checking BOTH the UI lang (user-picked) AND the OS lang
+      // (navigator.language) — covers the common case where the user has an
+      // Israeli device but kept the Ziggy UI in English, and would still
+      // speak Hebrew. Wrong-lang utterances still get captured by Whisper
+      // for the final transcript; the preview just won't be useful for them.
+      const osHebrew = typeof navigator !== 'undefined'
+        && (navigator.language || '').toLowerCase().startsWith('he')
+      rec.lang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
       rec.onresult = (e) => {
         let interim = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {
