@@ -383,6 +383,49 @@ def _infer_device_type(entity_id: str, attrs: dict) -> str:
     return domain
 
 
+# Room slugs we recognise in entity_ids / friendly names. Kept short on purpose
+# — the HA area registry is the authoritative source; this is a name-hint
+# fallback for users who haven't set up HA areas yet. Matched longest-first so
+# "master_bedroom" wins over "bedroom".
+_NAME_HINT_ROOMS: tuple[str, ...] = (
+    "master_bedroom", "kids_room", "living_room", "dining_room", "guest_room",
+    "office", "bedroom", "kitchen", "bathroom", "balcony", "garden", "hallway",
+    "entrance", "study", "garage", "laundry",
+)
+
+
+def _infer_room(entity_id: str, attrs: dict, entity_areas: dict[str, str] | None) -> str | None:
+    """Resolve `entity_id → ziggy-room-key`. Priority order:
+
+      1. HA area assignment (authoritative — the operator told HA so)
+      2. friendly_name contains a known room hint
+      3. entity_id slug contains a known room hint
+
+    Steps 2+3 are deliberate fallbacks for the user who has the sensor
+    plugged in but never set the HA area. Returns None when nothing matches —
+    callers leave the row UNCLAIMED so the Devices page can prompt a manual
+    assignment.
+    """
+    if entity_areas:
+        area = entity_areas.get(entity_id)
+        if area:
+            return area
+    # Step 2: friendly_name. Z2M often names devices "Office Temperature
+    # Sensor" — that's the strongest non-area signal we have.
+    fn = (attrs.get("friendly_name") or "").lower().replace(" ", "_")
+    if fn:
+        for slug in _NAME_HINT_ROOMS:
+            if slug in fn:
+                return slug
+    # Step 3: entity_id slug. Catches ZHA-style ids like
+    # `sensor.aqara_office_temperature` even without a friendly name.
+    slug_part = entity_id.split(".", 1)[-1].lower()
+    for slug in _NAME_HINT_ROOMS:
+        if slug in slug_part:
+            return slug
+    return None
+
+
 def _add_unclaimed(devices: list[dict], live_ids: set[str],
                    states: list[dict] | None = None,
                    entity_areas: dict[str, str] | None = None) -> list[dict]:
@@ -424,7 +467,7 @@ def _add_unclaimed(devices: list[dict], live_ids: set[str],
             continue
         attrs = attrs_by_id.get(eid, {})
         device_type = _infer_device_type(eid, attrs)
-        room = entity_areas.get(eid)
+        room = _infer_room(eid, attrs, entity_areas)
         devices.append({
             "room": room,
             "device_type": device_type,
@@ -461,8 +504,8 @@ def _heal_unclaimed(devices: list[dict],
         eid = d.get("entity_id")
         if not eid:
             continue
-        room = entity_areas.get(eid)
         attrs = attrs_by_id.get(eid, {})
+        room = _infer_room(eid, attrs, entity_areas)
         new_type = _infer_device_type(eid, attrs)
         # Refine device_type even if there's no room yet — "sensor" → "temperature"
         # is still better for ops UIs and future area assignments.

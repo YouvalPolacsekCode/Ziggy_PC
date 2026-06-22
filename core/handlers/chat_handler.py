@@ -82,10 +82,19 @@ async def handle_chat_with_gpt(params: dict, *, source: str = "unknown") -> dict
     user_name = memory_context.get("user_name", "Youval")
     input_is_hebrew = _is_hebrew(text)
 
-    # Check recent history too — if the conversation has been in Hebrew, stay Hebrew.
-    if not input_is_hebrew and session_history:
-        recent = session_history[-4:] if len(session_history) >= 4 else session_history
-        input_is_hebrew = any(_is_hebrew(m.get("content", "")) for m in recent if m.get("role") == "user")
+    # Sticky-Hebrew override: only for genuinely ambiguous one-word
+    # acknowledgments ("ok", "yes", "no") that carry no language signal.
+    # Anything longer — even three English words — is the user clearly
+    # choosing a language, so the CURRENT turn wins and they can switch
+    # Hebrew→English mid-chat without the LLM dragging the old lang along.
+    # Previously this override fired whenever ANY recent message was Hebrew,
+    # which made the conversation feel stuck.
+    if (not input_is_hebrew
+            and len(text.strip().split()) <= 1
+            and session_history):
+        recent = session_history[-2:]
+        input_is_hebrew = any(_is_hebrew(m.get("content", ""))
+                              for m in recent if m.get("role") == "user")
 
     lang_rule = (
         "ALWAYS respond in Hebrew (עברית). Keep responses concise and natural. "

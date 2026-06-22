@@ -238,8 +238,33 @@ except ImportError:
 # Zero latency, zero API cost, grammatically correct Israeli Hebrew.
 # _translate() tries this first; falls through to Ollama/GPT for unknowns.
 
-# Build reverse map: English slug → preferred Hebrew room name (longest wins)
-_EN_SLUG_TO_HE: dict[str, str] = {}
+# Common Israeli-home rooms — always available so a fresh install without a
+# user-curated room_aliases_he in settings.yaml still translates "Office" to
+# "משרד" instead of leaking English into the spoken Hebrew reply.
+# User settings override this on a per-slug basis (longest-wins) below.
+_FALLBACK_ROOM_HE: dict[str, str] = {
+    "office":         "משרד",
+    "living_room":    "סלון",
+    "bedroom":        "חדר השינה",
+    "master_bedroom": "חדר השינה הראשי",
+    "kitchen":        "מטבח",
+    "bathroom":       "אמבטיה",
+    "kids_room":      "חדר הילדים",
+    "balcony":        "מרפסת",
+    "garden":         "גינה",
+    "hallway":        "מסדרון",
+    "entrance":       "כניסה",
+    "dining_room":    "פינת אוכל",
+    "guest_room":     "חדר אורחים",
+    "study":          "חדר עבודה",
+    "garage":         "חניה",
+    "laundry":        "כביסה",
+}
+
+# Build reverse map: English slug → preferred Hebrew room name (longest wins).
+# Seed with the fallback so unconfigured rooms still translate; user config
+# overrides per-slug below.
+_EN_SLUG_TO_HE: dict[str, str] = dict(_FALLBACK_ROOM_HE)
 # Build from personal room_aliases_he (settings) — personal takes priority
 for _he_r, _slug_r in settings.get("room_aliases_he", {}).items():
     if len(_he_r) > len(_EN_SLUG_TO_HE.get(_slug_r, "")):
@@ -261,6 +286,29 @@ def _room_to_he(display: str) -> str:
     return (_EN_SLUG_TO_HE.get(slug)
             or _EN_SLUG_TO_HE.get(display.strip().lower())
             or display)
+
+
+def _sanitize_room_leaks_he(text: str) -> str:
+    """Replace lingering English room slugs in a Hebrew reply.
+
+    Failure mode this fixes: the regex matcher above doesn't match a sensor
+    reply (formatting drift), the GPT fallback translates the sentence but
+    leaves the English room slug (e.g. "office") in the output → user sees
+    "הטמפרטורה היא 23 בoffice". This pass catches that.
+    """
+    if not text:
+        return text
+    out = text
+    # Boundary semantics: NOT preceded or followed by an ASCII letter.
+    # We can't use \b because Python's word-character class includes Hebrew
+    # letters — between "ב" and "o" in "בoffice" there's no \b, so the
+    # default boundary would silently miss the most common leak. ASCII-
+    # letter lookaround catches the leak while still preventing "office"
+    # from matching inside "officedoor" or "soffice".
+    for slug, he in _EN_SLUG_TO_HE.items():
+        pattern = rf"(?<![A-Za-z]){re.escape(slug)}(?![A-Za-z])"
+        out = re.sub(pattern, he, out, flags=re.IGNORECASE)
+    return out
 
 # Regex patterns for handler response strings (all anchored to full message)
 # ── Lights ────────────────────────────────────────────────────────────────────
@@ -558,8 +606,11 @@ def _translate(text: str) -> str:
     # of dead weight) and its quality is inconsistent.
     cached = _translate_via_gpt_cached(text)
     if cached is not None:
-        return cached
-    return text
+        # GPT occasionally leaves English room slugs untranslated
+        # ("הטמפרטורה היא 23 בoffice"). Catch that here so the user never
+        # hears or reads a half-Hebrew sentence.
+        return _sanitize_room_leaks_he(cached)
+    return _sanitize_room_leaks_he(text)
 
 
 # Cache GPT translations of unmatched English replies. The chat fallback path

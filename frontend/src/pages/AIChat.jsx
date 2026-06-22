@@ -209,9 +209,17 @@ export default function AIChat() {
   const [orbState,  setOrbState]  = useState('idle')
   const [thinking,  setThinking]  = useState(false)
   const [recording, setRecording] = useState(false)
+  // Live interim transcript from the browser's SpeechRecognition while the
+  // user holds the mic. Whisper still does the authoritative pass after
+  // release — this is just a 'you're being heard' visualization, equivalent
+  // to the iOS dictation strip. Empty when no SR available or when idle.
+  const [livePreview, setLivePreview] = useState('')
 
   const mediaRef       = useRef(null)
   const chunksRef      = useRef([])
+  // SpeechRecognition handle — paired with MediaRecorder in startRecording,
+  // stopped in onstop. Stored in a ref because nothing renders from it.
+  const speechRef      = useRef(null)
   const scrollRef      = useRef(null)
   const inputRef       = useRef(null)
   const sentPrefillRef = useRef(false)
@@ -244,9 +252,60 @@ export default function AIChat() {
       try { mediaRef.current?.stop() } catch {}
       try { mediaRef.current?.stream?.getTracks?.().forEach(t => t.stop()) } catch {}
       mediaRef.current = null
+      stopLivePreview()
       stopTtsPlayback()
     }
   }, [])
+
+  // Live transcript via the browser's SpeechRecognition API. Runs in
+  // parallel with MediaRecorder — SR is the live preview (interim results
+  // stream while the user speaks), MediaRecorder is the authoritative
+  // capture for Whisper. SR has spotty browser coverage (Chrome / Edge /
+  // recent Safari yes; Firefox no), spotty Hebrew accuracy, and zero
+  // back-pressure handling — we lean on it for visual feedback only and
+  // never trust its output as the final transcript. If it's missing, the
+  // PTT flow degrades gracefully to the no-preview behaviour.
+  const startLivePreview = () => {
+    const SR = typeof window !== 'undefined'
+      && (window.SpeechRecognition || window.webkitSpeechRecognition)
+    if (!SR) return
+    try {
+      const rec = new SR()
+      rec.continuous = true
+      rec.interimResults = true
+      // Pick the SR locale to match the UI language. SR has no auto-detect
+      // mode that works reliably across browsers, and our user's lang preference
+      // is the best single hint available. Wrong-lang utterances still get
+      // captured by Whisper post-release; we just don't get a useful preview
+      // for those — that's fine.
+      rec.lang = lang === 'he' ? 'he-IL' : 'en-US'
+      rec.onresult = (e) => {
+        let interim = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          interim += e.results[i][0].transcript
+        }
+        setLivePreview(interim.trim())
+      }
+      // SR fires `error` for permission denials, no-speech, network drops, etc.
+      // None of those should kill the PTT flow — Whisper picks up the slack.
+      // We silently swallow and let the recogniser auto-end.
+      rec.onerror = () => {}
+      rec.onend = () => { /* end-of-speech — leave livePreview visible
+                            until Whisper supersedes it */ }
+      speechRef.current = rec
+      rec.start()
+    } catch {
+      // SR can throw 'not allowed' or 'aborted' synchronously on some
+      // browsers if a previous instance hasn't fully released. Best effort.
+      speechRef.current = null
+    }
+  }
+  const stopLivePreview = () => {
+    const rec = speechRef.current
+    if (!rec) return
+    try { rec.stop() } catch {}
+    speechRef.current = null
+  }
 
   // Stop any in-flight TTS reply and release its object URL. Safe to call
   // multiple times; safe to call when nothing is playing.
@@ -455,7 +514,12 @@ export default function AIChat() {
     // Subtle haptic on press (Android PWA / Capacitor). iOS Safari ignores
     // — that's fine, no fallback needed.
     try { navigator.vibrate?.(10) } catch {}
+    setLivePreview('')
     setRecording(true); setOrbState('listening')
+    // Live preview runs in parallel with the MediaRecorder capture below.
+    // Whisper still owns the authoritative transcript; SR is the moment-to-
+    // moment 'you're being heard' UI. Safe to fire-and-forget.
+    startLivePreview()
 
     let stream
     try {
@@ -481,6 +545,9 @@ export default function AIChat() {
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop())
       mediaRef.current = null
+      // Stop SR before showing 'transcribing' so we don't pile up interim
+      // results from the trailing silence after the user releases.
+      stopLivePreview()
       setRecording(false)
 
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
@@ -488,7 +555,7 @@ export default function AIChat() {
       // webm/opus is well under ~150 ms of audio — almost certainly a
       // mis-tap and the backend would just return an empty transcript
       // (and burn a Whisper API call). Silently drop.
-      if (blob.size < 1500) { setOrbState('idle'); return }
+      if (blob.size < 1500) { setOrbState('idle'); setLivePreview(''); return }
 
       // Two phases, so the user's words land on screen the moment Whisper
       // returns — *before* the chat-reply pipeline runs:
@@ -506,9 +573,10 @@ export default function AIChat() {
       } catch (e) {
         addToast(e?.message || t('chat.transcribeFailed'), 'error')
         setOrbState('idle')
+        setLivePreview('')
         return
       }
-      if (!transcription) { setOrbState('idle'); return }
+      if (!transcription) { setOrbState('idle'); setLivePreview(''); return }
 
       // History = previous messages only. Backend appends transcription as
       // the final user turn (matches the text-input handleSend flow).
@@ -516,6 +584,9 @@ export default function AIChat() {
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text,
       }))
+      // Whisper has the authoritative transcript — drop the SR preview the
+      // moment we have it so the user message renders the real text.
+      setLivePreview('')
       addMessage('user', transcription)
 
       setThinking(true); setOrbState('thinking')
@@ -667,18 +738,41 @@ export default function AIChat() {
             </button>
           )}
 
-          {/* Hold-to-talk status — only while actively recording/processing */}
+          {/* Hold-to-talk status — only while actively recording/processing.
+              When SR delivers an interim transcript, the live text takes over
+              the pill so the user sees their words appear in real time. We
+              keep the preview visible through 'transcribing' too so the text
+              doesn't flash off in the gap between release and Whisper return. */}
           {(listening || busy) && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 10px', borderRadius: 999,
               background: 'var(--surface)', border: '0.5px solid var(--line)',
               fontSize: 11, color: 'var(--ink-mute)',
+              maxWidth: '70vw',
             }}>
-              {listening && <><VoiceWave active size={14} /><span>{t('chat.listening')}</span></>}
+              {listening && (
+                <>
+                  <VoiceWave active size={14} />
+                  <span
+                    style={{ overflow: 'hidden', textOverflow: 'ellipsis',
+                             whiteSpace: 'nowrap', minWidth: 0 }}
+                    dir="auto"
+                  >
+                    {livePreview || t('chat.listening')}
+                  </span>
+                </>
+              )}
               {busy && !listening && (
-                <span style={{ fontFamily: '"IBM Plex Mono", monospace' }}>
-                  {transcribing ? t('chat.transcribing') : orbState === 'thinking' ? t('chat.thinking') : t('chat.speaking')}
+                <span
+                  style={{ fontFamily: '"IBM Plex Mono", monospace',
+                           overflow: 'hidden', textOverflow: 'ellipsis',
+                           whiteSpace: 'nowrap', minWidth: 0 }}
+                  dir="auto"
+                >
+                  {transcribing
+                    ? (livePreview || t('chat.transcribing'))
+                    : orbState === 'thinking' ? t('chat.thinking') : t('chat.speaking')}
                 </span>
               )}
             </span>
