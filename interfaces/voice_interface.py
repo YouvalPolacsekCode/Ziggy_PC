@@ -573,9 +573,14 @@ def _translate(text: str) -> str:
              without any API call.
     Step 2:  Ollama local model (free, ~1s).
     Step 3:  GPT-4o-mini fallback (~2s, small cost).
-    If the text is already Hebrew, returns it unchanged.
+    Already-Hebrew text is returned unchanged. Mixed strings whose Hebrew
+    chars come only from embedded names ("Turning off X and Task added:
+    לקנות חלב") still need translation — gate on majority script, not
+    any-Hebrew-char.
     """
-    if is_hebrew(text):
+    hebrew_letters = sum(1 for c in text if 'א' <= c <= 'ת')
+    latin_letters = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+    if hebrew_letters >= latin_letters and hebrew_letters > 0:
         return text
 
     instant = _he_instant_reply(text)

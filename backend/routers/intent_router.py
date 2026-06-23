@@ -184,13 +184,24 @@ async def process_chat(req: ChatRequest):
     # chat_with_gpt already responds in Hebrew natively; this covers command
     # intents (toggle_light, control_ac, etc.) and multi-intent combinations
     # whose handlers return English strings.
+    #
+    # The old gate was `not is_hebrew(reply)` — but is_hebrew returns True if
+    # ANY Hebrew char appears, so a mostly-English multi-intent reply like
+    # "Turning off living room light and Task added: לקנות חלב" was treated
+    # as Hebrew (because of the embedded task title) and translation was
+    # skipped. Switch to a Latin-vs-Hebrew letter ratio: if Latin letters
+    # outweigh Hebrew letters, the connective prose is English and we should
+    # translate.
     if top_intent not in _GPT_FALLBACK_INTENTS:
         from interfaces.voice_interface import _translate, is_hebrew as _is_hebrew
-        if _is_hebrew(req.text) and reply and not _is_hebrew(reply):
-            try:
-                reply = _translate(reply)
-            except Exception:
-                pass
+        if _is_hebrew(req.text) and reply:
+            hebrew_letters = sum(1 for c in reply if 'א' <= c <= 'ת')
+            latin_letters = sum(1 for c in reply if 'a' <= c.lower() <= 'z')
+            if latin_letters > hebrew_letters:
+                try:
+                    reply = _translate(reply)
+                except Exception:
+                    pass
 
     broadcast_intent = top_intent
     if top_intent == "__multi__":

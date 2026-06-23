@@ -53,20 +53,18 @@ async def handle_shutdown_ziggy(params: dict, *, source: str = "unknown") -> dic
 
 
 async def handle_ziggy_status(params: dict, *, source: str = "unknown") -> dict:
-    sys_status = get_system_status()
-    return ok("I'm Ziggy, your home assistant. Feeling sharp and ready!\n\nHere's how I'm doing:\n" + str(sys_status))
+    # Plain one-sentence reply. The detailed system snapshot lives behind
+    # the get_system_status intent for ops surfaces — the chat surface gets
+    # a TTS-friendly answer.
+    return ok("All systems good.")
 
 
 async def handle_ziggy_identity(params: dict, *, source: str = "unknown") -> dict:
-    return ok("I'm Ziggy, built by Youval to make your home smarter and life easier.")
+    return ok("I'm Ziggy, your home assistant.")
 
 
 async def handle_ziggy_help(params: dict, *, source: str = "unknown") -> dict:
-    return ok(
-        "I can help with lights, AC, TV, tasks, notes, sensors, web search, news, stocks, recipes, "
-        "emails, events, memory, and system info. Try: 'Turn on the living room lights', "
-        "'What's the temperature in Roni's room?', 'Add task feed the cat', 'Search the web for...'"
-    )
+    return ok("I run lights, tasks, sensors, and more — just ask.")
 
 
 async def handle_ziggy_chat(params: dict, *, source: str = "unknown") -> dict:

@@ -61,42 +61,37 @@ def add_task(task, due=None, priority=None, reminder=None, notes=None, repeat=No
 
 
 def list_tasks(formatted: bool = False):
+    """Return tasks.
+
+    formatted=True returns a single plain-prose string suitable for the
+    chat surface (TTS-safe, no markdown / emoji / table separators — the
+    chat shape contract requires plain prose).
+    formatted=False returns the raw list[str] used by the dashboard.
+    """
     tasks = load_tasks()
     if not tasks:
-        return "📭 No tasks yet." if formatted else ["No tasks yet."]
+        return "No tasks yet." if formatted else ["No tasks yet."]
 
     now_dt = datetime.now()
-    lines = []
-    for i, t in enumerate(tasks, start=1):
+    # Side-effect: stamp missed=True on overdue tasks. Preserved from the
+    # previous implementation; other code paths read .missed downstream.
+    for t in tasks:
         due_dt = datetime.strptime(t["due"], "%Y-%m-%d %H:%M")
-        overdue = not t["done"] and due_dt < now_dt
-        if overdue:
+        if not t["done"] and due_dt < now_dt:
             t["missed"] = True
-
-        if t.get("missed"):
-            status = "❌ Missed"
-        elif overdue:
-            status = "⚠️ Overdue"
-        elif t["done"]:
-            status = "✅ Done"
-        else:
-            status = "🕒 Pending"
-
-        task_text = (
-            f"{i}. {t['task']}\n"
-            f"📅 Due: {t['due']}\n"
-            f"⚡ Priority: {t['priority']}\n"
-            f"📌 Status: {status}"
-        )
-        if t.get("notes"):
-            task_text += f"\n📝 Notes: {t['notes']}"
-        lines.append(task_text)
-
     save_tasks(tasks)
-    result = "📝 Your Tasks:\n\n" + "\n\n────────────\n\n".join(lines)
-    if formatted:
-        return result
-    return lines
+
+    if not formatted:
+        lines = [f"{i}. {t['task']}" for i, t in enumerate(tasks, 1)]
+        return lines
+
+    # Plain-prose summary. Examples:
+    #   "You have 3 tasks: call mom, buy milk, feed the cat."
+    #   "You have 1 task: call mom."
+    titles = [t["task"] for t in tasks]
+    count = len(titles)
+    noun = "task" if count == 1 else "tasks"
+    return f"You have {count} {noun}: " + ", ".join(titles) + "."
 
 
 def task_summary() -> str:
@@ -113,16 +108,12 @@ def task_summary() -> str:
             return False
     overdue = sum(1 for t in tasks if not t["done"] and _is_overdue(t))
     high = sum(1 for t in tasks if not t["done"] and t.get("priority") == "high")
-    lines = [
-        f"📊 Task summary: {len(tasks)} total",
-        f"✅ Done: {done}",
-        f"🕒 Pending: {pending}",
-    ]
+    parts = [f"{len(tasks)} total", f"{done} done", f"{pending} pending"]
     if overdue:
-        lines.append(f"⚠️ Overdue: {overdue}")
+        parts.append(f"{overdue} overdue")
     if high:
-        lines.append(f"🔴 High priority: {high}")
-    return "\n".join(lines)
+        parts.append(f"{high} high priority")
+    return "Tasks: " + ", ".join(parts) + "."
 
 
 def postpone_task(task_name: str, days: int = 1) -> str:
@@ -140,8 +131,8 @@ def postpone_task(task_name: str, days: int = 1) -> str:
             t["reminded"] = False
             t["missed"] = False
             save_tasks(tasks)
-            return f"📅 Postponed '{t['task']}' to {t['due']}."
-    return f"❌ Task not found: {task_name}"
+            return f"Postponed '{t['task']}' to {t['due']}."
+    return f"Task not found: {task_name}"
 
 
 def get_overdue_tasks() -> list[str]:
