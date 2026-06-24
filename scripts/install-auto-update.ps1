@@ -1,29 +1,34 @@
-# Install a Windows Scheduled Task that runs scripts\update.ps1 every 5
+# Install a Windows Scheduled Task that runs scripts\update.ps1 every 2
 # minutes. Idempotent: re-running replaces the existing task.
 #
-# REQUIRES Administrator PowerShell (because we use -LogonType S4U so the
-# task runs even when no user is logged in).
+# Default: Interactive logon (no admin required, runs while signed in — the
+# always-on home mini PC case). Pass -RequireS4U to use the legacy logon mode
+# that survives sign-out at the cost of needing Admin PowerShell to install.
 #
 # After install:
 #   - Task name:    ZiggyAutoUpdate
 #   - Action:       powershell -File scripts\update.ps1
-#   - Trigger:      every 5 minutes, indefinitely
+#   - Trigger:      every 2 minutes, indefinitely
 #   - Output log:   user_files\update.log
 #   - Deploy log:   user_files\deploy_log (one entry per successful deploy)
 #
 # To uninstall:
 #   Unregister-ScheduledTask -TaskName ZiggyAutoUpdate -Confirm:$false
+param([switch]$RequireS4U)
 
 $ErrorActionPreference = "Stop"
 
-# Confirm running as admin
 $isAdmin = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Host "ERROR: this script must run from an Administrator PowerShell."
+if ($RequireS4U -and -not $isAdmin) {
+    Write-Host "ERROR: -RequireS4U needs Administrator PowerShell."
     Write-Host "Right-click PowerShell, 'Run as Administrator', then re-run."
     exit 1
+}
+if (-not $RequireS4U -and -not $isAdmin) {
+    Write-Host "Installing with Interactive logon (task fires only while signed in)."
+    Write-Host "Pass -RequireS4U from an Admin PowerShell to survive sign-out."
 }
 
 $TaskName     = "ZiggyAutoUpdate"
@@ -50,10 +55,13 @@ $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 2) `
     -RepetitionDuration (New-TimeSpan -Days 365)
 
-# S4U = run with the user's credentials, even when they're not logged in.
+# Default: Interactive logon (runs while user is signed in — the always-on
+# home-mini-PC case). S4U would let it run when nobody is signed in but
+# requires admin elevation to register, so it's opt-in.
+$logonType = if ($RequireS4U) { "S4U" } else { "Interactive" }
 $principal = New-ScheduledTaskPrincipal `
     -UserId "$env:USERDOMAIN\$env:USERNAME" `
-    -LogonType S4U `
+    -LogonType $logonType `
     -RunLevel Highest
 
 # Safety: don't pile up if a run is slow; cap each run at 10 min.
