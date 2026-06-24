@@ -1,0 +1,81 @@
+# AC Schedule — Turn on at a fixed time, off at another fixed time
+#
+# Israeli-default temperature: 24°C (the user-settled default per memory).
+# Pairs with phone-presence checks in the more advanced Pre-cool template.
+blueprint:
+  name: AC Schedule
+  description: >
+    Turn the AC on at one time and off at another. Israeli default
+    temperature is 24°C; adjust to taste.
+  domain: automation
+  input:
+    ac_entity:
+      name: AC
+      description: The climate entity to control.
+      selector:
+        entity:
+          domain: climate
+    on_time:
+      name: Turn on at
+      description: When to start cooling.
+      default: "18:00:00"
+      selector:
+        time: {}
+    off_time:
+      name: Turn off at
+      description: When to stop cooling.
+      default: "23:00:00"
+      selector:
+        time: {}
+    target_temp:
+      name: Target temperature (°C)
+      default: 24
+      selector:
+        number:
+          min: 16
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+  ziggy:
+    category: climate
+    icon: ❄️
+    tags: [ac, climate, schedule, israel]
+    he:
+      name: לוח זמנים למזגן
+      description: מפעיל את המזגן בשעה אחת ומכבה בשעה אחרת. ברירת מחדל ישראלית 24 מעלות.
+      inputs:
+        ac_entity: מזגן
+        on_time: שעת הפעלה
+        off_time: שעת כיבוי
+        target_temp: טמפרטורת יעד (מעלות)
+    israel_defaults:
+      target_temp: 24
+      on_time: "18:00:00"
+      off_time: "23:00:00"
+triggers:
+  - platform: time
+    at: !input on_time
+    id: ac_on
+  - platform: time
+    at: !input off_time
+    id: ac_off
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: ac_on
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: !input ac_entity
+            data:
+              temperature: !input target_temp
+              hvac_mode: cool
+      - conditions:
+          - condition: trigger
+            id: ac_off
+        sequence:
+          - service: climate.turn_off
+            target:
+              entity_id: !input ac_entity
+mode: single

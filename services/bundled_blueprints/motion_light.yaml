@@ -1,0 +1,69 @@
+# Motion-activated Light
+#
+# Canonical HA community pattern: a motion sensor turns a light on, and after
+# a configurable no-motion delay it turns the light back off. Bundled with
+# Ziggy as the first-class "smart bathroom / smart hallway" template.
+#
+# Israeli defaults: 90-second no-motion delay (long enough for someone
+# brushing teeth in a bathroom; short enough not to waste electricity).
+blueprint:
+  name: Motion-activated Light
+  description: >
+    Turn on a light when a motion sensor fires, then turn it off after a
+    configurable period of no motion. The classic bathroom / hallway pattern.
+  domain: automation
+  input:
+    motion_entity:
+      name: Motion sensor
+      description: The motion sensor that triggers the light.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: motion
+    light_target:
+      name: Light
+      description: The light to switch on and off.
+      selector:
+        entity:
+          domain: light
+    no_motion_wait:
+      name: No-motion wait time (seconds)
+      description: How long to wait without motion before turning the light off.
+      default: 90
+      selector:
+        number:
+          min: 10
+          max: 3600
+          unit_of_measurement: seconds
+  ziggy:
+    category: lighting
+    icon: 💡
+    tags: [motion, lights, room]
+    he:
+      name: אור מופעל-על-ידי-תנועה
+      description: הדלקת אור כשמזוהה תנועה, וכיבוי לאחר זמן ללא תנועה.
+      inputs:
+        motion_entity: חיישן תנועה
+        light_target: אור להפעלה
+        no_motion_wait: זמן המתנה ללא תנועה (שניות)
+    israel_defaults:
+      no_motion_wait: 90
+
+triggers:
+  - platform: state
+    entity_id: !input motion_entity
+    to: "on"
+actions:
+  - service: light.turn_on
+    target:
+      entity_id: !input light_target
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input motion_entity
+        to: "off"
+        for:
+          seconds: !input no_motion_wait
+  - service: light.turn_off
+    target:
+      entity_id: !input light_target
+mode: restart

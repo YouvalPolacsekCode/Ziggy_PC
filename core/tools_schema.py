@@ -825,13 +825,14 @@ TOOLS = [
             "name":              {"type": "string", "description": "Friendly name, e.g. 'Kitchen lights noon'"},
             "trigger_type":      {
                 "type": "string",
-                "enum": ["time", "state", "numeric_state", "sunrise", "sunset"],
+                "enum": ["time", "state", "numeric_state", "sunrise", "sunset", "time_pattern"],
                 "description": (
                     "What triggers the automation. "
                     "Use 'time' for clock-based schedules. "
                     "Use 'state' for exact entity state matches (on/off/home). "
                     "Use 'numeric_state' for numeric sensor thresholds (temperature above 24, humidity below 60). "
-                    "Use 'sunrise'/'sunset' for sun-based triggers."
+                    "Use 'sunrise'/'sunset' for sun-based triggers. "
+                    "Use 'time_pattern' for periodic triggers (every N minutes, every N hours) — set trigger_minutes/hours/seconds."
                 ),
             },
             "trigger_time":      {"type": "string", "description": "HH:MM for time triggers, e.g. '07:00'"},
@@ -840,6 +841,11 @@ TOOLS = [
             "trigger_above":     {"type": "number", "description": "For numeric_state triggers: fire when value rises ABOVE this number (e.g. 24 for 'temp above 24')"},
             "trigger_below":     {"type": "number", "description": "For numeric_state triggers: fire when value falls BELOW this number"},
             "trigger_offset":    {"type": "string", "description": "Offset for sunrise/sunset, e.g. '+00:30:00'"},
+            "trigger_for_minutes": {"type": "integer", "description": "For state triggers: how many minutes the state must hold before firing. Essential for occupancy patterns ('no motion for 5 minutes' → set to 5). Omit if the trigger should fire immediately."},
+            "trigger_minutes":   {"type": "string", "description": "For time_pattern triggers: minutes interval. Use '/15' for 'every 15 minutes', '30' for 'at minute 30 of each hour'."},
+            "trigger_hours":     {"type": "string", "description": "For time_pattern triggers: hours interval. Use '/2' for 'every 2 hours'."},
+            "trigger_seconds":   {"type": "string", "description": "For time_pattern triggers: seconds interval. Use '/30' for 'every 30 seconds'."},
+            "mode":              {"type": "string", "enum": ["single", "restart", "queued", "parallel"], "description": "What happens when a new trigger fires while the automation is still running. 'single' (default) drops new triggers. 'restart' cancels the running instance and starts fresh — use for motion-driven automations so each new motion event resets any countdown. 'queued' runs sequentially. 'parallel' runs concurrently."},
             "action_room":       {"type": "string", "description": f"Room to act on. Options: {_ROOMS}"},
             "action_device_type":{"type": "string", "description": f"Device type to act on: {_automation_device_types()}"},
             "action_entity_id":  {"type": "string", "description": "Specific HA entity ID for the action (use this instead of action_room when you know the exact entity, e.g. light.gledopto_gl_b_004p)"},
@@ -891,6 +897,75 @@ TOOLS = [
         }, "required": ["enable"]},
     }},
     {"type": "function", "function": {
+        "name": "create_occupancy_sensor",
+        "description": (
+            "Create a room occupancy sensor that fuses multiple presence signals "
+            "(motion, mmWave, door open) into a single 'is anyone in this room' entity. "
+            "Use this when the user wants to make a room 'smart' — automations can then check "
+            "one entity instead of repeating motion-OR-presence-OR-door logic in every rule."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "room":             {"type": "string", "description": f"Room this sensor is for. Options: {_ROOMS}"},
+            "sensor_entities":  {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "List of HA entity IDs whose 'on' state means 'someone present'. "
+                    "Typically motion + presence + door, e.g. "
+                    "['binary_sensor.bedroom_motion', 'binary_sensor.bedroom_presence', 'binary_sensor.bedroom_door']. "
+                    "At least one is required; more sensors give better coverage."
+                ),
+            },
+            "friendly_name":    {"type": "string", "description": "Display name for the new sensor. Pass the user's preferred language verbatim (Hebrew supported, e.g. 'תפוסה - חדר שינה')."},
+            "delay_off_seconds":{"type": "integer", "description": "How many seconds after all source sensors go quiet before the occupancy sensor reports clear. Damps flicker. Default 30."},
+        }, "required": ["room", "sensor_entities"]},
+    }},
+    # ---- Community templates (bundled HA blueprints, surfaced as Ziggy templates) ----
+    {"type": "function", "function": {
+        "name": "list_blueprints",
+        "description": (
+            "List Ziggy's bundled community automation templates (proven patterns the user "
+            "can fill in instead of describing each trigger and action manually). "
+            "Use when the user says things like 'what automations can I set up?', "
+            "'show me templates', 'set up smart bathroom lights', 'is there a template for X', "
+            "or when you want to recommend a proven pattern instead of building one from scratch. "
+            "Returns each template's id, name, short description, and number of inputs to fill. "
+            "Never use the word 'blueprint' in your reply — call them 'templates' or 'community templates'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "instantiate_blueprint",
+        "description": (
+            "Create an automation from a bundled community template by filling in its inputs. "
+            "Use after list_blueprints — pass the chosen template's id plus a key/value map of "
+            "the values for each input the template declares (typically entity ids, times, numbers, etc.). "
+            "Israeli defaults (24°C AC, sunset-based blinds, weekday wake times) are baked in; only override "
+            "when the user explicitly asks for something different. "
+            "If you don't have the inputs the user needs to provide, ask them — do NOT hallucinate entity ids."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "blueprint_id": {
+                "type": "string",
+                "description": "Template id returned by list_blueprints (e.g. 'motion_light', 'ac_schedule').",
+            },
+            "inputs": {
+                "type": "object",
+                "description": (
+                    "Map of input key → value. Keys come from the chosen template (e.g. for motion_light: "
+                    "{'motion_entity': 'binary_sensor.bathroom_motion', 'light_target': 'light.bathroom', "
+                    "'no_motion_wait': 120}). Values are HA entity ids, numbers, times, or strings, depending "
+                    "on the input's selector kind."
+                ),
+                "additionalProperties": True,
+            },
+            "name": {
+                "type": "string",
+                "description": "Optional custom name for the created automation. Omit to use the template's default name.",
+            },
+        }, "required": ["blueprint_id", "inputs"]},
+    }},
+    {"type": "function", "function": {
         "name": "update_automation",
         "description": (
             "Update any property of an existing automation or routine. "
@@ -903,7 +978,7 @@ TOOLS = [
             "new_name":          {"type": "string", "description": "New name for the automation"},
             "description":       {"type": "string", "description": "New description"},
             "room":              {"type": "string", "description": f"Assign to this room. Options: {_ROOMS}. Pass empty string \"\" to unassign / remove from all rooms."},
-            "trigger_type":      {"type": "string", "enum": ["time", "state", "numeric_state", "sunrise", "sunset"],
+            "trigger_type":      {"type": "string", "enum": ["time", "state", "numeric_state", "sunrise", "sunset", "time_pattern"],
                                   "description": "Change the trigger type"},
             "trigger_time":      {"type": "string", "description": "New HH:MM for time triggers"},
             "trigger_entity_id": {"type": "string", "description": "New entity ID or room name for state/numeric_state triggers"},
@@ -911,6 +986,8 @@ TOOLS = [
             "trigger_above":     {"type": "number", "description": "New above threshold for numeric_state triggers"},
             "trigger_below":     {"type": "number", "description": "New below threshold for numeric_state triggers"},
             "trigger_offset":    {"type": "string", "description": "New offset for sunrise/sunset triggers"},
+            "trigger_for_minutes": {"type": "integer", "description": "For state triggers: how many minutes the state must hold before firing. Set to 0 or omit to fire immediately."},
+            "mode":              {"type": "string", "enum": ["single", "restart", "queued", "parallel"], "description": "Change how concurrent triggers are handled. Same semantics as in create_automation."},
             "action_room":       {"type": "string", "description": f"New room for the action. Options: {_ROOMS}"},
             "action_device_type":{"type": "string", "description": f"New device type: {_automation_device_types()}"},
             "action_service":    {"type": "string", "description": f"New HA service: {_automation_all_services()}"},

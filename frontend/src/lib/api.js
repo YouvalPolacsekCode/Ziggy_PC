@@ -416,7 +416,23 @@ export const toggleAutomation = (id, enabled) => patch(`/automations/${id}/toggl
 export const triggerAutomation = (id) => post(`/automations/${id}/trigger`)
 export const deleteAutomation = (id) => del(`/automations/${id}`)
 export const getAutomationHistory = (id, limit = 20) => get(`/automations/${id}/history?limit=${limit}`)
+// Bridge-side run history (every automatic fire, not just manual triggers).
+// Returns {ok, runs: [{run_id, started_at, finished_at, status, trigger_label}, ...]}.
+// `runs` is empty (not an error) when an automation has never fired.
+export const getAutomationTraces = (id, limit = 10) => get(`/automations/${id}/traces?limit=${limit}`)
+// Step-by-step timeline of one run. Returns {ok, run, steps: [{kind, label, passed, error, timestamp}, ...]}.
+// 404 ⇒ run rolled out of the bridge's retention window; 502 ⇒ bridge unreachable.
+export const getAutomationTraceDetail = (id, runId) => get(`/automations/${id}/traces/${encodeURIComponent(runId)}`)
 export const snoozeAutomation = (id, minutes) => post(`/automations/${id}/snooze`, { minutes })
+
+// Community templates — HA Blueprints bundled with Ziggy + ad-hoc user-imported ones.
+// See services/blueprint_importer.py. Pre-bundled or pasted-only; we never fetch from
+// the internet at runtime. Use cases: a "Templates" library tab, the wizard's
+// blueprint-input form, and the LLM's list_blueprints / instantiate_blueprint tools.
+export const listBlueprints           = () => get('/blueprints')
+export const getBlueprint             = (id) => get(`/blueprints/${encodeURIComponent(id)}`)
+export const instantiateBlueprint     = (id, inputs, name) => post(`/blueprints/${encodeURIComponent(id)}/instantiate`, { blueprint_id: id, inputs, name })
+export const importBlueprint          = (yaml) => post('/blueprints/import', { yaml })
 
 // Smart Light Schedule (circadian) — bundle of 4 HA automations created/replaced
 // atomically. See services/circadian_builder.py.

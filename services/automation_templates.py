@@ -1104,3 +1104,77 @@ def _generic(template: dict, cap_map: dict) -> dict:
         "actions":     [],
         "rooms":       [],
     }
+
+
+# ---------------------------------------------------------------------------
+# Blueprint-sourced templates (Session C)
+# ---------------------------------------------------------------------------
+#
+# HA blueprints loaded via services.blueprint_importer surface here as a
+# *second* family of templates, side-by-side with the curated Ziggy-native
+# library above. The list/can_run/build_prefill helpers above are untouched —
+# they remain authoritative for the curated set. Blueprint templates carry
+# `kind: "blueprint"` so callers can route them through the blueprint-aware
+# wizard (no capability-matching prefill; the user fills inputs directly).
+#
+# Why a separate family: blueprint inputs are arbitrary HA selectors
+# (entity-of-domain X, number, time, text, …). The curated wizard speaks a
+# tighter shape (trigger + actions + conditions). Mixing them would force a
+# refactor; instead we ADD a parallel surface that the frontend renders as
+# its own "From the community library" section.
+
+
+def _blueprint_to_template_dict(bp) -> dict:
+    """Convert a parsed Blueprint into the same dict shape the rest of the
+    template surface expects, so the frontend can reuse TemplateCard.
+
+    Note on terminology: end users NEVER see the word "blueprint". The HA
+    community calls them blueprints; in Ziggy we surface them as "templates"
+    or "community templates". The internal `kind: "blueprint"` field is
+    routing-only and never rendered as user-facing text.
+    """
+    return {
+        # Stable id + namespace to avoid clashing with curated TEMPLATES ids.
+        "id":                    f"bp:{bp.id}",
+        "blueprint_id":          bp.id,
+        "name":                  bp.name,
+        "name_he":               bp.name_he or "",
+        "description":           bp.description,
+        "description_he":        bp.description_he or "",
+        "category":              bp.category or "blueprint",
+        "icon":                  bp.icon or "🧩",
+        "tags":                  list(bp.tags or []),
+        "kind":                  "blueprint",  # routing marker only
+        "source":                bp.source,    # "bundled" | "user"
+        # Capability machinery returns "everything is ready" for blueprints —
+        # the user picks entities directly in the form, no auto-prefill.
+        "required_capabilities": [],
+        "optional_capabilities": [],
+        "relevant_capabilities": [],
+        "capability_labels":     {},
+        "safety_level":          "safe",
+        "inputs":                [i.to_dict() for i in bp.inputs],
+    }
+
+
+def get_blueprint_templates() -> list[dict]:
+    """Return all bundled + session-loaded blueprints as template dicts.
+
+    Safe to call even if blueprint_importer fails to load — we swallow the
+    error and return an empty list so the curated library still renders.
+    """
+    try:
+        from services.blueprint_importer import list_blueprints
+        return [_blueprint_to_template_dict(bp) for bp in list_blueprints()]
+    except Exception:
+        return []
+
+
+def get_all_templates() -> list[dict]:
+    """Curated + blueprint templates in one list.
+
+    Callers that need the curated set unchanged keep using `TEMPLATES`
+    directly. Callers that want everything (the new Templates page, the LLM
+    `list_blueprints` tool) call here.
+    """
+    return list(TEMPLATES) + get_blueprint_templates()

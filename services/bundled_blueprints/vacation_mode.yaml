@@ -1,0 +1,74 @@
+# Vacation Mode — flip a marker when nobody's been home for N hours
+#
+# Watches a person tracker. After the configured no-presence duration, sets
+# an input_boolean (or any switchable entity) to "on" — that flag is then
+# what other automations key off of for vacation-style behaviour. Resets the
+# flag the moment the person tracker returns home.
+blueprint:
+  name: Vacation Mode
+  description: >
+    When the household has been away for several hours, mark vacation mode
+    on. Clear it as soon as anyone arrives home. Other automations can use
+    this flag to disable presence-triggered behaviour while you're away.
+  domain: automation
+  input:
+    person_entity:
+      name: Person tracker
+      description: The person whose presence drives the vacation flag.
+      selector:
+        entity:
+          domain: person
+    vacation_flag:
+      name: Vacation flag (switch / input_boolean)
+      description: The on/off entity Ziggy toggles. Other automations key off this.
+      selector:
+        entity:
+          domain: input_boolean
+    away_hours:
+      name: Hours away before vacation mode kicks in
+      default: 24
+      selector:
+        number:
+          min: 1
+          max: 168
+          step: 1
+          unit_of_measurement: hours
+  ziggy:
+    category: presence
+    icon: 🏖️
+    tags: [vacation, presence, away]
+    he:
+      name: מצב חופשה
+      description: מסמן מצב חופשה אחרי שאף אחד לא היה בבית מספר שעות.
+      inputs:
+        person_entity: עוקב נוכחות
+        vacation_flag: דגל חופשה
+        away_hours: שעות העדרות עד הפעלת חופשה
+triggers:
+  - platform: state
+    entity_id: !input person_entity
+    to: not_home
+    for:
+      hours: !input away_hours
+    id: away_long
+  - platform: state
+    entity_id: !input person_entity
+    to: home
+    id: returned
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: away_long
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input vacation_flag
+      - conditions:
+          - condition: trigger
+            id: returned
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input vacation_flag
+mode: single

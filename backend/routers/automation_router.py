@@ -15,6 +15,8 @@ from services.ha_automations import (
     save_automation,
     delete_automation as ha_delete_automation,
     toggle_automation,
+    get_automation_traces,
+    get_trace_detail,
 )
 from services.local_automation_actions import (
     delete_ziggy_actions,
@@ -211,6 +213,100 @@ async def get_automation_templates():
     return {"templates": [_enrich_template(t, cap_map, signal_fires=signal_fires) for t in TEMPLATES]}
 
 
+# ── Community templates (HA Blueprints, surfaced as Ziggy templates) ────────
+#
+# Session C. The list endpoint serves a flat catalogue of all bundled
+# blueprints, plus any user-loaded ones from the current process. The
+# instantiate endpoint creates an automation from a chosen template + a
+# filled inputs map, routed through the same save_automation pipeline as
+# every other automation creation path. The import endpoint accepts pasted
+# YAML for a one-off ad-hoc template (NOT persisted to disk — security
+# boundary).
+
+class BlueprintInstantiateBody(BaseModel):
+    blueprint_id: str
+    inputs:       dict
+    name:         Optional[str] = None
+
+
+class BlueprintImportBody(BaseModel):
+    yaml: str
+
+
+@router.get("/api/blueprints")
+async def list_blueprints_endpoint():
+    """All bundled + session-loaded community templates, in the same template
+    dict shape the curated /api/automations/templates endpoint returns so
+    the frontend can reuse TemplateCard.
+    """
+    from services.automation_templates import get_blueprint_templates
+    templates = await asyncio.to_thread(get_blueprint_templates)
+    return {"templates": templates}
+
+
+@router.get("/api/blueprints/{blueprint_id}")
+async def get_blueprint_endpoint(blueprint_id: str):
+    """Full detail (including the inputs list) for one template."""
+    from services.blueprint_importer import get_blueprint
+    bp = await asyncio.to_thread(get_blueprint, blueprint_id)
+    if not bp:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return bp.to_dict()
+
+
+@router.post("/api/blueprints/{blueprint_id}/instantiate")
+async def instantiate_blueprint_endpoint(blueprint_id: str, body: BlueprintInstantiateBody):
+    """Create an automation from a community template + filled inputs.
+
+    Mirrors the validation contract of the LLM handler: 400 on missing
+    inputs / unknown template, 502 on HA save failure, 200 on success.
+    """
+    from services.blueprint_importer import instantiate_blueprint, get_blueprint
+    bp = await asyncio.to_thread(get_blueprint, blueprint_id)
+    if not bp:
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        automation_data = await asyncio.to_thread(
+            instantiate_blueprint, blueprint_id, body.inputs or {}, name=body.name,
+        )
+    except ValueError as e:
+        # Friendly validation message — surface to the user as-is.
+        raise HTTPException(status_code=400, detail=str(e))
+    result = await asyncio.to_thread(save_automation, automation_data)
+    if not result.get("ok"):
+        _bus.emit("automation", _BASIC, "blueprint_instantiate_failed",
+                  blueprint_id=blueprint_id, name=automation_data.get("name"),
+                  result="error", error=result.get("error"))
+        raise HTTPException(status_code=502, detail=result.get("error", "Save failed"))
+    _bus.emit("automation", _BASIC, "blueprint_instantiated",
+              blueprint_id=blueprint_id, automation_id=result.get("id"),
+              name=automation_data.get("name"), result="ok")
+    return {
+        "ok":            True,
+        "automation_id": result.get("id"),
+        "source":        result.get("source"),
+        "blueprint_id":  blueprint_id,
+        "name":          automation_data.get("name"),
+    }
+
+
+@router.post("/api/blueprints/import")
+async def import_blueprint_endpoint(body: BlueprintImportBody):
+    """Parse a user-pasted blueprint YAML string and register it in the
+    in-process catalogue. NOT persisted to disk — survives only for the
+    current Ziggy process (security boundary; the operator must drop the
+    file under services/bundled_blueprints/ to make it permanent).
+    """
+    from services.blueprint_importer import load_user_blueprint
+    try:
+        bp = await asyncio.to_thread(load_user_blueprint, body.yaml)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _bus.emit("automation", _BASIC, "blueprint_imported",
+              blueprint_id=bp.id, name=bp.name, source="user", result="ok")
+    return {"ok": True, "blueprint": bp.to_dict()}
+
+
 @router.get("/api/automations/templates/suggested")
 async def get_suggested_templates():
     """Return templates that match the user's installed devices, with pre-filled wizard data."""
@@ -380,6 +476,30 @@ async def trigger_automation_endpoint(automation_id: str, background_tasks: Back
 @router.get("/api/automations/{automation_id}/history")
 async def get_automation_history(automation_id: str, limit: int = 20):
     return {"automation_id": automation_id, "history": get_history(automation_id, limit)}
+
+
+# Bridge-side run history. Surfaces the smart-home bridge's own per-run records
+# (which conditions passed, where it stopped, error details) so users can debug
+# "why didn't my light turn on?". Distinct from /history above — that one is
+# Ziggy's own executor log for manual triggers; this one is automatic fires.
+# Sync HTTP under the hood — wrap in to_thread so the event loop stays free.
+
+@router.get("/api/automations/{automation_id}/traces")
+async def get_automation_traces_endpoint(automation_id: str, limit: int = 10):
+    result = await asyncio.to_thread(get_automation_traces, automation_id, limit)
+    return {"automation_id": automation_id, **result}
+
+
+@router.get("/api/automations/{automation_id}/traces/{run_id}")
+async def get_automation_trace_detail_endpoint(automation_id: str, run_id: str):
+    result = await asyncio.to_thread(get_trace_detail, automation_id, run_id)
+    if not result.get("ok"):
+        # 404 specifically for the "no longer available" case; 502 for upstream
+        # outages so the frontend can distinguish gone-vs-broken.
+        err = result.get("error", "")
+        status = 404 if "no longer available" in err else 502
+        raise HTTPException(status_code=status, detail=err)
+    return {"automation_id": automation_id, **result}
 
 
 @router.post("/api/automations/{automation_id}/snooze")

@@ -1,0 +1,62 @@
+# Bathroom Motion Light — shorter timeout, condition: night-only is optional
+#
+# Optimised default for bathrooms vs the generic motion_light: 4-minute
+# no-motion timeout (long enough for a shower; short enough to avoid leaving
+# the light on for hours when someone walks past at night).
+blueprint:
+  name: Bathroom Motion Light
+  description: >
+    Motion-triggered light tuned for bathrooms — long enough timeout for a
+    shower, but not so long that the light stays on unnecessarily.
+  domain: automation
+  input:
+    motion_entity:
+      name: Bathroom motion sensor
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: motion
+    light_target:
+      name: Bathroom light
+      selector:
+        entity:
+          domain: light
+    no_motion_wait:
+      name: No-motion wait (seconds)
+      default: 240
+      selector:
+        number:
+          min: 30
+          max: 1200
+          unit_of_measurement: seconds
+  ziggy:
+    category: lighting
+    icon: 🚿
+    tags: [bathroom, motion, lights]
+    he:
+      name: אור אמבטיה אוטומטי
+      description: אור מופעל-תנועה לאמבטיה — זמן השהיה ארוך מספיק למקלחת.
+      inputs:
+        motion_entity: חיישן תנועה באמבטיה
+        light_target: אור באמבטיה
+        no_motion_wait: זמן ללא תנועה (שניות)
+    israel_defaults:
+      no_motion_wait: 240
+triggers:
+  - platform: state
+    entity_id: !input motion_entity
+    to: "on"
+actions:
+  - service: light.turn_on
+    target:
+      entity_id: !input light_target
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input motion_entity
+        to: "off"
+        for:
+          seconds: !input no_motion_wait
+  - service: light.turn_off
+    target:
+      entity_id: !input light_target
+mode: restart

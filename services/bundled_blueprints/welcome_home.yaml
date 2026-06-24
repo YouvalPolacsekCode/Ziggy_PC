@@ -1,0 +1,42 @@
+# Welcome Home — presence-based light on arrival
+#
+# When the user (person tracker) transitions to "home", turn on a chosen
+# light. Sister template to Sleep Mode / Morning Routine.
+blueprint:
+  name: Welcome Home Light
+  description: >
+    Turn on a light the moment you arrive home (based on your phone's
+    location).
+  domain: automation
+  input:
+    person_entity:
+      name: Person tracker
+      description: The person whose arrival triggers the light.
+      selector:
+        entity:
+          domain: person
+    light_target:
+      name: Welcome light
+      description: The light to turn on when you arrive.
+      selector:
+        entity:
+          domain: light
+  ziggy:
+    category: presence
+    icon: 🏠
+    tags: [welcome, presence, lights]
+    he:
+      name: ברוך הבא הביתה
+      description: מדליק אור ברגע שאתה מגיע הביתה (לפי מיקום הטלפון).
+      inputs:
+        person_entity: עוקב נוכחות
+        light_target: אור הברכה
+triggers:
+  - platform: state
+    entity_id: !input person_entity
+    to: home
+actions:
+  - service: light.turn_on
+    target:
+      entity_id: !input light_target
+mode: single

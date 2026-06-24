@@ -1,0 +1,53 @@
+# Window Open — Turn AC Off
+#
+# Safety-net automation: if someone opens a window while the AC is running,
+# turn the AC off so cold air doesn't get wasted. Pairs with Ziggy's
+# ac_window_interlock template (which is the more advanced IR-blaster path).
+blueprint:
+  name: Window Open — AC Off
+  description: >
+    When a window opens, turn the AC off. Saves the electricity bill on
+    days when a family member opens a window without remembering the AC
+    is on.
+  domain: automation
+  input:
+    window_entity:
+      name: Window sensor
+      description: The contact sensor on the window.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: window
+    ac_entity:
+      name: AC
+      description: The climate entity to turn off.
+      selector:
+        entity:
+          domain: climate
+  ziggy:
+    category: climate
+    icon: 🪟
+    tags: [window, ac, energy, safety]
+    he:
+      name: חלון נפתח — מזגן נכבה
+      description: כשמישהו פותח חלון, המזגן נכבה אוטומטית.
+      inputs:
+        window_entity: חיישן חלון
+        ac_entity: מזגן
+triggers:
+  - platform: state
+    entity_id: !input window_entity
+    to: "on"
+conditions:
+  - condition: state
+    entity_id: !input ac_entity
+    state: cool
+actions:
+  - service: climate.turn_off
+    target:
+      entity_id: !input ac_entity
+  - service: notify.persistent_notification
+    data:
+      title: "Ziggy"
+      message: "Window opened — AC turned off to save energy."
+mode: single

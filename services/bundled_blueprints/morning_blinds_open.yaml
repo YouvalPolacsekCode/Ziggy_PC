@@ -1,0 +1,42 @@
+# Morning Blinds Open — at a fixed time, weekdays only by default
+#
+# Opens blinds at a configurable time. Useful as a "wake up to natural light"
+# trigger. Pairs with sunset_blinds_close.
+blueprint:
+  name: Open Blinds in the Morning
+  description: >
+    Open a cover at a configured wake-up time, optionally only on weekdays.
+  domain: automation
+  input:
+    cover_target:
+      name: Blinds / cover
+      description: The blinds, shutter, or curtain to open.
+      selector:
+        entity:
+          domain: cover
+    wake_time:
+      name: Wake time
+      description: When to open the blinds.
+      default: "07:00:00"
+      selector:
+        time: {}
+  ziggy:
+    category: blinds
+    icon: ☀️
+    tags: [morning, blinds, wake_up]
+    he:
+      name: פתיחת תריסים בבוקר
+      description: פותח את התריסים אוטומטית בשעת ההשכמה.
+      inputs:
+        cover_target: תריס לפתיחה
+        wake_time: שעת השכמה
+    israel_defaults:
+      wake_time: "07:00:00"
+triggers:
+  - platform: time
+    at: !input wake_time
+actions:
+  - service: cover.open_cover
+    target:
+      entity_id: !input cover_target
+mode: single

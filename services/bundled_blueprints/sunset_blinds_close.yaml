@@ -1,0 +1,43 @@
+# Sun-based Blinds — Close at Sunset
+#
+# Closes a cover (blinds, shutters, curtains) automatically at sunset, with
+# an optional offset for "30 minutes before sunset" / "an hour after".
+# Pairs naturally with morning_blinds_open.yaml.
+blueprint:
+  name: Close Blinds at Sunset
+  description: >
+    Close a cover automatically at sunset. Use the offset to fire earlier
+    or later (e.g. -00:30:00 for 30 minutes before sunset).
+  domain: automation
+  input:
+    cover_target:
+      name: Blinds / cover
+      description: The blinds, shutter, or curtain to close.
+      selector:
+        entity:
+          domain: cover
+    offset:
+      name: Offset from sunset
+      description: Use negative values for before sunset (e.g. -00:30:00). Leave blank for exactly at sunset.
+      default: "00:00:00"
+      selector:
+        text: {}
+  ziggy:
+    category: blinds
+    icon: 🌅
+    tags: [sun, blinds, evening]
+    he:
+      name: סגירת תריסים בשקיעה
+      description: סוגר תריסים אוטומטית בשקיעה (אפשר היסט של חצי שעה לפני/אחרי).
+      inputs:
+        cover_target: תריס לסגירה
+        offset: היסט מהשקיעה
+triggers:
+  - platform: sun
+    event: sunset
+    offset: !input offset
+actions:
+  - service: cover.close_cover
+    target:
+      entity_id: !input cover_target
+mode: single

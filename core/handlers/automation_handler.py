@@ -108,6 +108,13 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
             )
         trigger["entity_id"] = raw
         trigger["state"] = params.get("trigger_state", "on")
+        # Optional "for" duration: state must hold for N minutes before firing.
+        # Critical for occupancy patterns ("no motion for 5 minutes → lights off").
+        if params.get("trigger_for_minutes") is not None:
+            try:
+                trigger["for_minutes"] = max(0, int(params["trigger_for_minutes"]))
+            except (TypeError, ValueError):
+                pass
     elif trigger_type == "numeric_state":
         raw_sensor = params.get("trigger_entity_id") or ""
         resolved = _resolve_trigger_entity(raw_sensor)
@@ -129,6 +136,18 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
     elif trigger_type in ("sunrise", "sunset"):
         if params.get("trigger_offset"):
             trigger["offset"] = params["trigger_offset"]
+    elif trigger_type == "time_pattern":
+        # Periodic trigger ("every N minutes/hours"). Pass at least one of:
+        #   trigger_minutes  — integer (5, 15) or cron-style "/N" string ("/15")
+        #   trigger_hours    — same
+        #   trigger_seconds  — same
+        # If none provided we drop back to "every minute" as a safe default.
+        for src, dst in (("trigger_seconds", "seconds"), ("trigger_minutes", "minutes"), ("trigger_hours", "hours")):
+            v = params.get(src)
+            if v is not None and v != "":
+                trigger[dst] = v
+        if not any(trigger.get(k) is not None for k in ("seconds", "minutes", "hours")):
+            trigger["minutes"] = "/1"
 
     service_action = params.get("action_service", "turn_on")
     # Determine the HA domain of the resolved entity so we can call domain-specific services
@@ -169,6 +188,10 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
         "conditions": conditions,
         "actions": [{"type": "call_service", "entity_id": entity_id, "service": full_service}],
     }
+    # Optional mode override. Default is single; motion-driven automations
+    # should pass "restart" so each new trigger event resets any running off-timer.
+    if params.get("mode"):
+        automation_data["mode"] = params["mode"]
 
     result = save_automation(automation_data)
     if result.get("ok"):
@@ -279,6 +302,11 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         elif new_type == "state":
             trigger["entity_id"] = _resolve_trigger_entity(params.get("trigger_entity_id") or "")
             trigger["state"] = params.get("trigger_state") or "on"
+            if params.get("trigger_for_minutes") is not None:
+                try:
+                    trigger["for_minutes"] = max(0, int(params["trigger_for_minutes"]))
+                except (TypeError, ValueError):
+                    pass
         elif new_type == "numeric_state":
             raw = params.get("trigger_entity_id") or ""
             resolved = _resolve_trigger_entity(raw)
@@ -292,6 +320,13 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         elif new_type in ("sunrise", "sunset"):
             if params.get("trigger_offset"):
                 trigger["offset"] = params["trigger_offset"]
+        elif new_type == "time_pattern":
+            for src, dst in (("trigger_seconds", "seconds"), ("trigger_minutes", "minutes"), ("trigger_hours", "hours")):
+                v = params.get(src)
+                if v is not None and v != "":
+                    trigger[dst] = v
+            if not any(trigger.get(k) is not None for k in ("seconds", "minutes", "hours")):
+                trigger["minutes"] = "/1"
     else:
         # Partial trigger field updates — keep existing type, patch only what changed
         if params.get("trigger_time"):
@@ -306,6 +341,16 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
             trigger["below"] = params["trigger_below"]
         if params.get("trigger_offset"):
             trigger["offset"] = params["trigger_offset"]
+        if params.get("trigger_for_minutes") is not None:
+            try:
+                trigger["for_minutes"] = max(0, int(params["trigger_for_minutes"]))
+            except (TypeError, ValueError):
+                pass
+        # time_pattern fields (only meaningful if the existing trigger already is time_pattern)
+        for src, dst in (("trigger_seconds", "seconds"), ("trigger_minutes", "minutes"), ("trigger_hours", "hours")):
+            v = params.get(src)
+            if v is not None and v != "":
+                trigger[dst] = v
 
     # ── Action merge ──────────────────────────────────────────────────────────
     actions = list(current.get("actions") or [])
@@ -362,6 +407,11 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         "actions": actions,
         "rooms": rooms,
     }
+    # Mode update — preserve existing if not specified
+    if params.get("mode"):
+        updated["mode"] = params["mode"]
+    elif current.get("mode"):
+        updated["mode"] = current["mode"]
 
     result = save_automation(updated, auto_id=auto_id)
     if result.get("ok"):
@@ -403,6 +453,131 @@ async def handle_assign_automation_to_room(params: dict, *, source: str = "unkno
     return ok(f"Done! '{auto['name']}' is now assigned to {room}.")
 
 
+async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown") -> dict:
+    """Create a template binary_sensor that fuses multiple occupancy signals.
+
+    Used by the orchestra/bedroom pattern: one entity that's `on` whenever ANY of
+    its source sensors say someone's present (motion, mmWave presence, door open).
+    Automations then reference this one entity instead of recomputing the same
+    boolean in every condition list.
+    """
+    from services.template_sensors import create_occupancy_sensor
+
+    room = (params.get("room") or "").strip()
+    if not room:
+        return err("Which room is this occupancy sensor for?")
+
+    sensors_raw = params.get("sensor_entities") or []
+    if isinstance(sensors_raw, str):
+        # GPT sometimes returns a comma-separated string instead of a list
+        sensors_raw = [s.strip() for s in sensors_raw.split(",") if s.strip()]
+    sensor_entities = [s for s in sensors_raw if isinstance(s, str) and "." in s]
+    if not sensor_entities:
+        return err(
+            f"I need at least one sensor entity to fuse for the {room} occupancy sensor. "
+            f"Provide motion/presence/door entity IDs (e.g. binary_sensor.bedroom_motion)."
+        )
+
+    friendly = params.get("friendly_name")  # Hebrew names preserved verbatim
+    delay_off = params.get("delay_off_seconds", 30)
+
+    result = create_occupancy_sensor(
+        room=room,
+        sensor_entities=sensor_entities,
+        friendly_name=friendly,
+        delay_off_seconds=delay_off,
+    )
+    if result.get("ok"):
+        log_info(f"[Occupancy] {result.get('message')}")
+        return ok(result.get("message", "Done."), data={"entity_id": result.get("entity_id")})
+    return err(result.get("error", "Failed to create occupancy sensor"))
+
+
+async def handle_list_blueprints(params: dict, *, source: str = "unknown") -> dict:
+    """List Ziggy's bundled community templates so the LLM (or any caller)
+    can recommend them by name.
+
+    Wording note: the user-facing response talks about "templates" — never
+    "blueprints" — because HA jargon is invisible in Ziggy per the project's
+    surface-area rule.
+    """
+    from services.automation_templates import get_blueprint_templates
+
+    templates = get_blueprint_templates()
+    if not templates:
+        return ok("No community templates are bundled yet.")
+
+    # Compact summary for the LLM — id + name + a one-line description so the
+    # chat reply stays short. The full input schema is fetched on demand by
+    # the wizard / the instantiate tool, not surfaced here.
+    summary = [
+        {
+            "id":          t["blueprint_id"],
+            "name":        t["name"],
+            "description": (t["description"].splitlines()[0] if t.get("description") else ""),
+            "category":    t.get("category"),
+            "input_count": len(t.get("inputs") or []),
+        }
+        for t in templates
+    ]
+    lines = [f"- {t['name']}: {t['description']}" for t in summary]
+    return ok(
+        f"There are {len(summary)} community templates available:\n" + "\n".join(lines),
+        data={"templates": summary},
+    )
+
+
+async def handle_instantiate_blueprint(params: dict, *, source: str = "unknown") -> dict:
+    """Create an automation from a bundled / user-loaded community template
+    by filling its inputs.
+
+    The work happens in services.blueprint_importer.instantiate_blueprint;
+    this handler is the routing shim that translates HA-shaped errors into
+    Ziggy-native messages and pushes the resulting automation through the
+    same save_automation pipeline create_automation uses.
+    """
+    blueprint_id = (params.get("blueprint_id") or "").strip()
+    if not blueprint_id:
+        return err("Which template should I use? Provide the template's id.")
+
+    inputs_raw = params.get("inputs") or {}
+    if not isinstance(inputs_raw, dict):
+        return err("Template inputs must be a key/value object.")
+
+    custom_name = (params.get("name") or "").strip() or None
+
+    from services.blueprint_importer import instantiate_blueprint, get_blueprint
+    bp = get_blueprint(blueprint_id)
+    if not bp:
+        return err(f"No template found with id '{blueprint_id}'.")
+
+    try:
+        automation_data = instantiate_blueprint(
+            blueprint_id,
+            inputs_raw,
+            name=custom_name,
+        )
+    except ValueError as e:
+        # Validation error wording is already user-friendly.
+        return err(str(e))
+    except Exception as e:
+        log_info(f"[Blueprint] Unexpected instantiation error for {blueprint_id}: {e}")
+        return err("Couldn't apply the template — please try again.")
+
+    result = save_automation(automation_data)
+    if result.get("ok"):
+        name = automation_data["name"]
+        log_info(
+            f"[Blueprint] Instantiated '{bp.name}' as '{name}' id={result.get('id')} "
+            f"source={result.get('source')}"
+        )
+        return ok(
+            f"Done! '{name}' has been set up from the {bp.name} template.",
+            data={"automation_id": result.get("id"), "blueprint_id": blueprint_id},
+        )
+    return err(f"Couldn't save the automation: {result.get('error', 'unknown error')}")
+
+
 HANDLERS = {
     "create_automation": handle_create_automation,
     "list_automations": handle_list_automations,
@@ -410,4 +585,7 @@ HANDLERS = {
     "toggle_automation": handle_toggle_automation,
     "update_automation": handle_update_automation,
     "assign_automation_to_room": handle_assign_automation_to_room,
+    "create_occupancy_sensor": handle_create_occupancy_sensor,
+    "list_blueprints": handle_list_blueprints,
+    "instantiate_blueprint": handle_instantiate_blueprint,
 }

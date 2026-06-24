@@ -1,0 +1,51 @@
+# Low Battery Alert
+#
+# When any battery-reporting sensor drops below a threshold, send a one-shot
+# alert so the user can swap the cell before the sensor dies. Threshold
+# defaults to 20% — high enough to give a few days' notice, low enough to
+# avoid nag fatigue.
+blueprint:
+  name: Low Battery Alert
+  description: >
+    Send a notification when a battery sensor falls below a chosen percentage.
+    Use one per battery-powered device, or duplicate for several.
+  domain: automation
+  input:
+    battery_entity:
+      name: Battery sensor
+      description: The sensor reporting battery percentage.
+      selector:
+        entity:
+          domain: sensor
+          device_class: battery
+    threshold:
+      name: Alert threshold (%)
+      description: Fire when the battery drops below this percentage.
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 50
+          unit_of_measurement: "%"
+  ziggy:
+    category: maintenance
+    icon: 🔋
+    tags: [battery, alert, maintenance]
+    he:
+      name: התראת סוללה חלשה
+      description: שולח התראה כשסוללה של חיישן יורדת מתחת לאחוז שנבחר.
+      inputs:
+        battery_entity: חיישן סוללה
+        threshold: סף ההתראה (%)
+    israel_defaults:
+      threshold: 20
+triggers:
+  - platform: numeric_state
+    entity_id: !input battery_entity
+    below: !input threshold
+actions:
+  - service: notify.persistent_notification
+    data:
+      title: "Ziggy"
+      message: "Battery low — time for a replacement."
+mode: single

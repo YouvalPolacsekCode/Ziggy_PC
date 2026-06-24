@@ -1,0 +1,43 @@
+# Doorbell Notification
+#
+# When a doorbell sensor (binary_sensor) fires, send a push notification.
+# Works with any binary_sensor — door contact, dedicated doorbell button, or
+# an Aqara/Sonoff wireless button.
+blueprint:
+  name: Doorbell Notification
+  description: >
+    When the doorbell rings, send a push notification with a custom message.
+  domain: automation
+  input:
+    doorbell_entity:
+      name: Doorbell sensor
+      description: The binary sensor that fires when the doorbell rings (button, contact, or motion at the door).
+      selector:
+        entity:
+          domain: binary_sensor
+    notification_message:
+      name: Notification message
+      description: What the push notification will say.
+      default: "Someone is at the door"
+      selector:
+        text: {}
+  ziggy:
+    category: presence
+    icon: 🔔
+    tags: [doorbell, notification, security]
+    he:
+      name: התראת פעמון דלת
+      description: שולח התראה בפוש כשמישהו לוחץ על הפעמון.
+      inputs:
+        doorbell_entity: חיישן פעמון
+        notification_message: טקסט ההתראה
+triggers:
+  - platform: state
+    entity_id: !input doorbell_entity
+    to: "on"
+actions:
+  - service: notify.persistent_notification
+    data:
+      title: "Ziggy"
+      message: !input notification_message
+mode: single

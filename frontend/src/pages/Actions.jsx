@@ -16,6 +16,7 @@ import CircadianBundleWizard from '../components/automations/CircadianBundleWiza
 import CircadianGroupRow from '../components/automations/CircadianGroupRow'
 import TemplateCard from '../components/automations/templates/TemplateCard'
 import LibraryModal from '../components/automations/templates/LibraryModal'
+import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import SuggestedTab, { suggestionToWizardData } from '../components/automations/templates/SuggestedTab'
 
 // Module-level cache so the Recommended-by-Ziggy block doesn't re-flash empty
@@ -50,6 +51,10 @@ export default function Automations() {
   const [viewTarget,        setViewTarget]        = useState(null)
   const [suggestedTemplates, setSuggestedTemplates] = useState(suggestedTemplatesCache || [])
   const [showLibrary,       setShowLibrary]       = useState(false)
+  // Community templates modal (bundled HA blueprints, surfaced as Ziggy
+  // templates). Lives next to the curated Library; never uses the word
+  // "blueprint" in user-facing text per the surface-area rule.
+  const [showCommunity,     setShowCommunity]     = useState(false)
   // Circadian bundle wizard — opened by Configure on the Smart Light Schedule
   // template, or by Edit on the grouped row in the Your-Automations section.
   // Carries the prefill (defaults.lights, defaults.bedtime) and an
@@ -243,6 +248,10 @@ export default function Automations() {
           <button onClick={() => setShowLibrary(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             {t('automations.library')}
+          </button>
+          <button onClick={() => setShowCommunity(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.2 21 12 17.7 5.8 21 7 14 2 9.3 9 8.5 12 2"/></svg>
+            {t('automations.community')}
           </button>
           <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -446,6 +455,19 @@ export default function Automations() {
         open={showLibrary}
         onClose={() => setShowLibrary(false)}
         onConfigure={handleConfigureTemplate}
+      />
+
+      {/* Community templates modal (bundled HA blueprints, surfaced as
+          Ziggy templates). Creates the automation through the standard
+          save_automation path; after success we refresh the automation
+          list so the new entry shows up in the Active tab. */}
+      <BlueprintsModal
+        open={showCommunity}
+        onClose={() => setShowCommunity(false)}
+        onCreated={async (created) => {
+          addToast(t('automations.saved'), 'success')
+          try { await fetchAutomations({ force: true }) } catch {}
+        }}
       />
 
       <Modal open={showWizard} onClose={handleClose} title={

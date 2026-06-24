@@ -1,0 +1,37 @@
+# Water Leak Alert
+#
+# When a leak sensor fires, raise a high-priority notification immediately.
+# Simple, but high-impact: leaks are one of the more expensive home failures.
+blueprint:
+  name: Water Leak Alert
+  description: >
+    When a water-leak sensor detects moisture, send an immediate alert.
+    Connect this to every sink, washing machine, and dishwasher you can.
+  domain: automation
+  input:
+    leak_entity:
+      name: Leak sensor
+      description: The water-leak detector.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: moisture
+  ziggy:
+    category: safety
+    icon: 💧
+    tags: [leak, safety, alert]
+    he:
+      name: התראת נזילת מים
+      description: התראה מיידית כשחיישן הנזילה מזהה מים.
+      inputs:
+        leak_entity: חיישן נזילה
+triggers:
+  - platform: state
+    entity_id: !input leak_entity
+    to: "on"
+actions:
+  - service: notify.persistent_notification
+    data:
+      title: "Ziggy — דחוף"
+      message: "Water leak detected — check immediately!"
+mode: single
