@@ -3998,8 +3998,13 @@ export default {
   'automations.proCard.partialSuccess':           '{ok} created, {fail} couldn’t be set up.',
   // Confirmation messages that replace the card in the chat history
   'automations.proCard.confirmDone':              'Done — created {n} items for “{name}”.',
+  'automations.proCard.confirmDoneHeader':        '✅ “{name}” is ready:',
   'automations.proCard.confirmAllFailed':         'Couldn’t set up “{name}” — nothing was created.',
   'automations.proCard.confirmPartial':           '“{name}” partly set up — {ok} created, {fail} need a manual look.',
+  // Where each artifact kind lives in the Ziggy UI so the user knows where to look
+  'automations.proCard.location.actions':         'in the Actions tab',
+  'automations.proCard.location.devices':         'in Devices (per-room, after the next device sync)',
+  'automations.proCard.location.kvState':         'state flag — used by the automations above',
   'automations.proCard.discarded':                'Discarded the bundle. Nothing was created.',
   // Per-artifact kind labels for the results view (so a row reads
   // "AUTOMATION · Bedroom auto-on" rather than the raw kind string).

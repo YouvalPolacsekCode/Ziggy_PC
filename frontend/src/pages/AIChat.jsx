@@ -224,13 +224,22 @@ function LiveUserBubble({ text }) {
 // fancier spinner for a chat reply) but false negatives hurt (Pro Mode
 // shows generic dots for 5s and feels broken).
 const _PRO_MODE_PATTERNS = [
-  /\bset up smart\b/i,
-  /\bmake (?:my |the )?\w+(?: room)? (?:smart|intelligent)\b/i,
+  // "set up smart X" / "set up smart bedroom lights"
+  /\bset up\b.*\bsmart\b/i,
+  // "make my kitchen smart" / "make the kitchen a smart kitchen" / "make my X intelligent"
+  // Broad: any "make ... smart/intelligent" with up to ~30 chars between
+  /\bmake\b[\s\S]{0,30}\b(?:smart|intelligent)\b/i,
+  // "automate the X" / "automate my X"
   /\bautomate (?:the |my )?\w+/i,
-  /\bdesign (?:a |an )?\w*\s*(?:routine|setup|smart)/i,
+  // "design a morning routine" / "design something for X"
+  /\bdesign (?:a |an )?\w*\s*(?:routine|setup|smart|something)/i,
+  // "I want my bedroom to wake me up gently"
   /\bI want (?:my )?\w+ to\b/i,
   /\bhelp me automate\b/i,
   /\borganize (?:the |my )?\w+ automations?\b/i,
+  // Direct mentions of "smart <room>" or "intelligent <room>" as outcomes
+  /\bsmart (?:bedroom|kitchen|bathroom|office|living\s?room|home|house)\b/i,
+  /\bintelligent (?:bedroom|kitchen|bathroom|office|living\s?room|home|house)\b/i,
   // Hebrew
   /תכין לי/u,
   /תעשה (?:את )?\S+\s*חכם/u,
@@ -239,6 +248,8 @@ const _PRO_MODE_PATTERNS = [
   /הפוך (?:את )?\S+ לחכם/u,
   /תגדיר (?:לי )?\S+ חכם/u,
   /אני רוצה ש/u,
+  // HE direct "X חכם/חכמה"
+  /(?:חדר|מטבח|סלון|אמבטיה|בית) חכ(?:ם|מה)/u,
 ]
 
 function isProModeOutcome(text) {
@@ -919,27 +930,61 @@ export default function AIChat() {
   const onBundleAccept = (msg, applyResult) => {
     // applyResult shape: { ok, bundle_id, created[], errors[] } OR a partial
     // { created, errors } when the card was in results-view. Build a
-    // Ziggy-native confirmation message that matches the bundle language
-    // (not the UI lang — a Hebrew bundle gets a Hebrew confirmation).
+    // Ziggy-native confirmation that matches the bundle language and
+    // tells the user EXACTLY what was created and WHERE to find it —
+    // a generic "Done — 1 item created" left users hunting for what changed.
     const created = applyResult?.created || []
     const errors  = applyResult?.errors  || []
     const bundleLang = msg.bundle?.language === 'he' ? 'he' : 'en'
     const bundleName = msg.bundle?.name || ''
-    // Pick the message variant honestly. The card already showed per-artifact
-    // outcomes for partial cases; here we just leave a one-line summary
-    // in the chat history.
-    const confirmText = errors.length === 0
-      ? translateWithLang('automations.proCard.confirmDone', { n: created.length, name: bundleName }, bundleLang)
-      : created.length === 0
-        ? translateWithLang('automations.proCard.confirmAllFailed', { name: bundleName }, bundleLang)
-        : translateWithLang('automations.proCard.confirmPartial', { ok: created.length, fail: errors.length, name: bundleName }, bundleLang)
+
+    // Group created items by kind + collapse to "<count> <kind>(s) in <ui-tab>"
+    // hints so the user knows where to look:
+    //   automation       → Actions page
+    //   occupancy_sensor → Devices page  (and shows up per-room)
+    //   kv_state         → not directly visible (state flag, used by automations)
+    //   voice_intent     → never reaches here (executor surfaces as error)
+    const kindLocations = {
+      automation:       translateWithLang('automations.proCard.location.actions',  null, bundleLang),
+      occupancy_sensor: translateWithLang('automations.proCard.location.devices',  null, bundleLang),
+      kv_state:         translateWithLang('automations.proCard.location.kvState',  null, bundleLang),
+    }
+    const byKind = created.reduce((acc, c) => {
+      const k = c.kind || 'other'
+      ;(acc[k] = acc[k] || []).push(c)
+      return acc
+    }, {})
+    const summaryLines = Object.entries(byKind).map(([kind, items]) => {
+      const label = translateWithLang(`automations.proCard.artifactKind.${kind}`, null, bundleLang) || kind
+      const names = items.map(i => i.name || i.room || i.key || i.phrase).filter(Boolean).join(', ')
+      const loc = kindLocations[kind]
+      const namesPart = names ? ` (${names})` : ''
+      const locPart = loc ? ` — ${loc}` : ''
+      return `• ${label}${namesPart}${locPart}`
+    })
+
+    let confirmText
+    if (errors.length === 0) {
+      // Multi-line success: header + per-kind list (with locations)
+      const header = translateWithLang('automations.proCard.confirmDoneHeader', { name: bundleName }, bundleLang)
+      confirmText = summaryLines.length > 0
+        ? `${header}\n${summaryLines.join('\n')}`
+        : translateWithLang('automations.proCard.confirmDone', { n: created.length, name: bundleName }, bundleLang)
+    } else if (created.length === 0) {
+      confirmText = translateWithLang('automations.proCard.confirmAllFailed', { name: bundleName }, bundleLang)
+    } else {
+      // Partial: still list what got created so the user can verify
+      const header = translateWithLang('automations.proCard.confirmPartial', { ok: created.length, fail: errors.length, name: bundleName }, bundleLang)
+      confirmText = summaryLines.length > 0
+        ? `${header}\n${summaryLines.join('\n')}`
+        : header
+    }
+
     replaceBundleMessage(msg, {
       ...msg,
       bundle: null,            // strip the bundle so Message renders plain text
       text: confirmText,
       ok: errors.length === 0 || created.length > 0,
-      // Add a short action chip per created artifact so the user has a quick
-      // visual cue that things landed (mirrors the existing assistant-chip pattern).
       actions: created.slice(0, 4).map((c) => c.name || c.room || c.phrase || c.kind),
     })
   }

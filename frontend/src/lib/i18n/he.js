@@ -3940,8 +3940,13 @@ export default {
   'automations.proCard.noneCreated':              'שום דבר לא נוצר. הסתכלו על השגיאות למעלה.',
   'automations.proCard.partialSuccess':           '{ok} נוצרו, ל־{fail} נדרשת התערבות.',
   'automations.proCard.confirmDone':              'בוצע — יצרתי {n} פריטים עבור „{name}״.',
+  'automations.proCard.confirmDoneHeader':        '✅ „{name}״ מוכן:',
   'automations.proCard.confirmAllFailed':         'לא הצלחתי ליצור את „{name}״ — שום דבר לא נוצר.',
   'automations.proCard.confirmPartial':           '„{name}״ נוצר חלקית — {ok} נוצרו, {fail} דורשים בדיקה ידנית.',
+  // איפה כל סוג פריט נמצא ב-Ziggy
+  'automations.proCard.location.actions':         'בלשונית Actions',
+  'automations.proCard.location.devices':         'במכשירים (לפי חדר, אחרי הסנכרון הבא)',
+  'automations.proCard.location.kvState':         'דגל מצב — בשימוש האוטומציות למעלה',
   'automations.proCard.discarded':                'החבילה בוטלה. שום דבר לא נוצר.',
   'automations.proCard.artifactKind.automation':         'אוטומציה',
   'automations.proCard.artifactKind.occupancy_sensor':   'חיישן נוכחות',
