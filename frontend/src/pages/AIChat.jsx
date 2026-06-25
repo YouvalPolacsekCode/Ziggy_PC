@@ -218,24 +218,106 @@ function LiveUserBubble({ text }) {
   )
 }
 
-function ThinkingBubble() {
+// Detect Pro Mode outcome-shape so the ThinkingBubble can render progressive
+// stage labels. Mirrors (loosely) the SYSTEM_PROMPT routing rules in
+// core/tools_schema.py — false positives are cheap (user sees a slightly
+// fancier spinner for a chat reply) but false negatives hurt (Pro Mode
+// shows generic dots for 5s and feels broken).
+const _PRO_MODE_PATTERNS = [
+  /\bset up smart\b/i,
+  /\bmake (?:my |the )?\w+(?: room)? (?:smart|intelligent)\b/i,
+  /\bautomate (?:the |my )?\w+/i,
+  /\bdesign (?:a |an )?\w*\s*(?:routine|setup|smart)/i,
+  /\bI want (?:my )?\w+ to\b/i,
+  /\bhelp me automate\b/i,
+  /\borganize (?:the |my )?\w+ automations?\b/i,
+  // Hebrew
+  /תכין לי/u,
+  /תעשה (?:את )?\S+\s*חכם/u,
+  /תעשה אוטומציה/u,
+  /תארגן (?:לי )?/u,
+  /הפוך (?:את )?\S+ לחכם/u,
+  /תגדיר (?:לי )?\S+ חכם/u,
+  /אני רוצה ש/u,
+]
+
+function isProModeOutcome(text) {
+  if (!text || typeof text !== 'string') return false
+  return _PRO_MODE_PATTERNS.some(re => re.test(text))
+}
+
+function ThinkingBubble({ mode }) {
   const t = useT()
+  // Cycle through Pro Mode progress messages over the ~5s designer LLM call.
+  // Wall-clock isn't faster but perceived latency drops a lot — the user sees
+  // Ziggy is actively working through stages, not just spinning.
+  const [stage, setStage] = useState(0)
+  useEffect(() => {
+    if (mode !== 'pro') { setStage(0); return }
+    const timers = [
+      setTimeout(() => setStage(1), 1200),
+      setTimeout(() => setStage(2), 2800),
+      setTimeout(() => setStage(3), 5000),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [mode])
+
+  // Generic chat → just the bouncing dots
+  if (mode !== 'pro') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}>
+        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
+        <div style={{
+          padding: '10px 14px', borderRadius: 18, borderEndStartRadius: 4,
+          background: 'var(--surface)', border: '0.5px solid var(--line)',
+          display: 'flex', gap: 5, alignItems: 'center',
+        }}>
+          {[0, 1, 2].map(i => (
+            <motion.span
+              key={i}
+              style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-mute)', display: 'block' }}
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Pro Mode → progressive label that cycles through design stages
+  const stages = [
+    t('chat.proStage.lookingAtHome'),
+    t('chat.proStage.checkingSensors'),
+    t('chat.proStage.designing'),
+    t('chat.proStage.finishing'),
+  ]
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}>
       <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
       <div style={{
         padding: '10px 14px', borderRadius: 18, borderEndStartRadius: 4,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
-        display: 'flex', gap: 5, alignItems: 'center',
+        display: 'flex', gap: 8, alignItems: 'center',
+        fontSize: 14, color: 'var(--ink-mute)',
       }}>
         {[0, 1, 2].map(i => (
           <motion.span
             key={i}
-            style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-mute)', display: 'block' }}
-            animate={{ y: [0, -4, 0] }}
+            style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--ink-mute)', display: 'block' }}
+            animate={{ y: [0, -3, 0] }}
             transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
           />
         ))}
+        <motion.span
+          key={stage}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          dir="auto"
+        >
+          {stages[stage]}
+        </motion.span>
       </div>
     </div>
   )
@@ -303,6 +385,10 @@ export default function AIChat() {
   const [input,     setInput]     = useState('')
   const [orbState,  setOrbState]  = useState('idle')
   const [thinking,  setThinking]  = useState(false)
+  // 'pro' when the user's message looks like a Pro Mode outcome — the
+  // ThinkingBubble shows progressive stage labels instead of just dots.
+  // 'chat' for everything else. Set in send handlers; cleared on response.
+  const [thinkingMode, setThinkingMode] = useState('chat')
   const [recording, setRecording] = useState(false)
   // Live transcript while the user holds the mic. Rendered as a pending
   // user chat bubble that fills word-by-word — NOT into the typed-text
@@ -889,6 +975,7 @@ export default function AIChat() {
     addMessage('user', t)
     // Defer clearing the input until sendChat() succeeds so a network blip
     // doesn't make the user re-type a long question.
+    setThinkingMode(isProModeOutcome(t) ? 'pro' : 'chat')
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendChat(t, historyForApi)
@@ -931,6 +1018,7 @@ export default function AIChat() {
 
   const handleDirectQuickAsk = async (qa) => {
     addMessage('user', `${qa.icon ? qa.icon + ' ' : ''}${qa.label}`)
+    setThinkingMode('chat')   // quick-asks never go through Pro Mode
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendDirectIntent(qa.intent, qa.params)
@@ -1207,6 +1295,7 @@ export default function AIChat() {
       setLiveTranscript('')
       addMessage('user', transcription)
 
+      setThinkingMode(isProModeOutcome(transcription) ? 'pro' : 'chat')
       setThinking(true); setOrbState('thinking')
       try {
         const res = await sendChat(transcription, historyForApi)
@@ -1359,6 +1448,7 @@ export default function AIChat() {
     }))
     setLiveTranscript('')
     addMessage('user', dictated)
+    setThinkingMode(isProModeOutcome(dictated) ? 'pro' : 'chat')
     setThinking(true); setOrbState('thinking')
     try {
       const res = await sendChat(dictated, historyForApi)
@@ -1620,7 +1710,7 @@ export default function AIChat() {
               its first interim result — show a single bouncing dot then
               so the user sees acknowledgement of the hold. */}
           {recording && <LiveUserBubble text={liveTranscript} />}
-          {thinking && <ThinkingBubble />}
+          {thinking && <ThinkingBubble mode={thinkingMode} />}
           <div ref={scrollRef} />
         </div>
       )}

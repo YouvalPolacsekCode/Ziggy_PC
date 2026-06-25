@@ -275,6 +275,11 @@ export default {
   'chat.send':               'שלח',
   'chat.listening':          'מקשיב…',
   'chat.thinking':           'חושב…',
+  // שלבי "חושב…" של זיגי פרו בזמן שהמתכנן עובד
+  'chat.proStage.lookingAtHome':    'מסתכל על הבית שלך…',
+  'chat.proStage.checkingSensors':  'בודק אילו חיישנים זמינים…',
+  'chat.proStage.designing':        'מתכנן את הסט…',
+  'chat.proStage.finishing':        'כמעט סיימתי…',
   'chat.speaking':           'מדבר…',
   'chat.clearHistory':       'נקה היסטוריה',
   'chat.historyCleared':     'ההיסטוריה נוקתה',

@@ -277,6 +277,11 @@ export default {
   'chat.send':               'Send',
   'chat.listening':          'Listening…',
   'chat.thinking':           'Thinking…',
+  // Pro Mode progressive thinking stages — cycle as the designer LLM works
+  'chat.proStage.lookingAtHome':    'Looking at your home…',
+  'chat.proStage.checkingSensors':  'Checking which sensors are available…',
+  'chat.proStage.designing':        'Designing the bundle…',
+  'chat.proStage.finishing':        'Almost ready…',
   'chat.speaking':           'Speaking…',
   'chat.clearHistory':       'Clear history',
   'chat.historyCleared':     'History cleared',
