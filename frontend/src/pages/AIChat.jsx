@@ -10,7 +10,8 @@ import { useVoiceStore } from '../stores/voiceStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useAutomationStore } from '../stores/automationStore'
 import { formatTime, isHebrew } from '../lib/utils'
-import { useT, useLang, translateNamePhrase } from '../lib/i18n'
+import { useT, useLang, translateNamePhrase, t as translateWithLang } from '../lib/i18n'
+import BundlePreviewCard from '../components/automations/BundlePreviewCard'
 
 // Hold-to-talk uses MediaRecorder exclusively. The Web Speech API was
 // previously the "fast path" but its auto-end behavior (even with
@@ -82,7 +83,7 @@ function PatternCard({ msg, onSaveRoutine }) {
 }
 
 // ── Message bubble (Chat-A) ───────────────────────────────────────────────────
-function Message({ msg }) {
+function Message({ msg, onBundleAccept, onBundleDiscard }) {
   const t = useT()
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
@@ -90,6 +91,25 @@ function Message({ msg }) {
 
   // Pattern card
   if (msg.isPattern) return <PatternCard msg={msg} />
+
+  // Ziggy Pro Mode bundle preview — render the structured card INSTEAD of
+  // the plain-text bubble. The plain reply text already sits in
+  // `msg.text` (the LLM's "I designed X: ..." prose), so showing both
+  // would duplicate the rationale. The card carries the full structured
+  // breakdown plus Accept/Discard, which is the actionable surface.
+  if (msg.bundle) {
+    return (
+      <div style={{ maxWidth: '92%', alignSelf: 'flex-start', width: '100%' }}>
+        <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('chat.ziggy')}</p>
+        <BundlePreviewCard
+          bundle={msg.bundle}
+          onAccept={(result) => onBundleAccept?.(msg, result)}
+          onDiscard={() => onBundleDiscard?.(msg)}
+        />
+      </div>
+    )
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -260,6 +280,9 @@ export default function AIChat() {
   const navigate  = useNavigate()
   const { addToast }                              = useUIStore()
   const { messages, addMessage, clearMessages }   = useChatStore()
+  // Direct setter so the bundle accept/discard handlers can replace the
+  // preview card in place. The chatStore exposes the array via `messages`
+  // — useChatStore.setState() patches it without going through addMessage.
   const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
   // Awareness counters for the header strip — same pattern as the TV-remote
   // page's "HDMI 2 · Apple TV" contextual cue: tells you what Ziggy can act on
@@ -794,6 +817,61 @@ export default function AIChat() {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, thinking])
 
+  // ── Ziggy Pro Mode bundle preview handlers ──────────────────────────────
+  // The BundlePreviewCard owns the in-flight apply state internally; these
+  // handlers just decide what happens to the message list AFTER the user
+  // resolves the card (accept-with-success, accept-in-results-view, or
+  // discard). We mutate the chatStore via setState rather than addMessage
+  // so the preview card disappears in place — replacing it with a fresh
+  // confirmation message would leave the card scrolled out of view.
+  const replaceBundleMessage = (msg, replacement) => {
+    useChatStore.setState((s) => ({
+      messages: s.messages.map((m) => (m.id === msg.id ? replacement : m)),
+    }))
+  }
+
+  const onBundleAccept = (msg, applyResult) => {
+    // applyResult shape: { ok, bundle_id, created[], errors[] } OR a partial
+    // { created, errors } when the card was in results-view. Build a
+    // Ziggy-native confirmation message that matches the bundle language
+    // (not the UI lang — a Hebrew bundle gets a Hebrew confirmation).
+    const created = applyResult?.created || []
+    const errors  = applyResult?.errors  || []
+    const bundleLang = msg.bundle?.language === 'he' ? 'he' : 'en'
+    const bundleName = msg.bundle?.name || ''
+    // Pick the message variant honestly. The card already showed per-artifact
+    // outcomes for partial cases; here we just leave a one-line summary
+    // in the chat history.
+    const confirmText = errors.length === 0
+      ? translateWithLang('automations.proCard.confirmDone', { n: created.length, name: bundleName }, bundleLang)
+      : created.length === 0
+        ? translateWithLang('automations.proCard.confirmAllFailed', { name: bundleName }, bundleLang)
+        : translateWithLang('automations.proCard.confirmPartial', { ok: created.length, fail: errors.length, name: bundleName }, bundleLang)
+    replaceBundleMessage(msg, {
+      ...msg,
+      bundle: null,            // strip the bundle so Message renders plain text
+      text: confirmText,
+      ok: errors.length === 0 || created.length > 0,
+      // Add a short action chip per created artifact so the user has a quick
+      // visual cue that things landed (mirrors the existing assistant-chip pattern).
+      actions: created.slice(0, 4).map((c) => c.name || c.room || c.phrase || c.kind),
+    })
+  }
+
+  const onBundleDiscard = (msg) => {
+    // Discard collapses the card AND clears the original prose reply, so the
+    // chat history doesn't keep promising "I designed X" after the user said
+    // no. The user message above it stays as the record of what they asked.
+    const bundleLang = msg.bundle?.language === 'he' ? 'he' : 'en'
+    replaceBundleMessage(msg, {
+      ...msg,
+      bundle: null,
+      text: translateWithLang('automations.proCard.discarded', null, bundleLang),
+      ok: true,
+      actions: [],
+    })
+  }
+
   const handleSend = async (text) => {
     const t = (text || input).trim()
     if (!t) return
@@ -822,7 +900,15 @@ export default function AIChat() {
         if (a.label) return a.label
         return String(a)
       }) || []
-      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      // Ziggy Pro Mode bundle preview — the chat envelope carries a
+      // structured bundle JSON when the LLM dispatched design_automation_set.
+      // Thread it to the message so Message() can render BundlePreviewCard
+      // in place of the plain text bubble. Non-bundle replies are unchanged.
+      const bundle = res.data?.kind === 'automation_bundle_preview'
+        ? res.data.bundle
+        : null
+      addMessage('assistant', res.reply || '…', res.ok !== false,
+                 bundle ? { actions, bundle } : { actions })
       // Pattern suggestion card
       if (res.pattern_suggestion) {
         addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
@@ -1130,7 +1216,11 @@ export default function AIChat() {
           if (a.label) return a.label
           return String(a)
         }) || []
-        addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+        const bundle = res.data?.kind === 'automation_bundle_preview'
+          ? res.data.bundle
+          : null
+        addMessage('assistant', res.reply || '…', res.ok !== false,
+                   bundle ? { actions, bundle } : { actions })
         if (res.pattern_suggestion) {
           addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
             patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
@@ -1278,7 +1368,11 @@ export default function AIChat() {
         if (a.label) return a.label
         return String(a)
       }) || []
-      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      const bundle = res.data?.kind === 'automation_bundle_preview'
+        ? res.data.bundle
+        : null
+      addMessage('assistant', res.reply || '…', res.ok !== false,
+                 bundle ? { actions, bundle } : { actions })
       if (res.pattern_suggestion) {
         addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
           patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
@@ -1511,7 +1605,14 @@ export default function AIChat() {
           className="scrollbar-thin"
           style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}
         >
-          {messages.map(msg => <Message key={msg.id} msg={msg} />)}
+          {messages.map(msg => (
+            <Message
+              key={msg.id}
+              msg={msg}
+              onBundleAccept={onBundleAccept}
+              onBundleDiscard={onBundleDiscard}
+            />
+          ))}
           {/* Pending live-dictation bubble: rendered as a normal user
               bubble that fills word-by-word while the mic is held. On
               release we promote it to a real persisted message and clear

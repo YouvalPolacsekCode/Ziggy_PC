@@ -147,20 +147,55 @@ def create_occupancy_sensor(
     if not entry_id:
         return {"ok": False, "error": "HA accepted the flow but returned no entry_id."}
 
+    # Resolve the ACTUAL entity_id HA assigned. Modern HA template helpers
+    # normalize the slug from `name` and may append suffixes on collision;
+    # guessing it from `_slug(name) + "_occupied"` mismatches in practice
+    # (the bundle executor's reported entity_id then doesn't match what HA
+    # exposes). The entity_registry WS API tells us the truth.
+    actual_entity_id = _lookup_entry_entity_id(entry_id) or (
+        f"binary_sensor.{_slug(name) or room_slug}_occupied".replace("_occupied_occupied", "_occupied")
+    )
+
     # Cache the entry_id → room mapping so we can replace/delete later.
     set_local_state(_KV_NAMESPACE, room_slug, {
-        "entry_id": entry_id,
-        "name":     name,
-        "sensors":  sensor_entities,
+        "entry_id":  entry_id,
+        "entity_id": actual_entity_id,
+        "name":      name,
+        "sensors":   sensor_entities,
     })
 
-    # Modern HA template helpers normalize the entity_id from the name; we
-    # can't construct it deterministically (HA appends suffixes on collision)
-    # so we return our best guess and let callers query HA for the real id.
-    likely_entity_id = f"binary_sensor.{_slug(name) or room_slug}_occupied".replace("_occupied_occupied", "_occupied")
     msg = f"Created occupancy sensor from {len(sensor_entities)} signal(s)"
-    log_info(f"[template_sensors] {msg} room={room_slug} entry={entry_id}")
-    return {"ok": True, "entity_id": likely_entity_id, "entry_id": entry_id, "message": msg}
+    log_info(f"[template_sensors] {msg} room={room_slug} entry={entry_id} entity={actual_entity_id}")
+    return {"ok": True, "entity_id": actual_entity_id, "entry_id": entry_id, "message": msg}
+
+
+def _lookup_entry_entity_id(entry_id: str) -> Optional[str]:
+    """Ask HA's entity_registry which entity_id belongs to a config_entry.
+
+    Uses WebSocket — HA doesn't expose entity_registry over REST. Returns
+    the first binary_sensor.* entity for the entry (template helpers create
+    exactly one). Returns None on any failure so the caller can fall back
+    to its guessed slug.
+    """
+    try:
+        from services.ha_ws import ha_ws_command
+    except ImportError:
+        return None
+    resp = ha_ws_command(
+        {"type": "config/entity_registry/list_for_config_entry", "config_entry_id": entry_id},
+        timeout=5.0,
+    )
+    if not resp.get("ok"):
+        return None
+    entries = resp.get("result") or []
+    for e in entries if isinstance(entries, list) else []:
+        if isinstance(e, dict) and (e.get("entity_id") or "").startswith("binary_sensor."):
+            return e["entity_id"]
+    # Fallback: any entity from this config entry
+    for e in entries if isinstance(entries, list) else []:
+        if isinstance(e, dict) and e.get("entity_id"):
+            return e["entity_id"]
+    return None
 
 
 def list_occupancy_sensors() -> list[dict]:

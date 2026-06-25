@@ -434,6 +434,17 @@ export const getBlueprint             = (id) => get(`/blueprints/${encodeURIComp
 export const instantiateBlueprint     = (id, inputs, name) => post(`/blueprints/${encodeURIComponent(id)}/instantiate`, { blueprint_id: id, inputs, name })
 export const importBlueprint          = (yaml) => post('/blueprints/import', { yaml })
 
+// Ziggy Pro Mode — bundle preview & apply (Session D).
+// Design returns a PREVIEW (no side effects); Apply executes it. The bundle
+// shape comes back inside the /chat envelope as data.bundle when the user
+// asks for an outcome-shaped automation ("set up smart kitchen"); this
+// helper lets the chat UI POST the same dict back on Accept. Direct designer
+// endpoint is exposed for retries / fresh designs without going through chat.
+export const designAutomationBundle  = (outcome, language) =>
+  post('/automations/bundles/design', { outcome, language })
+export const applyAutomationBundle   = (bundle) =>
+  post('/automations/bundles/apply', { bundle })
+
 // Smart Light Schedule (circadian) — bundle of 4 HA automations created/replaced
 // atomically. See services/circadian_builder.py.
 export const getCircadianBundle    = () => get('/automations/circadian-bundle')

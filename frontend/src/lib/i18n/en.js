@@ -3938,4 +3938,68 @@ export default {
   'marketing.feature3.title':           'Bring your gear',
   'marketing.feature3.body':            'Tadiran, Electra, Broadlink, Shelly, Sonos, and more. If it speaks Wi-Fi, Zigbee, or IR, Ziggy can drive it.',
   'marketing.footer':                   '© Ziggy — built in Israel for real homes.',
+
+  // ── Ziggy Pro Mode — chat bundle preview card (D4) ─────────────────────
+  'automations.proCard.eyebrow':                  'ZIGGY PRO · BUNDLE PREVIEW',
+  'automations.proCard.untitledBundle':           'Untitled bundle',
+  'automations.proCard.noteLabel':                'NOTE',
+  'automations.proCard.sectionOccupancy':         'Occupancy sensors',
+  'automations.proCard.sectionModes':             'Modes',
+  'automations.proCard.sectionAutomations':       'Automations',
+  'automations.proCard.sectionVoice':             'Voice commands',
+  'automations.proCard.occupancySourceOne':       '1 source',
+  'automations.proCard.occupancySourceMany':      '{n} sources',
+  'automations.proCard.sourceTemplate':           'Template',
+  'automations.proCard.sourceCustom':             'Custom',
+  'automations.proCard.modeSingle':               'Single',
+  'automations.proCard.modeRestart':              'Restart',
+  'automations.proCard.modeQueued':               'Queued',
+  'automations.proCard.modeParallel':             'Parallel',
+  // Trigger summaries — keep them short, one-line, plain-prose. Israeli
+  // defaults (5-min motion windows, 24°C climate) carry through from the
+  // backend; the UI just renders what it gets.
+  'automations.proCard.triggerGeneric':           'when the conditions are met',
+  'automations.proCard.trigStateMotionOffFor':    'when motion stops for {n} min',
+  'automations.proCard.trigStateMotionOn':        'when motion is detected',
+  'automations.proCard.trigStateChangeTo':        'when state becomes {value}',
+  'automations.proCard.trigStateChangeToFor':     'when state stays {value} for {n} min',
+  'automations.proCard.trigStateChange':          'when the state changes',
+  'automations.proCard.trigTimeAt':               'every day at {time}',
+  'automations.proCard.trigTimeGeneric':          'at a set time',
+  'automations.proCard.trigEveryMinutes':         'every {n} minutes',
+  'automations.proCard.trigEveryHours':           'every {n} hours',
+  'automations.proCard.trigPeriodic':             'on a recurring schedule',
+  'automations.proCard.trigSunrise':              'at sunrise',
+  'automations.proCard.trigSunset':               'at sunset',
+  'automations.proCard.trigSun':                  'around sunrise / sunset',
+  'automations.proCard.trigNumAbove':             'when the value rises above {value}',
+  'automations.proCard.trigNumBelow':             'when the value drops below {value}',
+  'automations.proCard.trigNumChange':            'when the value changes',
+  // Voice intents are not yet apply-supported (bundle_executor.py:141-146),
+  // so the card surfaces this honestly.
+  'automations.proCard.voiceIntentManualNote':    'Manual setup needed for now — voice intents aren’t auto-created yet.',
+  // Buttons
+  'automations.proCard.accept':                   'Accept & Create',
+  'automations.proCard.discard':                  'Discard',
+  'automations.proCard.creating':                 'Creating…',
+  'automations.proCard.done':                     'Done',
+  'automations.proCard.applyFailed':              'Couldn’t create the bundle — try again in a moment.',
+  // Results view
+  'automations.proCard.createdLabel':             'Created',
+  'automations.proCard.errorsLabel':              'Couldn’t set up',
+  'automations.proCard.unknownError':             'Unknown error',
+  'automations.proCard.allCreated':               'All {n} items created.',
+  'automations.proCard.noneCreated':              'Nothing was created. See the errors above.',
+  'automations.proCard.partialSuccess':           '{ok} created, {fail} couldn’t be set up.',
+  // Confirmation messages that replace the card in the chat history
+  'automations.proCard.confirmDone':              'Done — created {n} items for “{name}”.',
+  'automations.proCard.confirmAllFailed':         'Couldn’t set up “{name}” — nothing was created.',
+  'automations.proCard.confirmPartial':           '“{name}” partly set up — {ok} created, {fail} need a manual look.',
+  'automations.proCard.discarded':                'Discarded the bundle. Nothing was created.',
+  // Per-artifact kind labels for the results view (so a row reads
+  // "AUTOMATION · Bedroom auto-on" rather than the raw kind string).
+  'automations.proCard.artifactKind.automation':         'Automation',
+  'automations.proCard.artifactKind.occupancy_sensor':   'Occupancy sensor',
+  'automations.proCard.artifactKind.kv_state':           'Mode',
+  'automations.proCard.artifactKind.voice_intent':       'Voice command',
 }
