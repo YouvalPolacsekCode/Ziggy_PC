@@ -321,3 +321,54 @@ async def debug_self_test(_: dict = Depends(require_role("super_admin"))):
             else "PROBLEM — see ws_callback_wired and test_event_emitted fields"
         ),
     }
+
+
+# ─── Home context (Ziggy Pro designer input) ──────────────────────────────────
+#
+# Dumps the compact JSON blob the Pro-mode designer (Session D3) consumes when
+# the LLM is asked to design an automation set. Wired here (not its own router)
+# because it's strictly a debug surface — production code paths call
+# services.home_context.load_home_context() directly, not through HTTP.
+
+@router.get("/home-context")
+async def get_home_context(
+    language: str = Query("en", regex="^(en|he)$"),
+    refresh: bool = Query(False, description="Bust the 60s cache and rebuild"),
+    _: dict = Depends(require_role("super_admin")),
+):
+    """Return the home-context snapshot the Ziggy Pro designer will see.
+
+    The snapshot is built sync and may briefly hit HA via WebSocket
+    (config_entries/get) to enumerate installed integrations; the work is
+    pushed to a thread so the event loop doesn't block. Cache TTL is 60 s;
+    `refresh=true` rebuilds immediately.
+    """
+    import asyncio as _asyncio
+    from services.home_context import load_home_context, invalidate_cache
+
+    if refresh:
+        invalidate_cache()
+    snapshot = await _asyncio.to_thread(load_home_context, language)
+    return snapshot
+
+
+# ─── Capability catalog (Ziggy Pro designer input) ───────────────────────────
+#
+# Exposes the D1 capability_catalog so you can eyeball what the designer LLM
+# will see — what triggers/conditions/actions Ziggy supports, what's a gap,
+# and any drift between the hand-curated catalog and the live converter.
+
+@router.get("/capabilities")
+async def get_capabilities(
+    only_supported: bool = Query(False, description="Filter to ziggy_supported=true|partial"),
+    include_drift:  bool = Query(True,  description="Include catalog-vs-live drift report"),
+    _: dict = Depends(require_role("super_admin")),
+):
+    """Dump the Ziggy Pro capability catalog. Debug-only — production code
+    calls services.capability_catalog directly.
+    """
+    from services.automation_catalog import get_catalog, get_supported_only, detect_drift
+    out = get_supported_only() if only_supported else get_catalog()
+    if include_drift:
+        out["drift"] = detect_drift()
+    return out
