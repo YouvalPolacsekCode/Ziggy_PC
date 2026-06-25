@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useT } from '../../lib/i18n'
 import { applyAutomationBundle } from '../../lib/api'
@@ -284,6 +284,12 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   const [status, setStatus] = useState(STATUS.IDLE)
   const [applyResult, setApplyResult] = useState(null)
   const [topError, setTopError] = useState(null)
+  // Cooldown ref: card just appeared in the chat after the user pressed Enter
+  // on their message. Browsers can deliver a stray Enter keystroke onto the
+  // freshly-rendered Accept button if focus shifted. Ignore Accept calls in
+  // the first 400 ms — enough to absorb the racing keystroke without being
+  // noticeable to a real click.
+  const mountedAt = useRef(performance.now())
 
   if (!bundle || typeof bundle !== 'object') return null
 
@@ -295,6 +301,8 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   const decline     = bundle.decline || null
 
   const handleAccept = async () => {
+    // Race guard — see mountedAt ref above
+    if (performance.now() - mountedAt.current < 400) return
     setStatus(STATUS.APPLYING)
     setTopError(null)
     try {
