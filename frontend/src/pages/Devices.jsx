@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, forwardRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, ChevronUp, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight, Radio } from 'lucide-react'
+import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, ChevronUp, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight, Radio, Sparkles } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
@@ -903,13 +903,14 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
 // they react to the active language. The icons stay outside translation.
 function buildStatusFilters(t) {
   return [
-    { id: 'all',        label: t('devices.filterAll') },
-    { id: 'unassigned', label: `📦 ${t('devices.filterUnassigned')}` },
-    { id: 'noroom',     label: `🏠 ${t('devices.filterNoRoom')}` },
-    { id: 'offline',    label: `🔴 ${t('devices.filterOffline')}` },
-    { id: 'active',     label: `🟢 ${t('devices.filterActive')}` },
-    { id: 'connected',  label: `🔗 ${t('devices.filterConnected')}` },
-    { id: 'ir',         label: `📡 ${t('devices.filterIr')}` },
+    { id: 'all',           label: t('devices.filterAll') },
+    { id: 'unassigned',    label: `📦 ${t('devices.filterUnassigned')}` },
+    { id: 'noroom',        label: `🏠 ${t('devices.filterNoRoom')}` },
+    { id: 'offline',       label: `🔴 ${t('devices.filterOffline')}` },
+    { id: 'active',        label: `🟢 ${t('devices.filterActive')}` },
+    { id: 'connected',     label: `🔗 ${t('devices.filterConnected')}` },
+    { id: 'ir',            label: `📡 ${t('devices.filterIr')}` },
+    { id: 'smart_sensors', label: `✨ ${t('devices.filterSmartSensors')}` },
   ]
 }
 
@@ -930,6 +931,196 @@ function buildGroupFilters(entities, irEntities) {
 // DOMAIN_GROUPS and domainGroup are now imported from domainRegistry.js.
 // Adding a new HA domain there automatically updates grouping here.
 // (DOMAIN_GROUPS and domainGroup imported at top of file)
+
+// ── Smart Sensor card ─────────────────────────────────────────────────────────
+// Ziggy-created template helpers (currently: occupancy sensors fused from
+// multiple physical motion/contact sensors by Pro Mode). These are NOT bought
+// hardware — visual treatment leans friendly + accent-tinted to telegraph
+// "Ziggy made this" without exposing HA entity_ids to the end user.
+//
+// Live state comes from the same enriched-entity record the rest of the page
+// consumes (HA → /api/ha/entities → store.entities). The Ziggy-only metadata
+// (origin, ziggy_sources, friendly source names) is attached by the page
+// before render — see `smartSensorEntries` in the Devices component.
+function SmartSensorCard({ entity, lang }) {
+  const t = useT()
+  const [sourcesOpen, setSourcesOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  // Live state pill — for occupancy-style binary sensors, "on" == occupied.
+  // Anything else (off/unknown/unavailable) treats as "clear" so the pill
+  // never lies about presence when HA momentarily reports unavailable.
+  const isOccupied = entity.state === 'on'
+  const isUnavailable = entity.state === 'unavailable' || entity.state === 'unknown'
+
+  const sources = Array.isArray(entity._ziggySources) ? entity._ziggySources : []
+  const sourceLabels = Array.isArray(entity._ziggySourceLabels) ? entity._ziggySourceLabels : []
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menuOpen])
+
+  const roomLabel = entity._roomName
+    ? translateNamePhrase(entity._roomName, lang)
+    : (entity.room || '').replace(/_/g, ' ')
+
+  return (
+    <motion.div layout
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.15 }}
+    >
+      <Card
+        className="p-4 transition-all duration-200"
+        style={{
+          background: `color-mix(in srgb, var(--accent) 5%, var(--surface))`,
+          border: `0.5px solid color-mix(in srgb, var(--accent) 22%, var(--line))`,
+        }}
+      >
+        <div className="flex items-start justify-between mb-2">
+          <div style={{
+            width: 40, height: 40, borderRadius: 12,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: `color-mix(in srgb, var(--accent) 18%, var(--surface))`,
+            color: 'var(--accent)',
+            flexShrink: 0,
+          }}>
+            <Sparkles size={18} strokeWidth={2.2} />
+          </div>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+              className="p-1 rounded-lg text-ink-mute hover:text-ink-2 hover:bg-line transition-colors"
+              aria-label={t('common.more')}
+            >
+              <MoreVertical size={14} />
+            </button>
+            <AnimatePresence>
+              {menuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                  transition={{ duration: 0.12 }}
+                  style={{ position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4, zIndex: 50, minWidth: 200 }}
+                  className="bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
+                >
+                  <button
+                    onClick={() => { setSourcesOpen(true); setMenuOpen(false) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-2 hover:bg-surface-2 text-start"
+                  >
+                    <Eye size={12} /> {t('devices.smartSensor.viewSources')}
+                  </button>
+                  {/* TODO(v1): no per-smart-sensor delete endpoint yet.
+                      Once DELETE /api/automations/bundles/{id} or an
+                      equivalent for template helpers lands, surface a
+                      Delete item here. For now the user removes a smart
+                      sensor by editing the originating bundle. */}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <p dir="auto" className="text-sm font-medium text-ink leading-tight mb-0.5 truncate">
+          {entity.display_name || entity.friendly_name || entity.name || entity.entity_id}
+        </p>
+
+        <p dir="auto" className="text-[10.5px] text-ink-mute mb-2 leading-snug">
+          {t('devices.smartSensor.subtitle', { n: sources.length })}
+          {roomLabel && (
+            <> · <span className="capitalize">{roomLabel}</span></>
+          )}
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '3px 9px', borderRadius: 999, fontSize: 10.5, fontWeight: 600,
+            background: isUnavailable
+              ? 'var(--surface-2)'
+              : isOccupied
+                ? `color-mix(in srgb, var(--ok) 16%, var(--surface))`
+                : 'var(--surface-2)',
+            color: isUnavailable
+              ? 'var(--ink-faint)'
+              : isOccupied ? 'var(--ok)' : 'var(--ink-mute)',
+            border: `0.5px solid ${isOccupied && !isUnavailable
+              ? `color-mix(in srgb, var(--ok) 35%, var(--line))`
+              : 'var(--line)'}`,
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: isUnavailable ? 'var(--ink-faint)' : isOccupied ? 'var(--ok)' : 'var(--ink-mute)',
+            }} />
+            {isOccupied
+              ? t('devices.smartSensor.statusOccupied')
+              : t('devices.smartSensor.statusClear')}
+          </span>
+        </div>
+
+        {/* Source-sensor reveal — friendly names only, never raw entity_ids.
+            Falls back to a count if no friendly names were available from the
+            HA entity registry. */}
+        <AnimatePresence initial={false}>
+          {sourcesOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div style={{
+                marginTop: 10, paddingTop: 10,
+                borderTop: '0.5px solid var(--line)',
+              }}>
+                <p className="text-[9.5px] uppercase tracking-wider text-ink-mute font-semibold mb-1.5">
+                  {t('devices.smartSensor.sourcesTitle')}
+                </p>
+                {sourceLabels.length > 0 ? (
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {sourceLabels.map((label, i) => (
+                      <li key={i} dir="auto" style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        fontSize: 11, color: 'var(--ink-2)',
+                      }}>
+                        <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                        <span className="truncate">{label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-ink-faint">
+                    {t('devices.smartSensor.subtitle', { n: sources.length })}
+                  </p>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+    </motion.div>
+  )
+}
+
+// True if the registry-side device record marks this row as a Ziggy-created
+// smart sensor (template helper). Either marker is sufficient — `status` is
+// the runtime state, `origin` is the provenance tag.
+function _isSmartSensorRecord(d) {
+  return (
+    d?.status === 'smart_sensor' ||
+    d?.origin === 'ziggy_template' ||
+    d?.device_type === 'smart_sensor'
+  )
+}
 
 // ── Collapsible group header ───────────────────────────────────────────────────
 function CollapsibleGroup({ label, count, open, onToggle, children, action, room, onRoomClick }) {
@@ -1638,6 +1829,7 @@ export default function Devices() {
   const showHidden            = useDeviceStore(s => s.showHidden)
   const rawZiggyRooms         = useDeviceStore(s => s.ziggyRooms)
   const unclaimedDevices      = useDeviceStore(s => s.unclaimedDevices)
+  const noRoomDevices         = useDeviceStore(s => s.noRoomDevices)
   const fetchAll              = useDeviceStore(s => s.fetchAll)
   const hideEntity            = useDeviceStore(s => s.hideEntity)
   const unhideEntity          = useDeviceStore(s => s.unhideEntity)
@@ -1695,10 +1887,66 @@ export default function Devices() {
   const unassigned = getUnassigned()
   const noRoomEntities = getNoRoom()
 
+  // ── Smart sensor enrichment ──────────────────────────────────────────────────
+  // Walk every device record returned by the registry (room devices + no-room
+  // + unclaimed) and pluck out the Ziggy-created template helpers. Then join
+  // each one with its live HA entity record (state) and friendly source-sensor
+  // labels so the card can render without ever showing a raw entity_id.
+  const entityById = (() => {
+    const m = {}
+    for (const e of entities) m[e.entity_id] = e
+    return m
+  })()
+  const smartSensorEntries = (() => {
+    const out = []
+    const seen = new Set()
+    const consider = (d, roomName) => {
+      if (!d || !d.entity_id || seen.has(d.entity_id)) return
+      if (!_isSmartSensorRecord(d)) return
+      seen.add(d.entity_id)
+      const liveEntity = entityById[d.entity_id]
+      if (!liveEntity) return  // entity not yet in HA — skip until it shows up
+      const sources = Array.isArray(d.ziggy_sources) ? d.ziggy_sources : []
+      // Resolve friendly names from the live entity registry, falling back to
+      // null so the card can hide unknown labels instead of leaking entity_ids.
+      const sourceLabels = sources
+        .map((sid) => {
+          const se = entityById[sid]
+          if (!se) return null
+          return se.display_name || se.friendly_name || null
+        })
+        .filter(Boolean)
+      out.push({
+        ...liveEntity,
+        // Ziggy-only metadata — prefixed `_` so it never collides with HA fields
+        _ziggySmartSensor: true,
+        _ziggySources:     sources,
+        _ziggySourceLabels: sourceLabels,
+        _roomName:         roomName || liveEntity._roomName || null,
+        // Mirror the registry's friendly room slug if present so rendering can
+        // capitalize / format it the same as other cards.
+        room:              d.room || liveEntity.room || null,
+        // Preserve the registry's display name when HA's friendly name is missing.
+        display_name:      liveEntity.display_name || d.name || liveEntity.friendly_name || liveEntity.entity_id,
+      })
+    }
+    for (const room of ziggyRooms) {
+      for (const d of (room.devices || [])) consider(d, room.name)
+    }
+    for (const d of (noRoomDevices || [])) consider(d, null)
+    for (const d of (unclaimedDevices || [])) consider(d, null)
+    return out
+  })()
+  const smartSensorIdSet = new Set(smartSensorEntries.map(e => e.entity_id))
+
   // Dynamic filter chips — only groups that have at least one entity present.
   const irEntities = entities.filter(e => e._ir)
   const groupFilters = buildGroupFilters(entities, irEntities)
-  const DOMAIN_FILTER = [...buildStatusFilters(t), ...groupFilters]
+  // Hide the Smart Sensors chip until at least one exists — keeps the chip
+  // bar honest for users who haven't asked Ziggy to set up any smart rooms yet.
+  const baseStatusFilters = buildStatusFilters(t)
+    .filter(f => f.id !== 'smart_sensors' || smartSensorEntries.length > 0)
+  const DOMAIN_FILTER = [...baseStatusFilters, ...groupFilters]
 
   // If the current filter is a group that no longer has any devices, reset to 'all'.
   useEffect(() => {
@@ -1710,9 +1958,22 @@ export default function Devices() {
   const filtered = (() => {
     if (domain === 'unassigned') return unassigned
     if (domain === 'noroom') return noRoomEntities
+    // Smart sensors are surfaced as their own enriched list — they don't live
+    // in the main `entities` filter path (so they never show up twice when
+    // any other filter is active).
+    if (domain === 'smart_sensors') {
+      return smartSensorEntries.filter((e) =>
+        !search ||
+        (e.display_name || e.friendly_name || '').toLowerCase().includes(search.toLowerCase())
+      )
+    }
     return entities.filter((e) => {
       const isHidden = hiddenEntities.has(e.entity_id)
       if (isHidden && !showHidden) return false
+      // Hide Ziggy smart sensors from the generic device list — they get
+      // their own dedicated section / chip so users never see two cards
+      // for the same template helper.
+      if (smartSensorIdSet.has(e.entity_id)) return false
       let matchDomain = true
       if (domain === 'active') matchDomain = isEntityOn(e)
       else if (domain === 'offline') matchDomain = e.state === 'unavailable' || e.state === 'unknown'
@@ -2095,17 +2356,22 @@ export default function Devices() {
         </div>
       )}
 
-      {/* Empty state — only when truly empty (not just refreshing) */}
-      {!loading && filtered.length === 0 && (
+      {/* Empty state — only when truly empty (not just refreshing).
+          In `all` mode the Smart Sensors group lives outside `filtered`, so
+          we skip the empty banner when at least one smart sensor exists. */}
+      {!loading && filtered.length === 0 && !(domain === 'all' && smartSensorEntries.length > 0) && (
         <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--ink-faint)' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>
-            {domain === 'unassigned' ? 'All devices are assigned to rooms' : domain === 'noroom' ? 'No devices without a room' : 'No devices found'}
+            {domain === 'unassigned' ? 'All devices are assigned to rooms'
+              : domain === 'noroom' ? 'No devices without a room'
+              : domain === 'smart_sensors' ? t('devices.smartSensor.empty')
+              : 'No devices found'}
           </p>
         </div>
       )}
 
       {/* ── By-room view (default) ── */}
-      {viewMode === 'room' && domain === 'all' && filtered.length > 0 && (() => {
+      {viewMode === 'room' && domain === 'all' && (filtered.length > 0 || smartSensorEntries.length > 0) && (() => {
         const entitySet = new Set(filtered.map(e => e.entity_id))
         // Resolve a room device entry to its enriched entity object.
         // HA entities have `d.entity_id`; standalone IR devices in rooms only
@@ -2138,6 +2404,29 @@ export default function Devices() {
                 </div>
               </CollapsibleGroup>
             ))}
+            {/* ── Smart Sensors group ───────────────────────────────────────
+                Ziggy-created template helpers (occupancy etc.). Placed BELOW
+                room groups (so physical devices stay top of view) but ABOVE
+                No Room / Unassigned so the new section is high-visibility
+                for the user who just asked Ziggy to set up a smart room.
+                Default OPEN — this is the freshly-created surface they're
+                hunting for. */}
+            {smartSensorEntries.length > 0 && (
+              <CollapsibleGroup
+                label={t('devices.groupSmartSensors')}
+                count={smartSensorEntries.length}
+                open={!collapsedGroups.has('__smart_sensors__')}
+                onToggle={() => toggleGroup('__smart_sensors__')}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                  <AnimatePresence mode="popLayout">
+                    {smartSensorEntries.map(entity => (
+                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </CollapsibleGroup>
+            )}
             {noRoomItems.length > 0 && (
               <CollapsibleGroup label="No Room" count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onToggle={() => toggleGroup('__noroom__')}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
@@ -2161,20 +2450,64 @@ export default function Devices() {
       })()}
 
       {/* ── By-type view ── */}
-      {(viewMode === 'type' || domain !== 'all') && domain !== 'unassigned' && domain !== 'noroom' && filtered.length > 0 && (() => {
+      {(viewMode === 'type' || domain !== 'all') && domain !== 'unassigned' && domain !== 'noroom' && domain !== 'smart_sensors' && filtered.length > 0 && (() => {
         const groups = DOMAIN_GROUPS.map(g => ({
           ...g, items: filtered.filter(e => domainGroup(e) === g.id),
         })).filter(g => g.items.length > 0)
-        return groups.map(g => (
-          <CollapsibleGroup key={g.id} label={g.label} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
-              <AnimatePresence mode="popLayout">
-                {g.items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
-              </AnimatePresence>
-            </div>
-          </CollapsibleGroup>
-        ))
+        return (
+          <>
+            {groups.map(g => (
+              <CollapsibleGroup key={g.id} label={g.label} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                  <AnimatePresence mode="popLayout">
+                    {g.items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
+                  </AnimatePresence>
+                </div>
+              </CollapsibleGroup>
+            ))}
+            {/* Mirror the by-room placement: Smart Sensors appears in By-type
+                view too when no narrowing filter is active, so the user can
+                still find them regardless of which view mode they're in. */}
+            {domain === 'all' && smartSensorEntries.length > 0 && (
+              <CollapsibleGroup
+                label={t('devices.groupSmartSensors')}
+                count={smartSensorEntries.length}
+                open={!collapsedGroups.has('__smart_sensors__')}
+                onToggle={() => toggleGroup('__smart_sensors__')}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                  <AnimatePresence mode="popLayout">
+                    {smartSensorEntries.map(entity => (
+                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </CollapsibleGroup>
+            )}
+          </>
+        )
       })()}
+
+      {/* ── Smart Sensors flat view (chip-filter mode) ──
+          When the user activates the Smart Sensors chip we render the
+          group as a single flat collapsible — same SmartSensorCard, no
+          domain-group fan-out. */}
+      {domain === 'smart_sensors' && filtered.length > 0 && (
+        <CollapsibleGroup
+          label={t('devices.groupSmartSensors')}
+          count={filtered.length}
+          open={!collapsedGroups.has('__smart_sensors_only__')}
+          onToggle={() => toggleGroup('__smart_sensors_only__')}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+            <AnimatePresence mode="popLayout">
+              {filtered.map(entity => (
+                <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
+              ))}
+            </AnimatePresence>
+          </div>
+        </CollapsibleGroup>
+      )}
 
       {/* Unassigned flat view */}
       {domain === 'unassigned' && filtered.length > 0 && (

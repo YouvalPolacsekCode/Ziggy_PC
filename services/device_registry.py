@@ -34,6 +34,11 @@ UNCLAIMED    = "unclaimed"
 UNCONFIGURED = "unconfigured"
 LOST         = "lost"
 IR_ONLY      = "ir_only"
+# Ziggy-created virtual sensors (template binary_sensors fused via Pro Mode).
+# Distinct status so the Devices UI can render them in their own "Smart
+# Sensors" section — they're not bought hardware and shouldn't be treated
+# like Unclaimed entries either (we created them, we know the source).
+SMART_SENSOR = "smart_sensor"
 
 # Internal tags on registry entries. Stored as a list of strings on each
 # device row (key: "tags"). NOT exposed via the UI — auto-applied at registry
@@ -277,6 +282,54 @@ def _merge_ir_devices(devices: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Reconciliation
 # ---------------------------------------------------------------------------
+
+def _merge_ziggy_smart_sensors(devices: list[dict]) -> list[dict]:
+    """
+    Surface Ziggy-created occupancy template helpers as virtual devices.
+
+    Pro Mode's bundle executor creates template binary_sensors via HA's
+    config_entries flow (see services/template_sensors.create_occupancy_sensor).
+    HA's device_registry doesn't list template helpers as "devices" because
+    they have no physical manufacturer / model, so the standard reconcile
+    pass skips them and they never appear in Ziggy's Devices page either.
+
+    This merge reads from Ziggy's local KV (the canonical store of which
+    smart sensors WE created) and injects them as devices with a distinct
+    status=SMART_SENSOR. Frontend renders them in their own section.
+
+    Rebuild semantics mirror _merge_ir_devices: drop stale smart-sensor
+    entries first, then re-add from the live KV. Lets the UI reflect
+    deletions (when delete_occupancy_sensor lands) without a restart.
+    """
+    try:
+        from services.template_sensors import list_occupancy_sensors
+        kv_sensors = list_occupancy_sensors()
+    except Exception as e:
+        log_error(f"[DeviceRegistry] smart-sensor merge skipped: {e}")
+        return devices
+
+    # Drop existing smart-sensor entries (we'll rebuild from KV).
+    kept = [d for d in devices if d.get("origin") != "ziggy_template"]
+
+    for s in kv_sensors:
+        entity_id = (s.get("entity_id") or "").strip()
+        if not entity_id:
+            # Older KV records (pre entity_id lookup fix) may lack entity_id;
+            # we can't surface them as devices without an entity to bind to.
+            continue
+        kept.append({
+            "entity_id":     entity_id,
+            "device_type":   "smart_sensor",
+            "status":        SMART_SENSOR,
+            "origin":        "ziggy_template",
+            "room":          s.get("room") or None,
+            "name":          s.get("name") or entity_id,
+            "ziggy_sources": list(s.get("sensors") or []),
+            "entry_id":      s.get("entry_id"),   # opaque HA config_entry id; UI never shows it
+        })
+
+    return kept
+
 
 def _live_entity_ids() -> set[str]:
     try:
@@ -572,6 +625,7 @@ def init() -> None:
         # IR merge before HA reconciliation: hybrid HA+IR rows surface
         # immediately on /api/devices even before reconcile_with_ha runs.
         devices = _merge_ir_devices(devices)
+        devices = _merge_ziggy_smart_sensors(devices)
         _registry = devices
         _rebuild_indexes()
         _initialized = True
@@ -632,6 +686,7 @@ async def reconcile_with_ha() -> None:
             devices = _heal_unclaimed(devices, states=states,
                                       entity_areas=entity_areas)
             devices = _merge_ir_devices(devices)
+            devices = _merge_ziggy_smart_sensors(devices)
             _save_persistent(devices)
             _registry = devices
             _rebuild_indexes()
@@ -674,6 +729,7 @@ def refresh() -> None:
         devices = _add_unclaimed(devices, live_ids, states=states)
         # Merge IR devices LAST so the merge can see all HA-bound rows.
         devices = _merge_ir_devices(devices)
+        devices = _merge_ziggy_smart_sensors(devices)
         _save_persistent(devices)
         _registry = devices
         _rebuild_indexes()

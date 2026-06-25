@@ -139,6 +139,8 @@ CASES: list[Case] = [
 
 
 def _post(base: str, path: str, body: dict, token: str, timeout: float = 90.0) -> tuple[int, dict]:
+    # Cloudflare in front of canary returns 1010 (Browser Integrity Check)
+    # for the default Python-urllib UA. A browser-like UA gets through.
     req = urllib.request.Request(
         f"{base.rstrip('/')}{path}",
         method="POST",
@@ -146,6 +148,8 @@ def _post(base: str, path: str, body: dict, token: str, timeout: float = 90.0) -
         headers={
             "Content-Type":  "application/json",
             "Authorization": f"Bearer {token}",
+            "User-Agent":    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+            "Accept":        "application/json",
         },
     )
     try:
@@ -161,9 +165,15 @@ def _post(base: str, path: str, body: dict, token: str, timeout: float = 90.0) -
 
 
 def run_case(base: str, token: str, case: Case) -> dict:
-    """Send one input through /api/chat and capture the routing decision."""
+    """Send one input through /api/intent and capture the routing decision.
+
+    NOTE: we use /api/intent rather than /api/chat because the chat endpoint
+    strips the `intent` field from its response (it's meant for human-facing
+    chat replies, not for tool-routing audits). The intent endpoint exposes
+    the same routing decision while running through the same parser stack.
+    """
     started = time.time()
-    status, resp = _post(base, "/api/chat", {"text": case.input, "source": "stress_test"}, token)
+    status, resp = _post(base, "/api/intent", {"text": case.input, "source": "stress_test"}, token)
     elapsed_ms = int((time.time() - started) * 1000)
 
     actual_intent = resp.get("intent") if isinstance(resp, dict) else None
