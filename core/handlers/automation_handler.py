@@ -603,20 +603,42 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
     bundle = result["bundle"]
     arts = bundle.get("artifacts") or {}
     counts = {k: len(v) for k, v in arts.items() if isinstance(v, list) and v}
+    # Voice intents are listed in v1 but can't actually be created (the bundle
+    # executor skips them). A bundle that's voice_intents-only would render a
+    # card the user can't act on — that's the "empty card" failure mode.
+    actionable_kinds = {"occupancy_sensors", "kv_state", "automations"}
+    actionable_count = sum(counts.get(k, 0) for k in actionable_kinds)
     has_artifacts = bool(counts)
+    has_actionable = actionable_count > 0
 
-    # Hard decline: no artifacts AND a decline message → surface it as the only reply.
-    if bundle.get("decline") and not has_artifacts:
-        return ok(bundle["decline"])
+    # Hard decline: no artifacts at all → surface decline (or generic) as text.
+    if not has_artifacts:
+        return ok(bundle.get("decline") or "I couldn't design anything for that — try describing the outcome differently.")
+
+    # Voice-intents-only is functionally an empty bundle for v1 — apply would
+    # report all voice intents as "manual setup needed". Don't render a card
+    # the user can't act on; surface as text with the manual-setup note.
+    if not has_actionable:
+        phrases = [vi.get("phrase", "") for vi in (arts.get("voice_intents") or [])]
+        phrase_list = ", ".join(f"\"{p}\"" for p in phrases if p)
+        msg = (
+            f"I'd add voice commands ({phrase_list}) for this, but voice commands "
+            f"need manual setup for now — there's nothing else I can build automatically."
+            if phrase_list else
+            "I couldn't compose any actionable automation for this outcome."
+        )
+        if bundle.get("decline"):
+            msg = f"{bundle['decline']} {msg}"
+        return ok(msg)
 
     summary = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in counts.items()) or "no artifacts"
     name = bundle.get("name", "automation bundle")
     rationale = bundle.get("rationale", "")
-    # Soft decline: there ARE artifacts AND a decline (partial fulfillment).
-    # Surface the decline as a note alongside the preview instead of blocking.
+    # Soft decline: there ARE actionable artifacts AND a decline note (partial
+    # fulfillment). Surface decline as a note alongside the preview.
     note = f" Note: {bundle['decline']}" if bundle.get("decline") else ""
 
-    log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts} decline={bool(bundle.get('decline'))}")
+    log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts} actionable={actionable_count} decline={bool(bundle.get('decline'))}")
     return ok(
         f"I designed '{name}': {summary}. {rationale}{note} Review and accept to create.",
         data={"bundle": bundle, "kind": "automation_bundle_preview"},

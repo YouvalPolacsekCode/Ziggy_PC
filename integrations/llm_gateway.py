@@ -125,6 +125,7 @@ def chat_completion(
     temperature: float | None = None,
     max_tokens: int | None = None,
     timeout: float | None = None,
+    response_format: dict | None = None,
 ) -> Any:
     """Run a chat completion for `purpose`. Returns the raw SDK response object.
 
@@ -151,6 +152,8 @@ def chat_completion(
         kwargs["max_tokens"] = max_tokens
     if timeout is not None:
         kwargs["timeout"] = timeout
+    if response_format is not None:
+        kwargs["response_format"] = response_format
     return client.chat.completions.create(**kwargs)
 
 

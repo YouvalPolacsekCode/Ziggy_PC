@@ -128,12 +128,18 @@ def design_bundle(outcome: str, language: Optional[str] = None) -> dict:
     ]
 
     try:
+        # response_format json_object forces the model into JSON-only output,
+        # which both removes the need to strip ```json``` fences AND speeds
+        # up generation slightly. Tightened max_tokens from 3000 to 1800 —
+        # most bundles fit comfortably in 800-1200 tokens; 1800 leaves
+        # headroom for verbose Hebrew bundles without paying for runaway.
         resp = chat_completion(
             "automation_design",
             messages,
-            temperature=0.2,   # low creativity → schema consistency
-            max_tokens=3000,
+            temperature=0.1,
+            max_tokens=1800,
             timeout=45,
+            response_format={"type": "json_object"},
         )
     except Exception as e:
         log_error(f"[designer] LLM call failed: {e}")
