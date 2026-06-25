@@ -313,7 +313,13 @@ async def design_bundle_endpoint(body: BundleDesignBody):
     from services.orchestra_designer import design_bundle
     result = await asyncio.to_thread(design_bundle, body.outcome, body.language)
     if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Designer failed."))
+        # Return 400 but keep the bundle (if any) so the caller can see what
+        # the LLM produced even when validation rejected it.
+        raise HTTPException(status_code=400, detail={
+            "error":  result.get("error", "Designer failed."),
+            "bundle": result.get("bundle"),
+            "raw":    result.get("raw_preview"),
+        })
     return result
 
 

@@ -45,7 +45,8 @@ _SYSTEM_PROMPT_TMPL = """You are Ziggy's Pro Mode designer. The user has describ
 5. If the user's outcome needs something Ziggy can't currently do, return an empty artifacts object and set decline to a Ziggy-native explanation. Use the catalog.gaps decline_message_he when the user typed Hebrew, decline_message_en otherwise.
 6. Default to Israeli home patterns: 24°C AC, 5-min motion timeouts, RTL Hebrew when the user typed Hebrew.
 7. Every artifact MUST reference REAL entity_ids from the home context. NEVER invent entity IDs.
-8. Output STRICT JSON matching the schema below. No prose, no markdown fences, no commentary outside the JSON object.
+8. If a room lacks suitable source sensors for an occupancy_sensor (no motion / presence / door entity), OMIT the occupancy_sensors entry entirely — don't add one with empty sensors[]. Note the limitation in the rationale instead.
+9. Output STRICT JSON matching the schema below. No prose, no markdown fences, no commentary outside the JSON object.
 
 # BUNDLE SCHEMA
 {{
@@ -212,8 +213,13 @@ def _validate_bundle(bundle: dict) -> Optional[str]:
             if not trig.get("type"):
                 return f"automations[{i}].trigger.type is required for source=custom."
 
-    for i, s in enumerate(artifacts.get("occupancy_sensors") or []):
-        if not isinstance(s, dict) or not s.get("room") or not s.get("sensors"):
-            return f"occupancy_sensors[{i}] needs both room and sensors[]."
+    # occupancy_sensors with missing/empty data are silently dropped here —
+    # the LLM sometimes proposes them for rooms that lack source sensors.
+    # We don't fail the whole bundle; we just filter the bad entries.
+    valid_sensors = [
+        s for s in (artifacts.get("occupancy_sensors") or [])
+        if isinstance(s, dict) and s.get("room") and s.get("sensors")
+    ]
+    artifacts["occupancy_sensors"] = valid_sensors
 
     return None
