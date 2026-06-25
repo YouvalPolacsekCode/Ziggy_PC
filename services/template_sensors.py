@@ -1,62 +1,62 @@
 """
 Ziggy-managed HA template binary_sensors for room occupancy fusion.
 
-The bedroom-orchestra and similar smart-room patterns need a single
-"is the room occupied" entity that fuses several signals (motion, presence,
-door contact, etc.).  HA's `template` integration is the right primitive but
-it's YAML-configured, not REST-creatable, so Ziggy maintains its own packages
-file and reloads template entities after each change.
+Why HTTP, not files
+-------------------
+HA exposes template binary_sensors two ways:
+  1. legacy YAML under `template:` in configuration.yaml (or packages/)
+  2. modern UI helper — same `template` integration but config-entry backed,
+     stored in HA's `.storage`, hot-reloads on create.
 
-HA prerequisite (one-time, done as part of Ziggy's HA provisioning):
-  configuration.yaml must include `packages: !include_dir_named packages`
-  under `homeassistant:`.
+The legacy YAML path requires Ziggy to write into HA's config dir. That
+fails on the canary topology (HA OS in a VirtualBox VM, Ziggy in Docker
+on the Windows host — no shared filesystem). The modern helper path is
+all REST and works regardless of where HA runs.
 
-Layout:
-  {ha_config_dir}/packages/ziggy_occupancy_sensors.yaml
-
-Reload:
-  POST /api/services/template/reload   (no body, no restart needed)
+Flow:
+  POST  /api/config/config_entries/flow      {handler: "template"}     → menu
+  POST  /api/config/config_entries/flow/{id} {next_step_id: "binary_sensor"}
+  POST  /api/config/config_entries/flow/{id} {name, state, device_class, ...}
+  DELETE /api/config/config_entries/entry/{entry_id}                   for removal
 """
 from __future__ import annotations
-from pathlib import Path
 from typing import Optional
-import os
 import re
-import yaml
 import requests
 
-from core.settings_loader import settings
+from services import ha_client
 from core.logger_module import log_info, log_error
+from services.local_automation_actions import set_local_state, get_local_state
 
 
-_PACKAGES_SUBDIR = "packages"
-_PACKAGE_FILENAME = "ziggy_occupancy_sensors.yaml"
-_DEFAULT_DELAY_OFF_SECONDS = 30  # damps flicker when all sensors briefly go quiet
+_KV_NAMESPACE = "occupancy_sensors"  # entry_id → metadata
+_DEFAULT_DELAY_OFF_SECONDS = 30
 
 
-def _ha_config_dir() -> Optional[Path]:
-    """Resolve HA config dir from the same source backup_engine uses."""
-    backup_cfg = (settings.get("backup") or {})
-    raw = backup_cfg.get("ha_config_dir") or os.environ.get("HA_CONFIG_DIR")
-    if not raw:
-        return None
-    p = Path(raw)
-    return p if p.is_dir() else None
+def _ha_post(path: str, body: dict, timeout: float = 10.0) -> tuple[int, dict]:
+    url = f"{ha_client.url().rstrip('/')}{path}"
+    try:
+        resp = requests.post(url, json=body, headers=ha_client.headers(), timeout=timeout)
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"_raw": resp.text}
+        return resp.status_code, data
+    except requests.RequestException as e:
+        return 0, {"error": str(e)}
 
 
-def _ha_url() -> str:
-    return (settings.get("home_assistant") or {}).get("url", "").rstrip("/")
-
-
-def _ha_headers() -> dict:
-    token = (settings.get("home_assistant") or {}).get("token") or os.environ.get("HA_TOKEN", "")
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+def _ha_delete(path: str, timeout: float = 10.0) -> int:
+    url = f"{ha_client.url().rstrip('/')}{path}"
+    try:
+        resp = requests.delete(url, headers=ha_client.headers(), timeout=timeout)
+        return resp.status_code
+    except requests.RequestException:
+        return 0
 
 
 def _slug(name: str) -> str:
-    """HA unique_id slug — lowercase ASCII + underscores. Returns '' for input
-    that has no ASCII content (e.g. pure Hebrew). Callers must validate non-empty.
-    HA entity_ids do not accept non-ASCII; Hebrew belongs in friendly_name, not the slug."""
+    """ASCII slug for HA entity_id. Returns '' if no ASCII content (e.g. pure Hebrew)."""
     s = re.sub(r"[^a-z0-9_]+", "_", name.lower().replace(" ", "_")).strip("_")
     if s and s[0].isdigit():
         s = f"z_{s}"
@@ -64,8 +64,7 @@ def _slug(name: str) -> str:
 
 
 def _build_state_template(sensor_entities: list[str]) -> str:
-    """OR-of-sensors template. Each clause: states('entity') == 'on'.
-    Empty list returns 'false' so the sensor always reports clear."""
+    """OR-of-sensors Jinja: any source 'on' → occupied."""
     clean = [e.strip() for e in sensor_entities if e and "." in e]
     if not clean:
         return "false"
@@ -73,44 +72,22 @@ def _build_state_template(sensor_entities: list[str]) -> str:
     return "{{ " + " or ".join(clauses) + " }}"
 
 
-def _load_package(path: Path) -> dict:
-    if not path.exists():
-        return {"template": []}
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        if "template" not in data or not isinstance(data["template"], list):
-            data["template"] = []
-        return data
-    except Exception as e:
-        log_error(f"[template_sensors] failed to load {path}: {e}")
-        return {"template": []}
-
-
-def _save_package(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        # allow_unicode preserves Hebrew friendly_names verbatim
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
-
-
-def _reload_template_entities() -> tuple[bool, str]:
-    """Live-reload HA's YAML-based templates. No restart needed."""
-    url = _ha_url()
-    if not url:
-        return False, "HA URL not configured"
-    try:
-        resp = requests.post(
-            f"{url}/api/services/template/reload",
-            headers=_ha_headers(),
-            json={},
-            timeout=10,
-        )
-        if resp.status_code in (200, 201):
-            return True, ""
-        return False, f"HA {resp.status_code}: {resp.text}"
-    except Exception as e:
-        return False, str(e)
+def _start_template_flow() -> tuple[Optional[str], Optional[str]]:
+    """Open a template config_entry flow, advance past the domain menu, and
+    return (flow_id, error). On success flow_id is set and the next POST
+    submits the binary_sensor form."""
+    status, init = _ha_post("/api/config/config_entries/flow",
+                            {"handler": "template", "show_advanced_options": False})
+    if status != 200 or not isinstance(init, dict):
+        return None, f"could not start template flow (HA {status}): {init}"
+    flow_id = init.get("flow_id")
+    if not flow_id:
+        return None, "HA returned no flow_id"
+    status, picked = _ha_post(f"/api/config/config_entries/flow/{flow_id}",
+                              {"next_step_id": "binary_sensor"})
+    if status != 200 or picked.get("step_id") != "binary_sensor":
+        return None, f"could not advance to binary_sensor step (HA {status}): {picked}"
+    return flow_id, None
 
 
 def create_occupancy_sensor(
@@ -119,17 +96,19 @@ def create_occupancy_sensor(
     friendly_name: Optional[str] = None,
     delay_off_seconds: int = _DEFAULT_DELAY_OFF_SECONDS,
 ) -> dict:
-    """Create or replace a template binary_sensor that ORs the given sensors.
-
-    Args:
-        room: Room slug, e.g. "bedroom" or "חדר_שינה". Used for unique_id.
-        sensor_entities: List of HA entity_ids whose `on` state means "occupied".
-        friendly_name: Display name (Hebrew supported, e.g. "תפוסה - חדר שינה").
-                       Defaults to "{Room} Occupied" if omitted.
-        delay_off_seconds: Linger time after all sensors clear, to damp flicker.
+    """Create a template binary_sensor that ORs the given sensors into a single
+    'occupied' signal. Idempotent: if a sensor for the same room already
+    exists (tracked in Ziggy's local KV), the old one is removed first.
 
     Returns:
-        {"ok": bool, "entity_id": str, "message"|"error": str}
+      {"ok": True, "entity_id": "binary_sensor.{slug}_occupied", "message": str}
+      {"ok": False, "error": str}
+
+    Note: `delay_off_seconds` is currently NOT applied — the modern HA template
+    helper UI doesn't expose delay_off in its basic form. Track as a follow-up;
+    sensors flicker fast in practice (~PIR sampling rate) so for v1 the bare
+    OR template is usable. To add: extend the create POST body once we confirm
+    the UI's "advanced_options" expandable field name.
     """
     if not room or not sensor_entities:
         return {"ok": False, "error": "room and sensor_entities are required"}
@@ -138,113 +117,83 @@ def create_occupancy_sensor(
     if not room_slug:
         return {"ok": False, "error": (
             f"Room name '{room}' has no ASCII characters Ziggy can use for the HA entity_id. "
-            f"HA requires ASCII slugs. Pass the room as its ASCII slug (e.g. 'bedroom') "
-            f"and use friendly_name for the Hebrew display label."
+            f"Pass the room as its ASCII slug (e.g. 'bedroom') and use friendly_name for Hebrew."
         )}
 
-    cfg_dir = _ha_config_dir()
-    if cfg_dir is None:
-        return {"ok": False, "error": (
-            "HA config dir not configured. Set settings.backup.ha_config_dir "
-            "or HA_CONFIG_DIR env var so Ziggy can write template sensors."
-        )}
-
-    slug = f"{room_slug}_occupied"
-    entity_id = f"binary_sensor.{slug}"
     name = friendly_name or f"{room.replace('_', ' ').title()} Occupied"
+    state_template = _build_state_template(sensor_entities)
 
-    entry = {
-        "binary_sensor": [{
-            "name": name,
-            "unique_id": slug,
-            "device_class": "occupancy",
-            "state": _build_state_template(sensor_entities),
-            "delay_off": {"seconds": max(0, int(delay_off_seconds))},
-        }]
-    }
+    # Idempotency: if we previously created one for this room, remove it first.
+    existing = get_local_state(_KV_NAMESPACE, room_slug) or {}
+    prev_entry_id = existing.get("entry_id") if isinstance(existing, dict) else None
+    if prev_entry_id:
+        _ha_delete(f"/api/config/config_entries/entry/{prev_entry_id}")  # best-effort
 
-    package_path = cfg_dir / _PACKAGES_SUBDIR / _PACKAGE_FILENAME
-    pkg = _load_package(package_path)
-    # Replace any existing entry with the same unique_id, else append.
-    new_template: list = []
-    replaced = False
-    for block in pkg.get("template", []):
-        if not isinstance(block, dict):
-            continue
-        block_entries = block.get("binary_sensor") or []
-        if any(isinstance(e, dict) and e.get("unique_id") == slug for e in block_entries):
-            new_template.append(entry)
-            replaced = True
-        else:
-            new_template.append(block)
-    if not replaced:
-        new_template.append(entry)
-    pkg["template"] = new_template
+    flow_id, err = _start_template_flow()
+    if err:
+        log_error(f"[template_sensors] {err}")
+        return {"ok": False, "error": "Could not start template helper flow on HA."}
 
-    try:
-        _save_package(package_path, pkg)
-    except Exception as e:
-        return {"ok": False, "error": f"failed to write {package_path}: {e}"}
+    status, result = _ha_post(f"/api/config/config_entries/flow/{flow_id}", {
+        "name":         name,
+        "state":        state_template,
+        "device_class": "occupancy",
+    })
+    if status != 200 or result.get("type") != "create_entry":
+        log_error(f"[template_sensors] create failed: status={status} body={result}")
+        return {"ok": False, "error": "HA rejected the occupancy sensor configuration."}
 
-    reloaded, reload_err = _reload_template_entities()
-    msg = f"Created occupancy sensor {entity_id} from {len(sensor_entities)} signal(s)"
-    if not reloaded:
-        msg += f" — file saved, but template reload failed ({reload_err}). Restart HA or call template.reload manually."
-    log_info(f"[template_sensors] {msg}")
-    return {"ok": True, "entity_id": entity_id, "message": msg}
+    entry_id = (result.get("result") or {}).get("entry_id", "")
+    if not entry_id:
+        return {"ok": False, "error": "HA accepted the flow but returned no entry_id."}
+
+    # Cache the entry_id → room mapping so we can replace/delete later.
+    set_local_state(_KV_NAMESPACE, room_slug, {
+        "entry_id": entry_id,
+        "name":     name,
+        "sensors":  sensor_entities,
+    })
+
+    # Modern HA template helpers normalize the entity_id from the name; we
+    # can't construct it deterministically (HA appends suffixes on collision)
+    # so we return our best guess and let callers query HA for the real id.
+    likely_entity_id = f"binary_sensor.{_slug(name) or room_slug}_occupied".replace("_occupied_occupied", "_occupied")
+    msg = f"Created occupancy sensor from {len(sensor_entities)} signal(s)"
+    log_info(f"[template_sensors] {msg} room={room_slug} entry={entry_id}")
+    return {"ok": True, "entity_id": likely_entity_id, "entry_id": entry_id, "message": msg}
 
 
 def list_occupancy_sensors() -> list[dict]:
-    """Return all Ziggy-managed occupancy sensors currently defined."""
-    cfg_dir = _ha_config_dir()
-    if cfg_dir is None:
-        return []
-    pkg = _load_package(cfg_dir / _PACKAGES_SUBDIR / _PACKAGE_FILENAME)
+    """List Ziggy-managed occupancy sensors. Reads from local KV — HA's
+    config_entries can be cross-checked separately if drift is a concern."""
+    # Walk local KV by namespace. set_local_state stores per-key; the
+    # underlying _STATE dict has the namespace as a top-level key.
+    from services.local_automation_actions import _load_state
+    state = _load_state()
+    rooms = (state.get(_KV_NAMESPACE) or {}) if isinstance(state, dict) else {}
     out: list[dict] = []
-    for block in pkg.get("template", []):
-        if not isinstance(block, dict):
-            continue
-        for e in (block.get("binary_sensor") or []):
-            if isinstance(e, dict) and e.get("unique_id"):
-                out.append({
-                    "entity_id": f"binary_sensor.{e['unique_id']}",
-                    "name": e.get("name", e["unique_id"]),
-                    "state_template": e.get("state", ""),
-                })
+    for room_slug, meta in rooms.items():
+        if isinstance(meta, dict) and meta.get("entry_id"):
+            out.append({
+                "room":      room_slug,
+                "entry_id":  meta["entry_id"],
+                "name":      meta.get("name", ""),
+                "sensors":   meta.get("sensors", []),
+            })
     return out
 
 
-def delete_occupancy_sensor(entity_id: str) -> dict:
-    """Remove the named sensor from the packages file and reload templates."""
-    cfg_dir = _ha_config_dir()
-    if cfg_dir is None:
-        return {"ok": False, "error": "HA config dir not configured"}
-    slug = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
-    package_path = cfg_dir / _PACKAGES_SUBDIR / _PACKAGE_FILENAME
-    if not package_path.exists():
-        return {"ok": False, "error": f"no Ziggy template sensors defined yet"}
-    pkg = _load_package(package_path)
-    new_template: list = []
-    removed = False
-    for block in pkg.get("template", []):
-        if not isinstance(block, dict):
-            new_template.append(block)
-            continue
-        entries = block.get("binary_sensor") or []
-        kept = [e for e in entries if not (isinstance(e, dict) and e.get("unique_id") == slug)]
-        if len(kept) != len(entries):
-            removed = True
-        if kept:
-            new_template.append({"binary_sensor": kept})
-    if not removed:
-        return {"ok": False, "error": f"sensor {entity_id} not found"}
-    pkg["template"] = new_template
-    try:
-        _save_package(package_path, pkg)
-    except Exception as e:
-        return {"ok": False, "error": f"failed to write {package_path}: {e}"}
-    reloaded, reload_err = _reload_template_entities()
-    msg = f"Removed {entity_id}"
-    if not reloaded:
-        msg += f" — file saved, but template reload failed ({reload_err})."
-    return {"ok": True, "message": msg}
+def delete_occupancy_sensor(room: str) -> dict:
+    """Remove a previously-created occupancy sensor by room slug."""
+    room_slug = _slug(room)
+    if not room_slug:
+        return {"ok": False, "error": "invalid room slug"}
+    existing = get_local_state(_KV_NAMESPACE, room_slug) or {}
+    entry_id = existing.get("entry_id") if isinstance(existing, dict) else None
+    if not entry_id:
+        return {"ok": False, "error": f"no occupancy sensor tracked for room '{room}'"}
+    status = _ha_delete(f"/api/config/config_entries/entry/{entry_id}")
+    if status not in (200, 204):
+        return {"ok": False, "error": f"HA rejected delete (status {status})"}
+    set_local_state(_KV_NAMESPACE, room_slug, None)
+    return {"ok": True, "message": f"Removed occupancy sensor for {room}"}

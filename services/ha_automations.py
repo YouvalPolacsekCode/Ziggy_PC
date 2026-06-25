@@ -40,6 +40,11 @@ def needs_ha(data: dict) -> bool:
     - state / numeric_state → HA must watch for the state-change event
     - sunrise / sunset      → HA must compute the astronomical time
     - webhook               → HA must receive the HTTP call
+    - zone                  → HA tracks person-zone enter/leave transitions
+    - time_pattern          → HA's cron-style scheduler; Ziggy's scheduler
+                              doesn't speak time_pattern, so without this
+                              routing the automation would be saved Ziggy-local
+                              and silently never fire
     - time trigger          → Ziggy's own scheduler handles it; no HA required
       (call_service steps are now executed natively by execute_ziggy_actions)
     - ha_native_body present → HA must run it (blueprint-sourced bodies can
@@ -49,7 +54,7 @@ def needs_ha(data: dict) -> bool:
     if isinstance(data.get("ha_native_body"), dict) and data["ha_native_body"]:
         return True
     trigger_type = data.get("trigger", {}).get("type", "")
-    return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook", "zone")
+    return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook", "zone", "time_pattern")
 
 
 # ── Ziggy → HA ────────────────────────────────────────────────────────────────
@@ -701,32 +706,23 @@ def get_automation_traces(auto_id: str, limit: int = 10) -> dict:
       {"ok": False, "error": "<ziggy-native message>", "runs": []}   on failure
 
     Errors are surfaced in Ziggy-native wording (no "HA"/"trace"/"context_id").
+
+    Modern HA exposes trace history only via WebSocket — the REST endpoint
+    /api/config/automation/trace/{id} was removed. We call trace/list via
+    services.ha_ws which manages a short-lived auth handshake per request.
     """
-    try:
-        resp = requests.get(
-            f"{HA_URL()}/api/config/automation/trace/{auto_id}",
-            headers=HEADERS(), timeout=10,
-        )
-        if resp.status_code == 404:
-            # HA returns 404 when no runs recorded yet — treat as empty list,
-            # not an error, so the frontend can render the empty state.
-            return {"ok": True, "runs": []}
-        if resp.status_code != 200:
-            log_error(f"[HA Automations] traces {auto_id}: {resp.status_code}")
-            return {"ok": False, "error": "Run history is temporarily unavailable.", "runs": []}
-        payload = resp.json() or []
-        if not isinstance(payload, list):
-            return {"ok": True, "runs": []}
-        runs = [_summarize_run(t) for t in payload if isinstance(t, dict)]
-        # HA returns oldest first; show newest first.
-        runs.reverse()
-        return {"ok": True, "runs": runs[: max(0, int(limit))]}
-    except requests.RequestException as e:
-        log_error(f"[HA Automations] traces {auto_id} network: {e}")
+    from services.ha_ws import ha_ws_command
+    cmd_resp = ha_ws_command({"type": "trace/list", "domain": "automation", "item_id": auto_id})
+    if not cmd_resp.get("ok"):
+        log_error(f"[HA Automations] traces {auto_id}: {cmd_resp.get('error')}")
         return {"ok": False, "error": "Run history is temporarily unavailable.", "runs": []}
-    except Exception as e:
-        log_error(f"[HA Automations] traces {auto_id}: {e}")
-        return {"ok": False, "error": "Run history is temporarily unavailable.", "runs": []}
+    payload = cmd_resp.get("result") or []
+    if not isinstance(payload, list):
+        return {"ok": True, "runs": []}
+    runs = [_summarize_run(t) for t in payload if isinstance(t, dict)]
+    # HA returns oldest first; show newest first.
+    runs.reverse()
+    return {"ok": True, "runs": runs[: max(0, int(limit))]}
 
 
 def get_trace_detail(auto_id: str, run_id: str) -> dict:
@@ -739,57 +735,61 @@ def get_trace_detail(auto_id: str, run_id: str) -> dict:
     Steps are ordered as HA recorded them. `path` is kept (opaque pass-through)
     so the frontend can key React lists, but it's never shown to the user.
     The frontend should render `label` + status pill.
+
+    Uses HA's WebSocket trace/get — the REST detail endpoint was removed
+    in modern HA along with trace/list. See services.ha_ws.
     """
-    try:
-        resp = requests.get(
-            f"{HA_URL()}/api/config/automation/trace/{auto_id}/{run_id}",
-            headers=HEADERS(), timeout=10,
-        )
-        if resp.status_code == 404:
+    from services.ha_ws import ha_ws_command
+    cmd_resp = ha_ws_command({
+        "type":    "trace/get",
+        "domain":  "automation",
+        "item_id": auto_id,
+        "run_id":  run_id,
+    })
+    if not cmd_resp.get("ok"):
+        err = (cmd_resp.get("error") or "").lower()
+        # HA reports a specific error code for purged runs; translate to the
+        # frontend's "no longer available" copy. Anything else is treated as
+        # a transient backend issue.
+        if "not_found" in err or "no trace" in err or "purged" in err:
             return {"ok": False, "error": "This run is no longer available."}
-        if resp.status_code != 200:
-            log_error(f"[HA Automations] trace detail {auto_id}/{run_id}: {resp.status_code}")
-            return {"ok": False, "error": "Run details are temporarily unavailable."}
-        payload = resp.json() or {}
-
-        summary = _summarize_run(payload)
-
-        # Build a flat, ordered step list. HA's `trace` is a dict keyed by
-        # path → list of execution entries. We want chronological order.
-        steps: list = []
-        trace_map = payload.get("trace") or {}
-        config = payload.get("config") or {}
-        if isinstance(trace_map, dict):
-            # Each entry's `timestamp` lets us sort across paths.
-            tmp: list = []
-            for path, entries in trace_map.items():
-                if not isinstance(entries, list):
-                    continue
-                outcome = _step_outcome(entries)
-                tmp.append((
-                    outcome.get("timestamp") or "",
-                    path,
-                    outcome,
-                ))
-            tmp.sort(key=lambda x: x[0])
-            for _ts, path, outcome in tmp:
-                kind = _step_kind(path)
-                steps.append({
-                    "path":      path,             # opaque, for React key only
-                    "kind":      kind,
-                    "label":     _step_label(path, kind, config),
-                    "passed":    outcome["passed"],
-                    "error":     outcome["error"],
-                    "timestamp": outcome["timestamp"],
-                })
-
-        return {"ok": True, "run": summary, "steps": steps}
-    except requests.RequestException as e:
-        log_error(f"[HA Automations] trace detail {auto_id}/{run_id} network: {e}")
+        log_error(f"[HA Automations] trace detail {auto_id}/{run_id}: {cmd_resp.get('error')}")
         return {"ok": False, "error": "Run details are temporarily unavailable."}
-    except Exception as e:
-        log_error(f"[HA Automations] trace detail {auto_id}/{run_id}: {e}")
+    payload = cmd_resp.get("result") or {}
+    if not isinstance(payload, dict):
         return {"ok": False, "error": "Run details are temporarily unavailable."}
+
+    summary = _summarize_run(payload)
+
+    # Build a flat, ordered step list. HA's `trace` is a dict keyed by
+    # path → list of execution entries. We want chronological order.
+    steps: list = []
+    trace_map = payload.get("trace") or {}
+    config = payload.get("config") or {}
+    if isinstance(trace_map, dict):
+        tmp: list = []
+        for path, entries in trace_map.items():
+            if not isinstance(entries, list):
+                continue
+            outcome = _step_outcome(entries)
+            tmp.append((
+                outcome.get("timestamp") or "",
+                path,
+                outcome,
+            ))
+        tmp.sort(key=lambda x: x[0])
+        for _ts, path, outcome in tmp:
+            kind = _step_kind(path)
+            steps.append({
+                "path":      path,
+                "kind":      kind,
+                "label":     _step_label(path, kind, config),
+                "passed":    outcome["passed"],
+                "error":     outcome["error"],
+                "timestamp": outcome["timestamp"],
+            })
+
+    return {"ok": True, "run": summary, "steps": steps}
 
 
 def _step_label(path: str, kind: str, config: dict) -> str:
