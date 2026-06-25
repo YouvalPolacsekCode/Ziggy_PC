@@ -177,7 +177,56 @@ async def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | 
         if best is None or _DOMAIN_RANK[domain] < _DOMAIN_RANK[best.get("domain") or ""]:
             best = entry
 
+    # Z2M-as-HA-add-on fallback. Z2M deployed via the HAOS add-on store
+    # publishes its bridge entities (and devices) via MQTT discovery —
+    # there's no `zigbee2mqtt` config entry to find. Look for the
+    # bridge's connection-state entity (auto-published on every Z2M
+    # startup, independent of any device being paired) and treat its
+    # MQTT-integration config entry as the coordinator. The entity's
+    # own state ("on" / "off") reflects whether Z2M is actually
+    # alive — more useful than the MQTT integration's loaded state.
     if best is None:
+        try:
+            res2, = await _ws({"type": "config/entity_registry/list"},
+                              timeout=COORDINATOR_QUERY_TIMEOUT_S)
+            ents = res2.get("result") or [] if res2.get("success") else []
+        except Exception as e:
+            log_error(f"[Health] entity_registry fetch for Z2M fallback failed: {e}")
+            ents = []
+        bridge_ent = next(
+            (e for e in ents
+             if e.get("entity_id") == "binary_sensor.zigbee2mqtt_bridge_connection_state"),
+            None,
+        )
+        if bridge_ent and bridge_ent.get("config_entry_id"):
+            mqtt_entry = next(
+                (e for e in entries if e.get("entry_id") == bridge_ent["config_entry_id"]),
+                None,
+            )
+            # Map Z2M bridge entity state → HA config-entry state vocabulary
+            # so downstream classifier logic doesn't need a new branch.
+            try:
+                from services.ha_subscriber import state_cache as _state_cache
+                bridge_state = (_state_cache.get(
+                    "binary_sensor.zigbee2mqtt_bridge_connection_state") or {}).get("state")
+            except Exception:
+                bridge_state = None
+            coord_state = (
+                "loaded" if bridge_state == "on"
+                else "not_loaded" if bridge_state == "off"
+                else "unknown"
+            )
+            cs = CoordinatorState(
+                entry_id=bridge_ent["config_entry_id"],
+                domain="zigbee2mqtt",
+                title=_friendly_coord_title("zigbee2mqtt"),
+                state=coord_state,
+                raw_title=(mqtt_entry.get("title") if mqtt_entry else None)
+                           or _raw_coord_title("zigbee2mqtt"),
+            )
+            _coord_cache    = cs
+            _coord_cache_at = now
+            return cs
         _coord_cache    = None
         _coord_cache_at = now
         return None
