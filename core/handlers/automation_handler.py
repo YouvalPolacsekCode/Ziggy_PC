@@ -601,20 +601,24 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
         return err(result.get("error") or "Designer failed.")
 
     bundle = result["bundle"]
-
-    # Declined — surface the Ziggy-native reason and stop here.
-    if bundle.get("decline"):
-        return ok(bundle["decline"])
-
     arts = bundle.get("artifacts") or {}
     counts = {k: len(v) for k, v in arts.items() if isinstance(v, list) and v}
+    has_artifacts = bool(counts)
+
+    # Hard decline: no artifacts AND a decline message → surface it as the only reply.
+    if bundle.get("decline") and not has_artifacts:
+        return ok(bundle["decline"])
+
     summary = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in counts.items()) or "no artifacts"
     name = bundle.get("name", "automation bundle")
     rationale = bundle.get("rationale", "")
+    # Soft decline: there ARE artifacts AND a decline (partial fulfillment).
+    # Surface the decline as a note alongside the preview instead of blocking.
+    note = f" Note: {bundle['decline']}" if bundle.get("decline") else ""
 
-    log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts}")
+    log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts} decline={bool(bundle.get('decline'))}")
     return ok(
-        f"I designed '{name}': {summary}. {rationale} Review and accept to create.",
+        f"I designed '{name}': {summary}. {rationale}{note} Review and accept to create.",
         data={"bundle": bundle, "kind": "automation_bundle_preview"},
     )
 
