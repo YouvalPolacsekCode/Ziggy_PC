@@ -56,6 +56,14 @@ async def _discover_coordinator_entry() -> dict | None:
     Detects the coordinator by scanning the HA entity registry for entities
     whose platform matches a known Zigbee integration.  This works on all HA
     versions because config/entity_registry/list is a stable WS command.
+
+    Fallback path: Z2M deployed as an HA add-on (the canonical setup post
+    ZHA→Z2M cut-over) publishes via MQTT discovery, so its entities have
+    platform="mqtt" — not "zigbee2mqtt". The standard scan misses them.
+    When the standard scan finds nothing, look explicitly for the Z2M
+    bridge's connection-state entity (a guaranteed-present indicator
+    auto-published by Z2M on startup) and report its MQTT config entry
+    as the coordinator.
     """
     global _coordinator_entry_cache, _coordinator_cache_checked
     if _coordinator_cache_checked:
@@ -76,6 +84,18 @@ async def _discover_coordinator_entry() -> dict | None:
                 best_rank = domain_rank[platform]
                 best_entry_id = e.get("config_entry_id")
                 best_platform = platform
+        # Z2M-as-HA-add-on fallback. The bridge connection-state entity is the
+        # one Z2M always publishes — independent of any device having been
+        # paired — so its absence cleanly means "no Z2M either."
+        if not best_entry_id:
+            z2m_bridge = next(
+                (e for e in entities
+                 if e.get("entity_id") == "binary_sensor.zigbee2mqtt_bridge_connection_state"),
+                None,
+            )
+            if z2m_bridge and z2m_bridge.get("config_entry_id"):
+                best_entry_id = z2m_bridge["config_entry_id"]
+                best_platform = "zigbee2mqtt"
         if best_entry_id and best_platform:
             title = {"zha": "Zigbee Home Automation", "deconz": "deCONZ", "zigbee2mqtt": "Zigbee2MQTT"}.get(best_platform, best_platform.upper())
             _coordinator_entry_cache = {"entry_id": best_entry_id, "title": title}
