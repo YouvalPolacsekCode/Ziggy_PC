@@ -578,6 +578,83 @@ async def handle_instantiate_blueprint(params: dict, *, source: str = "unknown")
     return err(f"Couldn't save the automation: {result.get('error', 'unknown error')}")
 
 
+async def handle_design_automation_set(params: dict, *, source: str = "unknown") -> dict:
+    """Ziggy Pro Mode entry point. Designs a bundle from a natural-language outcome
+    and returns it as a preview (does NOT create anything yet).
+
+    The bundle includes a `bundle_id` the frontend uses to correlate the user's
+    Accept action with the saved JSON. On accept, the frontend POSTs to
+    /api/automations/bundles/apply which dispatches handle_apply_automation_bundle.
+    """
+    from services.orchestra_designer import design_bundle
+
+    outcome = (params.get("outcome") or params.get("text") or "").strip()
+    if not outcome:
+        return ok(
+            "What outcome should I design for? "
+            "(e.g. 'set up smart bedroom lights' / 'תכין לי אורות חכמים בחדר השינה')"
+        )
+
+    result = design_bundle(outcome, language=params.get("language"))
+    if not result.get("ok"):
+        # Validation/LLM error path
+        return err(result.get("error") or "Designer failed.")
+
+    bundle = result["bundle"]
+
+    # Declined — surface the Ziggy-native reason and stop here.
+    if bundle.get("decline"):
+        return ok(bundle["decline"])
+
+    arts = bundle.get("artifacts") or {}
+    counts = {k: len(v) for k, v in arts.items() if isinstance(v, list) and v}
+    summary = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in counts.items()) or "no artifacts"
+    name = bundle.get("name", "automation bundle")
+    rationale = bundle.get("rationale", "")
+
+    log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts}")
+    return ok(
+        f"I designed '{name}': {summary}. {rationale} Review and accept to create.",
+        data={"bundle": bundle, "kind": "automation_bundle_preview"},
+    )
+
+
+async def handle_apply_automation_bundle(params: dict, *, source: str = "unknown") -> dict:
+    """Execute a previously-designed bundle (user has reviewed and accepted).
+
+    Called by:
+      - the frontend on Accept tap → POST /api/automations/bundles/apply
+      - the LLM tool path when the user replies "yes create it" with the
+        bundle echoed back in params
+    """
+    from services.bundle_executor import execute_bundle
+
+    bundle = params.get("bundle")
+    if not isinstance(bundle, dict):
+        return err("No bundle provided.")
+
+    result = execute_bundle(bundle)
+    created_count = len(result.get("created", []))
+    error_count   = len(result.get("errors", []))
+    bundle_name   = bundle.get("name", "bundle")
+
+    if result.get("ok"):
+        return ok(
+            f"Done — created {created_count} item(s) for '{bundle_name}'.",
+            data=result,
+        )
+
+    if created_count > 0:
+        first_err = (result.get("errors") or [{}])[0].get("error", "unknown")
+        return ok(
+            f"Created {created_count} items, but {error_count} couldn't be set up. First issue: {first_err}",
+            data=result,
+        )
+
+    first_err = (result.get("errors") or [{}])[0].get("error", "unknown")
+    return err(f"Couldn't create the bundle. First issue: {first_err}")
+
+
 HANDLERS = {
     "create_automation": handle_create_automation,
     "list_automations": handle_list_automations,
@@ -586,6 +663,8 @@ HANDLERS = {
     "update_automation": handle_update_automation,
     "assign_automation_to_room": handle_assign_automation_to_room,
     "create_occupancy_sensor": handle_create_occupancy_sensor,
+    "design_automation_set": handle_design_automation_set,
+    "apply_automation_bundle": handle_apply_automation_bundle,
     "list_blueprints": handle_list_blueprints,
     "instantiate_blueprint": handle_instantiate_blueprint,
 }

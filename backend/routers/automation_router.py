@@ -290,6 +290,50 @@ async def instantiate_blueprint_endpoint(blueprint_id: str, body: BlueprintInsta
     }
 
 
+# ── Ziggy Pro Mode bundle endpoints (D3) ─────────────────────────────────────
+
+
+class BundleDesignBody(BaseModel):
+    outcome: str
+    language: Optional[str] = None
+
+
+class BundleApplyBody(BaseModel):
+    bundle: dict
+
+
+@router.post("/api/automations/bundles/design")
+async def design_bundle_endpoint(body: BundleDesignBody):
+    """Design a Ziggy Pro Mode bundle from a natural-language outcome.
+
+    Returns the bundle JSON as a PREVIEW — nothing is created until the
+    client POSTs to /apply with the bundle. Mirrors the LLM tool path
+    (design_automation_set) for clients that want direct REST access.
+    """
+    from services.orchestra_designer import design_bundle
+    result = await asyncio.to_thread(design_bundle, body.outcome, body.language)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Designer failed."))
+    return result
+
+
+@router.post("/api/automations/bundles/apply")
+async def apply_bundle_endpoint(body: BundleApplyBody):
+    """Execute a previously-designed bundle (user accepted the preview).
+
+    Idempotent in the failure case: artifacts that succeed are kept, ones
+    that fail are reported in errors[]. The caller can re-POST a corrected
+    bundle without first deleting successful items.
+    """
+    from services.bundle_executor import execute_bundle
+    result = await asyncio.to_thread(execute_bundle, body.bundle)
+    # Even on partial failure (ok=False but some created), return 200 so the
+    # client can render per-artifact pass/fail. Reserve non-200 for input
+    # errors only (e.g. malformed bundle, which the executor doesn't validate
+    # — Pydantic already enforces the bundle dict shape at the API boundary).
+    return result
+
+
 @router.post("/api/blueprints/import")
 async def import_blueprint_endpoint(body: BlueprintImportBody):
     """Parse a user-pasted blueprint YAML string and register it in the

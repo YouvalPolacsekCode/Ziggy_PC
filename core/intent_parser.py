@@ -84,6 +84,8 @@ _MUTATION_INTENTS = frozenset({
     "control_device",
     "create_automation", "update_automation", "delete_automation", "toggle_automation",
     "assign_automation_to_room",
+    "apply_automation_bundle",   # Ziggy Pro Mode: creates the full designed bundle (multiple automations + sensors + KV)
+    "create_occupancy_sensor",
     "create_routine", "update_routine", "delete_routine",
     "add_task", "remove_task", "remove_all_tasks",
     "save_note", "append_to_note", "delete_note",

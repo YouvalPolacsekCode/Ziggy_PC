@@ -920,6 +920,39 @@ TOOLS = [
             "delay_off_seconds":{"type": "integer", "description": "How many seconds after all source sensors go quiet before the occupancy sensor reports clear. Damps flicker. Default 30."},
         }, "required": ["room", "sensor_entities"]},
     }},
+    # ---- Ziggy Pro Mode designer (D3): outcome → multi-artifact bundle ----
+    {"type": "function", "function": {
+        "name": "design_automation_set",
+        "description": (
+            "ZIGGY PRO MODE: Use when the user describes a holistic OUTCOME for their home "
+            "(not a single specific action). Triggers when they say things like 'set up smart bedroom', "
+            "'make the bathroom intelligent', 'design a morning routine', 'automate the office', "
+            "'תכין לי אורות חכמים בחדר השינה', 'תארגן לי שגרת בוקר'. "
+            "The designer reasons over the user's actual rooms, entities, integrations, and the "
+            "11 community templates to produce a complete bundle of automations + sensors + state "
+            "flags + voice intents. Returns a PREVIEW the user reviews and accepts. "
+            "DO NOT use this when the user has a single specific request ('turn off bedroom lights "
+            "at 23:00') — use create_automation for that. DO use this for 'make my bedroom smart' "
+            "even if the user might have meant just one automation — the designer can decide."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "outcome": {"type": "string", "description": "The user's outcome description, verbatim. The designer needs the original phrasing to infer scope and language."},
+        }, "required": ["outcome"]},
+    }},
+    {"type": "function", "function": {
+        "name": "apply_automation_bundle",
+        "description": (
+            "Execute a previously-designed bundle. Called after design_automation_set has shown "
+            "a preview and the user has explicitly accepted it (e.g. 'yes create it', 'looks good, do it', "
+            "'אשר', 'תיצור'). The frontend's Accept tap goes directly to the apply endpoint instead, "
+            "so this tool path is for users who confirm conversationally. Pass the full bundle JSON "
+            "exactly as design_automation_set returned it."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "bundle": {"type": "object", "description": "The complete bundle JSON from the most recent design_automation_set call."},
+        }, "required": ["bundle"]},
+    }},
+
     # ---- Community templates (bundled HA blueprints, surfaced as Ziggy templates) ----
     {"type": "function", "function": {
         "name": "list_blueprints",
@@ -1101,6 +1134,15 @@ SYSTEM_PROMPT = (
     "'turn them back on' after a bulk off, 'turn on office and bedroom lights'), issue ONE tool call per device "
     "using the specific per-room tool (e.g. toggle_light). Do NOT invent a new combined tool. "
     "Use the known rooms list and conversation context to determine which devices to include. "
+
+    # ── Ziggy Pro Mode (outcome-shaped requests) ──────────────────────────────
+    "ZIGGY PRO MODE: For HOLISTIC outcome requests where the user describes WHAT they want their "
+    "home to do as a whole (not a single specific automation), call design_automation_set. "
+    "Triggers: 'set up smart bedroom', 'make the bathroom intelligent', 'design a morning routine', "
+    "'automate the office', 'I want my bedroom to wake me up gently', "
+    "'תכין לי אורות חכמים בחדר השינה', 'תארגן לי שגרת בוקר', 'תעשה לי מצב חכם לחדר אמבטיה'. "
+    "design_automation_set returns a PREVIEW the user reviews; nothing is created until they accept. "
+    "DO NOT use design_automation_set when the user has a single specific request — use create_automation. "
 
     # ── Automation / routine routing ───────────────────────────────────────────
     "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule', "

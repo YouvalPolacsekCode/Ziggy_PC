@@ -58,6 +58,11 @@ _DEFAULTS: dict[str, dict[str, str | None]] = {
     "intent_parse":            {"backend": _BACKEND_OPENAI,         "model": "gpt-4o-mini"},
     "chat":                    {"backend": _BACKEND_OPENAI,         "model": "gpt-4o"},
     "translate":               {"backend": _BACKEND_OPENAI,         "model": "gpt-4o-mini"},
+    # Ziggy Pro designer (Session D3) — reasons over the full capability
+    # catalog + home context to produce a structured automation bundle.
+    # Higher-quality model justified by the complex reasoning and JSON
+    # output requirement; low temperature for schema consistency.
+    "automation_design":       {"backend": _BACKEND_OPENAI,         "model": "gpt-4o"},
     # suggestion_quality_gate's model defaults to settings.ollama.model
     # (preserving the previous behavior where the caller read that key
     # directly). The None below triggers that lookup in _resolve().
