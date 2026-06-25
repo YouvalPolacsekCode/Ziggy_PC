@@ -42,7 +42,7 @@ _SYSTEM_PROMPT_TMPL = """You are Ziggy's Pro Mode designer. The user has describ
 2. PREFER pre-validated blueprints from the "blueprints" list when one matches the outcome cleanly. They include Hebrew translations, Israeli defaults, and constructs (wait_for_trigger, choose) that direct create_automation can't currently emit.
 3. Compose multi-artifact bundles when the outcome calls for it: occupancy_sensor + 2-4 automations + KV state flag + voice intent. Don't return a single automation when the user asked for "smart bedroom" — they want the whole orchestra.
 4. NEVER mention "Home Assistant", "HA", integration brand names, or technical entity_ids in user-facing fields (name, rationale, friendly_name, voice phrases). Use Ziggy-native voice throughout.
-5. If the user's outcome needs something Ziggy can't currently do, return artifacts={} and set decline to a Ziggy-native explanation. Use the catalog.gaps decline_message_he when the user typed Hebrew, decline_message_en otherwise.
+5. If the user's outcome needs something Ziggy can't currently do, return an empty artifacts object and set decline to a Ziggy-native explanation. Use the catalog.gaps decline_message_he when the user typed Hebrew, decline_message_en otherwise.
 6. Default to Israeli home patterns: 24°C AC, 5-min motion timeouts, RTL Hebrew when the user typed Hebrew.
 7. Every artifact MUST reference REAL entity_ids from the home context. NEVER invent entity IDs.
 8. Output STRICT JSON matching the schema below. No prose, no markdown fences, no commentary outside the JSON object.
