@@ -172,29 +172,50 @@ def create_occupancy_sensor(
 def _lookup_entry_entity_id(entry_id: str) -> Optional[str]:
     """Ask HA's entity_registry which entity_id belongs to a config_entry.
 
-    Uses WebSocket — HA doesn't expose entity_registry over REST. Returns
-    the first binary_sensor.* entity for the entry (template helpers create
-    exactly one). Returns None on any failure so the caller can fall back
-    to its guessed slug.
+    Uses WebSocket — HA doesn't expose entity_registry over REST. The
+    purpose-built `config/entity_registry/list_for_config_entry` command
+    doesn't exist on this HA version, so we fetch the full registry and
+    filter by `config_entry_id` client-side. ~300 entries on a typical
+    home; the round-trip is cheap.
+
+    HA assigns the entity_id asynchronously after `create_entry`, so a
+    fresh entry may not yet appear in the registry. We retry briefly
+    (500 ms × 4) before giving up. Returns None on persistent failure so
+    the caller can fall back to its guessed slug.
     """
     try:
         from services.ha_ws import ha_ws_command
     except ImportError:
         return None
-    resp = ha_ws_command(
-        {"type": "config/entity_registry/list_for_config_entry", "config_entry_id": entry_id},
-        timeout=5.0,
-    )
-    if not resp.get("ok"):
-        return None
-    entries = resp.get("result") or []
-    for e in entries if isinstance(entries, list) else []:
-        if isinstance(e, dict) and (e.get("entity_id") or "").startswith("binary_sensor."):
-            return e["entity_id"]
-    # Fallback: any entity from this config entry
-    for e in entries if isinstance(entries, list) else []:
-        if isinstance(e, dict) and e.get("entity_id"):
-            return e["entity_id"]
+    import time
+    for attempt in range(4):
+        if attempt:
+            time.sleep(0.5)
+        resp = ha_ws_command({"type": "config/entity_registry/list"}, timeout=5.0)
+        if not resp.get("ok"):
+            continue
+        entries = resp.get("result") or []
+        if not isinstance(entries, list):
+            continue
+        # Prefer binary_sensor.* (template helpers create exactly one), but
+        # fall back to any entity from this config entry if not yet typed.
+        binary = None
+        any_entity = None
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            if e.get("config_entry_id") != entry_id:
+                continue
+            eid = e.get("entity_id")
+            if not eid:
+                continue
+            if eid.startswith("binary_sensor."):
+                binary = eid
+                break
+            if any_entity is None:
+                any_entity = eid
+        if binary or any_entity:
+            return binary or any_entity
     return None
 
 
