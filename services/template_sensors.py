@@ -233,6 +233,7 @@ def list_occupancy_sensors() -> list[dict]:
             out.append({
                 "room":      room_slug,
                 "entry_id":  meta["entry_id"],
+                "entity_id": meta.get("entity_id", ""),
                 "name":      meta.get("name", ""),
                 "sensors":   meta.get("sensors", []),
             })
