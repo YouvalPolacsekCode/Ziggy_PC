@@ -781,32 +781,72 @@ _TADIRAN_MIN_BITS = 32         # reject very short frames as not-Tadiran
 _TADIRAN_MAX_BITS = 96         # one half's worth + slack
 
 
+# Tentative mode/fan maps for byte 1 (per arikfe/IRTadiran reference layout
+# "fan upper nibble + mode lower nibble"). MARKED EXPERIMENTAL because we
+# only have captures where mode=cool and fan=auto (constant byte 1 = 0x41
+# across all 3 pinned captures). The maps below are the arikfe nibble values
+# extrapolated to other modes/fans; they have NOT been validated against
+# our hardware. If a beta user captures a mode-change or fan-change press
+# and the byte 1 nibble matches these maps, we promote them to validated.
+_TADIRAN_TENTATIVE_MODE_MAP = {
+    0x0: "auto",   # arikfe default
+    0x1: "cool",   # CONFIRMED for our captures (byte 1 = 0x41, cool mode active)
+    0x2: "dry",    # arikfe
+    0x3: "fan",    # arikfe
+    0x4: "heat",   # arikfe
+}
+_TADIRAN_TENTATIVE_FAN_MAP = {
+    0x0: "auto",   # arikfe
+    0x1: "low",    # arikfe
+    0x2: "medium", # arikfe
+    0x3: "high",   # arikfe
+    0x4: "auto",   # CONFIRMED for our captures (byte 1 = 0x41, fan auto active)
+}
+
+
 def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
     """
     Extract HVAC state fields from a decoded Tadiran payload.
 
     Bit-position mapping derived from real captures (2026-05-23, user's
-    own Tadiran inverter):
+    own Tadiran inverter) and cross-checked against arikfe/IRTadiran
+    (sibling Tadiran sub-model — see below for what matches and what doesn't).
 
-      Power: byte 2 bit 1 (set = on, clear = off). Byte 7 mirrors the
-             flip as part of its checksum-style aggregate.
+      Power: byte 2 bit 1 (set = on, clear = off). VALIDATED by all 3 pinned
+             captures. arikfe places power at byte 5 (0x30/0xc0) — does NOT
+             match our unit; byte 2 bit 1 toggling between captures 1→2 (the
+             only press was power-on) is the load-bearing evidence.
 
       Temperature: two consecutive set bits sliding through bytes 5-6,
-             position = 2 * (temp - 22).
-               22°C → byte 5 bits 0,1
-               23°C → byte 5 bits 2,3
-               24°C → byte 5 bits 4,5  (= 0x30)
-               25°C → byte 5 bits 6,7  (= 0xc0)
-               26°C → byte 6 bits 0,1
-               27°C → byte 6 bits 2,3
-               28°C → byte 6 bits 4,5
-               29°C → byte 6 bits 6,7
-             16-21°C and 30°C ranges are extrapolation TBD — return None
-             rather than guess wrong values.
+             position = 2 * (temp - 22). VALIDATED for 24°C and 25°C from
+             captures. 22-23°C, 26-29°C extrapolated from same pattern;
+             16-21°C and 30°C entirely unverified — return None rather than
+             guess wrong values. arikfe places temp at byte 2 (value = T*2)
+             — does NOT match our unit; byte 5/6 changing between captures
+             2→3 (the only press was TEMP+) is the load-bearing evidence.
 
-      Mode and fan: not yet reverse-engineered (would need fan-change /
-             mode-change captures to diff). Return None for both —
-             ac_memory keeps any prior value the device already had.
+      Mode: tentative — byte 1 lower nibble, per arikfe layout. Our captures
+             have byte 1 = 0x41 (mode_nibble = 1 = "cool") which is consistent
+             with the captures being in cool mode. UNVALIDATED for other
+             modes — needs mode-change captures from real hardware. Returned
+             value is best-effort; callers should treat as low confidence.
+
+      Fan: tentative — byte 1 upper nibble. Our captures have fan_nibble = 4
+             which we map to "auto" (consistent with constant fan across
+             captures). The 0-3 range follows arikfe's documented map.
+             UNVALIDATED for non-auto fan settings.
+
+      Swing: per arikfe, byte 6 high bits (0xc0 = on). Our captures have
+             byte 6 = 0 across all three (no swing). Pass-through for
+             when beta captures land.
+
+    Checksum cross-check vs arikfe formula
+        byte[7] = sum(0..6) - (0xf*(3 + temp/8) + fan*0xf + (swing?0xb4:0))
+      Captures 1 and 2 satisfy this formula EXACTLY. Capture 3 does NOT
+      (expected 0x9e, actual 0x17 — diff of 135). This confirms our unit
+      is a sibling-but-not-identical Tadiran sub-model. The decoder makes
+      no use of the arikfe checksum at runtime; it's documented here as
+      reverse-engineering provenance.
     """
     if len(payload) < 8:
         return None
@@ -826,7 +866,24 @@ def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
                 temp = 26 + (i // 2)
                 break
 
-    return AcState(power=power, mode=None, temp=temp, fan=None, brand="tadiran")
+    # Tentative mode/fan from byte 1 nibbles (arikfe layout).
+    fan_nibble = (payload[1] >> 4) & 0x0F
+    mode_nibble = payload[1] & 0x0F
+    mode = _TADIRAN_TENTATIVE_MODE_MAP.get(mode_nibble)
+    fan = _TADIRAN_TENTATIVE_FAN_MAP.get(fan_nibble)
+
+    # Swing: byte 6 bits 6-7 per arikfe. 0xc0 (top two bits set) = swing on.
+    # Distinct from the temp bit-pattern (which puts pairs of 1s at lower
+    # positions). When byte 6 == 0xc0 AND we already extracted temp 25 via
+    # byte 5, we know byte 6 isn't being used for temp on this frame — so
+    # 0xc0 is unambiguously swing. (Captures C3 uses 0xc0 for temp=25 via
+    # byte 5 NOT being 0; in our captures byte 5=0xc0 means temp=25 — and
+    # byte 6=0 means no swing. The two are disambiguated by whichever byte
+    # carries the two-bit pattern at the right position.)
+    # NOTE: this is brittle on the boundary case temp=29 (byte 6 = 0xc0).
+    # Real hardware captures with swing-on will resolve.
+
+    return AcState(power=power, mode=mode, temp=temp, fan=fan, brand="tadiran")
 
 
 def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
