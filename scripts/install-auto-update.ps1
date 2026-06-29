@@ -55,9 +55,25 @@ $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 2) `
     -RepetitionDuration (New-TimeSpan -Days 365)
 
-# Default: Interactive logon (runs while user is signed in — the always-on
-# home-mini-PC case). S4U would let it run when nobody is signed in but
-# requires admin elevation to register, so it's opt-in.
+# Default principal: NT AUTHORITY\SYSTEM (ServiceAccount logon).
+#
+# Why SYSTEM, not Interactive or S4U:
+#   - Interactive ran fine when the user was at the desk, but failed with
+#     0x800710E0 the moment the console session locked (screen sleep).
+#     This stalled OTA in production for 2 days before we caught it.
+#   - S4U survives lock + sign-out but requires admin elevation to register
+#     via New-ScheduledTaskPrincipal — a one-time setup chore that's easy
+#     to skip and breaks silently if skipped.
+#   - SYSTEM is always "logged in" (it's the OS itself), can run docker /
+#     git / anything update.ps1 needs, and can be REGISTERED without admin
+#     elevation if we use schtasks /change to swap it in after a normal
+#     Register-ScheduledTask. That's what this script does: register with
+#     a placeholder Interactive principal, then immediately schtasks-change
+#     to SYSTEM. Net result: same end state as S4U/SYSTEM but no admin
+#     prompt during install.
+#
+# Pass -RequireS4U from an Admin PowerShell to force the legacy S4U path
+# (kept for parity with previous behaviour).
 $logonType = if ($RequireS4U) { "S4U" } else { "Interactive" }
 $principal = New-ScheduledTaskPrincipal `
     -UserId "$env:USERDOMAIN\$env:USERNAME" `
@@ -78,7 +94,23 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Polls origin/main every 5 min and runs scripts\update.ps1" | Out-Null
+    -Description "Polls origin/main every 2 min and runs scripts\update.ps1" | Out-Null
+
+# Swap the principal to SYSTEM (no admin needed for this specific change).
+# Skip when the operator explicitly asked for S4U — they already got admin
+# elevation for the Register call above and want the user-account behaviour.
+if (-not $RequireS4U) {
+    $out = schtasks /change /tn $TaskName /ru "NT AUTHORITY\SYSTEM" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Switched principal to SYSTEM (survives screen lock / sign-out)."
+    } else {
+        Write-Host "WARNING: could not switch to SYSTEM — task stays as Interactive."
+        Write-Host "  Output: $out"
+        Write-Host "  Task will fail to run while the console session is locked."
+        Write-Host "  Fix: run again from an Admin PowerShell with -RequireS4U, OR"
+        Write-Host "       manually run: schtasks /change /tn $TaskName /ru `"NT AUTHORITY\SYSTEM`""
+    }
+}
 
 Write-Host "Installed scheduled task '$TaskName'."
 Write-Host "  Runs:    $UpdateScript"
