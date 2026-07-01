@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useT } from '../../lib/i18n'
-import { applyAutomationBundle } from '../../lib/api'
+import { applyAutomationBundle, deleteAutomationBundle } from '../../lib/api'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BundlePreviewCard — Ziggy Pro Mode bundle review surface (D4)
@@ -28,7 +28,9 @@ import { applyAutomationBundle } from '../../lib/api'
 const STATUS = {
   IDLE:     'idle',     // initial card; Accept / Discard available
   APPLYING: 'applying', // POST in flight; buttons disabled + spinner
-  RESULTS:  'results',  // partial-failure view; per-artifact pass/fail
+  SUCCESS:  'success',  // fully applied; Undo / Done available (undo-last-accept)
+  RESULTS:  'results',  // partial-failure view; per-artifact pass/fail + Undo
+  UNDONE:   'undone',   // bundle swept via Undo; Dismiss available
 }
 
 // Trigger → one-line natural-language summary. Covers the common
@@ -284,6 +286,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   const [status, setStatus] = useState(STATUS.IDLE)
   const [applyResult, setApplyResult] = useState(null)
   const [topError, setTopError] = useState(null)
+  const [undoing, setUndoing] = useState(false)
   // Cooldown ref: card just appeared in the chat after the user pressed Enter
   // on their message. Browsers can deliver a stray Enter keystroke onto the
   // freshly-rendered Accept button if focus shifted. Ignore Accept calls in
@@ -308,15 +311,17 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
     try {
       const result = await applyAutomationBundle(bundle)
       // Backend returns 200 even on partial failure so we render results inline.
-      const created = result?.created || []
       const errors  = result?.errors  || []
+      // Keep the full result (carries bundle_id) so Undo can sweep the bundle.
+      setApplyResult(result)
       if (result?.ok && errors.length === 0) {
-        // Full success — let the parent replace the card with a confirmation message.
-        onAccept?.(result)
+        // Full success — hold the card in a SUCCESS state offering Undo, rather
+        // than collapsing immediately. This is the undo-last-accept story:
+        // the user can reverse the whole bundle right after accepting it.
+        setStatus(STATUS.SUCCESS)
         return
       }
       // Partial or full failure — flip to results view so user sees per-artifact outcome.
-      setApplyResult({ created, errors })
       setStatus(STATUS.RESULTS)
     } catch (e) {
       // Network / 5xx / unknown — keep the card; show the error on the footer.
@@ -325,12 +330,33 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
     }
   }
 
+  // Undo-last-accept — sweep every artifact the bundle created. bundle_id comes
+  // from the apply result (authoritative) or falls back to the preview bundle.
+  const handleUndo = async () => {
+    const bundleId = applyResult?.bundle_id || bundle?.bundle_id
+    if (!bundleId || undoing) return
+    setUndoing(true)
+    setTopError(null)
+    try {
+      await deleteAutomationBundle(bundleId)
+      setStatus(STATUS.UNDONE)
+    } catch (e) {
+      setTopError(e?.userMessage || e?.message || t('automations.proCard.undoFailed'))
+    } finally {
+      setUndoing(false)
+    }
+  }
+
   const handleDiscard = () => {
     onDiscard?.()
   }
 
   const applying = status === STATUS.APPLYING
+  const showingSuccess = status === STATUS.SUCCESS && applyResult
   const showingResults = status === STATUS.RESULTS && applyResult
+  const showingUndone  = status === STATUS.UNDONE
+  // Whether an Undo action is offered (anything got created and isn't already undone).
+  const canUndo = (applyResult?.created?.length || 0) > 0 && !showingUndone
 
   // Resolve a per-kind label for the results view. Falls back to the raw
   // kind string when no translation exists, so a new artifact kind from
@@ -397,8 +423,25 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
         </div>
       )}
 
-      {/* RESULTS VIEW — per-artifact pass/fail (after a partial failure) */}
-      {showingResults ? (
+      {/* UNDONE VIEW — the bundle was swept via Undo */}
+      {showingUndone ? (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+          padding: '18px 12px', textAlign: 'center',
+        }}>
+          <span style={{
+            width: 32, height: 32, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--bg-2)', color: 'var(--ink-mute)',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+          </span>
+          <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, fontWeight: 500 }} dir="auto">
+            {t('automations.proCard.undone')}
+          </p>
+        </div>
+      ) : /* RESULTS / SUCCESS VIEW — per-artifact created + any errors */
+      (showingResults || showingSuccess) ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {applyResult.created.length > 0 && (
             <div>
@@ -525,15 +568,56 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
         display: 'flex', gap: 8, paddingTop: 4,
         borderTop: '0.5px solid var(--line)', marginTop: 2,
       }}>
-        {showingResults ? (
+        {showingUndone ? (
+          // Bundle swept — single dismiss that clears the card from the chat.
           <button
             type="button"
-            onClick={() => onAccept?.(applyResult)}
+            onClick={handleDiscard}
             className="z-btn-primary"
             style={{ flex: 1 }}
           >
             {t('automations.proCard.done')}
           </button>
+        ) : (showingResults || showingSuccess) ? (
+          // Resolved (full or partial). Offer Undo when anything was created,
+          // plus Done to collapse the card into a chat confirmation.
+          <>
+            {canUndo && (
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={undoing}
+                className="z-btn-secondary"
+                style={{
+                  flex: 1, opacity: undoing ? 0.85 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  cursor: undoing ? 'progress' : 'pointer',
+                }}
+              >
+                {undoing && (
+                  <motion.span
+                    style={{
+                      width: 12, height: 12, borderRadius: '50%',
+                      border: '1.5px solid currentColor',
+                      borderTopColor: 'transparent', display: 'inline-block',
+                    }}
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
+                  />
+                )}
+                {undoing ? t('automations.proCard.undoing') : t('automations.proCard.undo')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onAccept?.(applyResult)}
+              disabled={undoing}
+              className="z-btn-primary"
+              style={{ flex: 1, opacity: undoing ? 0.55 : 1 }}
+            >
+              {t('automations.proCard.done')}
+            </button>
+          </>
         ) : (
           <>
             <button

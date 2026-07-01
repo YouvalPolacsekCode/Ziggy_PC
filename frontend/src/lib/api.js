@@ -455,6 +455,12 @@ export const designAutomationBundle  = (outcome, language) =>
   post('/automations/bundles/design', { outcome, language })
 export const applyAutomationBundle   = (bundle) =>
   post('/automations/bundles/apply', { bundle })
+// Applied Pro-Mode bundles — list every accept + sweep-delete (undo accept).
+// deleteAutomationBundle tears down every artifact the bundle created
+// (automations, occupancy sensors, KV flags). See services/bundle_executor.py.
+export const listAutomationBundles   = () => get('/automations/bundles')
+export const deleteAutomationBundle  = (bundleId) =>
+  del(`/automations/bundles/${encodeURIComponent(bundleId)}`)
 
 // Smart Light Schedule (circadian) — bundle of 4 HA automations created/replaced
 // atomically. See services/circadian_builder.py.

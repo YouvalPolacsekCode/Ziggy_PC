@@ -450,6 +450,39 @@ async def delete_circadian_bundle():
     return result
 
 
+# ── Pro Mode bundles — list / delete (undo-accept) ───────────────────────────
+# Registered BEFORE the /{automation_id} catch-all so "bundles" isn't captured
+# as an automation id. A bundle is the set of artifacts a single Pro Mode accept
+# created; deleting it sweeps every one (automations, occupancy sensors, KV
+# flags) via services.bundle_executor.delete_bundle.
+
+@router.get("/api/automations/bundles")
+async def list_bundles_endpoint():
+    from services.bundle_executor import list_bundles
+    return {"bundles": await asyncio.to_thread(list_bundles)}
+
+
+@router.delete("/api/automations/bundles/{bundle_id}")
+async def delete_bundle_endpoint(bundle_id: str):
+    """Undo a Pro Mode accept — tear down every artifact the bundle created.
+
+    Returns 200 with a per-artifact removed/errors breakdown. A missing bundle
+    (nothing to undo) is a 404 so the UI can distinguish gone-vs-broken.
+    """
+    from services.bundle_executor import delete_bundle
+    result = await asyncio.to_thread(delete_bundle, bundle_id)
+    if not result.get("ok") and not result.get("removed"):
+        detail = (result.get("errors") or [{}])[0].get("error", "Could not delete bundle")
+        status = 404 if "no such bundle" in detail else 502
+        raise HTTPException(status_code=status, detail=detail)
+    _bus.emit("automation", _BASIC, "bundle_deleted",
+              bundle_id=bundle_id,
+              removed=len(result.get("removed", [])),
+              errors=len(result.get("errors", [])),
+              result="ok" if result.get("ok") else "partial")
+    return result
+
+
 # ── Single-automation endpoints ──────────────────────────────────────────────
 
 @router.get("/api/automations/{automation_id}")

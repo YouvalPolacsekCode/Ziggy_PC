@@ -4058,6 +4058,10 @@ export default {
   'automations.proCard.discard':                  'Discard',
   'automations.proCard.creating':                 'Creating…',
   'automations.proCard.done':                     'Done',
+  'automations.proCard.undo':                     'Undo',
+  'automations.proCard.undoing':                  'Undoing…',
+  'automations.proCard.undone':                   'Undone — everything this bundle created was removed.',
+  'automations.proCard.undoFailed':               'Couldn’t undo the bundle — try again in a moment.',
   'automations.proCard.applyFailed':              'Couldn’t create the bundle — try again in a moment.',
   // Results view
   'automations.proCard.createdLabel':             'Created',
