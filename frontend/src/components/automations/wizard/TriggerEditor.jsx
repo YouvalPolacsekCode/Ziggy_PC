@@ -29,9 +29,18 @@ function TriggerEditor({ trigger, onChange }) {
   // State" — same picker, but the controls swap to above/below + threshold when
   // a numeric sensor is selected.
   const effectiveType = trigger.type || 'time'
-  const uiType = (effectiveType === 'numeric_state') ? 'state' : effectiveType
   const triggerDomain = trigger.entity_id?.split('.')?.[0] || null
   const triggerEntity = trigger.entity_id ? entities.find(e => e.entity_id === trigger.entity_id) : null
+  // Round-trip: a saved occupancy automation persists as a plain `state`
+  // trigger on a presence/occupancy sensor. Detect that shape and re-present
+  // it as the friendly "occupancy" trigger so editing shows the same UI it was
+  // built with (rather than a bare "device state" trigger).
+  const isPresenceState = effectiveType === 'state'
+    && triggerEntity?.domain === 'binary_sensor'
+    && PRESENCE_CLASSES.includes(triggerEntity?.device_class)
+  const uiType = (effectiveType === 'numeric_state') ? 'state'
+    : (effectiveType === 'occupancy' || isPresenceState) ? 'occupancy'
+    : effectiveType
   const isTracker     = triggerDomain === 'person' || triggerDomain === 'device_tracker'
   const isNumericSensor = triggerDomain === 'sensor'
   const BINARY_SENSOR_TRIGGER_STATES = getBinarySensorTriggerStates()
@@ -69,11 +78,23 @@ function TriggerEditor({ trigger, onChange }) {
   }
 
   // ── occupancy helpers ─────────────────────────────────────────────────────
-  const occRoomArea = (rooms || []).find(a => a.id === trigger.room)
-  const occSensor = occRoomArea
-    ? entities.find(e => (occRoomArea.entities || []).includes(e.entity_id)
-        && e.domain === 'binary_sensor' && PRESENCE_CLASSES.includes(e.device_class))
-    : null
+  // Room: explicit trigger.room, else derived from the sensor entity so a
+  // saved automation (persisted as a state trigger, no `room`) still shows its
+  // room selected on re-edit.
+  const occRoomId = trigger.room
+    || (trigger.entity_id ? (rooms || []).find(a => (a.entities || []).includes(trigger.entity_id))?.id : '')
+    || ''
+  const occRoomArea = (rooms || []).find(a => a.id === occRoomId)
+  // The presence sensor in use: the saved entity if it's a presence sensor,
+  // otherwise the first presence sensor in the chosen room.
+  const occSensor = (trigger.entity_id
+      && entities.find(e => e.entity_id === trigger.entity_id
+          && e.domain === 'binary_sensor' && PRESENCE_CLASSES.includes(e.device_class)))
+    || (occRoomArea
+      ? entities.find(e => (occRoomArea.entities || []).includes(e.entity_id)
+          && e.domain === 'binary_sensor' && PRESENCE_CLASSES.includes(e.device_class))
+      : null)
+    || null
   const occRoomOptions = (rooms || []).filter(a => (a.entities || []).some(eid => {
     const e = entities.find(x => x.entity_id === eid)
     return e && e.domain === 'binary_sensor' && ['motion', ...PRESENCE_CLASSES, 'door', 'opening'].includes(e.device_class)
@@ -256,7 +277,7 @@ function TriggerEditor({ trigger, onChange }) {
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {occRoomOptions.map(r => {
-                  const sel = r.id === trigger.room
+                  const sel = r.id === occRoomId
                   return (
                     <button key={r.id} type="button" onClick={() => selectOccRoom(r.id)} style={{
                       padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
@@ -271,7 +292,7 @@ function TriggerEditor({ trigger, onChange }) {
             )}
           </div>
 
-          {trigger.room && !occSensor && (
+          {occRoomId && !occSensor && (
             <div style={{
               padding: '10px 12px', borderRadius: 10,
               background: `color-mix(in srgb, var(--warn) 6%, var(--surface))`,
@@ -287,7 +308,7 @@ function TriggerEditor({ trigger, onChange }) {
             </div>
           )}
 
-          {trigger.room && occSensor && (
+          {occRoomId && occSensor && (
             <FieldHint>{t('automations.editor.occHasSensor')}</FieldHint>
           )}
 
