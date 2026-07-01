@@ -107,8 +107,8 @@ CASES: list[Case] = [
     Case("EN: set AC to 24",              "single_en",   "set AC in the bedroom to 24",                                  not_expect=_PRO_MODE_INTENT),
     Case("EN: temp in living room?",      "single_en",   "what's the temperature in the living room",                    not_expect=_PRO_MODE_INTENT),
     Case("EN: create automation explicit","single_en",   "create an automation: turn off bedroom light every day at 23:00", not_expect=_PRO_MODE_INTENT),
-    Case("EN: create occupancy explicit", "single_en",   "create an occupancy sensor for the kitchen",                   not_expect=_PRO_MODE_INTENT),
-    Case("EN: instantiate template",      "single_en",   "use the motion-activated light template for the bathroom",     not_expect=_PRO_MODE_INTENT),
+    Case("EN: create occupancy explicit", "single_en",   "create an occupancy sensor for the kitchen",                   expect="create_occupancy_sensor"),
+    Case("EN: instantiate template",      "single_en",   "use the motion-activated light template for the bathroom",     expect="instantiate_blueprint"),
 
     Case("HE: כבה אורות חדר שינה",       "single_he",   "כבה את האורות בחדר השינה",                                      not_expect=_PRO_MODE_INTENT),
     Case("HE: הדלק אור מטבח",            "single_he",   "הדלק את האור במטבח",                                            not_expect=_PRO_MODE_INTENT),
