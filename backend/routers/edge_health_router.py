@@ -82,6 +82,99 @@ def _last_post_is_fresh(last_post_at: Optional[str], *,
     return (now - parsed) <= timedelta(seconds=window_s)
 
 
+# OTA staleness thresholds — how long since the last successful deploy
+# before we escalate. The Windows scheduled task fires every 2 min, so
+# on a healthy hub the deploy_log tail is refreshed by any push within
+# that window. When there's nothing to deploy the log doesn't advance,
+# so a real "OTA is broken" signal has to be relatively patient.
+#
+# 30 min → the scheduled task has skipped ~15 opportunities. Even on a
+#          quiet repo we'd expect SOMETHING (a fetch heartbeat, a
+#          failed-verify entry) to have appeared. Warn.
+# 2 hours → the task has been silent for 60+ cycles. Screen-lock stall,
+#           schtasks broken, docker daemon down — real problem, page.
+_OTA_STALE_WARN_S  = 30 * 60
+_OTA_STALE_DOWN_S  = 2 * 60 * 60
+_DEPLOY_LOG_PATH   = "/app/user_files/deploy_log"
+
+
+def _ota_snapshot() -> dict:
+    """Read deploy_log (mounted from the mini PC host at /app/user_files/).
+
+    The file is a flat log with '---' separated blocks, each carrying:
+      ts:        2026-06-25T10:35:50Z
+      cohort:    canary
+      target:    origin/main
+      old:       <sha>
+      new:       <sha>
+      verified:  True|False
+
+    Returns:
+      {
+        "last_deploy_at":  iso8601 | null,
+        "seconds_since":   int,
+        "last_verified":   bool | null,
+        "status":          "ok" | "stale" | "silent" | "unknown"
+      }
+
+    Never raises — a missing/unreadable log becomes status="unknown" so
+    that a fresh hub without OTA still returns a clean payload.
+    """
+    import os
+    import re
+    try:
+        if not os.path.exists(_DEPLOY_LOG_PATH):
+            return {"last_deploy_at": None, "seconds_since": None,
+                    "last_verified": None, "status": "unknown"}
+        # Read last ~10KB — enough for many recent blocks without paying
+        # to scan the whole file on every /health poll.
+        with open(_DEPLOY_LOG_PATH, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 10240))
+            tail = f.read().decode("utf-8", errors="replace")
+        # Grab the last `ts:` and matching `verified:` in the tail.
+        ts_matches = re.findall(r"^\s*ts:\s*(\S+)", tail, re.MULTILINE)
+        verified_matches = re.findall(r"^\s*verified:\s*(\S+)", tail, re.MULTILINE)
+        if not ts_matches:
+            return {"last_deploy_at": None, "seconds_since": None,
+                    "last_verified": None, "status": "unknown"}
+        last_ts_str = ts_matches[-1]
+        last_verified = None
+        if verified_matches:
+            v = verified_matches[-1].strip().lower()
+            last_verified = v in ("true", "1", "yes")
+        # Compute age
+        try:
+            # Log emits UTC ISO with Z suffix; datetime.fromisoformat needs +00:00.
+            iso = last_ts_str.replace("Z", "+00:00")
+            last_dt = datetime.fromisoformat(iso)
+            now = datetime.now(timezone.utc)
+            seconds_since = int((now - last_dt).total_seconds())
+        except Exception:
+            return {"last_deploy_at": last_ts_str, "seconds_since": None,
+                    "last_verified": last_verified, "status": "unknown"}
+        # Classify
+        if seconds_since >= _OTA_STALE_DOWN_S:
+            status = "silent"
+        elif seconds_since >= _OTA_STALE_WARN_S:
+            status = "stale"
+        else:
+            status = "ok"
+        # Even a fresh deploy that failed verification is a problem
+        if last_verified is False and status == "ok":
+            status = "stale"
+        return {
+            "last_deploy_at":  last_ts_str,
+            "seconds_since":   seconds_since,
+            "last_verified":   last_verified,
+            "status":          status,
+        }
+    except Exception:
+        return {"last_deploy_at": None, "seconds_since": None,
+                "last_verified": None, "status": "unknown"}
+
+
 async def _build_health_snapshot() -> dict:
     """Read in-memory state from sibling modules. All reads tolerate
     missing modules — local-dev hubs may not have every service running.
@@ -164,12 +257,15 @@ async def _build_health_snapshot() -> dict:
         pass
 
     fresh = _last_post_is_fresh(last_post)
+    ota = _ota_snapshot()
     # Status escalation rubric: hardest signal wins. coordinator_status=failed
     # and sh_level=down both promote to "down" even when HA WS is technically
     # reachable, because from the user's perspective the home is broken.
-    if not ha_reachable or sh_level == "down" or coordinator_status == "failed":
+    # OTA "silent" (no deploy in 2h) escalates to "down" — a hub that can't
+    # accept pushes is dark to operators. "stale" (30m+) → "degraded".
+    if not ha_reachable or sh_level == "down" or coordinator_status == "failed" or ota["status"] == "silent":
         status = "down"
-    elif not fresh or sh_level == "degraded" or coordinator_status == "loading":
+    elif not fresh or sh_level == "degraded" or coordinator_status == "loading" or ota["status"] == "stale":
         status = "degraded"
     else:
         status = "ok"
@@ -182,6 +278,7 @@ async def _build_health_snapshot() -> dict:
         "last_telemetry_post_at": last_post,
         "coordinator_status":     coordinator_status,
         "manual_action":          manual_action,
+        "ota":                    ota,
     }
 
 
@@ -210,4 +307,6 @@ async def edge_health() -> dict:
             "last_telemetry_post_at": None,
             "coordinator_status":     "unknown",
             "manual_action":          None,
+            "ota":                    {"last_deploy_at": None, "seconds_since": None,
+                                       "last_verified": None, "status": "unknown"},
         }
