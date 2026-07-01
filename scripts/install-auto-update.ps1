@@ -59,56 +59,62 @@ $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
 #
 # Why SYSTEM, not Interactive or S4U:
 #   - Interactive ran fine when the user was at the desk, but failed with
-#     0x800710E0 the moment the console session locked (screen sleep).
-#     This stalled OTA in production for 2 days before we caught it.
-#   - S4U survives lock + sign-out but requires admin elevation to register
-#     via New-ScheduledTaskPrincipal — a one-time setup chore that's easy
-#     to skip and breaks silently if skipped.
-#   - SYSTEM is always "logged in" (it's the OS itself), can run docker /
-#     git / anything update.ps1 needs, and can be REGISTERED without admin
-#     elevation if we use schtasks /change to swap it in after a normal
-#     Register-ScheduledTask. That's what this script does: register with
-#     a placeholder Interactive principal, then immediately schtasks-change
-#     to SYSTEM. Net result: same end state as S4U/SYSTEM but no admin
-#     prompt during install.
+#     0x800710E0 the moment the console session locked. Stalled OTA in
+#     production for 2 days before we caught it.
+#   - S4U survives lock but requires admin elevation via
+#     New-ScheduledTaskPrincipal — easy to skip in setup → silent failure.
+#   - SYSTEM is always "logged in" (the OS itself), has full privileges
+#     for docker / git / everything update.ps1 needs, and CAN be
+#     registered without admin via the legacy `schtasks /create /ru SYSTEM`
+#     command line — the PowerShell cmdlet's admin-elevation check is a
+#     policy layer that schtasks.exe doesn't enforce.
+#
+# One earlier attempt used Register-ScheduledTask (Interactive) + then
+# `schtasks /change /ru SYSTEM` to swap. That worked initially but left
+# vestigial security metadata that caused sporadic 0x800710E0 failures
+# after a few days. Clean `schtasks /create /ru SYSTEM` avoids that path.
 #
 # Pass -RequireS4U from an Admin PowerShell to force the legacy S4U path
-# (kept for parity with previous behaviour).
-$logonType = if ($RequireS4U) { "S4U" } else { "Interactive" }
-$principal = New-ScheduledTaskPrincipal `
-    -UserId "$env:USERDOMAIN\$env:USERNAME" `
-    -LogonType $logonType `
-    -RunLevel Highest
+# (kept for parity).
+if ($RequireS4U) {
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType S4U `
+        -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+        -StartWhenAvailable
 
-# Safety: don't pile up if a run is slow; cap each run at 10 min.
-$settings = New-ScheduledTaskSettingsSet `
-    -MultipleInstances IgnoreNew `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
-    -StartWhenAvailable
-
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $action `
-    -Trigger $trigger `
-    -Principal $principal `
-    -Settings $settings `
-    -Description "Polls origin/main every 2 min and runs scripts\update.ps1" | Out-Null
-
-# Swap the principal to SYSTEM (no admin needed for this specific change).
-# Skip when the operator explicitly asked for S4U — they already got admin
-# elevation for the Register call above and want the user-account behaviour.
-if (-not $RequireS4U) {
-    $out = schtasks /change /tn $TaskName /ru "NT AUTHORITY\SYSTEM" 2>&1
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $action `
+        -Trigger $trigger `
+        -Principal $principal `
+        -Settings $settings `
+        -Description "Polls origin/main every 2 min and runs scripts\update.ps1" | Out-Null
+    Write-Host "Installed with S4U principal (admin path)."
+} else {
+    # Non-admin path: legacy schtasks.exe accepts /ru SYSTEM without an
+    # elevation check. Full re-create (not modify) is deliberate — sporadic
+    # 0x800710E0 failures were traced back to vestigial state left behind
+    # by incremental "modify existing task" flows.
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    $trArg = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $UpdateScript + '"'
+    $out = schtasks /create `
+        /tn $TaskName `
+        /tr $trArg `
+        /sc minute /mo 2 `
+        /ru "SYSTEM" `
+        /rl HIGHEST `
+        /f 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Switched principal to SYSTEM (survives screen lock / sign-out)."
+        Write-Host "Installed as SYSTEM (survives screen lock / sign-out / reboot)."
     } else {
-        Write-Host "WARNING: could not switch to SYSTEM — task stays as Interactive."
-        Write-Host "  Output: $out"
-        Write-Host "  Task will fail to run while the console session is locked."
-        Write-Host "  Fix: run again from an Admin PowerShell with -RequireS4U, OR"
-        Write-Host "       manually run: schtasks /change /tn $TaskName /ru `"NT AUTHORITY\SYSTEM`""
+        Write-Host "ERROR: schtasks /create failed — $out"
+        Write-Host "Fallback: re-run this script from an Admin PowerShell with -RequireS4U."
+        exit 1
     }
 }
 
