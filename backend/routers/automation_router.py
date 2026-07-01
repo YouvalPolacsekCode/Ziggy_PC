@@ -483,6 +483,34 @@ async def delete_bundle_endpoint(bundle_id: str):
     return result
 
 
+# ── Voice intents — list / delete registered phrases ─────────────────────────
+# Registered phrases ("good night" → sleep mode) are matched in the intent
+# parser's short-circuit path without an LLM. These endpoints let a UI (or a
+# canary test) inspect and remove them. Creation happens via bundle apply.
+
+@router.get("/api/voice-intents")
+async def list_voice_intents_endpoint():
+    from services.voice_intents import list_voice_intents
+    intents = await asyncio.to_thread(list_voice_intents)
+    # Never leak internal action wiring detail beyond what a UI needs.
+    return {"voice_intents": [
+        {"phrase": r.get("phrase"), "normalized": r.get("normalized"),
+         "description": r.get("description"), "bundle_id": r.get("bundle_id"),
+         "action_kind": (r.get("action") or {}).get("kind")}
+        for r in intents
+    ]}
+
+
+@router.delete("/api/voice-intents/{phrase}")
+async def delete_voice_intent_endpoint(phrase: str):
+    from services.voice_intents import unregister_voice_intent
+    removed = await asyncio.to_thread(unregister_voice_intent, phrase)
+    if not removed:
+        raise HTTPException(status_code=404, detail="No such voice intent")
+    _bus.emit("automation", _BASIC, "voice_intent_deleted", phrase=phrase, result="ok")
+    return {"ok": True, "phrase": phrase}
+
+
 # ── Single-automation endpoints ──────────────────────────────────────────────
 
 @router.get("/api/automations/{automation_id}")

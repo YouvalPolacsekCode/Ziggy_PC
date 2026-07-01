@@ -142,17 +142,40 @@ def execute_bundle(bundle: dict) -> dict:
         except Exception as e:
             errors.append({"kind": "automation", "name": name, "error": str(e)})
 
-    # ── Phase 4: Voice intents — NOT YET SUPPORTED ──────────────────────────
-    # Voice intent registration needs a Ziggy primitive that doesn't exist
-    # yet (where do phrases live? command_phrases.yaml? a new registry?).
-    # Surface as a clear "not supported" error so the user knows the rest of
-    # the bundle landed but voice triggers need manual setup for now.
+    # ── Phase 4: Voice intents ──────────────────────────────────────────────
+    # Register each phrase against a concrete action resolved deterministically
+    # from what THIS bundle created (see voice_intents.resolve_action_description).
+    # Runs last so `created` already holds the automations / KV modes a phrase
+    # can bind to. Phrases we can't resolve without an LLM keep the honest
+    # "manual setup" note rather than registering something wrong.
     for vi in artifacts.get("voice_intents") or []:
-        errors.append({
-            "kind":   "voice_intent",
-            "phrase": vi.get("phrase"),
-            "error":  "Voice intents aren't supported by Ziggy Pro v1 yet — set this phrase up manually for now.",
-        })
+        phrase = vi.get("phrase")
+        if not phrase:
+            errors.append({"kind": "voice_intent", "error": "missing phrase"})
+            continue
+        try:
+            from services.voice_intents import register_voice_intent, resolve_action_description
+            action = resolve_action_description(vi.get("action_description", ""), created)
+            if not action:
+                errors.append({
+                    "kind":   "voice_intent",
+                    "phrase": phrase,
+                    "error":  "I couldn't map this phrase to an action automatically — set it up manually for now.",
+                })
+                continue
+            reg = register_voice_intent(phrase, action, bundle_id=bundle_id,
+                                        description=vi.get("action_description", ""))
+            if reg.get("ok"):
+                created.append({
+                    "kind":       "voice_intent",
+                    "phrase":     phrase,
+                    "normalized": reg.get("normalized"),
+                    "bundle_id":  bundle_id,
+                })
+            else:
+                errors.append({"kind": "voice_intent", "phrase": phrase, "error": reg.get("error", "unknown")})
+        except Exception as e:
+            errors.append({"kind": "voice_intent", "phrase": phrase, "error": str(e)})
 
     ok = len(errors) == 0
 
@@ -195,6 +218,8 @@ def _persist_manifest(bundle_id: str, name: str, created: list[dict]) -> None:
             return (kind, a.get("entry_id") or a.get("room"))
         if kind == "kv_state":
             return (kind, a.get("namespace"), a.get("key"))
+        if kind == "voice_intent":
+            return (kind, a.get("normalized") or a.get("phrase"))
         return (kind, str(a))
 
     seen = {_key(a) for a in merged}
@@ -286,6 +311,10 @@ def delete_bundle(bundle_id: str) -> dict:
             elif kind == "kv_state":
                 set_local_state(a.get("namespace") or "modes", a.get("key"), None)
                 removed.append({"kind": kind, "namespace": a.get("namespace"), "key": a.get("key")})
+            elif kind == "voice_intent":
+                from services.voice_intents import unregister_voice_intent
+                unregister_voice_intent(a.get("normalized") or a.get("phrase") or "")
+                removed.append({"kind": kind, "phrase": a.get("phrase")})
             else:
                 # Unknown artifact kind — nothing actionable, but record it so
                 # the manifest can still be cleared.

@@ -221,6 +221,25 @@ def quick_parse(text: str, chat_history: list | None = None) -> dict:
         text = text[len(_TRIGGER_PREFIX):].strip()
         lower = text.lower()
 
+    # Voice-intent registry — user/Pro-Mode-registered phrases ("good night" →
+    # sleep mode). Checked BEFORE the hardcoded fast patterns so a registered
+    # phrase can override a built-in default, and entirely without an LLM call.
+    # Exact normalized match only (see services.voice_intents.match).
+    try:
+        from services import voice_intents as _vi
+        _rec = _vi.match(text)
+        if _rec:
+            from core.debug_bus import bus, VERBOSE
+            bus.emit("intent", VERBOSE, "voice_intent_match",
+                     phrase=_rec.get("normalized"), input=text)
+            return {
+                "intent": "run_voice_intent",
+                "params": {"phrase": _rec.get("normalized"), "action": _rec.get("action")},
+                "source": "voice",
+            }
+    except Exception:
+        pass  # registry unavailable → fall through to normal parsing
+
     # Fast-path patterns never need history — they match exact phrases
     for pattern, intent in _FAST_PATTERNS:
         if pattern.search(lower):

@@ -681,7 +681,65 @@ async def handle_apply_automation_bundle(params: dict, *, source: str = "unknown
     return err(f"Couldn't create the bundle. First issue: {first_err}")
 
 
+async def handle_run_voice_intent(params: dict, *, source: str = "unknown") -> dict:
+    """Execute a registered voice-intent phrase's action.
+
+    Reached only via the intent parser's voice short-circuit (no LLM). The
+    `action` is carried in params (from the registry match), or re-looked-up by
+    phrase as a fallback. Supported action kinds:
+      - intent:     re-dispatch a normal Ziggy intent (e.g. turn_off_everything)
+      - kv_mode:    set a KV mode flag (e.g. modes.sleep = true)
+      - automation: run a Ziggy automation's stored action list
+    """
+    action = params.get("action")
+    if not isinstance(action, dict) or not action.get("kind"):
+        # Fallback: re-resolve from the registry by phrase.
+        try:
+            from services.voice_intents import match as _vi_match
+            rec = _vi_match(params.get("phrase") or "")
+            action = rec.get("action") if rec else None
+        except Exception:
+            action = None
+    if not isinstance(action, dict) or not action.get("kind"):
+        return err("I recognized that phrase but couldn't find what it should do.")
+
+    kind = action.get("kind")
+
+    if kind == "intent":
+        sub_intent = action.get("intent")
+        if not sub_intent:
+            return err("This voice command isn't set up correctly.")
+        # Re-enter the dispatcher with the target intent. Safe re-entrant call —
+        # handle_intent is just a coroutine; lazy import avoids a module cycle.
+        from core.action_parser import handle_intent
+        return await handle_intent(
+            {"intent": sub_intent, "params": action.get("params") or {}, "source": "voice"},
+        )
+
+    if kind == "kv_mode":
+        from services.local_automation_actions import set_local_state
+        ns = action.get("namespace") or "modes"
+        key = action.get("key")
+        if not key:
+            return err("This voice command isn't set up correctly.")
+        value = action.get("value", True)
+        set_local_state(ns, key, value)
+        return ok("Done." if value else "Turned that off.")
+
+    if kind == "automation":
+        auto_id = action.get("automation_id")
+        if not auto_id:
+            return err("This voice command isn't set up correctly.")
+        from services.local_automation_actions import execute_ziggy_actions
+        label = action.get("label") or auto_id
+        await execute_ziggy_actions(auto_id, label, "voice")
+        return ok("Done.")
+
+    return err("This voice command uses an action Ziggy doesn't support yet.")
+
+
 HANDLERS = {
+    "run_voice_intent": handle_run_voice_intent,
     "create_automation": handle_create_automation,
     "list_automations": handle_list_automations,
     "delete_automation": handle_delete_automation,
