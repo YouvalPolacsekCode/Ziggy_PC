@@ -910,15 +910,18 @@ TOOLS = [
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "List of HA entity IDs whose 'on' state means 'someone present'. "
+                    "OPTIONAL. List of HA entity IDs whose 'on' state means 'someone present'. "
                     "Typically motion + presence + door, e.g. "
                     "['binary_sensor.bedroom_motion', 'binary_sensor.bedroom_presence', 'binary_sensor.bedroom_door']. "
-                    "At least one is required; more sensors give better coverage."
+                    "Pass these when the user names specific sensors. If the user only names the ROOM "
+                    "(e.g. 'create an occupancy sensor for the kitchen'), OMIT this — call the tool with just "
+                    "'room' and Ziggy will confirm which of the room's sensors to fuse in the same turn. "
+                    "Never invent entity IDs to satisfy this field."
                 ),
             },
             "friendly_name":    {"type": "string", "description": "Display name for the new sensor. Pass the user's preferred language verbatim (Hebrew supported, e.g. 'תפוסה - חדר שינה')."},
             "delay_off_seconds":{"type": "integer", "description": "How many seconds after all source sensors go quiet before the occupancy sensor reports clear. Damps flicker. Default 30."},
-        }, "required": ["room", "sensor_entities"]},
+        }, "required": ["room"]},
     }},
     # ---- Ziggy Pro Mode designer (D3): outcome → multi-artifact bundle ----
     {"type": "function", "function": {
@@ -957,11 +960,13 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "list_blueprints",
         "description": (
-            "List Ziggy's bundled community automation templates (proven patterns the user "
-            "can fill in instead of describing each trigger and action manually). "
-            "Use when the user says things like 'what automations can I set up?', "
-            "'show me templates', 'set up smart bathroom lights', 'is there a template for X', "
-            "or when you want to recommend a proven pattern instead of building one from scratch. "
+            "BROWSE/DISCOVERY ONLY. List Ziggy's bundled community automation templates so the user "
+            "can see what's on offer. Use ONLY when the user is browsing and has NOT named a specific "
+            "template to use — e.g. 'what automations can I set up?', 'show me the templates', "
+            "'what templates do you have?', 'is there a template for X?'. "
+            "If the user names a specific template to USE or APPLY ('use the motion-activated light "
+            "template', 'set up the bathroom light template'), do NOT call this — call instantiate_blueprint "
+            "directly. "
             "Returns each template's id, name, short description, and number of inputs to fill. "
             "Never use the word 'blueprint' in your reply — call them 'templates' or 'community templates'."
         ),
@@ -970,25 +975,32 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "instantiate_blueprint",
         "description": (
-            "Create an automation from a bundled community template by filling in its inputs. "
-            "Use after list_blueprints — pass the chosen template's id plus a key/value map of "
-            "the values for each input the template declares (typically entity ids, times, numbers, etc.). "
+            "Create an automation from a bundled community template (SINGLE-SHOT). "
+            "Call this AS SOON AS the user names a template they want to use or apply — "
+            "'use the motion-activated light template', 'set up the bathroom light template', "
+            "'apply the AC schedule template for the bedroom'. You do NOT need to call list_blueprints "
+            "first, and you do NOT need all the input values up front: pass the template id plus whatever "
+            "inputs you can infer (e.g. the room), and Ziggy will ask the user for any missing required "
+            "inputs in the same turn. "
+            "Common template ids: 'motion_light' (motion-activated light — turns a light on with motion and "
+            "off after no motion), 'ac_schedule' (AC on/off schedule), 'blinds_sunset' (blinds by sun). "
             "Israeli defaults (24°C AC, sunset-based blinds, weekday wake times) are baked in; only override "
             "when the user explicitly asks for something different. "
-            "If you don't have the inputs the user needs to provide, ask them — do NOT hallucinate entity ids."
+            "Never hallucinate entity ids — if you don't know an input value, leave it out and let Ziggy ask."
         ),
         "parameters": {"type": "object", "properties": {
             "blueprint_id": {
                 "type": "string",
-                "description": "Template id returned by list_blueprints (e.g. 'motion_light', 'ac_schedule').",
+                "description": "Template id (e.g. 'motion_light', 'ac_schedule'). For 'the motion-activated light template' use 'motion_light'.",
             },
             "inputs": {
                 "type": "object",
                 "description": (
-                    "Map of input key → value. Keys come from the chosen template (e.g. for motion_light: "
-                    "{'motion_entity': 'binary_sensor.bathroom_motion', 'light_target': 'light.bathroom', "
-                    "'no_motion_wait': 120}). Values are HA entity ids, numbers, times, or strings, depending "
-                    "on the input's selector kind."
+                    "OPTIONAL. Map of input key → value for inputs you already know. Keys come from the chosen "
+                    "template (e.g. for motion_light: {'motion_entity': 'binary_sensor.bathroom_motion', "
+                    "'light_target': 'light.bathroom', 'no_motion_wait': 120}). Values are HA entity ids, numbers, "
+                    "times, or strings. Omit entirely (or pass only what you know) when the user hasn't provided "
+                    "concrete values — Ziggy will prompt for the rest. Never invent entity ids to fill this."
                 ),
                 "additionalProperties": True,
             },
@@ -996,7 +1008,7 @@ TOOLS = [
                 "type": "string",
                 "description": "Optional custom name for the created automation. Omit to use the template's default name.",
             },
-        }, "required": ["blueprint_id", "inputs"]},
+        }, "required": ["blueprint_id"]},
     }},
     {"type": "function", "function": {
         "name": "update_automation",
@@ -1163,6 +1175,22 @@ SYSTEM_PROMPT = (
     "  'create an occupancy sensor in the kitchen' → create_occupancy_sensor (explicit primitive), "
     "  'turn off bedroom lights at 23:00' → create_automation (explicit single trigger+action). "
     "design_automation_set returns a PREVIEW the user reviews; nothing is created until they accept. "
+
+    # ── Occupancy sensor (explicit primitive) ──────────────────────────────────
+    "OCCUPANCY SENSOR: When the user EXPLICITLY asks to create an occupancy/presence sensor for a room "
+    "('create an occupancy sensor for the kitchen', 'add a presence sensor for the office', "
+    "'תוסיף חיישן תפוסה למטבח'), call create_occupancy_sensor with just the room. Do NOT require the user "
+    "to name sensor entities and do NOT fall through to unrecognized — Ziggy asks which sensors to fuse in "
+    "the same turn. This is distinct from 'make the kitchen smart' (that stays design_automation_set). "
+
+    # ── Templates: browse vs. use ──────────────────────────────────────────────
+    "TEMPLATES ROUTING: Distinguish BROWSING from USING a template. "
+    "If the user is browsing ('what templates are there?', 'show me the templates'), call list_blueprints. "
+    "If the user names a SPECIFIC template to use or apply ('use the motion-activated light template', "
+    "'set up the bathroom light template', 'apply the AC schedule template for the bedroom', "
+    "'תשתמש בתבנית של אור לפי תנועה'), call instantiate_blueprint DIRECTLY (single-shot) — do NOT call "
+    "list_blueprints first. Pass the template id (e.g. 'motion_light' for the motion-activated light template) "
+    "and any inputs you can infer; Ziggy asks the user for the remaining required inputs in the same turn. "
 
     # ── Automation / routine routing ───────────────────────────────────────────
     "For scheduling requests like 'every day at X', 'at 12 PM', 'automatically', 'schedule', "
