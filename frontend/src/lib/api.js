@@ -425,6 +425,17 @@ export const getAutomationTraces = (id, limit = 10) => get(`/automations/${id}/t
 export const getAutomationTraceDetail = (id, runId) => get(`/automations/${id}/traces/${encodeURIComponent(runId)}`)
 export const snoozeAutomation = (id, minutes) => post(`/automations/${id}/snooze`, { minutes })
 
+// Smart presence sensor — fuses motion / presence / door-recently-open into one
+// "is anyone here" entity. Same backend handler the LLM's create_occupancy_sensor
+// tool routes to; the created sensor shows up in the Devices page automatically.
+export const createOccupancySensor = (body) => post('/occupancy-sensors', body)
+
+// Delete a Ziggy-created smart (occupancy) sensor by its opaque HA config-entry
+// id. Removes it from HA and clears Ziggy's KV so it doesn't reappear on the
+// Devices page. The entry_id is carried on the smart-sensor device record and
+// is never shown to the user.
+export const deleteSmartSensor = (entryId) => del(`/smart-sensors/${encodeURIComponent(entryId)}`)
+
 // Community templates — HA Blueprints bundled with Ziggy + ad-hoc user-imported ones.
 // See services/blueprint_importer.py. Pre-bundled or pasted-only; we never fetch from
 // the internet at runtime. Use cases: a "Templates" library tab, the wizard's

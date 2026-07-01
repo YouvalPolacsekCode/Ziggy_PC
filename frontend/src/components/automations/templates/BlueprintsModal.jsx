@@ -13,7 +13,7 @@ import { listBlueprints, instantiateBlueprint } from '../../../lib/api'
 // Wording note: this UI NEVER uses the word "blueprint". HA jargon stays
 // invisible per the project's surface-area rule (CLAUDE.md). We call them
 // "templates" or "community templates" only.
-function BlueprintsModal({ open, onClose, onCreated }) {
+function BlueprintsModal({ open, onClose, onCreated, initialBlueprintId = null }) {
   const t           = useT()
   const lang        = useLang()              // 'en' | 'he'
   const isHe        = lang === 'he'
@@ -30,10 +30,19 @@ function BlueprintsModal({ open, onClose, onCreated }) {
     if (!open) return
     setLoading(true)
     listBlueprints()
-      .then(r => setTemplates(r.templates || []))
+      .then(r => {
+        const list = r.templates || []
+        setTemplates(list)
+        // Deep-link from the Templates tab: jump straight to one template's
+        // input form instead of the browse list.
+        if (initialBlueprintId) {
+          const hit = list.find(tpl => tpl.blueprint_id === initialBlueprintId || tpl.id === initialBlueprintId)
+          if (hit) setSelected(hit)
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [open])
+  }, [open, initialBlueprintId])
 
   // Reset selection when the modal closes/opens.
   useEffect(() => {

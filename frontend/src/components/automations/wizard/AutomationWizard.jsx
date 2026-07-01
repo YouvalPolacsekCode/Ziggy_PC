@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
 import { Input, Textarea } from '../../ui/Input'
+import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
 import { getAllRooms } from '../../../lib/api'
+import { getRunModes } from '../../../lib/automations/types'
 import StepIndicator, { STEP_COUNT } from './StepIndicator'
 import TriggerEditor from './TriggerEditor'
 import ConditionRow from './ConditionRow'
@@ -22,6 +24,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const [actions,          setActions]        = useState(() => (initial?.actions || []).map(a => ({ ...a, _key: a._key || crypto.randomUUID() })))
   const [conditions,       setConditions]     = useState(() => (initial?.conditions || []).map(c => ({ ...c, _key: c._key || crypto.randomUUID() })))
   const [collapsedActions, setCollapsedActions] = useState(new Set())
+  const [mode,             setMode]           = useState(initial?.mode || 'single')
   const [saving,           setSaving]         = useState(false)
 
   useEffect(() => { getAllRooms().then(r => setAvailableRooms(Array.isArray(r) ? r : r.rooms ?? [])).catch(() => {}) }, [])
@@ -47,7 +50,14 @@ function AutomationWizard({ initial, onSave, onClose }) {
       .map(({ _key, ...rest }) => rest)
       .filter(c => (c.type === 'time' ? (c.after || c.before) : !!c.entity_id))
     const cleanActions = actions.map(({ _key, ...rest }) => rest)
-    await onSave({ name, description, trigger, conditions: cleanConditions, actions: cleanActions, rooms: selectedRooms })
+    // The "occupancy" trigger is a UI convenience — resolve it to the state
+    // trigger the backend understands (a room's presence sensor going on/off).
+    let outTrigger = trigger
+    if (trigger?.type === 'occupancy') {
+      outTrigger = { type: 'state', entity_id: trigger.entity_id || '', state: trigger.state === 'off' ? 'off' : 'on' }
+      if (trigger.for_minutes) outTrigger.for_minutes = trigger.for_minutes
+    }
+    await onSave({ name, description, trigger: outTrigger, conditions: cleanConditions, actions: cleanActions, rooms: selectedRooms, mode })
     setSaving(false); onClose()
   }
 
@@ -157,7 +167,17 @@ function AutomationWizard({ initial, onSave, onClose }) {
               </button>
             </div>
           )}
-          {step === 4 && <ReviewPanel name={name} description={description} trigger={trigger} conditions={conditions.map(({ _key, ...rest }) => rest)} actions={actions.map(({ _key, ...rest }) => ({ ...rest, _key }))} />}
+          {step === 4 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <ReviewPanel name={name} description={description} trigger={trigger} conditions={conditions.map(({ _key, ...rest }) => rest)} actions={actions.map(({ _key, ...rest }) => ({ ...rest, _key }))} />
+              <div>
+                <Select label={t('automations.mode.label')} options={getRunModes()} value={mode} onChange={e => setMode(e.target.value)} />
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '4px 0 0', lineHeight: 1.4 }} dir="auto">
+                  {t('automations.mode.hint')}
+                </p>
+              </div>
+            </div>
+          )}
         </motion.div>
       </AnimatePresence>
       <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>

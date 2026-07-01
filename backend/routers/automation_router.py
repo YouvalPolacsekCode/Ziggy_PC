@@ -37,6 +37,21 @@ class AutomationBody(BaseModel):
     trigger: Optional[dict] = {}
     actions: Optional[list] = []
     rooms: Optional[list] = []
+    # Declared explicitly so the wizard's condition list and run-mode reach
+    # save_automation() (Pydantic v2 drops undeclared fields on model_dump).
+    # save_automation already reads data["conditions"] / data["mode"].
+    conditions: Optional[list] = []
+    mode: Optional[str] = "single"
+
+
+class OccupancySensorBody(BaseModel):
+    """Create a Ziggy smart presence sensor that fuses motion / presence /
+    door-recently-open into one 'is anyone here' entity. Thin wrapper over the
+    same handler the LLM's create_occupancy_sensor tool routes to."""
+    room: str
+    sensor_entities: Optional[list] = []
+    friendly_name: Optional[str] = None
+    delay_off_seconds: Optional[int] = 30
 
 
 class AutomationToggle(BaseModel):
@@ -474,6 +489,39 @@ async def create_automation_endpoint(body: AutomationBody):
         "source": result.get("source", "ha"),
     }
     return {"ok": True, "automation": automation}
+
+
+@router.post("/api/occupancy-sensors")
+async def create_occupancy_sensor_endpoint(body: OccupancySensorBody):
+    """Spawn a Ziggy smart presence sensor from the Automation Builder UI.
+
+    Routes through the SAME handler as the LLM's create_occupancy_sensor tool
+    so behaviour (auto-naming, delay-off damping, Devices-page surfacing via
+    device_registry) stays identical regardless of entry point.
+    """
+    from core.handlers.automation_handler import handle_create_occupancy_sensor
+    result = await handle_create_occupancy_sensor(body.model_dump(), source="ui_wizard")
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Could not create sensor"))
+    return result
+
+
+@router.delete("/api/smart-sensors/{entry_id}")
+async def delete_smart_sensor_endpoint(entry_id: str):
+    """Remove a Ziggy-created smart (occupancy) sensor from the Devices page.
+
+    The UI carries the opaque HA config_entry id (never shown to the user) but
+    not the room slug, so we delete by entry_id. This both removes the HA config
+    entry AND clears Ziggy's KV record so the sensor doesn't reappear on the
+    Devices page (device_registry._merge_ziggy_smart_sensors rebuilds from KV).
+    """
+    from services.template_sensors import delete_occupancy_sensor_by_entry_id
+    result = await asyncio.to_thread(delete_occupancy_sensor_by_entry_id, entry_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("error", "Could not delete smart sensor"))
+    _bus.emit("automation", _BASIC, "smart_sensor_deleted",
+              entry_id=entry_id, result="ok")
+    return result
 
 
 @router.patch("/api/automations/{automation_id}/rooms")

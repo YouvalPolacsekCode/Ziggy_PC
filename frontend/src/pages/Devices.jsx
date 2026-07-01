@@ -13,7 +13,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity } from '../lib/api'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor } from '../lib/api'
 import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
@@ -946,7 +946,28 @@ function SmartSensorCard({ entity, lang }) {
   const t = useT()
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const menuRef = useRef(null)
+
+  const entryId = entity._ziggyEntryId || null
+  const displayName = entity.display_name || entity.friendly_name || entity.name || entity.entity_id
+
+  const handleDelete = async () => {
+    if (!entryId || deleting) return
+    setDeleting(true)
+    try {
+      await deleteSmartSensor(entryId)
+      setConfirmOpen(false)
+      useUIStore.getState().addToast(t('devices.smartSensor.deleted', { name: displayName }), 'success')
+      // Rebuild devices + entities so the card disappears immediately.
+      await useDeviceStore.getState().fetchAll?.({ force: true })
+    } catch (e) {
+      useUIStore.getState().addToast(t('devices.smartSensor.deleteFailed'), 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   // Live state pill — for occupancy-style binary sensors, "on" == occupied.
   // Anything else (off/unknown/unavailable) treats as "clear" so the pill
@@ -1018,11 +1039,18 @@ function SmartSensorCard({ entity, lang }) {
                   >
                     <Eye size={12} /> {t('devices.smartSensor.viewSources')}
                   </button>
-                  {/* TODO(v1): no per-smart-sensor delete endpoint yet.
-                      Once DELETE /api/automations/bundles/{id} or an
-                      equivalent for template helpers lands, surface a
-                      Delete item here. For now the user removes a smart
-                      sensor by editing the originating bundle. */}
+                  {/* Delete — removes the fused HA template helper AND clears
+                      Ziggy's KV record so it doesn't reappear on reload. Only
+                      offered when we hold the entry_id (older KV records without
+                      one can't be targeted). */}
+                  {entryId && (
+                    <button
+                      onClick={() => { setConfirmOpen(true); setMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-err hover:bg-surface-2 text-start"
+                    >
+                      <Trash2 size={12} /> {t('devices.smartSensor.delete')}
+                    </button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1107,6 +1135,27 @@ function SmartSensorCard({ entity, lang }) {
           )}
         </AnimatePresence>
       </Card>
+
+      {/* Delete confirmation — smart sensors are user-visible automations, so a
+          double-confirm avoids an accidental teardown of a fused room sensor. */}
+      <Modal
+        open={confirmOpen}
+        onClose={() => { if (!deleting) setConfirmOpen(false) }}
+        title={t('devices.smartSensor.deleteTitle')}
+        maxWidth={420}
+      >
+        <p dir="auto" className="text-sm text-ink-2 leading-relaxed mb-4">
+          {t('devices.smartSensor.deleteBody', { name: displayName })}
+        </p>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={deleting}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="danger" onClick={handleDelete} disabled={deleting}>
+            {deleting ? t('common.deleting') : t('devices.smartSensor.delete')}
+          </Button>
+        </div>
+      </Modal>
     </motion.div>
   )
 }
@@ -1922,6 +1971,9 @@ export default function Devices() {
         _ziggySmartSensor: true,
         _ziggySources:     sources,
         _ziggySourceLabels: sourceLabels,
+        // Opaque HA config-entry id — never rendered, only used to target the
+        // DELETE /api/smart-sensors/{entry_id} endpoint.
+        _ziggyEntryId:     d.entry_id || null,
         _roomName:         roomName || liveEntity._roomName || null,
         // Mirror the registry's friendly room slug if present so rendering can
         // capitalize / format it the same as other cards.

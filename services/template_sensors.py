@@ -254,3 +254,44 @@ def delete_occupancy_sensor(room: str) -> dict:
         return {"ok": False, "error": f"HA rejected delete (status {status})"}
     set_local_state(_KV_NAMESPACE, room_slug, None)
     return {"ok": True, "message": f"Removed occupancy sensor for {room}"}
+
+
+def _find_room_slug_for_entry(entry_id: str) -> Optional[str]:
+    """Reverse-lookup the KV room slug whose record holds this HA entry_id."""
+    from services.local_automation_actions import _load_state
+    state = _load_state()
+    rooms = (state.get(_KV_NAMESPACE) or {}) if isinstance(state, dict) else {}
+    for room_slug, meta in rooms.items():
+        if isinstance(meta, dict) and meta.get("entry_id") == entry_id:
+            return room_slug
+    return None
+
+
+def delete_occupancy_sensor_by_entry_id(entry_id: str) -> dict:
+    """Remove a Ziggy-created occupancy sensor by its opaque HA config_entry id.
+
+    This is the entry point the Devices-page Delete action uses — the UI carries
+    the entry_id (never shown to the user) but not the room slug. We:
+      1. delete the HA config entry (removes the entity from HA), and
+      2. clear the KV record so device_registry._merge_ziggy_smart_sensors stops
+         re-surfacing it on the Devices page.
+
+    A missing KV record is not an error — the entry may already be untracked
+    (e.g. deleted in HA directly). We still attempt the HA delete so the caller
+    always converges on "gone". Returns {"ok": bool, "message"/"error": str}.
+    """
+    entry_id = (entry_id or "").strip()
+    if not entry_id:
+        return {"ok": False, "error": "entry_id is required"}
+
+    status = _ha_delete(f"/api/config/config_entries/entry/{entry_id}")
+    # 404 means HA already has no such entry — treat as success (idempotent).
+    if status not in (200, 204, 404):
+        return {"ok": False, "error": f"HA rejected delete (status {status})"}
+
+    room_slug = _find_room_slug_for_entry(entry_id)
+    if room_slug:
+        set_local_state(_KV_NAMESPACE, room_slug, None)
+
+    log_info(f"[template_sensors] deleted occupancy sensor entry={entry_id} room={room_slug or '?'}")
+    return {"ok": True, "message": "Removed smart sensor"}
