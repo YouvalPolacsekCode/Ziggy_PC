@@ -6,15 +6,41 @@ import { t as tStatic } from '../i18n'
 
 export function getTriggerTypes() {
   return [
-    { value: 'time',    label: tStatic('automations.triggerTime') },
-    { value: 'state',   label: tStatic('automations.triggerState') },
-    { value: 'zone',    label: tStatic('automations.triggerZone') },
-    { value: 'sunrise', label: tStatic('automations.triggerSunrise') },
-    { value: 'sunset',  label: tStatic('automations.triggerSunset') },
-    { value: 'webhook', label: tStatic('automations.triggerWebhook') },
+    { value: 'time',         label: tStatic('automations.triggerTime') },
+    // "When a room is occupied / empty" — a friendly wrapper that resolves to
+    // a state trigger on a room's presence sensor (created on the fly if the
+    // room has none). See TriggerEditor's occupancy block.
+    { value: 'occupancy',    label: tStatic('automations.triggerOccupancy') },
+    { value: 'state',        label: tStatic('automations.triggerState') },
+    // Periodic trigger — "every N minutes / hours". Backend: time_pattern.
+    { value: 'time_pattern', label: tStatic('automations.triggerTimePattern') },
+    { value: 'zone',         label: tStatic('automations.triggerZone') },
+    { value: 'sunrise',      label: tStatic('automations.triggerSunrise') },
+    { value: 'sunset',       label: tStatic('automations.triggerSunset') },
+    { value: 'webhook',      label: tStatic('automations.triggerWebhook') },
     // App-driven trigger — automation only runs when the user taps Run.
     // Used by Fake Occupancy and any other "start when I say so" automation.
-    { value: 'manual',  label: tStatic('automations.triggerManual') },
+    { value: 'manual',       label: tStatic('automations.triggerManual') },
+  ]
+}
+
+// Run mode — how Ziggy handles a re-trigger while the automation is still
+// running. Backend field: `mode` (HA automation mode). Ziggy-voice labels.
+export function getRunModes() {
+  return [
+    { value: 'single',   label: tStatic('automations.mode.single') },
+    { value: 'restart',  label: tStatic('automations.mode.restart') },
+    { value: 'queued',   label: tStatic('automations.mode.queued') },
+    { value: 'parallel', label: tStatic('automations.mode.parallel') },
+  ]
+}
+
+// Units offered for the "every N …" periodic trigger.
+export function getTimePatternUnits() {
+  return [
+    { value: 'minutes', label: tStatic('automations.editor.unitMinutes') },
+    { value: 'hours',   label: tStatic('automations.editor.unitHours') },
+    { value: 'seconds', label: tStatic('automations.editor.unitSeconds') },
   ]
 }
 
