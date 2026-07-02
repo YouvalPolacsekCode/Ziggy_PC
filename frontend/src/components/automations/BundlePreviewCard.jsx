@@ -287,6 +287,12 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   const [applyResult, setApplyResult] = useState(null)
   const [topError, setTopError] = useState(null)
   const [undoing, setUndoing] = useState(false)
+  // Per-artifact edits keyed by `${kind}:${idx}`. Each value is a partial
+  // override: { included?: bool, name?: str, timeout?: int }. Absent → the
+  // artifact ships as designed. This backs the per-artifact edit controls
+  // (rename / change timeout / toggle include) so the user can accept a
+  // subset ("2 of these 3") or tweak names without re-prompting.
+  const [edits, setEdits] = useState({})
   // Cooldown ref: card just appeared in the chat after the user pressed Enter
   // on their message. Browsers can deliver a stray Enter keystroke onto the
   // freshly-rendered Accept button if focus shifted. Ignore Accept calls in
@@ -303,13 +309,72 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   const voices      = artifacts.voice_intents     || []
   const decline     = bundle.decline || null
 
+  // ── Per-artifact edit helpers ──────────────────────────────────────────
+  const editKey = (kind, idx) => `${kind}:${idx}`
+  const getEdit = (kind, idx) => edits[editKey(kind, idx)] || {}
+  const setEdit = (kind, idx, patch) =>
+    setEdits((e) => ({ ...e, [editKey(kind, idx)]: { ...getEdit(kind, idx), ...patch } }))
+  const isIncluded = (kind, idx) => getEdit(kind, idx).included !== false  // default in
+
+  // Editing is only offered in the initial preview — once applying/resolved
+  // the artifacts are (being) created and edits no longer make sense.
+  const editable = status === STATUS.IDLE
+
+  // A trigger carries an editable "timeout" (a for-duration) when it's a state
+  // trigger that already expresses minutes/seconds — e.g. "no motion for 5 min".
+  const triggerTimeoutMinutes = (trigger) => {
+    if (!trigger || trigger.type !== 'state') return null
+    if (typeof trigger.for_minutes === 'number') return trigger.for_minutes
+    if (typeof trigger.for_seconds === 'number') return Math.round(trigger.for_seconds / 60)
+    return null
+  }
+
+  // How many artifacts are currently included (gates the Accept button).
+  const includedCount =
+    occupancy.filter((_, i) => isIncluded('occupancy_sensor', i)).length +
+    modes.filter((_, i) => isIncluded('kv_state', i)).length +
+    automations.filter((_, i) => isIncluded('automation', i)).length +
+    voices.filter((_, i) => isIncluded('voice_intent', i)).length
+
+  // Build the bundle to actually apply: drop excluded artifacts and fold in
+  // rename / timeout overrides. Pure — never mutates the original bundle.
+  const buildEditedBundle = () => {
+    const pick = (arr, kind, apply) =>
+      arr.map((item, i) => ({ item, i }))
+         .filter(({ i }) => isIncluded(kind, i))
+         .map(({ item, i }) => apply(item, getEdit(kind, i)))
+
+    const editedArtifacts = {
+      occupancy_sensors: pick(occupancy, 'occupancy_sensor', (s, e) => ({
+        ...s,
+        ...(e.name ? { friendly_name: e.name } : {}),
+        ...(typeof e.timeout === 'number' ? { delay_off_seconds: e.timeout } : {}),
+      })),
+      kv_state: pick(modes, 'kv_state', (m) => ({ ...m })),
+      automations: pick(automations, 'automation', (a, e) => {
+        const next = { ...a, ...(e.name ? { name: e.name } : {}) }
+        if (typeof e.timeout === 'number' && next.trigger && next.trigger.type === 'state') {
+          next.trigger = { ...next.trigger, for_minutes: e.timeout }
+          // Drop a competing for_seconds so the two can't disagree.
+          delete next.trigger.for_seconds
+        }
+        return next
+      }),
+      voice_intents: pick(voices, 'voice_intent', (v, e) => ({
+        ...v, ...(e.name ? { phrase: e.name } : {}),
+      })),
+    }
+    return { ...bundle, artifacts: editedArtifacts }
+  }
+
   const handleAccept = async () => {
     // Race guard — see mountedAt ref above
     if (performance.now() - mountedAt.current < 400) return
+    if (includedCount === 0) return  // nothing selected — Accept is disabled anyway
     setStatus(STATUS.APPLYING)
     setTopError(null)
     try {
-      const result = await applyAutomationBundle(bundle)
+      const result = await applyAutomationBundle(buildEditedBundle())
       // Backend returns 200 even on partial failure so we render results inline.
       const errors  = result?.errors  || []
       // Keep the full result (carries bundle_id) so Undo can sweep the bundle.
@@ -365,6 +430,55 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
     const key = `automations.proCard.artifactKind.${k}`
     const label = t(key)
     return (label === key) ? k : label
+  }
+
+  // Per-artifact edit strip. Called as a function (NOT rendered as a
+  // <Component>) so its inputs keep focus across keystrokes — a nested
+  // component defined in render would remount on every change.
+  const artifactControls = ({ kind, idx, currentName, showRename,
+                              showTimeout, currentTimeout, timeoutUnitKey }) => {
+    const included = isIncluded(kind, idx)
+    const e = getEdit(kind, idx)
+    const pill = (on) => ({
+      fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999,
+      border: `0.5px solid ${on ? 'color-mix(in srgb, var(--ok) 35%, var(--line))' : 'var(--line)'}`,
+      background: on ? 'color-mix(in srgb, var(--ok) 12%, var(--surface))' : 'var(--bg-2)',
+      color: on ? 'var(--ok)' : 'var(--ink-mute)', cursor: 'pointer',
+    })
+    const field = {
+      fontSize: 11.5, padding: '3px 8px', borderRadius: 8,
+      border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)',
+    }
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+        <button type="button" style={pill(included)}
+                onClick={() => setEdit(kind, idx, { included: !included })}>
+          {included ? `✓ ${t('automations.proCard.included')}` : t('automations.proCard.excluded')}
+        </button>
+        {included && showRename && (
+          <input
+            dir="auto" style={{ ...field, flex: 1, minWidth: 120 }}
+            value={e.name ?? currentName ?? ''}
+            placeholder={t('automations.proCard.renamePh')}
+            onChange={(ev) => setEdit(kind, idx, { name: ev.target.value })}
+          />
+        )}
+        {included && showTimeout && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-mute)' }}>
+            {t('automations.proCard.timeoutLabel')}
+            <input
+              type="number" min="0" style={{ ...field, width: 64 }}
+              value={e.timeout ?? currentTimeout ?? ''}
+              onChange={(ev) => {
+                const v = ev.target.value
+                setEdit(kind, idx, { timeout: v === '' ? undefined : Math.max(0, parseInt(v, 10) || 0) })
+              }}
+            />
+            <span>{t(timeoutUnitKey)}</span>
+          </label>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -503,7 +617,21 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 count={occupancy.length}
               />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {occupancy.map((s, i) => <OccupancyRow key={i} sensor={s} t={t} />)}
+                {occupancy.map((s, i) => {
+                  const e = getEdit('occupancy_sensor', i)
+                  const eff = { ...s, ...(e.name ? { friendly_name: e.name } : {}) }
+                  return (
+                    <div key={i} style={{ opacity: isIncluded('occupancy_sensor', i) ? 1 : 0.45 }}>
+                      <OccupancyRow sensor={eff} t={t} />
+                      {editable && artifactControls({
+                        kind: 'occupancy_sensor', idx: i,
+                        currentName: s.friendly_name || s.room || '',
+                        showRename: true, showTimeout: true,
+                        currentTimeout: 30, timeoutUnitKey: 'automations.proCard.timeoutSec',
+                      })}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -515,7 +643,13 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 count={modes.length}
               />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {modes.map((kv, i) => <ModeRow key={i} kv={kv} />)}
+                {modes.map((kv, i) => (
+                  <div key={i} style={{ opacity: isIncluded('kv_state', i) ? 1 : 0.45 }}>
+                    <ModeRow kv={kv} />
+                    {/* Modes are technical flags — toggle include only, no rename. */}
+                    {editable && artifactControls({ kind: 'kv_state', idx: i, showRename: false, showTimeout: false })}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -527,9 +661,27 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 count={automations.length}
               />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {automations.map((a, i) => (
-                  <AutomationRow key={i} auto={a} lang={lang} t={t} />
-                ))}
+                {automations.map((a, i) => {
+                  const e = getEdit('automation', i)
+                  const baseTimeout = triggerTimeoutMinutes(a.trigger)
+                  const eff = { ...a, ...(e.name ? { name: e.name } : {}) }
+                  if (typeof e.timeout === 'number' && eff.trigger && eff.trigger.type === 'state') {
+                    eff.trigger = { ...eff.trigger, for_minutes: e.timeout }
+                  }
+                  return (
+                    <div key={i} style={{ opacity: isIncluded('automation', i) ? 1 : 0.45 }}>
+                      <AutomationRow auto={eff} lang={lang} t={t} />
+                      {editable && artifactControls({
+                        kind: 'automation', idx: i,
+                        currentName: a.name || '',
+                        showRename: true,
+                        showTimeout: baseTimeout !== null,
+                        currentTimeout: baseTimeout ?? undefined,
+                        timeoutUnitKey: 'automations.proCard.timeoutMin',
+                      })}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -541,7 +693,20 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 count={voices.length}
               />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {voices.map((vi, i) => <VoiceIntentRow key={i} vi={vi} t={t} />)}
+                {voices.map((vi, i) => {
+                  const e = getEdit('voice_intent', i)
+                  const eff = { ...vi, ...(e.name ? { phrase: e.name } : {}) }
+                  return (
+                    <div key={i} style={{ opacity: isIncluded('voice_intent', i) ? 1 : 0.45 }}>
+                      <VoiceIntentRow vi={eff} t={t} />
+                      {editable && artifactControls({
+                        kind: 'voice_intent', idx: i,
+                        currentName: vi.phrase || '',
+                        showRename: true, showTimeout: false,
+                      })}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -632,13 +797,13 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
             <button
               type="button"
               onClick={handleAccept}
-              disabled={applying}
+              disabled={applying || includedCount === 0}
               className="z-btn-primary"
               style={{
                 flex: 1,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                opacity: applying ? 0.85 : 1,
-                cursor: applying ? 'progress' : 'pointer',
+                opacity: (applying || includedCount === 0) ? 0.5 : 1,
+                cursor: applying ? 'progress' : (includedCount === 0 ? 'not-allowed' : 'pointer'),
               }}
             >
               {applying && (
@@ -654,7 +819,13 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
               )}
               {applying
                 ? t('automations.proCard.creating')
-                : t('automations.proCard.accept')}
+                : includedCount === 0
+                  ? t('automations.proCard.accept')
+                  /* Reflect the subset when the user has excluded artifacts, so
+                     "Accept" clearly applies to only what's still selected. */
+                  : includedCount < (occupancy.length + modes.length + automations.length + voices.length)
+                    ? t('automations.proCard.acceptN', { n: includedCount })
+                    : t('automations.proCard.accept')}
             </button>
           </>
         )}

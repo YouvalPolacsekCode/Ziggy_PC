@@ -80,11 +80,17 @@ def execute_bundle(bundle: dict) -> dict:
     for sensor in artifacts.get("occupancy_sensors") or []:
         room = sensor.get("room", "")
         try:
-            result = create_occupancy_sensor(
-                room=room,
-                sensor_entities=sensor.get("sensors", []),
-                friendly_name=sensor.get("friendly_name"),
-            )
+            # delay_off_seconds is optional on the artifact (the per-artifact
+            # edit UI can set it); fall back to create_occupancy_sensor's own
+            # default when absent.
+            create_kwargs = {
+                "room": room,
+                "sensor_entities": sensor.get("sensors", []),
+                "friendly_name": sensor.get("friendly_name"),
+            }
+            if isinstance(sensor.get("delay_off_seconds"), int):
+                create_kwargs["delay_off_seconds"] = sensor["delay_off_seconds"]
+            result = create_occupancy_sensor(**create_kwargs)
             if result.get("ok"):
                 created.append({
                     "kind":      "occupancy_sensor",
