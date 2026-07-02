@@ -15,6 +15,17 @@ Three test modes:
                  verify the scheduled task fires successfully anyway (proves
                  the SYSTEM principal fix survives screen lock). ~4 min.
 
+  --mode signed-out   DESTRUCTIVE. Forces the interactive console user to sign
+                 out, waits 3 min, verifies the SYSTEM task still fires (result
+                 0, LastRunTime after sign-out). Non-damaging but disruptive;
+                 re-login is manual. Needs --confirm-destructive.
+
+  --mode docker-down  DESTRUCTIVE. Stops the Docker engine, confirms /health
+                 goes dark, then ALWAYS restarts it (finally block) and confirms
+                 recovery. Needs --confirm-destructive.
+
+Destructive modes refuse to run without --confirm-destructive.
+
 Requires:
   - SSH access to the mini PC (uses whatever key ssh_config points at)
   - ZIGGY_TOKEN env var (super_admin session token) for the /health poll in
@@ -106,8 +117,8 @@ def _http_get_json(url: str, timeout: float = 15.0) -> dict:
 def check_task_principal(r: Result) -> None:
     """Task must run as NT AUTHORITY\\SYSTEM (ServiceAccount) — survives lock."""
     rc, out, err = _ps(
-        "$t = Get-ScheduledTask -TaskName ZiggyAutoUpdate; "
-        "Write-Output ($t.Principal.UserId + '|' + $t.Principal.LogonType)"
+        '$t = Get-ScheduledTask -TaskName ZiggyAutoUpdate; '
+        'Write-Output "$($t.Principal.UserId)|$($t.Principal.LogonType)"'
     )
     if rc != 0 or not out.strip():
         r.check("Task principal check", False, f"ssh rc={rc} err={err[:80]!r}")
@@ -123,10 +134,12 @@ def check_task_principal(r: Result) -> None:
 
 def check_task_state(r: Result) -> None:
     """Task must be Ready + last result 0 OR 267009 (RUNNING)."""
+    # Use PowerShell string interpolation (`$($x)`) — the earlier `+` chain
+    # tripped up EncodedCommand serialisation on integer→string conversions.
     rc, out, _ = _ps(
-        "$t = Get-ScheduledTask -TaskName ZiggyAutoUpdate; "
-        "$i = Get-ScheduledTaskInfo -TaskName ZiggyAutoUpdate; "
-        "Write-Output ($t.State + '|' + $i.LastTaskResult + '|' + $i.NextRunTime)"
+        '$t = Get-ScheduledTask -TaskName ZiggyAutoUpdate; '
+        '$i = Get-ScheduledTaskInfo -TaskName ZiggyAutoUpdate; '
+        'Write-Output "$($t.State)|$($i.LastTaskResult)|$($i.NextRunTime)"'
     )
     if rc != 0 or not out.strip():
         r.check("Task state check", False, f"ssh rc={rc}")
@@ -265,12 +278,147 @@ def scenario_lock(r: Result, wait_s: int = 180) -> None:
             f"ran_after_lock={ran_after_lock} last_result={last_result}")
 
 
+# ── Adverse scenarios (DESTRUCTIVE — gated behind --confirm-destructive) ─────
+#
+# These deliberately break the mini PC to prove the OTA pipeline survives the
+# failure mode, then restore it. They are HIGHER RISK than quick/probe/lock:
+#   - signed-out: forces the interactive user off the console
+#   - docker-down: stops the Docker engine (Ziggy goes dark until restored)
+# Both refuse to run without --confirm-destructive so a stray invocation can't
+# knock over the user's real home. docker-down guarantees restart via finally.
+
+
+def _require_confirm(r: Result, args, mode: str) -> bool:
+    """Gate destructive modes. Returns True if allowed to proceed."""
+    if getattr(args, "confirm_destructive", False):
+        return True
+    r.check(f"{mode}: refused (safety)", False,
+            "destructive mode needs --confirm-destructive; not run")
+    print(f"  ⚠️  --mode {mode} is destructive (it breaks the live home to test "
+          f"recovery).\n     Re-run with --confirm-destructive to actually execute it.")
+    return False
+
+
+def _wait_health_reachable(timeout_s: int, want_reachable: bool) -> tuple[bool, str]:
+    """Poll /health until reachability matches want_reachable (or timeout).
+    Returns (matched, last_detail)."""
+    deadline = time.time() + timeout_s
+    last = ""
+    while time.time() < deadline:
+        try:
+            data = _http_get_json(f"{CANARY_URL}/health?t={int(time.time())}", timeout=8.0)
+            reachable = bool(data) and "_http_error" not in data and data.get("status") is not None
+            last = f"status={data.get('status')}" if reachable else f"unreachable ({list(data.keys())})"
+            if reachable == want_reachable:
+                return True, last
+        except Exception as e:
+            last = f"exc={e}"
+            if not want_reachable:
+                return True, last
+        time.sleep(10)
+    return False, last
+
+
+def _detect_docker_service() -> str | None:
+    """Find the Docker engine service name on the mini PC (Docker Desktop uses
+    com.docker.service; a plain dockerd install uses 'docker')."""
+    rc, out, _ = _ps(
+        "$s = Get-Service -Name 'com.docker.service','docker' -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.Status -eq 'Running' } | Select-Object -First 1; "
+        "if ($s) { Write-Output $s.Name }"
+    )
+    name = (out or "").strip().splitlines()[-1].strip() if out.strip() else ""
+    return name or None
+
+
+def scenario_docker_down(r: Result, args, down_s: int = 60, restore_timeout_s: int = 300) -> None:
+    """Stop the Docker engine, confirm /health goes dark, then ALWAYS restart it
+    and confirm recovery. Reversible: the restart runs in a finally block so an
+    exception or Ctrl-C can't leave the home offline."""
+    if not _require_confirm(r, args, "docker-down"):
+        return
+    svc = _detect_docker_service()
+    if not svc:
+        r.check("docker-down: locate Docker service", False,
+                "no running com.docker.service/docker found — aborting (nothing stopped)")
+        return
+    print(f"  Docker service = {svc!r}. Stopping it for ~{down_s}s …")
+    stopped = False
+    try:
+        rc, out, err = _ps(f"Stop-Service -Name '{svc}' -Force; Write-Output 'stopped'", timeout=90)
+        stopped = rc == 0 and "stopped" in (out or "")
+        if not stopped:
+            r.check("docker-down: stop engine", False, f"rc={rc} err={err[:80]!r}")
+            return
+        # Health should become unreachable / not-ok while the container is down.
+        matched, detail = _wait_health_reachable(down_s, want_reachable=False)
+        r.check("docker-down: /health reflects outage", matched, detail)
+    finally:
+        if stopped:
+            print("  Restarting Docker engine (guaranteed restore) …")
+            _ps(f"Start-Service -Name '{svc}'", timeout=120)
+            recovered, detail = _wait_health_reachable(restore_timeout_s, want_reachable=True)
+            r.check("docker-down: home recovered after restart", recovered, detail)
+
+
+def scenario_signed_out(r: Result, args, wait_s: int = 180) -> None:
+    """Force the interactive console user to sign out, then verify the SYSTEM
+    scheduled task still fires (LastRunTime advances past sign-out, result 0).
+
+    This is the exact regression the SYSTEM-principal fix guards against. It's
+    non-damaging (the machine keeps running headless; the user simply logs back
+    in later) but disruptive, so it's confirmation-gated. Re-login is manual —
+    the script can't and won't cache the user's password."""
+    if not _require_confirm(r, args, "signed-out"):
+        return
+    # Enumerate active interactive sessions so we log off a real one.
+    rc, out, _ = _ps(
+        "query session 2>$null | Select-String -Pattern 'Active' | ForEach-Object { $_.ToString() }"
+    )
+    if rc != 0 or not (out or "").strip():
+        r.check("signed-out: find active session", False, "no active console session found")
+        return
+    print("  Active sessions:\n    " + "\n    ".join(out.strip().splitlines()))
+    signout_ts = datetime.now(timezone.utc)
+    # `logoff` the active session id (2nd token of the `query session` Active row).
+    _ps(
+        "$row = (query session | Select-String 'Active' | Select-Object -First 1).ToString(); "
+        "$id = ($row -split '\\s+' | Where-Object { $_ -match '^[0-9]+$' } | Select-Object -First 1); "
+        "if ($id) { logoff $id }"
+    )
+    print(f"  Signed out; waiting {wait_s}s for the SYSTEM task to fire while logged off …")
+    time.sleep(wait_s)
+    rc, out, _ = _ps(
+        "$i = Get-ScheduledTaskInfo -TaskName ZiggyAutoUpdate; "
+        "Write-Output ($i.LastRunTime.ToUniversalTime().ToString('o') + '|' + $i.LastTaskResult)"
+    )
+    line = (out or "").strip().splitlines()[-1] if out else ""
+    if "|" not in line:
+        r.check("signed-out: task run", False, f"unexpected output {line!r}")
+        return
+    last_ts, last_result = line.split("|", 1)
+    try:
+        last_dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+    except Exception:
+        r.check("signed-out: task run", False, f"bad timestamp {last_ts!r}")
+        return
+    ran_after = last_dt >= signout_ts
+    result_ok = last_result.strip() == "0"
+    r.check("Task fires successfully while signed out", ran_after and result_ok,
+            f"ran_after_signout={ran_after} last_result={last_result.strip()}")
+    print("  ℹ️  The console is now signed out — log back in on the mini PC when convenient.")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=("quick", "probe", "lock"), default="quick")
+    ap.add_argument("--mode",
+                    choices=("quick", "probe", "lock", "signed-out", "docker-down"),
+                    default="quick")
+    ap.add_argument("--confirm-destructive", action="store_true",
+                    help="required to actually run signed-out / docker-down modes")
     args = ap.parse_args()
 
     r = Result()
@@ -291,6 +439,10 @@ def main() -> int:
                     f"seconds_since={after['seconds_since']}")
     elif args.mode == "lock":
         scenario_lock(r)
+    elif args.mode == "signed-out":
+        scenario_signed_out(r, args)
+    elif args.mode == "docker-down":
+        scenario_docker_down(r, args)
 
     r.print_summary()
     return 0 if not r.failed else 1
