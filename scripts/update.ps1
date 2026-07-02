@@ -60,6 +60,14 @@ $DeployLogsDir    = Join-Path $RepoDir "user_files\deploy-logs"
 # no-op-on-every-cycle bug (dirty tree, network, etc.) looks identical to
 # "task never runs". With it, mtime on heartbeat answers that in one curl.
 $HeartbeatFile    = Join-Path $RepoDir "user_files\update.heartbeat"
+# Task Scheduler heartbeat (JSON). The container can't query Task Scheduler
+# directly, so we snapshot the ZiggyAutoUpdate task's own LastTaskResult /
+# LastRunTime here and drop it where /health.ota can read it. This catches the
+# failure mode the plain heartbeat can't: the task engine reporting a non-zero
+# result (e.g. a launch/permission error) even when a run still managed to
+# write a heartbeat, plus missed-run accrual.
+$TaskHeartbeatFile = Join-Path $RepoDir "user_files\update_task.json"
+$TaskName          = "ZiggyAutoUpdate"
 New-Item -ItemType Directory -Path (Split-Path $DeployLog) -Force | Out-Null
 New-Item -ItemType Directory -Path $DeployLogsDir         -Force | Out-Null
 
@@ -81,6 +89,25 @@ function Write-Heartbeat {
     try { Set-Content -Path $HeartbeatFile -Value $line -Encoding ASCII } catch {}
 }
 Write-Heartbeat "starting"
+
+# Snapshot the scheduled task's own status for /health.ota. Best-effort — a
+# missing ScheduledTasks module, renamed task, or query failure must never
+# abort the update run, so everything is wrapped and failures are silent.
+function Write-TaskHeartbeat {
+    try {
+        $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+        $obj = [ordered]@{
+            written_at            = $Ts
+            task_name             = $TaskName
+            last_task_result      = [int]$info.LastTaskResult
+            last_run_time         = if ($info.LastRunTime) { $info.LastRunTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $null }
+            next_run_time         = if ($info.NextRunTime) { $info.NextRunTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $null }
+            number_of_missed_runs = [int]$info.NumberOfMissedRuns
+        }
+        $obj | ConvertTo-Json -Compress | Set-Content -Path $TaskHeartbeatFile -Encoding ASCII
+    } catch {}
+}
+Write-TaskHeartbeat
 
 # ---------------------------------------------------------------------------
 # Cohort selection

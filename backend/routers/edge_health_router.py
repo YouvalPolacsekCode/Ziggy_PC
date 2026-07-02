@@ -96,6 +96,17 @@ def _last_post_is_fresh(last_post_at: Optional[str], *,
 _OTA_STALE_WARN_S  = 30 * 60
 _OTA_STALE_DOWN_S  = 2 * 60 * 60
 _DEPLOY_LOG_PATH   = "/app/user_files/deploy_log"
+# Task Scheduler heartbeat written by scripts/update.ps1 on every run. The
+# container can't query Windows Task Scheduler, so this JSON is the only view
+# into the ZiggyAutoUpdate task's own LastTaskResult / run cadence.
+_TASK_HEARTBEAT_PATH = "/app/user_files/update_task.json"
+# Task fires every 2 min. If the heartbeat hasn't been rewritten in 15 min the
+# task engine isn't launching the script at all (distinct from "script runs
+# but has nothing to deploy" — deploy_log tracks that separately).
+_TASK_HEARTBEAT_STALE_S = 15 * 60
+# Windows Task Scheduler LastTaskResult sentinels.
+_TASK_RESULT_RUNNING  = 0x00041301  # 267009 — currently running
+_TASK_RESULT_NEVER    = 0x00041303  # 267011 — has not yet run
 
 
 def _ota_snapshot() -> dict:
@@ -185,6 +196,67 @@ def _ota_snapshot() -> dict:
                 "last_verified": None, "status": "unknown"}
 
 
+def _task_scheduler_snapshot() -> dict:
+    """Read the ZiggyAutoUpdate task heartbeat (written by update.ps1).
+
+    Surfaces the Windows scheduled task's own verdict — which the container
+    can't query directly — so /health.ota can distinguish "the task engine
+    is unhappy / not firing" from "the task fires fine but there's nothing to
+    deploy". Never raises. status:
+      ok        — last result success (0) and heartbeat fresh
+      running   — last result = "currently running"
+      never_run — task registered but hasn't run yet
+      failing   — last result non-zero (task engine reported an error)
+      stale     — heartbeat older than the fire cadence allows (not launching)
+      unknown   — no heartbeat file / unreadable
+    """
+    import json
+    import os
+    try:
+        if not os.path.exists(_TASK_HEARTBEAT_PATH):
+            return {"status": "unknown", "last_task_result": None,
+                    "last_run_at": None, "next_run_at": None,
+                    "missed_runs": None, "heartbeat_age_seconds": None}
+        with open(_TASK_HEARTBEAT_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        written_at = data.get("written_at")
+        age = None
+        if written_at:
+            try:
+                dt = datetime.fromisoformat(str(written_at).replace("Z", "+00:00"))
+                age = int((datetime.now(timezone.utc) - dt).total_seconds())
+                if age < 0:  # host clock skew (see Item 7) — treat as fresh
+                    age = 0
+            except Exception:
+                age = None
+
+        last_result = data.get("last_task_result")
+        if age is not None and age >= _TASK_HEARTBEAT_STALE_S:
+            status = "stale"
+        elif last_result == _TASK_RESULT_RUNNING:
+            status = "running"
+        elif last_result == _TASK_RESULT_NEVER:
+            status = "never_run"
+        elif last_result in (0, None):
+            status = "ok"
+        else:
+            status = "failing"
+
+        return {
+            "status":                status,
+            "last_task_result":      last_result,
+            "last_run_at":           data.get("last_run_time"),
+            "next_run_at":           data.get("next_run_time"),
+            "missed_runs":           data.get("number_of_missed_runs"),
+            "heartbeat_age_seconds": age,
+        }
+    except Exception:
+        return {"status": "unknown", "last_task_result": None,
+                "last_run_at": None, "next_run_at": None,
+                "missed_runs": None, "heartbeat_age_seconds": None}
+
+
 async def _build_health_snapshot() -> dict:
     """Read in-memory state from sibling modules. All reads tolerate
     missing modules — local-dev hubs may not have every service running.
@@ -268,14 +340,22 @@ async def _build_health_snapshot() -> dict:
 
     fresh = _last_post_is_fresh(last_post)
     ota = _ota_snapshot()
+    # Fold in the Windows scheduled-task view (LastTaskResult + cadence).
+    ota["task_scheduler"] = _task_scheduler_snapshot()
     # Status escalation rubric: hardest signal wins. coordinator_status=failed
     # and sh_level=down both promote to "down" even when HA WS is technically
     # reachable, because from the user's perspective the home is broken.
     # OTA "silent" (no deploy in 2h) escalates to "down" — a hub that can't
     # accept pushes is dark to operators. "stale" (30m+) → "degraded".
+    task_status = ota["task_scheduler"]["status"]
     if not ha_reachable or sh_level == "down" or coordinator_status == "failed" or ota["status"] == "silent":
         status = "down"
-    elif not fresh or sh_level == "degraded" or coordinator_status == "loading" or ota["status"] == "stale":
+    elif (not fresh or sh_level == "degraded" or coordinator_status == "loading"
+          or ota["status"] == "stale" or task_status in ("failing", "stale")):
+        # A scheduled task reporting a non-zero result, or one that has stopped
+        # firing (heartbeat >15 min old), means OTA is impaired even if the last
+        # deploy_log entry is recent — surface it as degraded before the 2h
+        # "silent" threshold escalates to down.
         status = "degraded"
     else:
         status = "ok"
@@ -318,5 +398,6 @@ async def edge_health() -> dict:
             "coordinator_status":     "unknown",
             "manual_action":          None,
             "ota":                    {"last_deploy_at": None, "seconds_since": None,
-                                       "last_verified": None, "status": "unknown"},
+                                       "last_verified": None, "status": "unknown",
+                                       "task_scheduler": {"status": "unknown"}},
         }
