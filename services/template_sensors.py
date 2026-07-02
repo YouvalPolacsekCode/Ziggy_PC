@@ -72,22 +72,49 @@ def _build_state_template(sensor_entities: list[str]) -> str:
     return "{{ " + " or ".join(clauses) + " }}"
 
 
-def _start_template_flow() -> tuple[Optional[str], Optional[str]]:
+def _start_template_flow(show_advanced: bool = False
+                         ) -> tuple[Optional[str], Optional[str], Optional[dict]]:
     """Open a template config_entry flow, advance past the domain menu, and
-    return (flow_id, error). On success flow_id is set and the next POST
-    submits the binary_sensor form."""
+    return (flow_id, error, form). On success flow_id is set and the next POST
+    submits the binary_sensor form. `form` is the raw binary_sensor step dict
+    HA returned (carries `data_schema`), used to detect which advanced fields —
+    notably delay_off — this HA version actually exposes.
+
+    show_advanced surfaces HA's advanced-options fields (delay_on/delay_off) in
+    the binary_sensor form. HA only includes them when the flow was started with
+    show_advanced_options=True."""
     status, init = _ha_post("/api/config/config_entries/flow",
-                            {"handler": "template", "show_advanced_options": False})
+                            {"handler": "template", "show_advanced_options": bool(show_advanced)})
     if status != 200 or not isinstance(init, dict):
-        return None, f"could not start template flow (HA {status}): {init}"
+        return None, f"could not start template flow (HA {status}): {init}", None
     flow_id = init.get("flow_id")
     if not flow_id:
-        return None, "HA returned no flow_id"
+        return None, "HA returned no flow_id", None
     status, picked = _ha_post(f"/api/config/config_entries/flow/{flow_id}",
                               {"next_step_id": "binary_sensor"})
     if status != 200 or picked.get("step_id") != "binary_sensor":
-        return None, f"could not advance to binary_sensor step (HA {status}): {picked}"
-    return flow_id, None
+        return None, f"could not advance to binary_sensor step (HA {status}): {picked}", None
+    return flow_id, None, picked
+
+
+def _form_has_field(form: Optional[dict], field: str) -> bool:
+    """True if HA's flow form advertises `field` in its data_schema.
+
+    HA serializes data_schema as a list of {"name": ..., ...} descriptors. We
+    only submit an advanced field (delay_off) when HA actually offers it —
+    submitting an unknown key makes voluptuous reject the whole form."""
+    if not isinstance(form, dict):
+        return False
+    schema = form.get("data_schema")
+    if not isinstance(schema, list):
+        return False
+    return any(isinstance(f, dict) and f.get("name") == field for f in schema)
+
+
+def _abort_flow(flow_id: Optional[str]) -> None:
+    """Abandon a config-entry flow we opened only to inspect (probe path)."""
+    if flow_id:
+        _ha_delete(f"/api/config/config_entries/flow/{flow_id}")
 
 
 def create_occupancy_sensor(
@@ -104,11 +131,12 @@ def create_occupancy_sensor(
       {"ok": True, "entity_id": "binary_sensor.{slug}_occupied", "message": str}
       {"ok": False, "error": str}
 
-    Note: `delay_off_seconds` is currently NOT applied — the modern HA template
-    helper UI doesn't expose delay_off in its basic form. Track as a follow-up;
-    sensors flicker fast in practice (~PIR sampling rate) so for v1 the bare
-    OR template is usable. To add: extend the create POST body once we confirm
-    the UI's "advanced_options" expandable field name.
+    `delay_off_seconds` damps flicker: after all source sensors go quiet, the
+    occupancy sensor waits this long before reporting clear. It maps to HA's
+    template-helper advanced `delay_off` field, which is only present when the
+    flow is opened with show_advanced_options=True. We apply it defensively:
+    if this HA version doesn't advertise the field (or rejects it), we fall
+    back to the bare OR template rather than failing the whole creation.
     """
     if not room or not sensor_entities:
         return {"ok": False, "error": "room and sensor_entities are required"}
@@ -129,16 +157,41 @@ def create_occupancy_sensor(
     if prev_entry_id:
         _ha_delete(f"/api/config/config_entries/entry/{prev_entry_id}")  # best-effort
 
-    flow_id, err = _start_template_flow()
+    want_delay = isinstance(delay_off_seconds, int) and delay_off_seconds > 0
+
+    flow_id, err, form = _start_template_flow(show_advanced=want_delay)
     if err:
         log_error(f"[template_sensors] {err}")
         return {"ok": False, "error": "Could not start template helper flow on HA."}
 
-    status, result = _ha_post(f"/api/config/config_entries/flow/{flow_id}", {
+    base_body = {
         "name":         name,
         "state":        state_template,
         "device_class": "occupancy",
-    })
+    }
+    # Only add delay_off when HA's form actually advertises it — submitting an
+    # unknown key makes voluptuous reject the whole form. HA's DurationSelector
+    # expects a {hours, minutes, seconds} mapping.
+    applied_delay = False
+    body = dict(base_body)
+    if want_delay and _form_has_field(form, "delay_off"):
+        body["delay_off"] = {"hours": 0, "minutes": 0, "seconds": int(delay_off_seconds)}
+        applied_delay = True
+
+    status, result = _ha_post(f"/api/config/config_entries/flow/{flow_id}", body)
+
+    # Defensive fallback: if HA rejected the form AND we'd added delay_off, retry
+    # a fresh flow with the bare body so we never regress the working v1 create.
+    if (status != 200 or result.get("type") != "create_entry") and applied_delay:
+        log_error(f"[template_sensors] create with delay_off rejected (HA {status}); "
+                  f"retrying without it: {result}")
+        flow_id, err, _ = _start_template_flow(show_advanced=False)
+        if err:
+            log_error(f"[template_sensors] retry flow start failed: {err}")
+            return {"ok": False, "error": "Could not start template helper flow on HA."}
+        applied_delay = False
+        status, result = _ha_post(f"/api/config/config_entries/flow/{flow_id}", base_body)
+
     if status != 200 or result.get("type") != "create_entry":
         log_error(f"[template_sensors] create failed: status={status} body={result}")
         return {"ok": False, "error": "HA rejected the occupancy sensor configuration."}
@@ -162,11 +215,43 @@ def create_occupancy_sensor(
         "entity_id": actual_entity_id,
         "name":      name,
         "sensors":   sensor_entities,
+        "delay_off_seconds": int(delay_off_seconds) if applied_delay else None,
     })
 
     msg = f"Created occupancy sensor from {len(sensor_entities)} signal(s)"
-    log_info(f"[template_sensors] {msg} room={room_slug} entry={entry_id} entity={actual_entity_id}")
-    return {"ok": True, "entity_id": actual_entity_id, "entry_id": entry_id, "message": msg}
+    if want_delay and not applied_delay:
+        # Sensor still created — just note the delay couldn't be applied so the
+        # caller/logs make the degradation visible (this HA doesn't expose it).
+        log_info(f"[template_sensors] delay_off not applied (field absent on this HA) room={room_slug}")
+    log_info(f"[template_sensors] {msg} room={room_slug} entry={entry_id} "
+             f"entity={actual_entity_id} delay_off={'yes' if applied_delay else 'no'}")
+    return {"ok": True, "entity_id": actual_entity_id, "entry_id": entry_id,
+            "message": msg, "delay_off_applied": applied_delay}
+
+
+def probe_template_binary_sensor_fields() -> dict:
+    """Diagnostic: open a template binary_sensor flow WITH advanced options and
+    report the field names HA offers — so we can confirm the exact delay_off
+    field shape on a real HA without creating anything.
+
+    Abandons the flow afterward (nothing is created). Returns:
+      {"ok": True, "fields": ["name","state","delay_off",...],
+       "has_delay_off": bool, "schema": <raw data_schema>}
+      {"ok": False, "error": "..."}
+    """
+    flow_id, err, form = _start_template_flow(show_advanced=True)
+    if err:
+        return {"ok": False, "error": err}
+    schema = (form or {}).get("data_schema")
+    fields = [f.get("name") for f in schema if isinstance(f, dict) and f.get("name")] \
+        if isinstance(schema, list) else []
+    _abort_flow(flow_id)
+    return {
+        "ok": True,
+        "fields": fields,
+        "has_delay_off": "delay_off" in fields,
+        "schema": schema,
+    }
 
 
 def _lookup_entry_entity_id(entry_id: str) -> Optional[str]:

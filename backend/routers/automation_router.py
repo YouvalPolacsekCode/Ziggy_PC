@@ -585,6 +585,15 @@ async def delete_smart_sensor_endpoint(entry_id: str):
     return result
 
 
+@router.get("/api/smart-sensors/probe-fields")
+async def probe_smart_sensor_fields_endpoint():
+    """Diagnostic: report which fields HA's template binary_sensor flow exposes
+    with advanced options on — used to confirm the delay_off field shape on a
+    real HA. Creates nothing."""
+    from services.template_sensors import probe_template_binary_sensor_fields
+    return await asyncio.to_thread(probe_template_binary_sensor_fields)
+
+
 @router.post("/api/smart-sensors/reconcile")
 async def reconcile_smart_sensors_endpoint():
     """Prune orphaned smart-sensor KV records (HA helper deleted, KV lingered).
