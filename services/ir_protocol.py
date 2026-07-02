@@ -804,6 +804,28 @@ _TADIRAN_TENTATIVE_FAN_MAP = {
 }
 
 
+def tadiran_checksum(payload: bytes) -> int:
+    """Tadiran frame checksum: sum of all nibbles of bytes 0-6, mod 256.
+
+    Fits all 3 pinned real captures (2026-05-23), including capture 3 where
+    the arikfe formula fails. Nibble-sum checksums are a Gree-family trait,
+    corroborating the Gree-adjacent-sibling conclusion.
+
+    EVIDENCE: three captures, all cool/auto. Treat as tentative until the
+    real-hardware temp/mode/fan walk confirms it across the remote's range.
+    """
+    return sum((b >> 4) + (b & 0x0F) for b in payload[:7]) & 0xFF
+
+
+def tadiran_checksum_ok(payload: bytes) -> Optional[bool]:
+    """True/False for 8-byte frames; None when the checksum position is
+    unknown (payload not exactly 8 bytes — longer decodes and short packets
+    haven't had their checksum position validated)."""
+    if len(payload) != 8:
+        return None
+    return tadiran_checksum(payload) == payload[7]
+
+
 def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
     """
     Extract HVAC state fields from a decoded Tadiran payload.
@@ -847,8 +869,20 @@ def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
       is a sibling-but-not-identical Tadiran sub-model. The decoder makes
       no use of the arikfe checksum at runtime; it's documented here as
       reverse-engineering provenance.
+
+    The checksum this unit ACTUALLY uses (all 3 captures): byte 7 = sum of
+    nibbles of bytes 0-6 — see tadiran_checksum(). 8-byte frames failing it
+    are treated as corrupt RX reads and yield no state (matching unaffected).
     """
     if len(payload) < 8:
+        return None
+
+    # Checksum gate: an 8-byte frame whose byte 7 doesn't match the nibble
+    # sum is a corrupt RX read — refuse to emit state rather than report a
+    # wrong power/temp. Only 8-byte frames are gated; the checksum position
+    # in longer decodes and short packets is unvalidated, so those pass
+    # through unchanged. Matching (payload_hex) is unaffected either way.
+    if tadiran_checksum_ok(payload) is False:
         return None
 
     power = "on" if (payload[2] & 0x02) else "off"
