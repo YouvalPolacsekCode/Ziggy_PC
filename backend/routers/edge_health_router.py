@@ -154,6 +154,15 @@ def _ota_snapshot() -> dict:
         except Exception:
             return {"last_deploy_at": last_ts_str, "seconds_since": None,
                     "last_verified": last_verified, "status": "unknown"}
+        # Clock-skew guard: the mini PC host clock has run ahead of real time
+        # (see scripts/fix-clock-skew.ps1), which stamps deploy_log in the
+        # future relative to the reader — yielding a nonsensical NEGATIVE age.
+        # Surface it honestly (clock_skew_suspected) and clamp to 0 for
+        # classification so a just-deployed hub still reads "ok" rather than
+        # flashing a confusing negative number.
+        clock_skew_suspected = seconds_since < 0
+        if clock_skew_suspected:
+            seconds_since = 0
         # Classify
         if seconds_since >= _OTA_STALE_DOWN_S:
             status = "silent"
@@ -165,10 +174,11 @@ def _ota_snapshot() -> dict:
         if last_verified is False and status == "ok":
             status = "stale"
         return {
-            "last_deploy_at":  last_ts_str,
-            "seconds_since":   seconds_since,
-            "last_verified":   last_verified,
-            "status":          status,
+            "last_deploy_at":       last_ts_str,
+            "seconds_since":        seconds_since,
+            "last_verified":        last_verified,
+            "status":               status,
+            "clock_skew_suspected": clock_skew_suspected,
         }
     except Exception:
         return {"last_deploy_at": None, "seconds_since": None,
