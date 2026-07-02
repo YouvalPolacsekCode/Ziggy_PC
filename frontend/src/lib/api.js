@@ -436,6 +436,11 @@ export const createOccupancySensor = (body) => post('/occupancy-sensors', body)
 // is never shown to the user.
 export const deleteSmartSensor = (entryId) => del(`/smart-sensors/${encodeURIComponent(entryId)}`)
 
+// Prune orphaned smart-sensor KV records (HA helper deleted, KV lingered).
+// Server-side throttled; safe to fire-and-forget on Devices page load. Returns
+// { ok, pruned: [{room, entry_id, entity_id}, ...] }.
+export const reconcileSmartSensors = () => post('/smart-sensors/reconcile')
+
 // Community templates — HA Blueprints bundled with Ziggy + ad-hoc user-imported ones.
 // See services/blueprint_importer.py. Pre-bundled or pasted-only; we never fetch from
 // the internet at runtime. Use cases: a "Templates" library tab, the wizard's

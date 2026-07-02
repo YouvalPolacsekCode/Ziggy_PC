@@ -585,6 +585,22 @@ async def delete_smart_sensor_endpoint(entry_id: str):
     return result
 
 
+@router.post("/api/smart-sensors/reconcile")
+async def reconcile_smart_sensors_endpoint():
+    """Prune orphaned smart-sensor KV records (HA helper deleted, KV lingered).
+
+    Throttled server-side so a Devices page that mounts repeatedly doesn't
+    hammer HA's WS. Returns the pruned list (empty when nothing to do or when
+    throttled). Conservative: prunes nothing if HA is unreachable.
+    """
+    from services.ha_reconciler import maybe_reconcile_occupancy
+    result = await asyncio.to_thread(maybe_reconcile_occupancy)
+    if result.get("pruned"):
+        _bus.emit("automation", _BASIC, "smart_sensor_reconciled",
+                  pruned=len(result["pruned"]), result="ok")
+    return result
+
+
 @router.patch("/api/automations/{automation_id}/rooms")
 async def patch_automation_rooms(automation_id: str, body: AutomationRoomsPatch):
     from services.local_automation_actions import save_automation_meta, get_automation_meta

@@ -13,7 +13,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor } from '../lib/api'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor, reconcileSmartSensors } from '../lib/api'
 import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
@@ -1915,6 +1915,15 @@ export default function Devices() {
   // just to redraw the same list — and even when the cache is stale, the
   // skeleton no longer hides the cached entities while the refresh runs.
   useEffect(() => { fetchAll({ maxAge: 120_000 }) }, [])
+
+  // Fire-and-forget: prune orphaned smart-sensor KV records (HA helper deleted
+  // out from under us) on page load. Server-side throttled to once / 5 min. If
+  // anything was pruned, refresh so the dead card disappears in place.
+  useEffect(() => {
+    reconcileSmartSensors()
+      .then((r) => { if (r?.pruned?.length) fetchAll({ force: true }) })
+      .catch(() => {})
+  }, [])
 
   // Sync filter from URL param (used by Rooms page "Unassigned" card)
   useEffect(() => {

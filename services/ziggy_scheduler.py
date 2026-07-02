@@ -405,6 +405,22 @@ async def run_scheduler() -> None:
         if _tick % 60 == 0:
             await _maybe_poll_ota()
 
+        # ── Hourly: prune orphaned Ziggy KV records vs HA config_entries ─────
+        # Clears smart-sensor KV entries whose HA helper was deleted out from
+        # under us (the `test_bedroom` orphan class). Conservative: prunes
+        # nothing if HA is unreachable. Off-thread — it opens a short-lived HA
+        # WS connection and must not stall the once-per-minute loop.
+        if _tick % 60 == 0:
+            try:
+                from services.ha_reconciler import reconcile_occupancy_sensors
+                result = await asyncio.to_thread(reconcile_occupancy_sensors)
+                if result.get("pruned"):
+                    _dbus.emit("scheduler", BASIC, "occupancy_kv_reconciled",
+                               pruned=len(result["pruned"]),
+                               rooms=[p.get("room") for p in result["pruned"]])
+            except Exception as exc:
+                log_error(f"[Scheduler] Occupancy KV reconcile failed: {exc}")
+
         # ── Every minute: Fake Occupancy scheduler tick ──────────────────────
         # No-op when no activations are registered — safe to call
         # unconditionally. Owns its own lock + persistence; errors are absorbed
