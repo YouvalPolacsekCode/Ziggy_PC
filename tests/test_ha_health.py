@@ -427,3 +427,91 @@ class TestAcknowledgement:
         )
         assert out["primary"]      == ISSUE_HA_UNREACHABLE
         assert out["ack"]["active"] is False
+
+
+# ── Coordinator-scoped dead-device detection (2026-07-02 incident) ──────────
+#
+# Incident: power cut killed the Z2M addon. Mosquitto's persisted retained
+# `zigbee2mqtt/bridge/state = online` survived, no LWT fired (the broker died
+# with Z2M), so the bridge sensor read "on" and coordinator_status said "ok"
+# while every Zigbee device sat in `unknown`. The global offline share
+# (dead-coordinator entities diluted across ALL HA entities) stayed under the
+# 80% threshold, so ISSUE_COORDINATOR_DEVS_GONE never fired and no alert went
+# out. Fix: count dead entities WITHIN the coordinator's own config entry.
+
+class TestCoordinatorScopedDeadDevices:
+    def _coord(self, total, dead):
+        return CoordinatorState(entry_id="ent_mqtt", domain="zigbee2mqtt",
+                                title="Zigbee hub", state="loaded",
+                                devices_total=total, devices_dead=dead)
+
+    def test_all_coordinator_devices_dead_is_devs_gone_despite_low_global_share(
+            self, stub_no_create_task):
+        # Global picture looks calm (0 offline of 95) — exactly the incident.
+        out = ha_health.compute_system_health(
+            ha_connected=True, offline_primary_ids=set(),
+            total_devices=95, coordinator=self._coord(25, 25),
+        )
+        assert out["primary"] == ISSUE_COORDINATOR_DEVS_GONE
+        assert out["level"]   == LEVEL_DOWN
+
+    def test_partial_coordinator_deaths_do_not_trigger(self, stub_no_create_task):
+        out = ha_health.compute_system_health(
+            ha_connected=True, offline_primary_ids=set(),
+            total_devices=95, coordinator=self._coord(25, 10),
+        )
+        assert out["primary"] == ISSUE_OK
+
+    def test_single_device_coordinator_is_exempt(self, stub_no_create_task):
+        # One paired device that's asleep must not page anyone.
+        out = ha_health.compute_system_health(
+            ha_connected=True, offline_primary_ids=set(),
+            total_devices=95, coordinator=self._coord(1, 1),
+        )
+        assert out["primary"] == ISSUE_OK
+
+    def test_defaults_keep_legacy_behavior(self, stub_no_create_task):
+        # CoordinatorState built without the new fields (all existing call
+        # sites) must behave exactly as before.
+        coord = CoordinatorState(entry_id="x", domain="zha",
+                                 title="Zigbee hub", state="loaded")
+        out = ha_health.compute_system_health(
+            ha_connected=True, offline_primary_ids=set(),
+            total_devices=10, coordinator=coord,
+        )
+        assert out["primary"] == ISSUE_OK
+
+
+class TestCountCoordinatorDevices:
+    REGISTRY = [
+        {"entity_id": "sensor.0xaaa_temperature", "config_entry_id": "ent_mqtt"},
+        {"entity_id": "sensor.0xaaa_battery",     "config_entry_id": "ent_mqtt"},
+        {"entity_id": "light.0xbbb",              "config_entry_id": "ent_mqtt"},
+        # Bridge's own entities must not count as devices — they are exactly
+        # the retained-topic liars this check exists to cross-examine.
+        {"entity_id": "binary_sensor.zigbee2mqtt_bridge_connection_state",
+         "config_entry_id": "ent_mqtt"},
+        {"entity_id": "sensor.zigbee2mqtt_bridge_version",
+         "config_entry_id": "ent_mqtt"},
+        # Different integration — out of scope.
+        {"entity_id": "sensor.other_thing", "config_entry_id": "ent_other"},
+    ]
+
+    def test_counts_dead_and_total_within_entry(self):
+        states = {
+            "sensor.0xaaa_temperature": "unknown",
+            "sensor.0xaaa_battery":     "unavailable",
+            "light.0xbbb":              "on",
+            "binary_sensor.zigbee2mqtt_bridge_connection_state": "on",
+            "sensor.zigbee2mqtt_bridge_version": "2.12.0",
+            "sensor.other_thing": "unknown",
+        }
+        total, dead = ha_health._count_coordinator_devices(
+            self.REGISTRY, "ent_mqtt", states.get)
+        assert (total, dead) == (3, 2)
+
+    def test_entities_missing_from_state_cache_are_excluded(self):
+        # Cold subscriber cache must not read as "everything dead".
+        total, dead = ha_health._count_coordinator_devices(
+            self.REGISTRY, "ent_mqtt", lambda eid: None)
+        assert (total, dead) == (0, 0)

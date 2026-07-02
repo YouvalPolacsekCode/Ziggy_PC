@@ -83,6 +83,11 @@ class CoordinatorState:
     title: str              # user-facing label ("Zigbee hub")
     state: str              # "loaded" | "setup_retry" | "setup_error" | ...
     raw_title: str = ""     # the integration's own title (for Settings → Advanced)
+    # Coordinator-scoped device census (2026-07-02 incident). "dead" =
+    # unavailable/unknown. Both default 0 so callers that don't populate
+    # them keep pre-incident behavior. See _count_coordinator_devices().
+    devices_total: int = 0
+    devices_dead: int = 0
 
 
 @dataclass
@@ -137,6 +142,49 @@ def _raw_coord_title(domain: str) -> str:
         "zigbee2mqtt": "Zigbee2MQTT",
         "deconz":      "deCONZ",
     }.get(domain, domain.upper() or "Unknown")
+
+
+# A coordinator with fewer paired devices than this is exempt from the
+# all-devices-dead check — one sleepy battery sensor must not page anyone.
+MIN_COORD_DEVICES_FOR_DEAD_CHECK = 2
+
+
+def _count_coordinator_devices(registry_entities, entry_id, get_state) -> tuple[int, int]:
+    """Census of the coordinator's own entities: (total, dead).
+
+    dead = state is "unavailable" or "unknown". Entities absent from the
+    state lookup are excluded from BOTH counts — a cold subscriber cache
+    would otherwise read as "everything dead" and false-alarm at startup.
+    Bridge self-entities (…zigbee2mqtt_bridge…) are excluded: the bridge
+    connection sensor is backed by a *retained* MQTT topic that survives a
+    broker crash and keeps saying "online" after Z2M dies (no LWT fires when
+    broker and Z2M die together — observed 2026-07-02). It is exactly the
+    witness this census exists to cross-examine, so it doesn't get a vote.
+    """
+    total = dead = 0
+    for ent in registry_entities:
+        if ent.get("config_entry_id") != entry_id:
+            continue
+        eid = ent.get("entity_id") or ""
+        if "bridge" in eid:
+            continue
+        state = get_state(eid)
+        if state is None:
+            continue
+        total += 1
+        if state in ("unavailable", "unknown"):
+            dead += 1
+    return total, dead
+
+
+def _state_from_subscriber_cache(entity_id: str):
+    """Entity state via ha_subscriber's in-memory cache; None if not cached."""
+    try:
+        from services.ha_subscriber import state_cache as _state_cache
+        rec = _state_cache.get(entity_id)
+        return rec.get("state") if rec else None
+    except Exception:
+        return None
 
 
 async def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | None:
@@ -216,6 +264,8 @@ async def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | 
                 else "not_loaded" if bridge_state == "off"
                 else "unknown"
             )
+            devs_total, devs_dead = _count_coordinator_devices(
+                ents, bridge_ent["config_entry_id"], _state_from_subscriber_cache)
             cs = CoordinatorState(
                 entry_id=bridge_ent["config_entry_id"],
                 domain="zigbee2mqtt",
@@ -223,6 +273,8 @@ async def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | 
                 state=coord_state,
                 raw_title=(mqtt_entry.get("title") if mqtt_entry else None)
                            or _raw_coord_title("zigbee2mqtt"),
+                devices_total=devs_total,
+                devices_dead=devs_dead,
             )
             _coord_cache    = cs
             _coord_cache_at = now
@@ -231,12 +283,28 @@ async def fetch_coordinator_state(*, force: bool = False) -> CoordinatorState | 
         _coord_cache_at = now
         return None
 
+    # Census of the coordinator's own entities — lets the classifier catch
+    # "integration claims loaded but every one of its devices is dead"
+    # (stale-retained Z2M bridge state, or a ZHA dongle that enumerates but
+    # doesn't talk to the mesh).
+    devs_total = devs_dead = 0
+    try:
+        res3, = await _ws({"type": "config/entity_registry/list"},
+                          timeout=COORDINATOR_QUERY_TIMEOUT_S)
+        reg = res3.get("result") or [] if res3.get("success") else []
+        devs_total, devs_dead = _count_coordinator_devices(
+            reg, best.get("entry_id") or "", _state_from_subscriber_cache)
+    except Exception as e:
+        log_error(f"[Health] coordinator device census failed: {e}")
+
     cs = CoordinatorState(
         entry_id=best.get("entry_id") or "",
         domain=best.get("domain") or "",
         title=_friendly_coord_title(best.get("domain") or ""),
         state=best.get("state") or "unknown",
         raw_title=best.get("title") or _raw_coord_title(best.get("domain") or ""),
+        devices_total=devs_total,
+        devices_dead=devs_dead,
     )
     _coord_cache    = cs
     _coord_cache_at = now
@@ -393,6 +461,17 @@ def _classify(
         return ISSUE_COORDINATOR_FAILED, LEVEL_DOWN
 
     # coordinator.state == "loaded" — fall through to device-level signals.
+
+    # Coordinator-scoped census: every entity belonging to the coordinator's
+    # own config entry is dead while the entry claims "loaded". Catches the
+    # stale-retained-bridge-state case (2026-07-02: Z2M dead after a power
+    # cut, retained MQTT topic still said online, and the global share below
+    # never crossed its threshold because dead Zigbee entities were diluted
+    # across all HA entities).
+    if (coordinator.devices_total >= MIN_COORD_DEVICES_FOR_DEAD_CHECK
+            and coordinator.devices_dead == coordinator.devices_total):
+        return ISSUE_COORDINATOR_DEVS_GONE, LEVEL_DOWN
+
     if total_devices >= MIN_DEVICES_FOR_SHARE and offline_share >= ERROR_OFFLINE_SHARE:
         # Integration says loaded but ≥80% of devices vanished — looks like a
         # dongle that's still presenting to HA but no longer talking to the
