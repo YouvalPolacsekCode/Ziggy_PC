@@ -10,63 +10,119 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FLEET_YML="${REPO_DIR}/scripts/fleet.yml"
 
 VERBOSE=0
-for arg in "$@"; do
-  case "$arg" in
-    -v|--verbose) VERBOSE=1 ;;
+RELAY_URL="${ZIGGY_RELAY_URL:-}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -v|--verbose) VERBOSE=1; shift ;;
+    --from-relay)
+      RELAY_URL="$2"; shift 2 ;;
     -h|--help)
       cat <<'EOF'
-Usage: ./scripts/fleet-status.sh [-v]
+Usage: ./scripts/fleet-status.sh [-v] [--from-relay <RELAY_URL>]
 
-  -v, --verbose   Print raw JSON responses under the table.
-  -h, --help      Show this message.
+  -v, --verbose            Print raw JSON responses under the table.
+  --from-relay <URL>       Fetch the home list from
+                           $URL/api/admin/fleet/homes instead of the
+                           static scripts/fleet.yml file.
+                           Requires $ZIGGY_RELAY_ADMIN_JWT in the
+                           environment. Falls back to the static file
+                           if the request fails.
+
+  ZIGGY_RELAY_URL env var  Default value for --from-relay if unset.
+  -h, --help               Show this message.
 EOF
       exit 0
       ;;
+    *) shift ;;
   esac
 done
 
-if [[ ! -f "$FLEET_YML" ]]; then
-  echo "ERROR: $FLEET_YML not found."
-  echo "Create it with at least one entry. Example:"
-  echo "  homes:"
-  echo "    - name: home-youval-primary"
-  echo "      url: https://app.ziggy-home.com"
-  exit 2
+NAMES=()
+URLS=()
+SOURCE="fleet.yml"
+
+# ----------------------------------------------------------------------------
+# Source A: relay's DB-backed fleet endpoint (Phase 4). Fetches
+#   [{id, name, type, tunnel_url, status, subscription_state}, ...]
+# from $RELAY_URL/api/admin/fleet/homes. Requires ZIGGY_RELAY_ADMIN_JWT.
+# On any failure, falls through silently and tries fleet.yml.
+# ----------------------------------------------------------------------------
+if [[ -n "$RELAY_URL" ]]; then
+  if [[ -z "${ZIGGY_RELAY_ADMIN_JWT:-}" ]]; then
+    echo "WARN: --from-relay given but ZIGGY_RELAY_ADMIN_JWT not set — falling back to $FLEET_YML" >&2
+  else
+    relay_json="$(curl -fsS --max-time 10 \
+      -H "Authorization: Bearer $ZIGGY_RELAY_ADMIN_JWT" \
+      "${RELAY_URL%/}/api/admin/fleet/homes" 2>/dev/null || true)"
+    if [[ -n "$relay_json" ]]; then
+      # Parse JSON into TSV `name<TAB>url` pairs.
+      while IFS=$'\t' read -r n u; do
+        [[ -z "$n" || -z "$u" ]] && continue
+        NAMES+=("$n"); URLS+=("$u")
+      done < <(python3 - "$relay_json" <<'PY'
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+for h in data.get("homes", []):
+    n = h.get("name") or h.get("id") or ""
+    u = h.get("tunnel_url") or ""
+    if n and u:
+        print(f"{n}\t{u}")
+PY
+      )
+      if [[ "${#NAMES[@]}" -gt 0 ]]; then
+        SOURCE="relay ($RELAY_URL)"
+      fi
+    fi
+    if [[ "${#NAMES[@]}" -eq 0 ]]; then
+      echo "WARN: relay returned no homes — falling back to $FLEET_YML" >&2
+    fi
+  fi
 fi
 
 # ----------------------------------------------------------------------------
-# Parse fleet.yml.
-# Format is intentionally simple: a `homes:` list of `{ name, url }` items.
-# We grep out `name:` and `url:` lines in order and pair them up. This avoids
-# pulling in a YAML dependency on a stock macOS install.
+# Source B (fallback): static fleet.yml. Format is intentionally simple:
+# a `homes:` list of `{ name, url }` items. We grep out `name:` and `url:`
+# lines in order and pair them up (no YAML dep on a stock macOS install).
 # ----------------------------------------------------------------------------
-NAMES=()
-URLS=()
-while IFS= read -r line; do
-  trimmed="${line#"${line%%[![:space:]]*}"}"  # ltrim
-  case "$trimmed" in
-    "- name:"*|"-name:"*)
-      val="${trimmed#*name:}"
-      val="${val#"${val%%[![:space:]]*}"}"
-      NAMES+=("$val")
-      ;;
-    "name:"*)
-      val="${trimmed#name:}"
-      val="${val#"${val%%[![:space:]]*}"}"
-      NAMES+=("$val")
-      ;;
-    "url:"*)
-      val="${trimmed#url:}"
-      val="${val#"${val%%[![:space:]]*}"}"
-      URLS+=("$val")
-      ;;
-  esac
-done < "$FLEET_YML"
+if [[ "${#NAMES[@]}" -eq 0 ]]; then
+  if [[ ! -f "$FLEET_YML" ]]; then
+    echo "ERROR: $FLEET_YML not found and no homes from relay."
+    echo "Create it with at least one entry, or pass --from-relay with a valid ZIGGY_RELAY_ADMIN_JWT."
+    exit 2
+  fi
+  while IFS= read -r line; do
+    trimmed="${line#"${line%%[![:space:]]*}"}"  # ltrim
+    case "$trimmed" in
+      "- name:"*|"-name:"*)
+        val="${trimmed#*name:}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        NAMES+=("$val")
+        ;;
+      "name:"*)
+        val="${trimmed#name:}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        NAMES+=("$val")
+        ;;
+      "url:"*)
+        val="${trimmed#url:}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        URLS+=("$val")
+        ;;
+    esac
+  done < "$FLEET_YML"
 
-if [[ "${#NAMES[@]}" -eq 0 || "${#URLS[@]}" -ne "${#NAMES[@]}" ]]; then
-  echo "ERROR: $FLEET_YML did not parse into a usable list of {name, url} pairs."
-  echo "Found ${#NAMES[@]} name(s) and ${#URLS[@]} url(s)."
-  exit 2
+  if [[ "${#NAMES[@]}" -eq 0 || "${#URLS[@]}" -ne "${#NAMES[@]}" ]]; then
+    echo "ERROR: $FLEET_YML did not parse into a usable list of {name, url} pairs."
+    echo "Found ${#NAMES[@]} name(s) and ${#URLS[@]} url(s)."
+    exit 2
+  fi
+fi
+
+if [[ "$VERBOSE" -eq 1 ]]; then
+  echo "source: $SOURCE" >&2
 fi
 
 # ----------------------------------------------------------------------------

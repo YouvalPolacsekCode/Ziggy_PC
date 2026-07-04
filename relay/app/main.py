@@ -16,6 +16,7 @@ from .routers.mobile_admin import router as mobile_admin_router
 from .routers.support_session import router as support_session_router
 from .routers.auth import router as auth_router, ensure_relay_admin
 from .routers.backup_keys import router as backup_keys_router
+from .routers.fleet import router as fleet_router
 from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
 from .routers.ota import router as ota_router
@@ -79,6 +80,9 @@ app.include_router(support_session_router)
 # Mobile devices admin proxy (Prompt 10 chunk 3). Absolute path
 # /api/admin/homes/{id}/mobile-devices, no prefix, before catch-all proxy.
 app.include_router(mobile_admin_router)
+# Fleet admin (Phase 4 of Oracle->mini-PC). Absolute path /api/admin/fleet/homes,
+# specific route, must mount before the catch-all proxy.
+app.include_router(fleet_router, prefix="/api")
 # Public presence passthrough — must register BEFORE the catch-all proxy so
 # its specific /api/presence/ping route takes precedence.
 app.include_router(public_presence_router)
