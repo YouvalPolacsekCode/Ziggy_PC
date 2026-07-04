@@ -123,6 +123,45 @@ async def test_no_auth_rejected(client):
     assert r.status_code == 401
 
 
+async def test_home_owner_can_poll_status(client, db):
+    """Phase 3: the newly-created owner can poll their own home's status."""
+    r = client.post(
+        "/api/provision/hub",
+        json={"home_name": "Owner Poll House"},
+        headers=_admin_headers(),
+    )
+    assert r.status_code == 200, r.text
+    home_id = r.json()["home_id"]
+
+    # Simulate the JWT the owner would get from /auth/register.
+    owner_jwt = issue_jwt("u-owner", "owner@example.com", "user", home_id)
+    r2 = client.get(
+        f"/api/provision/home/{home_id}/status",
+        headers={"Authorization": f"Bearer {owner_jwt}"},
+    )
+    assert r2.status_code == 200, r2.text
+    data = r2.json()
+    assert data["id"] == home_id
+    assert data["type"] == "hub"
+    assert data["status"] == "awaiting_claim"
+
+
+async def test_wrong_owner_cannot_poll_status(client, db):
+    r = client.post(
+        "/api/provision/hub",
+        json={"home_name": "Other House"},
+        headers=_admin_headers(),
+    )
+    home_id = r.json()["home_id"]
+
+    outsider_jwt = issue_jwt("u-x", "outsider@example.com", "user", "some-other-home")
+    r2 = client.get(
+        f"/api/provision/home/{home_id}/status",
+        headers={"Authorization": f"Bearer {outsider_jwt}"},
+    )
+    assert r2.status_code == 403
+
+
 async def test_cf_failure_marks_home_failed(client, db, monkeypatch):
     async def boom(name):
         raise RuntimeError("Cloudflare API is down")

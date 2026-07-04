@@ -31,6 +31,8 @@ export default function AcceptInvite() {
   const [saving,   setSaving]   = useState(false)
   const [done,     setDone]     = useState(false)
   const [homeUrl,  setHomeUrl]  = useState(null)
+  const [regResult, setRegResult] = useState(null)  // { token, home_id } from register response
+  const [provStatus, setProvStatus] = useState(null)  // { type, status, tunnel_url } from status poll
 
   useEffect(() => {
     const fetchInvite = relayBase
@@ -43,6 +45,35 @@ export default function AcceptInvite() {
       .catch(e  => setError(e.message || t('invite.notFound')))
       .finally(() => setLoading(false))
   }, [token, relayBase])
+
+  // Poll the home's provisioning status after a successful home-invite acceptance.
+  // Stops when status is 'active' (tunnel_url ready) or starts with 'failed'.
+  useEffect(() => {
+    if (!done || !relayBase || !regResult?.home_id || !regResult?.token) return
+    let cancelled = false
+    let handle
+    const poll = async () => {
+      try {
+        const r = await fetch(`${relayBase}/api/provision/home/${regResult.home_id}/status`, {
+          headers: { Authorization: `Bearer ${regResult.token}` },
+        })
+        if (!r.ok || cancelled) return
+        const data = await r.json()
+        if (cancelled) return
+        setProvStatus(data)
+        if (data.status === 'active' && data.tunnel_url) {
+          setHomeUrl(data.tunnel_url)
+          return
+        }
+        if (String(data.status || '').startsWith('failed')) return
+        handle = setTimeout(poll, 3000)
+      } catch {
+        if (!cancelled) handle = setTimeout(poll, 5000)
+      }
+    }
+    poll()
+    return () => { cancelled = true; if (handle) clearTimeout(handle) }
+  }, [done, relayBase, regResult])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -68,6 +99,10 @@ export default function AcceptInvite() {
             }).then(r => r.ok ? r.json() : null)
             if (homeData?.tunnel_url) setHomeUrl(homeData.tunnel_url)
           } catch { /* tunnel URL optional — home might still be registering */ }
+        }
+        // For home invites: store creds so the effect below can poll status.
+        if (res.invite_type === 'home' && res.home_id && res.token) {
+          setRegResult({ token: res.token, home_id: res.home_id })
         }
         setDone(true)
 
@@ -128,15 +163,55 @@ export default function AcceptInvite() {
 
           {!loading && done && (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              {invite?.type === 'home' ? (
+              {invite?.type === 'home' && homeUrl ? (
+                <>
+                  <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                    {t('invite.welcomeTo', { name: invite?.home_name || 'Ziggy' })}
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 16 }}>
+                    {t('invite.homeReady')}
+                  </p>
+                  <a
+                    href={homeUrl}
+                    style={{
+                      display: 'inline-block',
+                      background: 'var(--accent)', color: '#fff',
+                      padding: '10px 20px', borderRadius: 10,
+                      fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                    }}
+                  >
+                    {t('invite.goToHome')}
+                  </a>
+                </>
+              ) : invite?.type === 'home' && String(provStatus?.status || '').startsWith('failed') ? (
+                <>
+                  <p style={{ fontSize: 28, marginBottom: 12 }}>⚠️</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                    {t('invite.setupFailed')}
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+                    {t('invite.setupFailedHelp')}
+                  </p>
+                </>
+              ) : invite?.type === 'home' ? (
                 <>
                   <p style={{ fontSize: 28, marginBottom: 12 }}>🏠</p>
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                     {t('invite.accountCreated')}
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
-                    {t('invite.newHomeSetup1')}
-                    <br />{t('invite.newHomeSetup2')}
+                    {provStatus?.type === 'hub' ? (
+                      <>
+                        {t('invite.hubShipping1')}
+                        <br />{t('invite.hubShipping2')}
+                      </>
+                    ) : (
+                      <>
+                        {t('invite.newHomeSetup1')}
+                        <br />{t('invite.newHomeSetup2')}
+                      </>
+                    )}
                   </p>
                 </>
               ) : homeUrl ? (

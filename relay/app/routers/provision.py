@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
-from ..auth import require_role, new_id
+from ..auth import require_role, current_user, new_id, ROLE_ORDER
 from ..database import get_db
 from ..provisioner import provision_home, provision_hub, deprovision_home
 
@@ -133,10 +133,20 @@ async def deprovision(home_id: str, bg: BackgroundTasks, request: Request):
 
 @router.get("/home/{home_id}/status")
 async def provision_status(home_id: str, request: Request):
-    require_role("relay_admin")(request)
+    """Poll a home's provisioning status.
+
+    Accepts either relay_admin (for CloudAdmin) or the home's own owner
+    (so AcceptInvite.jsx can poll the status of the home it just created
+    with the JWT it got back from /auth/register).
+    """
+    user = current_user(request)
+    role = user.get("role", "user")
+    if ROLE_ORDER.get(role, 0) < ROLE_ORDER["relay_admin"]:
+        if user.get("home_id") != home_id:
+            raise HTTPException(403, "Insufficient permissions.")
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT id, name, status, tunnel_url FROM homes WHERE id=?", (home_id,)
+            "SELECT id, name, type, status, tunnel_url FROM homes WHERE id=?", (home_id,)
         )
         if not rows:
             raise HTTPException(404, "Home not found.")
