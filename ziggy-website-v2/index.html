@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>זיגי — בית חכם בקופסה</title>
+  <meta name="description" content="קופסה אחת מגיעה הביתה — ובית שלם מתעורר. זיגי, עוזר הבית שמבין עברית.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">זיגי<b>.</b></a>
+  </header>
+
+  <div id="scroll-track">
+    <div id="stage">
+      <!-- Act 1: hero — box on the doorstep, pre-dawn -->
+      <section id="act-hero" class="act">
+        <div class="hero-art"><!-- Task 2: box SVG --></div>
+        <h1>בית חכם. <em>בקופסה.</em></h1>
+        <p class="sub">קופסה אחת מגיעה הביתה — ובית שלם לומד להקשיב לכם. בעברית.</p>
+        <form class="waitlist" novalidate>
+          <input type="email" name="email" placeholder="you@email.com" autocomplete="email" required>
+          <button type="submit">לרשימת ההמתנה</button>
+        </form>
+        <div class="scroll-hint">גללו לפתוח את הקופסה ↓</div>
+      </section>
+
+      <!-- Act 2: the house rises from the box, drawn line by line -->
+      <section id="act-rise" class="act" aria-hidden="true">
+        <div class="rise-art"><!-- Task 3: house SVG --></div>
+      </section>
+
+      <!-- Act 3: door-dive speed streaks -->
+      <section id="act-dive" class="act" aria-hidden="true">
+        <svg id="streaks" viewBox="0 0 1000 600" preserveAspectRatio="none">
+          <line x1="0" y1="90"  x2="1000" y2="80"/>
+          <line x1="0" y1="220" x2="1000" y2="230"/>
+          <line x1="0" y1="360" x2="1000" y2="350"/>
+          <line x1="0" y1="500" x2="1000" y2="510"/>
+        </svg>
+      </section>
+
+      <!-- Act 4: living room — ink plate, photo plate, life layer -->
+      <section id="act-room" class="act" aria-hidden="true">
+        <img id="room-ink"   class="plate" src="img/room-ink.webp"   alt="">
+        <img id="room-photo" class="plate" src="img/room-photo.webp" alt="">
+        <div id="life-layer"><!-- Task 6: SVG life layer + chat bubble --></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="proof-outro">
+    <p>זה רק הפתיח. 🏡</p>
+  </section>
+
+  <script type="module" src="js/flight.js"></script>
+</body>
+</html>

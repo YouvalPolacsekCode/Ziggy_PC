@@ -1,0 +1,54 @@
+/* ---------- fonts ---------- */
+@font-face { font-family: 'Assistant'; src: url('../fonts/assistant-hebrew.woff2') format('woff2'); unicode-range: U+0590-05FF; font-weight: 300 800; font-display: swap; }
+@font-face { font-family: 'Assistant'; src: url('../fonts/assistant-latin.woff2') format('woff2'); unicode-range: U+0000-00FF; font-weight: 300 800; font-display: swap; }
+@font-face { font-family: 'Suez One'; src: url('../fonts/suezone-hebrew.woff2') format('woff2'); unicode-range: U+0590-05FF; font-display: swap; }
+@font-face { font-family: 'Suez One'; src: url('../fonts/suezone-latin.woff2') format('woff2'); unicode-range: U+0000-00FF; font-display: swap; }
+
+/* ---------- paper theme ---------- */
+:root {
+  --paper: #f4ecdc;        /* warm cream, midday */
+  --paper-dawn: #edeef0;   /* cool pale paper, pre-dawn */
+  --ink: #6b4e33;          /* sepia ink */
+  --ink-dawn: #7a8699;     /* grey-blue dawn ink */
+  --amber: #e8940a;        /* Ziggy glow */
+  --cold: #6aa9d8;         /* AC air */
+  --text: #3a2e20;
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--paper-dawn); color: var(--text); font-family: 'Assistant', sans-serif; transition: background 0.4s linear; }
+h1, .brand { font-family: 'Suez One', serif; }
+
+.topbar { position: fixed; top: 0; right: 0; left: 0; z-index: 50; padding: 18px 28px; }
+.brand { font-size: 24px; color: var(--text); text-decoration: none; }
+.brand b { color: var(--amber); }
+
+/* ---------- flight stage ---------- */
+#scroll-track { height: 700vh; position: relative; }
+#stage { position: sticky; top: 0; height: 100vh; overflow: hidden; }
+.act { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px; }
+#act-rise, #act-dive, #act-room { opacity: 0; pointer-events: none; }
+
+h1 { font-size: clamp(34px, 6vw, 64px); }
+h1 em { font-style: normal; color: var(--amber); }
+.sub { font-size: clamp(15px, 2.2vw, 20px); opacity: .8; max-width: 34em; }
+
+.waitlist { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.waitlist input { padding: 12px 18px; border: 1.5px solid var(--ink); border-radius: 999px; background: transparent; font: inherit; min-width: 240px; direction: ltr; text-align: left; }
+.waitlist button { padding: 12px 26px; border: 0; border-radius: 999px; background: var(--amber); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.scroll-hint { font-size: 13px; opacity: .6; position: absolute; bottom: 22px; }
+
+#streaks { position: absolute; inset: 0; width: 100%; height: 100%; }
+#streaks line { stroke: var(--ink); stroke-width: 2; opacity: .7; }
+
+.plate { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#room-photo { opacity: 0; }
+#life-layer { position: absolute; inset: 0; }
+
+.proof-outro { min-height: 40vh; display: flex; align-items: center; justify-content: center; font-size: 22px; background: var(--paper); }
+
+/* ---------- reduced motion: calm stacked reveal ---------- */
+@media (prefers-reduced-motion: reduce) {
+  #scroll-track { height: auto; }
+  #stage { position: static; height: auto; overflow: visible; }
+  .act { position: static; min-height: 70vh; opacity: 1 !important; pointer-events: auto; }
+}
