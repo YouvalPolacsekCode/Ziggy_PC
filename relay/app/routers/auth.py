@@ -117,8 +117,10 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
 
         uid  = new_id()
 
-        # For home invites: create a placeholder home record so it appears in
-        # CloudAdmin immediately. Provisioning (Docker + tunnel) happens separately.
+        # For home invites: create a placeholder hub-type home record so it
+        # appears in CloudAdmin immediately. Cloudflare Tunnel provisioning
+        # happens in the background so the register response isn't blocked
+        # on CF API latency. The frontend polls /provision/home/{id}/status.
         home_id = inv["home_id"]
         if inv["type"] == "home":
             home_id = f"home-{new_id()}"
@@ -126,8 +128,8 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
             await db.execute(
                 """INSERT INTO homes
                    (id, name, type, tunnel_url, status, relay_secret, created_at, owner_email)
-                   VALUES (?,?,?,NULL,'pending_setup','pending_setup',?,?)""",
-                (home_id, home_name, "cloud", now.isoformat(), email),
+                   VALUES (?,?,?,NULL,'provisioning','pending',?,?)""",
+                (home_id, home_name, "hub", now.isoformat(), email),
             )
 
         token = issue_jwt(uid, email, inv["role"], home_id)
@@ -144,17 +146,15 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
         )
         await db.commit()
 
-        # Kick off Fly.io provisioning immediately for home invites.
-        # Password is passed in plaintext here only — it's set as a Fly machine
-        # env var (encrypted at rest) and never stored on the relay.
+        # Kick off Cloudflare Tunnel creation in the background for home
+        # invites. No SSH: the customer's mini PC is bench-provisioned via
+        # scripts/claim-home.ps1 before shipping (Phase 2). The tunnel is
+        # created now so the operator can run claim-home.ps1 as soon as the
+        # invite is accepted.
         if inv["type"] == "home":
-            from ..routers.provision import _provision_background
+            from ..routers.provision import _provision_hub_background
             home_name_for_prov = (inv.get("home_name") or "My Home").strip() or "My Home"
-            bg.add_task(
-                _provision_background,
-                home_id, home_name_for_prov, 0,
-                email, body.password,
-            )
+            bg.add_task(_provision_hub_background, home_id, home_name_for_prov)
 
         return {
             "token":       token,

@@ -131,6 +131,37 @@ async def deprovision(home_id: str, bg: BackgroundTasks, request: Request):
     return {"ok": True, "status": "deprovisioning"}
 
 
+async def _provision_hub_background(home_id: str, home_name: str):
+    """Background task for invite-accepted hub homes (Phase 4.5).
+
+    Register endpoint inserted the DB row synchronously (so the accepter
+    gets a home_id immediately) but the Cloudflare Tunnel call is deferred
+    here so the /auth/register response isn't blocked on CF API latency.
+    The frontend polls /provision/home/{id}/status to detect completion.
+    """
+    try:
+        result = await provision_hub(
+            home_id   = home_id,
+            home_name = home_name,
+            relay_url = RELAY_URL,
+        )
+        async with get_db() as db:
+            await db.execute(
+                """UPDATE homes
+                   SET tunnel_url=?, relay_secret=?, cf_tunnel_id=?, status='awaiting_claim'
+                   WHERE id=?""",
+                (result.tunnel_url, result.relay_secret, result.tunnel_id, home_id),
+            )
+            await db.commit()
+    except Exception as e:
+        async with get_db() as db:
+            await db.execute(
+                "UPDATE homes SET status=? WHERE id=?",
+                (f"failed: {str(e)[:200]}", home_id),
+            )
+            await db.commit()
+
+
 @router.get("/home/{home_id}/status")
 async def provision_status(home_id: str, request: Request):
     """Poll a home's provisioning status.
