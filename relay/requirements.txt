@@ -7,6 +7,11 @@ python-multipart==0.0.12
 python-dotenv==1.0.1
 docker==7.1.0
 passlib[bcrypt]==1.7.4
+# passlib 1.7.4 predates bcrypt 4.x's stricter 72-byte handling; unpinned pip
+# resolves to bcrypt 5.x which breaks passlib's init-time detect_wrap_bug()
+# call. All login attempts against bcrypt-hashed rows return 401 silently
+# because verify_password() catches the ValueError and returns False.
+bcrypt<4.0
 asyncssh==2.17.0
 stripe==11.1.0
 boto3>=1.34.0
