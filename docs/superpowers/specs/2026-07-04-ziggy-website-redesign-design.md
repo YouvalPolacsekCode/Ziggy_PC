@@ -63,9 +63,16 @@ gauges on hero objects.
 **The rule:** everything static is quiet ink; **only what Ziggy touches glows
 and moves** (air flow, gauge needles, lamp halos, annotations).
 
-**Palette (owner picked option ג):** the sketch language never changes; the
-palette rides the day — cold blueprint-blue at dawn/morning, warming to cream/
-sepia as the family returns, moonlight ink at night.
+**Palette — LIGHT MODE (owner revision 2026-07-04, "wife rule"):** the page is
+always light. Warm cream drafting-paper base with sepia-brown hairline ink,
+like an architect's hand drawing. The day-cycle rides on top without darkening
+the page: cool pale paper + grey-blue ink at morning → full warm cream + sepia
+at midday → dusk-amber paper (still light) at evening → at night the darkness
+lives INSIDE the drawings (hatched shading within room frames, drawn moon/
+stars, Ziggy's glows at maximum drama) while the page itself stays paper.
+Reference Higgsfield jobs: 0e0ed5cd (day), adba8e23 (night-on-light).
+This supersedes the earlier dark-base palette (option ג of the style screen);
+the "day paints the drawing" idea survives, re-expressed on a light base.
 
 **Detail hierarchy (anime.js recipe):**
 - Instrument grade: the box, house exterior, each scene's hero object (AC, דוד, vacuum, floodlight)
