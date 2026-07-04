@@ -44,8 +44,15 @@ function init() {
       })
       .add('#act-dive', { opacity: [0, 1, 0], duration: 700 }, '<+=500')
       .add('#streaks line', { x2: [0, 1000], duration: 500, delay: stagger(60) }, '<')
-      // Act 4 arrival is added in Task 6
-      ;
+      // Act 4 "roomArrive": arrive inside — ink room scales in from the dive
+      .add('#act-room', { opacity: [0, 1], scale: [0.55, 1], duration: 1000, ease: 'out(2)' }, '<-=200')
+      // gentle in-room camera drift (the parallax feel on a single plate)
+      .add('#room-ink', { scale: [1.12, 1.02], x: [30, -30], duration: 2400, ease: 'linear' }, '<')
+      // "ziggyActs": gauge + air + bubble spring in
+      .add('#ac-gauge', { opacity: [0, 1], duration: 400 })
+      .add('#ac-gauge-needle', { rotate: [-70, 12], duration: 700, ease: 'outBack(2)', transformOrigin: '875px 145px' }, '<')
+      .add('#ac-air path', { opacity: [0, 1], strokeDashoffset: [0, -80], duration: 1200, delay: stagger(180) }, '<+=200')
+      .add('#bubble-ac', { opacity: [0, 1], y: [24, 0], scale: [0.85, 1], duration: 650, ease: 'outElastic(1, .6)' }, '<+=300');
 
     window.__flightTl = tl;
     console.log('ziggy flight: timeline built, duration =', tl.duration);

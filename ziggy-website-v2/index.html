@@ -103,7 +103,24 @@
       <section id="act-room" class="act" aria-hidden="true">
         <img id="room-ink"   class="plate" src="img/room-ink.webp"   alt="">
         <img id="room-photo" class="plate" src="img/room-photo.webp" alt="">
-        <div id="life-layer"><!-- Task 6: SVG life layer + chat bubble --></div>
+        <div id="life-layer">
+          <svg id="life-svg" viewBox="0 0 1376 768" preserveAspectRatio="xMidYMid slice">
+            <!-- cold air from the AC vent (bottom edge ~y=185, center ~x=710) -->
+            <g id="ac-air">
+              <path d="M 660 185 Q 640 240 655 295 Q 670 350 645 405" />
+              <path d="M 710 185 Q 690 240 705 295 Q 720 350 700 410" />
+              <path d="M 760 185 Q 745 240 760 295 Q 775 350 755 410" />
+            </g>
+            <!-- drawn gauge beside the AC (right of unit, upper wall area) -->
+            <g id="ac-gauge">
+              <circle cx="875" cy="145" r="34" fill="none"/>
+              <path d="M 853 165 A 30 30 0 1 1 897 165" fill="none" stroke-dasharray="1.4 6.6" stroke-width="5" opacity=".6"/>
+              <line id="ac-gauge-needle" x1="875" y1="145" x2="875" y2="121" stroke-width="2.5"/>
+              <text x="875" y="197" text-anchor="middle" font-size="20" font-family="ui-monospace, monospace">24°</text>
+            </g>
+          </svg>
+          <div id="bubble-ac" class="chat-bubble">חלון הסלון פתוח והמזגן עבד — כיביתי 🍃</div>
+        </div>
       </section>
     </div>
   </div>
