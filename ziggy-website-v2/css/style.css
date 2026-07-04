@@ -59,6 +59,8 @@ h1 em { font-style: normal; color: var(--amber); }
 #house-svg { width: 100%; height: auto; }
 #front-door { color: var(--amber); filter: drop-shadow(0 0 6px var(--amber)); }
 
+.form-msg { min-height: 1.4em; font-size: 14px; opacity: .85; }
+
 /* ---------- reduced motion: calm stacked reveal ---------- */
 @media (prefers-reduced-motion: reduce) {
   #scroll-track { height: auto; }
