@@ -68,7 +68,25 @@
 
       <!-- Act 2: the house rises from the box, drawn line by line -->
       <section id="act-rise" class="act" aria-hidden="true">
-        <div class="rise-art"><!-- Task 3: house SVG --></div>
+        <div class="rise-art">
+  <svg id="house-svg" viewBox="0 0 460 340" fill="none">
+    <!-- construction guides -->
+    <line class="hguide" x1="30" y1="300" x2="430" y2="300" stroke="currentColor" stroke-width="1" stroke-dasharray="5 7" opacity=".35"/>
+    <!-- house lines, drawn in order: base → walls → roof → door → windows -->
+    <path class="hline" d="M 90 300 L 370 300" stroke="currentColor" stroke-width="2"/>
+    <path class="hline" d="M 100 300 L 100 170 M 360 300 L 360 170" stroke="currentColor" stroke-width="2"/>
+    <path class="hline" d="M 84 176 L 230 84 L 376 176" stroke="currentColor" stroke-width="2.2"/>
+    <path class="hline" d="M 230 84 L 230 64" stroke="currentColor" stroke-width="1.6"/>
+    <path id="front-door" class="hline" d="M 208 300 L 208 216 Q 208 208 216 208 L 244 208 Q 252 208 252 216 L 252 300" stroke="currentColor" stroke-width="2"/>
+    <circle class="hline" cx="244" cy="258" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+    <path class="hline" d="M 128 210 h 52 v 44 h -52 Z M 154 210 v 44 M 128 232 h 52" stroke="currentColor" stroke-width="1.5"/>
+    <path class="hline" d="M 282 210 h 52 v 44 h -52 Z M 308 210 v 44 M 282 232 h 52" stroke="currentColor" stroke-width="1.5"/>
+    <!-- roof solar boiler (the דוד) -->
+    <path class="hline" d="M 268 128 l 44 26 M 268 122 a 12 8 0 0 1 0 12" stroke="currentColor" stroke-width="1.5"/>
+    <!-- annotations -->
+    <text x="120" y="150" font-size="11" font-family="ui-monospace, monospace" fill="currentColor" opacity="0" class="hnote">בית · דגם 001</text>
+  </svg>
+</div>
       </section>
 
       <!-- Act 3: door-dive speed streaks -->

@@ -54,6 +54,11 @@ h1 em { font-style: normal; color: var(--amber); }
 #lid-l { transform-origin: 160px 156px; }
 #lid-r { transform-origin: 290px 156px; }
 
+/* ---------- house SVG (Task 3) ---------- */
+.rise-art { width: min(560px, 88vw); color: var(--ink-dawn); }
+#house-svg { width: 100%; height: auto; }
+#front-door { color: var(--amber); filter: drop-shadow(0 0 6px var(--amber)); }
+
 /* ---------- reduced motion: calm stacked reveal ---------- */
 @media (prefers-reduced-motion: reduce) {
   #scroll-track { height: auto; }
