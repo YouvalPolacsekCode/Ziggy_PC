@@ -16,7 +16,7 @@ are built.
 
 ## 2. Core concept
 
-**"Smart home in a box" — one continuous flight.**
+**"Smart home in a box" — one continuous flight, from drawing to reality.**
 
 A cardboard box sits on a doorstep before dawn. Scrolling opens the lid; a
 line-drawn house rises out of it and the camera dives through the front door —
@@ -24,6 +24,16 @@ the page's only door-dive. From there the entire page is one uninterrupted
 scroll-driven flight through the home across a full day (morning → night),
 ending with the house folding back into the box, which shows a shipping label
 with an empty address line: the waitlist form.
+
+**The arc (owner decision, final art-direction fork):** the page *starts* as an
+ink drawing and **reality fills in as Ziggy touches each room**. Early scenes
+are sepia ink on paper; each scene Ziggy acts in gains photographic color,
+texture and light (sketch-to-photo morph), until the evening scenes are fully
+photorealistic with Ziggy's drawn ink layer (glows, gauges, annotations, chat
+bubbles) living on top — the "AR look". The morph is the page's magic trick and
+the product story: Ziggy turns a plan in a box into a living home.
+Reference Higgsfield jobs: d4a4a705 (photo + ink AR layer), 288136d5
+(sketch-to-real morph).
 
 The narrative arc the owner chose: the day starts with the family *leaving* —
 the first scenes show the house working alone; the family flows back in through
@@ -102,10 +112,18 @@ the "day paints the drawing" idea survives, re-expressed on a light base.
   `stagger`, `createDrawable` (line drawing), `morphTo`, springs, `createScope`
 - **Hybrid art pipeline (owner-approved after Higgsfield comparison):**
   - Scene "plates" generated with Higgsfield (nano_banana_pro) from a shared
-    base prompt encoding §4; reference jobs 26f59d4a / e8c81cd3
+    base prompt encoding §4. Ink-style refs: 26f59d4a / e8c81cd3 (dark),
+    0e0ed5cd / adba8e23 (light). Photoreal refs: d4a4a705 (AR layer),
+    288136d5 (morph)
+  - Sketch-to-photo morph per the §2 arc: each scene exists as an ink plate
+    and a photoreal plate of the SAME room; the morph is a scroll-driven
+    crossfade/wipe between them (plus in-between variants where needed)
+  - **One master home:** a reference set of photoreal room images generated
+    once and passed as reference media to every scene generation so the home
+    stays visually identical across all scenes (sofa, walls, light, lens)
   - Plates split into parallax layers (generation + background removal)
   - Coded SVG "life layer" on top for everything animated/glowing/interactive
-  - Consistency risk across 9 scenes is acknowledged and tested by the proof scene
+  - Consistency risk across 9 scenes is the top risk; tested by the proof scene
 - RTL-first with existing i18n toggle mechanism (`data-i18n`, localStorage)
 - Waitlist form reuses the existing endpoint/mechanism from current site
 - Interactive moment: text input (+ Web Speech API Hebrew voice where
@@ -125,10 +143,12 @@ the "day paints the drawing" idea survives, re-expressed on a light base.
 
 ## 8. Delivery plan — proof scene first
 
-1. **Proof scene (gate):** the opening beat (hero → box opens → house rises →
-   door dive → arrival in the living room), full production quality: generated
-   plates, SVG life layer, real anime.js motion, typography, RTL. Owner judges
-   side-by-side vs animejs.com
+1. **Proof scene (gate):** the opening beat (hero → box opens → house rises in
+   ink → door dive → arrival in the living room → **the room's first
+   sketch-to-photoreal morph as Ziggy acts**), full production quality:
+   generated plates, SVG life layer, real anime.js motion, typography, RTL.
+   Must also demonstrate master-home consistency (same room, ink + photo).
+   Owner judges side-by-side vs animejs.com
 2. On pass: remaining scenes 1–9, interactive moment, trust block, finale, FAQ
 3. Swap into `ziggy-website/` after owner approval; old site preserved in git
 
