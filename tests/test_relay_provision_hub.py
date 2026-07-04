@@ -43,6 +43,8 @@ async def client(db, monkeypatch):
     monkeypatch.setattr(provmod, "CF_API_TOKEN", "test-token")
     monkeypatch.setattr(provmod, "CF_ACCOUNT_ID", "test-account")
 
+    calls: dict[str, list] = {"set_config": []}
+
     async def fake_create(name):
         return ("test-tunnel-id-1234", "test-tunnel-secret")
 
@@ -52,13 +54,19 @@ async def client(db, monkeypatch):
     async def fake_delete(tunnel_id):
         pass
 
+    async def fake_set_config(tunnel_id, service_url):
+        calls["set_config"].append((tunnel_id, service_url))
+
     monkeypatch.setattr(provmod, "_cf_create_tunnel", fake_create)
     monkeypatch.setattr(provmod, "_cf_get_token", fake_get_token)
     monkeypatch.setattr(provmod, "_cf_delete_tunnel", fake_delete)
+    monkeypatch.setattr(provmod, "_cf_set_tunnel_config", fake_set_config)
 
     app = FastAPI()
     app.include_router(provision_router, prefix="/api")
-    return TestClient(app)
+    client = TestClient(app)
+    client.cf_calls = calls
+    return client
 
 
 def _admin_headers() -> dict:
@@ -96,6 +104,9 @@ async def test_admin_can_provision_hub(client, db):
     assert row["tunnel_url"] == body["tunnel_url"]
     assert row["cf_tunnel_id"] == "test-tunnel-id-1234"
     assert row["owner_email"] == "sarah@example.com"
+
+    # Ingress must be set to localhost:8001 so the tunnel actually reaches Ziggy.
+    assert client.cf_calls["set_config"] == [("test-tunnel-id-1234", "http://localhost:8001")]
 
 
 async def test_non_admin_rejected(client):

@@ -95,6 +95,23 @@ async def _cf_delete_tunnel(tunnel_id: str) -> None:
         )
 
 
+async def _cf_set_tunnel_config(tunnel_id: str, service_url: str) -> None:
+    """Set the tunnel's server-side ingress config (config_src='cloudflare' tunnels)."""
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.put(
+            f"{CF_BASE}/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/configurations",
+            headers={"Authorization": f"Bearer {CF_API_TOKEN}"},
+            json={
+                "config": {
+                    "ingress": [
+                        {"service": service_url},
+                    ]
+                }
+            },
+        )
+        r.raise_for_status()
+
+
 def _cf_tunnel_url(tunnel_id: str) -> str:
     return f"https://{tunnel_id}.cfargotunnel.com"
 
@@ -381,12 +398,17 @@ async def provision_hub(
     tunnel_id, _ = await _cf_create_tunnel(f"ziggy-{home_id[:12]}")
     try:
         tunnel_token = await _cf_get_token(tunnel_id)
+        # Point the tunnel at Ziggy on the mini PC. cloudflared runs locally
+        # on the mini PC alongside Ziggy, so localhost:8001 is the ingress
+        # target. Without this call the tunnel exists but returns CF's default
+        # 404 for every request.
+        await _cf_set_tunnel_config(tunnel_id, "http://localhost:8001")
     except Exception as e:
         try:
             await _cf_delete_tunnel(tunnel_id)
         except Exception:
             pass
-        raise RuntimeError(f"Cloudflare tunnel token fetch failed: {e}")
+        raise RuntimeError(f"Cloudflare tunnel setup failed: {e}")
     return HubProvisionResult(
         home_id      = home_id,
         home_name    = home_name,
