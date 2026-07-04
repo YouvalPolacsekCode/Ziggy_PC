@@ -46,6 +46,14 @@ h1 em { font-style: normal; color: var(--amber); }
 
 .proof-outro { min-height: 40vh; display: flex; align-items: center; justify-content: center; font-size: 22px; background: var(--paper); }
 
+/* ---------- hero art ---------- */
+.hero-art { width: min(420px, 80vw); color: var(--ink-dawn); }
+#box-svg { width: 100%; height: auto; display: block; }
+.wbar { fill: var(--amber); }
+.glow-amber { fill: var(--amber); filter: drop-shadow(0 0 5px var(--amber)); }
+#lid-l { transform-origin: 160px 156px; }
+#lid-r { transform-origin: 290px 156px; }
+
 /* ---------- reduced motion: calm stacked reveal ---------- */
 @media (prefers-reduced-motion: reduce) {
   #scroll-track { height: auto; }
