@@ -337,3 +337,62 @@ async def deprovision_home(home_id: str, cf_tunnel_id: Optional[str] = None) -> 
             await _cf_delete_tunnel(cf_tunnel_id)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Mini-PC hub provisioning — no SSH, pull-based
+# ---------------------------------------------------------------------------
+#
+# Every customer kit ships with a mini PC that runs the full Ziggy stack
+# locally (Zigbee/Thread radios need to be physically present in the home).
+# The hub flow replaces "SSH into a shared Oracle VM and start containers"
+# with "return a provisioning bundle the mini PC consumes via a claim script"
+# — see scripts/claim-home.ps1 (Phase 2).
+#
+# The mini PC is bench-provisioned before shipping: operator runs the claim
+# script pointing at this endpoint's response, which writes HOME_ID /
+# RELAY_URL / RELAY_SECRET / TUNNEL_URL into the mini PC's .env and installs
+# the cloudflared tunnel token. On first boot in the customer's home it
+# registers via POST /api/homes/register-hub the same way cloud homes do.
+
+@dataclass
+class HubProvisionResult:
+    home_id:      str
+    home_name:    str
+    relay_url:    str
+    relay_secret: str
+    tunnel_id:    str
+    tunnel_url:   str
+    tunnel_token: str
+
+
+async def provision_hub(
+    home_id:   str,
+    home_name: str,
+    relay_url: str,
+) -> HubProvisionResult:
+    """Create Cloudflare Tunnel + relay secret for a mini-PC hub. No SSH."""
+    if not CF_API_TOKEN or not CF_ACCOUNT_ID:
+        raise RuntimeError(
+            "CF_API_TOKEN and CF_ACCOUNT_ID required for Cloudflare Tunnel. "
+            "Get them free at dash.cloudflare.com → My Profile → API Tokens."
+        )
+    relay_secret = secrets.token_hex(32)
+    tunnel_id, _ = await _cf_create_tunnel(f"ziggy-{home_id[:12]}")
+    try:
+        tunnel_token = await _cf_get_token(tunnel_id)
+    except Exception as e:
+        try:
+            await _cf_delete_tunnel(tunnel_id)
+        except Exception:
+            pass
+        raise RuntimeError(f"Cloudflare tunnel token fetch failed: {e}")
+    return HubProvisionResult(
+        home_id      = home_id,
+        home_name    = home_name,
+        relay_url    = relay_url or RELAY_URL,
+        relay_secret = relay_secret,
+        tunnel_id    = tunnel_id,
+        tunnel_url   = _cf_tunnel_url(tunnel_id),
+        tunnel_token = tunnel_token,
+    )
