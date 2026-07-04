@@ -1,5 +1,6 @@
 export function initWaitlist() {
   const form = document.querySelector('.waitlist');
+  if (!form) return;
   const msg = document.createElement('p');
   msg.className = 'form-msg';
   msg.setAttribute('role', 'status');
@@ -7,6 +8,7 @@ export function initWaitlist() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    msg.textContent = '';
     const email = form.email.value.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       msg.textContent = 'כתובת אימייל לא תקינה 🤔';
@@ -32,5 +34,5 @@ async function submitEmail(email) {
     if (list.indexOf(email) === -1) list.push(email);
     localStorage.setItem('ziggy-waitlist', JSON.stringify(list));
   } catch (e) { /* storage unavailable, still show success */ }
-  console.log('waitlist (simulated):', email);
+  console.log('waitlist (simulated):', email); // TODO-launch: remove with real endpoint
 }
