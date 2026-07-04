@@ -54,7 +54,7 @@ function init() {
       .add('#ac-air path', { opacity: [0, 1], strokeDashoffset: [0, -80], duration: 1200, delay: stagger(180) }, '<+=200')
       .add('#bubble-ac', { opacity: [0, 1], y: [24, 0], scale: [0.85, 1], duration: 650, ease: 'outElastic(1, .6)' }, '<+=300')
       // "morph": the room becomes real as Ziggy acts — the page's magic trick
-      .add('#room-photo', { opacity: [0, 1], scale: [1.04, 1], maskPosition: ['100% 0', '0% 0'], duration: 2000, ease: 'inOut(2)' })
+      .add('#room-photo', { opacity: [0, 1], scale: [1.04, 1], maskPosition: ['100% 0', '0% 0'], '-webkit-mask-position': ['100% 0', '0% 0'], duration: 2000, ease: 'inOut(2)' })
       .add('#room-ink',   { opacity: [1, 0], duration: 2000, ease: 'inOut(2)' }, '<')
       // ink life layer PERSISTS over the photo (the AR look) — just re-assert it
       .add('#life-layer', { opacity: [1, 1], duration: 100 }, '<')
