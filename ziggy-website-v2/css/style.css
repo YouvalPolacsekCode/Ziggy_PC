@@ -75,3 +75,11 @@ h1 em { font-style: normal; color: var(--amber); }
   #stage { position: static; height: auto; overflow: visible; }
   .act { position: static; min-height: 70vh; opacity: 1 !important; pointer-events: auto; }
 }
+
+@media (max-width: 640px) {
+  #scroll-track { height: 600vh; }
+  .hero-art { width: 78vw; }
+  .rise-art { width: 92vw; }
+  .chat-bubble { top: 10%; inset-inline-start: 6%; inset-inline-end: 6%; }
+  .waitlist input { min-width: 0; flex: 1; }
+}

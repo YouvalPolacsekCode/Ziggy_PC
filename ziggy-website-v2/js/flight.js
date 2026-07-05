@@ -1,6 +1,7 @@
 import { animate, createTimeline, stagger, onScroll, svg, utils } from 'https://cdn.jsdelivr.net/npm/animejs@4/+esm';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PORTRAIT = matchMedia('(orientation: portrait)').matches;
 
 function init() {
   if (!REDUCED) {
@@ -47,7 +48,9 @@ function init() {
       // Act 4 "roomArrive": arrive inside — ink room scales in from the dive
       .add('#act-room', { opacity: [0, 1], scale: [0.55, 1], duration: 1000, ease: 'out(2)' }, '<-=200')
       // gentle in-room camera drift (the parallax feel on a single plate)
-      .add('#room-ink', { scale: [1.12, 1.02], x: [30, -30], duration: 2400, ease: 'linear' }, '<')
+      .add('#room-ink', PORTRAIT
+        ? { scale: [1.18, 1.05], y: [24, -24], duration: 2400, ease: 'linear' }
+        : { scale: [1.12, 1.02], x: [30, -30], duration: 2400, ease: 'linear' }, '<')
       // "ziggyActs": gauge + air + bubble spring in
       .add('#ac-gauge', { opacity: [0, 1], duration: 400 })
       .add('#ac-gauge-needle', { rotate: [-70, 12], duration: 700, ease: 'outBack(2)', transformOrigin: '875px 145px' }, '<')
