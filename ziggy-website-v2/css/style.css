@@ -63,6 +63,26 @@ h1 em { font-style: normal; color: var(--amber); }
      above the SVG skeleton so the settle cross-fade reads correctly */
   z-index: 1;
 }
+#door-plate {
+  /* inside #act-dive which is position:absolute/inset:0 — plate-fill handles
+     the absolute positioning. object-fit:contain preserves door composition. */
+  z-index: 1;
+}
+#threshold-glow {
+  position: absolute;
+  inset: 0;
+  /* amber radial gradient centred on the door light gap: 37% from left, 45% from top
+     (as measured from door-ink.webp image analysis). Warm amber bloom. */
+  background: radial-gradient(ellipse 55% 65% at 37% 45%,
+    rgba(232, 148, 10, 0.9) 0%,
+    rgba(232, 148, 10, 0.5) 30%,
+    rgba(232, 148, 10, 0.1) 60%,
+    transparent 80%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  mix-blend-mode: screen;
+}
 #room-photo {
   opacity: 0;
   -webkit-mask-image: linear-gradient(105deg, black 60%, transparent 88%);

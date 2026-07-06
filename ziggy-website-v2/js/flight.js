@@ -60,23 +60,40 @@ function init() {
       .add('#house-plate', { opacity: [0, 1], duration: 1800, ease: 'inOut(2)' }, '<+=2800')
       .add('#house-svg', { opacity: [1, 0.15], duration: 1800, ease: 'inOut(2)' }, '<')
       .add('.hnote', { opacity: 0.7, duration: 400 }, '<+=1400')
-      // Act 2 → 3: dive toward the front door. Longer than half a viewport
-      // of scroll so the plunge reads as a plunge, not a cut.
+      // Beat B — house → interior: "through the door"
+      //
+      // Step 1: Slow zoom into #act-rise toward the front door in house-plate.
+      //   scale 1 → 3.4; transform-origin tuned to door position in house-ink.webp
+      //   (49% from left, 65% from top per image analysis). Duration 2400ms.
       .add('#act-rise', {
-        scale: 9, opacity: [1, 0], duration: 1900, ease: 'inQuad',
-        transformOrigin: '50% 71%', // the door's position in the composition
+        scale: 3.4, opacity: [1, 0], duration: 2400, ease: 'inQuad',
+        transformOrigin: '49% 65%',
       })
-      // dive streaks fade in DURING the plunge (negative offset overlaps the
-      // rise-zoom, which fades out near its end) and HOLD — so the stage is
-      // covered before the rise opacity crashes. '<' = end-of-previous here, so
-      // a negative offset is what pulls the dive back over the plunge.
-      .add('#act-dive', { opacity: [0, 1], duration: 700 }, '<-=1100')
-      .add('#streaks line', { x2: [0, 1000], duration: 650, delay: stagger(70) }, '<<')
-      // Act 4 "roomArrive": the room arrives while the streaks still hold —
-      // its opacity snaps in fast, its scale eases from the dive, and it covers
-      // the streaks. Then the streaks fade out behind it.
-      .add('#act-room', { opacity: [0, 1], scale: [0.55, 1], duration: 1100, ease: 'out(2)' }, '<+=150')
-      .add('#act-dive', { opacity: [1, 0], duration: 500 }, '<+=500')
+      // Step 2: #act-dive fades in early — door-plate enters at scale 0.82
+      //   (continues approach) and #threshold-glow blooms as door fills screen.
+      .add('#act-dive', { opacity: [0, 1], duration: 800, ease: 'out(2)' }, '<-=1600')
+      .add('#door-plate', { opacity: [0, 1], scale: [0.82, 1.2], duration: 1600, ease: 'inOut(2)' }, '<<')
+      // Step 3: Threshold glow — amber radial overlay grows to 0.85 opacity as
+      //   door fills the screen, deepening the "light through the gap" feeling.
+      .add('#threshold-glow', { opacity: [0, 0.85], duration: 1200, ease: 'out(2)' }, '<+=400')
+      // Step 4: Pass-through smear — door-plate + glow smear sideways with blur
+      //   over ~700ms; streaks fire simultaneously for speed-trail feel.
+      .add('#door-plate', {
+        scaleX: 2.6, translateX: '-20%', filter: ['blur(0px)', 'blur(18px)'],
+        duration: 700, ease: 'in(3)',
+      }, '<+=800')
+      .add('#threshold-glow', {
+        scaleX: 2.6, opacity: [0.85, 0], duration: 700, ease: 'in(3)',
+      }, '<')
+      .add('#streaks line', { x2: [0, 1000], duration: 650, delay: stagger(70) }, '<')
+      // Step 5: Room resolves FROM the smear — #act-room enters with #room-ink
+      //   starting scaleX 1.5 + blur(12px), settling to scaleX 1 / blur(0) over
+      //   ~900ms. This replaces the previous simple scale-in from 0.55.
+      .add('#act-room', { opacity: [0, 1], duration: 600, ease: 'out(2)' }, '<+=400')
+      .add('#room-ink', {
+        scaleX: [1.5, 1], filter: ['blur(12px)', 'blur(0px)'], duration: 900, ease: 'out(3)',
+      }, '<')
+      .add('#act-dive', { opacity: [1, 0], duration: 500 }, '<+=300')
       // gentle in-room camera drift (the parallax feel on a single plate)
       .add('#room-ink', PORTRAIT
         ? { scale: [1.18, 1.05], y: [24, -24], duration: 2400, ease: 'linear' }
