@@ -55,39 +55,50 @@ function init() {
       .add(svg.createDrawable('#house-svg .hline'), {
         draw: '0 1', duration: 3600, delay: stagger(530), ease: 'inOut(2)',
       }, '<+=200')
-      // house-plate settles in: the sketch fades INTO the finished drawing.
-      // The skeleton STROKES (not the svg container) fade to 0.15 while the
-      // plate fades in — keeps the .hnote annotation crisp above the plate.
+      // house-plate settles in: the sketch fades INTO the finished FULL-BLEED
+      // drawing (the plate's paper becomes the page). The skeleton crossfades
+      // fully OUT — sketch-to-plate geometric registration is impossible, and a
+      // clean handoff beats a misregistered ghost. The body warms to cream in
+      // the same beat so the plate's paper meets no tonal jump.
       .add('#house-plate', { opacity: [0, 1], duration: 1800, ease: 'inOut(2)' }, '<+=2800')
       .add('#house-svg .hline, #house-svg .hguide, #house-svg .vguide',
-           { opacity: 0.15, duration: 1800, ease: 'inOut(2)' }, '<')
+           { opacity: 0, duration: 1800, ease: 'inOut(2)' }, '<')
+      .add('body', { backgroundColor: '#f4ecdc', duration: 1800, ease: 'linear' }, '<')
       .add('.hnote', { opacity: 0.7, duration: 400 }, '<+=1400')
       // Beat B — house → interior: "through the door"
+      // Phases are SEQUENTIAL (no double-exposure): the house zoom fully hands
+      // off to the dive's cream paper before the door resolves, and the streaks
+      // exist only inside the smear window.
       //
-      // Step 1: Slow zoom toward the front door in house-plate. The scale rides
-      //   on .rise-art whose transform-origin (49% 61%, the door) is set in CSS —
-      //   passing transformOrigin through the tween makes anime v4 ANIMATE it
-      //   from the computed px origin with mismatched units, hurling the plate
-      //   off-screen mid-zoom. The act-level opacity fade stays on #act-rise.
-      .add('.rise-art', { scale: 3.4, duration: 2400, ease: 'inQuad' })
-      .add('#act-rise', { opacity: [1, 0], duration: 2400, ease: 'inQuad' }, '<<')
-      // Step 2: #act-dive fades in early — door-plate enters at scale 0.82
-      //   (continues approach) and #threshold-glow blooms as door fills screen.
-      .add('#act-dive', { opacity: [0, 1], duration: 800, ease: 'out(2)' }, '<-=1600')
-      .add('#door-plate', { opacity: [0, 1], scale: [0.82, 1.2], duration: 1600, ease: 'inOut(2)' }, '<<')
+      // Step 1: hnote lifts as the camera dives. The zoom rides #house-plate
+      //   itself (full-bleed) — its transform-origin (the front door, 49% 65%)
+      //   is set in CSS, NOT passed through the tween: anime v4 animates a
+      //   tween-passed transformOrigin from the computed px origin with
+      //   mismatched units, hurling the plate off-screen mid-zoom.
+      .add('.hnote', { opacity: 0, duration: 500, ease: 'out(2)' })
+      .add('#house-plate', { scale: 3.4, duration: 2400, ease: 'inQuad' }, '<<')
+      //   the act fades out over the zoom's last 800ms and reaches 0 BEFORE the
+      //   door plate is meaningfully visible (phase separation).
+      .add('#act-rise', { opacity: [1, 0], duration: 800, ease: 'inQuad' }, '<-=800')
+      // Step 2: #act-dive rises as the house fades — its solid cream backing
+      //   (CSS background) is the connective tissue; the door plate itself
+      //   resolves slowly on top of it (inOut: ~9% opacity when the house hits
+      //   0), entering at scale 0.82 → 1.2 to continue the approach momentum.
+      .add('#act-dive', { opacity: [0, 1], duration: 700, ease: 'out(2)' }, '<-=300')
+      .add('#door-plate', { opacity: [0, 1], scale: [0.82, 1.2], duration: 1400, ease: 'inOut(2)' }, '<<')
       // Step 3: Threshold glow — amber radial overlay grows to 0.85 opacity as
-      //   door fills the screen, deepening the "light through the gap" feeling.
-      .add('#threshold-glow', { opacity: [0, 0.85], duration: 1200, ease: 'out(2)' }, '<+=400')
+      //   the door fills the screen, "light through the gap".
+      .add('#threshold-glow', { opacity: [0, 0.85], duration: 1000, ease: 'inQuad' }, '<-=400')
       // Step 4: Pass-through smear — door-plate + glow smear sideways with blur
-      //   over ~700ms; streaks fire simultaneously for speed-trail feel.
+      //   over ~700ms. Streaks fire ONLY now, with the door at full opacity.
       .add('#door-plate', {
         scaleX: 2.6, translateX: '-20%', filter: ['blur(0px)', 'blur(18px)'],
         duration: 700, ease: 'in(3)',
-      }, '<+=800')
+      })
       .add('#threshold-glow', {
         scaleX: 2.6, opacity: [0.85, 0], duration: 700, ease: 'in(3)',
-      }, '<')
-      .add('#streaks line', { x2: [0, 1000], duration: 650, delay: stagger(70) }, '<')
+      }, '<<')
+      .add('#streaks line', { x2: [0, 1000], duration: 650, delay: stagger(70) }, '<<')
       // Step 5: Room resolves FROM the smear — #act-room enters with #room-ink
       //   starting scaleX 1.5 + blur(12px), settling to scaleX 1 / blur(0) over
       //   ~900ms. This replaces the previous simple scale-in from 0.55.

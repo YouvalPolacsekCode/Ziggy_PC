@@ -68,8 +68,10 @@
 
       <!-- Act 2: the house rises from the box, drawn line by line -->
       <section id="act-rise" class="act" aria-hidden="true">
+        <!-- full-bleed detailed drawing: its paper becomes the page at the settle.
+             First child so the .rise-art skeleton stacks above it during the crossfade. -->
+        <img id="house-plate" class="plate-fill" src="img/house-ink.webp" alt="">
         <div class="rise-art">
-          <img id="house-plate" class="plate-fill" src="img/house-ink.webp" alt="">
           <svg id="house-svg" viewBox="0 0 460 340" fill="none">
             <!-- construction guides -->
             <line class="hguide" x1="30" y1="300" x2="430" y2="300" stroke="currentColor" stroke-width="1" stroke-dasharray="5 7" opacity=".35"/>
