@@ -1,4 +1,4 @@
-import { animate, createTimeline, stagger, onScroll, svg, utils } from 'https://cdn.jsdelivr.net/npm/animejs@4/+esm';
+import { animate, createTimeline, stagger, onScroll, svg } from 'https://cdn.jsdelivr.net/npm/animejs@4/+esm';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PORTRAIT = matchMedia('(orientation: portrait)').matches;

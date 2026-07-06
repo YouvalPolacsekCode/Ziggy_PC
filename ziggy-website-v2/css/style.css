@@ -12,6 +12,7 @@
   --ink-dawn: #7a8699;     /* grey-blue dawn ink */
   --amber: #e8940a;        /* Ziggy glow */
   --cold: #6aa9d8;         /* AC air */
+  /* --text: general copy color — part of the shared palette contract */
   --text: #3a2e20;
 }
 * { box-sizing: border-box; margin: 0; }
@@ -44,7 +45,15 @@ h1 em { font-style: normal; color: var(--amber); }
 #streaks line { stroke: var(--ink); stroke-width: 2; opacity: .7; }
 
 .plate { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-#room-photo { opacity: 0; -webkit-mask-image: linear-gradient(105deg, black 60%, transparent 88%); mask-image: linear-gradient(105deg, black 60%, transparent 88%); -webkit-mask-size: 300% 100%; mask-size: 300% 100%; -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+#room-photo {
+  opacity: 0;
+  -webkit-mask-image: linear-gradient(105deg, black 60%, transparent 88%);
+  mask-image: linear-gradient(105deg, black 60%, transparent 88%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-position: 100% 0;
+  mask-position: 100% 0;
+}
 #life-layer { position: absolute; inset: 0; }
 
 .proof-outro { min-height: 40vh; display: flex; align-items: center; justify-content: center; font-size: 22px; background: var(--paper); }
@@ -74,6 +83,7 @@ h1 em { font-style: normal; color: var(--amber); }
 
 /* ---------- reduced motion: calm stacked reveal ---------- */
 @media (prefers-reduced-motion: reduce) {
+  /* note: #room-photo stays at opacity:0 here on purpose — static fallback shows the ink drawing, not the photo */
   #scroll-track { height: auto; }
   #stage { position: static; height: auto; overflow: visible; }
   .act { position: static; min-height: 70vh; opacity: 1 !important; pointer-events: auto; }
