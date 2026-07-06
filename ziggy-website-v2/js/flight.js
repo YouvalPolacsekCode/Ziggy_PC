@@ -26,27 +26,43 @@ function init() {
     });
 
     tl
-      // Act 1 → 2: lids open, hero copy drifts away, rise act appears
+      // Act 1 → 2: lids open, hero copy drifts up as the whole hero fades, and
+      // the rise act crossfades in underneath. The copy drift is folded into
+      // the same beat as the container fade so nothing lingers on a dead stage.
       .add('#lid-l', { rotate: -120, duration: 700 })
       .add('#lid-r', { rotate: 120, duration: 700 }, '<')
+      // hero content lifts up and fades together (same block) as it leaves
       .add('#act-hero h1, #act-hero .sub, #act-hero .waitlist, #act-hero .scroll-hint',
-           { opacity: 0, y: -40, duration: 500, delay: stagger(60) }, '<+=200')
-      .add('#act-hero', { opacity: 0, duration: 400 })
-      .add('#act-rise', { opacity: 1, duration: 400 }, '<')
-      // Act 2: the house draws itself line by line
+           { y: -40, opacity: 0, duration: 700, delay: stagger(50), ease: 'in(2)' }, '<+=200')
+      // rise fades in as hero leaves.
+      .add('#act-rise', { opacity: [0, 1], duration: 800, ease: 'out(2)' })
+      // hero container fades on a LONG, late ease so it is still partly on
+      // screen while rise ramps up — the overlap kills the blank handoff frame.
+      // (anime's onScroll timeline pins add positions, so duration — not the
+      // position token — is what actually controls the overlap here.)
+      .add('#act-hero', { opacity: [1, 0], duration: 1600, ease: 'inQuad' }, '<-=1500')
+      // Act 2: the house draws itself line by line, on an already-visible stage.
       .add(svg.createDrawable('#house-svg .hline'), {
-        draw: '0 1', duration: 2600, delay: stagger(180), ease: 'inOut(2)',
-      })
+        draw: '0 1', duration: 2400, delay: stagger(220), ease: 'inOut(2)',
+      }, '<+=100')
       .add('.hnote', { opacity: 0.7, duration: 300 })
-      // Act 2 → 3: dive toward the front door
+      // Act 2 → 3: dive toward the front door. Longer than half a viewport
+      // of scroll so the plunge reads as a plunge, not a cut.
       .add('#act-rise', {
-        scale: 9, opacity: [1, 0], duration: 1400, ease: 'in(2)',
-        transformOrigin: '50% 72%', // the door's position in the composition
+        scale: 9, opacity: [1, 0], duration: 1900, ease: 'inQuad',
+        transformOrigin: '50% 71%', // the door's position in the composition
       })
-      .add('#act-dive', { opacity: [0, 1, 0], duration: 700 }, '<+=500')
-      .add('#streaks line', { x2: [0, 1000], duration: 500, delay: stagger(60) }, '<')
-      // Act 4 "roomArrive": arrive inside — ink room scales in from the dive
-      .add('#act-room', { opacity: [0, 1], scale: [0.55, 1], duration: 1000, ease: 'out(2)' }, '<-=200')
+      // dive streaks fade in DURING the plunge (negative offset overlaps the
+      // rise-zoom, which fades out near its end) and HOLD — so the stage is
+      // covered before the rise opacity crashes. '<' = end-of-previous here, so
+      // a negative offset is what pulls the dive back over the plunge.
+      .add('#act-dive', { opacity: [0, 1], duration: 700 }, '<-=1100')
+      .add('#streaks line', { x2: [0, 1000], duration: 650, delay: stagger(70) }, '<<')
+      // Act 4 "roomArrive": the room arrives while the streaks still hold —
+      // its opacity snaps in fast, its scale eases from the dive, and it covers
+      // the streaks. Then the streaks fade out behind it.
+      .add('#act-room', { opacity: [0, 1], scale: [0.55, 1], duration: 1100, ease: 'out(2)' }, '<+=150')
+      .add('#act-dive', { opacity: [1, 0], duration: 500 }, '<+=500')
       // gentle in-room camera drift (the parallax feel on a single plate)
       .add('#room-ink', PORTRAIT
         ? { scale: [1.18, 1.05], y: [24, -24], duration: 2400, ease: 'linear' }

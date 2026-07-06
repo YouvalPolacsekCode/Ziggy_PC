@@ -15,7 +15,10 @@
   --text: #3a2e20;
 }
 * { box-sizing: border-box; margin: 0; }
-body { background: var(--paper-dawn); color: var(--text); font-family: 'Assistant', sans-serif; transition: background 0.4s linear; }
+/* No CSS transition on background: the scroll-synced timeline drives
+   backgroundColor directly, and a 0.4s CSS transition fights that tween
+   (visible stutter on fast scroll). The timeline owns the warm-up. */
+body { background: var(--paper-dawn); color: var(--text); font-family: 'Assistant', sans-serif; }
 h1, .brand { font-family: 'Suez One', serif; }
 
 .topbar { position: fixed; top: 0; right: 0; left: 0; z-index: 50; padding: 18px 28px; }
@@ -62,7 +65,7 @@ h1 em { font-style: normal; color: var(--amber); }
 .form-msg { min-height: 1.4em; font-size: 14px; opacity: .85; }
 
 /* ---------- life layer (Task 6) ---------- */
-#life-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+#life-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #ac-air path { stroke: var(--cold); stroke-width: 4; fill: none; stroke-dasharray: 12 14; filter: drop-shadow(0 0 6px var(--cold)); opacity: 0; }
 #ac-gauge circle, #ac-gauge path, #ac-gauge line { stroke: var(--amber); }
 #ac-gauge { filter: drop-shadow(0 0 6px var(--amber)); opacity: 0; }
