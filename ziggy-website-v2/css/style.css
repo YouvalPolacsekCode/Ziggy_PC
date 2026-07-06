@@ -27,7 +27,7 @@ h1, .brand { font-family: 'Suez One', serif; }
 .brand b { color: var(--amber); }
 
 /* ---------- flight stage ---------- */
-#scroll-track { height: 700vh; position: relative; }
+#scroll-track { height: 1000vh; position: relative; }
 #stage { position: sticky; top: 0; height: 100vh; overflow: hidden; }
 .act { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px; }
 #act-rise, #act-dive, #act-room { opacity: 0; pointer-events: none; }
@@ -45,6 +45,24 @@ h1 em { font-style: normal; color: var(--amber); }
 #streaks line { stroke: var(--ink); stroke-width: 2; opacity: .7; }
 
 .plate { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* plate-fill: positioned images inside .rise-art or .act, same box as SVG,
+   object-fit contain so the composition stays intact. Initially hidden — the
+   timeline animates opacity in at the right moment. */
+.plate-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  pointer-events: none;
+}
+#house-plate {
+  /* sits in .rise-art which is a positioned container — the z-index stacks it
+     above the SVG skeleton so the settle cross-fade reads correctly */
+  z-index: 1;
+}
 #room-photo {
   opacity: 0;
   -webkit-mask-image: linear-gradient(105deg, black 60%, transparent 88%);
@@ -67,7 +85,7 @@ h1 em { font-style: normal; color: var(--amber); }
 #lid-r { transform-origin: 290px 156px; }
 
 /* ---------- house SVG (Task 3) ---------- */
-.rise-art { width: min(560px, 88vw); color: var(--ink-dawn); }
+.rise-art { width: min(560px, 88vw); color: var(--ink-dawn); position: relative; }
 #house-svg { width: 100%; height: auto; }
 #front-door { color: var(--amber); filter: drop-shadow(0 0 6px var(--amber)); }
 
@@ -87,10 +105,13 @@ h1 em { font-style: normal; color: var(--amber); }
   #scroll-track { height: auto; }
   #stage { position: static; height: auto; overflow: visible; }
   .act { position: static; min-height: 70vh; opacity: 1 !important; pointer-events: auto; }
+  /* house-plate must be visible in reduced-motion fallback (it's the story payoff of act-rise).
+     door-plate stays hidden — act-dive is a transitional act, not needed in the static story. */
+  #house-plate { opacity: 1 !important; }
 }
 
 @media (max-width: 640px) {
-  #scroll-track { height: 600vh; }
+  #scroll-track { height: 850vh; }
   .hero-art { width: 78vw; }
   .rise-art { width: 92vw; }
   .chat-bubble { top: 10%; inset-inline-start: 6%; inset-inline-end: 6%; }

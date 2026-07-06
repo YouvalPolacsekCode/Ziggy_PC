@@ -31,21 +31,35 @@ function init() {
       // the same beat as the container fade so nothing lingers on a dead stage.
       .add('#lid-l', { rotate: -120, duration: 700 })
       .add('#lid-r', { rotate: 120, duration: 700 }, '<')
-      // hero content lifts up and fades together (same block) as it leaves
+      // hero content lifts up and fades — duration raised to ~1400ms (was ~700ms)
+      // for a slower, more deliberate departure. Stagger preserved.
       .add('#act-hero h1, #act-hero .sub, #act-hero .waitlist, #act-hero .scroll-hint',
-           { y: -40, opacity: 0, duration: 700, delay: stagger(50), ease: 'in(2)' }, '<+=200')
-      // rise fades in as hero leaves.
-      .add('#act-rise', { opacity: [0, 1], duration: 800, ease: 'out(2)' })
+           { y: -40, opacity: 0, duration: 1400, delay: stagger(50), ease: 'in(2)' }, '<+=200')
+      // rise fades in while hero is still ~40% visible — deepen the overlap.
+      .add('#act-rise', { opacity: [0, 1], duration: 1000, ease: 'out(2)' })
       // hero container fades on a LONG, late ease so it is still partly on
-      // screen while rise ramps up — the overlap kills the blank handoff frame.
-      // (anime's onScroll timeline pins add positions, so duration — not the
-      // position token — is what actually controls the overlap here.)
-      .add('#act-hero', { opacity: [1, 0], duration: 1600, ease: 'inQuad' }, '<-=1500')
-      // Act 2: the house draws itself line by line, on an already-visible stage.
-      .add(svg.createDrawable('#house-svg .hline'), {
-        draw: '0 1', duration: 2400, delay: stagger(220), ease: 'inOut(2)',
+      // screen while rise ramps up — duration raised to 2400ms, offset deepened
+      // to -=2000 to preserve the 40%-visible overlap with the slower hero copy.
+      .add('#act-hero', { opacity: [1, 0], duration: 2400, ease: 'inQuad' }, '<-=2000')
+      // Act 2 construction guides: vertical projections draw in FIRST — the
+      // "box projecting up" feeling before the house itself appears.
+      .add('#house-svg .vguide', {
+        strokeDashoffset: [216, 0], opacity: [0, 0.3], duration: 900, delay: stagger(160), ease: 'out(2)',
       }, '<+=100')
-      .add('.hnote', { opacity: 0.7, duration: 300 })
+      // horizontal guide draws in next
+      .add('#house-svg .hguide', {
+        strokeDashoffset: [400, 0], opacity: [0, 0.35], duration: 700, ease: 'out(2)',
+      }, '<+=200')
+      // Act 2: the house draws itself line by line — stagger raised to ~530ms per
+      // line (6-7 hlines × 530ms = ~3600ms total feel, up from 2400ms).
+      .add(svg.createDrawable('#house-svg .hline'), {
+        draw: '0 1', duration: 3600, delay: stagger(530), ease: 'inOut(2)',
+      }, '<+=200')
+      // house-plate settles in: the sketch fades INTO the finished drawing.
+      // SVG skeleton fades to 0.15 while plate fades in over 1800ms.
+      .add('#house-plate', { opacity: [0, 1], duration: 1800, ease: 'inOut(2)' }, '<+=2800')
+      .add('#house-svg', { opacity: [1, 0.15], duration: 1800, ease: 'inOut(2)' }, '<')
+      .add('.hnote', { opacity: 0.7, duration: 400 }, '<+=1400')
       // Act 2 → 3: dive toward the front door. Longer than half a viewport
       // of scroll so the plunge reads as a plunge, not a cut.
       .add('#act-rise', {
