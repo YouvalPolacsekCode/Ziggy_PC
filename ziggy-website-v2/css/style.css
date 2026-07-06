@@ -105,8 +105,15 @@ h1 em { font-style: normal; color: var(--amber); }
 #lid-r { transform-origin: 290px 156px; }
 
 /* ---------- house SVG (Task 3) ---------- */
-.rise-art { width: min(560px, 88vw); color: var(--ink-dawn); position: relative; }
-#house-svg { width: 100%; height: auto; }
+/* transform-origin = the front door of house-ink.webp (door at 49% x, 65% y of
+   the image; the plate letterboxes inside the fixed-aspect art box → 61% of the
+   box height). Set in CSS, NOT in the tween: anime v4 interpolates an animated
+   transformOrigin from the computed px value with mismatched units, which
+   throws the zoom target off-screen. */
+.rise-art { width: min(560px, 88vw); color: var(--ink-dawn); position: relative; transform-origin: 49% 61%; }
+/* stacked ABOVE #house-plate (z-index 1) so the .hnote annotation stays
+   readable after the skeleton strokes fade to 0.15 during the settle */
+#house-svg { width: 100%; height: auto; position: relative; z-index: 2; }
 #front-door { color: var(--amber); filter: drop-shadow(0 0 6px var(--amber)); }
 
 .form-msg { min-height: 1.4em; font-size: 14px; opacity: .85; }
@@ -128,6 +135,8 @@ h1 em { font-style: normal; color: var(--amber); }
   /* house-plate must be visible in reduced-motion fallback (it's the story payoff of act-rise).
      door-plate stays hidden — act-dive is a transitional act, not needed in the static story. */
   #house-plate { opacity: 1 !important; }
+  /* static fallback shows the SETTLED composition: detailed plate + receded skeleton */
+  #house-svg .hline, #house-svg .hguide, #house-svg .vguide { opacity: .15; }
 }
 
 @media (max-width: 640px) {

@@ -56,19 +56,21 @@ function init() {
         draw: '0 1', duration: 3600, delay: stagger(530), ease: 'inOut(2)',
       }, '<+=200')
       // house-plate settles in: the sketch fades INTO the finished drawing.
-      // SVG skeleton fades to 0.15 while plate fades in over 1800ms.
+      // The skeleton STROKES (not the svg container) fade to 0.15 while the
+      // plate fades in — keeps the .hnote annotation crisp above the plate.
       .add('#house-plate', { opacity: [0, 1], duration: 1800, ease: 'inOut(2)' }, '<+=2800')
-      .add('#house-svg', { opacity: [1, 0.15], duration: 1800, ease: 'inOut(2)' }, '<')
+      .add('#house-svg .hline, #house-svg .hguide, #house-svg .vguide',
+           { opacity: 0.15, duration: 1800, ease: 'inOut(2)' }, '<')
       .add('.hnote', { opacity: 0.7, duration: 400 }, '<+=1400')
       // Beat B — house → interior: "through the door"
       //
-      // Step 1: Slow zoom into #act-rise toward the front door in house-plate.
-      //   scale 1 → 3.4; transform-origin tuned to door position in house-ink.webp
-      //   (49% from left, 65% from top per image analysis). Duration 2400ms.
-      .add('#act-rise', {
-        scale: 3.4, opacity: [1, 0], duration: 2400, ease: 'inQuad',
-        transformOrigin: '49% 65%',
-      })
+      // Step 1: Slow zoom toward the front door in house-plate. The scale rides
+      //   on .rise-art whose transform-origin (49% 61%, the door) is set in CSS —
+      //   passing transformOrigin through the tween makes anime v4 ANIMATE it
+      //   from the computed px origin with mismatched units, hurling the plate
+      //   off-screen mid-zoom. The act-level opacity fade stays on #act-rise.
+      .add('.rise-art', { scale: 3.4, duration: 2400, ease: 'inQuad' })
+      .add('#act-rise', { opacity: [1, 0], duration: 2400, ease: 'inQuad' }, '<<')
       // Step 2: #act-dive fades in early — door-plate enters at scale 0.82
       //   (continues approach) and #threshold-glow blooms as door fills screen.
       .add('#act-dive', { opacity: [0, 1], duration: 800, ease: 'out(2)' }, '<-=1600')
