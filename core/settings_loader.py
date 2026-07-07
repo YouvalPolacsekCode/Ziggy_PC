@@ -99,6 +99,12 @@ def load_settings() -> dict:
     if os.getenv("HA_TOKEN"):
         ha["token"] = os.getenv("HA_TOKEN")
 
+    # MQTT env override (mirrors HA_URL pattern). Needed because a hub's HA VM
+    # DHCP lease can shift and hosts don't have MQTT_URL forwarded any other way.
+    mqtt = data.setdefault("mqtt", {})
+    if os.getenv("MQTT_URL"):
+        mqtt["url"] = os.getenv("MQTT_URL")
+
     oai = data.setdefault("openai", {})
     if os.getenv("OPENAI_API_KEY"):
         oai["api_key"] = os.getenv("OPENAI_API_KEY")

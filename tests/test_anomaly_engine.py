@@ -25,6 +25,29 @@ def _cache(**entity_states):
     return cache
 
 
+# Snapshot at import time so tests can restore anything they monkeypatched
+# on the engine module.
+_ORIG_ZIGGY_LOAD_PERSONS = engine._ziggy_load_persons
+_ORIG_EVALUATE           = engine.evaluate
+
+
+async def _sync_evaluate(*args, **kwargs):
+    """Wrap evaluate() to also await its debounced rule-loop task.
+
+    Production evaluate() schedules _debounced_rule_loop as an asyncio task
+    (0.25 s sleep + rule dispatch) and returns. Tests that `await evaluate()`
+    then assert immediately would race the debounce; this wrapper waits it
+    out so every existing test call site keeps working unchanged.
+    """
+    await _ORIG_EVALUATE(*args, **kwargs)
+    task = engine._eval_pending_task
+    if task is not None:
+        try:
+            await task
+        except Exception:
+            pass
+
+
 def _reset_state():
     engine._snooze.clear()
     engine._last_fired.clear()
@@ -33,6 +56,16 @@ def _reset_state():
     engine._all_away_since   = None
     engine._no_motion_since  = None
     engine._room_empty_since.clear()
+    # Restore anything a previous test overrode on the engine module.
+    engine._ziggy_load_persons = _ORIG_ZIGGY_LOAD_PERSONS
+    # Force the anomaly engine to consider itself enabled regardless of the
+    # dev machine's config/settings.yaml value. evaluate() short-circuits on
+    # _cfg().get("enabled", True) being False, which is a common config on
+    # a dev laptop and would silently mask every rule from ever firing.
+    engine._cfg = lambda: {"enabled": True}
+    # Force evaluate() to run its debounced rule loop inline so tests can
+    # assert on `active` immediately after `await engine.evaluate(...)`.
+    engine.evaluate = _sync_evaluate
 
 
 # ── ANOM-01: all persons away + lights on ────────────────────────────────────
@@ -40,6 +73,11 @@ def _reset_state():
 class TestAnom01:
     def setup_method(self):
         _reset_state()
+        # Isolate from services/presence_engine's on-disk registry, which can
+        # turn "all persons away" into False even when the test cache says
+        # everyone is away. Scoped to ANOM-01 tests only — other rules
+        # (ANOM-04/05) genuinely require non-empty presence sources.
+        engine._ziggy_load_persons = lambda: []
 
     @pytest.mark.asyncio
     async def test_fires_when_all_away_with_lights_on(self):
