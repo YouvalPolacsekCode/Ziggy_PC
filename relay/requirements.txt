@@ -14,6 +14,10 @@ passlib[bcrypt]==1.7.4
 bcrypt<4.0
 # asyncssh removed in Phase 5: Oracle-VM SSH provisioning path is deleted.
 # provisioner.py only hits the Cloudflare API via httpx now.
+# cryptography was a transitive dep of asyncssh but is still directly used
+# by relay/app/routers/backup_keys.py — pin it explicitly so removing
+# asyncssh doesn't take it out.
+cryptography>=41.0.0
 stripe==11.1.0
 boto3>=1.34.0
 
