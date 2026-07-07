@@ -12,7 +12,8 @@ passlib[bcrypt]==1.7.4
 # call. All login attempts against bcrypt-hashed rows return 401 silently
 # because verify_password() catches the ValueError and returns False.
 bcrypt<4.0
-asyncssh==2.17.0
+# asyncssh removed in Phase 5: Oracle-VM SSH provisioning path is deleted.
+# provisioner.py only hits the Cloudflare API via httpx now.
 stripe==11.1.0
 boto3>=1.34.0
 

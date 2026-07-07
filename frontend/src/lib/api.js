@@ -597,7 +597,10 @@ export const relayLogin       = (data)       => fetch(`${relayUrl()}/api/auth/lo
 export const relayListHomes   = ()           => relayRequest('GET', '/api/homes/')
 export const relayGetHome     = (id)         => relayRequest('GET', `/api/homes/${id}`)
 export const relayHealthHome  = (id)         => relayRequest('GET', `/api/homes/${id}/health`)
-export const relayProvision   = (data)       => relayRequest('POST', '/api/provision/home', data)
+// Provision a mini-PC hub (bench-provisioning). Returns the full bundle
+// (home_id, relay_secret, tunnel_url, tunnel_token, ...) that
+// scripts/claim-home.ps1 writes onto the mini PC before shipping.
+export const relayProvisionHub = (data)      => relayRequest('POST', '/api/provision/hub', data)
 export const relayDeprovision = (id)         => relayRequest('DELETE', `/api/provision/home/${id}`)
 export const relayProvStatus  = (id)         => relayRequest('GET', `/api/provision/home/${id}/status`)
 export const relayListInvites = ()           => relayRequest('GET', '/api/invites/')

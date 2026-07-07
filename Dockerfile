@@ -76,20 +76,20 @@ ENV ZIGGY_GIT_SHA=$GIT_SHA
 ARG BUILD_TIME=unknown
 ENV ZIGGY_BUILD_TIME=$BUILD_TIME
 
-# Cloud home env vars (all overridable at runtime)
-ENV CLOUD_MODE=true
+# Hub-mode defaults. Every home is a mini-PC hub post-Phase-5; the Oracle
+# per-home cloud VM path is gone. Docker Compose's ziggy service overrides
+# any of these at runtime as needed.
+ENV CLOUD_MODE=false
 ENV HOME_ID=""
 ENV HOME_NAME="My Home"
-ENV HOME_TYPE=cloud
+ENV HOME_TYPE=hub
 ENV RELAY_URL=""
 ENV RELAY_SECRET=""
 ENV TUNNEL_URL=""
 ENV HA_URL=""
 ENV HA_TOKEN=""
-ENV INITIAL_ADMIN_EMAIL=""
-ENV INITIAL_ADMIN_PASSWORD=""
-# Settings are written to the persistent volume so they survive restarts
-ENV ZIGGY_CONFIG_PATH=/app/user_files/settings.yaml
+# Hub config lives on the host bind-mount at ./config/settings.yaml.
+ENV ZIGGY_CONFIG_PATH=/app/config/settings.yaml
 
 EXPOSE 8001
 

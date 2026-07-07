@@ -12,7 +12,7 @@ import {
   getUsers, updateUser, deleteUser,
   listInvites, createInvite, revokeInvite,
   getHaSettings, getHealth,
-  relayListHomes, relayGetHome, relayProvision, relayDeprovision,
+  relayListHomes, relayGetHome, relayDeprovision,
   relayCreateInvite,
   relayHomeTelemetry,
   relayOtaReleases, relayHomeOtaPin, relaySetHomeOtaPin,

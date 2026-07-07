@@ -109,9 +109,6 @@ async def _startup():
     bus.set_scopes(_saved_scopes)
     _phase("debug bus + log level")
 
-    _bootstrap_cloud_admin()
-    _phase("cloud-admin bootstrap")
-
     _migrate_users_to_db()
     _phase("auth.db migration")
 
@@ -188,30 +185,6 @@ def _migrate_users_to_db():
             )
     except Exception as e:
         log_info(f"[Auth] auth.db migration error: {e}")
-
-
-def _bootstrap_cloud_admin():
-    """On first boot of a provisioned cloud home, create the initial admin user."""
-    import os
-    from services import auth_db
-    from services.auth_hashing import hash_password_bcrypt
-    email = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
-    password = os.getenv("INITIAL_ADMIN_PASSWORD", "").strip()
-    if not email or not password:
-        return
-    # auth.db is the source of truth post-S1; settings.yaml strips users[]
-    # on write so an in-memory yaml append alone never survives a restart.
-    if auth_db.get_user_by_username(email):
-        return  # already set up
-    pw_hash = hash_password_bcrypt(password)
-    auth_db.create_user(
-        username=email,
-        password_hash=pw_hash,
-        salt="",
-        role="super_admin",
-        hash_algo="bcrypt",
-    )
-    log_info(f"[Cloud] Initial admin created for {email}")
 
 
 async def _register_with_relay():
