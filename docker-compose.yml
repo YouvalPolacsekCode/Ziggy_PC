@@ -2,6 +2,15 @@
 # Runs Ziggy backend + Home Assistant + Mosquitto together.
 # For production cloud homes, see docker/home-template/docker-compose.yml
 
+# Pin the Compose project name so it's independent of the repo's parent
+# directory. Without this, `C:\ziggy` produces project 'ziggy' but
+# `C:\Users\...\Ziggy_PC` produces project 'ziggy_pc' — two competing
+# containers ('ziggy-ziggy-1' vs 'ziggy_pc-ziggy-1') both trying to
+# bind port 8001, and Docker volumes are project-scoped so the state
+# lives in different volumes. Locking the name to 'ziggy' means one
+# hub, one container, one set of volumes, no matter where the repo lives.
+name: ziggy
+
 services:
   mosquitto:
     image: eclipse-mosquitto:2

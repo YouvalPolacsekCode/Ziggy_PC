@@ -111,6 +111,31 @@ if ($RequireS4U) {
         /f 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Installed as SYSTEM (survives screen lock / sign-out / reboot)."
+        # Best-effort hardening beyond what schtasks.exe supports:
+        #   - RestartCount/Interval: re-run the task 3x at 1-min gaps if a
+        #     single run returns a non-zero exit. Prevents a transient
+        #     git-fetch or docker-compose failure from missing the next
+        #     2-min slot.
+        #   - StartWhenAvailable: if the mini PC was off during a scheduled
+        #     run, fire once when it comes back up instead of waiting for
+        #     the next :00/:02/:04 boundary.
+        #   - DontStopIfGoingOnBatteries + AllowStartIfOnBatteries: mini PCs
+        #     with UPS-backed power should keep running through brief
+        #     outages instead of pausing OTA until wall power returns.
+        # Set-ScheduledTask on a SYSTEM-owned task from a non-elevated
+        # PowerShell sometimes ACLs-fails silently — that's fine, the base
+        # install above is already correct; this is icing.
+        try {
+            $harden = New-ScheduledTaskSettingsSet `
+                -MultipleInstances IgnoreNew `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+                -StartWhenAvailable `
+                -RestartCount 3 `
+                -RestartInterval (New-TimeSpan -Minutes 1) `
+                -DontStopIfGoingOnBatteries `
+                -AllowStartIfOnBatteries
+            Set-ScheduledTask -TaskName $TaskName -Settings $harden -ErrorAction SilentlyContinue | Out-Null
+        } catch {}
     } else {
         Write-Host "ERROR: schtasks /create failed — $out"
         Write-Host "Fallback: re-run this script from an Admin PowerShell with -RequireS4U."

@@ -90,6 +90,26 @@ function Write-Heartbeat {
 }
 Write-Heartbeat "starting"
 
+# Fleet-wide fix: nudge the mini PC clock every cycle. Windows drifts by
+# seconds/day and the anomaly engine's clock_skew_suspected flag reads red
+# once the local clock is off by more than a couple of minutes. Silent on
+# failure — a broken w32tm must never abort the OTA run itself.
+try { & w32tm /resync 2>&1 | Out-Null } catch {}
+
+# Fleet-wide fix: self-heal a disabled ZiggyAutoUpdate task. Windows Task
+# Scheduler can mark the task Disabled after runs of exit-2/3/4/5 accumulate
+# (SCHED_S_TASK_TERMINATED = 0x00041306). Once Disabled, the task stops
+# firing forever, and the operator only notices when /health starts
+# reporting ota.status=silent hours later. This block is a no-op on the
+# common path (task Ready) and a save when it isn't. Runs BEFORE any check
+# that could exit so a manual /Run of a Disabled task still self-heals.
+try {
+    $__task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($__task -and $__task.State -eq "Disabled") {
+        Enable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
+    }
+} catch {}
+
 # Snapshot the scheduled task's own status for /health.ota. Best-effort — a
 # missing ScheduledTasks module, renamed task, or query failure must never
 # abort the update run, so everything is wrapped and failures are silent.
