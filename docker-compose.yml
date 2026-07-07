@@ -91,6 +91,11 @@ services:
       - HOME_ID=${HOME_ID:-home-ziggy-dev}
       - RELAY_URL=${RELAY_URL:-}
       - RELAY_SECRET=${RELAY_SECRET:-}
+      # Home Assistant reach. settings_loader.py reads these envs and overrides
+      # the values in config/settings.yaml when present. Set in the hub's .env
+      # so a shifted HA VM IP doesn't require a tracked-file edit + git commit.
+      - HA_URL=${HA_URL:-}
+      - HA_TOKEN=${HA_TOKEN:-}
       # Override the Dockerfile's cloud-default. Self-hosted hubs keep
       # config at /app/config/settings.yaml (mounted from ./config on the
       # host), NOT inside /app/user_files (which is the cloud-VM pattern
