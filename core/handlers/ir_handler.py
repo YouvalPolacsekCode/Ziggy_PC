@@ -14,6 +14,7 @@ GPT sends one of these intents after seeing ir_manager's device list in the syst
 from __future__ import annotations
 
 from core.intent_utils import ok, err, normalize_room
+from core.result_utils import L
 from core.conversation_context import set_context
 from core.logger_module import log_info, log_error
 from services.ir_manager import (
@@ -130,7 +131,8 @@ async def handle_ir_send_command(params: dict, *, source: str = "unknown") -> di
     raw_action = (params.get("action") or "").strip()
 
     if not raw_action:
-        return err("Please specify an action (e.g. 'power', 'volume up', 'mute').")
+        return err(L("Please specify an action (e.g. 'power', 'volume up', 'mute').",
+                     "אנא ציינו פעולה (למשל 'הפעלה', 'הגברת ווליום', 'השתקה')."))
 
     device, error = resolve_ir_device(room, device_type)
     if not device:
@@ -148,20 +150,24 @@ async def handle_ir_send_command(params: dict, *, source: str = "unknown") -> di
             current_state = get_device_state(device)
             room_str = (device.get("room") or "").replace("_", " ")
             if intended_on and current_state == "on":
-                return ok(f"{device['name']} in {room_str} is already on.")
+                return ok(L(f"{device['name']} in {room_str} is already on.",
+                            f"{device['name']} ב{room_str} כבר דלוק."))
             if intended_off and current_state == "off":
-                return ok(f"{device['name']} in {room_str} is already off.")
+                return ok(L(f"{device['name']} in {room_str} is already off.",
+                            f"{device['name']} ב{room_str} כבר כבוי."))
 
     result = send_ir_command(device["id"], action)
     if result.get("ok"):
         room_str = (device.get("room") or "").replace("_", " ")
         set_context(room=device.get("room") or room, device_type=device_type,
                     entity_id=device["id"], action=action, intent="ir_send_command")
-        return ok(f"Sent {raw_action} to {device['name']} in {room_str}.")
+        return ok(L(f"Sent {raw_action} to {device['name']} in {room_str}.",
+                    f"שלחתי {raw_action} ל{device['name']} ב{room_str}."))
 
     # Command not found — give a helpful message
     return err(
-        result.get("message") or f"Couldn't send '{raw_action}' to {device['name']}.",
+        result.get("message") or L(f"Couldn't send '{raw_action}' to {device['name']}.",
+                                   f"לא הצלחתי לשלוח '{raw_action}' ל{device['name']}."),
         details=str(result.get("data") or ""),
     )
 
@@ -177,13 +183,16 @@ async def handle_ir_set_ac_temperature(params: dict, *, source: str = "unknown")
     try:
         temperature = int(params["temperature"])
     except (KeyError, ValueError, TypeError):
-        return err("Please specify a valid temperature (e.g. 'set AC to 24').")
+        return err(L("Please specify a valid temperature (e.g. 'set AC to 24').",
+                     "אנא ציינו טמפרטורה תקינה (למשל 'כוון את המזגן ל-24')."))
 
     if not (10 <= temperature <= 35):
-        return err(
+        return err(L(
             f"{temperature}°C doesn't look right. "
-            "Please give a temperature between 16 and 30."
-        )
+            "Please give a temperature between 16 and 30.",
+            f"{temperature}°C לא נראה תקין. "
+            "אנא ציינו טמפרטורה בין 16 ל-30.",
+        ))
 
     device, error = resolve_ir_device(room, "ac")
     if not device:
@@ -195,7 +204,8 @@ async def handle_ir_set_ac_temperature(params: dict, *, source: str = "unknown")
         set_context(room=device.get("room") or room, device_type="ac",
                     entity_id=device["id"], action="temperature", intent="ir_set_ac_temperature")
         return result
-    return err(result.get("message") or "Couldn't set AC temperature.")
+    return err(result.get("message") or L("Couldn't set AC temperature.",
+                                          "לא הצלחתי לכוון את טמפרטורת המזגן."))
 
 
 async def handle_ir_send_channel(params: dict, *, source: str = "unknown") -> dict:
@@ -210,10 +220,12 @@ async def handle_ir_send_channel(params: dict, *, source: str = "unknown") -> di
     try:
         channel_number = int(str(raw_channel).strip())
     except (TypeError, ValueError):
-        return err("Please specify a valid channel number (e.g. 'channel 12').")
+        return err(L("Please specify a valid channel number (e.g. 'channel 12').",
+                     "אנא ציינו מספר ערוץ תקין (למשל 'ערוץ 12')."))
 
     if not (0 <= channel_number <= 9999):
-        return err(f"Channel {channel_number} is out of range.")
+        return err(L(f"Channel {channel_number} is out of range.",
+                     f"ערוץ {channel_number} מחוץ לטווח."))
 
     device, error = resolve_ir_device(room, "tv")
     if not device:
@@ -223,8 +235,10 @@ async def handle_ir_send_channel(params: dict, *, source: str = "unknown") -> di
     result = await send_channel(device["id"], channel_number)
     if result.get("ok"):
         room_str = (device.get("room") or "").replace("_", " ")
-        return ok(f"Switched {device['name']} in {room_str} to channel {channel_number}.")
-    return err(result.get("message") or f"Couldn't switch to channel {channel_number}.")
+        return ok(L(f"Switched {device['name']} in {room_str} to channel {channel_number}.",
+                    f"החלפתי את {device['name']} ב{room_str} לערוץ {channel_number}."))
+    return err(result.get("message") or L(f"Couldn't switch to channel {channel_number}.",
+                                          f"לא הצלחתי לעבור לערוץ {channel_number}."))
 
 
 async def handle_ir_play_sequence(params: dict, *, source: str = "unknown") -> dict:
@@ -238,7 +252,8 @@ async def handle_ir_play_sequence(params: dict, *, source: str = "unknown") -> d
     sequence_name = (params.get("sequence_name") or "").strip().lower().replace(" ", "_")
 
     if not sequence_name:
-        return err("Please specify a sequence name (e.g. 'netflix', 'sleep mode').")
+        return err(L("Please specify a sequence name (e.g. 'netflix', 'sleep mode').",
+                     "אנא ציינו שם רצף (למשל 'netflix', 'מצב שינה')."))
 
     device, error = resolve_ir_device(room, device_type)
     if not device:
@@ -249,8 +264,10 @@ async def handle_ir_play_sequence(params: dict, *, source: str = "unknown") -> d
     if result.get("ok"):
         room_str = (device.get("room") or "").replace("_", " ")
         display_name = sequence_name.replace("_", " ")
-        return ok(f"Played '{display_name}' on {device['name']} in {room_str}.")
-    return err(result.get("message") or f"Couldn't play sequence '{sequence_name}'.")
+        return ok(L(f"Played '{display_name}' on {device['name']} in {room_str}.",
+                    f"הפעלתי '{display_name}' על {device['name']} ב{room_str}."))
+    return err(result.get("message") or L(f"Couldn't play sequence '{sequence_name}'.",
+                                          f"לא הצלחתי להפעיל את הרצף '{sequence_name}'."))
 
 
 async def handle_ir_learn_command(params: dict, *, source: str = "unknown") -> dict:
@@ -266,11 +283,13 @@ async def handle_ir_learn_command(params: dict, *, source: str = "unknown") -> d
     command_name = (params.get("command_name") or "").strip()
 
     if not device_id or not command_name:
-        return err("Provide device_id and command_name to start learning.")
+        return err(L("Provide device_id and command_name to start learning.",
+                     "יש לספק device_id ו-command_name כדי להתחיל למידה."))
 
     device = get_ir_device(device_id)
     if not device:
-        return err(f"Device '{device_id}' not found.")
+        return err(L(f"Device '{device_id}' not found.",
+                     f"המכשיר '{device_id}' לא נמצא."))
 
     blaster_host = (device.get("blaster_host") or "").strip()
 
@@ -281,13 +300,16 @@ async def handle_ir_learn_command(params: dict, *, source: str = "unknown") -> d
             import base64
             raw_bytes = await learn_command_direct(blaster_host, timeout=20)
             if raw_bytes is None:
-                return err("No IR signal received within 20 seconds. Point the remote at the blaster and try again.")
+                return err(L("No IR signal received within 20 seconds. Point the remote at the blaster and try again.",
+                             "לא התקבל אות IR תוך 20 שניות. כוונו את השלט אל המשדר ונסו שוב."))
             raw_b64 = base64.b64encode(raw_bytes).decode()
             mark_command_learned(device_id, command_name, raw_code_b64=raw_b64)
-            return ok(
+            return ok(L(
                 f"Learned '{command_name}' on {device['name']}. "
-                "Physical remote detection is active for this button."
-            )
+                "Physical remote detection is active for this button.",
+                f"למדתי '{command_name}' על {device['name']}. "
+                "זיהוי השלט הפיזי פעיל עבור כפתור זה.",
+            ))
         except ImportError:
             return err("broadlink package not installed — run: pip install broadlink")
         except Exception as e:

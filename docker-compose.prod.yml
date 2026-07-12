@@ -1,0 +1,96 @@
+# docker-compose.prod.yml — PRODUCTION overlay for beta mini-PC hubs.
+#
+# Use ON TOP of the base compose (never alone):
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this overlay changes vs the base dev-oriented docker-compose.yml:
+#   - Pins every image to an explicit version (no floating `stable`/`latest`).
+#     Beta fleet must be byte-reproducible; `latest` is how a hub silently
+#     drifts from what was validated.
+#   - Mosquitto: swaps the anonymous dev broker for the authenticated prod
+#     broker (docker/mosquitto/mosquitto.conf + generated passwordfile).
+#   - Ziggy: forces HOME_TYPE=hub / CLOUD_MODE=false, wires MQTT_URL to the
+#     authenticated broker, and mounts /etc/ziggy + B2 env so the backup engine
+#     can run (`docker compose exec ziggy python -m services.backup_engine`).
+#   - Zigbee2MQTT: pinned tag, dongle via ${ZIGBEE_COORDINATOR_DEVICE}.
+#
+# NO SECRETS ARE BAKED HERE. Everything sensitive comes from /opt/ziggy/.env
+# (env_file below) or bind-mounted files generated at imaging. Values with
+# `${VAR:-default}` are safe non-secret defaults; secrets have no default.
+#
+# Expected /opt/ziggy/.env keys (written by scripts/factory/ziggy-image-device.sh):
+#   HA_VERSION, MOSQUITTO_VERSION, Z2M_VERSION
+#   TZ=Asia/Jerusalem
+#   HOME_ID=<uuid>            HOME_NAME="..."
+#   RELAY_URL=https://ziggy-relay.fly.dev   RELAY_SECRET=<from provision>
+#   TUNNEL_URL=https://<home>.trycloudflare-or-cf-tunnel
+#   HA_URL=http://homeassistant:8123        HA_TOKEN=<minted by ha-seed.sh>
+#   MQTT_URL=mqtt://ziggy:<pass>@mosquitto:1883
+#   ZIGGY_B2_KEY_ID=<per-home b2 key id>    ZIGGY_B2_APP_KEY=<per-home b2 app key>
+#   ZIGBEE_COORDINATOR_DEVICE=/dev/serial/by-id/usb-...-if00-port0
+#   GIT_SHA=<release sha>
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:${MOSQUITTO_VERSION:-2.0.20}
+    environment:
+      - TZ=${TZ:-Asia/Jerusalem}
+    volumes:
+      # Prod broker config + generated (git-ignored) password file. This
+      # REPLACES the base file's anonymous mosquitto.conf mount because compose
+      # merges volume lists by target path — both target /mosquitto/config/... .
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./docker/mosquitto/passwordfile:/mosquitto/config/passwordfile:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  homeassistant:
+    # Pinned — imaging sets HA_VERSION in /opt/ziggy/.env. Default tracks the
+    # version validated in dev (docker/ha-config-dev/.HA_VERSION).
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:-2026.6.1}
+    environment:
+      - TZ=${TZ:-Asia/Jerusalem}
+    # Prod HA skeleton (docker/ha-config) is already bind-mounted by the base
+    # file; onboarding + MQTT config entry are seeded by scripts/ha-seed.sh.
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:${Z2M_VERSION:-2.1.1}
+    environment:
+      - TZ=${TZ:-Asia/Jerusalem}
+    # devices[] (${ZIGBEE_COORDINATOR_DEVICE}) is inherited from the base file.
+    # Profile "zigbee-z2m" is inherited too: enable with
+    #   COMPOSE_PROFILES=zigbee-z2m docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+  ziggy:
+    # Self-hosted hub semantics — override the Dockerfile's cloud defaults.
+    # /opt/ziggy/.env is ALSO Compose's default project `.env` (the prod stack
+    # runs from /opt/ziggy), so its vars interpolate into every ${VAR} below.
+    # Declared here `required: false` so `docker compose config` still works on a
+    # bench where the file isn't written yet.
+    env_file:
+      - path: /opt/ziggy/.env
+        required: false
+    environment:
+      - CLOUD_MODE=false
+      - HOME_TYPE=hub
+      - TZ=${TZ:-Asia/Jerusalem}
+      # MQTT_URL / HA_URL / HA_TOKEN / HOME_ID / RELAY_* come from env_file.
+      # B2 creds for the backup engine (services/backup_storage.py reads these
+      # env names, NOT /etc/ziggy/b2_credentials).
+      - ZIGGY_B2_KEY_ID=${ZIGGY_B2_KEY_ID:-}
+      - ZIGGY_B2_APP_KEY=${ZIGGY_B2_APP_KEY:-}
+    volumes:
+      - ./config:/app/config
+      - ./user_files:/app/user_files
+      # Sealed key material + kit manifest (read-only) so an in-container backup
+      # run (`docker compose exec ziggy python -m services.backup_engine --once`)
+      # finds /etc/ziggy/data_key + /etc/ziggy/kit_manifest.yaml. The daily
+      # backup systemd timer (Stream 2) may instead run on the host venv.
+      - /etc/ziggy:/etc/ziggy:ro
+    depends_on:
+      - mosquitto
+      - homeassistant
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

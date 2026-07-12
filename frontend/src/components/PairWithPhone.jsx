@@ -19,9 +19,12 @@ export function PairWithPhone() {
   const [error, setError]         = useState(null)
   const qrRef                     = useRef(null)
 
-  // Render a QR encoding `ziggy://pair?code=XXXXXX` whenever code changes.
-  // The `qrcode` lib is loaded lazily so if it's not installed yet the
-  // section still works (text code only).
+  // Render a QR encoding `ziggy://pair?code=XXXXXX&base=<this-home-origin>`
+  // whenever code changes. Embedding this home's own origin lets the phone
+  // route the pair request (and every request thereafter) to THIS home rather
+  // than the compiled-in default — the fix for multi-home / fresh Canary Homes.
+  // A relay hint is added when the PWA knows one. The `qrcode` lib is loaded
+  // lazily so if it's not installed yet the section still works (text code only).
   useEffect(() => {
     if (!code || !qrRef.current) return
     let cancelled = false
@@ -29,7 +32,16 @@ export function PairWithPhone() {
       try {
         const mod = await import('qrcode')
         if (cancelled || !qrRef.current) return
-        await mod.default.toCanvas(qrRef.current, `ziggy://pair?code=${code}`, {
+        let payload = `ziggy://pair?code=${code}`
+        const origin = (typeof window !== 'undefined' && window.location?.origin) || ''
+        // Only embed a real remote origin — a localhost/dev origin would send
+        // the phone nowhere useful, so fall back to code-only in that case.
+        if (origin && !/^https?:\/\/(localhost|127\.|0\.0\.0\.0)/i.test(origin)) {
+          payload += `&base=${encodeURIComponent(origin)}`
+        }
+        const relay = (typeof window !== 'undefined' && window.__RELAY_URL__) || ''
+        if (relay) payload += `&relay=${encodeURIComponent(relay)}`
+        await mod.default.toCanvas(qrRef.current, payload, {
           width: 160, margin: 1, color: { dark: '#111111', light: '#ffffff' },
         })
       } catch {

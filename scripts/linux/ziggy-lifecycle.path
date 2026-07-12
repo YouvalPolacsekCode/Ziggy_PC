@@ -1,0 +1,18 @@
+# Ziggy lifecycle spool watcher — triggers ziggy-lifecycle.service whenever the
+# app writes a reset intent file into the lifecycle spool dir.
+#
+# The glob MUST match lifecycle_router.py's spool_dir + filename
+# (<action>.<uuid>.request.json). Default spool is /var/lib/ziggy/lifecycle; if
+# lifecycle.spool_dir is overridden in settings, update this glob AND set
+# ZIGGY_LIFECYCLE_SPOOL for ziggy-lifecycle-watch.sh to match.
+#
+# Install path: /etc/systemd/system/ziggy-lifecycle.path
+[Unit]
+Description=Watch the Ziggy lifecycle spool for queued reset intents
+
+[Path]
+PathExistsGlob=/var/lib/ziggy/lifecycle/*.request.json
+Unit=ziggy-lifecycle.service
+
+[Install]
+WantedBy=multi-user.target

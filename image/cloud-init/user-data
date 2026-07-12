@@ -1,0 +1,82 @@
+#cloud-config
+# image/cloud-init/user-data — first-boot provisioning for a Ziggy beta hub.
+#
+# NoCloud datasource: place this file + meta-data on a FAT32 volume labeled
+# CIDATA, or feed via the Ubuntu 24.04 autoinstall `user-data`. It prepares the
+# GOLDEN base only — NO per-home secrets. Per-hub identity/keys are minted later
+# by scripts/factory/ziggy-image-device.sh.
+#
+# EDIT BEFORE FLASHING:
+#   - ssh_authorized_keys: your operator public key
+#   - the ZIGGY_RELEASE_TAG below (write step) — the release to check out
+#   - (optional) ZIGGY_REPO_URL if mirroring privately
+#
+# Locale/timezone default he / Asia/Jerusalem per Israel-first launch.
+
+locale: he_IL.UTF-8
+timezone: Asia/Jerusalem
+
+users:
+  - name: ziggy
+    gecos: Ziggy Hub Operator
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "ssh-ed25519 REPLACE_WITH_OPERATOR_PUBLIC_KEY operator@ziggy"
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - python3
+  - python3-pip
+  - uidmap
+
+write_files:
+  # Release tag pin consumed by the runcmd clone step.
+  - path: /etc/ziggy-image/release
+    permissions: "0644"
+    content: |
+      ZIGGY_RELEASE_TAG=v1.0.0
+      ZIGGY_REPO_URL=https://github.com/YouvalPolacsekCode/ziggy_pc.git
+  # Marker so imaging/canary know this box came from the golden image.
+  - path: /etc/ziggy-image/provenance
+    permissions: "0644"
+    content: |
+      image_source=cloud-init
+      prepared_at=FIRST_BOOT
+
+runcmd:
+  # ── Docker Engine (official convenience script; Ubuntu 24.04, amd64) ────────
+  - [ bash, -c, "command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh" ]
+  - [ systemctl, enable, --now, docker ]
+  - [ usermod, -aG, docker, ziggy ]
+
+  # ── Clone Ziggy at the pinned release into /opt/ziggy ──────────────────────
+  - [ mkdir, -p, /opt/ziggy, /etc/ziggy ]
+  - [ chmod, "0700", /etc/ziggy ]
+  - bash -c '. /etc/ziggy-image/release; if [ ! -d /opt/ziggy/.git ]; then git clone --branch "$ZIGGY_RELEASE_TAG" --depth 1 "$ZIGGY_REPO_URL" /opt/ziggy; fi'
+  - [ chown, -R, "ziggy:ziggy", /opt/ziggy ]
+
+  # ── Python deps the factory scripts need on the host (crypto for seal) ─────
+  - [ bash, -c, "pip3 install --break-system-packages cryptography || pip3 install cryptography" ]
+
+  # ── Install + enable the systemd units (single source of truth for names) ──
+  #    scripts/linux/install-systemd-units.sh owns the real unit names
+  #    (ziggy.service + ziggy-update/disk-guard/lifecycle). --no-start enables
+  #    everything so it comes up on the NEXT boot, after per-hub imaging has
+  #    written /opt/ziggy/.env — the golden base has no secrets yet, so we do
+  #    NOT start the stack now. Backups are scheduled inside the Ziggy app
+  #    (ziggy_scheduler), so there is no backup timer to enable here.
+  - bash -c 'if [ -x /opt/ziggy/scripts/linux/install-systemd-units.sh ]; then /opt/ziggy/scripts/linux/install-systemd-units.sh --no-start || true; fi'
+
+  # ── Record that first boot completed. Imaging is a SEPARATE operator step ──
+  - [ bash, -c, "sed -i 's/prepared_at=FIRST_BOOT/prepared_at='$(date -u +%Y-%m-%dT%H:%M:%SZ)'/' /etc/ziggy-image/provenance || true" ]
+  - [ bash, -c, "echo 'Ziggy golden base ready. Run: sudo /opt/ziggy/scripts/factory/ziggy-image-device.sh' > /etc/motd" ]
+
+final_message: "Ziggy hub base provisioned in $UPTIME s. SSH in as ziggy and run per-hub imaging."

@@ -1,0 +1,18 @@
+# Run ziggy-disk-guard.service once a day (with catch-up after downtime).
+#
+# Install path: /etc/systemd/system/ziggy-disk-guard.timer
+[Unit]
+Description=Ziggy disk guard timer (daily)
+Documentation=file:///opt/ziggy/scripts/linux/README.md
+
+[Timer]
+Unit=ziggy-disk-guard.service
+# Daily at ~03:30 local, with jitter so a fleet doesn't prune in lockstep.
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=1800
+# Run on next boot if the scheduled time was missed while powered off.
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

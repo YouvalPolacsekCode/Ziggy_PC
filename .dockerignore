@@ -1,3 +1,23 @@
+# .dockerignore — keeps host secrets and dev cruft OUT of the built image.
+#
+# WHY THIS FILE MATTERS
+# The Dockerfile does `COPY config/ ./config/`, `COPY user_files/ ./user_files/`
+# and `COPY memory/ ./memory/` wholesale. Without exclusions, a real
+# config/secrets.yaml, config/settings.yaml (HA token + relay secret) and the
+# populated user_files/*.db (auth.db with password hashes) would be BAKED INTO
+# every image layer — readable by anyone who `docker save`s or pulls the image.
+# The canary suite (scripts/canary-validate.sh :: check_image_no_secrets)
+# asserts these are absent from `docker save` output.
+#
+# RULE: exclude real/live config + user state, KEEP *.example / *.template files
+# (the app + docs reference them) and KEEP tracked runtime skeletons the code
+# loads by path (memory/*.json, routines/, utils/).
+#
+# At runtime the prod compose bind-mounts ./config and ./user_files back in, so
+# excluding them from the image changes nothing operationally — it only stops
+# the leak.
+
+# ── Original entries (preserved) ──────────────────────────────────────────────
 node_modules
 frontend/node_modules
 frontend/dist
@@ -8,3 +28,60 @@ __pycache__
 .venv
 venv
 *.log
+
+# ── Secrets & live config (NEVER in an image) ─────────────────────────────────
+config/secrets.yaml
+config/settings.yaml
+config/contacts.yaml
+config/persons.json
+config/audio_devices.yaml
+docker/ha-config/secrets.yaml
+
+# ── Live user state (DBs, generated JSON) ─────────────────────────────────────
+user_files/*.db
+user_files/*.db-shm
+user_files/*.db-wal
+user_files/*.json
+
+# Hub runtime key material must never be near the build context.
+etc-ziggy/
+**/data_key
+**/b2_credentials
+kit_manifest.yaml
+
+# ── Keep the templates / skeletons the broad excludes above would remove ──────
+!config/settings.example.yaml
+!config/settings.dev.yaml.example
+!config/ziggy_memory.yaml
+!config/.gitkeep
+!user_files/.gitkeep
+
+# ── Dev HA state / other stacks' data (huge, not needed to run Ziggy) ─────────
+docker/ha-config-dev/
+docker/z2m-data/
+docker/z2m-data.example/
+docker/mosquitto/passwordfile
+
+# ── VCS / tooling / OS cruft ──────────────────────────────────────────────────
+.gitignore
+.github/
+.claude/
+.superpowers/
+.playwright-mcp/
+.tmp-screenshots/
+**/.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── Tests, docs, scratch, screenshots (not runtime deps) ──────────────────────
+tests/
+docs/
+cache/
+logs/
+*.png
+*.jpeg
+*.jpg
+ziggy-website/
+ziggy_website/

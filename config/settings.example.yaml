@@ -13,6 +13,12 @@
 # per home.
 # ------------------------------------------------------------------
 
+# Beta / launch marker. Israel-first beta builds ship with this true so the
+# backend and telemetry can distinguish beta hubs from later GA installs.
+# Purely informational — no feature is gated on it yet. Set false for GA.
+beta: true
+tier: beta
+
 anomaly_engine:
   anom02_empty_minutes: 30
   anom03_door_open_minutes: 60
@@ -251,7 +257,12 @@ ifttt:
   - send_notification
   webhook_key: YOUR_IFTTT_WEBHOOK_KEY
 
-language: en
+# Default response/UI language. Israel-first beta ships Hebrew-first: handlers
+# emit Hebrew confirmation strings (via core/result_utils.L) and the frontend
+# renders RTL. system.language below is the canonical source read by
+# services/home_context.py; this top-level key is the fallback. Keep both in
+# sync. Set to 'en' for an English-first deployment.
+language: he
 
 media:
   camera_map: {}
@@ -259,6 +270,24 @@ media:
   default_speaker: null
   default_volume: 0.35
   device_map: {}
+
+mqtt:
+  # Broker for Zigbee2MQTT bridge control (permit-join, restart, rename).
+  # Precedence at runtime (see services/mqtt_client.py + core/settings_loader.py):
+  #   1. ZIGGY_MQTT_URL / MQTT_URL env var (a hub's HA VM DHCP lease can shift)
+  #   2. mqtt.url below
+  #   3. default mqtt://mosquitto:1883 (the in-compose broker name)
+  #
+  # The in-compose default broker is unauthenticated. PRODUCTION mosquitto is
+  # deployed with auth enabled; put the credentials here (or embed them in the
+  # url as mqtt://user:pass@host:1883). These discrete fields are the intended
+  # config home for prod auth — keep the real values in config/secrets.yaml,
+  # NOT in a committed settings.yaml.
+  url: mqtt://mosquitto:1883
+  host: mosquitto
+  port: 1883
+  username: ''            # e.g. ziggy — prod mosquitto user
+  password: ''            # REPLACE_IN_SECRETS_YAML for production brokers
 
 news:
   rss_sources:
@@ -353,8 +382,11 @@ serpapi:
   api_key: REPLACE_WITH_SERPAPI_KEY
 
 system:
-  language: en
-  timezone: UTC
+  # Canonical language + timezone (read by services/home_context.py and
+  # core/result_utils.current_language). Israel-first beta defaults: Hebrew
+  # responses, Jerusalem time. Change per deployment for other markets.
+  language: he
+  timezone: Asia/Jerusalem
 
 target_registry: {}
   # Per-deployment registry of speakable targets (TVs, speakers, streamers).

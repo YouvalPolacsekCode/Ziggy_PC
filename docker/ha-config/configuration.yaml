@@ -1,0 +1,62 @@
+# docker/ha-config/configuration.yaml — PRODUCTION Home Assistant skeleton for
+# beta Ziggy hubs (mini PC, Ubuntu 24.04). This is the COMMITTED prod config;
+# the dev stack uses docker/ha-config-dev/ and is untouched.
+#
+# Design rules:
+#   - No secrets in this file. Anything sensitive → !secret (see secrets.yaml,
+#     generated at imaging from secrets.yaml.template).
+#   - Must boot headless with ZERO web-UI interaction. scripts/ha-seed.sh drives
+#     onboarding via the REST/WS API against a fresh container.
+#   - Ziggy is the ONLY user-facing surface. HA runs engine-only. Do not add
+#     Lovelace dashboards / themes here.
+#   - Israel-first: Asia/Jerusalem, country IL, metric, he can be set later.
+#
+# MQTT NOTE: modern HA (2022.9+) configures the MQTT BROKER via a config ENTRY,
+# not a YAML `mqtt:` broker block (a `mqtt: {broker: ...}` key here would fail
+# config validation and stop HA from starting). The broker connection is created
+# headlessly by scripts/ha-seed.sh --with-mqtt using the imaging-generated
+# username/password. See that script. YAML `mqtt:` is therefore intentionally
+# ABSENT — do not add a broker block here.
+
+# default_config pulls in recorder, history, logbook, mobile_app, the config
+# UI, MQTT support, etc. Ziggy talks to HA over its WebSocket/REST API.
+default_config:
+
+homeassistant:
+  # Israel-first defaults (memory: 24°C AC default, RTL/Hebrew baked in).
+  # These YAML keys take precedence over whatever onboarding wrote to
+  # .storage/core.config, so the hub is correct even if the operator clicked
+  # through a different locale.
+  time_zone: Asia/Jerusalem
+  country: IL
+  unit_system: metric
+  currency: ILS
+  # latitude/longitude/elevation are set per-home by the customer later (or via
+  # ha-seed core_config); left to onboarding defaults here — NOT hardcoded.
+
+# Trust the reverse proxies in front of HA so forwarded requests are accepted:
+#   - Cloudflare Tunnel (cloudflared) terminates the customer's remote access and
+#     forwards over loopback / the docker bridge.
+#   - Ziggy's backend reaches HA on the LAN / docker network.
+# Without these, HA rejects proxied requests with 400 "invalid auth provider".
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1/32          # cloudflared / same-host proxy
+    - ::1/128
+    - 172.16.0.0/12         # docker bridge networks
+    - 10.0.0.0/8            # LAN
+    - 192.168.0.0/16        # LAN
+
+# Cap recorder growth so a beta hub's SQLite DB doesn't balloon on small disks.
+# 10 days of history is plenty for Ziggy's pattern learning + the dashboard;
+# long-term stats (LTS) are kept separately by the recorder regardless.
+recorder:
+  purge_keep_days: 10
+  commit_interval: 5
+
+# Empty include hooks so HA stops complaining on first boot. Automations that
+# Ziggy creates through the HA API are written to automations.yaml.
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

@@ -20,4 +20,10 @@ bcrypt<4.0
 cryptography>=41.0.0
 stripe==11.1.0
 boto3>=1.34.0
+# WebSocket client for the per-home realtime proxy (relay/app/routers/proxy.py).
+# The relay dials each hub's /ws over the tunnel and pumps frames both ways.
+# uvicorn[standard] already bundles websockets for the *server* side; pinning it
+# here makes the *client* dependency explicit. 16.x provides the asyncio client
+# (websockets.asyncio.client.connect) this code imports.
+websockets==16.0
 

@@ -44,6 +44,24 @@ def _broker_url() -> str:
     return _DEFAULT_BROKER
 
 
+def _settings_credentials() -> tuple[str | None, str | None]:
+    """Discrete mqtt.username / mqtt.password from settings, or (None, None).
+
+    Prod mosquitto runs with auth enabled but the broker URL is often just
+    `mqtt://host:1883` (no embedded creds); the credentials live in the discrete
+    settings fields instead. Empty strings are treated as "unset".
+    """
+    try:
+        from core.settings_loader import load_settings
+        m = load_settings().get("mqtt") or {}
+        user = m.get("username") or None
+        pw = m.get("password")
+        pw = pw if pw not in ("", None) else None
+        return user, pw
+    except Exception:
+        return None, None
+
+
 def _parse_broker(url: str) -> tuple[str, int, bool, str | None, str | None]:
     """Return (host, port, tls, username, password). Defaults: 1883 plaintext."""
     p = urlparse(url)
@@ -75,6 +93,13 @@ def _publish_sync(topic: str, payload: bytes, qos: int) -> None:
     to loop_start + on_connect wait makes auth failures raise loudly.
     """
     host, port, tls, user, pw = _parse_broker(_broker_url())
+    # Fallback: if the URL carried no credentials, use the discrete
+    # mqtt.username / mqtt.password settings fields (the prod auth home).
+    if user is None:
+        fb_user, fb_pw = _settings_credentials()
+        if fb_user is not None:
+            user = fb_user
+            pw = pw if pw is not None else fb_pw
     client = mqtt_client.Client(callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
     if user is not None:
         client.username_pw_set(user, pw or "")

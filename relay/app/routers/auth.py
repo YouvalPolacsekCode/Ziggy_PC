@@ -18,6 +18,16 @@ router = APIRouter(prefix="/auth")
 RELAY_ADMIN_EMAIL    = os.getenv("RELAY_ADMIN_EMAIL", "admin@relay.local")
 RELAY_ADMIN_PASSWORD = os.getenv("RELAY_ADMIN_PASSWORD", "changeme")
 
+
+def _legacy_register_provision_enabled() -> bool:
+    """Escape hatch for the pre-Stream-3 behaviour where accepting a home
+    invite minted a brand-new home_id AND provisioned a second Cloudflare
+    tunnel. That double-provision footgun is OFF by default: home invites are
+    expected to carry a pre-provisioned home_id. Set
+    RELAY_LEGACY_REGISTER_PROVISION=1 only for legacy flows with no
+    bench-provision step."""
+    return os.getenv("RELAY_LEGACY_REGISTER_PROVISION", "").strip().lower() in ("1", "true", "yes")
+
 # ---------------------------------------------------------------------------
 # Bootstrap — create the relay-level super admin on first run
 # ---------------------------------------------------------------------------
@@ -117,20 +127,45 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
 
         uid  = new_id()
 
-        # For home invites: create a placeholder hub-type home record so it
-        # appears in CloudAdmin immediately. Cloudflare Tunnel provisioning
-        # happens in the background so the register response isn't blocked
-        # on CF API latency. The frontend polls /provision/home/{id}/status.
+        # Home invites: bind the accepting user to the home the invite was
+        # issued against. Identity reconciliation (Stream 3) — the home is
+        # PRE-PROVISIONED (via /provision/hub) and the invite carries its
+        # home_id, so acceptance must NOT mint a second home_id or a second
+        # Cloudflare tunnel. The legacy self-provision path is gated OFF by
+        # default (see _legacy_register_provision_enabled).
         home_id = inv["home_id"]
+        did_legacy_provision = False
         if inv["type"] == "home":
-            home_id = f"home-{new_id()}"
-            home_name = (inv.get("home_name") or "My Home").strip() or "My Home"
-            await db.execute(
-                """INSERT INTO homes
-                   (id, name, type, tunnel_url, status, relay_secret, created_at, owner_email)
-                   VALUES (?,?,?,NULL,'provisioning','pending',?,?)""",
-                (home_id, home_name, "hub", now.isoformat(), email),
-            )
+            if home_id:
+                # Pre-provisioned home — verify it still exists and adopt the
+                # accepter as owner if none is recorded yet.
+                hrows = await db.execute_fetchall(
+                    "SELECT id, owner_email FROM homes WHERE id=?", (home_id,)
+                )
+                if not hrows:
+                    raise HTTPException(409, "Invited home is no longer provisioned. Contact support.")
+                if not dict(hrows[0]).get("owner_email"):
+                    await db.execute(
+                        "UPDATE homes SET owner_email=? WHERE id=?", (email, home_id)
+                    )
+            elif _legacy_register_provision_enabled():
+                # Legacy escape hatch: create a placeholder home + provision a
+                # tunnel in the background. OFF unless explicitly enabled.
+                home_id = f"home-{new_id()}"
+                home_name = (inv.get("home_name") or "My Home").strip() or "My Home"
+                await db.execute(
+                    """INSERT INTO homes
+                       (id, name, type, tunnel_url, status, relay_secret, created_at, owner_email)
+                       VALUES (?,?,?,NULL,'provisioning','pending',?,?)""",
+                    (home_id, home_name, "hub", now.isoformat(), email),
+                )
+                did_legacy_provision = True
+            else:
+                raise HTTPException(
+                    409,
+                    "This home has not been provisioned yet. Ask the operator to "
+                    "run hub provisioning before accepting this invite.",
+                )
 
         token = issue_jwt(uid, email, inv["role"], home_id)
 
@@ -146,12 +181,11 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
         )
         await db.commit()
 
-        # Kick off Cloudflare Tunnel creation in the background for home
-        # invites. No SSH: the customer's mini PC is bench-provisioned via
-        # scripts/claim-home.ps1 before shipping (Phase 2). The tunnel is
-        # created now so the operator can run claim-home.ps1 as soon as the
-        # invite is accepted.
-        if inv["type"] == "home":
+        # Only the legacy escape-hatch path provisions a tunnel here. The
+        # default Stream-3 path binds to a home that was already provisioned
+        # via /provision/hub, so no background tunnel creation happens (that
+        # was the double-provision footgun).
+        if did_legacy_provision:
             from ..routers.provision import _provision_hub_background
             home_name_for_prov = (inv.get("home_name") or "My Home").strip() or "My Home"
             bg.add_task(_provision_hub_background, home_id, home_name_for_prov)

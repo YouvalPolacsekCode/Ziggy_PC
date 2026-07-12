@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dateparser.search import search_dates
 from core.intent_utils import ok, err, wrap
+from core.result_utils import L
 from services.task_manager import add_task, list_tasks, remove_task, mark_done, postpone_task, task_summary
 from services.home_automation import add_todo_item, get_todo_items
 
@@ -8,7 +9,7 @@ from services.home_automation import add_todo_item, get_todo_items
 async def handle_add_task(params: dict, *, source: str = "unknown") -> dict:
     task_text = (params.get("task") or "").strip()
     if not task_text:
-        return ok("What task would you like to add?")
+        return ok(L("What task would you like to add?", "איזו משימה להוסיף?"))
     reminder = params.get("reminder")
     due = params.get("due")
     priority = params.get("priority")
@@ -57,14 +58,14 @@ async def handle_remove_last_task(params: dict, *, source: str = "unknown") -> d
 async def handle_mark_task_done(params: dict, *, source: str = "unknown") -> dict:
     task_ref = params.get("task") or params.get("task_name") or params.get("index")
     if not task_ref:
-        return ok("Which task should I mark as done?")
+        return ok(L("Which task should I mark as done?", "איזו משימה לסמן כבוצעה?"))
     return wrap(mark_done(task_ref))
 
 
 async def handle_postpone_task(params: dict, *, source: str = "unknown") -> dict:
     task_name = params.get("task") or params.get("task_name") or ""
     if not task_name:
-        return ok("Which task should I postpone?")
+        return ok(L("Which task should I postpone?", "איזו משימה לדחות?"))
     days = int(params.get("days", 1))
     return wrap(postpone_task(task_name, days))
 
@@ -76,7 +77,7 @@ async def handle_task_summary(params: dict, *, source: str = "unknown") -> dict:
 async def handle_add_shopping_list_item(params: dict, *, source: str = "unknown") -> dict:
     item = (params.get("item") or "").strip()
     if not item:
-        return ok("What should I add to the shopping list?")
+        return ok(L("What should I add to the shopping list?", "מה להוסיף לרשימת הקניות?"))
     return wrap(add_todo_item(item))
 
 

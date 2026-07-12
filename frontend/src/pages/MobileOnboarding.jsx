@@ -38,6 +38,7 @@ import {
   completeOnboarding,
 } from '../lib/mobileApi'
 import { getPresencePersons, getPresenceZone, listPresenceZones } from '../lib/api'
+import { parsePairPayload, applyPairingTarget, finalizeHome } from '../lib/pairingCapture'
 import { useT } from '../lib/i18n'
 
 const STEP = {
@@ -172,13 +173,23 @@ function PairStep({ onDone }) {
   const [busy, setBusy]           = useState(false)
   const [error, setError]         = useState(null)
 
-  const submitWithCode = async (rawCode) => {
+  // `target` carries the per-home routing info parsed from a scanned QR
+  // ({ code, baseUrl, relayUrl, homeId }). For a manually typed code it's null;
+  // routing then relies on the active/default home (correct for the founder
+  // single-home build and for re-pairing an already-known home).
+  const submitWithCode = async (rawCode, target = null) => {
     const code = (rawCode || '').trim().toUpperCase()
     if (code.length < 4) { setError(t('mobileOnboard.codeTooShort')); return }
     setBusy(true); setError(null)
+    // Point the pair request at the home the QR names *before* it fires, so a
+    // fresh Canary Home (never contacted before) is reachable.
+    if (target?.baseUrl) applyPairingTarget(target)
     try {
       const device = await getDeviceInfo()
       const result = await pair({ pairCode: code, device })
+      // Persist this home's per-home base URL (from the pair response) and make
+      // it the active routing target for every request from here on.
+      try { finalizeHome({ parsed: target, pairResponse: result }) } catch { /* non-fatal */ }
       // Pass is_first_pair back so the parent can branch into the
       // claim-owner flow vs. the existing person-bind flow.
       onDone(!!result?.is_first_pair)
@@ -208,11 +219,14 @@ function PairStep({ onDone }) {
                 ?? res.barcodes?.[0]?.displayValue
                 ?? res.content
                 ?? ''
-      const m = String(raw).match(/code=([A-Z0-9]+)/i) ?? [null, raw]
-      const code = (m[1] || '').trim().toUpperCase()
+      // Parse the full payload: 6-char code + the per-home routing target
+      // (base / relay / home_id) the QR carries. Supports a bare code or the
+      // ziggy://pair?code=...&base=... deep-link form.
+      const parsed = parsePairPayload(raw)
+      const code = parsed.code
       if (!code) { setError(t('mobileOnboard.noCodeInQr')); return }
       setCodeEntry(code)
-      await submitWithCode(code)
+      await submitWithCode(code, parsed)
     } catch (e) {
       setError(e?.message || t('mobileOnboard.scanCancelled'))
     }

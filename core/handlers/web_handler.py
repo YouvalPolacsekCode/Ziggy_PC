@@ -1,5 +1,6 @@
 from __future__ import annotations
 from core.intent_utils import ok, err
+from core.result_utils import L
 from services import web_manager
 
 
@@ -38,17 +39,17 @@ async def handle_web_search(params: dict, *, source: str = "unknown") -> dict:
 async def handle_get_weather(params: dict, *, source: str = "unknown") -> dict:
     city = (params.get("city") or params.get("location") or "").strip()
     if not city:
-        return err("Please specify a city for the weather.")
+        return err(L("Please specify a city for the weather.", "אנא ציינו עיר עבור מזג האוויר."))
     wx = web_manager._weather_fetch(city)
     if not wx:
-        return err(f"Couldn't fetch weather for '{city}'.")
+        return err(L(f"Couldn't fetch weather for '{city}'.", f"לא הצלחתי לקבל מזג אוויר עבור '{city}'."))
     current = wx.get("current") or {}
     temp = current.get("temperature")
     wind = current.get("windspeed")
     wcode = current.get("weathercode")
-    msg = f"Weather in {city}: {temp}°C"
+    msg = L(f"Weather in {city}: {temp}°C", f"מזג האוויר ב{city}: {temp}°C")
     if wind is not None:
-        msg += f", wind {wind} km/h"
+        msg += L(f", wind {wind} km/h", f", רוח {wind} קמ\"ש")
     return ok(msg, data=wx)
 
 

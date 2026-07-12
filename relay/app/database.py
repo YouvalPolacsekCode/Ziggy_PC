@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS homes (
     status      TEXT NOT NULL DEFAULT 'provisioning',
     relay_secret TEXT NOT NULL,
     cf_tunnel_id TEXT,
+    public_hostname TEXT,
     created_at  TEXT NOT NULL,
     owner_email TEXT
 );
@@ -262,6 +263,16 @@ async def init_db():
         if "ota_pinned_release_id" not in home_cols:
             await db.execute(
                 "ALTER TABLE homes ADD COLUMN ota_pinned_release_id INTEGER"
+            )
+        # Per-home public hostname (Stream 3 identity/routing). Set at
+        # provision time to the reachable URL
+        # (https://{home_id}.hubs.ziggy-home.com) whose DNS CNAMEs to the
+        # home's Cloudflare Tunnel. NULL for pre-Stream-3 rows — the proxy
+        # falls back to tunnel_url for those. Bare {tunnel_id}.cfargotunnel.com
+        # is NOT publicly routable, which is why this column exists.
+        if "public_hostname" not in home_cols:
+            await db.execute(
+                "ALTER TABLE homes ADD COLUMN public_hostname TEXT"
             )
         # Subscription / billing columns (Prompt 9 chunk 2). Default
         # subscription_state='active' preserves backward compatibility:

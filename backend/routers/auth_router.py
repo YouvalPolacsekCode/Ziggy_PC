@@ -12,6 +12,7 @@ from core.logger_module import log_info
 from core.settings_loader import save_settings, settings
 from services import auth_db
 from services.auth_hashing import hash_password_bcrypt, verify_password
+from backend.middleware.rate_limit import enforce_login_rate_limit
 from .auth_deps import ROLE_ORDER, find_user_by_token, get_current_user, require_role
 
 router = APIRouter()
@@ -172,12 +173,16 @@ async def setup(body: SetupBody):
 
 
 # PUBLIC ENDPOINT — reviewed in PROMPT_SECURITY_HARDENING_V2 on 2026-05-28.
-# Justification: login IS the auth boundary. Rate limiting is a separate
-# concern (flagged for a follow-up prompt). Empty-fleet first-boot branch
+# Justification: login IS the auth boundary. Empty-fleet first-boot branch
 # returns a placeholder so the FE can chain into /setup without a second
 # prompt — fine because /setup is the next gate.
+#
+# Rate limiting (audit follow-up, now implemented): enforce_login_rate_limit
+# throttles to 10 attempts / 60s / source IP so this internet-exposed,
+# unauthenticated endpoint can't be used for unbounded credential stuffing.
+# Behavior on an allowed request is otherwise identical to before.
 @router.post("/api/auth/login")
-async def login(body: LoginBody):
+async def login(body: LoginBody, _rl: None = Depends(enforce_login_rate_limit)):
     # Empty-fleet first-boot UX: return a placeholder token so the FE can
     # immediately call /api/auth/setup without a separate prompt.
     if not auth_db.has_any_user() and not _get_users():

@@ -1,0 +1,4 @@
+# The real (hashed) password file is generated per-hub at imaging and must
+# never be committed. Only mosquitto.conf + passwordfile.template + README.md
+# are tracked.
+passwordfile

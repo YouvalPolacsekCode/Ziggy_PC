@@ -1,0 +1,27 @@
+# Ziggy lifecycle intent processor — one-shot, fired by ziggy-lifecycle.path
+# whenever the app queues a reset intent into the lifecycle spool dir.
+#
+# Consumes <spool>/*.request.json and invokes the matching reset script
+# (factory-reset / safe-mode / customer-reset) with --intent <file>.
+#
+# Runs as ROOT intentionally: the reset scripts wipe HA config, docker volumes,
+# and /etc/ziggy. This unit deliberately omits a `User=` line so it always runs
+# as root even when install-systemd-units.sh is given --user for the OTA units —
+# a non-root principal could not perform a factory reset.
+#
+# Install path: /etc/systemd/system/ziggy-lifecycle.service
+[Unit]
+Description=Ziggy lifecycle intent processor (factory-reset / safe-mode / customer-reset)
+Documentation=file:///opt/ziggy/scripts/linux/README.md
+# Don't run concurrently with the OTA deploy — a reset mid-build is undefined.
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/ziggy/ziggy.env
+WorkingDirectory=/opt/ziggy
+ExecStart=/opt/ziggy/scripts/linux/ziggy-lifecycle-watch.sh
+TimeoutStartSec=1200
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ziggy-lifecycle

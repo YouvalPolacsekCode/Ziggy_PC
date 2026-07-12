@@ -15,13 +15,26 @@
 // See main.jsx.
 
 import { isNative } from './native'
+import {
+  resolveHttpBaseSync,
+  resolveWsBaseSync,
+  hydrateFromDurable,
+} from './homeConfig'
 
-// Single source of truth for the prod backend. If we ever multi-home the
-// native app this will need to switch to a runtime-configurable value
-// (likely loaded from Preferences during pair). Phase-1 scope keeps it
-// hardcoded — every customer build today points at app.ziggy-home.com.
+// Compiled-in fallback for legacy single-home installs (and the very first
+// paint before any home is paired). The base URL is now RUNTIME-configurable:
+// homeConfig resolves the active per-home base (captured at pairing) at request
+// time. When no home is configured yet, we fall back to these constants so the
+// existing founder build keeps working byte-for-byte.
 const PROD_HTTP = 'https://app.ziggy-home.com'
 const PROD_WS   = 'wss://app.ziggy-home.com'
+
+// Kick off the durable (Capacitor Preferences) reconciliation early so a
+// returning user's saved home is in memory ASAP. The synchronous localStorage
+// mirror already covers the common cold-start path; this only matters if the
+// WebView's localStorage was evicted. Fire-and-forget — resolve*Sync() below
+// reads whatever is currently cached.
+if (isNative()) { hydrateFromDurable().catch(() => {}) }
 
 function _shouldRewriteHttp(url) {
   // Only rewrite path-only URLs. Anything fully-qualified (https://..., the
@@ -30,21 +43,31 @@ function _shouldRewriteHttp(url) {
   return typeof url === 'string' && url.startsWith('/')
 }
 
-function _rewriteWsUrl(url) {
+// Resolve the active HTTP base at call time (per-home) with the compiled-in
+// PROD default as the safety net. Exported for tests.
+export function rewriteHttpUrl(url) {
+  if (!_shouldRewriteHttp(url)) return url
+  const base = resolveHttpBaseSync() || PROD_HTTP
+  return base + url
+}
+
+// Exported for tests. Rewrites path-only or localhost-origin WS URLs to the
+// active per-home WS base (falls back to PROD_WS). The WS base may itself carry
+// a path prefix (relay-proxy case), so we append the original path + query
+// (the latter carries the bearer ?token=...).
+export function rewriteWsUrl(url) {
   if (typeof url !== 'string') return url
+  const wsBase = (resolveWsBaseSync() || PROD_WS).replace(/\/+$/, '')
   // Path-only WebSocket URLs (rare but legal) — same logic as fetch.
-  if (url.startsWith('/')) return PROD_WS + url
+  if (url.startsWith('/')) return wsBase + url
   // useWebSocket.js builds `wss://${window.location.host}/ws` which under
   // Capacitor evaluates to wss://localhost/ws — the WebView's own origin,
-  // not the backend. Rewrite the host to prod while preserving path + query
-  // (which includes the bearer ?token=...).
+  // not the backend. Point it at the active per-home WS base while preserving
+  // path + query.
   try {
     const u = new URL(url)
     if (u.host === 'localhost' || u.hostname === 'localhost') {
-      const prod = new URL(PROD_WS)
-      u.protocol = prod.protocol
-      u.host = prod.host
-      return u.toString()
+      return wsBase + u.pathname + u.search
     }
   } catch {
     // Not a parseable URL — leave it alone, let the WebSocket constructor
@@ -58,7 +81,7 @@ if (isNative() && typeof window !== 'undefined') {
   const _origFetch = window.fetch.bind(window)
   window.fetch = (input, init) => {
     if (_shouldRewriteHttp(input)) {
-      return _origFetch(PROD_HTTP + input, init)
+      return _origFetch(rewriteHttpUrl(input), init)
     }
     return _origFetch(input, init)
   }
@@ -70,7 +93,7 @@ if (isNative() && typeof window !== 'undefined') {
   const _OrigWS = window.WebSocket
   class _ZiggyWS extends _OrigWS {
     constructor(url, protocols) {
-      super(_rewriteWsUrl(url), protocols)
+      super(rewriteWsUrl(url), protocols)
     }
   }
   window.WebSocket = _ZiggyWS

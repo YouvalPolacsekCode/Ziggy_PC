@@ -1,5 +1,6 @@
 from __future__ import annotations
 from core.intent_utils import ok, err
+from core.result_utils import L
 from core.logger_module import log_info
 from services.home_automation import resolve_entity
 from services.ha_automations import save_automation, list_automations, delete_automation, toggle_automation
@@ -81,16 +82,20 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
     # Without them the handler would silently hallucinate a device (e.g. defaulting to
     # "light in bathroom" for "create a morning routine").
     if not params.get("action_room") and not params.get("action_entity_id"):
-        return ok(
+        return ok(L(
             "Which room and device should this automation control, and when should it trigger? "
-            "Example: 'turn on the living room light every day at 7 am'."
-        )
+            "Example: 'turn on the living room light every day at 7 am'.",
+            "באיזה חדר ומכשיר האוטומציה הזו אמורה לשלוט, ומתי היא צריכה לפעול? "
+            "לדוגמה: 'הדלק את האור בסלון כל יום ב-7 בבוקר'.",
+        ))
 
     entity_id, room = _resolve_action_entity(params)
     if not entity_id:
         device_type = params.get("action_device_type", "light")
-        return err(f"No {device_type} found for {room.replace('_', ' ')}. "
-                   f"Check that a {device_type} is configured in the device registry for this room.")
+        return err(L(f"No {device_type} found for {room.replace('_', ' ')}. "
+                     f"Check that a {device_type} is configured in the device registry for this room.",
+                     f"לא נמצא {device_type} עבור {room.replace('_', ' ')}. "
+                     f"ודאו ש{device_type} מוגדר במרשם המכשירים עבור חדר זה."))
 
     trigger_type = params.get("trigger_type", "time")
     trigger: dict = {"type": trigger_type}
@@ -101,11 +106,14 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
         # State triggers need an exact HA entity ID (domain.object_id contains a dot).
         # Room names like "office" are not valid — ask the user to be specific.
         if not raw or "." not in raw:
-            return err(
+            return err(L(
                 f"Please specify the exact entity to watch for state changes "
                 f"(e.g. binary_sensor.office_door, sensor.office_motion). "
-                f"'{raw}' doesn't look like a valid entity ID."
-            )
+                f"'{raw}' doesn't look like a valid entity ID.",
+                f"אנא ציינו את הישות המדויקת לניטור שינויי מצב "
+                f"(למשל binary_sensor.office_door, sensor.office_motion). "
+                f"'{raw}' לא נראה כמזהה ישות תקין.",
+            ))
         trigger["entity_id"] = raw
         trigger["state"] = params.get("trigger_state", "on")
         # Optional "for" duration: state must hold for N minutes before firing.
@@ -123,11 +131,15 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
         # sensor couldn't be found in the device registry.
         if not resolved or "." not in resolved:
             hint = f" (tried to resolve '{raw_sensor}' but found no sensor entity)" if raw_sensor else ""
-            return err(
+            hint_he = f" (ניסיתי לזהות '{raw_sensor}' אך לא נמצאה ישות חיישן)" if raw_sensor else ""
+            return err(L(
                 f"I couldn't find the sensor to watch{hint}. "
                 f"Please check that a temperature sensor is configured for this room, "
-                f"or provide the exact entity ID (e.g. sensor.office_temperature)."
-            )
+                f"or provide the exact entity ID (e.g. sensor.office_temperature).",
+                f"לא הצלחתי למצוא את החיישן לניטור{hint_he}. "
+                f"אנא ודאו שחיישן טמפרטורה מוגדר עבור חדר זה, "
+                f"או ספקו את מזהה הישות המדויק (למשל sensor.office_temperature).",
+            ))
         trigger["entity_id"] = resolved
         if params.get("trigger_above") is not None:
             trigger["above"] = params["trigger_above"]
@@ -198,17 +210,20 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
         name = automation_data["name"]
         cond_note = f" (with {len(conditions)} condition{'s' if len(conditions) != 1 else ''})" if conditions else ""
         log_info(f"[Automation] Created '{name}'{cond_note} id={result.get('id')} source={result.get('source')}")
-        return ok(f"Done! '{name}' has been set up{cond_note}.")
-    return err(f"Failed to create automation: {result.get('error', 'unknown error')}")
+        return ok(L(f"Done! '{name}' has been set up{cond_note}.",
+                    f"מוכן! '{name}' הוגדר{cond_note}."))
+    return err(L(f"Failed to create automation: {result.get('error', 'unknown error')}",
+                 f"יצירת האוטומציה נכשלה: {result.get('error', 'unknown error')}"))
 
 
 async def handle_list_automations(params: dict, *, source: str = "unknown") -> dict:
     autos = list_automations()
     if not autos:
-        return ok("No automations found.")
+        return ok(L("No automations found.", "לא נמצאו אוטומציות."))
     lines = [f"- {a['name']} ({'on' if a['enabled'] else 'off'})" for a in autos]
     word = "automation" if len(autos) == 1 else "automations"
-    return ok(f"You have {len(autos)} {word}:\n" + "\n".join(lines), data={"automations": autos})
+    header = L(f"You have {len(autos)} {word}:", f"יש לך {len(autos)} אוטומציות:")
+    return ok(header + "\n" + "\n".join(lines), data={"automations": autos})
 
 
 async def handle_delete_automation(params: dict, *, source: str = "unknown") -> dict:
@@ -216,12 +231,15 @@ async def handle_delete_automation(params: dict, *, source: str = "unknown") -> 
     if not auto_id:
         autos = list_automations()
         if not autos:
-            return ok("You have no automations to delete.")
+            return ok(L("You have no automations to delete.", "אין לך אוטומציות למחיקה."))
         names = ", ".join(f"'{a['name']}'" for a in autos[:5])
         more = f" (and {len(autos) - 5} more)" if len(autos) > 5 else ""
-        return ok(f"Which automation should I delete? Your automations: {names}{more}.")
+        more_he = f" (ועוד {len(autos) - 5})" if len(autos) > 5 else ""
+        return ok(L(f"Which automation should I delete? Your automations: {names}{more}.",
+                    f"איזו אוטומציה למחוק? האוטומציות שלך: {names}{more_he}."))
     ok_ = delete_automation(auto_id)
-    return ok(f"Automation '{auto_id}' deleted.") if ok_ else err(f"Could not delete automation '{auto_id}'.")
+    return ok(L(f"Automation '{auto_id}' deleted.", f"האוטומציה '{auto_id}' נמחקה.")) if ok_ \
+        else err(L(f"Could not delete automation '{auto_id}'.", f"לא הצלחתי למחוק את האוטומציה '{auto_id}'."))
 
 
 async def handle_toggle_automation(params: dict, *, source: str = "unknown") -> dict:
@@ -230,13 +248,18 @@ async def handle_toggle_automation(params: dict, *, source: str = "unknown") -> 
     if not auto_id:
         autos = list_automations()
         if not autos:
-            return ok("You have no automations to enable or disable.")
+            return ok(L("You have no automations to enable or disable.",
+                        "אין לך אוטומציות להפעלה או כיבוי."))
         names = ", ".join(f"'{a['name']}'" for a in autos[:5])
         action = "enable" if enable else "disable"
-        return ok(f"Which automation should I {action}? Your automations: {names}.")
+        action_he = "להפעיל" if enable else "לכבות"
+        return ok(L(f"Which automation should I {action}? Your automations: {names}.",
+                    f"איזו אוטומציה {action_he}? האוטומציות שלך: {names}."))
     ok_ = toggle_automation(auto_id, enable)
     state = "enabled" if enable else "disabled"
-    return ok(f"Automation '{auto_id}' {state}.") if ok_ else err(f"Could not toggle automation '{auto_id}'.")
+    state_he = "הופעלה" if enable else "כובתה"
+    return ok(L(f"Automation '{auto_id}' {state}.", f"האוטומציה '{auto_id}' {state_he}.")) if ok_ \
+        else err(L(f"Could not toggle automation '{auto_id}'.", f"לא הצלחתי לשנות את מצב האוטומציה '{auto_id}'."))
 
 
 async def _resolve_room_id(room_name: str) -> str:
@@ -265,14 +288,16 @@ def _find_automation(name_query: str) -> tuple[dict | None, str]:
     """Return (automation_dict, error_message). error_message is empty on success."""
     query = name_query.lower().strip()
     if not query:
-        return None, "Please specify which automation to update."
+        return None, L("Please specify which automation to update.", "אנא ציינו איזו אוטומציה לעדכן.")
     autos = list_automations()
     matches = [a for a in autos if query in (a.get("name") or "").lower()]
     if not matches:
-        return None, f"No automation found matching '{name_query}'. Use 'list automations' to see exact names."
+        return None, L(f"No automation found matching '{name_query}'. Use 'list automations' to see exact names.",
+                       f"לא נמצאה אוטומציה התואמת ל'{name_query}'. השתמשו ב'רשימת אוטומציות' לראות שמות מדויקים.")
     if len(matches) > 1:
         names = ", ".join(f"'{a['name']}'" for a in matches[:4])
-        return None, f"Multiple automations match '{name_query}': {names}. Please be more specific."
+        return None, L(f"Multiple automations match '{name_query}': {names}. Please be more specific.",
+                       f"מספר אוטומציות תואמות ל'{name_query}': {names}. אנא היו יותר ספציפיים.")
     return matches[0], ""
 
 
@@ -311,7 +336,8 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
             raw = params.get("trigger_entity_id") or ""
             resolved = _resolve_trigger_entity(raw)
             if not resolved or "." not in resolved:
-                return err(f"Couldn't find a sensor for '{raw}'. Provide the exact entity ID.")
+                return err(L(f"Couldn't find a sensor for '{raw}'. Provide the exact entity ID.",
+                             f"לא נמצא חיישן עבור '{raw}'. ספקו את מזהה הישות המדויק."))
             trigger["entity_id"] = resolved
             if params.get("trigger_above") is not None:
                 trigger["above"] = params["trigger_above"]
@@ -381,7 +407,8 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
             entity_id = existing_entity
 
         if not entity_id:
-            return err(f"Couldn't find a {action_dtype or 'device'} in {action_room or 'that room'}.")
+            return err(L(f"Couldn't find a {action_dtype or 'device'} in {action_room or 'that room'}.",
+                         f"לא נמצא {action_dtype or 'מכשיר'} ב{action_room or 'חדר זה'}."))
         service = action_svc or (existing_entity and existing_action.get("service", "homeassistant.turn_on").split(".")[-1]) or "turn_on"
         update_domain = entity_id.split(".")[0] if entity_id and "." in entity_id else "homeassistant"
         actions = [{"type": "call_service", "entity_id": entity_id, "service": _service_for_domain(update_domain, service)}]
@@ -416,26 +443,29 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
     result = save_automation(updated, auto_id=auto_id)
     if result.get("ok"):
         log_info(f"[Automation] Updated '{name}' id={auto_id}")
-        return ok(f"Done! '{name}' has been updated.")
-    return err(f"Failed to update automation: {result.get('error', 'unknown error')}")
+        return ok(L(f"Done! '{name}' has been updated.", f"מוכן! '{name}' עודכן."))
+    return err(L(f"Failed to update automation: {result.get('error', 'unknown error')}",
+                 f"עדכון האוטומציה נכשל: {result.get('error', 'unknown error')}"))
 
 
 async def handle_assign_automation_to_room(params: dict, *, source: str = "unknown") -> dict:
     name_query = (params.get("automation_name") or "").lower().strip()
     room = (params.get("room") or "").strip()
     if not name_query:
-        return err("Please specify which automation to assign.")
+        return err(L("Please specify which automation to assign.", "אנא ציינו איזו אוטומציה לשייך."))
     if not room:
-        return err("Please specify which room to assign it to.")
+        return err(L("Please specify which room to assign it to.", "אנא ציינו לאיזה חדר לשייך אותה."))
 
     # Find the best-matching automation by name substring
     autos = list_automations()
     matches = [a for a in autos if name_query in (a.get("name") or "").lower()]
     if not matches:
-        return err(f"No automation found matching '{name_query}'. Try listing automations to see exact names.")
+        return err(L(f"No automation found matching '{name_query}'. Try listing automations to see exact names.",
+                     f"לא נמצאה אוטומציה התואמת ל'{name_query}'. נסו להציג את רשימת האוטומציות לשמות מדויקים."))
     if len(matches) > 1:
         names = ", ".join(f"'{a['name']}'" for a in matches[:4])
-        return err(f"Multiple automations match '{name_query}': {names}. Please be more specific.")
+        return err(L(f"Multiple automations match '{name_query}': {names}. Please be more specific.",
+                     f"מספר אוטומציות תואמות ל'{name_query}': {names}. אנא היו יותר ספציפיים."))
 
     auto = matches[0]
     auto_id = auto["id"]
@@ -450,7 +480,8 @@ async def handle_assign_automation_to_room(params: dict, *, source: str = "unkno
     save_automation_meta(auto_id, meta)
 
     log_info(f"[Automation] Assigned '{auto['name']}' ({auto_id}) to room '{room_id}'")
-    return ok(f"Done! '{auto['name']}' is now assigned to {room}.")
+    return ok(L(f"Done! '{auto['name']}' is now assigned to {room}.",
+                f"מוכן! '{auto['name']}' משויכת כעת ל{room}."))
 
 
 async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown") -> dict:
@@ -465,7 +496,7 @@ async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown
 
     room = (params.get("room") or "").strip()
     if not room:
-        return err("Which room is this occupancy sensor for?")
+        return err(L("Which room is this occupancy sensor for?", "לאיזה חדר מיועד חיישן הנוכחות הזה?"))
 
     sensors_raw = params.get("sensor_entities") or []
     if isinstance(sensors_raw, str):
@@ -473,10 +504,12 @@ async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown
         sensors_raw = [s.strip() for s in sensors_raw.split(",") if s.strip()]
     sensor_entities = [s for s in sensors_raw if isinstance(s, str) and "." in s]
     if not sensor_entities:
-        return err(
+        return err(L(
             f"I need at least one sensor entity to fuse for the {room} occupancy sensor. "
-            f"Provide motion/presence/door entity IDs (e.g. binary_sensor.bedroom_motion)."
-        )
+            f"Provide motion/presence/door entity IDs (e.g. binary_sensor.bedroom_motion).",
+            f"אני צריך לפחות ישות חיישן אחת עבור חיישן הנוכחות של {room}. "
+            f"ספקו מזהי ישות של תנועה/נוכחות/דלת (למשל binary_sensor.bedroom_motion).",
+        ))
 
     friendly = params.get("friendly_name")  # Hebrew names preserved verbatim
     delay_off = params.get("delay_off_seconds", 30)
@@ -489,8 +522,8 @@ async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown
     )
     if result.get("ok"):
         log_info(f"[Occupancy] {result.get('message')}")
-        return ok(result.get("message", "Done."), data={"entity_id": result.get("entity_id")})
-    return err(result.get("error", "Failed to create occupancy sensor"))
+        return ok(result.get("message", L("Done.", "מוכן.")), data={"entity_id": result.get("entity_id")})
+    return err(result.get("error", L("Failed to create occupancy sensor", "יצירת חיישן הנוכחות נכשלה")))
 
 
 async def handle_list_blueprints(params: dict, *, source: str = "unknown") -> dict:
@@ -505,7 +538,7 @@ async def handle_list_blueprints(params: dict, *, source: str = "unknown") -> di
 
     templates = get_blueprint_templates()
     if not templates:
-        return ok("No community templates are bundled yet.")
+        return ok(L("No community templates are bundled yet.", "עדיין לא צורפו תבניות קהילה."))
 
     # Compact summary for the LLM — id + name + a one-line description so the
     # chat reply stays short. The full input schema is fetched on demand by
@@ -521,8 +554,10 @@ async def handle_list_blueprints(params: dict, *, source: str = "unknown") -> di
         for t in templates
     ]
     lines = [f"- {t['name']}: {t['description']}" for t in summary]
+    header = L(f"There are {len(summary)} community templates available:",
+               f"יש {len(summary)} תבניות קהילה זמינות:")
     return ok(
-        f"There are {len(summary)} community templates available:\n" + "\n".join(lines),
+        header + "\n" + "\n".join(lines),
         data={"templates": summary},
     )
 
@@ -538,18 +573,21 @@ async def handle_instantiate_blueprint(params: dict, *, source: str = "unknown")
     """
     blueprint_id = (params.get("blueprint_id") or "").strip()
     if not blueprint_id:
-        return err("Which template should I use? Provide the template's id.")
+        return err(L("Which template should I use? Provide the template's id.",
+                     "באיזו תבנית להשתמש? ספקו את מזהה התבנית."))
 
     inputs_raw = params.get("inputs") or {}
     if not isinstance(inputs_raw, dict):
-        return err("Template inputs must be a key/value object.")
+        return err(L("Template inputs must be a key/value object.",
+                     "קלטי התבנית חייבים להיות אובייקט מפתח/ערך."))
 
     custom_name = (params.get("name") or "").strip() or None
 
     from services.blueprint_importer import instantiate_blueprint, get_blueprint
     bp = get_blueprint(blueprint_id)
     if not bp:
-        return err(f"No template found with id '{blueprint_id}'.")
+        return err(L(f"No template found with id '{blueprint_id}'.",
+                     f"לא נמצאה תבנית עם המזהה '{blueprint_id}'."))
 
     try:
         automation_data = instantiate_blueprint(
@@ -562,7 +600,8 @@ async def handle_instantiate_blueprint(params: dict, *, source: str = "unknown")
         return err(str(e))
     except Exception as e:
         log_info(f"[Blueprint] Unexpected instantiation error for {blueprint_id}: {e}")
-        return err("Couldn't apply the template — please try again.")
+        return err(L("Couldn't apply the template — please try again.",
+                     "לא הצלחתי להחיל את התבנית — אנא נסו שוב."))
 
     result = save_automation(automation_data)
     if result.get("ok"):
@@ -572,10 +611,12 @@ async def handle_instantiate_blueprint(params: dict, *, source: str = "unknown")
             f"source={result.get('source')}"
         )
         return ok(
-            f"Done! '{name}' has been set up from the {bp.name} template.",
+            L(f"Done! '{name}' has been set up from the {bp.name} template.",
+              f"מוכן! '{name}' הוגדר מתבנית {bp.name}."),
             data={"automation_id": result.get("id"), "blueprint_id": blueprint_id},
         )
-    return err(f"Couldn't save the automation: {result.get('error', 'unknown error')}")
+    return err(L(f"Couldn't save the automation: {result.get('error', 'unknown error')}",
+                 f"לא הצלחתי לשמור את האוטומציה: {result.get('error', 'unknown error')}"))
 
 
 async def handle_design_automation_set(params: dict, *, source: str = "unknown") -> dict:
@@ -590,15 +631,17 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
 
     outcome = (params.get("outcome") or params.get("text") or "").strip()
     if not outcome:
-        return ok(
+        return ok(L(
             "What outcome should I design for? "
-            "(e.g. 'set up smart bedroom lights' / 'תכין לי אורות חכמים בחדר השינה')"
-        )
+            "(e.g. 'set up smart bedroom lights' / 'תכין לי אורות חכמים בחדר השינה')",
+            "איזו תוצאה שאעצב? "
+            "(למשל 'תכין לי אורות חכמים בחדר השינה')",
+        ))
 
     result = design_bundle(outcome, language=params.get("language"))
     if not result.get("ok"):
         # Validation/LLM error path
-        return err(result.get("error") or "Designer failed.")
+        return err(result.get("error") or L("Designer failed.", "המעצב נכשל."))
 
     bundle = result["bundle"]
     arts = bundle.get("artifacts") or {}
@@ -613,7 +656,8 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
 
     # Hard decline: no artifacts at all → surface decline (or generic) as text.
     if not has_artifacts:
-        return ok(bundle.get("decline") or "I couldn't design anything for that — try describing the outcome differently.")
+        return ok(bundle.get("decline") or L("I couldn't design anything for that — try describing the outcome differently.",
+                                              "לא הצלחתי לעצב משהו עבור זה — נסו לתאר את התוצאה בצורה אחרת."))
 
     # Voice-intents-only is functionally an empty bundle for v1 — apply would
     # report all voice intents as "manual setup needed". Don't render a card
@@ -622,10 +666,13 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
         phrases = [vi.get("phrase", "") for vi in (arts.get("voice_intents") or [])]
         phrase_list = ", ".join(f"\"{p}\"" for p in phrases if p)
         msg = (
-            f"I'd add voice commands ({phrase_list}) for this, but voice commands "
-            f"need manual setup for now — there's nothing else I can build automatically."
+            L(f"I'd add voice commands ({phrase_list}) for this, but voice commands "
+              f"need manual setup for now — there's nothing else I can build automatically.",
+              f"הייתי מוסיף פקודות קוליות ({phrase_list}) עבור זה, אך פקודות קוליות "
+              f"דורשות הגדרה ידנית כרגע — אין עוד משהו שאוכל לבנות אוטומטית.")
             if phrase_list else
-            "I couldn't compose any actionable automation for this outcome."
+            L("I couldn't compose any actionable automation for this outcome.",
+              "לא הצלחתי להרכיב אוטומציה ניתנת לביצוע עבור תוצאה זו.")
         )
         if bundle.get("decline"):
             msg = f"{bundle['decline']} {msg}"
@@ -636,11 +683,12 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
     rationale = bundle.get("rationale", "")
     # Soft decline: there ARE actionable artifacts AND a decline note (partial
     # fulfillment). Surface decline as a note alongside the preview.
-    note = f" Note: {bundle['decline']}" if bundle.get("decline") else ""
+    note = L(f" Note: {bundle['decline']}", f" הערה: {bundle['decline']}") if bundle.get("decline") else ""
 
     log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts} actionable={actionable_count} decline={bool(bundle.get('decline'))}")
     return ok(
-        f"I designed '{name}': {summary}. {rationale}{note} Review and accept to create.",
+        L(f"I designed '{name}': {summary}. {rationale}{note} Review and accept to create.",
+          f"עיצבתי את '{name}': {summary}. {rationale}{note} סקרו ואשרו כדי ליצור."),
         data={"bundle": bundle, "kind": "automation_bundle_preview"},
     )
 
@@ -657,7 +705,7 @@ async def handle_apply_automation_bundle(params: dict, *, source: str = "unknown
 
     bundle = params.get("bundle")
     if not isinstance(bundle, dict):
-        return err("No bundle provided.")
+        return err(L("No bundle provided.", "לא סופקה חבילה."))
 
     result = execute_bundle(bundle)
     created_count = len(result.get("created", []))
@@ -666,19 +714,22 @@ async def handle_apply_automation_bundle(params: dict, *, source: str = "unknown
 
     if result.get("ok"):
         return ok(
-            f"Done — created {created_count} item(s) for '{bundle_name}'.",
+            L(f"Done — created {created_count} item(s) for '{bundle_name}'.",
+              f"מוכן — נוצרו {created_count} פריטים עבור '{bundle_name}'."),
             data=result,
         )
 
     if created_count > 0:
         first_err = (result.get("errors") or [{}])[0].get("error", "unknown")
         return ok(
-            f"Created {created_count} items, but {error_count} couldn't be set up. First issue: {first_err}",
+            L(f"Created {created_count} items, but {error_count} couldn't be set up. First issue: {first_err}",
+              f"נוצרו {created_count} פריטים, אך {error_count} לא הצליחו להתקין. הבעיה הראשונה: {first_err}"),
             data=result,
         )
 
     first_err = (result.get("errors") or [{}])[0].get("error", "unknown")
-    return err(f"Couldn't create the bundle. First issue: {first_err}")
+    return err(L(f"Couldn't create the bundle. First issue: {first_err}",
+                 f"לא הצלחתי ליצור את החבילה. הבעיה הראשונה: {first_err}"))
 
 
 async def handle_run_voice_intent(params: dict, *, source: str = "unknown") -> dict:
@@ -701,14 +752,16 @@ async def handle_run_voice_intent(params: dict, *, source: str = "unknown") -> d
         except Exception:
             action = None
     if not isinstance(action, dict) or not action.get("kind"):
-        return err("I recognized that phrase but couldn't find what it should do.")
+        return err(L("I recognized that phrase but couldn't find what it should do.",
+                     "זיהיתי את הביטוי אך לא מצאתי מה הוא אמור לעשות."))
 
     kind = action.get("kind")
 
     if kind == "intent":
         sub_intent = action.get("intent")
         if not sub_intent:
-            return err("This voice command isn't set up correctly.")
+            return err(L("This voice command isn't set up correctly.",
+                         "פקודה קולית זו אינה מוגדרת כראוי."))
         # Re-enter the dispatcher with the target intent. Safe re-entrant call —
         # handle_intent is just a coroutine; lazy import avoids a module cycle.
         from core.action_parser import handle_intent
@@ -721,21 +774,24 @@ async def handle_run_voice_intent(params: dict, *, source: str = "unknown") -> d
         ns = action.get("namespace") or "modes"
         key = action.get("key")
         if not key:
-            return err("This voice command isn't set up correctly.")
+            return err(L("This voice command isn't set up correctly.",
+                         "פקודה קולית זו אינה מוגדרת כראוי."))
         value = action.get("value", True)
         set_local_state(ns, key, value)
-        return ok("Done." if value else "Turned that off.")
+        return ok(L("Done.", "מוכן.") if value else L("Turned that off.", "כיביתי את זה."))
 
     if kind == "automation":
         auto_id = action.get("automation_id")
         if not auto_id:
-            return err("This voice command isn't set up correctly.")
+            return err(L("This voice command isn't set up correctly.",
+                         "פקודה קולית זו אינה מוגדרת כראוי."))
         from services.local_automation_actions import execute_ziggy_actions
         label = action.get("label") or auto_id
         await execute_ziggy_actions(auto_id, label, "voice")
-        return ok("Done.")
+        return ok(L("Done.", "מוכן."))
 
-    return err("This voice command uses an action Ziggy doesn't support yet.")
+    return err(L("This voice command uses an action Ziggy doesn't support yet.",
+                 "פקודה קולית זו משתמשת בפעולה שזיגי עדיין לא תומך בה."))
 
 
 HANDLERS = {

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://ziggy-home.com/schemas/image-version-1.json",
+  "_comment": "Provenance record shipped alongside each built Ziggy hub image. The build pipeline (packer/ or the golden-image job) fills the REPLACE_* fields. This committed copy is the SCHEMA + example; never hand-edit checksums.",
+  "image_version": "REPLACE_SEMVER",
+  "release_tag": "REPLACE_GIT_TAG",
+  "git_sha": "REPLACE_GIT_SHA",
+  "built_at": "REPLACE_UTC_ISO8601",
+  "built_by": "REPLACE_BUILD_HOST_OR_CI_ID",
+  "base_os": {
+    "distro": "ubuntu",
+    "version": "24.04",
+    "arch": "amd64"
+  },
+  "components": {
+    "home_assistant": "2026.6.1",
+    "mosquitto": "2.0.20",
+    "zigbee2mqtt": "2.1.1",
+    "docker_engine": "REPLACE_DOCKER_VERSION"
+  },
+  "artifacts": [
+    {
+      "name": "ziggy-hub-REPLACE_SEMVER.img",
+      "sha256": "REPLACE_SHA256",
+      "bytes": 0
+    }
+  ],
+  "provenance": {
+    "source_repo": "https://github.com/YouvalPolacsekCode/ziggy_pc",
+    "build_method": "REPLACE_packer_or_cloud-init",
+    "contains_secrets": false,
+    "notes": "Golden base image only. Per-home identity, HA token, MQTT creds, data_key and B2 credentials are minted per hub by scripts/factory/ziggy-image-device.sh and never present in this artifact."
+  }
+}

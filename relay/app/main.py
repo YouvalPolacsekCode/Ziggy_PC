@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .billing.admin import router as billing_admin_router
 from .billing.public import router as billing_public_router
 from .billing.webhooks import router as billing_webhooks_router
+from .config_guard import assert_prod_secrets
 from .database import init_db
 from .routers.audit_log import router as audit_log_router
 from .routers.mobile_admin import router as mobile_admin_router
@@ -29,6 +30,9 @@ from .telemetry_retention import run_retention_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail-fast: refuse to boot in prod with dev-default secrets
+    # (RELAY_JWT_SECRET / RELAY_ADMIN_PASSWORD). No-op in dev.
+    assert_prod_secrets()
     await init_db()
     await ensure_relay_admin()
     # Telemetry retention runs once a day in the background. Cancellation on

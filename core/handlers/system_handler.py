@@ -1,5 +1,6 @@
 from __future__ import annotations
 from core.intent_utils import ok, wrap
+from core.result_utils import L
 from services.system_tools import (
     get_time, get_date, get_day_of_week,
     restart_ziggy, shutdown_ziggy, get_system_status,
@@ -56,19 +57,21 @@ async def handle_ziggy_status(params: dict, *, source: str = "unknown") -> dict:
     # Plain one-sentence reply. The detailed system snapshot lives behind
     # the get_system_status intent for ops surfaces — the chat surface gets
     # a TTS-friendly answer.
-    return ok("All systems good.")
+    return ok(L("All systems good.", "כל המערכות תקינות."))
 
 
 async def handle_ziggy_identity(params: dict, *, source: str = "unknown") -> dict:
-    return ok("I'm Ziggy, your home assistant.")
+    return ok(L("I'm Ziggy, your home assistant.", "אני זיגי, עוזר הבית שלך."))
 
 
 async def handle_ziggy_help(params: dict, *, source: str = "unknown") -> dict:
-    return ok("I run lights, tasks, sensors, and more — just ask.")
+    return ok(L("I run lights, tasks, sensors, and more — just ask.",
+                "אני מפעיל אורות, משימות, חיישנים ועוד — פשוט תבקשו."))
 
 
 async def handle_ziggy_chat(params: dict, *, source: str = "unknown") -> dict:
-    return ok("Did you know octopuses have three hearts and blue blood?")
+    return ok(L("Did you know octopuses have three hearts and blue blood?",
+                "הידעתם שלתמנונים יש שלושה לבבות ודם כחול?"))
 
 
 async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
@@ -85,21 +88,23 @@ async def handle_debug_mode(params: dict, *, source: str = "unknown") -> dict:
         bus.set_level(new_level)
         settings.setdefault("debug", {})["level"] = new_level
         save_settings(settings)
-        return ok(f"Debug mode enabled at level **{new_level}**. Open /ops/debug to see live events.")
+        return ok(L(f"Debug mode enabled at level **{new_level}**. Open /ops/debug to see live events.",
+                    f"מצב דיבאג הופעל ברמה **{new_level}**. פתחו את /ops/debug כדי לראות אירועים חיים."))
 
     if action == "disable":
         bus.set_level("off")
         settings.setdefault("debug", {})["level"] = "off"
         save_settings(settings)
-        return ok("Debug mode disabled.")
+        return ok(L("Debug mode disabled.", "מצב דיבאג כובה."))
 
     if action == "set_level":
         if not level or level not in _LEVEL_VALUES:
-            return ok("Valid levels: off, basic, verbose, trace. Example: 'set debug to verbose'.")
+            return ok(L("Valid levels: off, basic, verbose, trace. Example: 'set debug to verbose'.",
+                        "רמות תקינות: off, basic, verbose, trace. לדוגמה: 'set debug to verbose'."))
         bus.set_level(level)
         settings.setdefault("debug", {})["level"] = level
         save_settings(settings)
-        return ok(f"Debug level set to **{level}**.")
+        return ok(L(f"Debug level set to **{level}**.", f"רמת הדיבאג הוגדרה ל-**{level}**."))
 
     if action == "status":
         cfg = bus.get_config()
@@ -191,8 +196,10 @@ async def handle_list_rooms(params: dict, *, source: str = "unknown") -> dict:
         # Keys are the display names (Living Room, Bedroom, etc.)
         rooms = sorted(set(personal.keys()))
     if not rooms:
-        return ok("No rooms configured yet. Add rooms in Settings.")
-    return ok(f"Your rooms: {', '.join(rooms)}.")
+        return ok(L("No rooms configured yet. Add rooms in Settings.",
+                    "עדיין לא הוגדרו חדרים. הוסיפו חדרים בהגדרות."))
+    return ok(L(f"Your rooms: {', '.join(rooms)}.",
+                f"החדרים שלך: {', '.join(rooms)}."))
 
 
 HANDLERS = {

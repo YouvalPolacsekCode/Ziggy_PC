@@ -1,6 +1,16 @@
-# Relay Architecture — v1
+# Relay Architecture — v2 (mini-PC hub model)
 
-This is the canonical description of how the user app reaches the mini PC running Ziggy + Home Assistant in a typical deployment. The transport is **Cloudflare Tunnel per home, fronted by a Fly.io relay**. There is no WireGuard, no inbound NAT pinhole, no per-home DNS to manage.
+Canonical description of how the Ziggy app reaches a customer's mini PC (running
+Ziggy + Home Assistant + Zigbee2MQTT). Transport is **one Cloudflare Tunnel per
+home, fronted by a Fly.io relay**, with a **per-home public hostname** that makes
+each tunnel reachable. No WireGuard, no inbound NAT pinhole, no SSH.
+
+> **What changed from v1:** the Oracle-ARM-VM + SSH + on-VM `docker-compose`
+> provisioning path is **gone** (removed in Phase 5). Ziggy now always ships a
+> physical mini PC that runs the full stack locally; the relay only allocates
+> *cloud-side* resources (a tunnel + a public hostname + a per-home secret).
+> `relay/app/provisioner.py` no longer imports `asyncssh` — it only calls the
+> Cloudflare API over `httpx`.
 
 ## Topology
 
@@ -11,35 +21,33 @@ This is the canonical description of how the user app reaches the mini PC runnin
                │  HTTPS + JWT (relay-issued)
                ▼
 ┌─────────────────────────────┐
-│ Fly.io: ziggy-relay         │   single VM (ams region, 512 MB / 1 shared CPU)
-│   FastAPI, port 8080        │   relay/app/
-│   - /api/auth               │   aiosqlite: homes, users, invites on Fly volume
+│ Fly.io: ziggy-relay         │   FastAPI, port 8080, relay/app/
+│   - /api/auth               │   aiosqlite: homes, users, invites (Fly volume)
 │   - /api/homes              │
 │   - /api/invites            │
-│   - /api/proxy/{home_id}/*  │   ← forwards user requests to that home's tunnel
+│   - /api/provision/hub      │   ← mint tunnel + public hostname for a hub
+│   - /api/proxy/{home_id}/*  │   ← forward user requests to that home's hub
 └──────────────┬──────────────┘
-               │  HTTPS to {tunnel_id}.cfargotunnel.com
+               │  HTTPS to  https://{home_id}.hubs.ziggy-home.com
+               │  (DNS CNAME → {tunnel_id}.cfargotunnel.com, proxied)
                │  + X-Relay-Secret, X-Relay-User, X-Relay-Role, X-Relay-Home
                ▼
 ┌─────────────────────────────┐
-│ Cloudflare edge             │   NAT traversal only — Cloudflare cannot
-│   (Argo Tunnel network)     │   read tunnel contents (E2E encrypted
-│                             │    between relay and cloudflared on the home)
+│ Cloudflare edge             │   NAT traversal only. The public hostname is
+│   (Argo Tunnel network)     │   what makes the tunnel reachable — a bare
+│                             │   {tunnel_id}.cfargotunnel.com URL is NOT
+│                             │   publicly routable.
 └──────────────┬──────────────┘
-               │  outbound tunnel maintained by cloudflared container
+               │  outbound tunnel maintained by cloudflared on the mini PC
                ▼
 ┌─────────────────────────────────────────────────┐
-│ Mini PC (hub) or Oracle ARM VM (cloud home)     │
-│                                                 │
-│   docker-compose:                               │
-│   ┌─────────────┐  ┌──────────┐  ┌──────────┐  │
-│   │ cloudflared │→ │ ziggy    │← │ home-    │  │
-│   │             │  │ :8001    │  │ assistant│  │
-│   │             │  │ FastAPI  │  │ :8123    │  │
-│   └─────────────┘  └──────────┘  └──────────┘  │
-│                         │                       │
-│                         ▼                       │
-│                    user_files/, ha-config/      │
+│ Mini PC (hub) — always physical, always local    │
+│   docker-compose:                                 │
+│   ┌─────────────┐  ┌──────────┐  ┌──────────┐    │
+│   │ cloudflared │→ │ ziggy    │← │ home-    │    │
+│   │             │  │ :8001    │  │ assistant│    │
+│   └─────────────┘  └──────────┘  └──────────┘    │
+│         + Zigbee2MQTT + USB coordinator dongle    │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -47,99 +55,196 @@ This is the canonical description of how the user app reaches the mini PC runnin
 
 | Choice | Reason |
 |---|---|
-| Cloudflare Tunnel | Free, gives each home a stable `*.cfargotunnel.com` URL with no DNS or domain ownership required. No port forwarding on the user's router. |
-| Fly.io relay in front | Stable public URL for the user app (`ziggy-relay.fly.dev`). User JWT auth happens here, then traffic is proxied to the right home. Hides Cloudflare URLs from clients. |
-| Per-home tunnel | Single shared tunnel would couple home isolation to relay correctness. Per-home isolates blast radius if a tunnel/secret is compromised. |
-| `X-Relay-Secret` middleware | Relay → hub is server-to-server. The shared per-home secret authorizes the relay's bypass of normal user-token auth, lets the relay inject a synthetic user identity. |
+| Cloudflare Tunnel (per home) | Free outbound tunnel; no router port-forwarding. Per-home isolates blast radius if one tunnel/secret is compromised. |
+| **Per-home public hostname** | `{home_id}.hubs.ziggy-home.com` CNAMEs to the tunnel. **Required** — the relay cannot reach a bare `cfargotunnel.com` host. This is the reachable URL the proxy targets. |
+| Fly.io relay in front | Stable public URL for the app; user JWT auth happens here; Cloudflare URLs are hidden from clients. |
+| `X-Relay-Secret` header | Relay→hub is server-to-server. The per-home secret authorizes the relay's synthetic user identity to the hub's `RelayAuthMiddleware`. |
 
-## Onboarding flow — provisioning a new home
+## Identity model (Stream 3 reconciliation)
 
-Implementation: [relay/app/provisioner.py:provision_home()](../relay/app/provisioner.py)
+There is exactly **one** id per physical home, and it is the same everywhere:
 
 ```
-1. POST /api/provision/home  (relay admin)
-        │
-        ▼
-2. relay generates relay_secret (32-byte hex)
-        │
-        ▼
-3. Cloudflare API: create tunnel
-   POST /accounts/{CF_ACCOUNT_ID}/cfd_tunnel
-   → returns tunnel_id + tunnel_secret
-        │
-        ▼
-4. Cloudflare API: fetch tunnel connector token
-   GET /accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token
-   → returns cf_token (embedded in cloudflared container as TUNNEL_TOKEN)
-        │
-        ▼
-5. tunnel_url = https://{tunnel_id}.cfargotunnel.com
-        │
-        ▼
-6. SSH into Oracle ARM VM (or, future, Hetzner CPX21):
-   - mkdir /opt/ziggy-homes/{home_id}/
-   - write docker-compose.yml (homeassistant + ziggy + cloudflared)
-   - write ha-config/configuration.yaml
-   - write mosquitto/mosquitto.conf
-   - docker compose pull && docker compose up -d
-        │
-        ▼
-7. Hub container boots:
-   - reads RELAY_URL, RELAY_SECRET, TUNNEL_URL from env
-   - 2 seconds after FastAPI startup, POSTs to relay /api/homes/register-hub
-        │
-        ▼
-8. Relay updates homes table:
-   tunnel_url, relay_secret, status='active'
-        │
-        ▼
-9. User accepts invite → JWT minted → /api/proxy/{home_id}/* works.
+DEVICE_ID  ==  HOME_ID  ==  uuidv4   (generated by factory imaging)
 ```
 
-The relay holds `(home_id → tunnel_url, relay_secret, status)`. Per-home state (devices, IR codes, automations, push subs) lives on the hub; the relay never sees it.
+- **Imaging** (Stream 1) generates the uuidv4 and calls
+  `POST /api/provision/hub` with `home_id` **supplied**. The relay uses it
+  verbatim (no `home-{id}` minting) so the mini PC's baked-in identity and the
+  relay's `homes` row are the same id.
+- **Re-provision is idempotent.** Calling `/provision/hub` again with the same
+  `home_id` reuses the existing tunnel + `relay_secret` (no second tunnel is
+  minted) and returns a fresh connector token. Re-imaging a device is safe.
+- **Home invites bind to a pre-provisioned home.** Accepting a home invite
+  (`POST /api/auth/register`) NO LONGER mints a second `home_id` or provisions a
+  second tunnel. The invite carries the pre-provisioned `home_id` (resolved at
+  invite-create time by explicit id or by `owner_email` match); registration
+  binds the accepting user to it. The old self-provision path is gated OFF
+  behind `RELAY_LEGACY_REGISTER_PROVISION=1` (default off; acceptance without a
+  pre-provisioned home returns `409`). This closes the dual-home / dual-tunnel
+  footgun.
+
+## Provisioning flow — `POST /api/provision/hub`
+
+Implementation: [relay/app/provisioner.py:provision_hub()](../relay/app/provisioner.py),
+[relay/app/routers/provision.py](../relay/app/routers/provision.py). `relay_admin` only.
+
+```
+1. POST /api/provision/hub  {home_name, owner_email?, home_id?}
+        │
+        ▼
+2. home_id = supplied home_id (imaging)  OR  "home-{rand}" (legacy bench)
+   Upsert homes row (status=provisioning). Existing row → idempotent reuse.
+        │
+        ▼
+3. Cloudflare API: create tunnel (skipped on re-provision — reuse cf_tunnel_id)
+   POST /accounts/{CF_ACCOUNT_ID}/cfd_tunnel  → tunnel_id
+        │
+        ▼
+4. Cloudflare API: fetch connector token
+   GET  /accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token  → tunnel_token
+        │
+        ▼
+5. Cloudflare API: set tunnel ingress (catch-all → http://localhost:8001)
+   PUT  /accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/configurations
+        │
+        ▼
+6. Cloudflare API: upsert per-home public hostname (idempotent)
+   {home_id}.hubs.ziggy-home.com  CNAME  {tunnel_id}.cfargotunnel.com (proxied)
+   POST/PUT /zones/{CF_ZONE_ID}/dns_records
+        │
+        ▼
+7. Store on homes row: tunnel_url, relay_secret, cf_tunnel_id,
+   public_hostname (= reachable_url), status=awaiting_claim.
+   Return the bundle → scripts/claim-home.ps1 writes it onto the mini PC.
+        │
+        ▼
+8. First boot in customer's home: mini PC POSTs /api/homes/register-hub
+   (HMAC) → relay sets tunnel_url + status=active.
+        │
+        ▼
+9. User accepts invite → bound to home_id → /api/proxy/{home_id}/* works.
+```
+
+**Dry-run:** set `CF_PROVISION_DRY_RUN=1` to log every intended Cloudflare call
+without performing it (and without requiring CF creds). Stream 1 (imaging) and
+Stream 4 (mobile) use this to exercise the provision contract end-to-end with no
+real CF/Fly account. `reachable_url` is still returned.
+
+### Provision request/response contract
+
+Request body (`POST /api/provision/hub`, `require_role("relay_admin")`):
+
+| Field | Type | Notes |
+|---|---|---|
+| `home_name` | str (required) | Display name. |
+| `owner_email` | str? | Bound onto the home; used later to match a home invite. |
+| `home_id` | str? | **Supplied by imaging** (uuidv4). Omit → relay mints `home-{rand}`. |
+
+Response bundle:
+
+| Field | Type | Notes |
+|---|---|---|
+| `home_id` | str | The id actually used (== supplied when provided). |
+| `home_name` | str | |
+| `relay_url` | str | Relay public URL the hub reports back to. |
+| `relay_secret` | str (64 hex) | Per-home HMAC secret. Hub→relay + relay→hub auth. |
+| `tunnel_id` | str | Cloudflare tunnel id. |
+| `tunnel_url` | str | `https://{tunnel_id}.cfargotunnel.com` — **not** publicly routable; kept for the hub's cloudflared config. |
+| `tunnel_token` | str | cloudflared `TUNNEL_TOKEN`. |
+| `reachable_url` | str | **`https://{home_id}.hubs.ziggy-home.com`** — the address the relay proxy targets. Consumers should treat THIS as the hub's address. |
+
+## Reachability: how the proxy targets a hub
+
+`homes.public_hostname` stores `reachable_url`. The proxy
+([relay/app/routers/proxy.py](../relay/app/routers/proxy.py)) prefers it over
+`tunnel_url` (older rows without a public hostname fall back to `tunnel_url`).
+This is why the DNS CNAME is mandatory: without it the relay would forward to a
+bare `cfargotunnel.com` host that Cloudflare will not route.
+
+## What the user app sees
+
+- Login: `POST https://app.ziggy-home.com/api/auth/login` → JWT.
+- Everything else: `https://app.ziggy-home.com/api/proxy/{home_id}/*` with
+  `Authorization: Bearer <jwt>`.
+
+The proxy validates the JWT + home ownership (relay_admin may proxy any home;
+founder-support bypasses operational/billing gates), looks up the home's
+`public_hostname`, and forwards with:
+
+| Header | Value |
+|---|---|
+| `X-Relay-Secret` | the home's `relay_secret` (server-to-server auth) |
+| `X-Relay-User` | caller email |
+| `X-Relay-Role` | caller role |
+| `X-Relay-Home` | `home_id` |
+
+The hub's `RelayAuthMiddleware`
+([backend/middleware/relay_auth.py](../backend/middleware/relay_auth.py)) trusts
+these when `X-Relay-Secret` matches and synthesizes a user identity.
+
+## Hub self-registration — `POST /api/homes/register-hub`
+
+HMAC-SHA256 over the raw body, verified against the per-home `relay_secret`
+([relay/app/routers/homes.py](../relay/app/routers/homes.py)). Body
+`{home_id, name, tunnel_url}` → relay updates `tunnel_url` + `status=active`.
+Legacy hubs holding a shared secret rotate first via
+`POST /api/homes/rotate-hub-secret` (also HMAC, returns a fresh per-home secret).
+`public_hostname` is set at provision time and is NOT overwritten by
+register-hub, so proxy reachability is stable regardless of what the hub reports.
+
+## Encrypted-backup seal key — `POST /api/homes/{home_id}/seal-key`
+
+Founder-only (`require_role("relay_admin")`) + AES-GCM proof-of-knowledge of the
+master key. Stores per-home wrapped key material (`home_backup_keys`); restore
+unwraps via `POST /api/homes/{home_id}/unseal` (audited, TTL 300 s). See
+[relay/app/routers/backup_keys.py](../relay/app/routers/backup_keys.py) and
+DESIGN_BACKUP_DR.md. Factory imaging performs the initial seal — see
+[SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md](SEAL_KEY_SNIPPET_FOR_FACTORY_IMAGING.md).
+
+## Boot-time prod config guard
+
+[relay/app/config_guard.py](../relay/app/config_guard.py) refuses to boot in prod
+(`ZIGGY_ENV=prod` or `FLY_APP_NAME` set) while `RELAY_JWT_SECRET` or
+`RELAY_ADMIN_PASSWORD` are still dev/`changeme` defaults. No-op in dev. A
+random-per-boot JWT secret would silently invalidate every issued token on each
+restart; a `changeme` admin password is an open door.
 
 ## Secret inventory
 
 | Secret | Lives at | Used for |
 |---|---|---|
-| `home_id` + `relay_secret` | Hub `config/settings.yaml` `relay:` + relay `homes` row | Hub→relay auth on `/api/homes/register-hub`; relay→hub auth via `X-Relay-Secret` header |
-| `tunnel_secret` | Cloudflare (held), `cloudflared` container env (`TUNNEL_TOKEN`) | cloudflared ↔ Cloudflare auth |
-| `CF_API_TOKEN`, `CF_ACCOUNT_ID` | Fly secrets on relay | Provision/delete tunnels |
-| `PROVISION_SSH_KEY` | Fly secrets on relay | SSH into provisioning VM |
-| `FLY_API_TOKEN` | Fly secrets on relay (also `cloudflared` images pulled from Fly registry) | docker login on the provisioning VM |
-| `JWT_SECRET` | Fly secrets on relay | Sign user JWTs (30-day expiry) |
-| `INITIAL_ADMIN_EMAIL/PASSWORD` | Hub container env at provision time | Bootstrap super_admin on first boot |
+| `home_id` + `relay_secret` | Hub `.env` + relay `homes` row | Hub→relay HMAC on register-hub; relay→hub `X-Relay-Secret` |
+| `tunnel_token` | Cloudflare + `cloudflared` env (`TUNNEL_TOKEN`) | cloudflared ↔ Cloudflare auth |
+| `CF_API_TOKEN`, `CF_ACCOUNT_ID` | Fly secrets | Create/delete tunnels + config |
+| `CF_ZONE_ID` | Fly secrets | Create per-home public-hostname DNS records |
+| `RELAY_JWT_SECRET` | Fly secrets | Sign user JWTs (30-day expiry) |
+| `RELAY_ADMIN_EMAIL/PASSWORD` | Fly secrets | Bootstrap the `relay_admin` user |
+| master key (per home) | offline/founder custody | Seal/unseal `home_backup_keys` |
 
-**Rotation:** per-home secret rotation, JWT rotation, and Cloudflare token rotation are handled in [PROMPT_SECURITY_HARDENING.md](../../Downloads/ziggyfiles/PROMPT_SECURITY_HARDENING.md) (out of scope here). The relay's `POST /api/homes/register-hub` accepts a new `(tunnel_url, relay_secret)` pair on each call, which gives the rotation path room to operate.
+`PROVISION_SSH_KEY` and `FLY_API_TOKEN`-for-VM-docker-login are **retired** with
+the Oracle-VM path.
 
-## What the user app sees
+## Failure modes
 
-- Login: `POST https://ziggy-relay.fly.dev/api/auth/login` → JWT
-- Everything else: `https://ziggy-relay.fly.dev/api/proxy/{home_id}/*` with `Authorization: Bearer <jwt>`
-
-The proxy adds `X-Relay-Secret`, `X-Relay-User`, `X-Relay-Role`, `X-Relay-Home` based on the validated JWT and looks up the home's `tunnel_url`. The hub's `RelayAuthMiddleware` ([backend/middleware/relay_auth.py](../backend/middleware/relay_auth.py)) trusts these headers when `X-Relay-Secret` matches the configured value and synthesizes a user identity for the rest of the request pipeline.
-
-## What ships v1, what ships v1.1
-
-| Capability | v1 | v1.1 plan |
-|---|---|---|
-| User remote access | ✅ Cloudflare Tunnel + Fly relay | unchanged |
-| Per-home isolation | ✅ one tunnel + one relay_secret per home | unchanged |
-| Provisioning host | Oracle Cloud Free Tier ARM VM | Hetzner CPX21 (see [RUNBOOK_HETZNER_MIGRATION.md](RUNBOOK_HETZNER_MIGRATION.md)) |
-| Fly region | ams only (single VM) | + iad as warm failover when justified by paid-user count |
-| Relay backups | manual | scheduled snapshot of relay `aiosqlite` DB |
-| Cloudflare cert pinning | not enforced | TBD |
-
-## Failure modes to know about
-
-1. **Relay VM down** → users see proxy errors; hub keeps working locally for anyone on the LAN. PWA hits hub directly if `ziggy_local_url` is configured.
-2. **Cloudflare Tunnel down** → relay can reach the home but tunnel proxy fails. The hub's `_register_with_relay()` will retry on next restart; manual: re-run provision or recreate tunnel.
-3. **Provisioner SSH key out of sync** → new-home provisioning fails; existing homes unaffected.
-4. **Relay loses `homes` row** → `/api/proxy/{home_id}/*` returns 404. Hub `_register_with_relay()` re-creates the row on next hub restart provided env vars are intact. No data loss.
+1. **Relay VM down** → app sees proxy errors; hub keeps working locally on LAN.
+2. **Tunnel down** → relay can't reach the hub; cloudflared retries; recreate via
+   re-provision (idempotent).
+3. **Missing DNS route** (`CF_ZONE_ID` unset at provision) → hub is not reachable
+   until a `{home_id}.hubs.ziggy-home.com` CNAME exists; provisioner logs a
+   warning and still returns `reachable_url`.
+4. **Relay loses `homes` row** → `/api/proxy/{home_id}/*` returns 404 until the
+   hub re-registers or the home is re-provisioned with the same `home_id`.
 
 ## Code references
 
-- Hub side: [backend/server.py:_register_with_relay()](../backend/server.py)
-- Relay side: [relay/app/provisioner.py](../relay/app/provisioner.py), [relay/app/routers/](../relay/app/routers/)
-- Per-home compose template: generated inline by [`_compose_yaml()`](../relay/app/provisioner.py)
+- Provisioner: [relay/app/provisioner.py](../relay/app/provisioner.py)
+- Provision endpoint: [relay/app/routers/provision.py](../relay/app/routers/provision.py)
+- Proxy: [relay/app/routers/proxy.py](../relay/app/routers/proxy.py)
+- Hub register / rotate: [relay/app/routers/homes.py](../relay/app/routers/homes.py)
+- Invite / register reconciliation: [relay/app/routers/invites.py](../relay/app/routers/invites.py), [relay/app/routers/auth.py](../relay/app/routers/auth.py)
+- Config guard: [relay/app/config_guard.py](../relay/app/config_guard.py)
 - Hub middleware: [backend/middleware/relay_auth.py](../backend/middleware/relay_auth.py)
+- Tests: [relay/tests/](../relay/tests/), [tests/test_relay_provision_hub.py](../tests/test_relay_provision_hub.py)
+</content>
+</invoke>

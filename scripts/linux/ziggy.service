@@ -1,0 +1,47 @@
+# Ziggy stack — brings the docker compose stack up on boot and keeps it up.
+# This is the unit that runs `docker compose ... up -d` for a freshly-imaged
+# hub. Without it, nothing starts the containers on first boot and the OTA
+# loop (ziggy-update.service) has no running stack to update.
+#
+# One-shot + RemainAfterExit: `up -d` returns once the containers are started,
+# so the unit "stays active" to represent the running stack. Docker's own
+# restart policies keep individual containers alive; ziggy-update.service
+# rebuilds the `ziggy` service in place on each OTA cycle.
+#
+# Env / B2 wiring: WorkingDirectory=/opt/ziggy is Compose's project dir, so
+# /opt/ziggy/.env is read automatically as Compose's project env file. That is
+# where scripts/factory/ziggy-image-device.sh writes ZIGGY_B2_KEY_ID /
+# ZIGGY_B2_APP_KEY (and MQTT_URL, HA_*, HOME_ID, RELAY_*, image pins). The
+# docker-compose.prod.yml overlay already interpolates ${ZIGGY_B2_*} from that
+# file, so the backup engine gets its B2 creds without sourcing
+# /etc/ziggy/b2_env here. EnvironmentFile= below also exports those vars into
+# this process so COMPOSE_PROFILES / TZ etc. are honored by `docker compose`.
+#
+# Install path: /etc/systemd/system/ziggy.service
+[Unit]
+Description=Ziggy home hub stack (docker compose up)
+Documentation=file:///opt/ziggy/scripts/linux/README.md
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+# Don't race a factory-reset that is tearing the stack down.
+Conflicts=ziggy-factory-reset.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+# Compose reads /opt/ziggy/.env as the project env file; also export it here so
+# COMPOSE_PROFILES / TZ / pins are present in `docker compose`'s environment.
+EnvironmentFile=-/opt/ziggy/.env
+WorkingDirectory=/opt/ziggy
+# Base compose + production overlay, exactly as docker-compose.prod.yml documents.
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+# Pulling images + first build can take a while on a fresh hub.
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ziggy
+
+[Install]
+WantedBy=multi-user.target

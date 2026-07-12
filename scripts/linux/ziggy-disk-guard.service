@@ -1,0 +1,25 @@
+# Ziggy disk guard — one-shot maintenance, fired daily by ziggy-disk-guard.timer.
+# Prunes deploy-logs + docker images, caps the HA recorder DB, warns <5GB free.
+#
+# Install path: /etc/systemd/system/ziggy-disk-guard.service
+[Unit]
+Description=Ziggy disk guard (log/image prune, recorder DB cap, low-space warn)
+Documentation=file:///opt/ziggy/scripts/linux/README.md
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/ziggy/ziggy.env
+WorkingDirectory=/opt/ziggy
+ExecStart=/opt/ziggy/scripts/linux/disk-guard.sh
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ziggy-disk-guard
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@ a dedicated per-device handler file.  The handler:
 from __future__ import annotations
 
 from core.intent_utils import ok, err, normalize_room
+from core.result_utils import L
 from core.conversation_context import set_context
 from services.home_automation import resolve_entity, call_service, get_all_states
 import services.domain_registry as dr
@@ -105,10 +106,12 @@ async def handle_control_device(params: dict, *, source: str = "unknown") -> dic
 
     meta = dr.get(domain)
     if not meta:
-        return err(f"Unknown device domain '{domain}'.")
+        return err(L(f"Unknown device domain '{domain}'.",
+                     f"סוג מכשיר לא מוכר '{domain}'."))
 
     if not meta.actions:
-        return err(f"{meta.label} devices are read-only and cannot be controlled.")
+        return err(L(f"{meta.label} devices are read-only and cannot be controlled.",
+                     f"מכשירי {meta.label} הם לקריאה בלבד ולא ניתן לשלוט בהם."))
 
     # Resolve entity
     if not entity_id:
@@ -121,24 +124,30 @@ async def handle_control_device(params: dict, *, source: str = "unknown") -> dic
     if not entity_id:
         room = normalize_room(params)
         location = f" in {room.replace('_', ' ')}" if room != "unknown" else ""
-        return err(
+        location_he = f" ב{room.replace('_', ' ')}" if room != "unknown" else ""
+        return err(L(
             f"No {meta.label.lower()} found{location}. "
-            "Pair one via the Devices page and assign it to a room."
-        )
+            "Pair one via the Devices page and assign it to a room.",
+            f"לא נמצא {meta.label.lower()}{location_he}. "
+            "יש לחבר מכשיר דרך עמוד המכשירים ולשייך אותו לחדר.",
+        ))
 
     service = _resolve_service(meta, action)
     if not service:
         available = ", ".join(
             f"'{k}'" for k in meta.actions
         )
-        return err(
+        return err(L(
             f"Unknown action '{action}' for {meta.label}. "
-            f"Available: {available}."
-        )
+            f"Available: {available}.",
+            f"פעולה לא מוכרת '{action}' עבור {meta.label}. "
+            f"פעולות זמינות: {available}.",
+        ))
 
     result = call_service(domain, service, {"entity_id": entity_id})
     if not result.get("ok"):
-        return err(result.get("message", f"Failed to {action} {meta.label.lower()}."))
+        return err(result.get("message", L(f"Failed to {action} {meta.label.lower()}.",
+                                           f"נכשל בביצוע '{action}' עבור {meta.label.lower()}.")))
 
     action_meta = meta.actions.get(service)
     verb = action_meta.label if action_meta else action.title()

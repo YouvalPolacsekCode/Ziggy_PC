@@ -361,6 +361,31 @@ TEMPLATES: list[dict] = [
         "ootb_priority":         True,
     },
 
+    # ── IR entertainment ─────────────────────────────────────────────────────
+
+    {
+        "id":                    "tv_off_when_empty",
+        "name":                  "TV Off When Room Empty",
+        "name_he":               "כיבוי טלוויזיה בחדר ריק",
+        "description":           "When the room's been empty for a while and the TV is still on, Ziggy powers it off over IR.",
+        "description_he":        "כשהחדר ריק לאורך זמן והטלוויזיה עדיין דולקת, זיגי מכבה אותה דרך שלט אינפרא-אדום.",
+        "category":              "comfort",
+        "icon":                  "📺",
+        # A TV paired to an IR blaster is the hard requirement; a motion OR
+        # presence sensor supplies the "room emptied" trigger (required_any).
+        "required_capabilities": ["has_ir_blaster"],
+        "required_any":          [["motion_sensor", "presence_sensor"]],
+        "optional_capabilities": ["presence_sensor"],
+        "relevant_capabilities": ["has_ir_blaster", "motion_sensor", "presence_sensor"],
+        "capability_labels": {
+            "has_ir_blaster":   "IR blaster — sends the TV its power command",
+            "motion_sensor":    "Motion sensor — fires the room-empty trigger",
+            "presence_sensor":  "Presence sensor — preferred trigger (mmWave holds through stillness)",
+        },
+        "safety_level":          "safe",
+        "tags":                  ["comfort", "energy", "tv", "ir"],
+    },
+
     # ── Away / Safety ────────────────────────────────────────────────────────
 
     {
@@ -456,6 +481,7 @@ def build_prefill(template: dict, cap_map: dict) -> dict:
         "night_watch":         _night_watch,
         "circadian_lighting":  _circadian_lighting,
         "ac_window_interlock": _ac_window_interlock,
+        "tv_off_when_empty":   _tv_off_when_empty,
         "fake_occupancy":      _fake_occupancy,
     }
     fn = builders.get(template["id"])
@@ -1053,6 +1079,57 @@ def _ac_window_interlock(cap_map: dict) -> dict:
                 "shown_if":  {"auto_shutoff": True},
             },
         },
+    }
+
+
+def _tv_off_when_empty(cap_map: dict) -> dict:
+    """Prefill for TV Off When Room Empty.
+
+    Trigger: the room's presence/motion sensor reports clear for a grace window.
+    Condition: the TV's IR assumed_state is "on" — TV IR power is a single
+    toggle, so gating on assumed-on avoids toggling an already-off set back ON.
+    Action: one `ir_command` "power" step ("power" is the universal TV IR
+    command; see TYPE_COMMANDS['tv'] in ir_manager).
+
+    Sensor and TV are best-effort discovered here; when either is missing the
+    slot is left empty and the wizard asks the user to pick/pair before saving.
+    """
+    presence = first_entity(cap_map, "presence_sensor")
+    motion   = first_entity(cap_map, "motion_sensor")
+    sensor   = presence or motion          # mmWave preferred — holds through stillness
+    tv       = _first_tv_ir_device()
+    tv_id    = tv.get("id") if tv else ""
+
+    # Room emptied: sensor off for N minutes. Presence sensors rarely
+    # false-clear, so a shorter grace is safe; motion needs the longer window
+    # to avoid cutting off someone sitting still while watching.
+    grace = 20 if presence else 30
+    trigger = {"type": "state", "entity_id": sensor or "", "state": "off", "for_minutes": grace}
+
+    # Only power-toggle when the TV is believed ON — `power` is a toggle, so an
+    # unconditional blast on an already-off TV would switch it back on.
+    conditions: list[dict] = []
+    if tv_id:
+        conditions.append({
+            "type":         "ir_device_state",
+            "ir_device_id": tv_id,
+            "operator":     "is",
+            "value":        "on",
+        })
+
+    actions: list[dict] = [{
+        "type":         "ir_command",
+        "ir_device_id": tv_id,
+        "ir_command":   "power",
+    }]
+
+    return {
+        "name":        "TV Off When Room Empty",
+        "description": "Powers the TV off over IR after the room's been empty for a while — only when the TV is believed to be on.",
+        "trigger":     trigger,
+        "conditions":  conditions,
+        "actions":     actions,
+        "rooms":       [],
     }
 
 

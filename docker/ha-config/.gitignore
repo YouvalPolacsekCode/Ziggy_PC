@@ -1,0 +1,16 @@
+# Keep generated secrets + HA runtime state OUT of git. Only the committed
+# prod skeleton (configuration.yaml, *.template, empty include files) is tracked.
+secrets.yaml
+.storage/
+.cloud/
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.log.*
+home-assistant.log.fault
+tts/
+deps/
+.HA_VERSION
+.ha_run.lock
+__pycache__/

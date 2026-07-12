@@ -1,0 +1,6 @@
+# image/cloud-init/meta-data — NoCloud datasource metadata.
+# The instance-id changes per hub so cloud-init re-runs on a fresh flash.
+# Replace <HUB-SERIAL> with the mini PC's serial or leave for cloud-init to
+# generate; hostname is cosmetic (Ziggy is the product surface, not the host).
+instance-id: ziggy-hub-<HUB-SERIAL>
+local-hostname: ziggy-hub

@@ -1,0 +1,26 @@
+# Fire ziggy-update.service every 2 minutes, indefinitely.
+# Linux equivalent of the Windows scheduled task's 2-minute repetition.
+#
+# Persistent=true => if the box was powered off across a scheduled tick, the
+# service fires once on next boot instead of waiting for the next :00/:02.
+# This is the systemd equivalent of the task's StartWhenAvailable.
+#
+# Install path: /etc/systemd/system/ziggy-update.timer
+[Unit]
+Description=Ziggy OTA update timer (every 2 minutes)
+Documentation=file:///opt/ziggy/scripts/linux/README.md
+
+[Timer]
+Unit=ziggy-update.service
+# First run 90s after boot (let docker + HA settle), then every 2 minutes
+# measured from the end of the previous run so overlapping builds never stack.
+OnBootSec=90
+OnUnitInactiveSec=120
+# Catch up one missed run after downtime instead of waiting for the next slot.
+Persistent=true
+# Small jitter so a fleet of hubs doesn't hammer origin at the same instant.
+RandomizedDelaySec=20
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

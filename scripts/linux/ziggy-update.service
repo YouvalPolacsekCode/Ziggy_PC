@@ -1,0 +1,43 @@
+# Ziggy OTA update — one-shot, fired every 2 minutes by ziggy-update.timer.
+# systemd equivalent of the Windows ZiggyAutoUpdate scheduled task.
+#
+# Runs as root by default: git + docker + systemctl self-heal all need it,
+# mirroring the Windows task's NT AUTHORITY\SYSTEM principal. To run as a
+# non-root 'ziggy' user, that user must be in the 'docker' group and own the
+# repo; override User=/Group= via a drop-in (see install-systemd-units.sh).
+#
+# Install path: /etc/systemd/system/ziggy-update.service
+[Unit]
+Description=Ziggy OTA update (canary/production cohort deploy + rollback)
+Documentation=file:///opt/ziggy/scripts/linux/README.md
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+# Don't fight a factory-reset / safe-mode operation in flight.
+Conflicts=ziggy-factory-reset.service
+
+[Service]
+Type=oneshot
+User=root
+# Sourced by the script too, but exported here so `systemctl show` reflects them.
+EnvironmentFile=-/etc/ziggy/ziggy.env
+WorkingDirectory=/opt/ziggy
+ExecStart=/opt/ziggy/scripts/linux/ziggy-update.sh
+# A single build can take several minutes (--no-cache --pull).
+TimeoutStartSec=1200
+# StartLimit + Restart equivalent of the Windows task's RestartCount=3:
+# one transient git/docker flake shouldn't wait for the next timer slot.
+Restart=on-failure
+RestartSec=60
+# Keep the journal readable — the script writes its own detailed logs.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ziggy-update
+# Never let a runaway build starve the box.
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=5
+
+[Install]
+# Not WantedBy anything — the .timer drives it. Present so `systemctl enable`
+# on the service alone is a harmless no-op rather than an error.
+WantedBy=multi-user.target

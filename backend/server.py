@@ -52,6 +52,8 @@ from backend.routers.onboarding_sensors_router import router as onboarding_senso
 from backend.routers.push_action_router import router as push_action_router
 from backend.routers.media_router import router as media_router
 from backend.routers.tts_router import router as tts_router
+from backend.routers.alerts_router import router as alerts_router
+from backend.routers.lifecycle_router import router as lifecycle_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -460,6 +462,14 @@ app.include_router(map_router,           dependencies=_auth)
 app.include_router(admin_router,         dependencies=_auth)
 app.include_router(activity_router,      dependencies=_auth)
 app.include_router(health_router,        dependencies=_auth)
+# Alerts inbox for the Hub widget. Was implemented but never mounted, so the
+# live /api/alerts call 404'd. Its single route declares its own
+# Depends(get_current_user); the global _auth here is belt-and-suspenders.
+app.include_router(alerts_router,        dependencies=_auth)
+# Host lifecycle control (factory reset / safe mode / customer reset). Every
+# route is gated by require_role("super_admin") internally; global _auth keeps
+# it consistent with the rest of the admin surface.
+app.include_router(lifecycle_router,     dependencies=_auth)
 # presence_router registers WITHOUT global _auth — its public routes (/ping, /join,
 # /manifest.json) are token-secured at the handler level; protected read/write routes
 # carry their own Depends(get_current_user) or Depends(require_role) directly.

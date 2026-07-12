@@ -45,17 +45,32 @@ async def create_invite(body: CreateInviteBody, bg: BackgroundTasks, request: Re
         if role_level.get(user.get("role", "user"), 0) < role_level["relay_admin"]:
             raise HTTPException(403, "Only relay admins can create home invites.")
         invite_role = body.role if body.role in ("super_admin", "admin") else "super_admin"
+        # Identity reconciliation (Stream 3): a home invite must bind the
+        # accepting user to a home that was ALREADY provisioned via
+        # /provision/hub — it must NOT trigger a second home_id / second
+        # Cloudflare tunnel at register time. Resolve the pre-provisioned home
+        # by explicit home_id, else by owner_email match. If none is found the
+        # invite is created with home_id=NULL and acceptance will 409 (unless
+        # the legacy self-provision escape hatch is explicitly enabled).
+        home_id_for_invite = (body.home_id or "").strip() or None
+        if not home_id_for_invite and body.email:
+            async with get_db() as db:
+                rows = await db.execute_fetchall(
+                    "SELECT id FROM homes WHERE lower(owner_email)=? ORDER BY created_at DESC LIMIT 1",
+                    (body.email.strip().lower(),),
+                )
+                if rows:
+                    home_id_for_invite = dict(rows[0])["id"]
     else:
         if role_level.get(user.get("role", "user"), 0) < role_level["super_admin"]:
             raise HTTPException(403, "Only super admins can invite users.")
-        home_id = body.home_id or user.get("home_id")
-        if not home_id:
+        home_id_for_invite = body.home_id or user.get("home_id")
+        if not home_id_for_invite:
             raise HTTPException(400, "home_id required.")
         invite_role = body.role
 
     now  = datetime.now(timezone.utc)
     tok  = new_token()
-    home_id_for_invite = None if body.type == "home" else (body.home_id or user.get("home_id"))
 
     async with get_db() as db:
         home_name = body.home_name
