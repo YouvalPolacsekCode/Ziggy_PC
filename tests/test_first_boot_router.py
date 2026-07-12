@@ -40,7 +40,9 @@ def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def client() -> TestClient:
     app = FastAPI()
     app.include_router(first_boot_router)
-    return TestClient(app)
+    # First-boot endpoints are LAN-gated (is_lan_request); bind a loopback peer
+    # so this fixture models the real on-network onboarding phone.
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 # ── /pair HTML ───────────────────────────────────────────────────────────────

@@ -97,6 +97,18 @@ def client_key(request: Request, prefix: str = "ip") -> str:
     return f"{prefix}:{host}"
 
 
+def peer_key(request: Request, prefix: str = "ip") -> str:
+    """Per-client key bound strictly to the DIRECT socket peer.
+
+    Unlike `client_key`, this never consults an authenticated identity or a
+    forwarded header — the no-auth first-boot pairing endpoints have no user
+    yet and X-Forwarded-For is attacker-spoofable, so brute-force protection
+    there must key on the one address a remote party cannot forge.
+    """
+    host = request.client.host if request.client else "unknown"
+    return f"{prefix}:{host}"
+
+
 # ---------------------------------------------------------------------------
 # Login limiter — brute-force guard for POST /api/auth/login.
 #
@@ -115,3 +127,34 @@ login_limiter = SlidingWindowLimiter(LOGIN_RATE_MAX, LOGIN_RATE_WINDOW_S, name="
 async def enforce_login_rate_limit(request: Request) -> None:
     """FastAPI dependency: throttle login attempts per source IP."""
     login_limiter.check(client_key(request, prefix="login"))
+
+
+# ---------------------------------------------------------------------------
+# First-boot pairing / ownership limiters — brute-force guard for the no-auth
+# endpoints that gate hub ownership: POST /api/mobile/pair and
+# POST /api/onboarding/claim.
+#
+# The claim code is ~30 bits with a 30-day TTL, so without a throttle an
+# attacker on the LAN could spray codes fast enough to matter. All three
+# limiters key on the DIRECT peer IP (peer_key) because these endpoints are
+# pre-account and X-Forwarded-For is spoofable.
+#
+#   pair_limiter       generic throughput ceiling on /pair redemptions.
+#   pair_fail_limiter  tighter lockout that ONLY counts invalid/expired codes,
+#                      so a legitimate one-shot redemption is never blocked but
+#                      a sprayer trips it after a handful of misses.
+#   claim_limiter      throughput ceiling on /api/onboarding/claim.
+# ---------------------------------------------------------------------------
+PAIR_RATE_MAX = 10
+PAIR_RATE_WINDOW_S = 60
+pair_limiter = SlidingWindowLimiter(PAIR_RATE_MAX, PAIR_RATE_WINDOW_S, name="pair")
+
+PAIR_FAIL_MAX = 5
+PAIR_FAIL_WINDOW_S = 300
+pair_fail_limiter = SlidingWindowLimiter(
+    PAIR_FAIL_MAX, PAIR_FAIL_WINDOW_S, name="pair-failure"
+)
+
+CLAIM_RATE_MAX = 10
+CLAIM_RATE_WINDOW_S = 60
+claim_limiter = SlidingWindowLimiter(CLAIM_RATE_MAX, CLAIM_RATE_WINDOW_S, name="claim")

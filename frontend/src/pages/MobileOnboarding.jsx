@@ -165,6 +165,27 @@ export default function MobileOnboarding() {
   )
 }
 
+// Persist the device's language + timezone into the onboarding ledger (and,
+// server-side, into config settings so time-based automations honour it).
+// Fire-and-forget: a failure here must never block the wizard. Uses the
+// device token set during PAIR — same relative-fetch + Bearer convention as
+// lib/mobileApi.js. Runs right after CLAIM so the owner's picks are captured
+// at the earliest point the device is authenticated.
+async function persistOnboardingPrefs() {
+  try {
+    const token = await getDeviceToken()
+    if (!token) return
+    const language = (typeof navigator !== 'undefined' && /^he\b/i.test(navigator.language || '')) ? 'he' : 'en'
+    let timezone = null
+    try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null } catch { /* older engines */ }
+    await fetch('/api/onboarding/prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ language, timezone }),
+    })
+  } catch { /* non-fatal — the wizard continues regardless */ }
+}
+
 // ── Steps ────────────────────────────────────────────────────────────────────
 
 function PairStep({ onDone }) {
@@ -294,6 +315,9 @@ function ClaimStep({ onDone, onError }) {
     setBusy(true); setError(null)
     try {
       const res = await claimOwner({ username: u, password })
+      // Capture language + timezone now that the device is authenticated and
+      // an owner exists. Fire-and-forget — never blocks the wizard.
+      persistOnboardingPrefs()
       onDone(res?.user_token || null)
     } catch (e) {
       if (e?.status === 409) {

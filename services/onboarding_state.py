@@ -66,6 +66,11 @@ def _default_state() -> dict:
         "last_step":       None,
         "completed_at":    None,
         "created_at":      _now(),
+        # Captured in the language/timezone onboarding steps. `None` means
+        # "not yet overridden" — callers fall back to config/settings.yaml
+        # (system.language / system.timezone, Asia/Jerusalem-region defaults).
+        "language":        None,
+        "timezone":        None,
     }
 
 
@@ -122,6 +127,28 @@ def mark_step(step_id: str, *, skipped: bool = False) -> dict:
             if step_id in skipped_list:
                 skipped_list.remove(step_id)
         state["last_step"] = step_id
+
+    return _mutate(apply)
+
+
+def set_prefs(*, language: Optional[str] = None, timezone: Optional[str] = None) -> dict:
+    """Persist the language/timezone the user picked during onboarding.
+
+    Only the provided fields are overwritten — passing just `timezone` leaves
+    a previously-captured `language` intact. Returns the new state. This is the
+    authoritative record of the onboarding override; mirroring it into
+    config/settings.yaml (system.*) is a separate best-effort step owned by the
+    router so a settings-write failure never loses the captured preference.
+    """
+    def apply(state: dict) -> None:
+        if language is not None:
+            lang = str(language).strip()
+            if lang:
+                state["language"] = lang
+        if timezone is not None:
+            tz = str(timezone).strip()
+            if tz:
+                state["timezone"] = tz
 
     return _mutate(apply)
 

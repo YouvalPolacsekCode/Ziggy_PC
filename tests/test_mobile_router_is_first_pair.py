@@ -44,7 +44,9 @@ def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def client():
     app = FastAPI()
     app.include_router(mr.router)
-    return TestClient(app)
+    # The claim-tier /pair branch is LAN-gated (require_lan); bind a loopback
+    # peer so this fixture models the real on-network onboarding phone.
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def _events(step: str) -> list[dict]:

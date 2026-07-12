@@ -266,6 +266,7 @@ def bind_claim_pending_device(device_id: str, user_id: str) -> bool:
     """
     if not user_id:
         raise ValueError("user_id is required to bind a claim-pending device")
+    bound = False
     with _lock:
         devices = _load(_DEVICES_FILE, [])
         for d in devices:
@@ -276,9 +277,61 @@ def bind_claim_pending_device(device_id: str, user_id: str) -> bool:
             d["user_id"]       = user_id
             d["claim_pending"] = False
             d["last_seen"]     = _now().isoformat()
+            # Bind the device to THIS hub's home_id so the record is
+            # unambiguously tied to the box the customer just claimed.
+            hid = _current_home_id()
+            if hid:
+                d["home_id"] = hid
             _save(_DEVICES_FILE, devices)
             log_info(f"[mobile_app] bound claim-pending device {device_id} → user {user_id}")
-            return True
+            bound = True
+            break
+    if bound:
+        # The FIRST phone to claim ownership closes the first-boot window:
+        # the LAN /pair page stops serving the claim QR and every subsequent
+        # mint routes through the authenticated /api/mobile/pair-code path.
+        # Done OUTSIDE _lock — first_boot.mark_onboarding_complete acquires
+        # first_boot's own lock, and the mint path takes first_boot._lock →
+        # mobile_app._lock, so calling it here while holding mobile_app._lock
+        # would invert the ordering and risk a deadlock.
+        try:
+            from services import first_boot
+            first_boot.mark_onboarding_complete()
+        except Exception as e:  # pragma: no cover - defensive
+            log_error(f"[mobile_app] failed to close first-boot window after claim bind: {e}")
+        return True
+    return False
+
+
+def _current_home_id() -> Optional[str]:
+    """Best-effort home_id from settings (settings.home.id)."""
+    try:
+        from core.settings_loader import load_settings
+        s = load_settings() or {}
+        hid = ((s.get("home") or {}).get("id"))
+        return str(hid) if hid else None
+    except Exception:
+        return None
+
+
+def has_claim_pending_device() -> bool:
+    """True while at least one claim-pending mobile device exists.
+
+    M1: the first phone to redeem a first-boot claim code creates a
+    claim-pending device and thereby *closes* the first-boot window — no new
+    claim codes are minted (first_boot.get_claim_qr consults this) and no
+    second claim-pending device is admitted (mobile pair claim branch consults
+    this). This stops a second phone from minting its own claim token and
+    racing the first through /api/onboarding/claim.
+
+    Self-healing: if the claim-pending device is revoked (or completes its
+    claim, flipping claim_pending→False), this returns False again and the
+    window reopens, so an abandoned pair doesn't permanently brick onboarding.
+    """
+    with _lock:
+        for d in _load(_DEVICES_FILE, []):
+            if d.get("claim_pending"):
+                return True
     return False
 
 

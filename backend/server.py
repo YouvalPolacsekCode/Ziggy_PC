@@ -54,6 +54,8 @@ from backend.routers.media_router import router as media_router
 from backend.routers.tts_router import router as tts_router
 from backend.routers.alerts_router import router as alerts_router
 from backend.routers.lifecycle_router import router as lifecycle_router
+from backend.routers.onboarding_router import router as onboarding_router
+from backend.routers.consent_router import router as consent_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -470,6 +472,9 @@ app.include_router(alerts_router,        dependencies=_auth)
 # route is gated by require_role("super_admin") internally; global _auth keeps
 # it consistent with the rest of the admin surface.
 app.include_router(lifecycle_router,     dependencies=_auth)
+# Consent capture/gating (voice transcript, support tunnel, background location).
+# Reads authenticated; record is owner-gated at the handler level.
+app.include_router(consent_router,       dependencies=_auth)
 # presence_router registers WITHOUT global _auth — its public routes (/ping, /join,
 # /manifest.json) are token-secured at the handler level; protected read/write routes
 # carry their own Depends(get_current_user) or Depends(require_role) directly.
@@ -502,6 +507,9 @@ app.include_router(first_boot_router)
 # Onboarding sensor list (Prompt 7 chunk 2.7) — auth is device-token,
 # enforced via the get_current_device dep imported from mobile_router.
 app.include_router(onboarding_sensors_router)
+# Onboarding state + language/timezone prefs. Routes self-guard: /state is
+# public read-only, /prefs is open during the first-boot window else device-authed.
+app.include_router(onboarding_router)
 # Push action callback (PROMPT_SECURITY_HARDENING_V2). Service-worker-driven,
 # token-in-URL IS the credential — must NOT be under `_auth` because the SW
 # cannot attach an Authorization header. See push_action_router.py.

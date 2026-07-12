@@ -367,6 +367,51 @@ step_seal() {
     bash "$SCRIPT_DIR/_seal_step.sh" || _die "seal step failed"
   unset master MASTER_KEY_B64 || true
   _ok "seal: data_key + kit_manifest written under $ETC_DIR"
+
+  # ── backups ON for sealed units ────────────────────────────────────────────
+  # The seal above wrote the per-home data_key + B2 creds under $ETC_DIR. With
+  # keys sealed, daily encrypted backups can be turned on safely. We flip
+  # backup.enabled: true in the hub's PROD settings.yaml — NEVER in
+  # config/settings.example.yaml (that stays enabled:false for dev). Only ever
+  # runs on a REAL seal: a dry-run seals into a sandbox and must not enable
+  # backups on this machine.
+  _enable_backups_after_seal
+}
+
+# Flip backup.enabled: true in the hub's prod config/settings.yaml. Idempotent.
+# Guarded so it only mutates config on a real run — the dry-run path logs the
+# intent and writes nothing, keeping the dev stack (enabled:false) untouched.
+_enable_backups_after_seal() {
+  local prod_cfg="$REPO_DIR/config/settings.yaml"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    _log "backups (dry-run): would set backup.enabled: true in $prod_cfg (seal was sandboxed; not enabling)"
+    return 0
+  fi
+  # Real run: the seal succeeded (a failure above would have _die'd). Seed the
+  # prod config from the example if a fresh hub has none yet, then enable.
+  if [[ ! -f "$prod_cfg" ]]; then
+    if [[ -f "$REPO_DIR/config/settings.example.yaml" ]]; then
+      _maybe_sudo cp "$REPO_DIR/config/settings.example.yaml" "$prod_cfg"
+      _log "backups: no prod settings.yaml yet — seeded from settings.example.yaml"
+    else
+      _log "backups: WARNING no prod settings.yaml and no example to seed from — cannot enable backups"
+      return 0
+    fi
+  fi
+  CFG="$prod_cfg" _maybe_sudo python3 - "$prod_cfg" <<'PY' || { _log "backups: WARNING could not set backup.enabled (leaving config as-is)"; return 0; }
+import sys, yaml
+path = sys.argv[1]
+with open(path) as f:
+    data = yaml.safe_load(f) or {}
+backup = data.get("backup")
+if not isinstance(backup, dict):
+    backup = {}
+    data["backup"] = backup
+backup["enabled"] = True
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, sort_keys=True, allow_unicode=True, default_flow_style=False)
+PY
+  _ok "backups: backup.enabled: true written to $prod_cfg (keys sealed → daily encrypted backups armed)"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════

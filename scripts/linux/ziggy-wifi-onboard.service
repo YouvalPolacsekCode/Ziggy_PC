@@ -1,0 +1,41 @@
+# Ziggy Wi-Fi onboarding — gets a headless, Ethernet-less hub online on first
+# boot. Waits (bounded) for connectivity; if still offline, raises a WPA2 AP
+# hotspot (Ziggy-Setup-<id>) and serves a bilingual captive portal so the owner
+# can hand over their home Wi-Fi. On a successful join it persists the
+# connection (autoconnect=yes) and tears the AP down.
+#
+# Ordering: NetworkManager must be up (nmcli talks to it), but we deliberately
+# do NOT wait for network-online.target — the whole point is the box may never
+# reach it. We run after NetworkManager.service and let the script's own bounded
+# connectivity check decide whether onboarding is needed.
+#
+# Type=oneshot + long TimeoutStartSec: the captive portal loops until the owner
+# completes setup. That is intended — a hub with no network is useless until
+# onboarded, so blocking boot progress here is acceptable and desirable.
+#
+# Install path: /etc/systemd/system/ziggy-wifi-onboard.service
+[Unit]
+Description=Ziggy headless Wi-Fi onboarding (captive-portal AP fallback)
+Documentation=file:///opt/ziggy/scripts/linux/wifi-onboarding/README.md
+Wants=NetworkManager.service
+After=NetworkManager.service
+# Only meaningful with NetworkManager present.
+ConditionPathExists=/usr/bin/nmcli
+
+[Service]
+Type=oneshot
+User=root
+# Bounded connectivity wait before falling back to the AP (seconds).
+Environment=ZIGGY_CONNECTIVITY_TIMEOUT=45
+ExecStart=/opt/ziggy/scripts/linux/wifi-onboarding/wifi-onboard.sh
+# The portal loops until setup completes (wifi-onboard.sh has its own retry
+# loop); don't let systemd kill it early. Restart= is intentionally omitted —
+# it is ignored for Type=oneshot, and the script self-heals via its loop; the
+# only non-looping exit is "no Wi-Fi adapter", where a restart wouldn't help.
+TimeoutStartSec=infinity
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ziggy-wifi-onboard
+
+[Install]
+WantedBy=multi-user.target

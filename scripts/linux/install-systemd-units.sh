@@ -45,10 +45,11 @@ REPO_DIR="${ZIGGY_REPO_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 SYSTEMD_DIR="/etc/systemd/system"
 UNITS=(ziggy.service \
        ziggy-update.service ziggy-update.timer ziggy-disk-guard.service ziggy-disk-guard.timer \
-       ziggy-lifecycle.service ziggy-lifecycle.path)
+       ziggy-lifecycle.service ziggy-lifecycle.path \
+       ziggy-wifi-onboard.service)
 # Directly-enabled services (WantedBy=multi-user.target). ziggy.service brings
 # the compose stack up on boot; enabling it is what makes a fresh image run.
-SERVICES=(ziggy.service)
+SERVICES=(ziggy.service ziggy-wifi-onboard.service)
 TIMERS=(ziggy-update.timer ziggy-disk-guard.timer)
 # .path units are enabled like timers (they drive their .service on a trigger).
 PATHS=(ziggy-lifecycle.path)

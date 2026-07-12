@@ -158,6 +158,59 @@ def create_user(
         return cur.lastrowid
 
 
+def create_first_owner(
+    username: str,
+    password_hash: str,
+    salt: str,
+    role: str = "super_admin",
+    hash_algo: str = "bcrypt",
+) -> Optional[int]:
+    """Atomically create the FIRST owner account, and ONLY if none exists yet.
+
+    The whole check-then-insert runs inside a single ``BEGIN IMMEDIATE``
+    transaction using ``INSERT ... SELECT ... WHERE NOT EXISTS`` so two
+    concurrent first-boot ``/api/onboarding/claim`` calls (different usernames)
+    can never both pass the gate and each mint a super_admin — one wins, the
+    other inserts zero rows.
+
+    ``BEGIN IMMEDIATE`` takes a RESERVED write lock up front, so the second
+    connection blocks until the first commits and then observes the row the
+    first inserted; its ``WHERE NOT EXISTS`` is false and nothing is written.
+
+    Returns the new row id, or ``None`` when an owner already exists (zero rows
+    inserted). Callers treat ``None`` as "ownership already taken" → HTTP 409.
+    """
+    init()
+    db = _connect()
+    # Manual transaction control: put the connection in autocommit mode so our
+    # explicit BEGIN IMMEDIATE / COMMIT / ROLLBACK are the only transaction
+    # boundaries (sqlite3's implicit BEGIN would otherwise fight us).
+    db.isolation_level = None
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        cur = db.execute(
+            """INSERT INTO users (username, role, password_hash, salt, hash_algo, created_at)
+               SELECT ?, ?, ?, ?, ?, ?
+               WHERE NOT EXISTS (SELECT 1 FROM users)""",
+            (username.strip(), role, password_hash, salt, hash_algo, _now()),
+        )
+        if cur.rowcount != 1:
+            # An owner already exists — the SELECT produced no row to insert.
+            db.execute("ROLLBACK")
+            return None
+        row_id = cur.lastrowid
+        db.execute("COMMIT")
+        return row_id
+    except Exception:
+        try:
+            db.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        db.close()
+
+
 def update_user_password(
     username: str,
     password_hash: str,

@@ -61,6 +61,43 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _owner_exists() -> bool:
+    """True once ANY owner account exists on this hub.
+
+    This is the authoritative "first-boot window is closed" signal — stronger
+    than the completed_at stamp, because an owner can be created out-of-band
+    (e.g. a technical user runs the web /api/auth/setup flow, or restores a
+    backup) without ever walking the mobile claim wizard. The no-auth
+    first-boot pair-code mint MUST hard-refuse the moment an owner exists, so
+    we consult auth_db directly rather than trusting only our own state file.
+
+    Imported lazily to avoid a module-load cycle (auth_db → settings → …) and
+    to keep first_boot importable in minimal test contexts. Any failure is
+    treated as "no owner" so a transient auth_db error never *serves* a claim
+    code it shouldn't — wait, the opposite: a failure here must fail CLOSED for
+    minting (treat as owner-present) so we never leak a claim code during an
+    auth_db hiccup. Returns True on error.
+    """
+    try:
+        from services import auth_db
+        return auth_db.has_any_user()
+    except Exception as e:  # pragma: no cover - defensive
+        log_error(f"[first_boot] owner-existence check failed, failing closed: {e}")
+        return True
+
+
+def _home_id() -> Optional[str]:
+    """Best-effort home_id from settings (settings.home.id). Recorded on the
+    owner at claim time so the account is bound to this specific hub."""
+    try:
+        from core.settings_loader import load_settings
+        s = load_settings() or {}
+        hid = ((s.get("home") or {}).get("id"))
+        return str(hid) if hid else None
+    except Exception:
+        return None
+
+
 def _device_id_path() -> Path:
     return Path(os.environ.get("ZIGGY_DEVICE_ID_PATH", DEFAULT_DEVICE_ID_PATH))
 
@@ -166,12 +203,19 @@ def _save_state(state: dict) -> None:
 # ── Public surface ───────────────────────────────────────────────────────────
 
 def is_first_boot() -> bool:
-    """True until mark_onboarding_complete() runs.
+    """True until mark_onboarding_complete() runs OR an owner account exists.
 
     Drives the LAN /pair page visibility and (later) the edge agent's
     decision to show the boot-time QR sticker fallback page.
+
+    Gated on BOTH signals: our own completed_at stamp AND auth_db owner
+    existence. The moment a home has an owner (via the mobile claim flow OR an
+    out-of-band web /api/auth/setup), the first-boot window is closed even if
+    completed_at was never stamped.
     """
-    return _load_state().get("completed_at") in (None, "")
+    if _load_state().get("completed_at") not in (None, ""):
+        return False
+    return not _owner_exists()
 
 
 def get_claim_qr() -> Optional[dict]:
@@ -188,6 +232,24 @@ def get_claim_qr() -> Optional[dict]:
     with _lock:
         state = _load_state()
         if state.get("completed_at"):
+            return None
+        # Hard-refuse once an owner exists — even if completed_at was never
+        # stamped (out-of-band web setup, backup restore). Auto-close the
+        # window so the LAN /pair page + qr.json reflect reality and every
+        # future mint routes through the authenticated /api/mobile/pair-code.
+        if _owner_exists():
+            state["completed_at"] = _now()
+            _save_state(state)
+            log_info("[first_boot] owner already exists — closing first-boot window, refusing claim mint")
+            return None
+        # M1: as soon as the FIRST phone has redeemed a claim code (a
+        # claim-pending device now exists), stop minting NEW claim codes. The
+        # window is effectively closed until that device finishes /claim (owner
+        # created → the branch above fires) or is revoked (reopens). This stops
+        # a second phone from obtaining its own claim token and feeding the
+        # owner-creation race.
+        if mobile_app.has_claim_pending_device():
+            log_info("[first_boot] a claim is already in progress — refusing to mint a new claim code")
             return None
         device_id = state.get("device_id") or get_device_id()
         state["device_id"] = device_id  # heal a missing/empty id

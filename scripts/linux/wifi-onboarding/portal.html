@@ -1,0 +1,104 @@
+<!doctype html>
+<!--
+  portal.html — captive-portal setup page for Ziggy headless Wi-Fi onboarding.
+  Served by portal_server.py. Fully self-contained (no external CSS/JS/fonts) so
+  it renders on a hotspot with no internet uplink. Bilingual he/en with an
+  RTL-first layout and an in-page language toggle.
+  Placeholders substituted by the server: {{SSID}}, {{DEVICE_ID}}, {{STATUS}}.
+-->
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Ziggy · הגדרת רשת / Wi-Fi Setup</title>
+<style>
+  :root { --bg:#0b1020; --card:#151b33; --fg:#f4f6ff; --muted:#9aa3c4;
+          --accent:#5b8cff; --accent2:#37d6a8; --err:#ff6b6b; --ok:#37d6a8; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:linear-gradient(160deg,#0b1020,#161d3a);
+         color:var(--fg); font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+         display:flex; align-items:center; justify-content:center; padding:20px; }
+  .card { background:var(--card); width:100%; max-width:420px; border-radius:18px;
+          padding:28px 24px; box-shadow:0 18px 50px rgba(0,0,0,.45); }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .dot { width:12px; height:12px; border-radius:50%;
+         background:linear-gradient(120deg,var(--accent),var(--accent2)); }
+  h1 { font-size:20px; margin:0; }
+  .sub { color:var(--muted); font-size:13px; margin:4px 0 18px; }
+  label { display:block; font-size:13px; margin:14px 0 6px; color:var(--muted); }
+  input, select { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2a3358;
+          background:#0e1430; color:var(--fg); font-size:16px; }
+  input:focus, select:focus { outline:2px solid var(--accent); border-color:transparent; }
+  button { width:100%; margin-top:22px; padding:14px; border:0; border-radius:12px;
+          font-size:16px; font-weight:600; color:#06122b; cursor:pointer;
+          background:linear-gradient(120deg,var(--accent),var(--accent2)); }
+  button:active { transform:translateY(1px); }
+  .row { display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--muted); font-size:13px; }
+  .row input[type=checkbox] { width:auto; }
+  .status { margin:12px 0 0; padding:10px 12px; border-radius:10px; font-size:14px; display:none; }
+  .status.err { display:block; background:rgba(255,107,107,.12); color:var(--err); border:1px solid rgba(255,107,107,.4); }
+  .status.ok  { display:block; background:rgba(55,214,168,.12); color:var(--ok); border:1px solid rgba(55,214,168,.4); }
+  .toplang { display:flex; justify-content:flex-end; margin-bottom:8px; }
+  .toplang button { width:auto; margin:0; padding:6px 12px; font-size:13px; background:#1d2547; color:var(--fg); }
+  .foot { color:var(--muted); font-size:11px; text-align:center; margin-top:18px; }
+  [data-lang=en] { display:none; }
+  html[data-ui=en] [data-lang=he] { display:none; }
+  html[data-ui=en] [data-lang=en] { display:block; }
+  html[data-ui=en] .row [data-lang=en] { display:inline; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="toplang">
+      <button type="button" onclick="setLang()"><span data-lang="he">English</span><span data-lang="en">עברית</span></button>
+    </div>
+    <div class="brand"><span class="dot"></span><h1>Ziggy</h1></div>
+    <p class="sub">
+      <span data-lang="he">חבר את הבית שלך לאינטרנט. בחר את רשת ה-Wi-Fi הביתית והזן סיסמה.</span>
+      <span data-lang="en">Connect your home hub to the internet. Choose your home Wi-Fi and enter the password.</span>
+    </p>
+
+    <div id="status" class="status {{STATUS_CLASS}}">{{STATUS_MSG}}</div>
+
+    <form method="POST" action="/connect" autocomplete="off">
+      <label>
+        <span data-lang="he">שם רשת (SSID)</span>
+        <span data-lang="en">Network name (SSID)</span>
+      </label>
+      <input name="ssid" type="text" required maxlength="32" inputmode="text"
+             placeholder="Home-WiFi" value="{{PREFILL_SSID}}">
+
+      <label>
+        <span data-lang="he">סיסמת הרשת</span>
+        <span data-lang="en">Wi-Fi password</span>
+      </label>
+      <input id="pw" name="password" type="password" maxlength="63" placeholder="••••••••">
+
+      <div class="row">
+        <input id="show" type="checkbox" onclick="togglePw()">
+        <label for="show" style="margin:0;">
+          <span data-lang="he">הצג סיסמה</span><span data-lang="en">Show password</span>
+        </label>
+      </div>
+
+      <button type="submit">
+        <span data-lang="he">התחבר</span><span data-lang="en">Connect</span>
+      </button>
+    </form>
+
+    <p class="foot">
+      <span data-lang="he">רשת התקנה: {{SSID}} · מזהה יחידה {{DEVICE_ID}}</span>
+      <span data-lang="en">Setup network: {{SSID}} · Device {{DEVICE_ID}}</span>
+    </p>
+  </div>
+<script>
+  function setLang(){
+    var h=document.documentElement;
+    h.setAttribute('data-ui', h.getAttribute('data-ui')==='en'?'he':'en');
+    h.setAttribute('dir', h.getAttribute('data-ui')==='en'?'ltr':'rtl');
+    h.setAttribute('lang', h.getAttribute('data-ui')==='en'?'en':'he');
+  }
+  function togglePw(){ var p=document.getElementById('pw'); p.type = p.type==='password'?'text':'password'; }
+</script>
+</body>
+</html>

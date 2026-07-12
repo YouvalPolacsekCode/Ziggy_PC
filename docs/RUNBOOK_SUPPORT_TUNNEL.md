@@ -1,114 +1,234 @@
-# Support Tunnel Runbook
+# Support Tunnel Runbook — Ubuntu mini-PC hubs
 
-Operator + customer flow for founder SSH access to a deployed home, as
-delivered by Prompt 10 chunk 3 ("Option 1 — manual SSH, audit-only").
+Operator + customer flow for founder SSH access to a deployed Ziggy home.
 
-This is the **interim** flow. Full automation (one-click WebSSH terminal
-in the browser, automated key provisioning, server-side session timer)
-is Prompt 5 scope, deferred post-launch.
+Every beta home is a physical **Ubuntu 24.04 mini PC** running the full stack
+locally (Ziggy + Home Assistant + Zigbee2MQTT). Support access reaches that box
+through the home's **Cloudflare Tunnel** — the same tunnel that already carries
+the hub's HTTPS traffic — over a Cloudflare-Access-gated SSH ingress. There is
+**no inbound port** on the mini PC and **no standing remote login**: the
+`ziggy-support` account only holds a key for the duration of a session.
 
----
-
-## What it is
-
-A founder support tunnel is a temporary SSH session, initiated by the
-founder, that reaches the per-home Hetzner VM through the home's
-Cloudflare Tunnel. It bypasses the customer's subscription gate (per
-Prompt 9 decision 8) — support must work even when billing has stopped
-the customer's remote access. Every session leaves a row in the relay's
-`audit_log` table so the customer can see exactly when and why support
-connected.
+> This supersedes the earlier Windows/Hetzner-VM design. There is no per-home
+> VM and no `ziggy` standing user; the host is a Linux mini PC and the login is
+> the on-demand `ziggy-support` account.
 
 ---
 
-## Endpoint
+## Moving parts
 
-`POST /api/admin/homes/{home_id}/support-session`
+| Layer | What | Where |
+|-------|------|-------|
+| Cloudflare tunnel ingress | `ssh-<home_id>.<domain>` → `ssh://localhost:22`, plus the HTTP catch-all | `relay/app/provisioner.py` (bound at provision time) |
+| Cloudflare Access policy | Gates the SSH hostname to the founder allow-list. **Mandatory** — if the allow-list is empty the SSH ingress + DNS are NOT bound at all (fail-closed) | `relay/app/provisioner.py` (`ZIGGY_SUPPORT_ALLOWED_EMAILS`) |
+| Session record + command | Audit row + the `cloudflared access ssh` command | `relay/app/routers/support_session.py` |
+| Host login | On-demand locked-down `ziggy-support` user | `scripts/linux/ziggy-support-access.sh` (on the mini PC) |
 
-* Auth: founder JWT with role `relay_admin`.
-* Body: `{ "reason": "<free text, optional>" }`. Truncated to 120 chars
-  before being written to the audit detail.
-* Response:
+---
+
+## Endpoints
+
+`POST /api/admin/homes/{home_id}/support-session` — open
+`POST /api/admin/homes/{home_id}/support-session/revoke` — close/revoke
+
+* Auth: founder JWT with role `relay_admin` (the highest role). Ordinary
+  `super_admin` / `admin` / `user` tokens are rejected `403`.
+* Body: `{ "reason": "<free text, optional>" }` — truncated to 120 chars in
+  the audit detail.
+* `open` response:
   ```json
   {
     "home_id":      "home-abc",
-    "tunnel_url":   "https://abc.ziggy.app",
-    "cf_tunnel_id": "...",
-    "ssh_snippet":  "cloudflared access ssh --hostname ssh-home-abc.ssh.ziggy.app --user ziggy",
+    "tunnel_url":   "https://home-abc.hubs.ziggy-home.com",
+    "cf_tunnel_id": "…",
+    "ssh_hostname": "ssh-home-abc.ssh.ziggy-home.com",
+    "ssh_snippet":  "cloudflared access ssh --hostname ssh-home-abc.ssh.ziggy-home.com --user ziggy-support",
     "ts":           "<iso8601>",
     "audit_id":     <int>
   }
   ```
+* `revoke` response:
+  ```json
+  {
+    "home_id":              "home-abc",
+    "audit_only":           true,
+    "host_revoke_required": true,
+    "detail":               "Relay logged the revoke intent. Host SSH access remains live until ziggy-support-access.sh --disable runs …",
+    "ts":                   "<iso8601>",
+    "audit_id":             <int>
+  }
+  ```
+  The relay canNOT end host access, so revoke is **audit-only**: it returns
+  `audit_only: true` + `host_revoke_required: true` rather than falsely claiming
+  the host login was revoked. Actual key removal is host-side (`--disable` or the
+  auto-revoke TTL timer).
 
-The relay never establishes the SSH session itself — it writes the
-audit row and returns the command for the founder to run locally.
+The relay never establishes the SSH session itself — it writes the (mandatory)
+audit row, fires the optional customer-notification hook, and returns the command
+for the founder to run locally. The `ssh_hostname` is produced by the shared provisioner helper
+(`ssh_hostname_for`), so it always matches the hostname the tunnel is bound to.
 
 ---
 
-## Operator flow
-
-1. From the operator dashboard (`/ops/cloud`), click the LifeBuoy icon
-   on a relay-managed home's HomeCard.
-2. Fill in a free-text reason (optional, but recommended — it ends up
-   in `audit_log.detail` for the customer's transparency report).
-3. Click **Open session**. The modal shows the audit row id and the
-   templated SSH command.
-4. Click **Copy command** and paste it into a local terminal.
-5. The SSH session uses your local `cloudflared` client + your
-   enrolled Cloudflare Access identity.
-
-### One-time founder setup
-
-The first time you do this on a new laptop:
+## Founder one-time setup (per laptop)
 
 ```bash
-brew install cloudflared            # or curl-install on Linux
-cloudflared login                   # opens browser, authenticates against the
-                                    # Ziggy Cloudflare Access team
+brew install cloudflared          # or the Linux package
+cloudflared login                 # browser auth against the Ziggy CF Access team
 ```
 
-Cloudflare Access remembers your identity for ~24 h per device. After
-that you'll get a fresh browser auth prompt on the next session.
+Cloudflare Access remembers your identity ~24 h per device.
 
-### Closing the session
+Generate a support keypair once and share the **public** key with provisioning
+(it goes into `ZIGGY_SUPPORT_PUBKEY` on the hub, never committed):
 
-`Ctrl-D` or `exit` in the SSH session. The audit row is the durable
-record — there is no separate "session closed" event in v1.
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/ziggy_support -C "founder@ziggy.app"
+```
+
+---
+
+## Operator flow (open → connect → revoke)
+
+1. **Open** the session (dashboard LifeBuoy button, or curl):
+   ```bash
+   curl -sX POST https://relay.../api/admin/homes/home-abc/support-session \
+     -H "Authorization: Bearer $FOUNDER_JWT" \
+     -H 'Content-Type: application/json' \
+     -d '{"reason":"z2m dropouts"}'
+   ```
+   This writes `support_session_opened` to `audit_log`, notifies the customer,
+   and returns the `ssh_snippet`.
+
+2. **Enable the host login.** The mini PC must arm the `ziggy-support` account
+   for the session. This is triggered on the hub (via the authenticated admin
+   API / lifecycle watcher, or manually during a hands-on debug):
+   ```bash
+   sudo ZIGGY_SUPPORT_PUBKEY="$(cat ~/.ssh/ziggy_support.pub)" \
+     /opt/ziggy/scripts/linux/ziggy-support-access.sh --enable --ttl 60
+   ```
+   It installs the founder key with `restrict,pty` options, unlocks the account,
+   and schedules an auto-revoke timer (default 60 min). If no scheduler
+   (`systemd-run` or `at`) is available it **fails hard and arms nothing** —
+   there is never an unrevocable support login. The `ziggy-support` login is a
+   plain unprivileged account by default (no `docker`/root-equivalent groups).
+
+3. **Connect** with the returned command + your support key:
+   ```bash
+   cloudflared access ssh --hostname ssh-home-abc.ssh.ziggy-home.com \
+     --user ziggy-support -- -i ~/.ssh/ziggy_support
+   ```
+
+4. **Revoke** when done — two independent teardown steps, both idempotent:
+   * Host side (removes the key, locks the account, kills live sessions):
+     ```bash
+     sudo /opt/ziggy/scripts/linux/ziggy-support-access.sh --disable
+     ```
+     If you forget, the `--ttl` timer runs this automatically.
+   * Relay side (durable audit record + customer notification). This is
+     **audit-only** — it returns `{"audit_only": true, "host_revoke_required":
+     true, …}` and does NOT itself end host access, so always run the host-side
+     `--disable` (or rely on the TTL timer) too:
+     ```bash
+     curl -sX POST https://relay.../api/admin/homes/home-abc/support-session/revoke \
+       -H "Authorization: Bearer $FOUNDER_JWT" -d '{"reason":"done"}'
+     ```
+
+Check host state any time: `sudo ziggy-support-access.sh --status`.
+
+---
+
+## The host script — security model
+
+`scripts/linux/ziggy-support-access.sh` (`--enable` / `--disable` / `--status`,
+plus `--dry-run` on any action):
+
+* The `ziggy-support` account exists but is **locked and keyless** when no
+  session is active — login is impossible.
+* `--enable` installs the founder public key (from `--pubkey FILE` or
+  `ZIGGY_SUPPORT_PUBKEY`, never hard-coded) into
+  `~ziggy-support/.ssh/authorized_keys` prefixed with `restrict,pty`
+  (all forwarding/agent/X11/tunnel disabled; interactive PTY kept), unlocks the
+  account, and schedules `systemd-run` (or `at`) auto-revoke after `--ttl`
+  minutes. **It fails hard (exit 1, nothing armed) if no scheduler is available**
+  — and if scheduling fails after the account is unlocked, it rolls back to the
+  locked/keyless state. There is never an armed login without a self-heal timer.
+* **No supplementary groups by default.** `ziggy-support` is a plain,
+  unprivileged login. Extra groups are opt-in via `ZIGGY_SUPPORT_GROUPS`
+  (comma-separated). Adding `docker` grants **host-root-equivalent** access (the
+  docker socket == root); only set it when genuinely required.
+* `--disable` truncates the key, expires + locks the account, kills any live
+  `ziggy-support` sessions, and cancels the timer.
+* A drop-in `/etc/ssh/sshd_config.d/60-ziggy-support.conf` with a
+  `Match User ziggy-support` block enforces key-only, no-forwarding for **this
+  user only** — it never relaxes anything for other accounts, so normal host
+  security is identical whether or not a session is active.
+* Idempotent; `--dry-run` prints the full enable/revoke plan and mutates
+  nothing (no user created, no key written, no sshd reload).
+
+---
+
+## Provisioning: how the SSH ingress gets bound
+
+SSH ingress is **opt-in per home** (`ZIGGY_SSH_INGRESS_ENABLED=1`) and
+**fail-closed**. At `provision_hub` time, when enabled, the relay additively
+binds the SSH ingress on the existing per-home tunnel:
+
+0. **Fail-closed guard.** If `ZIGGY_SUPPORT_ALLOWED_EMAILS` is empty, the relay
+   binds **nothing** — no SSH ingress, no SSH DNS, no Access app — and logs a
+   warning. An allow-list is the only auth gate, so a missing one must never
+   yield a world-reachable, ungated SSH proxy.
+1. Sets the HTTP-only ingress first (the guaranteed baseline — hub stays live).
+2. **Creates/verifies the self-hosted Cloudflare Access application FIRST**, with
+   an allow policy reconciled to exactly `ZIGGY_SUPPORT_ALLOWED_EMAILS` (stale
+   policies are deleted so a removed email is truly de-authorized). If the Access
+   app can't be created, provisioning publishes **no** SSH route.
+3. Re-asserts the ingress as `[ssh-<id>.<domain> → ssh://localhost:22, HTTP
+   catch-all]`.
+4. Creates the SSH hostname CNAME → `<tunnel_id>.cfargotunnel.com` (proxied) —
+   only after the Access gate exists.
+
+The Access gate is **mandatory**; the ingress/DNS bind after it is best-effort
+and never fails an otherwise-live home. Relevant relay env:
+
+| Env | Meaning | Default |
+|-----|---------|---------|
+| `ZIGGY_SSH_INGRESS_ENABLED` | Bind the SSH ingress at all (opt-in) | `0` (off) |
+| `ZIGGY_SSH_DOMAIN` | Apex for `ssh-<home_id>.<domain>` | `ssh.ziggy-home.com` |
+| `ZIGGY_SUPPORT_ALLOWED_EMAILS` | Founder emails for the Access policy (**mandatory**) | *(unset → NO SSH ingress/DNS bound; fail-closed, warning logged)* |
+| `ZIGGY_SSH_USER` | Host login the command targets | `ziggy-support` |
+| `ZIGGY_CUSTOMER_NOTIFY_URL` | Optional webhook for open/revoke notifications | *(unset → no-op; the audit row is the durable record)* |
+| `CF_ZONE_ID` | Owned zone for the SSH CNAME (shared with the hub hostname) | *(unset → SSH DNS + ingress bind skipped)* |
+| `CF_PROVISION_DRY_RUN` | Log every intended CF call, perform none | *(unset)* |
+
+Because `ZIGGY_SSH_DOMAIN` (`ssh.ziggy-home.com`) sits under the same zone as
+the hub hostname (`hubs.ziggy-home.com`), the existing `CF_ZONE_ID` covers both.
 
 ---
 
 ## Customer-visible flow
 
-> *v1 scope: design doc only. The mobile-app implementation lives in
-> docs/MOBILE_ROUTE_AUDIT.md for the next mobile release.*
+Every relay open and revoke:
 
-The customer can see and revoke active support sessions from the Ziggy
-Home mobile app's Privacy screen:
+1. Writes an `audit_log` row (`support_session_opened` / `support_session_revoked`)
+   with the founder email + reason. **This is the mandatory, durable transparency
+   record** — it does not depend on the optional webhook. Customers read it from
+   the app's Privacy screen / `/ops/audit`.
+2. Fires the OPTIONAL `notify_customer` hook. When `ZIGGY_CUSTOMER_NOTIFY_URL` is
+   set the relay POSTs `{home_id, event, detail, ts}` so the customer's app (or
+   an email relay) can surface the session in real time. **When the env is unset
+   this is a no-op** — the audit row is still the durable record. Best-effort — a
+   notification failure never blocks the founder's request.
 
-1. Mobile app polls `/api/auth/me/support-sessions` (new edge endpoint,
-   not yet built) every time the Privacy screen renders.
-2. Each open session shows: founder identity, opened time, reason
-   (verbatim from the audit row), and a "Revoke" button.
-3. Revoke writes `support_session_revoked` to the audit_log and removes
-   the founder's enrolled key from the home's `authorized_keys`.
+**Honest scope note:** the guaranteed customer-visible record is the *relay-side*
+audit row for each open/revoke. The host-side `ziggy-support-access.sh --enable`
+runs on the mini PC and does **not** produce a relay audit trace on its own; the
+operator flow above pairs each host `--enable`/`--disable` with the corresponding
+relay open/revoke so the audit log reflects reality. Do not assume host arming is
+independently logged on the relay.
 
-Push notification on session open is **also** stubbed for v1. When the
-mobile app gains a foreground notification handler for
-`support_session_opened` audit events (Phase 3 mobile work), the
-customer will see a toast in real time.
-
----
-
-## Hostname pattern
-
-`ssh-<home_id>.<ZIGGY_SSH_DOMAIN>`
-
-`ZIGGY_SSH_DOMAIN` defaults to `ssh.ziggy.app` and is overridable via
-env on the relay. The hostname is bound to the home's Cloudflare
-Tunnel during provisioning (`relay/app/provisioner.py`). If a home was
-provisioned **before** the SSH-Access policy was published, you'll get
-"Hostname not found" — provision a fresh Cloudflare Access app for it
-manually using the cf_tunnel_id returned in the response body.
+Customers view/revoke sessions from the app's Privacy screen (mobile handler is
+tracked separately in `docs/MOBILE_ROUTE_AUDIT.md`).
 
 ---
 
@@ -116,48 +236,45 @@ manually using the cf_tunnel_id returned in the response body.
 
 `audit_log` table on the relay:
 
-| column      | value                                              |
-|-------------|----------------------------------------------------|
-| `ts`        | ISO timestamp of the relay write                   |
-| `event`     | `support_session_opened`                           |
-| `home_id`   | the customer's home                                 |
-| `source_ip` | founder's client IP (X-Forwarded-For)              |
-| `ok`        | `1` on success, `0` on unknown_home / auth failure |
-| `detail`    | `by=<founder_email> reason=<truncated>`            |
+| column | value |
+|--------|-------|
+| `ts` | ISO timestamp of the relay write |
+| `event` | `support_session_opened` / `support_session_revoked` |
+| `home_id` | the customer's home |
+| `source_ip` | founder's client IP (X-Forwarded-For) |
+| `ok` | `1` on success, `0` on unknown_home / auth failure |
+| `detail` | `by=<founder_email> reason=<truncated>` |
 
-To see all sessions for a home from the dashboard:
-
-* Open `/ops/audit`.
-* Filter `event = support_session_opened` and `home = <home>`.
-* Each row's detail shows founder email + reason.
-
-The CloudAdmin HomeCard's per-user expansion includes a "View audit log
-for this home" deep link that lands pre-filtered to exactly this query.
+Dashboard: `/ops/audit`, filter `event = support_session_*` and `home = <home>`.
 
 ---
 
 ## Failure modes
 
-| Symptom                                | Cause                                    | Recovery                              |
-|----------------------------------------|------------------------------------------|---------------------------------------|
-| `404 Home not found`                   | home_id wrong / home deprovisioned       | Confirm home_id in CloudAdmin         |
-| `cloudflared: certificate expired`     | Access session > 24 h old                | `cloudflared login` again             |
-| `cloudflared: connection refused`      | Per-home Cloudflare Tunnel down          | Check `homes.tunnel_url` is reachable from relay; reprovision if absent |
-| SSH prompts for password               | Founder pubkey not on the home's authorized_keys | Re-run the imaging script's SSH bootstrap (`PROMPT_FACTORY_IMAGING.md` §5) |
-| Customer reports "I see a session I didn't authorize" | (not a failure mode of this flow) | Investigate audit row; rotate Cloudflare Access policy |
+| Symptom | Cause | Recovery |
+|---------|-------|----------|
+| `404 Home not found` | wrong / deprovisioned `home_id` | confirm in CloudAdmin |
+| `403 Insufficient permissions` | token is not `relay_admin` | use the founder JWT |
+| `cloudflared: certificate expired` | Access session > 24 h | `cloudflared login` again |
+| Access page rejects you | your email isn't in `ZIGGY_SUPPORT_ALLOWED_EMAILS` | add it, re-provision the Access app |
+| `Permission denied (publickey)` | host session not enabled / expired | run `ziggy-support-access.sh --enable` (check `--status`) |
+| `connection refused` on the SSH hostname | tunnel down, or ingress not bound (CF_ZONE_ID was unset at provision) | verify hub tunnel is up; re-provision with `CF_ZONE_ID` set |
+| "Hostname not found" | home provisioned before SSH ingress existed | re-run provisioning (idempotent) to bind the ingress + Access app |
 
 ---
 
-## Why not full automation now
+## Notes / residual caveats
 
-* **Prompt 5 deferred (post-launch).** A WebSSH terminal in the browser
-  + auto-provisioning the founder pubkey to the home's
-  `authorized_keys` + server-side session timer all live there.
-* **The audit row is the durable record.** Whether the actual SSH is
-  one-click or copy-paste doesn't change what the customer can see in
-  their Privacy screen.
-* **The customer notification is the hard part.** That requires the
-  mobile app to subscribe to a new audit-event push channel, which is
-  Phase 3 mobile work, not Prompt 10.
-
-Revisit when Prompt 5 is unblocked.
+* **Access app auto-creation needs an IdP.** The Cloudflare Access policy is an
+  email allow-list; it assumes the Ziggy Access team already has an identity
+  provider (One-time PIN or Google) configured. Without one, `cloudflared`
+  can't complete the interactive auth.
+* **Fail-closed, not ungated.** If `ZIGGY_SUPPORT_ALLOWED_EMAILS` is empty the
+  relay binds **no** SSH ingress, DNS route, or Access app at all (a warning is
+  logged) — there is never an ungated SSH hostname. Set the allow-list (and
+  `ZIGGY_SSH_INGRESS_ENABLED=1`, which is off by default) before relying on
+  support access in production.
+* **Two-sided revoke.** The relay revoke endpoint is audit-only (returns
+  `audit_only: true` / `host_revoke_required: true`); the actual key removal is
+  host-side (`--disable` or the auto-revoke timer). Always confirm `--status`
+  shows `key: none` after a session.

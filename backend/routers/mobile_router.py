@@ -18,6 +18,7 @@ backend/server.py is one additive `app.include_router(mobile_router)` line.
 from __future__ import annotations
 
 import asyncio
+import ipaddress as _ipaddress
 import os as _os
 import zipfile as _zipfile
 from pathlib import Path as _PathLib
@@ -28,25 +29,105 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from backend.routers.auth_deps import get_current_user
+from backend.middleware.rate_limit import (
+    SlidingWindowLimiter, peer_key,
+    pair_limiter, pair_fail_limiter,
+)
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 from core.logger_module import log_info
-from services import mobile_app
+from services import auth_db, mobile_app
 from services.mobile_ws_manager import mobile_ws
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP for audit events.
+    """Best-effort client IP for **audit events only**.
 
     Prefers X-Forwarded-For (relay-proxied requests) then the direct peer.
     Returns empty string when neither is available — emit callers must
     tolerate that, the bus accepts any string.
+
+    SECURITY: X-Forwarded-For is attacker-controllable, so this value must
+    NEVER be used for an authorization decision. LAN-origin gating uses
+    `_peer_ip()` (the direct socket peer) instead — see `is_lan_request`.
     """
     fwd = request.headers.get("x-forwarded-for", "")
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else ""
+
+
+def _peer_ip(request: Request) -> str:
+    """The DIRECT socket peer address — never a forwarded header.
+
+    This is the only address a remote party cannot spoof, so it is what
+    LAN-origin gating and per-IP rate-limiting key on.
+    """
+    return request.client.host if request.client else ""
+
+
+def _is_private_host(host: str) -> bool:
+    """True when `host` is a loopback / RFC1918 / link-local address."""
+    if not host:
+        return False
+    try:
+        ip = _ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+# Header names whose presence proves the request traversed a proxy/relay and
+# therefore did NOT originate on the local network, regardless of peer IP
+# (the relay/tunnel egresses into the container from a private docker address).
+_PROXY_MARKER_HEADERS = (
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "forwarded",
+    "cf-connecting-ip",
+    "cf-ray",
+)
+
+
+def is_lan_request(request: Request) -> bool:
+    """True only when the request genuinely originated on the local network.
+
+    Both conditions are required:
+      1. The direct socket peer (`_peer_ip`) is loopback or RFC1918/link-local
+         private. A public source IP is never LAN.
+      2. No proxy/relay markers on the request: no X-Relay-* header (cloud
+         relay via RelayAuthMiddleware) and none of the reverse-proxy /
+         Cloudflare-Tunnel forwarding headers. The relay/tunnel egress into
+         the container is itself a private address, so (1) alone would let a
+         remote party through — (2) is what closes that hole.
+
+    A real customer phone talking straight to the edge box over Wi-Fi sets
+    neither marker and has a private peer IP, so it passes.
+    """
+    if not _is_private_host(_peer_ip(request)):
+        return False
+    for name in request.headers.keys():
+        n = name.lower()
+        if n.startswith("x-relay-") or n in _PROXY_MARKER_HEADERS:
+            return False
+    return True
+
+
+def require_lan(request: Request) -> None:
+    """Reject (403) any request that is not LAN-local. Guards the no-auth
+    first-boot endpoints so the claim code / ownership grant is never
+    reachable through the Cloudflare Tunnel or cloud relay."""
+    if not is_lan_request(request):
+        _dbus.emit("mobile_auth", BASIC, "first_boot_remote_blocked",
+                   path=request.url.path,
+                   source_ip=_client_ip(request),
+                   peer_ip=_peer_ip(request))
+        raise HTTPException(
+            status_code=403,
+            detail="First-boot pairing is only available on the local network.",
+        )
 
 
 def _short_code(code: str) -> str:
@@ -168,6 +249,12 @@ async def pair(req: PairRequest, request: Request):
         (Chunk 3) will later bind a freshly-minted owner. is_first_pair=True
         so the mobile app drives CLAIM_OWNER + SENSORS + STARTER_PACK steps.
     """
+    # H2: throttle the ownership-gating pair endpoint per direct peer IP. Pair
+    # codes are ~30 bits with a 30-day TTL, so an unthrottled sprayer could
+    # brute a claim code. This generic budget blunts request storms; the
+    # tighter `pair_fail_limiter` below locks out repeated invalid attempts.
+    pair_limiter.check(peer_key(request, "pair"))
+
     match = mobile_app.consume_pair_code(req.pair_code.upper())
     if not match:
         # Pair codes have low entropy by design (6 chars). An attacker
@@ -179,10 +266,43 @@ async def pair(req: PairRequest, request: Request):
                    code_suffix=_short_code(req.pair_code),
                    platform=req.device.platform,
                    source_ip=_client_ip(request))
+        # Record the failure; once too many land inside the window this raises
+        # 429 (a much tighter lockout than the generic pair budget) so online
+        # brute-forcing of the claim code becomes infeasible.
+        pair_fail_limiter.check(peer_key(request, "pairfail"))
         raise HTTPException(status_code=400, detail="Invalid or expired pair code.")
 
     kind = match.get("kind", "user")
     if kind == "claim":
+        # C2 + L1: the claim-tier (no-owner-yet) redemption is a first-boot
+        # ownership grant. It must be reachable only from the LAN, never
+        # through the tunnel/relay where a remote party who read the code off
+        # qr.json could seize super_admin. User-tier pairs are NOT gated —
+        # an owner may legitimately pair a second phone from anywhere.
+        require_lan(request)
+
+        # H1: once ANY owner exists this hub is already owned. A stale claim
+        # code (up to 30-day TTL, or one minted out-of-band) must not be
+        # honored to spin up another claim-pending device.
+        if auth_db.has_any_user():
+            _dbus.emit("mobile_auth", BASIC, "mobile_pair_failed",
+                       reason="owner_already_exists",
+                       code_suffix=_short_code(req.pair_code),
+                       platform=req.device.platform,
+                       source_ip=_client_ip(request))
+            raise HTTPException(status_code=409, detail="This hub is already claimed.")
+
+        # M1: the first claim-pending device closes the window. Refusing a
+        # SECOND claim-pending device stops a second phone from minting its
+        # own claim token and racing the first through /api/onboarding/claim.
+        if mobile_app.has_claim_pending_device():
+            _dbus.emit("mobile_auth", BASIC, "mobile_pair_failed",
+                       reason="claim_already_in_progress",
+                       code_suffix=_short_code(req.pair_code),
+                       platform=req.device.platform,
+                       source_ip=_client_ip(request))
+            raise HTTPException(status_code=409, detail="A claim is already in progress on this hub.")
+
         record = mobile_app.register_device(
             user_id=None,
             device_info=req.device.model_dump(),

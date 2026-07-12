@@ -23,7 +23,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.routers.mobile_router import get_current_device, _client_ip
+from backend.routers.mobile_router import get_current_device, _client_ip, require_lan
+from backend.middleware.rate_limit import claim_limiter, peer_key
 from core.debug_bus import bus as _dbus, BASIC
 from core.logger_module import log_error, log_info
 import asyncio
@@ -158,9 +159,13 @@ async def claim_owner(
          the customer's PWA can pick up later for browser auto-login.
 
     Concurrency notes:
-      - Only the FIRST caller succeeds. has_any_user() race is benign:
-        the second create_user would fail at SQL uniqueness; we re-check
-        explicitly to return a tidy 409.
+      - Only the FIRST caller succeeds. Ownership is minted via
+        auth_db.create_first_owner(), a single BEGIN IMMEDIATE transaction
+        that inserts the super_admin row ONLY if the users table is empty.
+        Two concurrent /claim calls with different usernames can therefore
+        never both win — the loser's insert affects zero rows and we return
+        a tidy 409. (The earlier has_any_user() pre-check is a fast path /
+        nicer audit reason, NOT the correctness guarantee.)
       - A claim-pending device whose token can't bind (race with revoke or
         bind-already-happened) yields device_bound=False without rolling
         back the user creation — the customer's account exists, the
@@ -171,6 +176,12 @@ async def claim_owner(
       (with a specific reason) so the founder's debug feed shows whether
       a freshly-imaged box made it through claim cleanly.
     """
+    # C2: ownership grant — LAN only, never through the tunnel/relay.
+    require_lan(request)
+    # H2: throttle per direct peer IP so the ownership endpoint can't be
+    # hammered even from the LAN.
+    claim_limiter.check(peer_key(request, "claim"))
+
     src_ip = _client_ip(request)
 
     # 1. The auth dep already returned a valid device record. Now verify
@@ -182,9 +193,9 @@ async def claim_owner(
                    source_ip=src_ip)
         raise HTTPException(status_code=409, detail="This device is already claimed.")
 
-    # 2. Refuse a second claim — only the very first owner gets the
-    #    super_admin slot via this no-auth flow. Subsequent users go through
-    #    invite_router.
+    # 2. Fast-path refusal + clear audit reason when an owner already exists.
+    #    This is NOT the concurrency guard — that lives in create_first_owner
+    #    (step 4). It short-circuits the common already-owned case cheaply.
     if auth_db.has_any_user():
         _dbus.emit("onboarding", BASIC, "claim_rejected",
                    reason="owner_already_exists",
@@ -200,17 +211,24 @@ async def claim_owner(
     if len(body.password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
 
-    # 4. Create the owner. Mirror /api/auth/setup primitives so the user row
-    #    matches what every other login path expects (bcrypt hash, empty
-    #    salt, hash_algo=bcrypt, super_admin role).
+    # 4. Atomically create the FIRST owner. create_first_owner returns None if
+    #    another concurrent claim already won the super_admin slot — treat that
+    #    as 409. Mirrors /api/auth/setup primitives (bcrypt hash, empty salt,
+    #    hash_algo=bcrypt, super_admin role) so the row matches every login path.
     user_session_token = secrets.token_hex(32)
-    user_row_id = auth_db.create_user(
+    user_row_id = auth_db.create_first_owner(
         username=username,
         password_hash=hash_password_bcrypt(body.password),
         salt="",
         role="super_admin",
         hash_algo="bcrypt",
     )
+    if user_row_id is None:
+        _dbus.emit("onboarding", BASIC, "claim_rejected",
+                   reason="owner_race_lost",
+                   device_id=device.get("device_id"),
+                   source_ip=src_ip)
+        raise HTTPException(status_code=409, detail="An owner account already exists.")
     auth_db.add_session(user_row_id, user_session_token)
 
     # 5. Bind the device. mobile_app stores user_id as the username string

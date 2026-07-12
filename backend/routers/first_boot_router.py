@@ -30,6 +30,8 @@ simply uses the existing flow with the code alone.
 """
 from __future__ import annotations
 
+import threading
+import time
 from typing import Optional
 from urllib.parse import urlsplit, quote
 
@@ -37,10 +39,53 @@ import segno
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from backend.routers.mobile_router import require_lan
 from services import first_boot
 
 
 router = APIRouter()
+
+
+# ─── rate limiting ──────────────────────────────────────────────────────────
+#
+# These endpoints are unauthenticated (the customer has no account yet), so
+# the claim-code IS the only credential a mint reveals. The mint is already
+# single-use + device-bound + first-boot-gated, but a no-auth surface still
+# wants a throttle so a LAN attacker (or a buggy client in a retry loop)
+# can't hammer it. Project has no global limiter (slowapi absent), so this is
+# a tiny in-process fixed-window counter keyed by client IP. Cheap, no deps,
+# resets naturally each window.
+
+_RATE_WINDOW_S = 60.0
+_RATE_MAX_PER_WINDOW = 60          # generous: a human refreshing /pair is fine
+_rate_lock = threading.Lock()
+# ip -> (window_start_epoch, count)
+_rate_state: dict[str, tuple[float, int]] = {}
+
+
+def reset_rate_limits() -> None:
+    """Clear the rate-limit counters. Test-only seam."""
+    with _rate_lock:
+        _rate_state.clear()
+
+
+def _rate_limit(request: Request) -> None:
+    """Raise 429 when the caller's IP exceeds the per-window budget."""
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    with _rate_lock:
+        start, count = _rate_state.get(ip, (now, 0))
+        if now - start >= _RATE_WINDOW_S:
+            start, count = now, 0
+        count += 1
+        _rate_state[ip] = (start, count)
+        over = count > _RATE_MAX_PER_WINDOW
+    if over:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many pairing requests. Please wait a moment and retry.",
+            headers={"Retry-After": str(int(_RATE_WINDOW_S))},
+        )
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -231,6 +276,11 @@ async def pair_page(request: Request) -> HTMLResponse:
     sees a coherent message rather than a 404. The body itself describes
     the state.
     """
+    # C2 + L1: the page renders the live claim code + device_id — a mint/leak
+    # surface. LAN only, so a remote party through the tunnel/relay can neither
+    # read the code nor fingerprint an unclaimed hub.
+    require_lan(request)
+    _rate_limit(request)
     qr = first_boot.get_claim_qr()
     if qr is None:
         body = _HTML_BODY_DONE
@@ -253,6 +303,10 @@ async def pair_page(request: Request) -> HTMLResponse:
 @router.get("/api/onboarding/first-boot/qr.json")
 async def pair_qr_json(request: Request) -> dict:
     """JSON sibling of /pair. 404 when onboarding is complete."""
+    # C2 + L1: same mint/leak surface as /pair — device_id + claim code. Gate
+    # to the LAN so remote callers can't read the code or recon unclaimed hubs.
+    require_lan(request)
+    _rate_limit(request)
     qr = first_boot.get_claim_qr()
     if qr is None:
         raise HTTPException(status_code=404, detail="Onboarding already complete.")
