@@ -1,372 +1,392 @@
-# Ziggy – Claude Operating Context
+# CLAUDE.md
 
-## What Ziggy Is
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Ziggy is a local AI-powered smart home assistant and automation platform.
+## Project Overview
 
-It runs on a **mini PC or Mac** and acts as the intelligence layer on top of systems like Home Assistant and other integrations.
+**Ziggy** is a locally-hosted AI smart home platform combining natural language control, Home Assistant integration, and a full-stack React web interface. The architecture is:
 
-Ziggy provides:
+```
+User Input (Web / Voice / Telegram)
+    ↓
+Intent Parser → Action Router → Domain Handlers
+    ↓
+FastAPI Backend (8001) ← → React Frontend (3000)
+    ↓
+Home Assistant + MQTT + Telegram Bot + LLM + IR Blasters
+```
 
-- natural language control
-- smart home orchestration
-- automation execution
-- task and reminder management
-- file and note management
-- system utilities
-- conversational AI interaction
-- remote control via Telegram
+Core stack: **Python 3.11+ backend** (FastAPI, async), **React 18 + Vite + Tailwind** frontend, **Home Assistant WebSocket integration**, **offline LLM support** (Ollama).
 
-The system is designed to eventually evolve into a **commercial smart home platform**.
+## Quick Start Commands
 
-Claude should treat the codebase as a **serious long-term software system**, not a prototype.
+### Local Development Setup
+
+```bash
+# Python backend
+python3 -m venv .venv
+source .venv/bin/activate          # macOS/Linux
+# OR .\.venv\Scripts\Activate.ps1  # Windows
+pip install -r requirements.txt
+
+# Frontend
+cd frontend && npm install && cd ..
+```
+
+### Running Ziggy
+
+**Full stack (recommended):**
+```bash
+# Terminal 1: Backend (runs on port 8001)
+python core/ziggy_main.py
+
+# Terminal 2: Frontend dev server (runs on port 3000)
+cd frontend && npm run dev
+```
+
+**Frontend only (against running backend):**
+```bash
+cd frontend && npm run dev
+```
+
+**Voice interface (standalone):**
+```bash
+python interfaces/voice_interface.py
+```
+
+**Telegram bot interface:**
+```bash
+python interfaces/telegram_interface.py
+```
+
+### Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run a single test file
+pytest tests/test_anomaly_engine.py
+
+# Run specific test class
+pytest tests/test_anomaly_engine.py::TestAnom01
+
+# Run with verbose output
+pytest -v
+
+# Run async tests (test_anomaly_engine.py uses pytest-asyncio)
+pytest tests/test_anomaly_engine.py -v
+```
+
+### Linting & Code Quality
+
+Ziggy uses standard Python patterns (no formal linter configured). For cleanliness:
+- Follow PEP 8 conventions
+- Use type hints (the codebase uses them throughout)
+- Async functions in services; sync in handlers where HA sync calls are needed
+- Document intent classifiers and handler logic inline
+
+## Architecture & Design Patterns
+
+### Data Flow: Intent → Handler → Result
+
+1. **User input** → FastAPI `/api/intent` or `/api/chat` endpoint
+2. **Intent parsing** (`core/intent_parser.py`): NLU classifies text into `{intent, params}`
+3. **Action routing** (`core/action_parser.py`): Routes intent to the appropriate handler
+4. **Domain handler** (`core/handlers/{light,climate,task,etc.}.py`): Executes the action
+5. **Result rendering** (`core/result_utils.py`): Formats response for the user
+
+**Key insight:** Handlers return `{"status", "message", "data"}`. The result is broadcast to all connected WebSocket clients via `backend.ws_manager.manager.broadcast()`.
+
+### Multi-Threaded Architecture
+
+`core/ziggy_main.py` spawns daemon threads for:
+- **API** (FastAPI server on 8001)
+- **Vite** (frontend dev server on 3000, auto-stop on shutdown)
+- **Voice** (wake-word detection + STT/TTS pipeline)
+- **PatternEngine** (learns usage patterns, emits suggestions)
+- **SensorAlerts** (monitors doors/motion, pushes notifications)
+- **Reminder** (task due dates, calendar notifications)
+- **Ollama** (local LLM server for pattern synthesis)
+
+All threads are **daemon=True**. Graceful shutdown via `core.shared_flags.shutdown_event` (SIGTERM handler sets it).
+
+### Configuration
+
+**File:** `config/settings.yaml` (loaded by `core/settings_loader.py`)
+
+Key sections:
+- `home_assistant`: HA URL + long-lived token
+- `openai`: API key for LLM fallback (Ollama preferred for Hebrew)
+- `telegram`: Bot token + allowed user IDs
+- `device_map`: Room-to-entity mapping (maps room names to HA entity_ids)
+- `features`: Toggle voice, pattern learning, sensor alerts, etc.
+- `debug`: Enable dashboard, log levels
+
+**Room-to-Entity Mapping Example:**
+```yaml
+device_map:
+  living_room:
+    light: light.living_room
+    temperature: climate.ac_living_room
+    motion: binary_sensor.motion_living_room
+```
+
+### Handler Structure
+
+Each domain handler lives in `core/handlers/{domain}.py` and exports an async function `handle_{domain}(intent_data, context)` that:
+1. Validates params
+2. Calls the appropriate service (e.g., `home_automation.py` for HA calls)
+3. Returns `{"status": "ok|error", "message": "...", "data": {...}}`
+
+**Example: Light handler**
+```python
+async def handle_light(intent_data, context):
+    action = intent_data.get("action")  # "on", "off", "dim"
+    room = intent_data.get("room")
+    if action == "on":
+        result = await home_automation.turn_on_light(room)
+    return {"status": "ok" if result else "error", "message": "..."}
+```
+
+Handlers can emit structured events via `core.debug_bus.bus.emit()` for dashboard telemetry.
+
+### Home Assistant Integration
+
+- **REST calls**: `services/home_automation.py` wraps the HA REST API
+- **Real-time sync**: `services/ha_subscriber.py` maintains a WebSocket subscription to HA state changes
+- **Device registry**: `services/device_registry.py` caches a canonical in-memory device model (synced from HA on startup + periodic reconciliation)
+- **Entity filtering**: `services/entity_filter.py` hides system entities from the UI (sensor.foo_debug, etc.)
+- **Capability detection**: `services/capability_catalog.py` infers dimmability, color support, etc. per entity
+
+### Pattern Learning & Suggestions
+
+- **Pattern detector** (`services/pattern_detector.py`): Scans event history for recurring usage (e.g., "lights on every weekday at 7am")
+- **Suggestion engine** (`services/suggestion_engine.py`): Converts patterns into actionable routines
+- **Local LLM synthesis** (Ollama): Uses local model to generate natural-language routine descriptions instead of hardcoded templates
+- **Async background task**: Runs on configurable schedule (default 10 min) without blocking FastAPI
+
+### Anomaly Detection
+
+`services/anomaly_engine.py` flags unusual states:
+- **ANOM-01:** All away + lights on
+- **ANOM-02:** Open door + AC running
+- **ANOM-03:** Motion in empty room at night
+- **ANOM-04:** Motion detected during quiet hours
+- (More rules can be added)
+
+Anomalies can be snoozed per-room. Snooze state is currently in-memory (TODO: persist to SQLite across restarts).
+
+### FastAPI Routers
+
+All routers are registered in `backend/server.py` and follow a consistent pattern:
+
+```python
+from fastapi import APIRouter, Depends
+from backend.routers.auth_deps import get_current_user
+
+router = APIRouter()
+
+@router.post("/api/endpoint")
+async def handler(req: Request, user = Depends(get_current_user)):
+    # Implementation
+    return {"status": "ok", ...}
+```
+
+**Key routers:**
+- `intent_router`: `/api/intent`, `/api/chat`, `/api/voice` (30/min rate limit)
+- `device_router`: `/api/devices`, `/api/device/{id}/capability`
+- `automation_router`: CRUD for automations
+- `routine_router`: CRUD for routines (time-based triggers)
+- `task_router`: Task list management
+- `suggestion_router`: Pattern-learned suggestions
+- `map_router`: Home floor plan rendering
+- `admin_router`: System settings
+
+### WebSocket Broadcasting
+
+All real-time updates flow through `backend.ws_manager.manager`:
+
+```python
+# In any service/handler
+await manager.broadcast({
+    "type": "device_state_updated",
+    "entity_id": "light.living_room",
+    "state": "on",
+})
+```
+
+Frontend subscribes to `ws://localhost:8001/ws` and updates state in Zustand stores.
+
+## Frontend Architecture
+
+**Tech Stack:** React 18 + Vite + Zustand (state) + Tailwind CSS + Framer Motion + Radix UI
+
+**Key directories:**
+- `frontend/src/pages/`: Page components (Dashboard, Rooms, Devices, etc.)
+- `frontend/src/components/`: Reusable UI components
+- `frontend/src/stores/`: Zustand state (authStore, cameraStore, quickAskStore, etc.)
+- `frontend/src/lib/`: Utilities (API calls, intent schemas, quick-asks definitions)
+
+**State Management:** Zustand stores handle auth, device state, UI prefs. Component-level state for forms/temporary UI state.
+
+**API Communication:**
+- `fetch()` for HTTP (REST)
+- `WebSocket` for real-time updates
+- All endpoints at `http://localhost:8001/api/...`
+
+**Styling:** Tailwind + PostCSS. Framer Motion for animations. Custom Badge component in `frontend/src/components/ui/Badge.jsx`.
+
+## Extension Points
+
+### Adding a New Intent
+
+1. **Classify the intent:** Add a case in `core/intent_parser.py` that recognizes the user's language pattern
+   ```python
+   def quick_parse(text):
+       if "turn on" in text.lower():
+           return {"intent": "light_on", "params": extract_room_from_text(text)}
+   ```
+2. **Route to handler:** In `core/action_parser.py`, map intent to handler
+   ```python
+   def handle_intent(intent_data):
+       if intent_data["intent"] == "light_on":
+           return await handle_light(intent_data, context)
+   ```
+3. **Implement handler:** Create or extend handler in `core/handlers/light_handler.py`
+
+### Adding a New Service
+
+1. Create `services/my_service.py`
+2. Export an async function `async def my_service_function(...)`
+3. Import and call from handlers or routers
+4. If background task: spawn thread in `core/ziggy_main.py` with `thread_wrapper("MyService", ...)`
+
+### Adding a Frontend Page
+
+1. Create React component in `frontend/src/pages/MyPage.jsx`
+2. Add route in `frontend/src/App.jsx`
+3. Wire API calls via `frontend/src/lib/api.js`
+4. Use Zustand stores for shared state
+
+### Adding a Home Assistant Entity
+
+1. Update `config/settings.yaml` to map the entity to a room
+   ```yaml
+   device_map:
+     living_room:
+       motion: binary_sensor.motion_living_room  # Add this
+   ```
+2. Handler code automatically reads from device registry on startup
+
+### Adding a New Router
+
+1. Create `backend/routers/my_router.py` with `router = APIRouter()`
+2. Add endpoints with `@router.get()`, `@router.post()`, etc.
+3. Import and register in `backend/server.py`: `from backend.routers.my_router import router as my_router`
+4. Then in the app setup: `app.include_router(my_router)` (find the existing include_router calls)
+
+## Important Files Reference
+
+| File | Purpose |
+|------|---------|
+| `core/ziggy_main.py` | Main entry point; spawns all threads |
+| `core/intent_parser.py` | NLU classifier |
+| `core/action_parser.py` | Routes intents to handlers |
+| `core/handlers/*.py` | Domain-specific action logic |
+| `core/settings_loader.py` | Config file loading + validation |
+| `core/result_utils.py` | Response formatting |
+| `services/home_automation.py` | HA REST API wrapper |
+| `services/ha_subscriber.py` | HA WebSocket state sync |
+| `services/device_registry.py` | Canonical device model |
+| `services/task_manager.py` | Task CRUD + reminders |
+| `services/pattern_detector.py` | Usage pattern detection |
+| `services/suggestion_engine.py` | Pattern → routine conversion |
+| `services/anomaly_engine.py` | Anomaly detection rules |
+| `backend/server.py` | FastAPI app wiring |
+| `backend/routers/intent_router.py` | Intent processing endpoints |
+| `backend/ws_manager.py` | WebSocket broadcast hub |
+| `backend/middleware/error_handler.py` | Unified error responses |
+| `frontend/package.json` | Frontend deps (React, Vite, Tailwind) |
+| `frontend/vite.config.js` | Vite build config |
+| `config/settings.yaml` | User configuration |
+
+## Known TODOs & Technical Debt
+
+See `TODOS.md` for full list. Key items:
+
+1. **Hebrew voice pipeline:** Handlers should generate Hebrew responses natively instead of translating English responses (saves 600ms latency)
+2. **Anomaly snooze persistence:** Currently in-memory; should persist to SQLite across server restarts
+3. **AI-generated home map visual:** Infrastructure built but GPT-4o struggles to enrich isometric SVG. Consider top-down projection or two-pass approach.
+
+## Debugging Tips
+
+### Check Backend Logs
+
+```bash
+# Tail output from running backend
+tail -f logs/*.log
+
+# Or stream stdout directly
+python core/ziggy_main.py 2>&1 | grep -i error
+```
+
+### Check Frontend Dev Server
+
+```bash
+cd frontend && npm run dev
+# Logs appear in the same terminal; check browser console (F12) for React errors
+```
+
+### Test HA Connection
+
+```bash
+# In Python shell
+from services.home_automation import get_state
+state = get_state("light.living_room")
+print(state)
+```
+
+### Test Voice Pipeline
+
+```bash
+python interfaces/voice_interface.py
+# Speaks "Hello" + waits for voice input
+# Type in console or speak after wake word "Hey Ziggy"
+```
+
+### View Device Registry
+
+```bash
+from services.device_registry import get_device_model
+model = get_device_model()
+print(model)  # Shows all entities synced from HA
+```
+
+### Check WebSocket Events
+
+In browser console (F12):
+```javascript
+// Assuming ws is the WebSocket connection
+ws.onmessage = (e) => console.log(JSON.parse(e.data))
+```
+
+## Performance Considerations
+
+- **HA WebSocket sync:** Runs continuously. Updates device registry in ~100ms per event.
+- **Intent parsing:** Can call OpenAI (500ms) or use local model (50-200ms). Optimize with quick_parse fallback.
+- **Pattern learning:** Async background task (10 min default). Doesn't block FastAPI.
+- **Voice STT:** Whisper API (~3s for 30s audio). Local faster-whisper (~1-2s).
+- **Frontend:** Vite HMR enabled. Zustand stores are subscription-based (efficient re-renders).
+
+## Deployment Notes
+
+- Set `web_interface.frontend_dev: false` in `settings.yaml` to skip Vite spawning (use production build instead)
+- Frontend production build: `cd frontend && npm run build` → outputs to `frontend/dist/`
+- Serve frontend dist via `backend` (FastAPI can serve static files)
+- For cloud/headless: `_has_audio_input_device()` check skips Voice thread gracefully
+- Use `.env` file (or `config/settings.yaml`) for secrets (HA token, OpenAI key, etc.)
 
 ---
 
-# Core Design Philosophy
-
-Ziggy should be:
-
-- modular
-- robust
-- extensible
-- maintainable
-- understandable
-
-Avoid:
-
-- monolithic code
-- tight coupling
-- fragile logic
-- hidden side effects
-
-Prefer:
-
-- clear module boundaries
-- explicit interfaces
-- readable code
-- predictable execution flows
-
----
-
-# High Level Architecture
-
-The system conceptually follows this pipeline:
-
-User Input  
-→ Intent Detection  
-→ Parameter Extraction  
-→ Action Routing  
-→ Execution  
-→ Response
-
-Input sources may include:
-
-- voice
-- Telegram
-- CLI
-- API
-- future UI
-
-Actions may include:
-
-- smart home control
-- task operations
-- file operations
-- system utilities
-- conversational AI responses
-
----
-
-# Major Capability Areas
-
-## Conversational AI
-
-Ziggy supports natural language interaction.
-
-This includes:
-
-- question answering
-- general conversation
-- thought partner mode
-- fallback responses when no structured command exists
-
-Conversation should not interfere with structured command execution.
-
----
-
-## Smart Home Control
-
-Ziggy acts as the AI layer above Home Assistant.
-
-Responsibilities include:
-
-- device control
-- device state queries
-- automation triggering
-- room summaries
-
-Supported domains may include:
-
-- lights
-- switches
-- climate
-- sensors
-- binary sensors
-- media players
-
-Design integrations so they are easily replaceable.
-
----
-
-## Task Management
-
-Ziggy includes a full task system.
-
-Tasks support:
-
-- creation
-- updates
-- deletion
-- listing
-
-Task attributes may include:
-
-- due date
-- reminder time
-- priority
-- repeat frequency
-- completion state
-
-Natural language input should be converted into structured task data.
-
----
-
-## File and Note Management
-
-Ziggy can create and manage local files.
-
-Supported formats may include:
-
-- TXT
-- Markdown
-- JSON
-- YAML
-- CSV
-- XLSX
-- DOCX
-- PPTX
-- PDF
-
-Files are stored locally.
-
----
-
-## System Tools
-
-Ziggy includes system diagnostics and utilities.
-
-Examples:
-
-- system status
-- disk usage
-- IP address
-- network adapters
-- ping tests
-- restarting Ziggy
-
-System commands must be safe and controlled.
-
----
-
-## Telegram Interface
-
-Telegram is a major control interface.
-
-Features include:
-
-- sending commands
-- receiving responses
-- task management
-- smart home control
-- button-based flows
-
-The Telegram layer must be resilient and stable.
-
----
-
-# Engineering Principles
-
-## Modularity
-
-The project should be divided into modules such as:
-
-- intent parsing
-- action handling
-- integrations
-- utilities
-- memory
-- interfaces
-
-Each module should have a clear responsibility.
-
----
-
-## Separation of Concerns
-
-Intent detection should not contain execution logic.
-
-Execution modules should not perform intent detection.
-
-Parsing, routing, and execution must be separated.
-
----
-
-## Error Handling
-
-The system must never crash from missing hardware or integrations.
-
-Instead it should:
-
-- log the error
-- return an informative response
-- continue operating
-
----
-
-## Logging
-
-All major flows should produce logs.
-
-Logs should help debug:
-
-- intent detection
-- parameter extraction
-- integration failures
-- automation execution
-
----
-
-# How Claude Should Work On This Project
-
-Claude should behave like a **senior software architect reviewing and improving a production system**.
-
-When analyzing code Claude should:
-
-1. Understand the architecture
-2. Identify structural issues
-3. Suggest improvements
-4. Detect bugs
-5. Propose cleaner module boundaries
-6. Simplify complex logic
-7. Improve reliability
-
-Claude **is allowed to refactor code aggressively** if it improves architecture or stability.
-
-However, changes should remain understandable and maintainable.
-
----
-
-# Important Rule
-
-Claude must **never assume missing functionality exists**.
-
-If something is unclear or missing from the codebase, Claude must explicitly state that instead of inventing behavior.
-
----
-
-# Deployment & operations (READ THIS BEFORE SUGGESTING ANYTHING THAT TOUCHES PROD)
-
-**Every push to `origin/main` auto-deploys to the user's home (canary) within ~5 minutes** via a Windows scheduled task on the mini PC. There is no "staging" between the Mac dev environment and the user's real home — canary IS the user's home.
-
-## Cohort model
-
-- **Canary** (default; the user's house): home's `.env` has no `ZIGGY_COHORT` or `ZIGGY_COHORT=canary`. Follows `origin/main`.
-- **Production** (future / other homes): home's `.env` has `ZIGGY_COHORT=production`. Follows the most recently created tag matching `release-*`. Bare pushes to `main` never deploy here.
-
-To ship to production, the operator runs: `git tag release-YYYY.MM.DD -m "..." && git push origin release-YYYY.MM.DD`.
-
-## Auto-rollback
-
-`scripts/update.ps1` verifies `/api/version` returns the new SHA within ~60s post-deploy. If not, it reverts to the last verified SHA from `user_files/deploy_log` and rebuilds. Rollback is recorded with `kind: rollback`. This only catches "container won't start"; logic bugs in a healthy container won't trigger it.
-
-## Signed releases (opt-in per home)
-
-If `ZIGGY_REQUIRE_SIGNED_TAGS=true` in a production home's `.env`, the script runs `git verify-tag` before checkout. Default off.
-
-## Fleet visibility
-
-`scripts/fleet-status.sh` reads `scripts/fleet.yml` and prints per-home SHA / uptime / HA status. Non-zero exit on drift.
-
-## Posture for Claude
-
-- Pushes to `main` hit the user's real home in 5 min. Treat every push as a production deploy. Do not push experimental or risky changes without the user's sign-off.
-- Reversible local edits (`Edit`, `Write`) and `git commit` (local) are fine to do autonomously. `git push origin main` is the line — pause to confirm unless the user has already authorized the scope.
-- For multi-home / staged rollouts, use tags: `git tag release-*` is the production lever. `main` is for canary only.
-- The user's canonical day-to-day cheat sheet is [`RUNBOOK.md`](RUNBOOK.md) at the repo root. The full architecture and runbook is [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Read both before suggesting a deployment workflow.
-- Mini PC is Windows. Scripts that run there are PowerShell (`scripts/update.ps1`, `scripts/install-auto-update.ps1`). Mac-side scripts are bash. Don't propose `apt-get` / `systemctl` for the mini PC.
-
----
-
-## Skill routing
-
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
-
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
-
-This project is indexed by GitNexus as **Ziggy_PC** (11967 symbols, 28005 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
-
-## Always Do
-
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
-- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
-
-## Never Do
-
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
-
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/Ziggy_PC/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Ziggy_PC/clusters` | All functional areas |
-| `gitnexus://repo/Ziggy_PC/processes` | All execution flows |
-| `gitnexus://repo/Ziggy_PC/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->
+**Last updated:** 2026-07-06 | Ziggy v1.0
