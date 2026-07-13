@@ -103,7 +103,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "ziggy_supported":    False,
             "ziggy_note":         "Converter exists but not exposed via create_automation; also requires HA-Companion GPS feed we don't ingest. presence_engine is the Ziggy-native path.",
             "decline_message_en": "I can't currently set up automations tied to people arriving or leaving home.",
-            "decline_message_he": "אני עדיין לא יכול להגדיר אוטומציות על בסיס הגעה או יציאה מהבית.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי הגעה או יציאה מהבית.",
         },
         {
             "id":                 "webhook",
@@ -112,7 +112,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "ziggy_supported":    False,
             "ziggy_note":         "Converter exists; handler doesn't expose. Security review needed before opening.",
             "decline_message_en": "I can't currently trigger automations from external web requests.",
-            "decline_message_he": "אני עדיין לא יכול להפעיל אוטומציות באמצעות קריאות חיצוניות מהאינטרנט.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות כשמשהו קורא לזיגי מבחוץ.",
         },
         {
             "id":                 "template",
@@ -120,7 +120,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "shape":              {"value_template": "{{ ... }}"},
             "ziggy_supported":    False,
             "decline_message_en": "I can't currently set up triggers based on custom expressions yet.",
-            "decline_message_he": "אני עדיין לא תומך בטריגרים על בסיס ביטויים מותאמים אישית.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי ביטויים שהגדרת בעצמך.",
         },
         {
             "id":                 "calendar",
@@ -128,7 +128,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "shape":              {"entity_id": "calendar.X", "event": "start|end", "offset": "-00:30:00"},
             "ziggy_supported":    False,
             "decline_message_en": "I can't currently trigger automations from calendar events.",
-            "decline_message_he": "אני עדיין לא יכול להפעיל אוטומציות לפי אירועים מהיומן.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים מהיומן.",
         },
         {
             "id":                 "tag",
@@ -136,7 +136,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "shape":              {"tag_id": "<uuid>"},
             "ziggy_supported":    False,
             "decline_message_en": "I can't currently trigger automations from NFC tag scans.",
-            "decline_message_he": "אני עדיין לא יכול להפעיל אוטומציות באמצעות סריקה של תגיות NFC.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי סריקת תג NFC.",
         },
         {
             "id":                 "device",
@@ -144,7 +144,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "shape":              {"device_id": "<id>", "type": "<event>", "subtype": "<button>"},
             "ziggy_supported":    False,
             "decline_message_en": "I can't currently set up automations on button presses or other device-specific events yet.",
-            "decline_message_he": "אני עדיין לא יכול להגדיר אוטומציות על לחיצות כפתורים או אירועים ייעודיים אחרים.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי לחיצת כפתור או אירועים מיוחדים אחרים.",
         },
         {
             "id":                 "event",
@@ -152,7 +152,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "shape":              {"event_type": "<name>"},
             "ziggy_supported":    False,
             "decline_message_en": "I can't currently set up automations on low-level system events.",
-            "decline_message_he": "אני עדיין לא תומך בטריגרים על בסיס אירועי מערכת נמוכים.",
+            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים פנימיים של המערכת.",
         },
     ],
     "conditions": [
@@ -195,7 +195,7 @@ _HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
             "shape":              {"after": "sunrise|sunset", "before": "sunrise|sunset", "elevation": "<deg>"},
             "ziggy_supported":    False,
             "decline_message_en": "I can't currently use sun-position conditions yet.",
-            "decline_message_he": "אני עדיין לא תומך בתנאים על בסיס מיקום השמש.",
+            "decline_message_he": "אני עדיין לא יודע להתחשב במיקום השמש.",
         },
     ],
     "actions": [
@@ -353,7 +353,7 @@ def get_gaps() -> list[dict]:
                     "kind":               kind[:-1],  # "triggers" → "trigger"
                     "id":                 c["id"],
                     "decline_message_en": c.get("decline_message_en", "I can't currently do that."),
-                    "decline_message_he": c.get("decline_message_he", "אני עדיין לא יכול לעשות את זה."),
+                    "decline_message_he": c.get("decline_message_he", "אני עדיין לא יודע לעשות את זה."),
                 })
     return gaps
 

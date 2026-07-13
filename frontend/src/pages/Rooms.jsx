@@ -16,7 +16,7 @@ import { Input } from '../components/ui/Input'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { useDeviceStore, applyRoomsOrder } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
-import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
+import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
@@ -890,7 +890,7 @@ function renderDomainSection(group, devices, t) {
     const onCount = visibleDevices.filter(e => isEntityOn(e)).length
     return (
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t ? t('rooms.lightsHeader', { label: group.label, on: onCount, total: visibleDevices.length }) : `${group.label} · ${onCount} of ${visibleDevices.length} on`}</p>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t ? t('rooms.lightsHeader', { label: groupLabel(group.id), on: onCount, total: visibleDevices.length }) : `${groupLabel(group.id)} · ${onCount} of ${visibleDevices.length} on`}</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
           {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="tile" tileStyle={ROOM_TILE_STYLE} />)}
         </div>
@@ -902,7 +902,7 @@ function renderDomainSection(group, devices, t) {
   if (group.id === 'sensors') {
     return (
       <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{groupLabel(group.id)}</p>
         <SensorsStrip devices={visibleDevices} />
       </div>
     )
@@ -911,7 +911,7 @@ function renderDomainSection(group, devices, t) {
   // Everything else → vertical list of row-variant DeviceCards
   return (
     <div>
-      <p className="z-eyebrow" style={{ marginBottom: 8 }}>{group.label}</p>
+      <p className="z-eyebrow" style={{ marginBottom: 8 }}>{groupLabel(group.id)}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {visibleDevices.map((e, i) => <DeviceCard key={e.entity_id || i} entity={e} variant="row" />)}
       </div>

@@ -27,7 +27,7 @@ blueprint:
     tags: [welcome, presence, lights]
     he:
       name: ברוך הבא הביתה
-      description: מדליק אור ברגע שאתה מגיע הביתה (לפי מיקום הטלפון).
+      description: מדליק אור ברגע שמגיעים הביתה (לפי מיקום הטלפון).
       inputs:
         person_entity: עוקב נוכחות
         light_target: אור הברכה

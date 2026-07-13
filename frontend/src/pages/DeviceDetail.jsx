@@ -15,7 +15,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
-import { DOMAIN_REGISTRY } from '../lib/domainRegistry'
+import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
 import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
@@ -843,7 +843,7 @@ export default function DeviceDetail() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span className="z-eyebrow">{meta.label}</span>
+                  <span className="z-eyebrow">{domainLabel(entity.domain)}</span>
                   {facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>IR</span>}
                   {facts.hasIr && !facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>{t('deviceDetail.irPlusWifi')}</span>}
                   {!facts.isAvailable && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--warn)' }}>{t('deviceDetail.unavailable')}</span>}

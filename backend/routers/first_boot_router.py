@@ -196,7 +196,7 @@ _HTML_TEMPLATE = """<!doctype html>
 """
 
 _HTML_BODY_PAIR = """
-    <h1>צמדו את הזיגי שלכם</h1>
+    <h1>בואו נחבר את זיגי</h1>
     <p class="lead">Open the Ziggy Home app and scan this code, or type the 6-character code shown below.</p>
     <div class="qr">{qr_svg}</div>
     <p class="code">{code}</p>
@@ -212,7 +212,7 @@ _HTML_BODY_PAIR = """
 _HTML_BODY_DONE = """
     <div class="done">
       <div class="icon">✓</div>
-      <h1>הזיגי שלכם כבר מוגדר</h1>
+      <h1>זיגי שלכם כבר מוכן</h1>
       <p class="lead">This Ziggy is already set up. Open the Ziggy Home app to use it.</p>
     </div>
 """
