@@ -14,10 +14,14 @@ where to click to get it.
   affect your *current* production home, so we do them together. When Phase 1 is
   green, just say "let's do Phase 2".
 
-Your laptop is a Mac. Your mini PC is assumed to be an Intel/AMD (x86-64) box.
-**30-second check:** if the box or its spec sheet says "Intel" or "AMD" or
-"N100/N305/Ryzen", you're fine. If it says "ARM", "Rockchip", or "RK35xx",
-**stop and tell Claude** — the download is different.
+**Your hardware (confirmed):** the beta units are HM35 mini PCs, AMD Ryzen 5
+3550H — that is **x86-64**, so the `amd64` Ubuntu download below is correct.
+(8 GB units are fine: the AI/chat runs in the cloud, not on the box.)
+
+**These units ship with Ubuntu already installed — we reflash it anyway.** The
+whole point of the Canary is the *exact* beta process with **no legacy state**,
+so we install our own clean Ubuntu (Parts C–D). Beta units get reflashed the
+same way — never trust the vendor's pre-install (unknown password/config).
 
 ---
 
@@ -109,7 +113,7 @@ value from Part A, save, close. (Keep the `KEY=value` shape, no spaces around `=
 
 ## PART D — Install Ubuntu on the mini PC (~15 min)
 1. With the mini PC **off**: plug in the **USB stick**, the **monitor (HDMI)**, the **keyboard**, and the **Ethernet cable**.
-2. Power it on and immediately **tap** the boot-menu key repeatedly. It's one of: **F7**, then if that doesn't work try **F11**, **F12**, **Esc**, or **Del**. A menu of drives appears — choose the one with your **USB / "UEFI"** in the name.
+2. Power it on and immediately **tap `F7` repeatedly** (that's the boot menu on the HM35). If no menu appears, power off and try again tapping **`Del`** to enter BIOS, then set the USB as first boot device and save/exit. A menu of drives appears — choose the one with your **USB / "UEFI"** in the name.
 3. The Ubuntu installer starts. Make these choices:
    - Language: **English** → Enter.
    - "Installer update available?": **Continue without updating**.
