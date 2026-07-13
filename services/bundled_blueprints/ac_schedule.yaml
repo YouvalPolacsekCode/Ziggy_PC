@@ -42,7 +42,7 @@ blueprint:
     tags: [ac, climate, schedule, israel]
     he:
       name: לוח זמנים למזגן
-      description: מפעיל את המזגן בשעה אחת ומכבה בשעה אחרת. ברירת מחדל ישראלית 24 מעלות.
+      description: מפעיל את המזגן בשעה שנקבעת ומכבה בשעה אחרת. ברירת מחדל ישראלית 24 מעלות.
       inputs:
         ac_entity: מזגן
         on_time: שעת הפעלה

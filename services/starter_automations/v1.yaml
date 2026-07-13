@@ -25,9 +25,9 @@
 
 - id: motion_turns_on_light
   label_en: Turn on the light when motion is detected
-  label_he: הדלק את האור כשמזוהה תנועה
+  label_he: הדלקת אור בזיהוי תנועה
   description_en: When the motion sensor detects movement, turn on the light in the same room.
-  description_he: כשחיישן התנועה מזהה תנועה, הדלק את האור באותו חדר.
+  description_he: כשחיישן התנועה מזהה תנועה, האור באותו חדר נדלק.
   slots:
     - name: motion_entity
       device_type: motion
@@ -50,9 +50,9 @@
 
 - id: door_open_notify
   label_en: Notify me when the front door opens
-  label_he: שלח לי התראה כשהדלת הראשית נפתחת
+  label_he: התראה כשהדלת הראשית נפתחת
   description_en: Get a push notification whenever the door sensor reports the door as open.
-  description_he: קבל התראה בכל פעם שחיישן הדלת מזהה שהדלת פתוחה.
+  description_he: בכל פעם שחיישן הדלת מזהה פתיחה, נשלחת התראה.
   slots:
     - name: door_entity
       device_type: door
@@ -71,9 +71,9 @@
 
 - id: door_open_turns_on_light
   label_en: Turn on the light when the door opens
-  label_he: הדלק את האור כשהדלת נפתחת
+  label_he: הדלקת אור כשהדלת נפתחת
   description_en: When the door sensor reports open, turn on a smart bulb so you walk into a lit room.
-  description_he: כשחיישן הדלת מזהה פתיחה, הדלק נורה חכמה כדי שתיכנס לחדר מואר.
+  description_he: כשחיישן הדלת מזהה פתיחה, נורה חכמה נדלקת כדי להיכנס לחדר מואר.
   slots:
     - name: door_entity
       device_type: door
@@ -96,9 +96,9 @@
 
 - id: high_temperature_notify
   label_en: Notify me if the temperature gets too high
-  label_he: שלח לי התראה אם הטמפרטורה גבוהה מדי
+  label_he: התראה כשחם מדי
   description_en: When the temperature sensor reads above 28°C, send a push notification.
-  description_he: כשחיישן הטמפרטורה מציג מעל 28°, שלח התראה.
+  description_he: כשחיישן הטמפרטורה עולה מעל 28°, נשלחת התראה.
   slots:
     - name: temp_entity
       device_type: temp_humidity
@@ -117,9 +117,9 @@
 
 - id: motion_turns_on_plug
   label_en: Turn on a smart plug when motion is detected
-  label_he: הדלק שקע חכם כשמזוהה תנועה
+  label_he: הפעלת שקע חכם בזיהוי תנועה
   description_en: When motion is detected, switch on a smart plug — handy for a fan or lamp on a side table.
-  description_he: כשמזוהה תנועה, הדלק שקע חכם — שימושי עבור מאוורר או מנורה על שולחן צד.
+  description_he: כשמזוהה תנועה, שקע חכם נדלק — שימושי למאוורר או למנורה על שולחן צד.
   slots:
     - name: motion_entity
       device_type: motion

@@ -55,8 +55,8 @@ def test_pair_page_renders_qr_in_first_boot(client: TestClient):
     # The 6-char code should appear in the page
     qr = first_boot.snapshot()
     assert qr["claim_code"] in html
-    # Hebrew + English copy both present
-    assert "צמדו את הזיגי שלכם" in html
+    # Hebrew + English copy both present (nativized copy)
+    assert "בואו נחבר את זיגי" in html
     assert "Open the Ziggy Home app" in html
     # device_id shows in the diagnostic footer
     assert "edge_test_box_001" in html
@@ -71,8 +71,8 @@ def test_pair_page_renders_done_state_after_completion(client: TestClient):
     html = resp.text
     assert "already set up" in html
     assert "<svg" not in html
-    # The "done" Hebrew copy
-    assert "הזיגי שלכם כבר מוגדר" in html
+    # The "done" Hebrew copy (nativized)
+    assert "זיגי שלכם כבר מוכן" in html
 
 
 def test_pair_page_does_not_require_auth(client: TestClient):

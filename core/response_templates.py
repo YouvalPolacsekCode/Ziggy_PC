@@ -9,7 +9,7 @@ def _is_hebrew(text: str) -> bool:
 _RESPONSES: dict[str, dict[str, str]] = {
     "chat_mode_entered": {
         "en": "Chat mode on. Ask me anything. Say 'back to commands' when done.",
-        "he": "מצב שיחה פעיל. שאל אותי כל דבר. אמור 'חזור לפקודות' כשתסיים.",
+        "he": "מצב שיחה פעיל. אפשר לשאול אותי כל דבר. כדי לחזור — ״חזור לפקודות״.",
     },
     "chat_mode_exited": {
         "en": "Back to command mode.",
@@ -17,7 +17,7 @@ _RESPONSES: dict[str, dict[str, str]] = {
     },
     "command_fallback": {
         "en": "I didn't catch a command. Try: 'turn on the kitchen light', or say 'chat mode' to talk freely.",
-        "he": "לא הבנתי פקודה. נסה: 'הדלק את האור במטבח', או אמור 'מצב שיחה' לשיחה חופשית.",
+        "he": "לא תפסתי את הפקודה. אפשר לנסות: ״הדלק את האור במטבח״, או להגיד ״מצב שיחה״ לשיחה חופשית.",
     },
     "clarify_room": {
         "en": "Which room?",
@@ -29,7 +29,7 @@ _RESPONSES: dict[str, dict[str, str]] = {
     },
     "confirm_destructive": {
         "en": "Are you sure? Say 'yes' to confirm or 'cancel' to abort.",
-        "he": "אתה בטוח? אמור 'כן' לאישור או 'ביטול' לביטול.",
+        "he": "בטוח? להגיד ״כן״ לאישור, ״ביטול״ כדי לעצור.",
     },
     "cancelled": {
         "en": "Cancelled.",
@@ -37,19 +37,19 @@ _RESPONSES: dict[str, dict[str, str]] = {
     },
     "not_supported": {
         "en": "That's not something I can do right now.",
-        "he": "זה משהו שאני לא יכול לעשות כרגע.",
+        "he": "את זה אני עדיין לא יודע לעשות.",
     },
     "command_not_understood": {
         "en": "I didn't understand that command. Try saying it differently.",
-        "he": "לא הבנתי את הפקודה. נסה לנסח אחרת.",
+        "he": "לא הבנתי. אפשר לנסח אחרת?",
     },
     "task_added": {
         "en": "Got it, task added.",
-        "he": "קיבלתי, המשימה נוספה.",
+        "he": "קיבלתי, הוספתי.",
     },
     "reminder_set": {
         "en": "Reminder set.",
-        "he": "תזכורת נקבעה.",
+        "he": "קבעתי תזכורת.",
     },
     "good_night": {
         "en": "Good night. Turning everything off.",
@@ -69,7 +69,7 @@ _RESPONSES: dict[str, dict[str, str]] = {
     },
     "connection_error": {
         "en": "Couldn't reach Home Assistant right now.",
-        "he": "לא הצלחתי להתחבר ל-Home Assistant כרגע.",
+        "he": "אין לי חיבור לבית כרגע. תכף אנסה שוב.",
     },
     "temperature_query": {
         "en": "Let me check the temperature.",

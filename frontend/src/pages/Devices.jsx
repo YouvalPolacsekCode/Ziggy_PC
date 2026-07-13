@@ -12,7 +12,7 @@ import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
-import { DOMAIN_GROUPS, domainGroup } from '../lib/domainRegistry'
+import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
 import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor, reconcileSmartSensors } from '../lib/api'
 import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
@@ -925,7 +925,7 @@ function buildGroupFilters(entities, irEntities) {
   if (irEntities?.length) occupiedGroups.add('ir')
   return DOMAIN_GROUPS
     .filter((g) => g.id !== 'other' && occupiedGroups.has(g.id))
-    .map((g) => ({ id: g.id, label: g.label, isGroup: true }))
+    .map((g) => ({ id: g.id, label: groupLabel(g.id), isGroup: true }))
 }
 
 // DOMAIN_GROUPS and domainGroup are now imported from domainRegistry.js.
@@ -2518,7 +2518,7 @@ export default function Devices() {
         return (
           <>
             {groups.map(g => (
-              <CollapsibleGroup key={g.id} label={g.label} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
+              <CollapsibleGroup key={g.id} label={groupLabel(g.id)} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {g.items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}

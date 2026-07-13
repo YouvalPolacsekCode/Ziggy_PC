@@ -10,6 +10,8 @@
  * automatically derived from these entries. No other files need to change.
  */
 
+import { t as _t } from './i18n'
+
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
@@ -329,6 +331,25 @@ function _buildDomainGroups() {
 }
 
 export const DOMAIN_GROUPS = _buildDomainGroups()
+
+// ---------------------------------------------------------------------------
+// Localized label resolvers — device categories/groups must never render raw
+// English in a Hebrew UI. These route through i18n ('domain.label.<domain>' /
+// 'domain.group.<groupId>') and fall back to the English registry label if a
+// key is missing. Uses the non-hook t(); components that call these subscribe
+// to the language via useT() elsewhere, so they re-render on language change.
+// ---------------------------------------------------------------------------
+export function domainLabel(domain) {
+  const key = `domain.label.${domain}`
+  const v = _t(key)
+  return v === key ? (DOMAIN_REGISTRY[domain]?.label || domain) : v
+}
+
+export function groupLabel(groupId) {
+  const key = `domain.group.${groupId}`
+  const v = _t(key)
+  return v === key ? (GROUP_LABELS[groupId] || groupId) : v
+}
 
 // ---------------------------------------------------------------------------
 // Icon helper

@@ -265,7 +265,9 @@ TEMPLATES: list[dict] = [
     {
         "id":                    "night_watch",
         "name":                  "Night Watch",
+        "name_he":               "שמירת לילה",
         "description":           "Dim the lights once you're in bed, and quietly alert you if something stirs while you sleep.",
+        "description_he":        "מעמעם את האורות ברגע שנכנסים למיטה, ושולח התראה שקטה אם משהו זז בזמן השינה.",
         "category":              "safety",
         "icon":                  "🌃",
         "required_capabilities": ["presence_sensor", "light_dimmable"],
@@ -922,7 +924,7 @@ def _night_watch(cap_map: dict) -> dict:
         warnings.append({
             "id":    "single_mmwave",
             "level": "warn",
-            "text":  "נראה שיש לך חיישן אחד בלבד — Night Watch עובד הכי טוב עם חיישן בחדר שינה וחיישן נפרד בסלון.",
+            "text":  "שמנו לב שיש רק חיישן אחד — שמירת לילה עובדת הכי טוב עם חיישן בחדר השינה וחיישן נפרד בסלון.",
         })
 
     return {
@@ -1043,7 +1045,7 @@ def _ac_window_interlock(cap_map: dict) -> dict:
             "message": "החלון פתוח והמזגן עובד 🪟",
             "actions": [
                 {
-                    "label":  "כבה מזגן",
+                    "label":  "כיבוי מזגן",
                     "action": {
                         "type":         "ir_command",
                         "ir_device_id": ir_ac or "",
