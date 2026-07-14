@@ -110,8 +110,8 @@ So you're not hunting for values later, put them in one protected file:
 mkdir -p ~/.ziggy && chmod 700 ~/.ziggy
 cat > ~/.ziggy/canary-secrets.txt <<'EOF'
 RELAY_ADMIN_EMAIL=silentyouval@gmail.com
-RELAY_ADMIN_PASSWORD=PASTE_YOUR_EXISTING_RELAY_ADMIN_PASSWORD
-MASTER_KEY_B64=PASTE_YOUR_MASTER_KEY
+RELAY_ADMIN_PASSWORD=SIgXtK2Je313mNezUndKOm81
+MASTER_KEY_B64=V3riiYWIULa0ZiYhtgoFNa8pBCoDsIeb4lbG/whGsT0=
 B2_KEY_ID=0035de6f62004000000000002
 B2_APP_KEY=K003ss3mZhckpJmObYgArd6wT02kphE
 B2_ENDPOINT=s3.eu-central-003.backblazeb2.com
@@ -125,7 +125,12 @@ value from Part A, save, close. (Keep the `KEY=value` shape, no spaces around `=
 ---
 
 ## PART C — Make the Ubuntu USB installer (on your Mac, ~10 min)
-1. Download the OS: go to https://ubuntu.com/download/server → click **Download 24.04 LTS**. You get a file named like `ubuntu-24.04.x-live-server-amd64.iso` in your Downloads.
+1. Download the OS — **it must be 24.04, NOT the newest LTS.** The generic
+   `ubuntu.com/download/server` page now pushes 26.04; ignore it. Use this exact link:
+   **https://releases.ubuntu.com/24.04/ubuntu-24.04.4-live-server-amd64.iso**
+   (or the folder https://releases.ubuntu.com/24.04/ → the file whose name contains
+   `24.04` and `live-server-amd64`). You get `ubuntu-24.04.4-live-server-amd64.iso` (~3 GB).
+   Why 24.04: the beta units ship 24.04 and every imaging pin/test targets 24.04.
 2. Download the flasher: go to https://etcher.balena.io → **Download** → the macOS version. Open the downloaded file and drag **balenaEtcher** to Applications. Open it (if macOS blocks it: System Settings → Privacy & Security → "Open Anyway").
 3. Plug the USB stick into your Mac.
 4. In balenaEtcher:
