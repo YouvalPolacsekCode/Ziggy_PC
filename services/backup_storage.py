@@ -79,6 +79,11 @@ class BackupStorage:
             raise RuntimeError(
                 "settings.yaml backup.b2_endpoint and backup.b2_bucket must both be set"
             )
+        # boto3's endpoint_url requires a scheme. Operators often paste the bare
+        # S3 host from the Backblaze console (e.g. s3.eu-central-003.backblazeb2.com);
+        # normalize it to https:// so a missing scheme isn't a silent failure.
+        if "://" not in endpoint:
+            endpoint = "https://" + endpoint
 
         key_id_env = section.get("b2_key_id_env") or "ZIGGY_B2_KEY_ID"
         app_key_env = section.get("b2_app_key_env") or "ZIGGY_B2_APP_KEY"

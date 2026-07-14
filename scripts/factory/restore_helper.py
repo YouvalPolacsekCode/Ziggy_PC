@@ -144,6 +144,8 @@ def cmd_download_b2(args) -> int:
         _die(f"b2_credentials_json is not valid JSON: {e}")
 
     endpoint = creds.get("b2_endpoint", "https://s3.eu-central-003.backblazeb2.com")
+    if endpoint and "://" not in endpoint:
+        endpoint = "https://" + endpoint  # boto3 endpoint_url needs a scheme
     key_id = creds.get("b2_key_id")
     app_key = creds.get("b2_app_key")
     if not key_id or not app_key:
