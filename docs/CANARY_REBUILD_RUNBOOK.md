@@ -61,21 +61,46 @@ same way — never trust the vendor's pre-install (unknown password/config).
    - Click **Create New Key**.
 6. It now shows **keyID** and **applicationKey** — this is the **only time** they're shown. **Copy both.**
 
-### A3. Your existing relay admin password
-You set this when you first deployed the Ziggy relay. Find it in your password
-manager / notes (email = `silentyouval@gmail.com`).
-- **If you have it:** good, keep it handy.
-- **If you can't find it:** tell Claude — do not guess; we'll reset it in Phase 2.
+### A3. Reset the relay admin password (one-time, ~3 min — do it with Claude the first time)
+You don't have the old one — fine, we set a fresh one. **This is safe:** the admin
+login is only used for provisioning/sealing; it does **not** affect your current
+home's app connection (that uses a separate per-home secret). Run these **on your
+Mac**, one at a time; paste each output to Claude before the next.
+
+1) Generate + set a new admin password. **Save the value it prints:**
+```
+NEWPW=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24); echo "RELAY ADMIN PASSWORD = $NEWPW"
+flyctl secrets set -a ziggy-relay RELAY_ADMIN_EMAIL=silentyouval@gmail.com RELAY_ADMIN_PASSWORD="$NEWPW"
+```
+2) Remove the old admin record so the new password takes effect. Open a shell on the relay:
+```
+flyctl ssh console -a ziggy-relay
+```
+…then paste this whole block and press Enter:
+```
+python3 - <<'PY'
+import sqlite3
+c = sqlite3.connect('/data/relay.db')
+print('deleted', c.execute("DELETE FROM users WHERE role='relay_admin'").rowcount)
+c.commit()
+PY
+```
+…then type `exit` to leave the relay shell.
+
+3) Restart so the new admin is created with your new password:
+```
+flyctl apps restart ziggy-relay
+```
+Now put that `NEWPW` value into `~/.ziggy/canary-secrets.txt` as `RELAY_ADMIN_PASSWORD`.
 
 ### A4. Your founder master backup key
-This is the one key that encrypts all backups.
-- **If you already generated one** (check your password manager for something like
-  "Ziggy master key" — a ~44-character string ending in `=`): use that, keep it handy.
-- **If you have never made one:** make it now on your Mac and save it:
-  ```
-  head -c 32 /dev/urandom | base64
-  ```
-  Copy the output into your password manager as "Ziggy master key". You'll paste it during imaging.
+Nothing has ever been backed up in production, so there is **no old key to preserve** —
+make a fresh one now on your Mac and save it:
+```
+head -c 32 /dev/urandom | base64
+```
+Copy the output into your password manager as "Ziggy master key", and put it into
+`~/.ziggy/canary-secrets.txt` as `MASTER_KEY_B64`.
 
 ---
 
@@ -87,9 +112,9 @@ cat > ~/.ziggy/canary-secrets.txt <<'EOF'
 RELAY_ADMIN_EMAIL=silentyouval@gmail.com
 RELAY_ADMIN_PASSWORD=PASTE_YOUR_EXISTING_RELAY_ADMIN_PASSWORD
 MASTER_KEY_B64=PASTE_YOUR_MASTER_KEY
-B2_KEY_ID=PASTE_BACKBLAZE_keyID
-B2_APP_KEY=PASTE_BACKBLAZE_applicationKey
-B2_ENDPOINT=PASTE_BACKBLAZE_ENDPOINT
+B2_KEY_ID=0035de6f62004000000000002
+B2_APP_KEY=K003ss3mZhckpJmObYgArd6wT02kphE
+B2_ENDPOINT=s3.eu-central-003.backblazeb2.com
 EOF
 chmod 600 ~/.ziggy/canary-secrets.txt
 open -e ~/.ziggy/canary-secrets.txt
