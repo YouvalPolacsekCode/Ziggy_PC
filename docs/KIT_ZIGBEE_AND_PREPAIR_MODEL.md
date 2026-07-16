@@ -88,3 +88,19 @@ every kit needs anyway for post-ship additions.
 
 See DESIGN_BACKUP_DR.md (coordinator backup), docs/RUNBOOK_ZHA_TO_Z2M_CUTOVER.md,
 scripts/factory/ziggy-image-device.sh, scripts/factory/ziggy-restore-device.sh.
+
+---
+## Onboarding already supports device rename + room-assign (confirmed 2026-07-16)
+The mobile wizard's **SensorsStep** (MobileOnboarding.jsx) walks each device with
+a Name + Room field and PRE-FILLS suggestions from the kit manifest's
+intended_label_en/he + current_area_name. So the "customer renames pre-paired
+devices and assigns rooms during onboarding" model is BUILT. Followed by
+StarterStep (starter automations). Two things to wire for the full pre-paired
+experience:
+1. Zigbee-ON imaging + factory pairing must populate the device/sensor list that
+   SensorsStep reads (via the onboarding sensors endpoint / kit manifest), so the
+   pre-paired devices appear for the customer to name.
+2. Fresh-home first-run must reliably ENTER the wizard (see the "two account-
+   creation doors" finding in docs/CANARY_REBUILD_RUNBOOK.md) — tonight's address
+   entry hit LoginPage setup and skipped SensorsStep.
+The rename/room capability itself is NOT a build item — it exists.
