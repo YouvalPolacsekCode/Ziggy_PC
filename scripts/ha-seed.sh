@@ -311,7 +311,11 @@ fi
 if [[ -n "$ENV_OUT" ]]; then
   touch "$ENV_OUT"
   # upsert HA_TOKEN and HA_URL
-  python3 - "$ENV_OUT" "$LLAT" "$HA_URL" <<'PY'
+  # The value WRITTEN to the .env is consumed by the ziggy CONTAINER, which
+  # can't reach HA at the host's localhost. Callers set HA_URL_ENV to a
+  # container-reachable address (e.g. http://host.docker.internal:8123) while
+  # HA_URL stays localhost for this script's own host-side checks.
+  python3 - "$ENV_OUT" "$LLAT" "${HA_URL_ENV:-$HA_URL}" <<'PY'
 import sys
 path, token, url = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(path).read().splitlines() if __import__("os").path.exists(path) else []

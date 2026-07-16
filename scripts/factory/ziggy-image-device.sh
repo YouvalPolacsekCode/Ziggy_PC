@@ -279,7 +279,7 @@ CLOUD_MODE=false
 RELAY_URL=$RELAY_URL
 RELAY_SECRET=$relay_secret
 TUNNEL_URL=$tunnel_url
-HA_URL=http://localhost:8123
+HA_URL=http://host.docker.internal:8123
 MQTT_URL=mqtt://$MQTT_USER:$mqtt_pass@localhost:1883
 ZIGBEE_COORDINATOR_DEVICE=$zdev
 EOF
@@ -327,7 +327,11 @@ step_ha_seed() {
       || _log "ha-seed (dry-run): HA not running (expected in dry-run) — would onboard + mint token"
     return 0
   fi
-  HA_URL="http://localhost:8123" HA_ADMIN_USER="$MQTT_USER" HA_ADMIN_PASS="$ha_pass" \
+  # HA_URL = localhost for ha-seed's own host-side onboarding calls; HA_URL_ENV =
+  # what gets written into /opt/ziggy/.env for the ziggy CONTAINER (which reaches
+  # host-network HA via host.docker.internal, wired in docker-compose.prod.yml).
+  HA_URL="http://localhost:8123" HA_URL_ENV="http://host.docker.internal:8123" \
+    HA_ADMIN_USER="$MQTT_USER" HA_ADMIN_PASS="$ha_pass" \
     MQTT_USER="$MQTT_USER" MQTT_PASS="$mqtt_pass" MQTT_HOST="localhost" MQTT_PORT="1883" \
     bash "$REPO_DIR/scripts/ha-seed.sh" --with-mqtt --env-out "$ENV_FILE" || _die "ha-seed failed"
   _ok "ha-seed: onboarded, token written to $ENV_FILE, MQTT entry created"

@@ -99,6 +99,11 @@ services:
     depends_on:
       - mosquitto
       - homeassistant
+    # HA runs network_mode:host (listening on the host's :8123). This bridge
+    # container reaches it via host.docker.internal, so imaging writes
+    # HA_URL=http://host.docker.internal:8123 into /opt/ziggy/.env.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   mosquitto_data:
