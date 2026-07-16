@@ -91,6 +91,11 @@ services:
       # finds /etc/ziggy/data_key + /etc/ziggy/kit_manifest.yaml. The daily
       # backup systemd timer (Stream 2) may instead run on the host venv.
       - /etc/ziggy:/etc/ziggy:ro
+      # HA config (read-only) so the in-container backup engine can tar it up.
+      # Same host dir the HA container mounts as /config; backup_engine's default
+      # ha_config_dir="docker/ha-config" resolves to /app/docker/ha-config (WORKDIR
+      # is /app). Without this the backup fails at stage=collect ("does not exist").
+      - ./docker/ha-config:/app/docker/ha-config:ro
     depends_on:
       - mosquitto
       - homeassistant
