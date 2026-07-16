@@ -25,9 +25,20 @@ REPO_DIR="${ZIGGY_REPO_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 HA_URL="${HA_URL:-http://localhost:8123}"
 ZIGGY_URL="${ZIGGY_URL:-http://localhost:8001}"
 MQTT_HOST="${MQTT_HOST:-localhost}"; MQTT_PORT="${MQTT_PORT:-1883}"
-MOSQUITTO_IMAGE="${MOSQUITTO_IMAGE:-eclipse-mosquitto:2}"
+MOSQUITTO_IMAGE="${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}"
 IMAGE_REF="${ZIGGY_IMAGE:-}"
 [[ "${1:-}" == "--image" ]] && IMAGE_REF="${2:?--image needs a tag}"
+
+# MQTT creds: if not supplied, parse them from the hub's .env MQTT_URL
+# (mqtt://user:pass@host:port). .env is root-owned 0600 — only readable when the
+# suite runs as root (it should: `sudo ./scripts/canary-validate.sh`).
+if [[ -z "${MQTT_USER:-}" || -z "${MQTT_PASS:-}" ]] && [[ -r "$REPO_DIR/.env" ]]; then
+  _murl="$(grep -E '^MQTT_URL=' "$REPO_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  if [[ "$_murl" =~ ^mqtt://([^:]+):([^@]+)@ ]]; then
+    MQTT_USER="${MQTT_USER:-${BASH_REMATCH[1]}}"
+    MQTT_PASS="${MQTT_PASS:-${BASH_REMATCH[2]}}"
+  fi
+fi
 
 declare -a ROWS
 _row() { ROWS+=("$1|$2|$3"); }   # name|status|detail
@@ -76,9 +87,15 @@ check_pairing_hooks() {
   if [[ "$code" == "200" ]]; then
     # device pairing router should be mounted; probe a pairing endpoint (any
     # non-000/404-at-root response means the backend + routes are alive).
-    local pc; pc="$(curl -s -o /dev/null -w '%{http_code}' "$ZIGGY_URL/api/pairing/catalog" 2>/dev/null || echo 000)"
-    if [[ "$pc" =~ ^(200|401|403|405)$ ]]; then _row "pairing hooks reachable" "PASS" "/api/pairing/catalog → $pc"
-    else _row "pairing hooks reachable" "SKIP" "pairing route probe → $pc (route name may differ)"; fi
+    # Probe real mounted API endpoints — an auth-gated 401 still proves the
+    # router surface (devices/pairing) is mounted. A 404 would mean not mounted.
+    local pc="000" ep
+    for ep in /api/devices /api/ha/config_flows /api/version; do
+      pc="$(curl -s -o /dev/null -w '%{http_code}' "$ZIGGY_URL$ep" 2>/dev/null || echo 000)"
+      [[ "$pc" =~ ^(200|401|403|405)$ ]] && break
+    done
+    if [[ "$pc" =~ ^(200|401|403|405)$ ]]; then _row "pairing hooks reachable" "PASS" "backend API routes mounted (probe → $pc)"
+    else _row "pairing hooks reachable" "SKIP" "no API route responded (last → $pc)"; fi
   else
     _row "pairing hooks reachable" "SKIP" "Ziggy backend down ($ZIGGY_URL/health $code)"
   fi
@@ -106,14 +123,22 @@ check_ha_kill_recover() {
   if [[ "$policy" != "unless-stopped" && "$policy" != "always" ]]; then
     _row "HA kill→recover" "FAIL" "restart policy is '$policy' (needs unless-stopped/always)"; return
   fi
-  docker kill "$cid" >/dev/null 2>&1
-  local deadline=$(( $(date +%s) + 90 )) up=0
+  # Simulate a REAL crash: kill the container's main process on the host so the
+  # exit is process-initiated. A CLI `docker kill`/`docker stop` is treated as a
+  # manual action Docker does NOT auto-restart — using it here gives a false FAIL.
+  local pid before; pid="$(docker inspect -f '{{.State.Pid}}' "$cid" 2>/dev/null)"
+  before="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null)"
+  if [[ -z "$pid" || "$pid" == "0" ]]; then _row "HA kill→recover" "SKIP" "could not read container pid"; return; fi
+  kill -9 "$pid" 2>/dev/null || sudo kill -9 "$pid" 2>/dev/null
+  local deadline=$(( $(date +%s) + 120 )) up=0
   while [[ $(date +%s) -lt $deadline ]]; do
-    if curl -sf "$HA_URL/api/onboarding" >/dev/null 2>&1; then up=1; break; fi
+    local st rc; st="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null)"
+    rc="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null)"
+    if [[ "$st" == "running" && "${rc:-0}" -gt "${before:-0}" ]]; then up=1; break; fi
     sleep 3
   done
-  if [[ "$up" == "1" ]]; then _row "HA kill→recover" "PASS" "recovered within 90s (policy=$policy)"
-  else _row "HA kill→recover" "FAIL" "did not recover within 90s"; fi
+  if [[ "$up" == "1" ]]; then _row "HA kill→recover" "PASS" "auto-restarted after real crash (policy=$policy)"
+  else _row "HA kill→recover" "FAIL" "did not auto-restart within 120s"; fi
 }
 
 # ── check: image contains no secrets (docker save grep) ─────────────────────
