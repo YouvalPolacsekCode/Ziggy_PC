@@ -338,7 +338,10 @@ step_ha_seed() {
 # ═══════════════════════════════════════════════════════════════════════════
 step_seal() {
   local home_id; home_id="$(_kv_get HOME_ID)"
-  [[ -n "$COORDINATOR_IEEE" || "$DRY_RUN" == "1" ]] || _die "COORDINATOR_IEEE required for kit_manifest (pair the coordinator first)"
+  # A real IEEE is only required when Zigbee is enabled — with ENABLE_ZIGBEE!=1
+  # there's no coordinator to read one from, so the manifest records a zero IEEE
+  # and a real one gets written when the coordinator is added later (re-seal).
+  [[ -n "$COORDINATOR_IEEE" || "$DRY_RUN" == "1" || "$ENABLE_ZIGBEE" != "1" ]] || _die "COORDINATOR_IEEE required for kit_manifest (pair the coordinator first)"
   local ieee="${COORDINATOR_IEEE:-00:00:00:00:00:00:00:00}"
 
   local master="${MASTER_KEY_B64:-}"
