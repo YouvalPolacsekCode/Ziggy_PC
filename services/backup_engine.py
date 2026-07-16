@@ -349,6 +349,38 @@ def _check_subscription_active(ctx: BackupContext) -> None:
         )
 
 
+def _query_sntp_skew(server: str = "pool.ntp.org", timeout: float = 3.0):
+    """Container-friendly clock check: ask an NTP server directly and return
+    local skew in seconds (local - server), or None if unreachable.
+
+    The chronyd/timesyncd probes only work on a host running those daemons.
+    Inside the ziggy container (where kit-ready runs the dry-run backup) neither
+    exists, so this SNTP round-trip is the fallback — it verifies the actual
+    clock rather than the presence of a daemon.
+    """
+    import socket
+    import struct
+    import time as _time
+    ntp_epoch = 2208988800  # seconds between 1900-01-01 and 1970-01-01
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
+        t0 = _time.time()
+        sock.sendto(b"\x1b" + 47 * b"\0", (server, 123))
+        data, _ = sock.recvfrom(48)
+        t3 = _time.time()
+        if len(data) < 48:
+            return None
+        transmit = struct.unpack("!I", data[40:44])[0] - ntp_epoch
+        return (t0 + t3) / 2.0 - transmit
+    except Exception:
+        return None
+    finally:
+        if sock is not None:
+            sock.close()
+
+
 def _check_ntp_sync(ctx: BackupContext) -> None:
     """Refuse to back up if the clock is more than ±60s out.
 
@@ -362,6 +394,10 @@ def _check_ntp_sync(ctx: BackupContext) -> None:
         skew = _query_chrony_skew()
         if skew is None:
             skew = _query_timesyncd_skew()
+        if skew is None:
+            # No host time daemon visible (e.g. running inside a container) —
+            # verify the actual clock against an NTP server directly.
+            skew = _query_sntp_skew()
     if skew is None:
         raise RuntimeError(
             "NTP sync source unavailable (chronyd / systemd-timesyncd both silent). "

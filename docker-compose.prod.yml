@@ -39,8 +39,12 @@ services:
       # Prod broker config + generated (git-ignored) password file. This
       # REPLACES the base file's anonymous mosquitto.conf mount because compose
       # merges volume lists by target path — both target /mosquitto/config/... .
-      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./docker/mosquitto/passwordfile:/mosquitto/config/passwordfile:ro
+      # NOT :ro — the eclipse-mosquitto entrypoint chowns /mosquitto/config on
+      # startup; a read-only bind makes that chown fail and the container
+      # crash-loops (exit 13). A writable bind lets the chown succeed. Container-
+      # local write access to its own config/passwordfile is not a real risk.
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./docker/mosquitto/passwordfile:/mosquitto/config/passwordfile
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
 
