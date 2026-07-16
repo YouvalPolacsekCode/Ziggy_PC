@@ -252,3 +252,19 @@ If Part G is all-PASS and Part H shows a Hebrew app talking to the Canary — **
 ## If anything goes wrong
 Copy the exact command you ran and the exact output, paste it to me, and I'll tell
 you the precise fix. Don't improvise — I'd rather adjust the script than have you guess.
+
+---
+## Onboarding-wizard finding (2026-07-16, from Canary)
+The rich onboarding wizard IS built (MobileOnboarding.jsx: pair → CLAIM →
+sensors → starter → person → notify → location → motion → done). It runs only
+via the **kit pair-QR path** (`/api/mobile/pair` returns `is_first_pair=true`
+on a fresh, un-owned home → CLAIM step creates the owner AND continues the
+wizard). BUG/GAP: there is a SECOND account-creation door — `LoginPage` "setup"
+mode (`/api/auth/setup`) — shown when an unauthenticated app reaches a home with
+no account. It creates the owner but drops the user on the dashboard, skipping
+the wizard. A customer entering via the home address (or any non-pair path) hits
+the plain door and misses onboarding — reproduced on the Canary. FIX for beta:
+make a fresh home's first run reliably route into MobileOnboarding regardless of
+entry path (or fold the wizard steps behind the LoginPage setup). The native
+pair-redirect (App.jsx MobileOnboardingRedirector, device-token based) also did
+not fire post-setup — investigate alongside.
