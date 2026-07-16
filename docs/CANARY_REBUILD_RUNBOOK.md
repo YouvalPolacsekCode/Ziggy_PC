@@ -169,7 +169,7 @@ value from Part A, save, close. (Keep the `KEY=value` shape, no spaces around `=
    ```
    Note the `192.168.x.x` number. You can now unplug the monitor/keyboard and do the rest from your Mac over SSH, or keep using the monitor. To use your Mac, open the Mac **Terminal** app and run (replace the number):
    ```
-   ssh ziggy@192.168.1.50
+   ssh ziggy@10.100.102.15
    ```
    Type `yes` if asked, then the mini-PC password.
 
@@ -178,8 +178,8 @@ value from Part A, save, close. (Keep the `KEY=value` shape, no spaces around `=
 ## PART E — Put Ziggy on the mini PC (~5 min)
 **On your Mac**, copy the bootstrap script and your secrets file to the mini PC (replace the IP with your mini PC's, and type the mini-PC password when asked):
 ```
-scp /Users/YouvalPolacsek/ziggy_pc/scripts/canary/hub-bootstrap.sh ziggy@192.168.1.50:~/
-scp ~/.ziggy/canary-secrets.txt ziggy@192.168.1.50:~/canary-secrets.txt
+scp /Users/YouvalPolacsek/ziggy_pc/scripts/canary/hub-bootstrap.sh ziggy@10.100.102.15:~/
+scp ~/.ziggy/canary-secrets.txt ziggy@10.100.102.15:~/canary-secrets.txt
 ```
 **On the mini PC** (console or your `ssh` session), run this — replace `ghp_YOURTOKEN` with the GitHub token from Part A1:
 ```
@@ -233,7 +233,7 @@ Paste the table to me regardless — green means Phase 1 succeeded.
 
 ## PART H — Claim it from your phone + check Hebrew (~5 min)
 1. Make sure your **phone is on the same Wi-Fi** as the mini PC.
-2. On your phone's browser, go to: `http://192.168.1.50/pair` (use the mini PC's IP).
+2. On your phone's browser, go to: `http://192.168.1.50:8001/pair` (use the mini PC's IP; the Ziggy backend listens on port **8001**).
 3. You should see a **Hebrew** setup page ("בואו נחבר את זיגי") with a QR code.
 4. Open the **Ziggy app** and follow its onboarding to scan that QR / enter the code. The first phone to do this becomes the owner.
 5. In the app, confirm: the interface is **Hebrew, right-to-left**, and the clock/times look like **Israel time**.
