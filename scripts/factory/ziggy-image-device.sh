@@ -300,7 +300,11 @@ RELAY_URL=$RELAY_URL
 RELAY_SECRET=$relay_secret
 TUNNEL_URL=$tunnel_url
 HA_URL=http://host.docker.internal:8123
-MQTT_URL=mqtt://$MQTT_USER:$mqtt_pass@localhost:1883
+# The ziggy backend runs in a BRIDGE-networked container; the broker is only
+# reachable there by its compose service name (mosquitto), NOT localhost
+# (localhost inside the container is the container itself). Ziggy publishes the
+# Zigbee permit-join over MQTT, so a wrong host here breaks in-app pairing.
+MQTT_URL=mqtt://$MQTT_USER:$mqtt_pass@mosquitto:1883
 ZIGBEE_COORDINATOR_DEVICE=$zdev
 EOF
   # B2 env for the backup engine (also written to $ETC_DIR/b2_env by seal step).
