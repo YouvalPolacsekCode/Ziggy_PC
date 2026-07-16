@@ -258,7 +258,7 @@ _HTML_BODY_DONE = """
     <div class="done">
       <div class="icon">✓</div>
       <h1>זיגי שלכם כבר מוכן</h1>
-      <p class="lead">הזיגי הזה כבר מוגדר — פתחו את אפליקציית Ziggy Home כדי להשתמש בו.<br>This Ziggy is already set up. Open the Ziggy Home app to use it.</p>
+      <p class="lead">זיגי שלכם כבר מוגדר — פתחו את אפליקציית Ziggy Home כדי להשתמש בו.<br>This Ziggy is already set up. Open the Ziggy Home app to use it.</p>
     </div>
 """
 
