@@ -242,14 +242,14 @@ _HTML_TEMPLATE = """<!doctype html>
 
 _HTML_BODY_PAIR = """
     <h1>בואו נחבר את זיגי</h1>
-    <p class="lead">Open the Ziggy Home app and scan this code, or type the 6-character code shown below.</p>
+    <p class="lead">פתחו את אפליקציית Ziggy Home וסרקו את הקוד, או הקלידו את הקוד שמתחת.<br>Open the Ziggy Home app and scan this code, or type the code below.</p>
     <div class="qr">{qr_svg}</div>
     <p class="code">{code}</p>
     <p class="code-hint">קוד צימוד · pair code</p>
     <div class="steps">
       <p>1. פתחו את אפליקציית Ziggy Home · Open the Ziggy Home app.</p>
-      <p>2. Tap “Scan QR” or paste the code above.</p>
-      <p>3. The app will guide you through the rest of setup.</p>
+      <p>2. הקישו על Scan QR או הדביקו את הקוד שלמעלה · Tap “Scan QR” or paste the code above.</p>
+      <p>3. האפליקציה תלווה אתכם בהמשך ההגדרה · The app will guide you through the rest of setup.</p>
     </div>
     <p class="device-id">device: {device_id}</p>
 """
@@ -258,7 +258,7 @@ _HTML_BODY_DONE = """
     <div class="done">
       <div class="icon">✓</div>
       <h1>זיגי שלכם כבר מוכן</h1>
-      <p class="lead">This Ziggy is already set up. Open the Ziggy Home app to use it.</p>
+      <p class="lead">הזיגי הזה כבר מוגדר — פתחו את אפליקציית Ziggy Home כדי להשתמש בו.<br>This Ziggy is already set up. Open the Ziggy Home app to use it.</p>
     </div>
 """
 
