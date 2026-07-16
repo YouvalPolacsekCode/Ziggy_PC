@@ -1,4 +1,4 @@
-import { useEffect, useRef, lazy, Suspense } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 // Dashboard is the home route — load eagerly so the first paint after login
@@ -166,6 +166,46 @@ function MobileOnboardingRedirector() {
     return () => { cancelled = true }
   }, [location.pathname, navigate])
   return null
+}
+
+// Unauthenticated entry gate. Decides what a logged-out visitor sees.
+//
+//  - PWA / browser  → always the LoginPage (self-install + returning users).
+//  - Native app on a home that HAS an owner → LoginPage (normal sign-in; the
+//    MobileOnboardingRedirector inside AppRoutes then handles device pairing).
+//  - Native app on a home with NO owner yet (a fresh kit / freshly-imaged box)
+//    → the rich onboarding wizard (pair → claim → sensors → starter …), NOT
+//    the bare LoginPage "setup" door. That door creates the owner but drops
+//    the customer on an empty dashboard, skipping device naming + starter
+//    automations. A fresh home's first run must always land in the wizard.
+//
+// "Has an owner" is read once from /api/auth/status (configured). We do NOT
+// re-fetch after mount, so the wizard stays mounted through CLAIM (which flips
+// the home to configured) without this gate yanking it away mid-flow.
+function UnauthenticatedGate() {
+  const native = isNative()
+  const [decision, setDecision] = useState(native ? 'loading' : 'login')
+  useEffect(() => {
+    if (!native) return
+    let cancelled = false
+    fetch('/api/auth/status')
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setDecision(d?.configured ? 'login' : 'fresh') })
+      .catch(() => { if (!cancelled) setDecision('login') })
+    return () => { cancelled = true }
+  }, [native])
+
+  if (decision === 'loading') return null
+  if (decision === 'fresh') {
+    return (
+      <BrowserRouter>
+        <Suspense fallback={null}>
+          <MobileOnboarding startFresh />
+        </Suspense>
+      </BrowserRouter>
+    )
+  }
+  return <LoginPage />
 }
 
 function AppRoutes() {
@@ -717,7 +757,7 @@ export default function App() {
 
   if (!authenticated) {
     _wasAuthenticated = false
-    return <LoginPage />
+    return <UnauthenticatedGate />
   }
 
   // Post-login redirect: when authenticated flips false→true (the user just

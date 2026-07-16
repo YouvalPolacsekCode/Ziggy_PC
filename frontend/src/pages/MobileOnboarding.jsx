@@ -39,6 +39,7 @@ import {
 } from '../lib/mobileApi'
 import { getPresencePersons, getPresenceZone, listPresenceZones } from '../lib/api'
 import { parsePairPayload, applyPairingTarget, finalizeHome } from '../lib/pairingCapture'
+import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
 
 const STEP = {
@@ -53,7 +54,12 @@ const STEP = {
   DONE:         'done',
 }
 
-export default function MobileOnboarding() {
+// `startFresh` is set when this wizard is mounted as the unauthenticated entry
+// gate for a brand-new home (no owner account yet). In that mode we always
+// begin at PAIR and never short-circuit home on a leftover device token — a
+// token from a *previously* paired home is meaningless here and gets
+// overwritten by the fresh pairing anyway.
+export default function MobileOnboarding({ startFresh = false }) {
   const navigate = useNavigate()
   const t = useT()
   const [step, setStep]             = useState(STEP.PAIR)
@@ -83,14 +89,18 @@ export default function MobileOnboarding() {
     let cancelled = false
     ;(async () => {
       if (!isNative()) { navigate('/', { replace: true }); return }
-      const tok = await getDeviceToken()
+      // Fresh-home gate: always start at PAIR, ignoring any stale device token.
+      if (!startFresh) {
+        const tok = await getDeviceToken()
+        if (cancelled) return
+        if (tok) { setPaired(true); navigate('/', { replace: true }); return }
+      }
       if (cancelled) return
-      if (tok) { setPaired(true); navigate('/', { replace: true }); return }
       setLoading(false)
       startedAtRef.current = Date.now()
     })()
     return () => { cancelled = true }
-  }, [navigate])
+  }, [navigate, startFresh])
 
   if (loading) return null
 
@@ -115,7 +125,16 @@ export default function MobileOnboarding() {
   const afterNotify  = () => setStep(STEP.LOCATION)
   const afterLocation = () => setStep(STEP.MOTION)
   const afterMotion  = () => setStep(STEP.DONE)
-  const afterDone    = () => navigate('/', { replace: true })
+  const afterDone    = () => {
+    // First-pair flow: CLAIM minted a real session token for the owner we just
+    // created. Persist it as ziggy_token now (only at hand-off, so flipping the
+    // app to "authenticated" doesn't unmount the wizard mid-flow). Without this
+    // the main app — which authenticates via ziggy_token — would bounce the
+    // finished customer straight back to the login page. claim always creates a
+    // super_admin owner, so the role is fixed.
+    if (userToken) useAuthStore.getState().setToken(userToken, 'super_admin')
+    navigate('/', { replace: true })
+  }
 
   return (
     <div style={{
