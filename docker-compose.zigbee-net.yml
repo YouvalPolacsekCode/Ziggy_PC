@@ -1,0 +1,24 @@
+# docker-compose.zigbee-net.yml — NETWORK Zigbee coordinator overlay.
+#
+# Use ON TOP of the base + prod compose when the hub's Zigbee coordinator is a
+# NETWORK adapter (SMLIGHT SLZB-07 over Ethernet/Wi-Fi, reached via tcp://),
+# NOT a USB stick:
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                    -f docker-compose.zigbee-net.yml \
+#                    --profile zigbee-z2m up -d
+#
+# Why this file exists:
+#   The base docker-compose.yml pins a USB `devices:` mount for the Sonoff USB
+#   dongle. A network coordinator has NO local character device, so that mount
+#   would make `docker compose up` fail with "no such file or directory". This
+#   overlay REPLACES the devices list with an empty one (`!override []`) so the
+#   z2m container comes up with no USB passthrough. Z2M then reaches the
+#   coordinator over the network via the `serial.port: tcp://<ip>:<port>` line
+#   that the imaging script writes into docker/z2m-data/configuration.yaml.
+#
+# `!override` (Compose spec / docker compose ≥ v2.24) REPLACES the sequence
+# instead of the default append-merge — that's the whole point: we cannot
+# "remove" the base USB mount by merging, only by overriding the list.
+services:
+  zigbee2mqtt:
+    devices: !override []

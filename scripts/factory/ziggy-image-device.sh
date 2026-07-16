@@ -13,13 +13,16 @@
 #   1  identity       generate uuid; provision home in relay; adopt home_id
 #   2  mqtt-creds     generate MQTT user/pass → mosquitto passwordfile + secrets
 #   3  env            write /opt/ziggy/.env (HOME_ID, RELAY_*, MQTT_URL, pins…)
-#   4  stack-up       docker compose up mosquitto + homeassistant (+z2m if kit)
+#   4  stack-up       docker compose up mosquitto + homeassistant (+z2m if kit;
+#                     seeds docker/z2m-data/configuration.yaml with MQTT auth)
 #   5  ha-seed        headless HA onboarding + LLAT + MQTT config entry
-#   6  seal           _seal_step.sh: data_key + kit_manifest + relay seal-key
-#   7  register-hub   bind tunnel_url to the home (HMAC) → status active
-#   8  ziggy-up       docker compose up the ziggy backend
-#   9  kit-ready      kit-ready-check.sh gate
-#   10 first-backup   one REAL backup to B2 (the ship signal)
+#   6  zigbee-pair    (ENABLE_ZIGBEE=1) wait for z2m, read real COORDINATOR_IEEE,
+#                     optionally open permit-join to pair kit devices + record them
+#   7  seal           _seal_step.sh: data_key + kit_manifest (+paired sensors) + relay seal-key
+#   8  register-hub   bind tunnel_url to the home (HMAC) → status active
+#   9  ziggy-up       docker compose up the ziggy backend
+#   10 kit-ready      kit-ready-check.sh gate
+#   11 first-backup   one REAL backup to B2 (the ship signal)
 #
 # USAGE
 #   sudo scripts/factory/ziggy-image-device.sh              # full run
@@ -40,6 +43,9 @@
 #   HA_VERSION MOSQUITTO_VERSION Z2M_VERSION TZ=Asia/Jerusalem
 #   B2_BUCKET=ziggy-backups-prod  B2_ENDPOINT=https://s3.eu-central-003.backblazeb2.com
 #   ZIGBEE_COORDINATOR_DEVICE  ENABLE_ZIGBEE=1
+#   COORDINATOR_IP        network coordinator (SLZB-07) → z2m over tcp://; unset = USB
+#   ZIGBEE_TCP_PORT=6638  ZIGBEE_ADAPTER=ezsp
+#   ZIGBEE_PAIR_SECONDS=0 permit-join window during imaging (0 = capture IEEE only)
 #   ZIGGY_REPO_DIR=/opt/ziggy  ZIGGY_ETC_DIR=/etc/ziggy  ZIGGY_ENV_FILE=/opt/ziggy/.env
 #   GIT_SHA
 #
@@ -85,6 +91,20 @@ B2_ENDPOINT="${B2_ENDPOINT:-https://s3.eu-central-003.backblazeb2.com}"
 COORDINATOR_TYPE="${COORDINATOR_TYPE:-smlight}"
 COORDINATOR_IEEE="${COORDINATOR_IEEE:-}"
 ENABLE_ZIGBEE="${ENABLE_ZIGBEE:-0}"
+# Zigbee coordinator transport:
+#   USB  → ZIGBEE_COORDINATOR_DEVICE (a /dev/serial/by-id path), the default.
+#   NET  → COORDINATOR_IP set (SMLIGHT SLZB-07 etc.) → z2m talks tcp://ip:port
+#          and the docker-compose.zigbee-net.yml overlay drops the USB mount.
+COORDINATOR_IP="${COORDINATOR_IP:-}"
+ZIGBEE_TCP_PORT="${ZIGBEE_TCP_PORT:-6638}"   # SLZB-07 default z2m TCP port
+ZIGBEE_ADAPTER="${ZIGBEE_ADAPTER:-ezsp}"     # ezsp = Sonoff-E + SLZB-07 (Silabs EFR32)
+# Seconds to hold the Zigbee network open for factory pairing during imaging.
+# 0 = capture the coordinator IEEE only, pair nothing (customer-adds-Zigbee
+# validation path). >0 = open permit-join for that long so the operator can
+# put each kit device into pairing mode and have it join + get recorded.
+ZIGBEE_PAIR_SECONDS="${ZIGBEE_PAIR_SECONDS:-0}"
+# True when this hub uses a NETWORK coordinator (no local USB device).
+ZIGBEE_NET=0; [[ -n "$COORDINATOR_IP" ]] && ZIGBEE_NET=1
 GIT_SHA="${GIT_SHA:-dev}"
 MQTT_USER="${MQTT_USER:-ziggy}"
 
@@ -100,7 +120,7 @@ else
 fi
 STATE_FILE="$STATE_DIR/imaging.state"
 
-STEPS=(preflight identity mqtt-creds env stack-up ha-seed seal register-hub ziggy-up kit-ready first-backup)
+STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up kit-ready first-backup)
 
 _log()  { printf '\033[36m[image]\033[0m %s\n' "$*" >&2; }
 _ok()   { printf '\033[32m[image ✓]\033[0m %s\n' "$*" >&2; }
@@ -293,9 +313,77 @@ EOF
 }
 
 _compose() {
-  local args=(-f "$REPO_DIR/docker-compose.yml" -f "$REPO_DIR/docker-compose.prod.yml" --env-file "$ENV_FILE")
+  local args=(-f "$REPO_DIR/docker-compose.yml" -f "$REPO_DIR/docker-compose.prod.yml")
+  # Network coordinator (no USB device) → drop the base's USB `devices:` mount.
+  if [[ "$ENABLE_ZIGBEE" == "1" && "$ZIGBEE_NET" == "1" ]]; then
+    args+=(-f "$REPO_DIR/docker-compose.zigbee-net.yml")
+  fi
+  args+=(--env-file "$ENV_FILE")
   if [[ "$ENABLE_ZIGBEE" == "1" ]]; then export COMPOSE_PROFILES="zigbee-z2m"; fi
   ( cd "$REPO_DIR" && docker compose "${args[@]}" "$@" )
+}
+
+# Seed docker/z2m-data/configuration.yaml BEFORE z2m first-starts. The template
+# in docker/z2m-data.example/ points MQTT at the broker WITHOUT credentials — but
+# the prod broker is `allow_anonymous false`, so an un-authed z2m can never
+# connect (and its devices never reach HA, which discovers them over MQTT). This
+# injects the imaging-generated MQTT user/pass + the correct serial transport
+# (USB /dev/ttyACM0 or tcp://<ip>:<port> for a network coordinator). Idempotent:
+# once a real config exists (e.g. a re-image of a paired hub) we DO NOT clobber
+# it — that would drop the paired network + its saved network key.
+_seed_z2m_config() {
+  local z2m_dir="$REPO_DIR/docker/z2m-data"
+  local z2m_cfg="$z2m_dir/configuration.yaml"
+  local mqtt_pass; mqtt_pass="$(_kv_get MQTT_PASS)"
+  local serial_port
+  if [[ "$ZIGBEE_NET" == "1" ]]; then
+    serial_port="tcp://$COORDINATOR_IP:$ZIGBEE_TCP_PORT"
+  else
+    serial_port="/dev/ttyACM0"   # compose maps the host by-id path here
+  fi
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    _log "z2m-seed (dry-run): would write $z2m_cfg (serial=$serial_port adapter=$ZIGBEE_ADAPTER, MQTT auth wired)"
+    return 0
+  fi
+  if [[ -f "$z2m_cfg" ]] && grep -q "generated by ziggy-image-device" "$z2m_cfg" 2>/dev/null; then
+    _log "z2m-seed: $z2m_cfg already generated — leaving paired network untouched"
+    return 0
+  fi
+  if [[ -f "$z2m_cfg" ]]; then
+    _log "z2m-seed: $z2m_cfg exists but wasn't ours — leaving it (manual/cutover config)"
+    return 0
+  fi
+  mkdir -p "$z2m_dir/external_converters"
+  # frontend port 8099 (operator-only). permit_join stays false; the pairing
+  # step opens it deliberately. network_key/pan_id left unset → z2m generates a
+  # fresh network on first start and writes coordinator_backup.json (captured by
+  # the nightly backup, per the kit dongle/PC matched-set model).
+  SP="$serial_port" AD="$ZIGBEE_ADAPTER" MU="$MQTT_USER" MP="$mqtt_pass" \
+  python3 - "$z2m_cfg" <<'PY'
+import os, sys
+cfg = f"""# generated by ziggy-image-device.sh — Zigbee2MQTT config (DO NOT commit; holds MQTT creds)
+homeassistant: true
+permit_join: false
+mqtt:
+  base_topic: zigbee2mqtt
+  server: 'mqtt://mosquitto:1883'
+  user: '{os.environ["MU"]}'
+  password: '{os.environ["MP"]}'
+serial:
+  port: {os.environ["SP"]}
+  adapter: {os.environ["AD"]}
+frontend:
+  port: 8099
+advanced:
+  channel: 20
+  log_level: info
+external_converters: []
+"""
+open(sys.argv[1], "w").write(cfg)
+PY
+  chmod 600 "$z2m_cfg" 2>/dev/null || true
+  _ok "z2m-seed: wrote $z2m_cfg (serial=$serial_port adapter=$ZIGBEE_ADAPTER, MQTT authenticated)"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -304,11 +392,15 @@ _compose() {
 step_stack_up() {
   if [[ "$DRY_RUN" == "1" ]]; then
     _log "stack-up (dry-run): would 'docker compose ... up -d mosquitto homeassistant'"
+    [[ "$ENABLE_ZIGBEE" == "1" ]] && _seed_z2m_config
     _compose config >/dev/null 2>&1 && _ok "stack-up (dry-run): compose config valid" || _log "stack-up (dry-run): compose config check skipped (docker unavailable)"
     return 0
   fi
   local svcs=(mosquitto homeassistant)
-  [[ "$ENABLE_ZIGBEE" == "1" ]] && svcs+=(zigbee2mqtt)
+  if [[ "$ENABLE_ZIGBEE" == "1" ]]; then
+    _seed_z2m_config
+    svcs+=(zigbee2mqtt)
+  fi
   _compose up -d "${svcs[@]}" || _die "docker compose up failed"
   _ok "stack-up: ${svcs[*]} started"
 }
@@ -333,15 +425,169 @@ step_ha_seed() {
   HA_URL="http://localhost:8123" HA_URL_ENV="http://host.docker.internal:8123" \
     HA_ADMIN_USER="$MQTT_USER" HA_ADMIN_PASS="$ha_pass" \
     MQTT_USER="$MQTT_USER" MQTT_PASS="$mqtt_pass" MQTT_HOST="localhost" MQTT_PORT="1883" \
+    MQTT_ENTRY_REQUIRED="$ENABLE_ZIGBEE" \
     bash "$REPO_DIR/scripts/ha-seed.sh" --with-mqtt --env-out "$ENV_FILE" || _die "ha-seed failed"
   _ok "ha-seed: onboarded, token written to $ENV_FILE, MQTT entry created"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STEP 6: seal — data_key + kit_manifest + relay seal-key
+# STEP 6: zigbee-pair — read the real coordinator IEEE + (optionally) pair
+#         the kit's devices during imaging, recording them for the manifest.
+# ───────────────────────────────────────────────────────────────────────────
+# Talks to Zigbee2MQTT over its MQTT bridge, using the mosquitto CONTAINER as
+# the MQTT client (mosquitto_sub/pub are already in that image, already on the
+# broker network, and we already have the creds) — no host MQTT client needed.
+# The captured IEEE flows into the seal step's kit_manifest; the paired-device
+# list (real IEEE + model + inferred type) is written to a sensors YAML the seal
+# step folds into the manifest so the mobile onboarding SensorsStep can show
+# each pre-paired device for the customer to name + place.
+# ═══════════════════════════════════════════════════════════════════════════
+KIT_SENSORS_FILE="$STATE_DIR/kit_sensors.yaml"
+
+_mqtt_sub_one() {  # topic [timeout_s]
+  local pass; pass="$(_kv_get MQTT_PASS)"
+  _compose exec -T mosquitto mosquitto_sub -u "$MQTT_USER" -P "$pass" \
+    -t "$1" -C 1 -W "${2:-20}" 2>/dev/null
+}
+_mqtt_pub() {  # topic payload
+  local pass; pass="$(_kv_get MQTT_PASS)"
+  _compose exec -T mosquitto mosquitto_pub -u "$MQTT_USER" -P "$pass" \
+    -t "$1" -m "$2" 2>/dev/null
+}
+
+step_zigbee_pair() {
+  if [[ "$ENABLE_ZIGBEE" != "1" ]]; then
+    _log "zigbee-pair: ENABLE_ZIGBEE!=1 — skipping (no coordinator to read)"
+    return 0
+  fi
+  if [[ "$DRY_RUN" == "1" ]]; then
+    _log "zigbee-pair (dry-run): would wait for z2m online, read coordinator IEEE, and (if ZIGBEE_PAIR_SECONDS>0) open permit-join to pair kit devices"
+    return 0
+  fi
+
+  # 1) Wait for Zigbee2MQTT to come online (adapter init can take ~30-60s).
+  _log "zigbee-pair: waiting for Zigbee2MQTT to come online…"
+  local deadline=$(( $(date +%s) + 150 )) state=""
+  until [[ $(date +%s) -gt $deadline ]]; do
+    state="$(_mqtt_sub_one 'zigbee2mqtt/bridge/state' 8 || true)"
+    case "$state" in *online*) break ;; esac
+    sleep 5
+  done
+  case "$state" in
+    *online*) _ok "zigbee-pair: Zigbee2MQTT is online" ;;
+    *) _die "zigbee-pair: Zigbee2MQTT never reported 'online' (last='$state'). Check the dongle is plugged in / reachable and z2m logs: docker compose logs zigbee2mqtt" ;;
+  esac
+
+  # 2) Read the REAL coordinator IEEE from the retained bridge/info topic.
+  local info ieee
+  info="$(_mqtt_sub_one 'zigbee2mqtt/bridge/info' 15 || true)"
+  ieee="$(printf '%s' "$info" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: d={}
+print((d.get("coordinator") or {}).get("ieee_address") or "")
+' 2>/dev/null)"
+  [[ -n "$ieee" ]] || _die "zigbee-pair: could not read coordinator IEEE from bridge/info (got: ${info:0:200})"
+  _kv_set COORDINATOR_IEEE "$ieee"
+  _ok "zigbee-pair: coordinator IEEE = $ieee"
+
+  # 3) Optional pairing window — open permit-join so the operator can join each
+  #    kit device now. 0 → capture-IEEE-only (customer-adds-Zigbee path).
+  if [[ "${ZIGBEE_PAIR_SECONDS:-0}" -gt 0 ]]; then
+    _log "════════════════════════════════════════════════════════════════════"
+    _log "zigbee-pair: OPENING the Zigbee network for ${ZIGBEE_PAIR_SECONDS}s."
+    _log "  → Put EACH kit device into pairing mode now (button/power-cycle)."
+    _log "  → Watch: docker compose logs -f zigbee2mqtt   (shows 'Interviewing'…'successfully')"
+    _log "════════════════════════════════════════════════════════════════════"
+    _mqtt_pub 'zigbee2mqtt/bridge/request/permit_join' "{\"value\":true,\"time\":${ZIGBEE_PAIR_SECONDS}}" \
+      || _log "zigbee-pair: WARN permit_join publish failed (continuing to record whatever joined)"
+    sleep "$ZIGBEE_PAIR_SECONDS"
+    _mqtt_pub 'zigbee2mqtt/bridge/request/permit_join' '{"value":false}' || true
+    _log "zigbee-pair: pairing window closed"
+  else
+    _log "zigbee-pair: ZIGBEE_PAIR_SECONDS=0 — capturing IEEE only, pairing nothing"
+  fi
+
+  # 4) Record the joined devices (real IEEE + model + inferred type) into a
+  #    sensors YAML the seal step folds into the kit_manifest. The coordinator
+  #    itself (type Coordinator) is excluded.
+  local devices
+  devices="$(_mqtt_sub_one 'zigbee2mqtt/bridge/devices' 15 || echo '[]')"
+  printf '%s' "$devices" | python3 - "$KIT_SENSORS_FILE" <<'PY'
+import json, sys
+out_path = sys.argv[1]
+try:
+    devs = json.load(sys.stdin)
+except Exception:
+    devs = []
+if not isinstance(devs, list):
+    devs = []
+
+# Map z2m expose properties → Ziggy device_type. First match wins.
+def infer_type(dev):
+    exposes = []
+    defn = dev.get("definition") or {}
+    for e in (defn.get("exposes") or []):
+        if isinstance(e, dict):
+            if e.get("property"):
+                exposes.append(e["property"])
+            for f in (e.get("features") or []):
+                if isinstance(f, dict) and f.get("property"):
+                    exposes.append(f["property"])
+    props = set(exposes)
+    if "occupancy" in props and ("illuminance" in props or "presence" in props):
+        return "mmwave"
+    if "occupancy" in props:                      return "motion"
+    if "contact" in props:                        return "door"
+    if "temperature" in props or "humidity" in props: return "temp_humidity"
+    if "state" in props and dev.get("power_source") == "Mains (single phase)":
+        return "plug"
+    if "brightness" in props:                     return "bulb"
+    return ""
+
+lines = []
+n = 0
+for d in devs:
+    if not isinstance(d, dict):
+        continue
+    if (d.get("type") or "").lower() == "coordinator":
+        continue
+    ieee = d.get("ieee_address") or ""
+    if not ieee:
+        continue
+    defn = d.get("definition") or {}
+    model = defn.get("model") or d.get("model_id") or ""
+    dtype = infer_type(d)
+    # Room labels intentionally blank → kit_manifest fills a type-based
+    # fallback and the customer sets the real name/room in onboarding.
+    def q(s):  # YAML-safe single-quote
+        return "'" + str(s).replace("'", "''") + "'"
+    lines.append(f"  - device_type: {q(dtype)}")
+    lines.append(f"    vendor_model: {q(model)}")
+    lines.append(f"    zigbee_mac: {q(ieee)}")
+    lines.append(f"    intended_room_label_he: ''")
+    lines.append(f"    intended_room_label_en: ''")
+    n += 1
+
+with open(out_path, "w") as f:
+    if n:
+        f.write("sensors:\n" + "\n".join(lines) + "\n")
+    else:
+        f.write("sensors: []\n")
+sys.stderr.write(f"[zigbee-pair] recorded {n} paired device(s) → {out_path}\n")
+PY
+  local cnt; cnt="$(grep -c 'zigbee_mac:' "$KIT_SENSORS_FILE" 2>/dev/null || echo 0)"
+  _ok "zigbee-pair: recorded $cnt paired device(s) for the kit manifest"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 7: seal — data_key + kit_manifest + relay seal-key
 # ═══════════════════════════════════════════════════════════════════════════
 step_seal() {
   local home_id; home_id="$(_kv_get HOME_ID)"
+  # Prefer the REAL IEEE captured by the zigbee-pair step (kv) over any env value.
+  local captured_ieee; captured_ieee="$(_kv_get COORDINATOR_IEEE)"
+  [[ -n "$captured_ieee" ]] && COORDINATOR_IEEE="$captured_ieee"
   # A real IEEE is only required when Zigbee is enabled — with ENABLE_ZIGBEE!=1
   # there's no coordinator to read one from, so the manifest records a zero IEEE
   # and a real one gets written when the coordinator is added later (re-seal).
@@ -368,7 +614,8 @@ step_seal() {
 
   DRY_RUN="$DRY_RUN" ZIGGY_ETC_DIR="$ETC_DIR" \
   HOME_ID="$home_id" DEVICE_ID="$home_id" \
-  COORDINATOR_TYPE="$COORDINATOR_TYPE" COORDINATOR_IEEE="$ieee" \
+  COORDINATOR_TYPE="$COORDINATOR_TYPE" COORDINATOR_IEEE="$ieee" COORDINATOR_IP="$COORDINATOR_IP" \
+  KIT_SENSORS_FILE="${KIT_SENSORS_FILE:-}" \
   RELAY_URL="$RELAY_URL" FOUNDER_JWT="$(_kv_get FOUNDER_JWT)" MASTER_KEY_B64="$master" \
   B2_KEY_ID="$B2_KEY_ID" B2_APP_KEY="$B2_APP_KEY" B2_BUCKET="$B2_BUCKET" B2_ENDPOINT="$B2_ENDPOINT" \
     bash "$SCRIPT_DIR/_seal_step.sh" || _die "seal step failed"
@@ -484,6 +731,7 @@ _run_step_fn() {
     env)           step_env ;;
     stack-up)      step_stack_up ;;
     ha-seed)       step_ha_seed ;;
+    zigbee-pair)   step_zigbee_pair ;;
     seal)          step_seal ;;
     register-hub)  step_register_hub ;;
     ziggy-up)      step_ziggy_up ;;

@@ -289,3 +289,32 @@ def test_helper_skips_malformed_connection_entries():
     ]
     found = osr._ha_device_by_mac(devices, "aa:bb")
     assert found is not None and found["id"] == "real"
+
+
+# ── Zigbee2MQTT join (identifiers + 0x prefix) ───────────────────────────────
+
+def test_helper_matches_z2m_identifiers_with_0x_prefix():
+    """Zigbee2MQTT stores the IEEE in `identifiers` as ["zigbee2mqtt",
+    "0x00158d..."] — not in connections. The manifest MAC (any form) must
+    still match it (0x stripped both sides)."""
+    devices = [
+        {"id": "z2m_dev", "identifiers": [["zigbee2mqtt", "0x00158d0001234567"]]},
+    ]
+    # manifest carries the colon-separated no-0x form
+    found = osr._ha_device_by_mac(devices, "00:15:8d:00:01:23:45:67")
+    assert found is not None and found["id"] == "z2m_dev"
+
+
+def test_helper_matches_mqtt_identifier_substring():
+    """Some HA MQTT devices embed the IEEE inside a composite identifier like
+    "zigbee2mqtt_0x00158d...". Substring match on the normalised IEEE covers it."""
+    devices = [
+        {"id": "mqtt_dev", "identifiers": [["mqtt", "zigbee2mqtt_0x00158d0009998887"]]},
+    ]
+    found = osr._ha_device_by_mac(devices, "0x00158d0009998887")
+    assert found is not None and found["id"] == "mqtt_dev"
+
+
+def test_normalize_mac_strips_0x_and_separators():
+    assert osr._normalize_mac("0x00158D0001234567") == "00158d0001234567"
+    assert osr._normalize_mac("00:15:8D:00:01:23:45:67") == "00158d0001234567"

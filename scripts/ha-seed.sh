@@ -268,24 +268,44 @@ if [[ "$WITH_MQTT" == "1" ]]; then
   MQTT_HOST="${MQTT_HOST:-localhost}"
   MQTT_PORT="${MQTT_PORT:-1883}"
   _log "creating MQTT config entry (broker $MQTT_HOST:$MQTT_PORT)"
-  # Start the mqtt config flow, then submit broker creds. HA returns a
-  # flow_id; the broker step accepts broker/port/username/password.
-  FLOW="$(curl -sf -X POST "$HA_URL/api/config/config_entries/flow" \
-      -H @<(printf 'Authorization: Bearer %s' "$LLAT") -H "Content-Type: application/json" \
-      -d '{"handler":"mqtt","show_advanced_options":false}' || echo '{}')"
-  FLOW_ID="$(printf '%s' "$FLOW" | python3 -c 'import json,sys
+  # HA validates the broker creds by actually CONNECTING during the flow. On a
+  # freshly-imaged hub the broker may still be settling when we get here, so a
+  # single attempt can return `cannot_connect` (a transient, not a real auth
+  # failure). Retry the whole start-flow → submit-creds sequence a few times.
+  # An "abort" of reason single_instance_allowed means the entry already exists
+  # (e.g. a --resume re-run) — that's success, not failure.
+  MQTT_ENTRY_RETRIES="${MQTT_ENTRY_RETRIES:-6}"
+  STEP_BODY="$(MQTT_HOST="$MQTT_HOST" MQTT_PORT="$MQTT_PORT" \
+    MQTT_USER="$MQTT_USER" MQTT_PASS="$MQTT_PASS" python3 -c 'import json,os; print(json.dumps({
+      "broker": os.environ["MQTT_HOST"],
+      "port": int(os.environ["MQTT_PORT"]),
+      "username": os.environ["MQTT_USER"],
+      "password": os.environ["MQTT_PASS"],
+    }))')"
+  mqtt_entry_ok=0
+  attempt=0
+  while [[ "$attempt" -lt "$MQTT_ENTRY_RETRIES" ]]; do
+    attempt=$((attempt + 1))
+    FLOW="$(curl -sf -X POST "$HA_URL/api/config/config_entries/flow" \
+        -H @<(printf 'Authorization: Bearer %s' "$LLAT") -H "Content-Type: application/json" \
+        -d '{"handler":"mqtt","show_advanced_options":false}' || echo '{}')"
+    FLOW_TYPE="$(printf '%s' "$FLOW" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("type",""))
+except Exception: print("")')"
+    FLOW_REASON="$(printf '%s' "$FLOW" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("reason",""))
+except Exception: print("")')"
+    if [[ "$FLOW_TYPE" == "abort" && "$FLOW_REASON" == "single_instance_allowed" ]]; then
+      _log "MQTT config entry already exists (abort: single_instance_allowed) — OK"
+      mqtt_entry_ok=1; break
+    fi
+    FLOW_ID="$(printf '%s' "$FLOW" | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("flow_id",""))
 except Exception: print("")')"
-  if [[ -z "$FLOW_ID" ]]; then
-    _log "WARN: could not start MQTT config flow (already configured?). Response: $FLOW"
-  else
-    STEP_BODY="$(MQTT_HOST="$MQTT_HOST" MQTT_PORT="$MQTT_PORT" \
-      MQTT_USER="$MQTT_USER" MQTT_PASS="$MQTT_PASS" python3 -c 'import json,os; print(json.dumps({
-        "broker": os.environ["MQTT_HOST"],
-        "port": int(os.environ["MQTT_PORT"]),
-        "username": os.environ["MQTT_USER"],
-        "password": os.environ["MQTT_PASS"],
-      }))')"
+    if [[ -z "$FLOW_ID" ]]; then
+      _log "MQTT flow start returned no flow_id (attempt $attempt/$MQTT_ENTRY_RETRIES). Response: $FLOW"
+      sleep 5; continue
+    fi
     RES="$(curl -sf -X POST "$HA_URL/api/config/config_entries/flow/$FLOW_ID" \
         -H @<(printf 'Authorization: Bearer %s' "$LLAT") -H "Content-Type: application/json" \
         -d "$STEP_BODY" || echo '{}')"
@@ -293,10 +313,25 @@ except Exception: print("")')"
 try: print(json.load(sys.stdin).get("type",""))
 except Exception: print("")')"
     if [[ "$TYPE" == "create_entry" ]]; then
-      _log "MQTT config entry created"
-    else
-      _log "WARN: MQTT flow did not create_entry (type=$TYPE). Response: $RES"
+      _log "MQTT config entry created (attempt $attempt)"
+      mqtt_entry_ok=1; break
     fi
+    _log "MQTT flow not ready (type=$TYPE, attempt $attempt/$MQTT_ENTRY_RETRIES) — broker likely still settling; retrying. Response: $RES"
+    # Best-effort: abandon this half-open flow before starting a new one.
+    [[ -n "$FLOW_ID" ]] && curl -sf -X DELETE "$HA_URL/api/config/config_entries/flow/$FLOW_ID" \
+        -H @<(printf 'Authorization: Bearer %s' "$LLAT") >/dev/null 2>&1 || true
+    sleep 5
+  done
+  if [[ "$mqtt_entry_ok" != "1" ]]; then
+    # HA's MQTT integration is REQUIRED for Zigbee kits (Zigbee2MQTT surfaces
+    # devices to HA over MQTT). For a non-Zigbee hub it's merely nice-to-have, so
+    # a failure there stays a warning (preserving the pre-existing behaviour that
+    # let non-Zigbee hubs image through). The imaging script sets
+    # MQTT_ENTRY_REQUIRED=1 when ENABLE_ZIGBEE=1.
+    if [[ "${MQTT_ENTRY_REQUIRED:-0}" == "1" ]]; then
+      _die "MQTT config entry could not be created after $MQTT_ENTRY_RETRIES attempts — HA could not connect to the broker at $MQTT_HOST:$MQTT_PORT with the imaging creds. Zigbee needs this. Check mosquitto is up + the passwordfile matches (docker compose logs mosquitto)."
+    fi
+    _log "WARN: MQTT config entry not created after $MQTT_ENTRY_RETRIES attempts (non-Zigbee hub — continuing). Broker $MQTT_HOST:$MQTT_PORT."
   fi
 fi
 

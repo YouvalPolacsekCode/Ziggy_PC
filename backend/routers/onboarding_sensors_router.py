@@ -42,21 +42,28 @@ router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 # ── HA device matching ───────────────────────────────────────────────────────
 
 def _normalize_mac(mac: str) -> str:
-    """Lowercase, strip separators. Lets us match `00:15:8D:...` against
-    HA's `00158d...` or any other variant the integration emits."""
+    """Lowercase, strip separators + a leading `0x`. Lets us match
+    `00:15:8D:...`, `00158d...`, and Zigbee2MQTT's `0x00158d...` form all as
+    the same address."""
     if not isinstance(mac, str):
         return ""
-    return mac.lower().replace(":", "").replace("-", "").replace(" ", "")
+    s = mac.lower().replace(":", "").replace("-", "").replace(" ", "")
+    if s.startswith("0x"):
+        s = s[2:]
+    return s
 
 
 def _ha_device_by_mac(devices: list[dict], mac: str) -> Optional[dict]:
-    """Find the HA device whose `connections` includes this MAC (any case,
-    any separator). Returns None if not found.
+    """Find the HA device whose `connections` OR `identifiers` carries this
+    IEEE/MAC (any case, any separator, with or without a `0x` prefix). Returns
+    None if not found.
 
-    HA's device registry stores Zigbee IEEE addresses in `connections` as
-    pairs like ["zigbee", "00:15:8d:00:01:23:45:67"]. The manifest may
-    store the same address with or without separators. We normalise both
-    sides before comparing.
+    HA's device registry stores Zigbee IEEE addresses two ways depending on the
+    integration:
+      - ZHA:            connections = [["zigbee", "00:15:8d:00:01:23:45:67"]]
+      - Zigbee2MQTT:    identifiers = [["zigbee2mqtt", "0x00158d0001234567"]]
+    The manifest may store either form. We normalise both sides and check both
+    fields so the join works regardless of which Zigbee stack the hub runs.
     """
     needle = _normalize_mac(mac)
     if not needle:
@@ -67,6 +74,14 @@ def _ha_device_by_mac(devices: list[dict], mac: str) -> Optional[dict]:
                 continue
             kind, value = conn[0], conn[1]
             if kind in ("zigbee", "mac") and _normalize_mac(str(value)) == needle:
+                return d
+        # Zigbee2MQTT / mqtt discovery: the IEEE lives in identifiers, e.g.
+        # ["zigbee2mqtt", "0x00158d..."] or ["mqtt", "zigbee2mqtt_0x00158d..."].
+        for ident in d.get("identifiers") or []:
+            if not isinstance(ident, (list, tuple)) or len(ident) < 2:
+                continue
+            value = _normalize_mac(str(ident[1]))
+            if value == needle or (needle and needle in value):
                 return d
     return None
 
