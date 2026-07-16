@@ -52,6 +52,9 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         r"^binary_sensor\.backups_",
         r"^binary_sensor\.remote_ui",
         r"^sensor\.backup_",
+        r"^event\.backup_",            # HA 2026 backup integration ("automatic backup" event) — internal plumbing, never a user device
+        r"^button\.backup_",           # HA backup manager buttons
+        r"^update\.backup",            # backup update entity
         r"^sensor\.sun_next_",         # all HA sun sub-sensors — data available via global_sensors, not devices
         r"^sensor\.phone_",            # HA Companion app sensors (battery, charger, etc.)
         r"^(sensor|binary_sensor)\.sagemcom_", # router integration entities (speed, IP, WAN status)
