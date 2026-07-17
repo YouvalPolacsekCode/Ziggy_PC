@@ -30,7 +30,7 @@ import {
   Thermometer, Plug, Square, ArrowUp, ArrowDown, Play, Pause,
   ChevronRight, Volume2, VolumeX, Cog, BatteryLow,
 } from 'lucide-react'
-import { deviceFacts, sendDeviceCommand, kindMeta, KIND, commandAvailable } from '../../lib/devices'
+import { deviceFacts, sendDeviceCommand, kindMeta, KIND, isLightKind, commandAvailable } from '../../lib/devices'
 import { useUIStore } from '../../stores/uiStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import logger from '../../lib/logger'
@@ -250,6 +250,8 @@ function InlineControl({ facts, onCommand, variant }) {
       return <StatusPill tone={facts.state === 'home' ? 'on' : 'off'} label={facts.stateLabel} />
 
     case KIND.LIGHT:
+    case KIND.LAMP:
+    case KIND.LED_STRIP:
     case KIND.SWITCH:
     case KIND.PLUG:
     case KIND.FAN:
@@ -515,7 +517,7 @@ function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
 function secondaryLine(facts) {
   const bits = []
   bits.push(facts.stateLabel)
-  if (facts.brightness != null && facts.kind === KIND.LIGHT && facts.isOn) bits.push(`${facts.brightness}%`)
+  if (facts.brightness != null && isLightKind(facts.kind) && facts.isOn) bits.push(`${facts.brightness}%`)
   if (facts.kind === KIND.AC && facts.hvacMode && facts.isOn) bits.push(facts.hvacMode)
   if ((facts.kind === KIND.TV || facts.kind === KIND.SOUNDBAR) && facts.mediaTitle) bits.push(facts.mediaTitle)
   if (facts.kind === KIND.PERSON) return facts.stateLabel

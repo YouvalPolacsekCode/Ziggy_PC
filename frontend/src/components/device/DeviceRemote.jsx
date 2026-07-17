@@ -105,6 +105,8 @@ export function DeviceRemote({ entity, automations, suggestion }) {
       return <BoilerRemote entity={entity} />
 
     case KIND.LIGHT:
+    case KIND.LAMP:
+    case KIND.LED_STRIP:
       return <LightControls entity={entity} onService={onService} />
 
     case KIND.COVER:

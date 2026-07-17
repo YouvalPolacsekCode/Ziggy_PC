@@ -64,6 +64,17 @@ export const KIND = {
   UNKNOWN:      'unknown',
 }
 
+// Sub-kinds of a light. `getKind` splits a `light.*` entity into lamp /
+// led_strip / light purely for the ICON (a table lamp vs a strip vs a ceiling
+// light read differently in a dense grid). But for CONTROLS and CAPABILITIES
+// they are all just lights — a lamp is as dimmable/tunable as any light. Any
+// code deciding "does this get a brightness slider / colour picker" must ask
+// isLightKind(), never `=== KIND.LIGHT` (that bug hid dimming on every "Lamp").
+export const LIGHT_KINDS = new Set([KIND.LIGHT, KIND.LAMP, KIND.LED_STRIP])
+export function isLightKind(kind) {
+  return LIGHT_KINDS.has(kind)
+}
+
 // Icon design notes (KEEP THIS NEXT TO THE TABLE):
 //
 //   - Every kind needs an icon that's visually distinct from its neighbours
@@ -595,10 +606,17 @@ export function getCapabilities(entity) {
   if (meta.controllable) caps.add('power')
 
   switch (kind) {
-    case KIND.LIGHT: {
+    case KIND.LIGHT:
+    case KIND.LAMP:
+    case KIND.LED_STRIP: {
+      // Any light-kind is dimmable in HA once it reports a colour mode beyond
+      // plain onoff (color_temp/xy/hs all carry brightness). Modern HA signals
+      // support via supported_color_modes, NOT the deprecated feature bitmask —
+      // so we read scm here, with the old bit/attr as a fallback.
       caps.add('brightness')
-      if (hasFeature(entity, HA_FEATURE.LIGHT_COLOR_TEMP) || entity.color_temp != null) caps.add('color_temp')
-      if (hasFeature(entity, HA_FEATURE.LIGHT_COLOR) || (entity.supported_color_modes || []).some(m => ['hs','rgb','xy','rgbw','rgbww'].includes(m))) caps.add('color')
+      const scm = entity.supported_color_modes || []
+      if (hasFeature(entity, HA_FEATURE.LIGHT_COLOR_TEMP) || entity.color_temp != null || scm.includes('color_temp')) caps.add('color_temp')
+      if (hasFeature(entity, HA_FEATURE.LIGHT_COLOR) || scm.some(m => ['hs','rgb','xy','rgbw','rgbww'].includes(m))) caps.add('color')
       if (hasFeature(entity, HA_FEATURE.LIGHT_EFFECT) || (entity.effect_list || []).length) caps.add('effects')
       break
     }
@@ -758,7 +776,7 @@ function brightnessPct(entity) {
 // real color (lights with rgb_color or color_temp). Used by tile/row cards so
 // the room page reflects the same color the device detail page renders.
 function liveTintFor(entity, kind, meta, isOnState) {
-  if (kind === KIND.LIGHT && isOnState) {
+  if (isLightKind(kind) && isOnState) {
     const rgb = lightRgb(entity)
     if (rgb) return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
   }

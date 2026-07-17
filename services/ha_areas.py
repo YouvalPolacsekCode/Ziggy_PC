@@ -166,9 +166,47 @@ async def delete_area(area_id: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _norm_area(s: str | None) -> str:
+    """Loose key so 'living_room', 'Living Room' and 'living room' all match."""
+    return "".join(ch for ch in (s or "").strip().lower().replace("_", " ").split())
+
+
+async def _resolve_or_create_area(area_token: str) -> str:
+    """Map an area token to a REAL HA area_id, creating the area if needed.
+
+    The Devices/Rooms UI can hand us a *ghost room* slug (e.g. 'living_room')
+    that was only ever inferred from device names and has NO HA area behind it.
+    HA's entity_registry/update accepts an unknown area_id (returns success) but
+    creates no area — so the entity ends up pointing at a phantom room and shows
+    as unassigned everywhere. To make assignment actually stick we ensure a real
+    area exists first: return it if the id already exists, reuse an existing area
+    whose id/name matches, else create one from the slug.
+    """
+    snap = await get_registry_snapshot()
+    areas = snap.get("areas") or []
+    if any(a.get("area_id") == area_token for a in areas):
+        return area_token
+    norm = _norm_area(area_token)
+    for a in areas:
+        if _norm_area(a.get("area_id")) == norm or _norm_area(a.get("name")) == norm:
+            return a.get("area_id")
+    display = area_token.replace("_", " ").title()
+    res = await create_area(display)
+    new_id = (res.get("area") or {}).get("area_id")
+    if res.get("ok") and new_id:
+        log_info(f"[HA Areas] auto-created area '{display}' ({new_id}) for ghost room '{area_token}'")
+        return new_id
+    log_error(f"[HA Areas] could not ensure area for '{area_token}': {res.get('error')}")
+    return area_token  # best-effort; assignment proceeds with the original token
+
+
 async def assign_entity_to_area(entity_id: str, area_id: str | None) -> dict:
     """Assign (or unassign when area_id=None) an entity and its parent device to an HA area."""
     try:
+        # Ghost-room self-heal: promote an inferred room slug to a real HA area
+        # so the assignment lands on a room that actually exists.
+        if area_id:
+            area_id = await _resolve_or_create_area(area_id)
         # Look up device_id from the cached snapshot instead of a fresh WS roundtrip.
         snap = await get_registry_snapshot()
         entity = next((e for e in snap["entities"] if e.get("entity_id") == entity_id), None)
@@ -191,6 +229,8 @@ async def assign_entity_to_area(entity_id: str, area_id: str | None) -> dict:
 async def assign_device_to_area(device_id: str, area_id: str | None) -> dict:
     """Assign (or unassign when area_id=None) a device to an HA area via device registry."""
     try:
+        if area_id:
+            area_id = await _resolve_or_create_area(area_id)
         res, = await _ws({
             "type": "config/device_registry/update",
             "device_id": device_id,

@@ -265,6 +265,7 @@ def list_automations() -> list:
                     "trigger": meta.get("trigger", {}),
                     "actions": get_all_saved_actions(auto_id),
                     "rooms": meta.get("rooms", []),
+                    "auto_on": meta.get("auto_on"),
                     "source": "ha",
                 })
         else:
@@ -288,6 +289,7 @@ def list_automations() -> list:
                         "trigger": meta.get("trigger", {}),
                         "actions": get_all_saved_actions(auto_id),
                         "rooms": meta.get("rooms", []),
+                        "auto_on": meta.get("auto_on"),
                         "source": "ha",
                     })
     except Exception as e:
@@ -372,6 +374,63 @@ def get_automation_for_ui(auto_id: str) -> Optional[dict]:
     return None
 
 
+def _known_entity_ids() -> set:
+    """Best-effort set of entity_ids that currently exist in HA."""
+    try:
+        from services.ha_subscriber import state_cache
+        if state_cache:
+            return set(state_cache.keys())
+    except Exception:
+        pass
+    try:
+        resp = requests.get(f"{HA_URL()}/api/states", headers=HEADERS(), timeout=10)
+        if resp.status_code == 200:
+            return {s.get("entity_id") for s in resp.json()}
+    except Exception:
+        pass
+    return set()
+
+
+def _validate_trigger_entities(ha_triggers: list) -> Optional[dict]:
+    """Reject a save whose entity-based trigger points at nothing / a ghost entity.
+
+    Bug: an automation triggered by a presence sensor the user hadn't created
+    yet was written with an empty entity_id. HA accepts it (2xx) but the
+    automation never materialises as a live entity, so Ziggy reported "saved"
+    then it vanished. We block that here and tell the user to create the sensor
+    first. Returns an error dict {reason, error, entity} or None when valid.
+    """
+    known = None
+    for trg in ha_triggers or []:
+        plat = trg.get("platform") or trg.get("trigger")
+        if plat not in ("state", "numeric_state", "zone"):
+            continue
+        ent = trg.get("entity_id")
+        ids = [ent] if isinstance(ent, str) else list(ent or [])
+        ids = [e for e in ids if e]
+        if not ids:
+            return {
+                "reason": "trigger_entity_missing",
+                "entity": "",
+                "error": "This automation's trigger has no sensor selected yet. "
+                         "Pick or create the sensor first, then save.",
+            }
+        # Only enforce existence when we actually have a snapshot — never block a
+        # legitimate save just because HA was briefly unreachable.
+        if known is None:
+            known = _known_entity_ids()
+        if known:
+            missing = [e for e in ids if e not in known]
+            if missing:
+                return {
+                    "reason": "trigger_entity_missing",
+                    "entity": missing[0],
+                    "error": f"The trigger uses {missing[0]}, which doesn't exist yet. "
+                             f"Create that sensor first, then save the automation.",
+                }
+    return None
+
+
 def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     """
     Save an automation.  Routes to HA or Ziggy-only depending on needs_ha().
@@ -443,6 +502,13 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         ha_triggers = list(native["triggers"])
     else:
         ha_triggers = _trigger_to_ha(trigger)
+
+    # Block a phantom save: an entity-based trigger pointing at an empty or
+    # non-existent entity would 2xx at HA but never materialise as an
+    # automation entity — Ziggy would say "saved" then it vanishes.
+    trigger_err = _validate_trigger_entities(ha_triggers)
+    if trigger_err:
+        return {"ok": False, **trigger_err}
 
     # HA 2024.1+ uses plural keys only. Sending both "trigger"+"triggers" (or
     # "condition"+"conditions", "action"+"actions") causes a 400 "Message malformed"

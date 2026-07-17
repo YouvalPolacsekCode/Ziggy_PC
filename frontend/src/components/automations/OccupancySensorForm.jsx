@@ -34,16 +34,20 @@ function OccupancySensorForm({ onCreated, onClose, initialRoom = '' }) {
     [entities],
   )
 
-  // A room is offerable only if it actually has a fusable binary sensor —
-  // otherwise "create" would always fail the backend's at-least-one guard.
+  // Show EVERY room, but mark whether it has a fusable binary sensor. Rooms
+  // without one are shown disabled (with a hint) instead of hidden — hiding
+  // them made the picker look broken ("only 3 of my 7 rooms"). `create` still
+  // needs at least one sensor, which the disabled state + resolved guard cover.
   const roomOptions = useMemo(() => {
     const relevant = new Set([...SIGNAL_CLASSES.motion, ...SIGNAL_CLASSES.presence, ...SIGNAL_CLASSES.door])
-    return (rooms || [])
-      .filter(area => (area.entities || []).some(eid => {
+    return (rooms || []).map(area => {
+      const entities = area.entities || []
+      const hasSignal = entities.some(eid => {
         const e = entityMap[eid]
         return e && e.domain === 'binary_sensor' && relevant.has(e.device_class)
-      }))
-      .map(area => ({ id: area.id, name: area.name, entities: area.entities || [] }))
+      })
+      return { id: area.id, name: area.name, entities, hasSignal }
+    })
   }, [rooms, entityMap])
 
   const [roomId, setRoomId] = useState(() => {
@@ -51,7 +55,8 @@ function OccupancySensorForm({ onCreated, onClose, initialRoom = '' }) {
       const hit = (rooms || []).find(a => a.id === initialRoom || a.name === initialRoom)
       if (hit) return hit.id
     }
-    return roomOptions[0]?.id || ''
+    // Default to the first room that can actually be fused, not just the first room.
+    return (roomOptions.find(r => r.hasSignal) || roomOptions[0])?.id || ''
   })
   const [signals, setSignals] = useState({ motion: true, presence: true, door: true })
   const [delayOff, setDelayOff] = useState(30)
@@ -133,14 +138,20 @@ function OccupancySensorForm({ onCreated, onClose, initialRoom = '' }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {roomOptions.map(r => {
               const sel = r.id === roomId
+              const disabled = !r.hasSignal
               return (
-                <button key={r.id} type="button" onClick={() => setRoomId(r.id)} style={{
-                  padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                  background: sel ? 'var(--ink)' : 'var(--surface)',
-                  color: sel ? 'var(--bg)' : 'var(--ink-mute)',
-                  border: sel ? 'none' : '0.5px solid var(--line)',
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }} dir="auto">{r.name}</button>
+                <button key={r.id} type="button"
+                  onClick={() => { if (!disabled) setRoomId(r.id) }}
+                  disabled={disabled}
+                  title={disabled ? t('automations.smartSensor.noneFound') : undefined}
+                  style={{
+                    padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                    background: sel ? 'var(--ink)' : 'var(--surface)',
+                    color: sel ? 'var(--bg)' : (disabled ? 'var(--ink-faint)' : 'var(--ink-mute)'),
+                    border: sel ? 'none' : '0.5px solid var(--line)',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.5 : 1, fontFamily: 'inherit',
+                  }} dir="auto">{r.name}</button>
               )
             })}
           </div>

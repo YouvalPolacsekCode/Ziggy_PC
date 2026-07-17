@@ -40,6 +40,12 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
     return new Set(pre)
   })
   const [bedtime, setBedtime] = useState(initial?.defaults?.bedtime || initial?.bedtime || '22:00')
+  // Default ON — matches the user expectation that all selected lights follow
+  // the schedule. Restored from an existing bundle when editing.
+  const [autoOn, setAutoOn]   = useState(() => {
+    const v = initial?.autoOn ?? initial?.defaults?.autoOn
+    return v == null ? true : !!v
+  })
   const [saving, setSaving]   = useState(false)
   const [error,  setError]    = useState(null)
 
@@ -56,7 +62,7 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
   const handleConfirm = async () => {
     setSaving(true); setError(null)
     try {
-      await saveCircadianBundle({ lights: Array.from(selected), bedtime })
+      await saveCircadianBundle({ lights: Array.from(selected), bedtime, auto_on: autoOn })
       await onSaved?.({ updated: isUpdate })
     } catch (e) {
       setError(e?.userMessage || e?.message || t('automations.circadian.failed'))
@@ -140,6 +146,44 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
         />
         <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
           {t('automations.circadian.bedtimeHelp')}
+        </p>
+      </div>
+
+      {/* Turn-on behaviour */}
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.autoOnLabel')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[
+            { on: true,  label: t('automations.circadian.autoOnTurnOn') },
+            { on: false, label: t('automations.circadian.autoOnAdjust') },
+          ].map(opt => {
+            const active = autoOn === opt.on
+            return (
+              <button
+                key={String(opt.on)}
+                type="button"
+                onClick={() => setAutoOn(opt.on)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '9px 11px', borderRadius: 10, textAlign: 'start', fontFamily: 'inherit',
+                  background: active ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'var(--surface)',
+                  border: `0.5px solid ${active ? 'var(--ok)' : 'var(--line)'}`,
+                  cursor: 'pointer',
+                }}
+                dir="auto"
+              >
+                <span style={{
+                  width: 16, height: 16, borderRadius: 999, flexShrink: 0,
+                  border: `1.5px solid ${active ? 'var(--ok)' : 'var(--line)'}`,
+                  background: active ? 'var(--ok)' : 'transparent',
+                }} />
+                <span style={{ fontSize: 13, color: 'var(--ink)' }}>{opt.label}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
+          {t('automations.circadian.autoOnHelp')}
         </p>
       </div>
 

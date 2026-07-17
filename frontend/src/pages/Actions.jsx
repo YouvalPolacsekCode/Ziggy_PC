@@ -57,11 +57,15 @@ export default function Automations() {
   // Schedule" row in the Your-Automations section. The user sees one
   // toggleable feature, not 4 cryptic clock entries.
   const { circadianGroup, visibleAutomations } = useMemo(() => {
-    const members = automations.filter(a => a.id?.startsWith('ziggy_circadian_'))
+    // Group by the ENTITY object-id prefix (HA derives it from the alias),
+    // NOT the config-id prefix `ziggy_circadian_` — the two differ, which is
+    // why the schedule used to not group at all (Bug 6).
+    const CIRCADIAN_PREFIX = 'ziggy_smart_light_schedule_'
+    const members = automations.filter(a => a.id?.startsWith(CIRCADIAN_PREFIX))
     if (members.length === 0) return { circadianGroup: null, visibleAutomations: automations }
-    const visible = automations.filter(a => !a.id?.startsWith('ziggy_circadian_'))
+    const visible = automations.filter(a => !a.id?.startsWith(CIRCADIAN_PREFIX))
 
-    const bedtimeAuto = members.find(a => a.id === 'ziggy_circadian_bedtime')
+    const bedtimeAuto = members.find(a => a.id === `${CIRCADIAN_PREFIX}bedtime`)
     const bedtime = bedtimeAuto?.trigger?.time?.slice(0, 5) || '22:00'
     const lightSet = new Set()
     members.forEach(m => (m.actions || []).forEach(act => {
@@ -72,9 +76,11 @@ export default function Automations() {
     const lights = Array.from(lightSet)
     const allEnabled = members.every(m => m.enabled)
     const anyEnabled = members.some(m => m.enabled)
+    // auto_on is stored per member; default to true (matches the builder default).
+    const autoOn = members.find(m => m.auto_on != null)?.auto_on ?? true
 
     return {
-      circadianGroup: { members, lights, bedtime, allEnabled, anyEnabled, count: members.length },
+      circadianGroup: { members, lights, bedtime, autoOn, allEnabled, anyEnabled, count: members.length },
       visibleAutomations: visible,
     }
   }, [automations])
@@ -116,7 +122,8 @@ export default function Automations() {
       _isInstalled: true,
       selectedLights: group.lights,
       bedtime: group.bedtime,
-      defaults: { lights: group.lights, bedtime: group.bedtime },
+      autoOn: group.autoOn,
+      defaults: { lights: group.lights, bedtime: group.bedtime, autoOn: group.autoOn },
     })
   }
 
@@ -146,7 +153,14 @@ export default function Automations() {
         try { await accept(editTarget._fromSuggestion) } catch {}
       }
       await fetchAutomations()
-    } catch { addToast(t('automations.failedToSave'), 'error') }
+    } catch (e) {
+      // 422 = a user-fixable validation error (e.g. the trigger points at a
+      // sensor that doesn't exist yet). Show the specific reason, not "failed".
+      const msg = e?.status === 422
+        ? t('automations.triggerEntityMissing')
+        : t('automations.failedToSave')
+      addToast(msg, 'error')
+    }
   }
   const handleDelete = async (id) => {
     try { await removeAutomation(id); addToast(t('automations.deleted'), 'success') }

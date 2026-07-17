@@ -416,6 +416,9 @@ async def get_suggested_templates():
 class CircadianBundleBody(BaseModel):
     lights:  list[str]
     bedtime: Optional[str] = "22:00"
+    # True → the schedule turns lights ON at each phase (user expectation).
+    # False → only re-tints lights already on. Defaults True.
+    auto_on: Optional[bool] = True
 
 
 @router.get("/api/automations/circadian-bundle")
@@ -427,7 +430,8 @@ async def get_circadian_bundle():
 @router.post("/api/automations/circadian-bundle")
 async def save_circadian_bundle(body: CircadianBundleBody):
     from services.circadian_builder import save_bundle
-    result = await asyncio.to_thread(save_bundle, body.lights, body.bedtime or "22:00")
+    auto_on = True if body.auto_on is None else bool(body.auto_on)
+    result = await asyncio.to_thread(save_bundle, body.lights, body.bedtime or "22:00", auto_on)
     if not result.get("ok"):
         _bus.emit("automation", _BASIC, "circadian_bundle_save_failed",
                   light_count=len(body.lights), bedtime=body.bedtime,
@@ -530,6 +534,11 @@ async def create_automation_endpoint(body: AutomationBody):
         _bus.emit("automation", _BASIC, "automation_save_failed",
                   name=body.name, automation_id=body.id,
                   result="error", error=result.get("error"))
+        # A trigger that references a missing/empty entity is a user-fixable
+        # validation error, not an HA outage — 422 so the app shows a clear
+        # "create the sensor first" message instead of a generic failure.
+        if result.get("reason") == "trigger_entity_missing":
+            raise HTTPException(status_code=422, detail=result.get("error", "Trigger entity missing"))
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     auto_id = result["id"]
     _bus.emit("automation", _BASIC,

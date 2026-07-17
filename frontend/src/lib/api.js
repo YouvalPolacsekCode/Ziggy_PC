@@ -470,7 +470,7 @@ export const deleteAutomationBundle  = (bundleId) =>
 // Smart Light Schedule (circadian) — bundle of 4 HA automations created/replaced
 // atomically. See services/circadian_builder.py.
 export const getCircadianBundle    = () => get('/automations/circadian-bundle')
-export const saveCircadianBundle   = ({ lights, bedtime }) => post('/automations/circadian-bundle', { lights, bedtime })
+export const saveCircadianBundle   = ({ lights, bedtime, auto_on }) => post('/automations/circadian-bundle', { lights, bedtime, auto_on })
 export const deleteCircadianBundle = () => del('/automations/circadian-bundle')
 
 // Manual overrides

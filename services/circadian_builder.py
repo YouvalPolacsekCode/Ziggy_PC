@@ -29,6 +29,7 @@ Design notes:
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 import requests
@@ -77,8 +78,47 @@ def _automation_id(phase_id: str) -> str:
     return f"{ID_PREFIX}{phase_id}"
 
 
-def _actions_for(lights: list[str], color_temp_k: int, brightness_pct: int) -> list[dict]:
-    """One `choose` block per light: only call light.turn_on if the light is currently on."""
+def _entity_object_id(alias: str) -> str:
+    """The HA entity object_id HA derives from an automation's alias.
+
+    HA sets automation.<object_id> from slugify(alias), NOT from the config
+    `id`. So a config saved at id `ziggy_circadian_sunrise` with alias
+    "Ziggy Smart Light Schedule — Sunrise" lands as
+    `automation.ziggy_smart_light_schedule_sunrise`. Ziggy's list + the UI
+    grouping key off that entity id, so all local metadata (trigger/actions
+    for display) MUST be keyed by this, not the config id — otherwise the
+    Smart Light Schedule renders blank (Bug 6). Mirrors homeassistant.util.slugify
+    for the ASCII case, which is all our fixed aliases use.
+    """
+    s = re.sub(r"[^a-z0-9_]+", "_", alias.lower())
+    return re.sub(r"_+", "_", s).strip("_")
+
+
+def _meta_trigger(phase_id: str, bedtime: str) -> dict:
+    """A trigger dict the frontend can read (it reads `.trigger.time` for bedtime)."""
+    if phase_id == "bedtime":
+        return {"time": bedtime}
+    if phase_id == "solar_noon":
+        return {"time": "12:00"}
+    return {"platform": "sun", "event": "sunrise" if phase_id == "sunrise" else "sunset"}
+
+
+def _actions_for(lights: list[str], color_temp_k: int, brightness_pct: int,
+                 auto_on: bool) -> list[dict]:
+    """Per-phase light actions.
+
+    auto_on=True  → turn the lights ON and set warmth/brightness (what the user
+                    expects: "all my lights follow the schedule").
+    auto_on=False → only re-tint lights already on, via a per-light `choose`
+                    gate, so off lights aren't woken.
+    """
+    settings_data = {"color_temp_kelvin": color_temp_k, "brightness_pct": brightness_pct}
+    if auto_on:
+        return [{
+            "service": "light.turn_on",
+            "target":  {"entity_id": lights},
+            "data":    settings_data,
+        }]
     return [
         {
             "choose": [
@@ -90,10 +130,7 @@ def _actions_for(lights: list[str], color_temp_k: int, brightness_pct: int) -> l
                         {
                             "service": "light.turn_on",
                             "target": {"entity_id": light},
-                            "data": {
-                                "color_temp_kelvin": color_temp_k,
-                                "brightness_pct":   brightness_pct,
-                            },
+                            "data": dict(settings_data),
                         }
                     ],
                 }
@@ -103,7 +140,7 @@ def _actions_for(lights: list[str], color_temp_k: int, brightness_pct: int) -> l
     ]
 
 
-def build_bundle(lights: list[str], bedtime: str = "22:00") -> list[dict]:
+def build_bundle(lights: list[str], bedtime: str = "22:00", auto_on: bool = True) -> list[dict]:
     """Return the 4 HA-native automation configs (one per phase).
 
     These configs can be inspected before saving — useful for the review
@@ -121,20 +158,27 @@ def build_bundle(lights: list[str], bedtime: str = "22:00") -> list[dict]:
             "description": f"Ziggy circadian — {phase_id.replace('_', ' ')} @ {kelvin}K / {pct}%",
             "triggers":    trig_factory(bedtime),
             "conditions":  [],
-            "actions":     _actions_for(cleaned, kelvin, pct),
+            "actions":     _actions_for(cleaned, kelvin, pct, auto_on),
             "mode":        "single",
         })
     return configs
 
 
-def save_bundle(lights: list[str], bedtime: str = "22:00") -> dict:
+def save_bundle(lights: list[str], bedtime: str = "22:00", auto_on: bool = True) -> dict:
     """Create/replace the 4 HA automations. Idempotent — re-saving overwrites.
 
     Returns {"ok": bool, "saved": [...], "failed": [...]}.
     """
-    configs = build_bundle(lights, bedtime)
+    from services.local_automation_actions import save_automation_meta, save_ziggy_actions
+
+    configs = build_bundle(lights, bedtime, auto_on)
     if not configs:
         return {"ok": False, "saved": [], "failed": [], "error": "No color-temp lights provided"}
+
+    cleaned = [l for l in lights if isinstance(l, str) and l.startswith("light.")]
+    # phase_id + settings, indexed the same as configs, for the local meta write.
+    phase_info = {_automation_id(pid): (pid, alias, k, pct)
+                  for pid, alias, _trig, k, pct in PHASES}
 
     saved: list[str] = []
     failed: list[dict] = []
@@ -150,26 +194,46 @@ def save_bundle(lights: list[str], bedtime: str = "22:00") -> dict:
             )
             if resp.status_code in (200, 201):
                 saved.append(auto_id)
+                # Persist Ziggy-side metadata keyed by the ENTITY object_id (what
+                # the list/UI groups on), so the Smart Light Schedule renders its
+                # lights + bedtime instead of blank (Bug 6).
+                pid, alias, k, pct = phase_info[auto_id]
+                obj_id = _entity_object_id(alias)
+                save_automation_meta(obj_id, {
+                    "name":     alias,
+                    "trigger":  _meta_trigger(pid, bedtime),
+                    "rooms":    [],
+                    "auto_on":  auto_on,
+                    "circadian": True,
+                })
+                save_ziggy_actions(obj_id, [{
+                    "service":   "light.turn_on",
+                    "entity_id": cleaned,
+                    "data":      {"color_temp_kelvin": k, "brightness_pct": pct},
+                }])
             else:
                 failed.append({"id": auto_id, "status": resp.status_code, "error": resp.text[:300]})
         except Exception as e:
             failed.append({"id": auto_id, "status": 0, "error": str(e)})
 
-    log_info(f"[Circadian] save_bundle: saved={saved} failed={[f['id'] for f in failed]}")
+    log_info(f"[Circadian] save_bundle: saved={saved} failed={[f['id'] for f in failed]} auto_on={auto_on}")
     return {
         "ok":      not failed,
         "saved":   saved,
         "failed":  failed,
         "bedtime": bedtime,
+        "auto_on": auto_on,
         "lights":  lights,
     }
 
 
 def delete_bundle() -> dict:
     """Remove all 4 circadian HA automations. Safe to call when none exist."""
+    from services.local_automation_actions import delete_automation_meta, delete_ziggy_actions
+
     deleted: list[str] = []
     missed: list[str] = []
-    for phase_id, *_ in PHASES:
+    for phase_id, alias, *_ in PHASES:
         auto_id = _automation_id(phase_id)
         try:
             resp = requests.delete(
@@ -183,6 +247,13 @@ def delete_bundle() -> dict:
         except Exception as e:
             log_error(f"[Circadian] delete {auto_id}: {e}")
             missed.append(auto_id)
+        # Purge Ziggy-side metadata keyed by the entity object_id.
+        obj_id = _entity_object_id(alias)
+        try:
+            delete_automation_meta(obj_id)
+            delete_ziggy_actions(obj_id)
+        except Exception:
+            pass
     return {"ok": True, "deleted": deleted, "missed": missed}
 
 
