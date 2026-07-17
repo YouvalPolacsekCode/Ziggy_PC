@@ -410,6 +410,30 @@ async def confirm_sensors(
     }
 
 
+# ── /api/onboarding/home-location ───────────────────────────────────────────
+# The onboarding LOCATION step captures the home's coordinates (for presence
+# geofencing). We ALSO push them into HA's core config here so sun/sunrise-
+# sunset/weather work — otherwise the hub stays at 0,0 and every sun-based
+# automation misfires. Backend startup sets a default; this refines it to the
+# user's real location.
+
+class HomeLocationBody(BaseModel):
+    latitude:  float
+    longitude: float
+    elevation: Optional[int] = None
+
+
+@router.post("/home-location")
+async def set_home_location(body: HomeLocationBody,
+                            device: dict = Depends(get_current_device)) -> dict:
+    from services.ha_config import set_core_location
+    res = await set_core_location(body.latitude, body.longitude, body.elevation)
+    if not res.get("ok"):
+        raise HTTPException(status_code=502, detail=res.get("error", "HA error"))
+    log_info(f"[Onboarding] HA home location set to {body.latitude},{body.longitude}")
+    return {"ok": True}
+
+
 # ── /api/onboarding/starter-pack (Chunk 3.3) ────────────────────────────────
 
 @router.get("/starter-pack")

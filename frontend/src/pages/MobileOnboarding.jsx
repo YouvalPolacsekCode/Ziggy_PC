@@ -35,6 +35,7 @@ import {
   confirmSensors,
   getStarterPack,
   installAutomation,
+  setHomeLocation,
   completeOnboarding,
 } from '../lib/mobileApi'
 import { getPresencePersons, getPresenceZone, listPresenceZones } from '../lib/api'
@@ -875,6 +876,10 @@ async function registerInitialGeofences(Pres) {
     } catch {}
   }
   if (homeLat == null || homeLon == null) return  // nothing usable
+
+  // Push the real home location into HA so sun/sunrise-sunset/weather are
+  // accurate (otherwise the hub stays at the imaging default). Best-effort.
+  try { await setHomeLocation({ latitude: homeLat, longitude: homeLon }) } catch {}
 
   // Home — small ring, fires on a real arrival.
   try {

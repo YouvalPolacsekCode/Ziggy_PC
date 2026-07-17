@@ -207,6 +207,14 @@ home:
   id: home-example-primary
   name: Home
   type: hub              # hub (local mini PC) | cloud (per-home VM)
+  # Default home location applied to Home Assistant on startup IF HA has no
+  # location set yet (a fresh image otherwise sits at 0,0 and every sun-based
+  # automation misfires). The onboarding location step overrides this with the
+  # user's real coordinates. Default is Tel Aviv; change for a non-Israel region.
+  location:
+    latitude: 32.0853
+    longitude: 34.7818
+    elevation: 10
 
 home_assistant:
   # Long-lived HA access token. Generate at HA → Profile → Long-lived tokens.

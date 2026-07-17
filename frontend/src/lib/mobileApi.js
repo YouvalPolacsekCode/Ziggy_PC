@@ -161,6 +161,21 @@ export async function getStarterPack() {
   return res.json()   // { starters: [...], ha_reachable }
 }
 
+// Push the home's real coordinates into HA's core config so sun/sunrise-sunset/
+// weather work. Best-effort — never blocks onboarding if it fails.
+export async function setHomeLocation({ latitude, longitude, elevation }) {
+  try {
+    const res = await fetch('/api/onboarding/home-location', {
+      method: 'POST',
+      headers: await _deviceAuthHeaders(),
+      body: JSON.stringify({ latitude, longitude, elevation }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 // /api/automations is user-authed — uses the user_token returned by claimOwner.
 export async function installAutomation(haPayload, userToken) {
   if (!userToken) throw new Error('user token required for automation install')

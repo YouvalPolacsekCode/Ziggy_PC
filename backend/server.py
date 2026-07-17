@@ -132,6 +132,7 @@ async def _startup():
     asyncio.create_task(_register_with_relay())
     asyncio.create_task(_start_ir_listener())
     asyncio.create_task(_run_update_checker())
+    asyncio.create_task(_ensure_ha_location())
     # Warm the HA service catalog so the first call to /api/devices/X/commands
     # returns instantly. Without this, the catalog stays empty until the
     # first request triggers it, and that request blocks while the WS round-
@@ -157,6 +158,21 @@ async def _run_update_checker():
     """Run the HA update check once in the background after startup."""
     from services.ha_update_checker import background_check
     await background_check()
+
+
+async def _ensure_ha_location():
+    """Set HA's home location to a default if it's still unset (0,0).
+
+    Freshly-imaged hubs onboard HA without a location, breaking every sun-based
+    automation. This self-heals it on startup (and covers imaging, since Ziggy
+    starts after ha-seed). Never overrides a real location the user/onboarding
+    already set.
+    """
+    try:
+        from services.ha_config import ensure_home_location
+        await ensure_home_location()
+    except Exception as e:
+        log_info(f"[HAConfig] ensure location error: {e}")
 
 
 async def _start_ir_listener():
