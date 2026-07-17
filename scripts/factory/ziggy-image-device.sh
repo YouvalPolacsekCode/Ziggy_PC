@@ -307,6 +307,14 @@ HA_URL=http://host.docker.internal:8123
 MQTT_URL=mqtt://$MQTT_USER:$mqtt_pass@mosquitto:1883
 ZIGBEE_COORDINATOR_DEVICE=$zdev
 EOF
+  # Home-LAN IP hint for LAN discovery (Broadlink IR blasters, etc.). The ziggy
+  # backend runs in a bridge container whose own subnet is the Docker net, so it
+  # can't broadcast-discover or subnet-scan the real LAN — services/ir_listener.py
+  # uses this to scan the correct /24 (unicast, which the bridge NATs to the LAN).
+  local host_lan_ip; host_lan_ip="$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -1)"
+  if [[ -n "$host_lan_ip" ]]; then
+    echo "ZIGGY_LAN_HOST_IP=$host_lan_ip" | _maybe_sudo tee -a "$ENV_FILE" >/dev/null
+  fi
   # B2 env for the backup engine (also written to $ETC_DIR/b2_env by seal step).
   if [[ -n "${ZIGGY_B2_KEY_ID:-}" ]]; then echo "ZIGGY_B2_KEY_ID=${ZIGGY_B2_KEY_ID}" | _maybe_sudo tee -a "$ENV_FILE" >/dev/null; fi
   if [[ -n "${ZIGGY_B2_APP_KEY:-}" ]]; then echo "ZIGGY_B2_APP_KEY=${ZIGGY_B2_APP_KEY}" | _maybe_sudo tee -a "$ENV_FILE" >/dev/null; fi

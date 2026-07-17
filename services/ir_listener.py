@@ -25,10 +25,40 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 import time
 from typing import Callable, Optional
 
 from core.logger_module import log_info, log_error
+
+
+def _lan_scan_base() -> Optional[str]:
+    """Return the home-LAN address/CIDR to scan for Broadlink devices, or None.
+
+    Ziggy's backend runs in a BRIDGE-networked container, so its own IP (and any
+    UDP broadcast) belong to the Docker network (172.x), NOT the home LAN — a
+    subnet scan off the container's own IP scans the wrong network and finds
+    nothing. We therefore need the HOST's LAN address, sourced (in order) from:
+      1. ZIGGY_LAN_CIDR      env  (e.g. "10.100.102.0/24")
+      2. ZIGGY_LAN_HOST_IP   env  (e.g. "10.100.102.15" → scanned as /24)
+      3. /etc/ziggy/lan_host_ip   (mounted into the container; lets ops set it
+                                   with no container restart)
+    Returns a bare IP or a CIDR string; caller normalises to a /24 network.
+    Unicast `hello` to a LAN IP works from the bridge container (Docker NATs
+    outbound), so scanning the real LAN /24 is what makes discovery work.
+    """
+    for var in ("ZIGGY_LAN_CIDR", "ZIGGY_LAN_HOST_IP"):
+        v = (os.environ.get(var) or "").strip()
+        if v:
+            return v
+    try:
+        with open("/etc/ziggy/lan_host_ip", "r") as f:
+            v = f.read().strip()
+            if v:
+                return v
+    except Exception:
+        pass
+    return None
 
 # Per-host pause events — set = paused (wizard is using the receiver)
 _pause_events: dict[str, asyncio.Event] = {}
@@ -1022,10 +1052,16 @@ async def discover_broadlink_devices(timeout: int = 8) -> list[dict]:
         def _try_hello(ip: str) -> dict | None:
             try:
                 dev = broadlink.hello(ip, timeout=1)
-                dev.auth()
-                return _device_info(dev)
             except Exception:
                 return None
+            # `hello` already gives us host/mac/type — enough to LIST the device.
+            # auth() only matters for sending, and can fail on an app-locked unit;
+            # don't let that drop a real blaster off the discovery list.
+            try:
+                dev.auth()
+            except Exception:
+                pass
+            return _device_info(dev)
 
         def _scan() -> list[dict]:
             found: list[dict] = []
@@ -1048,13 +1084,28 @@ async def discover_broadlink_devices(timeout: int = 8) -> list[dict]:
             if found:
                 return found
 
-            # Phase 2: Subnet scan
+            # Phase 2: Subnet scan (unicast hello per host — works from the bridge
+            # container, unlike the broadcast in Phase 1). Scan the HOME LAN, not
+            # the container's own Docker subnet — see _lan_scan_base().
             log_info("[IRListener] Broadcast found nothing — scanning subnet directly")
+            lan_base = _lan_scan_base()
+            local_ip = None
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    s.connect(("8.8.8.8", 80))
-                    local_ip = s.getsockname()[0]
-                network = ipaddress.IPv4Network(f"{local_ip}/24", strict=False)
+                if lan_base:
+                    network = (ipaddress.ip_network(lan_base, strict=False)
+                               if "/" in lan_base
+                               else ipaddress.IPv4Network(f"{lan_base}/24", strict=False))
+                    log_info(f"[IRListener] scanning home LAN {network} (from ZIGGY_LAN_* / /etc/ziggy/lan_host_ip)")
+                else:
+                    # Fallback: the container's own subnet. On a bridge-networked
+                    # deploy this is the Docker net and will find nothing on the
+                    # LAN — set ZIGGY_LAN_HOST_IP or /etc/ziggy/lan_host_ip to fix.
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                        s.connect(("8.8.8.8", 80))
+                        local_ip = s.getsockname()[0]
+                    network = ipaddress.IPv4Network(f"{local_ip}/24", strict=False)
+                    log_info(f"[IRListener] no LAN hint set — scanning own subnet {network} "
+                             f"(bridge container? set ZIGGY_LAN_HOST_IP)")
                 candidates = [str(h) for h in network.hosts() if str(h) != local_ip]
             except Exception as e:
                 log_error(f"[IRListener] Subnet detection failed: {e}")
