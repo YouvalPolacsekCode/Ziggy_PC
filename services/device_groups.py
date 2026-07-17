@@ -486,27 +486,44 @@ def _pick_primary(rows: list[dict]) -> dict:
         if r.get("ir_device_id"):
             return r
 
-    # 2. Best controllable domain.
+    # Best purposeful binary_sensor (the device's reason to exist:
+    # presence/motion/door/smoke/leak). Extracted so step 2 can consult it.
+    def _best_purposeful_binary() -> dict | None:
+        scored: list[tuple[int, dict]] = []
+        for r in rows:
+            score = _binary_sensor_purpose_score(r)
+            if score is not None:
+                scored.append((score, r))
+        if not scored:
+            return None
+        scored.sort(key=lambda t: (t[0], t[1].get("entity_id") or ""))
+        return scored[0][1]
+
+    # 2. Best controllable domain — with one exception: a bare `switch` must NOT
+    #    hijack the card from a purposeful binary_sensor. A rich sensor (Aqara
+    #    FP300, mmWave nodes, …) exposes feature/config switches (adaptive
+    #    sensitivity, interference self-ID) that are settings, not the device's
+    #    identity — its presence/motion state is. Strong controllables (light,
+    #    climate, cover, lock, media_player, fan) still win: those ARE the
+    #    device. Plugs / wall-switches keep winning too — they expose no
+    #    purposeful binary_sensor to lose to.
     controllable = [r for r in rows if (r.get("domain") or "") in _CONTROLLABLE_DOMAINS]
     if controllable:
         controllable.sort(key=lambda r: (_domain_priority(r["domain"]), r.get("entity_id") or ""))
-        return controllable[0]
+        best = controllable[0]
+        if (best.get("domain") or "") == "switch":
+            purposeful = _best_purposeful_binary()
+            if purposeful is not None:
+                return purposeful
+        return best
 
-    # 3. Purposeful binary_sensor outranks sibling `sensor.*` entities. A
-    #    motion node typically exposes binary_sensor.foo_motion alongside
-    #    sensor.foo_illuminance + sensor.foo_battery; without this step
-    #    illuminance would win on device_class priority and the card would
-    #    read "120 lx" instead of the motion state the user wants to see.
-    #    Uses device_class first, then entity-id pattern fallback so we
-    #    catch motion sensors whose binary_sensor has no device_class set.
-    purposeful: list[tuple[int, dict]] = []
-    for r in rows:
-        score = _binary_sensor_purpose_score(r)
-        if score is not None:
-            purposeful.append((score, r))
-    if purposeful:
-        purposeful.sort(key=lambda t: (t[0], t[1].get("entity_id") or ""))
-        return purposeful[0][1]
+    # 3. No controllable — a purposeful binary_sensor outranks sibling sensor.*.
+    #    (A motion node exposes binary_sensor.foo_motion alongside
+    #    sensor.foo_illuminance + sensor.foo_battery; without this, illuminance
+    #    would win on device_class priority and the card would read "120 lx".)
+    purposeful = _best_purposeful_binary()
+    if purposeful is not None:
+        return purposeful
 
     # 4. Sensor-only (or no purposeful binary) — pick by device_class.
     def _sort_key(r: dict) -> tuple:
