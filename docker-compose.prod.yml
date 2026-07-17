@@ -96,6 +96,14 @@ services:
       # ha_config_dir="docker/ha-config" resolves to /app/docker/ha-config (WORKDIR
       # is /app). Without this the backup fails at stage=collect ("does not exist").
       - ./docker/ha-config:/app/docker/ha-config:ro
+      # Zigbee2MQTT data (read-only) so the in-container backup engine can include
+      # the Zigbee bundle — z2m database.db (device list/names) + coordinator_backup
+      # (network key). backup_engine's default z2m_data_dir="docker/z2m-data"
+      # resolves to /app/docker/z2m-data. Without this mount the engine sees no z2m
+      # data and logs "no Zigbee stack detected — skipping zigbee bundle", so a
+      # restore would lose every Zigbee pairing. (Empty/created on Zigbee-off hubs
+      # → still correctly detected as no-stack.)
+      - ./docker/z2m-data:/app/docker/z2m-data:ro
     depends_on:
       - mosquitto
       - homeassistant
