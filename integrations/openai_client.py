@@ -64,8 +64,60 @@ def require_cloud_llm_active() -> None:
 
 
 def get_client() -> OpenAI:
+    """Direct OpenAI client (local key). Used for Whisper STT + voice, which stay
+    local per DECISIONS.md — NEVER routed through the relay. Do not add relay
+    routing here; that lives in get_chat_client()."""
     global _client
     if _client is None:
         api_key = settings.get("openai", {}).get("api_key", "")
         _client = OpenAI(api_key=api_key)
     return _client
+
+
+_chat_client: OpenAI | None = None
+
+
+def _relay_chat_config() -> tuple[str, str, str] | None:
+    """Return (base_url, relay_secret, home_id) when this hub should proxy chat
+    LLM calls through the relay (customer homes carry no OpenAI key), else None."""
+    relay = settings.get("relay") or {}
+    url = (relay.get("url") or "").rstrip("/")
+    secret = relay.get("secret") or ""
+    home_id = (settings.get("home") or {}).get("id") or ""
+    if url and secret and home_id:
+        return f"{url}/api/devices/{home_id}/llm/v1", secret, home_id
+    return None
+
+
+def get_chat_client() -> OpenAI:
+    """OpenAI client for CHAT-family calls (chat, intent-parse, automation-design,
+    translate, map-render).
+
+    When the hub has relay credentials, this points the OpenAI SDK at the relay's
+    LLM proxy and signs each request with the per-home relay_secret — so customer
+    homes never hold an OpenAI key (the relay does). Falls back to a direct client
+    with the local key when no relay is configured (dev machines)."""
+    global _chat_client
+    if _chat_client is None:
+        cfg = _relay_chat_config()
+        if cfg:
+            base_url, secret, _home_id = cfg
+            import httpx
+            from core.relay_signing import sign
+
+            class _RelaySigAuth(httpx.Auth):
+                # Sign the exact request body the SDK is about to send with the
+                # per-home relay_secret; the relay verifies this HMAC.
+                requires_request_body = True
+
+                def auth_flow(self, request):
+                    request.headers["X-Ziggy-Signature"] = sign(secret, request.content or b"")
+                    yield request
+
+            http_client = httpx.Client(auth=_RelaySigAuth(), timeout=120.0)
+            # api_key is unused (the relay injects the real one) but the SDK
+            # requires a non-empty value.
+            _chat_client = OpenAI(api_key="relay-proxied", base_url=base_url, http_client=http_client)
+        else:
+            _chat_client = get_client()
+    return _chat_client

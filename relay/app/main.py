@@ -20,6 +20,7 @@ from .routers.backup_keys import router as backup_keys_router
 from .routers.fleet import router as fleet_router
 from .routers.homes import router as homes_router
 from .routers.invites import router as invites_router
+from .routers.llm import router as llm_router, _openai_client
 from .routers.ota import router as ota_router
 from .routers.proxy import router as proxy_router, _proxy_client
 from .routers.provision import router as provision_router
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
         except (asyncio.CancelledError, Exception):
             pass
         await _proxy_client.aclose()
+        await _openai_client.aclose()
 
 
 app = FastAPI(title="Ziggy Relay", version="1.0", lifespan=lifespan)
@@ -75,6 +77,9 @@ app.include_router(ota_router)
 # Telemetry router same pattern — absolute paths under /api/devices/* +
 # /api/admin/homes/*/telemetry, no router prefix, mounted before proxy.
 app.include_router(telemetry_router)
+# LLM proxy — absolute path /api/devices/{id}/llm/v1/chat/completions, no prefix,
+# MUST mount before the catch-all proxy so it isn't forwarded to a hub.
+app.include_router(llm_router)
 # Audit log read endpoint (Prompt 10 chunk 3). Absolute path
 # /api/admin/audit-log, no prefix, must mount before the catch-all proxy.
 app.include_router(audit_log_router)

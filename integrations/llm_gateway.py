@@ -105,8 +105,15 @@ def _resolve(purpose: str) -> tuple[str, str]:
 
 def _client_for(backend: str):
     """Return the SDK client for a backend. Both OpenAI and Ollama use the OpenAI SDK
-    (Ollama exposes an OpenAI-compatible API), so callers see a uniform shape."""
-    if backend == _BACKEND_OPENAI or backend == _BACKEND_OPENAI_WHISPER:
+    (Ollama exposes an OpenAI-compatible API), so callers see a uniform shape.
+
+    Chat-family OpenAI calls use get_chat_client() (relay-proxied on customer
+    hubs, so no local OpenAI key is needed). Whisper STT uses the DIRECT client —
+    STT stays local and is never proxied (DECISIONS.md)."""
+    if backend == _BACKEND_OPENAI:
+        from integrations.openai_client import get_chat_client
+        return get_chat_client()
+    if backend == _BACKEND_OPENAI_WHISPER:
         from integrations.openai_client import get_client
         return get_client()
     if backend == _BACKEND_OLLAMA:
