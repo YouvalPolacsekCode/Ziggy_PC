@@ -567,6 +567,8 @@ def _state_of(row: dict):
 
 def _entity_summary(row: dict, is_primary: bool) -> dict:
     """Compact per-entity dict shipped to the frontend inside the group."""
+    from services import entity_prefs
+    pref = entity_prefs.get_pref(row.get("entity_id") or "")
     return {
         "entity_id":     row.get("entity_id"),
         "domain":        row.get("domain"),
@@ -575,6 +577,10 @@ def _entity_summary(row: dict, is_primary: bool) -> dict:
         "unit":          _unit_of(row),
         "state":         _state_of(row),
         "display_name":  row.get("display_name") or row.get("name") or row.get("entity_id"),
+        # User curation (B): promote a sibling to its own tile / hide / custom icon.
+        "is_tile":       bool(pref.get("is_tile")),
+        "hidden":        bool(pref.get("hidden")),
+        "icon":          pref.get("icon"),
     }
 
 

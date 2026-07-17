@@ -160,11 +160,22 @@ def _enrich_devices_with_ha_state(devices: list[dict]) -> list[dict]:
             "ac_memory":       ir_data.get("ac_memory"),
         }
 
+    # User tile/icon curation (B) — one read, applied per row below.
+    try:
+        from services import entity_prefs
+        _prefs = entity_prefs.get_all()
+    except Exception:
+        _prefs = {}
+
     enriched = []
     for d in devices:
         entry = dict(d)
         eid = d.get("entity_id")
         ir_id = d.get("ir_device_id")
+        _p = _prefs.get(eid or "", {})
+        entry["is_tile"] = bool(_p.get("is_tile"))
+        entry["hidden"]  = bool(_p.get("hidden"))
+        entry["icon"]    = _p.get("icon")
 
         if eid and eid in state_map:
             # Normal HA entity with live state
@@ -394,6 +405,33 @@ class DeviceUpsert(BaseModel):
     type: str
     entity_id: str
     validate_ha: bool = True
+
+
+class TilePrefBody(BaseModel):
+    entity_id: str
+    is_tile: Optional[bool] = None   # promote a sibling to its own tile
+    hidden: Optional[bool] = None    # hide the tile from the room grid
+    icon: Optional[str] = None       # custom icon (emoji)
+    clear_icon: bool = False
+
+
+@router.post("/api/devices/tile")
+async def set_tile_pref(body: TilePrefBody, _user: dict = Depends(require_role("admin"))):
+    """User tile curation for one entity: promote to its own tile (is_tile),
+    hide it (hidden), or set a custom icon. Omitted fields are left unchanged."""
+    from services import entity_prefs
+    kwargs: dict = {}
+    if body.is_tile is not None:
+        kwargs["is_tile"] = body.is_tile
+    if body.hidden is not None:
+        kwargs["hidden"] = body.hidden
+    if body.clear_icon:
+        kwargs["icon"] = None
+    elif body.icon is not None:
+        kwargs["icon"] = body.icon
+    pref = entity_prefs.set_pref(body.entity_id, **kwargs)
+    _invalidate_enrich_cache()
+    return {"ok": True, "entity_id": body.entity_id, "pref": pref}
 
 
 @router.get("/api/devices")

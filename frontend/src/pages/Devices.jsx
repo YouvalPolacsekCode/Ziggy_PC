@@ -1654,7 +1654,7 @@ const DeviceCard = forwardRef(function DeviceCard({
                 🔥 via getKind. Routing both through getKind+kindMeta keeps
                 vendor heuristics (Switcher boilers, future overrides) in
                 one place and the icon consistent across views. */}
-            <span style={{ fontSize: 21, lineHeight: 1 }} aria-hidden="true">{kindMeta(getKind(entity)).icon}</span>
+            <span style={{ fontSize: 21, lineHeight: 1 }} aria-hidden="true">{entity.icon || kindMeta(getKind(entity)).icon}</span>
             {(isIr || linkedIr) && (
               <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'var(--accent)', color: '#fff', fontSize: 6, fontWeight: 700, padding: '1px 4px', borderRadius: 3, lineHeight: 1.2 }}>IR</span>
             )}

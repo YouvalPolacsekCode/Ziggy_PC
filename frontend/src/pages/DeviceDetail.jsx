@@ -16,10 +16,13 @@ import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
 import { useT, useTranslatedName } from '../lib/i18n'
+
+// Emoji palette for the per-tile custom icon picker (B: tile curation).
+const TILE_ICON_CHOICES = ['💡','🪔','🔌','🎛️','❄️','💨','📺','🔊','🌡️','💧','🏃','🧍','🚪','🪟','🔒','📷','🔔','🌙','☀️','🛰️','🪴','🔋']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -715,6 +718,9 @@ export default function DeviceDetail() {
           device_class:  live.device_class ?? ge.device_class,
           role:          ge.role,
           isPrimary:     ge.role === 'primary',
+          is_tile:       !!ge.is_tile,
+          hidden:        !!ge.hidden,
+          icon:          ge.icon || null,
         }
       })
     : sibling_entities.map(s => ({ ...s, isPrimary: false }))
@@ -1181,6 +1187,48 @@ export default function DeviceDetail() {
                 {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
               </button>
             ))}
+          </div>
+        )}
+      </Card>
+      )}
+
+      {/* ── Manage tiles (B: user curation — icon + promote siblings) ── */}
+      {showData && group && (
+      <Card className="p-4 mb-3">
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.tilesTitle')}</p>
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {TILE_ICON_CHOICES.map(ic => {
+              const active = (liveEntity?.icon || '') === ic
+              return (
+                <button key={ic}
+                  onClick={async () => { await setTilePref(entityId, { icon: ic }).catch(() => {}); useDeviceStore.getState().fetchAll({ force: true }) }}
+                  style={{ width: 34, height: 34, borderRadius: 9, fontSize: 18, lineHeight: '32px', cursor: 'pointer',
+                    border: active ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
+                    background: active ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)' }}
+                >{ic}</button>
+              )
+            })}
+            <button
+              onClick={async () => { await setTilePref(entityId, { clear_icon: true }).catch(() => {}); useDeviceStore.getState().fetchAll({ force: true }) }}
+              style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 11, cursor: 'pointer',
+                border: '0.5px solid var(--line)', background: 'var(--surface-2)', color: 'var(--ink-mute)' }}
+            >{t('deviceDetail.tileIconDefault')}</button>
+          </div>
+        </div>
+        {usefulSiblings.filter(s => !s.isPrimary).length > 0 && (
+          <div>
+            <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.showAsTileHint')}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {usefulSiblings.filter(s => !s.isPrimary).map(s => (
+                <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
+                  <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
+                  <Toggle checked={!!s.is_tile}
+                    onChange={async () => { await setTilePref(s.entity_id, { is_tile: !s.is_tile }).catch(() => {}); useDeviceStore.getState().fetchAll({ force: true }) }} />
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </Card>

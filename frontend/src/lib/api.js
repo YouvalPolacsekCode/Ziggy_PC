@@ -815,6 +815,11 @@ export const getIrDevice = (id) => get(`/ir/devices/${id}`)
 export const createIrDevice = (data) => post('/ir/devices', data)
 export const patchIrDevice = (id, data) => patch(`/ir/devices/${id}`, data)
 export const deleteIrDevice = (id) => del(`/ir/devices/${id}`)
+
+// Tile curation (B): promote a sibling entity to its own tile, hide a tile, or
+// set a custom icon. { is_tile?, hidden?, icon?, clear_icon? } — omit to leave.
+export const setTilePref = (entityId, opts = {}) =>
+  post('/devices/tile', { entity_id: entityId, ...opts })
 export const irLearn = (deviceId, commandName) =>
   post('/ir/learn', { device_id: deviceId, command_name: commandName })
 export const irSend = (deviceId, command) =>

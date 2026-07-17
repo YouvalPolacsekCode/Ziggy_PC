@@ -105,9 +105,15 @@ function _attachGroup(entity, groupByEntityId, groupById) {
   if (!entity || !entity.entity_id) return entity
   const g = groupById[groupByEntityId[entity.entity_id]]
   if (!g) return entity
-  if (entity.entity_id !== g.primary_entity_id) return null
+  const isPrimary = entity.entity_id === g.primary_entity_id
+  // Non-primary siblings drop out of the grid UNLESS the user promoted this one
+  // to its own tile (B: e.g. surface a sensor's temperature as its own card).
+  if (!isPrimary && !entity.is_tile) return null
   return {
     ...entity,
+    // A promoted sibling stands alone — don't let it inherit the group's
+    // primary identity/name, so it reads as its own metric tile.
+    _promotedTile: !isPrimary,
     _group: {
       group_id:     g.group_id,
       kind:         g.kind,
@@ -823,10 +829,13 @@ export const useDeviceStore = create((set, get) => ({
   // power/current/time_left sensors stop appearing as separate cards.
   // DeviceDetail still resolves them via `entities` directly.
   getGroupedEntities: () => {
-    const { entities, deviceGroups, groupByEntityId, groupById } = get()
-    if (!deviceGroups || deviceGroups.length === 0) return entities
+    const { entities, deviceGroups, groupByEntityId, groupById, showHidden } = get()
+    // Server-side hidden (B): tiles the user hid live only in the device details,
+    // not the room grid — unless "show hidden" is on.
+    const visible = showHidden ? entities : entities.filter(e => !e.hidden)
+    if (!deviceGroups || deviceGroups.length === 0) return visible
     const result = []
-    for (const e of entities) {
+    for (const e of visible) {
       const decorated = _attachGroup(e, groupByEntityId, groupById)
       if (decorated) result.push(decorated)
     }
