@@ -114,6 +114,57 @@ def _decorate_blaster(b: dict) -> dict:
     return {**b, "status": status_for(b), "device_count": count}
 
 
+# Reachability probe throttle: blaster_id → last monotonic probe time. Keeps the
+# status live without hammering the blaster on every list call.
+_last_blaster_probe: dict[str, float] = {}
+_BLASTER_PROBE_THROTTLE_S = 30
+
+
+async def _refresh_blaster_reachability(blasters: list[dict]) -> None:
+    """Ping each blaster (unicast `hello`, which works from the bridge container)
+    and stamp last_seen on success — so `status` reflects ACTUAL reachability,
+    not just "last time we sent a command". Without this a paired-but-idle
+    blaster reads 'unreachable' after the 5-min stale window even though it's up.
+    Throttled per blaster; probes run concurrently with a short timeout."""
+    import asyncio
+    import time as _time
+    from services.ir_blasters import mark_seen
+
+    now = _time.monotonic()
+    targets = []
+    for b in blasters:
+        bid = b.get("id")
+        ip = b.get("ip") or b.get("last_seen_ip")
+        if not bid or not ip:
+            continue
+        if now - _last_blaster_probe.get(bid, 0.0) < _BLASTER_PROBE_THROTTLE_S:
+            continue
+        targets.append((bid, ip))
+    if not targets:
+        return
+    for bid, _ip in targets:
+        _last_blaster_probe[bid] = now
+
+    def _hello(ip: str) -> bool:
+        try:
+            import broadlink
+            broadlink.hello(ip, timeout=1)
+            return True
+        except Exception:
+            return False
+
+    loop = asyncio.get_event_loop()
+    results = await asyncio.gather(
+        *[loop.run_in_executor(None, _hello, ip) for _bid, ip in targets]
+    )
+    for (bid, ip), ok in zip(targets, results):
+        if ok:
+            try:
+                mark_seen(bid, ip)
+            except Exception:
+                pass
+
+
 @router.get("/api/ir/blasters")
 async def ir_blasters():
     """Return every registered blaster with derived status + device_count.
@@ -122,8 +173,12 @@ async def ir_blasters():
     and the IR Wizard's "pick blaster" picker. Backed by ir_blasters.json
     (in user_files/) — built from existing ir_devices.json on first boot
     after upgrade, then maintained explicitly via this API.
+
+    Before returning, we probe each blaster's reachability so `status` is live
+    (a paired blaster that's up shows online, not a stale 'unreachable').
     """
     from services.ir_blasters import list_blasters
+    await _refresh_blaster_reachability(list_blasters())
     return {"blasters": [_decorate_blaster(b) for b in list_blasters()]}
 
 
