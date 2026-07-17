@@ -589,14 +589,19 @@ def _heal_unclaimed(devices: list[dict],
         if new_type and new_type != d.get("device_type"):
             d["device_type"] = new_type
             reclassified += 1
-        if status != UNCLAIMED:
+        # Room promotion: fill in a room from HA's area registry when the row
+        # has NONE yet. Runs for UNCLAIMED rows AND for CONNECTED rows with
+        # room=None — the latter covers devices HA-assigned at the DEVICE level
+        # whose room key previously mismatched (see the area_id fix in
+        # reconcile_with_ha). It NEVER overrides an existing room — that's the
+        # user's choice.
+        if d.get("room"):
             continue
-        # The room-promotion below only runs for UNCLAIMED — never overrides
-        # a user's room assignment on CONNECTED rows.
         room = _infer_room(eid, attrs, entity_areas)
-        if room and not d.get("room"):
+        if room:
             d["room"] = room
-            d["status"] = CONNECTED
+            if status == UNCLAIMED:
+                d["status"] = CONNECTED
             promoted += 1
     if promoted or reclassified:
         log_info(f"[DeviceRegistry] heal pass: promoted={promoted}, "
@@ -677,7 +682,14 @@ async def reconcile_with_ha() -> None:
     try:
         from services.ha_areas import get_areas
         for area in await get_areas():
-            area_key = (area.get("name") or "").lower().replace(" ", "_").strip()
+            # Key by the HA area_id (the canonical room id used everywhere else
+            # in Ziggy), NOT a slug derived from the area NAME. Deriving from the
+            # name silently broke any room whose name doesn't slugify to its
+            # area_id — e.g. "Roni's Room" → name-slug "roni's_room" vs area_id
+            # "roni_s_room" — so its devices got a room key that matched no
+            # displayed room and vanished from the room view (device page still
+            # showed the room from HA's device-level area, hence the mismatch).
+            area_key = area.get("id") or (area.get("name") or "").lower().replace(" ", "_").strip()
             if not area_key:
                 continue
             for eid in area.get("entities") or ():
