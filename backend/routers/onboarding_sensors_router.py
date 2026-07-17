@@ -21,7 +21,7 @@ import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.routers.mobile_router import get_current_device, _client_ip, require_lan
 from backend.middleware.rate_limit import claim_limiter, peer_key
@@ -418,9 +418,11 @@ async def confirm_sensors(
 # user's real location.
 
 class HomeLocationBody(BaseModel):
-    latitude:  float
-    longitude: float
-    elevation: Optional[int] = None
+    # Bounds-checked so a bad/garbage payload can't write a nonsense location
+    # into HA's core config.
+    latitude:  float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    elevation: Optional[int] = Field(default=None, ge=-500, le=9000)
 
 
 @router.post("/home-location")
