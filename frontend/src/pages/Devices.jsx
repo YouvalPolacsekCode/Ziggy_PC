@@ -2093,6 +2093,7 @@ export default function Devices() {
 
   const [showPairing, setShowPairing]         = useState(false)
   const [showIRWizard, setShowIRWizard]       = useState(false)
+  const [showIRBlaster, setShowIRBlaster]     = useState(false)  // "pair IR blaster" (blaster-only) flow
   const [editingIrDevice, setEditingIrDevice] = useState(null)
   const [linkingIrDevice, setLinkingIrDevice] = useState(null) // IR device being linked to HA entity
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
@@ -2592,12 +2593,21 @@ export default function Devices() {
         open={showPairing}
         onClose={() => setShowPairing(false)}
         onAddIrDevice={() => setShowIRWizard(true)}
+        onAddIrBlaster={() => setShowIRBlaster(true)}
       />
 
       {showIRWizard && (
         <IRWizard
           onClose={() => setShowIRWizard(false)}
           onCreated={() => { fetchAll(); setShowIRWizard(false) }}
+        />
+      )}
+
+      {showIRBlaster && (
+        <IRWizard
+          blasterOnly
+          onClose={() => setShowIRBlaster(false)}
+          onCreated={() => { fetchAll() }}
         />
       )}
 

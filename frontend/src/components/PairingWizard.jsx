@@ -32,7 +32,7 @@ const PROTOCOLS = [
   { id: 'zwave',     Icon: Waves,    immediate: false },
   { id: 'matter',    Icon: Sparkles, immediate: false },
   { id: 'ir_device', Icon: Zap,      immediate: true  },  // handled by parent — no HA pairing flow
-  { id: 'broadlink', Icon: Tv2,      immediate: false },
+  { id: 'broadlink', Icon: Tv2,      immediate: true  },  // hands off to the blaster-only IR wizard (Ziggy LAN discovery, not HA config flows)
   { id: 'wifi',      Icon: Wifi,     immediate: false },
   { id: 'switcher',  Icon: Home,     immediate: true  },  // dedicated native flow
 ]
@@ -169,7 +169,7 @@ function RoomPicker({ rooms, value, onChange }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export function PairingWizard({ open, onClose, onAddIrDevice }) {
+export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) {
   const t = useT()
   const { rooms, fetchAll } = useDeviceStore()
 
@@ -404,10 +404,16 @@ export function PairingWizard({ open, onClose, onAddIrDevice }) {
       if (protocol === 'zigbee')              await startZigbee()
       else if (protocol === 'zwave')          await startZwave()
       else if (protocol === 'matter')         await startMatter()
-      else if (protocol === 'broadlink')      await startWifiScan('broadlink')
       else if (protocol === 'wifi')           await startWifiScan('wifi')
+      else if (protocol === 'broadlink') {
+        // Pair the IR blaster HARDWARE. Hands off to the blaster-only IR wizard,
+        // which uses Ziggy's own LAN discovery (works from the bridge container)
+        // instead of HA's config-flow discovery (which never found it).
+        onClose()
+        onAddIrBlaster?.()
+      }
       else if (protocol === 'ir_device') {
-        // Hand off to IRWizard in the parent — close this modal first
+        // Set up a TV/AC remote (assumes a blaster exists). Hand off to IRWizard.
         onClose()
         onAddIrDevice?.()
       }

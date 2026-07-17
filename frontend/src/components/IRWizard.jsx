@@ -540,8 +540,30 @@ function StepDone({ deviceName }) {
 
 const TOTAL_STEPS = 4
 
-export default function IRWizard({ onClose, onCreated }) {
+// Small confirmation shown at the end of the blaster-only ("pair IR blaster")
+// flow — the blaster hardware is now registered; TV/AC remotes are a separate
+// step (Add device → IR device).
+function BlasterDone({ name }) {
   const t = useT()
+  return (
+    <div className="flex flex-col items-center py-8 gap-4">
+      <div className="w-14 h-14 rounded-full bg-ok-soft flex items-center justify-center">
+        <Check className="w-7 h-7 text-ok" />
+      </div>
+      <p className="text-ink font-medium">{t('wizard.ir.blasterReady', { name: name || '' })}</p>
+      <p className="text-sm text-ink-mute text-center">{t('wizard.ir.blasterPairedBody')}</p>
+    </div>
+  )
+}
+
+// `blasterOnly` = the "pair IR blaster" entry point (from Add device → IR
+// Blaster). It runs step 1 only — discover + name + register the blaster
+// hardware — then shows a done screen. The full flow (blasterOnly=false) then
+// continues into TV/AC remote setup. Splitting these was the fix for "pairing a
+// blaster shouldn't dump me straight into setting up a TV remote".
+export default function IRWizard({ onClose, onCreated, blasterOnly = false }) {
+  const t = useT()
+  const totalSteps = blasterOnly ? 2 : TOTAL_STEPS
   const [step, setStep]               = useState(1)
   const [blaster, setBlaster]         = useState(null)
   // User-editable name for the blaster registry row, created at step 1
@@ -596,6 +618,9 @@ export default function IRWizard({ onClose, onCreated }) {
         setSaveError(e.message || t('wizard.ir.failedRegisterBlaster') || 'Could not register blaster')
         return
       }
+      // Blaster-only flow: the hardware is registered — refresh + show done.
+      // Full flow: continue into TV/AC device setup.
+      if (blasterOnly) onCreated?.()
       setStep(2)
       return
     }
@@ -661,16 +686,18 @@ export default function IRWizard({ onClose, onCreated }) {
 
   const handleBack = () => setStep((s) => Math.max(s - 1, 1))
 
-  const titles = [
-    t('wizard.ir.titleStep1'),
-    t('wizard.ir.titleStep2'),
-    t('wizard.ir.titleStep3'),
-    t('wizard.ir.titleStep4'),
-  ]
+  const titles = blasterOnly
+    ? [t('wizard.ir.titleStep1'), t('wizard.ir.blasterPairedTitle')]
+    : [
+        t('wizard.ir.titleStep1'),
+        t('wizard.ir.titleStep2'),
+        t('wizard.ir.titleStep3'),
+        t('wizard.ir.titleStep4'),
+      ]
 
   return (
     <Modal open fullScreen onClose={onClose} title={titles[step - 1]}>
-      <StepIndicator step={step} total={TOTAL_STEPS} />
+      <StepIndicator step={step} total={totalSteps} />
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -694,10 +721,13 @@ export default function IRWizard({ onClose, onCreated }) {
               onBlasterNameChange={setBlasterName}
             />
           )}
-          {step === 2 && (
+          {step === 2 && blasterOnly && (
+            <BlasterDone name={blasterName} />
+          )}
+          {step === 2 && !blasterOnly && (
             <StepDeviceDetails details={details} onChange={setDetails} />
           )}
-          {step === 3 && (
+          {step === 3 && !blasterOnly && (
             <StepLearnCommands
               deviceType={details.device_type}
               deviceId={savedDeviceId}
@@ -705,20 +735,20 @@ export default function IRWizard({ onClose, onCreated }) {
               onLearnedChange={markLearned}
             />
           )}
-          {step === 4 && <StepDone deviceName={details.name} />}
+          {step === 4 && !blasterOnly && <StepDone deviceName={details.name} />}
         </motion.div>
       </AnimatePresence>
 
       {saveError && <p className="mt-3 text-xs text-err">{saveError}</p>}
 
       <div className="flex items-center justify-between mt-6">
-        {step > 1 && step < 4 ? (
+        {step > 1 && step < totalSteps ? (
           <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1">
             <ChevronLeft className="w-4 h-4 icon-flip-rtl" /> {t('wizard.back')}
           </Button>
         ) : <div />}
 
-        {step < 4 ? (
+        {step < totalSteps ? (
           <Button
             size="sm"
             onClick={handleNext}
