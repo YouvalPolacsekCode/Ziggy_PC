@@ -2110,6 +2110,7 @@ export default function Devices() {
   // small status strip so the user can see "RM4 · online" without digging into
   // Settings → IR Hubs. Loaded once + refreshed after pairing one.
   const [blasters, setBlasters] = useState([])
+  const [blastersOpen, setBlastersOpen] = useState(false)  // collapsed by default
   const loadBlasters = () => listIrBlasters().then(b => setBlasters(Array.isArray(b) ? b : [])).catch(() => {})
   useEffect(() => { loadBlasters() }, [])
 
@@ -2409,24 +2410,25 @@ export default function Devices() {
         ))}
       </div>
 
-      {/* IR Blasters — status strip (infrastructure, not a control tile). Shown
-          in the main view so a paired blaster is visible without digging into
-          Settings → IR Hubs. Tap opens Settings → IR Hubs to manage. */}
+      {/* IR Blasters — collapsible status strip (infrastructure, not control
+          tiles). Collapsed by default; the only place blasters are surfaced.
+          Rows are display-only — no navigation. */}
       {domain === 'all' && blasters.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
-            {t('devices.irBlastersTitle') || 'IR Blasters'}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <CollapsibleGroup
+          label={t('devices.irBlastersTitle') || 'IR Blasters'}
+          count={blasters.length}
+          open={blastersOpen}
+          onToggle={() => setBlastersOpen(v => !v)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
             {blasters.map(b => {
               const host = b.ip || b.last_seen_ip || ''
               const color = b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn)' : 'var(--err)'
               return (
-                <button
+                <div
                   key={b.id}
-                  onClick={() => navigate('/settings/ir-hubs')}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 11,
-                    background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer', textAlign: 'start', width: '100%' }}
+                    background: 'var(--surface)', border: '0.5px solid var(--line)' }}
                 >
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -2434,11 +2436,11 @@ export default function Devices() {
                     {host && <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{host}</p>}
                   </div>
                   <Zap size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-                </button>
+                </div>
               )
             })}
           </div>
-        </div>
+        </CollapsibleGroup>
       )}
 
       {/* Unassigned section info */}

@@ -28,7 +28,6 @@ const NotificationsPage = lazy(() => import('./pages/Settings').then(m => ({ def
 const LocationPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.LocationPage })))
 const UsersPage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.UsersPage })))
 const MemoryPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MemoryPage })))
-const IrHubsPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.IrHubsPage })))
 const VoicePage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.VoicePage })))
 // Ops sub-pages migrated out of the old /admin route during the 2026-06 refactor
 const SystemDiagnosticsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SystemDiagnosticsPage })))
@@ -398,7 +397,6 @@ function AppRoutes() {
         <Route path="settings/mobile"        element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/users"         element={<UsersPage />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
-        <Route path="settings/ir-hubs"       element={<IrHubsPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
         <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
