@@ -181,12 +181,12 @@ async def matter_commission(body: MatterCommissionBody,
 
 @router.get("/api/ha/config_flows")
 async def ha_config_flows(protocol: Optional[str] = None):
-    integrations = None
-    if protocol == "wifi":
-        integrations = list(WIFI_INTEGRATIONS)
-    elif protocol == "broadlink":
-        integrations = ["broadlink"]
-    return get_pending_config_flows(integrations)
+    if protocol == "broadlink":
+        return await get_pending_config_flows(["broadlink"])
+    # "wifi" (or unspecified): show EVERY network device HA discovered (smart TV,
+    # Chromecast, WiFi plug, …) minus infra handlers — not a hardcoded allowlist
+    # that silently dropped TVs/casts.
+    return await get_pending_config_flows()
 
 
 # ---------------------------------------------------------------------------

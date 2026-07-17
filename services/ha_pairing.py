@@ -110,24 +110,33 @@ async def commission_matter(code: str) -> dict:
 # Wi-Fi / Broadlink — surface HA auto-discovered config flows
 # ---------------------------------------------------------------------------
 
-def get_pending_config_flows(integrations: list[str] | None = None) -> dict:
+# Discovery handlers that aren't user-addable "devices" — infrastructure /
+# adapters we never surface in the pairing list (BT adapter, the router's UPnP,
+# raw DHCP sniffs).
+NON_DEVICE_FLOW_HANDLERS = frozenset({"bluetooth", "upnp", "dhcp"})
+
+
+async def get_pending_config_flows(integrations: list[str] | None = None,
+                                   exclude: frozenset[str] | None = None) -> dict:
+    """Return pending HA config flows (devices HA auto-discovered but not yet
+    configured) — e.g. a smart TV, Chromecast, WiFi plug.
+
+    Lists via the WebSocket `config_entries/flow/progress` command. The old REST
+    `GET /api/config/config_entries/flow` returns 405 on current HA, which had
+    silently made this return nothing (WiFi pairing showed an empty list even
+    though HA had discovered the TV).
+
+    Optionally filter to `integrations`; `exclude` drops infra handlers
+    (defaults to NON_DEVICE_FLOW_HANDLERS).
     """
-    Return pending HA config flows (devices HA auto-discovered but not yet configured).
-    Optionally filtered to a list of integration names.
-    """
+    drop = NON_DEVICE_FLOW_HANDLERS if exclude is None else exclude
     try:
-        resp = requests.get(
-            f"{_ha_url()}/api/config/config_entries/flow",
-            headers=_headers(),
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return {"ok": False, "error": f"HA returned {resp.status_code}", "flows": [], "ha_url": _ha_url()}
-
-        flows = resp.json()
+        res, = await _ws({"type": "config_entries/flow/progress"})
+        flows = res.get("result") or []
         if integrations:
-            flows = [f for f in flows if f.get("handler") in integrations]
-
+            allow = set(integrations)
+            flows = [f for f in flows if f.get("handler") in allow]
+        flows = [f for f in flows if f.get("handler") not in drop]
         return {
             "ok": True,
             "ha_url": _ha_url(),
@@ -136,7 +145,7 @@ def get_pending_config_flows(integrations: list[str] | None = None) -> dict:
                     "flow_id": f.get("flow_id"),
                     "handler": f.get("handler", ""),
                     "title": (
-                        f.get("context", {}).get("title_placeholders", {}).get("name")
+                        (f.get("context", {}) or {}).get("title_placeholders", {}).get("name")
                         or f.get("handler", "Unknown device")
                     ),
                     "step_id": f.get("step_id"),
