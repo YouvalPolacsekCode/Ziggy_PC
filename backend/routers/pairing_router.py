@@ -190,6 +190,63 @@ async def ha_config_flows(protocol: Optional[str] = None):
 
 
 # ---------------------------------------------------------------------------
+# Native config-flow driver — configure a discovered device (TV, Chromecast,
+# WiFi plug) WITHOUT ever showing HA's UI. Each HA flow step is reshaped into
+# Ziggy's native envelope and driven via the WS config-flow API. Simple devices
+# auto-confirm on the first (empty) submit; ones needing input (a PIN, a
+# confirm-on-the-TV prompt) surface a native form/progress screen.
+# ---------------------------------------------------------------------------
+
+def _present_config_step(step: dict) -> dict:
+    """Reshape an HA flow step into Ziggy's UI envelope (mirrors switcher)."""
+    from services.ha_flow_driver import step_kind, translate_schema
+    kind = step_kind(step)
+    flow_id = step.get("flow_id")
+    if kind == "create_entry":
+        _schedule_registry_refresh(delay_s=2)
+        return {"ok": True, "status": "done", "flow_id": flow_id,
+                "title": step.get("title") or "Device added"}
+    if kind == "abort":
+        return {"ok": False, "status": "aborted", "flow_id": flow_id,
+                "reason": step.get("reason") or "unknown"}
+    if kind == "progress":
+        return {"ok": True, "status": "progress", "flow_id": flow_id,
+                "progress_action": step.get("progress_action"),
+                "description_placeholders": step.get("description_placeholders") or {}}
+    if kind == "menu":
+        return {"ok": True, "status": "menu", "flow_id": flow_id,
+                "options": step.get("menu_options") or [],
+                "description_placeholders": step.get("description_placeholders") or {}}
+    return {"ok": True, "status": "form", "flow_id": flow_id, "step_id": step.get("step_id"),
+            "fields": translate_schema(step), "errors": step.get("errors") or {},
+            "description_placeholders": step.get("description_placeholders") or {}}
+
+
+@router.post("/api/pairing/config-flow/{flow_id}/step")
+async def config_flow_step(flow_id: str, body: FlowStepBody,
+                           _user: dict = Depends(require_role("admin"))):
+    """Advance a discovered HA config flow one step, natively. Submit empty
+    user_input to confirm/auto-configure; a form's fields come back for anything
+    that needs input. Never redirects to HA."""
+    from services.ha_flow_driver import submit_step
+    res = await submit_step(flow_id, body.user_input or {})
+    if not res.get("ok"):
+        raise HTTPException(status_code=502, detail=res.get("error", "config flow step failed"))
+    return _present_config_step(res["step"])
+
+
+@router.post("/api/pairing/config-flow/{flow_id}/cancel")
+async def config_flow_cancel(flow_id: str,
+                             _user: dict = Depends(require_role("admin"))):
+    from services.ha_flow_driver import abort_flow
+    try:
+        await abort_flow(flow_id)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Switcher pairing — native Ziggy UI driving HA's switcher_kis config flow.
 # HA does protocol work invisibly; user sees only Ziggy screens.
 # ---------------------------------------------------------------------------

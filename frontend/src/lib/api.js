@@ -505,6 +505,14 @@ export const switcherPairingCancel = (flowId) =>
   post(`/pairing/switcher/${encodeURIComponent(flowId)}/cancel`)
 export const switcherPairingRecover = () => post('/pairing/switcher/recover')
 
+// Generic native config-flow driver — configure ANY discovered WiFi device
+// (TV, Chromecast, plug, …) without ever showing HA. Submit empty user_input
+// to auto-confirm; a form's fields come back for anything that needs input.
+export const configFlowStep = (flowId, userInput) =>
+  post(`/pairing/config-flow/${encodeURIComponent(flowId)}/step`, { user_input: userInput || {} })
+export const configFlowCancel = (flowId) =>
+  post(`/pairing/config-flow/${encodeURIComponent(flowId)}/cancel`)
+
 // Switcher account — one-time credential collection. Email + token come
 // from the Switcher mobile app (Settings → My account → request token).
 // Ziggy validates + caches them so every device pairing thereafter is one-tap.

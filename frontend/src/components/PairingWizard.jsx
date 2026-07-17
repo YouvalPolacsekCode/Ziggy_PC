@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown,
+  Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronRight,
   Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap, Home,
 } from 'lucide-react'
 import { Modal } from './ui/Modal'
@@ -12,6 +12,7 @@ import {
   zwaveInclude, zwaveStop, matterCommission, getConfigFlows,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
+import ConfigFlowRunner from './ConfigFlowRunner'
 import { useDeviceStore } from '../stores/deviceStore'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
@@ -195,6 +196,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   const [matterCode,  setMatterCode]  = useState('')
   const [configFlows, setConfigFlows] = useState([])
   const [haUrl,       setHaUrl]       = useState('')
+  const [configuringFlow, setConfiguringFlow] = useState(null)  // discovered device being set up natively
   const [flowsLoading, setFlowsLoading] = useState(false)
 
   const snapshotRef = useRef(new Set())
@@ -657,6 +659,17 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                       className="w-8 h-8 rounded-full border-2 border-line border-t-violet-500"
                     />
                   </div>
+                ) : configuringFlow ? (
+                  <ConfigFlowRunner
+                    flowId={configuringFlow.flow_id}
+                    title={configuringFlow.title}
+                    onDone={() => {
+                      setConfiguringFlow(null)
+                      try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+                      onClose?.()
+                    }}
+                    onCancel={() => setConfiguringFlow(null)}
+                  />
                 ) : configFlows.length > 0 ? (
                   <div className="space-y-2 text-left">
                     <p className="text-xs font-medium text-ink-2 mb-2">
@@ -665,31 +678,20 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                         : t('wizard.pairing.discoveredHa', { n: configFlows.length })}
                     </p>
                     {configFlows.map((flow) => (
-                      <div
+                      <button
                         key={flow.flow_id}
-                        className="flex items-center justify-between gap-2 p-3 rounded-xl bg-surface-2 border border-line"
+                        onClick={() => setConfiguringFlow(flow)}
+                        className="w-full flex items-center justify-between gap-2 p-3 rounded-xl bg-surface-2 border border-line hover:bg-line text-left"
                       >
                         <div>
-                          <p className="text-sm font-medium text-ink">
-                            {flow.title}
-                          </p>
+                          <p className="text-sm font-medium text-ink">{flow.title}</p>
                           <p className="text-xs text-ink-mute capitalize">{flow.handler}</p>
                         </div>
-                        {haUrl && (
-                          <a
-                            href={`${haUrl}/config/integrations`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-1 text-xs text-accent hover:text-accent shrink-0"
-                          >
-                            {t('wizard.pairing.configure')} <ExternalLink size={11} />
-                          </a>
-                        )}
-                      </div>
+                        <span className="flex items-center gap-1 text-xs text-accent shrink-0">
+                          {t('wizard.pairing.configure')} <ChevronRight size={12} className="icon-flip-rtl" />
+                        </span>
+                      </button>
                     ))}
-                    <p className="text-xs text-ink-mute mt-2">
-                      {t('wizard.pairing.completeInHa')}
-                    </p>
                   </div>
                 ) : (
                   <div className="w-full bg-surface-2 rounded-xl p-4 text-left space-y-2">
