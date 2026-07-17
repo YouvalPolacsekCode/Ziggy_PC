@@ -589,23 +589,32 @@ async def get_all_rooms():
     except Exception:
         pass
 
-    # Ziggy-native rooms from device registry
-    norm_to_ha: dict[str, dict] = {_norm_room_key(r["name"]): r for r in ha_rooms}
-    ziggy_rooms: list[dict] = []
-    seen_norms: set[str] = {_norm_room_key(r["name"]) for r in ha_rooms}
+    # Resolver: any room reference (area_id / normalized area_id / normalized
+    # name) → its HA area. A registry room that resolves to an HA area is NOT a
+    # separate Ziggy-native room — this stops "Roni's Room" (area_id
+    # "roni_s_room") appearing twice, once as the HA area and once as a titleized
+    # "Roni S Room".
+    ref_to_area: dict[str, dict] = {}
+    for r in ha_rooms:
+        ref_to_area[r["id"]] = r
+        ref_to_area[_norm_room_key(r["id"])] = r
+        ref_to_area[_norm_room_key(r["name"])] = r
 
+    ziggy_rooms: list[dict] = []
+    seen_ziggy: set[str] = set()
     for d in dr.get_all():
         room_raw = d.get("room")
         if not room_raw:
             continue
+        if ref_to_area.get(room_raw) or ref_to_area.get(_norm_room_key(room_raw)):
+            continue  # already an HA area
         norm = _norm_room_key(room_raw)
-        if norm in seen_norms:
+        if norm in seen_ziggy:
             continue
-        seen_norms.add(norm)
-        display = room_raw.replace("_", " ").title()
+        seen_ziggy.add(norm)
         ziggy_rooms.append({
             "id":     room_raw,
-            "name":   display,
+            "name":   room_raw.replace("_", " ").title(),
             "source": "ziggy",  # no HA area — Ziggy-only label
         })
 
@@ -723,12 +732,22 @@ async def get_rooms_with_devices():
     except Exception:
         ha_rooms = []
 
-    # Index areas by both their normalized key AND their original id for robust lookup
-    area_by_norm: dict[str, dict] = {}
+    # Resolve ANY room reference — an HA area_id, a normalized area_id, or a
+    # normalized area NAME — to its canonical HA area. This is what stops
+    # "Roni's Room" splitting into two cards: the registry stores the room as the
+    # area_id ("roni_s_room"), while the area NAME normalizes to "ronis_room"
+    # (apostrophe stripped) — different strings that must map to the SAME area.
     area_by_id: dict[str, dict] = {}
+    ref_to_area: dict[str, dict] = {}
     for a in ha_rooms:
-        area_by_norm[_norm_room_key(a["name"])] = a
         area_by_id[a["id"]] = a
+        ref_to_area[a["id"]] = a
+        ref_to_area[_norm_room_key(a["id"])] = a
+        ref_to_area[_norm_room_key(a["name"])] = a
+
+    def _canonical_room_key(room: str) -> str:
+        a = ref_to_area.get(room) or ref_to_area.get(_norm_room_key(room))
+        return a["id"] if a else _norm_room_key(room)
 
     # Shared enrichment cache with /api/devices and /api/devices/grouped.
     devices = _get_enriched_devices()
@@ -744,13 +763,12 @@ async def get_rooms_with_devices():
             else:
                 no_room.append(d)
         else:
-            # Normalize device room key the same way so apostrophes don't break the join
-            room_devices.setdefault(_norm_room_key(room), []).append(d)
+            room_devices.setdefault(_canonical_room_key(room), []).append(d)
 
-    all_room_keys = set(room_devices.keys()) | {_norm_room_key(a["name"]) for a in ha_rooms}
+    all_room_keys = set(room_devices.keys()) | set(area_by_id.keys())
     rooms_out = []
     for room_key in sorted(all_room_keys):
-        area = area_by_norm.get(room_key)
+        area = area_by_id.get(room_key)
         rooms_out.append({
             "id":      area["id"]   if area else room_key,
             "name":    area["name"] if area else room_key.replace("_", " ").title(),
