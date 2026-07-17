@@ -18,7 +18,7 @@ import { Input } from './ui/Input'
 import {
   discoverIrBlasters, createIrDevice, irLearn, irSend, getRooms,
   getIrCatalog, getIrUnassignedSignals, assignIrUnassignedSignal,
-  createIrBlaster,
+  createIrBlaster, listIrBlasters,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
@@ -59,12 +59,16 @@ function StepIndicator({ step, total }) {
 // Step 1 — Select blaster
 // ---------------------------------------------------------------------------
 
-function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChange }) {
+function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChange, deviceMode = false }) {
   const t = useT()
   const [discovered, setDiscovered]   = useState([])
   const [discovering, setDiscovering] = useState(false)
   const [manualIp, setManualIp]       = useState('')
   const [manualError, setManualError] = useState('')
+  // Device (TV/AC) flow: pick from already-paired blasters instead of re-scanning
+  // + re-naming. null = still loading.
+  const [registered, setRegistered]   = useState(deviceMode ? null : [])
+  const [showScan, setShowScan]       = useState(false)  // reveal LAN scan in device mode
 
   const runDiscover = () => {
     setDiscovering(true)
@@ -74,7 +78,34 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
       .finally(() => setDiscovering(false))
   }
 
-  useEffect(() => { runDiscover() }, [])
+  // Select an already-registered blaster (device mode). Carries the registry id
+  // so the device create can reference it without re-creating the blaster.
+  const selectBlasterRecord = (b) => onSelect({
+    blaster_host: b.ip || b.last_seen_ip || '',
+    blaster_mac:  b.mac || null,
+    blaster_id:   b.id || null,
+    entity_id:    null,
+    label:        b.name,
+    default_name: b.name,
+  })
+
+  useEffect(() => {
+    if (deviceMode) {
+      // TV/AC flow: load paired blasters. Auto-select when there's exactly one
+      // so the user doesn't even tap. If none exist, fall back to a LAN scan.
+      listIrBlasters()
+        .then((list) => {
+          const arr = Array.isArray(list) ? list : []
+          setRegistered(arr)
+          if (arr.length === 0) { setShowScan(true); runDiscover() }
+          else if (arr.length === 1 && !selected) selectBlasterRecord(arr[0])
+        })
+        .catch(() => { setRegistered([]); setShowScan(true); runDiscover() })
+    } else {
+      // Blaster-pairing flow: scan the LAN for a new blaster.
+      runDiscover()
+    }
+  }, [deviceMode])
 
   // `mac` is optional — auto-discovered blasters always have one (the
   // backend's _device_info pulls it from python-broadlink), but the
@@ -110,6 +141,41 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
 
   return (
     <div className="space-y-4">
+
+      {/* Device (TV/AC) flow: pick an already-paired blaster — no re-scan/rename. */}
+      {deviceMode && Array.isArray(registered) && registered.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-ink-mute mb-1">{t('wizard.ir.chooseBlaster') || 'Choose a blaster'}</p>
+          {registered.map((b) => {
+            const host = b.ip || b.last_seen_ip || ''
+            const isSel = (selected?.blaster_id && selected.blaster_id === b.id) || selected?.blaster_host === host
+            return (
+              <button
+                key={b.id}
+                onClick={() => selectBlasterRecord(b)}
+                className={cn(
+                  'w-full text-left p-3 rounded-xl border transition-all',
+                  isSel ? 'border-accent bg-accent/10' : 'border-line bg-surface-2 hover:bg-line',
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    background: b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn, #d90)' : 'var(--err)' }} />
+                  <p className="text-sm font-medium text-ink flex-1">{b.name}</p>
+                </div>
+                {host && <p className="text-xs text-ink-mute mt-0.5">{host}</p>}
+              </button>
+            )
+          })}
+          {!showScan && (
+            <button onClick={() => { setShowScan(true); runDiscover() }} className="text-xs text-ink-mute hover:text-ink">
+              {t('wizard.ir.scanForNew') || 'Pair a new blaster'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {(!deviceMode || showScan) && (<>
 
       {/* Auto-discover results */}
       {discovering ? (
@@ -185,12 +251,13 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
         )}
       </div>
 
-      {/* Name this blaster — appears once a blaster is selected. Pre-filled
-          with the humanized discovery name. Saving happens at step advance
-          (the registry's create-by-MAC is idempotent: if a row already
-          exists for this hardware, the create returns the existing row
-          and this name is ignored). */}
-      {selected?.blaster_host && onBlasterNameChange && (
+      </>)}
+
+      {/* Name this blaster — only when pairing a NEW blaster (not the TV/AC
+          device flow, where the blaster already has a name). Pre-filled with the
+          humanized discovery name. Saving happens at step advance (create-by-MAC
+          is idempotent, so re-selecting an existing blaster is a no-op). */}
+      {!deviceMode && selected?.blaster_host && onBlasterNameChange && (
         <div className="border-t border-line pt-4">
           <label className="block text-xs font-medium text-ink-2 mb-1.5">
             {t('wizard.ir.nameBlasterLabel') || 'Name this blaster'}
@@ -709,6 +776,7 @@ export default function IRWizard({ onClose, onCreated, blasterOnly = false }) {
         >
           {step === 1 && (
             <StepSelectBlaster
+              deviceMode={!blasterOnly}
               selected={blaster}
               onSelect={(b) => {
                 setBlaster(b)

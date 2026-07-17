@@ -1764,6 +1764,8 @@ export default {
   'wizard.ir.blasterPairedTitle': 'IR blaster paired',
   'wizard.ir.blasterReady':       '{name} is ready',
   'wizard.ir.blasterPairedBody':  'Now add a TV or AC remote from Add device → IR device.',
+  'wizard.ir.chooseBlaster':      'Choose an IR blaster',
+  'wizard.ir.scanForNew':         'Pair a new blaster',
   'wizard.ir.scanning':    'Scanning network…',
   'wizard.ir.enterIpHint': 'Enter your Broadlink IP address',
   'wizard.ir.enterIpManual':'Or enter IP manually',

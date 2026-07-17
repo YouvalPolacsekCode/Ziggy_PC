@@ -3073,6 +3073,8 @@ export default {
   'wizard.ir.blasterPairedTitle':              'משדר האינפרא צומד',
   'wizard.ir.blasterReady':                    '{name} מוכן לשימוש',
   'wizard.ir.blasterPairedBody':               'עכשיו אפשר להוסיף שלט לטלוויזיה או למזגן דרך הוספת מכשיר ← מכשיר אינפרא.',
+  'wizard.ir.chooseBlaster':                   'בחירת משדר אינפרא',
+  'wizard.ir.scanForNew':                      'צימוד משדר חדש',
   'wizard.ir.scanning':                        'סורק רשת…',
   'wizard.ir.enterIpHint':                     'להזין את כתובת ה־IP של ה־Broadlink',
   'wizard.ir.enterIpManual':                   'או להזין IP ידנית',
