@@ -3830,6 +3830,7 @@ export default {
 
   // ── Devices page section headings (unassigned / no-room) ───────────────
   'devices.unassignedTitle':            'Devices not assigned to any room',
+  'devices.irBlastersTitle':            'IR Blasters',
   'devices.unassignedHint':             'Use "Assign to room" on each card to organize them.',
   'devices.noRoomTitle':                'Devices with no room',
   'devices.noRoomHint':                 'These devices are intentionally left without a room. Use the ··· menu to assign one.',

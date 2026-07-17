@@ -3683,6 +3683,7 @@ export default {
 
   // ── Devices page section headings (unassigned / no-room) ───────────────
   'devices.unassignedTitle':            'מכשירים שלא שויכו לחדר',
+  'devices.irBlastersTitle':            'משדרי אינפרא',
   'devices.unassignedHint':             'אפשר להשתמש ב״שיוך לחדר״ בכל כרטיס כדי לארגן.',
   'devices.noRoomTitle':                'מכשירים ללא חדר',
   'devices.noRoomHint':                 'מכשירים אלה הושארו ללא חדר במכוון. אפשר להשתמש בתפריט ··· כדי לשייך.',

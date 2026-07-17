@@ -13,7 +13,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor, reconcileSmartSensors } from '../lib/api'
+import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor, reconcileSmartSensors, listIrBlasters } from '../lib/api'
 import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
@@ -951,7 +951,10 @@ function SmartSensorCard({ entity, lang }) {
   const menuRef = useRef(null)
 
   const entryId = entity._ziggyEntryId || null
-  const displayName = entity.display_name || entity.friendly_name || entity.name || entity.entity_id
+  // Same resolver the detail page uses — display_name → friendly_name →
+  // humanized slug. Never the raw entity_id (Bug: presence device showed
+  // "binary_sensor.bedroom_occupied" in the list, "Bedroom Occupied" in detail).
+  const displayName = entityDisplayName(entity)
 
   const handleDelete = async () => {
     if (!entryId || deleting) return
@@ -1058,7 +1061,7 @@ function SmartSensorCard({ entity, lang }) {
         </div>
 
         <p dir="auto" className="text-sm font-medium text-ink leading-tight mb-0.5 truncate">
-          {entity.display_name || entity.friendly_name || entity.name || entity.entity_id}
+          {entityDisplayName(entity)}
         </p>
 
         <p dir="auto" className="text-[10.5px] text-ink-mute mb-2 leading-snug">
@@ -1987,8 +1990,13 @@ export default function Devices() {
         // Mirror the registry's friendly room slug if present so rendering can
         // capitalize / format it the same as other cards.
         room:              d.room || liveEntity.room || null,
-        // Preserve the registry's display name when HA's friendly name is missing.
-        display_name:      liveEntity.display_name || d.name || liveEntity.friendly_name || liveEntity.entity_id,
+        // Preserve the registry's display name when HA's friendly name is
+        // missing — but the registry sometimes stores the raw entity_id as
+        // `name`, which must never surface as a display name. Prefer a real
+        // HA friendly name, and drop any registry name that is just the id.
+        display_name:      liveEntity.display_name
+                             || liveEntity.friendly_name
+                             || (d.name && d.name !== liveEntity.entity_id ? d.name : null),
       })
     }
     for (const room of ziggyRooms) {
@@ -2097,6 +2105,13 @@ export default function Devices() {
   const [editingIrDevice, setEditingIrDevice] = useState(null)
   const [linkingIrDevice, setLinkingIrDevice] = useState(null) // IR device being linked to HA entity
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
+
+  // Paired IR blasters — infrastructure (not controllable tiles), shown as a
+  // small status strip so the user can see "RM4 · online" without digging into
+  // Settings → IR Hubs. Loaded once + refreshed after pairing one.
+  const [blasters, setBlasters] = useState([])
+  const loadBlasters = () => listIrBlasters().then(b => setBlasters(Array.isArray(b) ? b : [])).catch(() => {})
+  useEffect(() => { loadBlasters() }, [])
 
   // Unassigned IR signals — captured physical-remote presses that didn't
   // match any device. Show a badge in the header so the user discovers it.
@@ -2394,6 +2409,38 @@ export default function Devices() {
         ))}
       </div>
 
+      {/* IR Blasters — status strip (infrastructure, not a control tile). Shown
+          in the main view so a paired blaster is visible without digging into
+          Settings → IR Hubs. Tap opens Settings → IR Hubs to manage. */}
+      {domain === 'all' && blasters.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+            {t('devices.irBlastersTitle') || 'IR Blasters'}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {blasters.map(b => {
+              const host = b.ip || b.last_seen_ip || ''
+              const color = b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn)' : 'var(--err)'
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => navigate('/settings/ir-hubs')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 11,
+                    background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer', textAlign: 'start', width: '100%' }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</p>
+                    {host && <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{host}</p>}
+                  </div>
+                  <Zap size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Unassigned section info */}
       {domain === 'unassigned' && (
         <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))` }}>
@@ -2599,7 +2646,7 @@ export default function Devices() {
       {showIRWizard && (
         <IRWizard
           onClose={() => setShowIRWizard(false)}
-          onCreated={() => { fetchAll(); setShowIRWizard(false) }}
+          onCreated={() => { fetchAll(); loadBlasters(); setShowIRWizard(false) }}
         />
       )}
 
@@ -2607,7 +2654,7 @@ export default function Devices() {
         <IRWizard
           blasterOnly
           onClose={() => setShowIRBlaster(false)}
-          onCreated={() => { fetchAll() }}
+          onCreated={() => { fetchAll(); loadBlasters() }}
         />
       )}
 
