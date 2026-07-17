@@ -63,6 +63,20 @@ _CRITICAL_PLUG_KEYWORDS: tuple[str, ...] = (
 
 _registry: list[dict] = []
 _lock = threading.Lock()
+
+# Entity IDs whose HA entity_category is 'config' or 'diagnostic' — settings and
+# telemetry, NOT devices to control. e.g. a Zigbee presence sensor exposes
+# "disable LED at night" / "adaptive sensitivity" as config switches; without
+# this they render as stray on/off toggles in the room. Populated from the HA
+# entity registry during reconcile_with_ha() and cached at module level so the
+# sync refresh() path benefits too. (HA hides these from its own dashboards by
+# the same convention; the data stays reachable via state_cache for automations.)
+_hidden_category_ids: set[str] = set()
+_HIDDEN_ENTITY_CATEGORIES = frozenset({"config", "diagnostic"})
+
+
+def _is_hidden_category(eid: str | None) -> bool:
+    return bool(eid) and eid in _hidden_category_ids
 _initialized = False
 
 # Hot-path lookup indexes. Rebuilt every time _registry is reassigned (init,
@@ -518,6 +532,8 @@ def _add_unclaimed(devices: list[dict], live_ids: set[str],
     for eid in filtered_ids:
         if eid in claimed or eid in existing_unclaimed:
             continue
+        if _is_hidden_category(eid):
+            continue  # config/diagnostic entity — a setting, not a device
         attrs = attrs_by_id.get(eid, {})
         device_type = _infer_device_type(eid, attrs)
         room = _infer_room(eid, attrs, entity_areas)
@@ -672,6 +688,21 @@ async def reconcile_with_ha() -> None:
         # area data; next loop will retry.
         log_info(f"[DeviceRegistry] HA area registry unavailable: {e}")
 
+    # HA entity registry → which entities are config/diagnostic (settings /
+    # telemetry, not controllable devices). Cached so both this reconcile and
+    # the sync refresh() keep them out of the device list.
+    try:
+        from services.ha_areas import get_registry_snapshot
+        snap = await get_registry_snapshot()
+        cats = {
+            e["entity_id"] for e in (snap.get("entities") or [])
+            if e.get("entity_id") and e.get("entity_category") in _HIDDEN_ENTITY_CATEGORIES
+        }
+        _hidden_category_ids.clear()
+        _hidden_category_ids.update(cats)
+    except Exception as e:
+        log_info(f"[DeviceRegistry] entity_category snapshot unavailable: {e}")
+
     def _do() -> int:
         global _registry
         # One HA REST snapshot → reused for both reconcile and unclaimed scan.
@@ -687,6 +718,9 @@ async def reconcile_with_ha() -> None:
                                       entity_areas=entity_areas)
             devices = _merge_ir_devices(devices)
             devices = _merge_ziggy_smart_sensors(devices)
+            # Purge config/diagnostic entities that may already be persisted as
+            # device rows (e.g. a sensor's LED/sensitivity switches).
+            devices = [d for d in devices if not _is_hidden_category(d.get("entity_id"))]
             _save_persistent(devices)
             _registry = devices
             _rebuild_indexes()
@@ -730,6 +764,7 @@ def refresh() -> None:
         # Merge IR devices LAST so the merge can see all HA-bound rows.
         devices = _merge_ir_devices(devices)
         devices = _merge_ziggy_smart_sensors(devices)
+        devices = [d for d in devices if not _is_hidden_category(d.get("entity_id"))]
         _save_persistent(devices)
         _registry = devices
         _rebuild_indexes()
