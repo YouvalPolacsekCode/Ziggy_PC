@@ -140,6 +140,79 @@ def _actions_for(lights: list[str], color_temp_k: int, brightness_pct: int,
     ]
 
 
+def _sun_is_up() -> Optional[bool]:
+    """True if HA's sun is above the horizon, None if unknown."""
+    try:
+        resp = requests.get(f"{HA_URL()}/api/states/sun.sun", headers=HEADERS(), timeout=5)
+        if resp.status_code == 200:
+            return resp.json().get("state") == "above_horizon"
+    except Exception:
+        pass
+    return None
+
+
+def _current_phase_id(bedtime: str) -> str:
+    """Which phase's lighting is 'current' right now.
+
+    Maps the moment to the last phase that would have fired: morning→sunrise,
+    afternoon→midday, evening→sunset, night→bedtime. Uses HA's sun state (day vs
+    night) plus the local clock, so it's robust without fragile sunrise math.
+    """
+    import datetime
+    try:
+        bedtime_hour = int(bedtime.split(":")[0])
+    except Exception:
+        bedtime_hour = 22
+    hour = datetime.datetime.now().hour
+    up = _sun_is_up()
+    if up is None:
+        up = 7 <= hour < 19  # clock-only fallback
+    if up:
+        return "sunrise" if hour < 12 else "solar_noon"
+    # sun down: evening (after noon, before bedtime) = sunset; else deep night = bedtime
+    if 12 <= hour < bedtime_hour:
+        return "sunset"
+    return "bedtime"
+
+
+def apply_current_phase(lights: list[str], bedtime: str = "22:00", auto_on: bool = True) -> dict:
+    """Immediately set the lights to the phase appropriate for the current time.
+
+    Called right after save so the schedule 'takes effect now' instead of waiting
+    for the next sun/time event. Respects auto_on: when False, only lights that
+    are already on are re-tinted (off lights are left off).
+    """
+    cleaned = [l for l in lights if isinstance(l, str) and l.startswith("light.")]
+    if not cleaned:
+        return {"applied": False, "reason": "no_lights"}
+    pid = _current_phase_id(bedtime)
+    kelvin, pct = next(((k, p) for phase_id, _a, _t, k, p in PHASES if phase_id == pid), (3000, 80))
+
+    targets = cleaned
+    if not auto_on:
+        # Only adjust lights already on.
+        try:
+            resp = requests.get(f"{HA_URL()}/api/states", headers=HEADERS(), timeout=8)
+            live = {s["entity_id"]: s.get("state") for s in resp.json()} if resp.status_code == 200 else {}
+            targets = [l for l in cleaned if live.get(l) == "on"]
+        except Exception:
+            targets = []
+    if not targets:
+        return {"applied": True, "phase": pid, "lights": 0}
+    try:
+        requests.post(
+            f"{HA_URL()}/api/services/light/turn_on",
+            headers=HEADERS(),
+            json={"entity_id": targets, "color_temp_kelvin": kelvin, "brightness_pct": pct},
+            timeout=10,
+        )
+    except Exception as e:
+        log_error(f"[Circadian] apply_current_phase: {e}")
+        return {"applied": False, "error": str(e)}
+    log_info(f"[Circadian] applied phase '{pid}' ({kelvin}K/{pct}%) to {len(targets)} light(s)")
+    return {"applied": True, "phase": pid, "lights": len(targets)}
+
+
 def build_bundle(lights: list[str], bedtime: str = "22:00", auto_on: bool = True) -> list[dict]:
     """Return the 4 HA-native automation configs (one per phase).
 
@@ -217,6 +290,11 @@ def save_bundle(lights: list[str], bedtime: str = "22:00", auto_on: bool = True)
             failed.append({"id": auto_id, "status": 0, "error": str(e)})
 
     log_info(f"[Circadian] save_bundle: saved={saved} failed={[f['id'] for f in failed]} auto_on={auto_on}")
+    # Apply the current phase immediately so saving 'takes effect now' rather
+    # than waiting for the next sun/time event.
+    applied = {}
+    if saved:
+        applied = apply_current_phase(cleaned, bedtime, auto_on)
     return {
         "ok":      not failed,
         "saved":   saved,
@@ -224,6 +302,7 @@ def save_bundle(lights: list[str], bedtime: str = "22:00", auto_on: bool = True)
         "bedtime": bedtime,
         "auto_on": auto_on,
         "lights":  lights,
+        "applied": applied,
     }
 
 
