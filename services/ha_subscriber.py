@@ -269,6 +269,14 @@ async def _process_event(event: dict) -> None:
     except Exception as e:
         log_error(f"[HASubscriber] anomaly evaluate failed: {e}")
 
+    # Self-heal: correlate this change with Ziggy's last intended command and
+    # recover devices that repeatedly revert right after a command.
+    try:
+        from services import self_heal
+        await self_heal.observe(entity_id, old_state, new_state)
+    except Exception as e:
+        log_error(f"[HASubscriber] self_heal observe failed: {e}")
+
 
 async def _run_once() -> None:
     """One connection attempt: connect, auth, subscribe, refresh, process events."""
