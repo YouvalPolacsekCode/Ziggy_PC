@@ -137,6 +137,9 @@ def create_ir_device(
         "blaster_entity_id": blaster_entity_id,
         "ha_device_namespace": ha_device_namespace,
         "ha_entity_id": ha_entity_id or None,   # optional linked HA entity for real state
+        # Config-entry id of the linked smart device, captured at link time so a
+        # final delete can nuke it even when that device is powered off.
+        "ha_config_entry_id": None,
         "room": room_norm,
         "brand": brand,
         "model": model,
@@ -202,6 +205,7 @@ def update_ir_device(device_id: str, updates: dict) -> Optional[dict]:
         "name", "room", "brand", "model", "type", "enabled", "aliases",
         "commands", "sequences", "ac_config", "learned_commands",
         "assumed_state", "assumed_state_at", "ac_memory", "ha_entity_id",
+        "ha_config_entry_id", "ha_device_id",
         "ir_codes", "ir_capabilities", "blaster_host",
         "last_command_sent", "last_command_sent_at",
         # Free-form user-defined buttons (managed via add/remove_custom_command).

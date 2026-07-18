@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.errors import ErrorCode, ZiggyError, ir_blaster_unreachable
+from core.logger_module import log_info
 from services.ir_manager import (
     list_ir_devices, get_ir_device, create_ir_device,
     update_ir_device, delete_ir_device,
@@ -64,6 +65,9 @@ class IrDevicePatch(BaseModel):
     ha_entity_id: Optional[str] = None   # link to HA entity for state fallback
     blaster_host: Optional[str] = None   # set/update direct Broadlink IP
     ir_capabilities: Optional[dict] = None
+    # Persisted at link time so a final delete can nuke the linked smart device's
+    # HA config entry even when it's powered off (entity gone from the registry).
+    ha_config_entry_id: Optional[str] = None
 
 
 class IrLearnBody(BaseModel):
@@ -365,6 +369,28 @@ async def create_ir_device_endpoint(body: IrDeviceCreate):
         )
 
 
+async def _resolve_config_entry_for_entity(entity_id: str) -> Optional[str]:
+    """Best-effort: find the HA config-entry id backing a smart entity, so we can
+    persist it on the IR link and delete it later even when the device is offline.
+    Generic across integrations. Returns None if it can't be resolved right now."""
+    if not entity_id:
+        return None
+    try:
+        from services.ha_areas import _ws
+        from backend.routers.device_router import _config_entries_to_delete
+        ent_res, dev_res = await _ws(
+            {"type": "config/entity_registry/list"},
+            {"type": "config/device_registry/list"},
+        )
+        ents = ent_res.get("result") or []
+        devs = dev_res.get("result") or []
+        ids, _ = _config_entries_to_delete(entity_id, ents, devs)
+        return next(iter(ids), None)
+    except Exception as e:
+        log_info(f"[IR] could not resolve config entry for {entity_id}: {e}")
+        return None
+
+
 @router.patch("/api/ir/devices/{device_id}")
 async def patch_ir_device(device_id: str, body: IrDevicePatch):
     data = body.model_dump()
@@ -374,6 +400,14 @@ async def patch_ir_device(device_id: str, body: IrDevicePatch):
             updates[k] = v
         elif k == "room":
             updates["room"] = ""
+
+    # Linking to a smart device: capture its config-entry id NOW (while it's
+    # reachable) so a later delete stays final even if the device is powered off.
+    if updates.get("ha_entity_id") and not updates.get("ha_config_entry_id"):
+        ce = await _resolve_config_entry_for_entity(updates["ha_entity_id"])
+        if ce:
+            updates["ha_config_entry_id"] = ce
+
     device = update_ir_device(device_id, updates)
     if not device:
         raise HTTPException(status_code=404, detail="IR device not found")
@@ -393,6 +427,25 @@ async def patch_ir_device(device_id: str, body: IrDevicePatch):
 
 @router.delete("/api/ir/devices/{device_id}")
 async def remove_ir_device(device_id: str):
+    # Delete is final: if this IR remote is linked to a smart device (a merged
+    # card), nuke that device's HA config entry too. Uses the config-entry id we
+    # stored at link time so it works even when the smart device is powered off;
+    # falls back to a live lookup. Generic across all integrations.
+    dev = get_ir_device(device_id)
+    if dev:
+        linked_eid = (dev.get("ha_entity_id") or "").strip()
+        entry_id = (dev.get("ha_config_entry_id") or "").strip()
+        if linked_eid and not entry_id:
+            entry_id = await _resolve_config_entry_for_entity(linked_eid) or ""
+        if entry_id:
+            try:
+                from backend.routers.device_router import _delete_ha_config_entry
+                if _delete_ha_config_entry(entry_id):
+                    log_info(f"[IR] cascade-deleted linked config entry {entry_id} "
+                             f"({linked_eid or '?'}) with IR device {device_id}")
+            except Exception as e:
+                log_info(f"[IR] cascade config-entry delete failed for {device_id}: {e}")
+
     if not delete_ir_device(device_id):
         raise HTTPException(status_code=404, detail="IR device not found")
     # Drop the stale row from the device registry without waiting for restart.

@@ -190,16 +190,22 @@ def _enrich_devices_with_ha_state(devices: list[dict]) -> list[dict]:
                 attrs["_linkedIr"] = _ir_snapshot(_ir_by_ha_eid[eid])
             entry["ha_attributes"] = attrs
 
-        elif ir_id and not eid:
-            # Pure IR device — enrich from ir_manager
+        elif ir_id:
+            # IR device — OR a merged IR+Wi-Fi card whose Wi-Fi entity is
+            # currently offline (branch 1 above only fires when the entity has
+            # live state). Either way, render the IR controls so a linked TV
+            # keeps its power-on button while it's off — never an empty card.
+            # When the Wi-Fi entity comes back, branch 1 takes over and adds the
+            # smart controls. Generic across integrations.
             try:
                 from services.ir_manager import get_ir_device
                 ir_data = get_ir_device(ir_id) or {}
             except Exception:
                 ir_data = {}
 
-            # Use linked HA entity state when available (more reliable than assumed)
-            linked_eid = ir_data.get("ha_entity_id") or ""
+            # Use linked HA entity state when available (more reliable than
+            # assumed). For a hybrid row the row's own entity_id IS the link.
+            linked_eid = eid or ir_data.get("ha_entity_id") or ""
             if linked_eid and linked_eid in state_map:
                 raw = state_map[linked_eid].get("state", "unknown")
                 ha_state = ("on" if raw in ("on", "playing", "idle", "paused")
@@ -819,8 +825,81 @@ async def patch_device_area(device_id: str, body: DeviceAreaPatch):
     return result
 
 
+def _config_entries_to_delete(
+    entity_id: str,
+    entity_entries: list[dict],
+    device_entries: list[dict],
+    hint: str | None = None,
+) -> tuple[set[str], str | None]:
+    """Resolve every HA config-entry id to delete so a physical device is gone
+    for good — integration-agnostic (webostv, samsungtv, cast, androidtv, roku,
+    shelly, tuya, ...). Sources, in order of reliability:
+
+      1. the entity's own ``config_entry_id`` (present when the device is online)
+      2. the parent device's ``config_entries`` (device registry)
+      3. a caller-supplied ``hint`` — a config_entry_id we persisted at link/pair
+         time. This is what keeps delete final when the device is POWERED OFF:
+         some integrations (webostv among them) drop their entities from the
+         registry while unreachable, so 1 and 2 find nothing and the entry would
+         otherwise survive, leaving the device un-deletable and un-rediscoverable.
+
+    Returns ``(config_entry_ids, device_id)``.
+    """
+    ids: set[str] = set()
+    ent = next((e for e in entity_entries if e.get("entity_id") == entity_id), None)
+    device_id = ent.get("device_id") if ent else None
+    if ent and ent.get("config_entry_id"):
+        ids.add(ent["config_entry_id"])
+    if device_id:
+        dev = next((d for d in device_entries if d.get("id") == device_id), None)
+        for ce in (dev or {}).get("config_entries", []) or []:
+            if ce:
+                ids.add(ce)
+    if hint:
+        ids.add(hint)
+    return ids, device_id
+
+
+def _delete_ha_config_entry(entry_id: str, timeout: float = 10.0) -> bool:
+    """Delete a config entry via HA's REST API. This nukes the entry AND every
+    device/entity it owns, and — unlike the device-registry WS remove — works
+    even when the device is offline (the entry persists regardless of reach).
+    Returns True on 2xx."""
+    from services import ha_client
+    import requests
+    try:
+        url = f"{ha_client.url().rstrip('/')}/api/config/config_entries/entry/{entry_id}"
+        resp = requests.delete(url, headers=ha_client.headers(), timeout=timeout)
+        ok = 200 <= resp.status_code < 300
+        if not ok:
+            log_info(f"[API] delete config_entry {entry_id} -> HTTP {resp.status_code}")
+        return ok
+    except Exception as e:
+        log_info(f"[API] delete config_entry {entry_id} failed: {e}")
+        return False
+
+
+def _cascade_delete_linked_ir(entity_ids: set[str]) -> list[str]:
+    """Delete every IR codeset linked (via ``ha_entity_id``) to any of the given
+    HA entities. Delete is final: removing the WiFi/smart side of a merged card
+    must also remove its IR half, so no orphaned remote lingers. Returns the ids
+    of IR devices removed."""
+    removed: list[str] = []
+    try:
+        from services.ir_manager import list_ir_devices, delete_ir_device
+        for ir in list_ir_devices(enabled_only=False):
+            linked = (ir.get("ha_entity_id") or "").strip()
+            if linked and linked in entity_ids:
+                if delete_ir_device(ir["id"]):
+                    removed.append(ir["id"])
+    except Exception as e:
+        log_info(f"[API] cascade IR delete failed: {e}")
+    return removed
+
+
 @router.delete("/api/ha/entity/{entity_id:path}")
 async def delete_ha_entity(entity_id: str, delete_device: bool = False,
+                           config_entry_hint: str | None = None,
                            _user: dict = Depends(require_role("admin"))):
     """Remove an entity from Home Assistant (and clean up Ziggy's registry).
 
@@ -902,26 +981,33 @@ async def delete_ha_entity(entity_id: str, delete_device: bool = False,
         except Exception as e:
             log_info(f"[API] delete_ha_entity: WS remove failed for {eid}: {e}")
 
-    # 3) When asked to remove the device too, drop its config_entries now
-    #    that we've cleared every entity. HA refuses device removal while
-    #    entities are still attached, hence the strict ordering.
-    if delete_device and device_id:
+    # 3) When asked to remove the device too, delete its HA config entries
+    #    outright. We delete the config ENTRY (not just detach it from the
+    #    device) via REST, which nukes the entry plus every device/entity it
+    #    owns AND works when the device is offline — the case that stranded a
+    #    powered-off webOS TV. Generic across all integrations.
+    if delete_device:
         try:
             dev_res, = await _ws({"type": "config/device_registry/list"})
-            target = next((d for d in (dev_res.get("result") or []) if d.get("id") == device_id), None)
-            config_entries = (target or {}).get("config_entries") or []
-            for ce in config_entries:
-                try:
-                    await _ws({
-                        "type": "config/device_registry/remove_config_entry",
-                        "device_id": device_id,
-                        "config_entry_id": ce,
-                    })
-                    ha_device_removed = True
-                except Exception as ce_err:
-                    log_info(f"[API] delete_ha_entity: remove_config_entry failed ({device_id}/{ce}): {ce_err}")
+            device_entries = dev_res.get("result") or []
         except Exception as e:
-            log_info(f"[API] delete_ha_entity: device cleanup failed for {device_id}: {e}")
+            log_info(f"[API] delete_ha_entity: device_registry list failed: {e}")
+            device_entries = []
+        entry_ids, _dev = _config_entries_to_delete(
+            entity_id, entity_entries, device_entries, hint=config_entry_hint)
+        # Cover siblings too — a hub device with several config entries.
+        for eid in entities_removed:
+            more, _ = _config_entries_to_delete(eid, entity_entries, device_entries)
+            entry_ids |= more
+        for ce in entry_ids:
+            if _delete_ha_config_entry(ce):
+                ha_device_removed = True
+
+    # 3b) Delete is final: removing the smart/Wi-Fi side of a merged card must
+    #     also remove its linked IR remote, so no orphaned codeset lingers.
+    ir_removed = _cascade_delete_linked_ir(set(entities_removed) | {entity_id})
+    if ir_removed:
+        log_info(f"[API] delete_ha_entity: cascade-removed linked IR {ir_removed}")
 
     # 4) Drop the Ziggy registry rows for every removed entity. Done even
     #    when HA refused (the user asked for it to be gone — don't strand

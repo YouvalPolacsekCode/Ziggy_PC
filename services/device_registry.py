@@ -397,11 +397,24 @@ def _reconcile(devices: list[dict], live_ids: set[str]) -> list[dict]:
     now = _t.time()
     keep = []
     for d in devices:
-        if d.get("ir_device_id") and not d.get("entity_id"):
+        eid = d.get("entity_id")
+        if d.get("ir_device_id") and not eid:
             d["status"] = IR_ONLY
             keep.append(d)
             continue
-        eid = d.get("entity_id")
+        if d.get("ir_device_id") and eid:
+            # Hybrid (merged IR + smart device). The IR remote is real whether
+            # or not the smart side is reachable, so NEVER ghost-prune it just
+            # because the device is powered off — that's the exact case the
+            # merge exists for (power a dead TV on via IR). Reflect Wi-Fi
+            # liveness in status, but keep the card.
+            if eid in live_ids:
+                d["status"] = CONNECTED
+                d.pop("_lost_since", None)
+            else:
+                d["status"] = LOST
+            keep.append(d)
+            continue
         if not eid:
             d["status"] = UNCONFIGURED
             keep.append(d)
