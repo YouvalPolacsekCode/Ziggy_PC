@@ -211,6 +211,10 @@ _PASSTHROUGH = {
     "ir_send_command": "ir_send_command",
     "ir_set_ac_temperature": "ir_set_ac_temperature",
     "ir_send_channel": "ir_send_channel",
+    # Pro Mode: reuse the v1 handler so the chat gets the SAME preview-card
+    # envelope (data.kind=automation_bundle_preview) + guardrails (no empty /
+    # voice-only cards). The runner detects that envelope and renders the card.
+    "design_automation": "design_automation_set",
 }
 
 
@@ -313,22 +317,6 @@ async def _exec_web_search(args: dict) -> dict:
         return {"ok": False, "message": str(e)}
 
 
-async def _exec_design_automation(args: dict) -> dict:
-    outcome = (args.get("outcome") or "").strip()
-    try:
-        from services.orchestra_designer import design_bundle
-        res = design_bundle(outcome)
-        if not res.get("ok"):
-            return {"ok": False, "message": res.get("error") or "design failed"}
-        bundle = res["bundle"]
-        # Surface the bundle so the frontend can render the preview card.
-        return {"ok": True, "message": "bundle designed", "bundle": bundle,
-                "preview": True, "decline": bundle.get("decline")}
-    except Exception as e:
-        log_error(f"[agent.tools] design_automation failed: {e}")
-        return {"ok": False, "message": str(e)}
-
-
 async def _exec_passthrough(name: str, args: dict) -> dict:
     """Reuse the v1 handler for a tool by dispatching through handle_intent."""
     from core.action_parser import handle_intent
@@ -352,8 +340,6 @@ async def execute_tool(name: str, args: dict, directory: dict) -> dict:
         return _exec_room_occupancy(args, directory)
     if name == "web_search":
         return await _exec_web_search(args)
-    if name == "design_automation":
-        return await _exec_design_automation(args)
     if name in _PASSTHROUGH:
         return await _exec_passthrough(name, args)
     return {"ok": False, "message": f"unknown tool {name}"}

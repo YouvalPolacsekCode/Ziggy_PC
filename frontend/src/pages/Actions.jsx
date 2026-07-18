@@ -13,6 +13,7 @@ import AutomationWizard from '../components/automations/wizard/AutomationWizard'
 import AutomationViewModal from '../components/automations/AutomationViewModal'
 import AutomationCard from '../components/automations/AutomationCard'
 import CircadianBundleWizard from '../components/automations/CircadianBundleWizard'
+import SmartRoomWizard from '../components/automations/SmartRoomWizard'
 import CircadianGroupRow from '../components/automations/CircadianGroupRow'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
@@ -49,6 +50,8 @@ export default function Automations() {
   // Circadian bundle wizard — opened by Configure on the Smart Light Schedule
   // template, or by Edit on the grouped row in the Your-Automations section.
   const [circadianTarget,   setCircadianTarget]   = useState(null)
+  // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
+  const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
   const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
@@ -111,6 +114,11 @@ export default function Automations() {
       setCircadianTarget({ ...template.wizard_prefill, _templateId: template.id, _isInstalled: false })
       return
     }
+    // Smart Room bundle — pick a room, then the designer + BundlePreviewCard.
+    if (template.wizard_prefill.bundle === 'smart_room') {
+      setSmartRoomTarget({ _templateId: template.id })
+      return
+    }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
     setShowWizard(true)
   }
@@ -125,6 +133,13 @@ export default function Automations() {
       autoOn: group.autoOn,
       defaults: { lights: group.lights, bedtime: group.bedtime, autoOn: group.autoOn },
     })
+  }
+
+  const handleSmartRoomClose = () => setSmartRoomTarget(null)
+  const handleSmartRoomSaved = async () => {
+    setSmartRoomTarget(null)
+    addToast(t('automations.smartRoom.created'), 'success')
+    await fetchAutomations({ force: true })
   }
 
   const handleCircadianClose = () => setCircadianTarget(null)
@@ -385,6 +400,16 @@ export default function Automations() {
             initial={circadianTarget}
             onSaved={handleCircadianSaved}
             onClose={handleCircadianClose}
+          />
+        )}
+      </Modal>
+
+      {/* Smart Room bundle — pick a room → designer → BundlePreviewCard */}
+      <Modal open={!!smartRoomTarget} onClose={handleSmartRoomClose} title={t('automations.smartRoom.title')}>
+        {smartRoomTarget && (
+          <SmartRoomWizard
+            onSaved={handleSmartRoomSaved}
+            onClose={handleSmartRoomClose}
           />
         )}
       </Modal>

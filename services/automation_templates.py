@@ -336,6 +336,29 @@ TEMPLATES: list[dict] = [
         "bundle":                "circadian",
     },
 
+    {
+        # Ziggy Pro Mode entry point as a template card. Configure doesn't open
+        # the single-trigger wizard — the frontend reads `bundle: "smart_room"`
+        # from wizard_prefill and opens SmartRoomWizard (pick a room → the
+        # orchestra designer builds a full bundle → BundlePreviewCard).
+        "id":                    "smart_room",
+        "name":                  "Smart Room",
+        "name_he":               "חדר חכם",
+        "description":           "Make a whole room smart in one step — pick a room and Ziggy designs its presence, lighting and comfort automations for you to review.",
+        "description_he":        "הפיכת חדר שלם לחכם בצעד אחד — בוחרים חדר וזיגי מעצב עבורו נוכחות, תאורה ונוחות לאישור.",
+        "category":              "comfort",
+        "icon":                  "🪄",
+        # No hard requirements — the designer reasons over whatever the chosen
+        # room actually has, and honestly declines pieces it can't build.
+        "required_capabilities": [],
+        "optional_capabilities": [],
+        "relevant_capabilities": [],
+        "capability_labels":     {},
+        "safety_level":          "safe",
+        "tags":                  ["room", "bundle", "pro", "comfort"],
+        "bundle":                "smart_room",
+    },
+
     # ── Climate Safety ────────────────────────────────────────────────────
 
     {
@@ -482,6 +505,7 @@ def build_prefill(template: dict, cap_map: dict) -> dict:
         "motion_night_light":  _motion_night_light,
         "night_watch":         _night_watch,
         "circadian_lighting":  _circadian_lighting,
+        "smart_room":          _smart_room,
         "ac_window_interlock": _ac_window_interlock,
         "tv_off_when_empty":   _tv_off_when_empty,
         "fake_occupancy":      _fake_occupancy,
@@ -990,6 +1014,26 @@ def _circadian_lighting(cap_map: dict) -> dict:
         },
         # Empty placeholders so the regular wizard editor doesn't choke if it
         # ever receives this prefill before the bundle adapter wires up.
+        "trigger":    {},
+        "conditions": [],
+        "actions":    [],
+        "rooms":      [],
+    }
+
+
+def _smart_room(cap_map: dict) -> dict:
+    """Prefill for the Smart Room template.
+
+    Carries only the `bundle: "smart_room"` marker. The real flow (pick a room →
+    orchestra designer → BundlePreviewCard) lives in the frontend SmartRoomWizard;
+    there are no single-trigger wizard fields to fill here.
+    """
+    return {
+        "name":        "Smart Room",
+        "description": "Pick a room and Ziggy designs its presence, lighting and comfort automations.",
+        "bundle":      "smart_room",
+        # Placeholders so any generic wizard code that touches this prefill
+        # before the bundle branch fires doesn't choke.
         "trigger":    {},
         "conditions": [],
         "actions":    [],

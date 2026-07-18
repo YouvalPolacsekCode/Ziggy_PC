@@ -207,12 +207,6 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                     result = await _tools.execute_tool(name, args, directory)
                     result_cache[key] = result
                 iter_results.append((name, result))
-                # collect surfaced data (automation preview bundle, etc.)
-                if result.get("bundle"):
-                    data["bundle"] = result["bundle"]
-                    data["preview"] = True
-                if result.get("data"):
-                    data.setdefault("tool_data", {})[name] = result["data"]
                 messages.append({
                     "role": "tool", "tool_call_id": tc.id,
                     "content": json.dumps(_slim_result(result), ensure_ascii=False),
@@ -221,6 +215,27 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
             bus.emit("intent", VERBOSE, "agent_tools_executed",
                      tools=[n for n, _ in iter_results],
                      ok=[bool(r.get("ok")) for _, r in iter_results])
+
+            # Pro Mode bundle preview: if a tool returned the v1 preview-card
+            # envelope, surface it verbatim so the app renders BundlePreviewCard
+            # (accept/edit/undo). Skip the 2nd model turn — the card replaces the
+            # text bubble anyway. This is what makes "build me a smart room" work
+            # in chat.
+            preview_res = next(
+                (r for _, r in iter_results
+                 if (r.get("data") or {}).get("kind") == "automation_bundle_preview"
+                 and (r.get("data") or {}).get("bundle")),
+                None,
+            )
+            if preview_res is not None:
+                data = {
+                    "kind": "automation_bundle_preview",
+                    "bundle": preview_res["data"]["bundle"],
+                }
+                reply = (preview_res.get("message") or "").strip() or (
+                    "עיצבתי לך את החדר החכם — סקור ואשר." if lang == "he"
+                    else "Here's the smart room I designed — review and accept.")
+                break
 
             # Fast path: first turn, no narration, every call a successful device
             # action → deterministic terse confirmation, skip 2nd round-trip.
