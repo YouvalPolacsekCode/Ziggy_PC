@@ -1,21 +1,23 @@
 import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useT, useLangStore } from '../../lib/i18n'
-import { getRooms, designAutomationBundle } from '../../lib/api'
+import { getRooms, designSmartRoom } from '../../lib/api'
 import BundlePreviewCard from './BundlePreviewCard'
+import OccupancySensorForm from './OccupancySensorForm'
 
 // ── SmartRoomWizard ───────────────────────────────────────────────────────────
-// Tab-surface twin of the chat "build me a smart room" flow. Opened from the
-// Smart Room template's Configure (Actions.jsx reads wizard_prefill.bundle ===
-// 'smart_room'). One tap: pick a room → the orchestra designer builds a bundle
-// (POST /api/automations/bundles/design) → the SAME BundlePreviewCard the chat
-// uses renders it for review / edit / accept (which POSTs /apply) / undo.
+// Dedicated flow for the Smart Room template (Actions.jsx routes here on
+// wizard_prefill.bundle === 'smart_room'). One tap:
+//   pick room → design the deterministic Smart Room RECIPE
+//     (sleeping-wife orchestra: presence-aware, day/night, off-when-empty)
+//   → if the room has no fused presence sensor yet, open the EXISTING
+//     OccupancySensorForm to create one, then retry with its entity_id
+//   → preview in the SAME BundlePreviewCard → Accept (applies) / Undo.
 //
-// No new backend — reuses designAutomationBundle + BundlePreviewCard entirely.
+// Reuses designSmartRoom (recipe endpoint) + OccupancySensorForm +
+// BundlePreviewCard. No new backend beyond the recipe endpoint.
 //
-// Props:
-//   onSaved — called after the user accepts + taps Done (parent closes + toasts)
-//   onClose — called to dismiss without creating anything
+// Props: onSaved (accepted+done), onClose (dismiss).
 // ──────────────────────────────────────────────────────────────────────────────
 
 function actionableCount(bundle) {
@@ -31,10 +33,10 @@ export default function SmartRoomWizard({ onSaved, onClose }) {
 
   const [rooms, setRooms]       = useState([])
   const [loading, setLoading]   = useState(true)
-  const [step, setStep]         = useState('pick')   // pick | designing | preview | decline | error
+  const [step, setStep]         = useState('pick')   // pick | designing | needOccupancy | preview | decline | error
   const [bundle, setBundle]     = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
-  const [roomName, setRoomName] = useState('')
+  const [room, setRoom]         = useState(null)     // {id, name}
 
   useEffect(() => {
     let alive = true
@@ -44,29 +46,26 @@ export default function SmartRoomWizard({ onSaved, onClose }) {
     return () => { alive = false }
   }, [])
 
-  const pickRoom = async (room) => {
-    const name = room.name || room.id || ''
-    setRoomName(name)
+  // Design the recipe for a room, optionally with a just-created occupancy entity.
+  const design = async (roomObj, occupancyEntity) => {
+    setRoom(roomObj)
     setStep('designing')
     setErrorMsg(null)
-    const outcome = lang === 'he'
-      ? `תהפוך את ${name} לחדר חכם`
-      : `Make the ${name} a smart room`
     try {
-      const res = await designAutomationBundle(outcome, lang)
+      const res = await designSmartRoom(roomObj.id || roomObj.name, occupancyEntity, lang)
+      if (res?.needs_occupancy) { setStep('needOccupancy'); return }
       const b = res?.bundle
       if (!b) throw new Error('no bundle')
+      if (b.decline || actionableCount(b) === 0) { setBundle(b); setStep('decline'); return }
       setBundle(b)
-      setStep(actionableCount(b) > 0 ? 'preview' : 'decline')
+      setStep('preview')
     } catch (e) {
-      // The design endpoint 400s with { detail: { bundle, error } } when the
-      // LLM produced something unusable — surface a friendly message.
       setErrorMsg(e?.userMessage || e?.message || t('automations.smartRoom.designFailed'))
       setStep('error')
     }
   }
 
-  const backToPick = () => { setStep('pick'); setBundle(null); setErrorMsg(null) }
+  const backToPick = () => { setStep('pick'); setBundle(null); setErrorMsg(null); setRoom(null) }
 
   // ── Room picker ─────────────────────────────────────────────────────────────
   if (step === 'pick') {
@@ -87,19 +86,16 @@ export default function SmartRoomWizard({ onSaved, onClose }) {
           </p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {rooms.map((room) => (
+            {rooms.map((r) => (
               <button
-                key={room.id || room.name}
+                key={r.id || r.name}
                 type="button"
-                onClick={() => pickRoom(room)}
+                onClick={() => design(r)}
                 className="z-btn-secondary"
-                style={{
-                  padding: '12px 14px', borderRadius: 11, textAlign: 'start',
-                  fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
-                }}
+                style={{ padding: '12px 14px', borderRadius: 11, textAlign: 'start', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}
                 dir="auto"
               >
-                {room.name || room.id}
+                {r.name || r.id}
               </button>
             ))}
           </div>
@@ -118,13 +114,29 @@ export default function SmartRoomWizard({ onSaved, onClose }) {
           transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
         />
         <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0, textAlign: 'center' }} dir="auto">
-          {t('automations.smartRoom.designing', { room: roomName })}
+          {t('automations.smartRoom.designing', { room: room?.name || '' })}
         </p>
       </div>
     )
   }
 
-  // ── Preview — reuse the exact same card as chat ─────────────────────────────
+  // ── Needs a fused presence sensor first — reuse the EXISTING creator ─────────
+  if (step === 'needOccupancy' && room) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, lineHeight: 1.5 }} dir="auto">
+          {t('automations.smartRoom.needPresence', { room: room.name })}
+        </p>
+        <OccupancySensorForm
+          initialRoom={room.name}
+          onCreated={(res) => { design(room, res?.entity_id) }}
+          onClose={() => {}}
+        />
+      </div>
+    )
+  }
+
+  // ── Preview — same card as chat ─────────────────────────────────────────────
   if (step === 'preview' && bundle) {
     return (
       <BundlePreviewCard
@@ -140,7 +152,7 @@ export default function SmartRoomWizard({ onSaved, onClose }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '8px 0' }}>
         <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, lineHeight: 1.5 }} dir="auto">
-          {bundle?.decline || t('automations.smartRoom.nothingToBuild', { room: roomName })}
+          {bundle?.decline || t('automations.smartRoom.nothingToBuild', { room: room?.name || '' })}
         </p>
         <button type="button" onClick={backToPick} className="z-btn-secondary" style={{ alignSelf: 'flex-start', padding: '8px 14px', borderRadius: 9 }}>
           {t('automations.smartRoom.chooseAnother')}

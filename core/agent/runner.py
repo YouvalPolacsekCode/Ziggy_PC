@@ -92,7 +92,9 @@ def _build_system_prompt(directory: dict, lang: str) -> str:
         "conversation and act.\n"
         "- 'is anyone in <room>' → room_occupancy. 'what's on' / 'is X on' → "
         "query_devices. Temperature → get_temperature.\n"
-        "- An OUTCOME ('make the bedroom smart', 'תעשה אוטומציה לסלון') → "
+        "- Make a whole ROOM smart ('make the bedroom smart', 'תבנה לי חדר שינה "
+        "חכם') → design_smart_room with the room. A FREE-FORM outcome that isn't a "
+        "whole-room setup ('make my office cozy', 'morning routine') → "
         "design_automation. An explicit single trigger+action ('turn off the "
         "bedroom light at 23:00') → create_automation.\n"
         "- A device tagged [IR] in the directory has no id you can pass to "
@@ -204,7 +206,7 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                 if key in result_cache:
                     result = result_cache[key]
                 else:
-                    result = await _tools.execute_tool(name, args, directory)
+                    result = await _tools.execute_tool(name, args, directory, lang=lang)
                     result_cache[key] = result
                 iter_results.append((name, result))
                 messages.append({

@@ -119,13 +119,26 @@ TOOL_SCHEMAS: list[dict] = [
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
+        "name": "design_smart_room",
+        "description": (
+            "Use when the user wants to make a whole ROOM smart — 'make the bedroom "
+            "smart', 'תבנה לי חדר שינה חכם', 'set up a smart living room'. Builds the "
+            "full reliable Smart Room recipe (lights on when entering an empty room — "
+            "bright by day, warm/dim at night — off when empty; a partner entering a "
+            "room where someone's already present stays dark). Returns a preview "
+            "bundle. Pass the room the user named."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "room": {"type": "string", "description": "The room the user named (e.g. bedroom, living room)."},
+        }, "required": ["room"]},
+    }},
+    {"type": "function", "function": {
         "name": "design_automation",
         "description": (
-            "ZIGGY PRO MODE. Use when the user describes an OUTCOME for their home "
-            "(not a single action): 'make the bedroom smart', 'תעשה אוטומציה לסלון', "
-            "'set up a morning routine', 'automate the office'. Returns a preview "
-            "bundle the user reviews before anything is created. Pass the user's "
-            "outcome text verbatim."
+            "ZIGGY PRO MODE for FREE-FORM outcomes that are NOT a whole-room smart "
+            "setup — 'make my office cozy', 'design a morning routine', 'automate the "
+            "blinds by sunset'. For 'make <room> smart' use design_smart_room instead. "
+            "Returns a preview bundle. Pass the user's outcome text verbatim."
         ),
         "parameters": {"type": "object", "properties": {
             "outcome": {"type": "string", "description": "The user's outcome request, verbatim."},
@@ -317,6 +330,35 @@ async def _exec_web_search(args: dict) -> dict:
         return {"ok": False, "message": str(e)}
 
 
+async def _exec_design_smart_room(args: dict, lang: str) -> dict:
+    """Deterministic Smart Room recipe → the same preview-card envelope."""
+    from services.room_alias_bank import resolve_room
+    from services.smart_room_recipe import build_smart_room_bundle
+    room = (args.get("room") or "").strip()
+    slug = resolve_room(room.lower())
+    try:
+        res = build_smart_room_bundle(slug, language=lang)
+    except Exception as e:
+        log_error(f"[agent.tools] smart_room recipe failed: {e}")
+        return {"ok": False, "message": str(e)}
+    if res.get("needs_occupancy"):
+        # Can't create the fused presence sensor inline in chat — direct to the tab.
+        msg = (f"כדי להפוך את {room or slug} לחדר חכם צריך קודם חיישן נוכחות משולב. "
+               f"אפשר להגדיר אותו במסך האוטומציות, בתבנית ״חדר חכם״, ואז לבקש שוב."
+               if lang == "he" else
+               f"To make {room or slug} smart it first needs a fused presence sensor. "
+               f"Set it up in the Automations page under the Smart Room template, then ask again.")
+        return {"ok": True, "message": msg}
+    if not res.get("ok"):
+        b = res.get("bundle") or {}
+        return {"ok": True, "message": b.get("decline") or res.get("error") or "could not build"}
+    bundle = res["bundle"]
+    if bundle.get("decline"):
+        return {"ok": True, "message": bundle["decline"]}
+    return {"ok": True, "message": "smart room designed",
+            "data": {"kind": "automation_bundle_preview", "bundle": bundle}}
+
+
 async def _exec_passthrough(name: str, args: dict) -> dict:
     """Reuse the v1 handler for a tool by dispatching through handle_intent."""
     from core.action_parser import handle_intent
@@ -329,7 +371,7 @@ async def _exec_passthrough(name: str, args: dict) -> dict:
     }
 
 
-async def execute_tool(name: str, args: dict, directory: dict) -> dict:
+async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en") -> dict:
     """Dispatch one tool call. Returns a JSON-serializable result dict."""
     log_info(f"[agent.tools] execute {name} args={args}")
     if name == "control_device":
@@ -338,6 +380,8 @@ async def execute_tool(name: str, args: dict, directory: dict) -> dict:
         return _exec_query_devices(args, directory)
     if name == "room_occupancy":
         return _exec_room_occupancy(args, directory)
+    if name == "design_smart_room":
+        return await _exec_design_smart_room(args, lang)
     if name == "web_search":
         return await _exec_web_search(args)
     if name in _PASSTHROUGH:

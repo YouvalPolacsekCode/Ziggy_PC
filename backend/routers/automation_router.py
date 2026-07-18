@@ -355,6 +355,39 @@ async def apply_bundle_endpoint(body: BundleApplyBody):
     return result
 
 
+class SmartRoomDesignBody(BaseModel):
+    room: str
+    occupancy_entity: Optional[str] = None
+    language: Optional[str] = None
+    options: Optional[dict] = None
+
+
+@router.post("/api/automations/smart-room/design")
+async def design_smart_room_endpoint(body: SmartRoomDesignBody):
+    """Design the deterministic Smart Room recipe (sleeping-wife orchestra) for a
+    room. Returns the same bundle shape as /bundles/design (apply via
+    /bundles/apply). Unlike the LLM designer this is a fixed, reliable recipe.
+
+    If the room has no fused occupancy sensor and none was passed, returns
+    {ok: false, needs_occupancy: true} so the UI opens the presence-sensor
+    creation modal first, then retries with the new entity_id.
+    """
+    from services.smart_room_recipe import build_smart_room_bundle
+    lang = body.language or ("he" if any('֐' <= c <= '׿' for c in body.room) else "en")
+    result = await asyncio.to_thread(
+        build_smart_room_bundle,
+        body.room,
+        occupancy_entity=body.occupancy_entity,
+        language=lang,
+        options=body.options,
+    )
+    # needs_occupancy and decline are both 200 responses the client renders;
+    # only a hard unknown-room is an error.
+    if not result.get("ok") and result.get("error", "").startswith("unknown room"):
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @router.post("/api/blueprints/import")
 async def import_blueprint_endpoint(body: BlueprintImportBody):
     """Parse a user-pasted blueprint YAML string and register it in the

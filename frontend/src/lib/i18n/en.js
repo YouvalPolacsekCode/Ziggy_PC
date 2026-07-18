@@ -854,6 +854,7 @@ export default {
   'automations.smartRoom.pickPrompt':      'Which room should Ziggy make smart?',
   'automations.smartRoom.noRooms':         'No rooms found yet. Add devices to a room first, then come back.',
   'automations.smartRoom.designing':       'Designing your smart {room}…',
+  'automations.smartRoom.needPresence':    'First, {room} needs a presence sensor (fused from its motion/presence sensors). Set it up here, then Ziggy builds the room.',
   'automations.smartRoom.created':         'Smart room created.',
   'automations.smartRoom.designFailed':    'Ziggy couldn’t design that room right now. Try again.',
   'automations.smartRoom.nothingToBuild':  'There’s nothing Ziggy can set up automatically in {room} yet — it needs more sensors or devices there.',

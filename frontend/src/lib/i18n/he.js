@@ -849,6 +849,7 @@ export default {
   'automations.smartRoom.pickPrompt':      'איזה חדר להפוך לחכם?',
   'automations.smartRoom.noRooms':         'עדיין אין חדרים. יש לשייך מכשירים לחדר ואז לחזור לכאן.',
   'automations.smartRoom.designing':       'מעצב עבורך את {room}…',
+  'automations.smartRoom.needPresence':    'קודם צריך ב{room} חיישן נוכחות (משולב מחיישני התנועה/נוכחות שבחדר). אפשר להגדיר אותו כאן, ואז זיגי יבנה את החדר.',
   'automations.smartRoom.created':         'החדר החכם נוצר.',
   'automations.smartRoom.designFailed':    'לא הצלחתי לעצב את החדר כרגע. אפשר לנסות שוב.',
   'automations.smartRoom.nothingToBuild':  'אין כרגע מה להגדיר אוטומטית ב{room} — חסרים שם חיישנים או מכשירים.',

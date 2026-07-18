@@ -458,6 +458,11 @@ export const importBlueprint          = (yaml) => post('/blueprints/import', { y
 // endpoint is exposed for retries / fresh designs without going through chat.
 export const designAutomationBundle  = (outcome, language) =>
   post('/automations/bundles/design', { outcome, language })
+// Smart Room recipe (deterministic sleeping-wife orchestra). Returns the same
+// bundle shape as designAutomationBundle, or {ok:false, needs_occupancy:true}
+// when the room has no fused presence sensor yet.
+export const designSmartRoom = (room, occupancy_entity, language) =>
+  post('/automations/smart-room/design', { room, occupancy_entity, language })
 export const applyAutomationBundle   = (bundle) =>
   post('/automations/bundles/apply', { bundle })
 // Applied Pro-Mode bundles — list every accept + sweep-delete (undo accept).
