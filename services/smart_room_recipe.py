@@ -98,13 +98,24 @@ def _light_color_caps() -> dict:
 
 
 def resolve_occupancy_entity(home: dict, room_slug: str) -> Optional[str]:
-    """Existing fused occupancy sensor entity_id for the room, or None."""
-    room = _find_room(home, room_slug)
-    if not room:
-        return None
-    occ = room.get("occupancy_sensor")
-    if isinstance(occ, dict) and occ.get("entity_id") and occ.get("exists"):
-        return occ["entity_id"]
+    """Real fused-occupancy-sensor entity_id for the room, or None.
+
+    IMPORTANT: use list_occupancy_sensors(), which stores the ACTUAL
+    HA-assigned entity_id (looked up from the entity registry at creation) —
+    NOT home_context.occupancy_sensor, whose entity_id is a naive slug
+    PREDICTION (e.g. Hebrew names slugify to 'binary_sensor.נוכחות_...' which
+    doesn't match HA's transliterated 'binary_sensor.nvkkhvt_...').
+    """
+    from services.room_alias_bank import resolve_room
+    target = resolve_room((room_slug or "").lower().strip())
+    try:
+        from services.template_sensors import list_occupancy_sensors
+        for rec in list_occupancy_sensors():
+            rec_room = resolve_room(str(rec.get("room", "")).lower().strip())
+            if rec_room == target and rec.get("entity_id"):
+                return rec["entity_id"]
+    except Exception as e:
+        log_error(f"[smart_room_recipe] occupancy lookup failed: {e}")
     return None
 
 

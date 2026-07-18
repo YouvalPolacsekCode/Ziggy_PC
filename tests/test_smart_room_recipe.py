@@ -23,9 +23,12 @@ def _home(occ=True, lights=("light.bedroom",), presence=("binary_sensor.bed_pres
     return {"rooms": [room]}
 
 
+OCC = "binary_sensor.bedroom_occupied"
+
+
 def test_full_recipe_shape(monkeypatch):
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {"light.bedroom": ["color_temp", "brightness"]})
-    r = sr.build_smart_room_bundle("bedroom", home=_home(), language="en")
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="en")
     assert r["ok"]
     a = r["bundle"]["artifacts"]
     autos = a["automations"]
@@ -51,14 +54,14 @@ def test_full_recipe_shape(monkeypatch):
 def test_night_dim_without_color_temp_support(monkeypatch):
     # A light with no color_temp support gets brightness only — no color key.
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {"light.bedroom": ["onoff"]})
-    r = sr.build_smart_room_bundle("bedroom", home=_home(), language="en")
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="en")
     night = r["bundle"]["artifacts"]["automations"][1]
     assert night["actions"][0]["service_data"] == {"brightness_pct": 30}
 
 
 def test_multiple_lights_get_one_action_each(monkeypatch):
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
-    r = sr.build_smart_room_bundle("bedroom", home=_home(lights=("light.a", "light.b")), language="en")
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(lights=("light.a", "light.b")), language="en")
     day = r["bundle"]["artifacts"]["automations"][0]
     assert [x["entity_id"] for x in day["actions"]] == ["light.a", "light.b"]
 
@@ -73,6 +76,8 @@ def test_uses_explicit_occupancy_entity(monkeypatch):
 
 def test_needs_occupancy_when_none(monkeypatch):
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
+    import services.template_sensors as ts
+    monkeypatch.setattr(ts, "list_occupancy_sensors", lambda: [])
     r = sr.build_smart_room_bundle("bedroom", home=_home(occ=False), language="en")
     assert not r["ok"] and r["needs_occupancy"] is True
     assert r["has_presence"] is True
@@ -87,13 +92,13 @@ def test_no_light_declines(monkeypatch):
 
 def test_motion_only_notes_weaker_guard(monkeypatch):
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
-    r = sr.build_smart_room_bundle("bedroom", home=_home(presence=()), language="en")
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(presence=()), language="en")
     assert r["ok"]
     assert "no dedicated presence sensor" in r["bundle"]["rationale"]
 
 
 def test_hebrew_names(monkeypatch):
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
-    r = sr.build_smart_room_bundle("bedroom", home=_home(), language="he")
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="he")
     assert r["bundle"]["name"] == "חדר שינה חכם"
     assert [v["phrase"] for v in r["bundle"]["artifacts"]["voice_intents"]] == ["לילה טוב", "בוקר טוב"]
