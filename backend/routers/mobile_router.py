@@ -518,6 +518,35 @@ def _frontend_dist_path() -> _PathLib:
     return _PathLib(_os.path.dirname(__file__)).parent.parent / "frontend" / "dist"
 
 
+def _bundle_version() -> str:
+    """The OTA version identifier the phone compares against.
+
+    Normally the deploy SHA (set by the image build). But when the hub is
+    runtime-patched (a new frontend/dist docker-cp'd in WITHOUT an image
+    rebuild, so ZIGGY_GIT_SHA is still 'dev'), fall back to a content-derived
+    id: Vite content-hashes every asset filename, so hashing the sorted asset
+    list changes iff the build changed. This lets a new UI reach the phone via
+    OTA without a full image rebuild. Backward compatible: once a real rebuild
+    sets ZIGGY_GIT_SHA, that wins and behaviour is unchanged.
+
+    Both /version and /bundles/{sha}.zip MUST use this (the download endpoint
+    404s any sha != current), so they always agree.
+    """
+    sha = _os.getenv("ZIGGY_GIT_SHA", "dev")
+    if sha and sha != "dev":
+        return sha
+    try:
+        assets = _frontend_dist_path() / "assets"
+        if assets.is_dir():
+            names = sorted(p.name for p in assets.iterdir() if p.is_file())
+            if names:
+                import hashlib as _hl
+                return "b-" + _hl.sha1("|".join(names).encode()).hexdigest()[:12]
+    except Exception:
+        pass
+    return sha
+
+
 def _build_bundle_zip(sha: str, dist_dir: _PathLib, out_path: _PathLib) -> None:
     """Zip the entire frontend/dist tree into out_path.
 
@@ -566,7 +595,7 @@ async def _ensure_bundle(sha: str) -> Optional[_PathLib]:
 
 
 async def _version_payload(request: Request) -> dict:
-    sha = _os.getenv("ZIGGY_GIT_SHA", "dev")
+    sha = _bundle_version()
     if not _frontend_dist_path().is_dir():
         return {"version": sha, "url": None, "available": False}
     # request.base_url uses the raw scheme uvicorn saw on the socket — Cloudflare
@@ -618,7 +647,7 @@ async def mobile_bundle_download(sha: str):
     plugin's rollback path uses bundles cached on the device, not the
     server, so we don't need to keep old bundles around.
     """
-    current = _os.getenv("ZIGGY_GIT_SHA", "dev")
+    current = _bundle_version()
     if sha != current:
         # Stale request from a phone whose plugin polled before our deploy.
         # 404 makes capacitor-updater retry on next launch; no rollback fires.
