@@ -86,6 +86,29 @@ class ChatRequest(BaseModel):
     text: str
     chat_history: list[dict[str, Any]] = []
     source: str = "web"
+    engine: str | None = None   # "v1" | "v2" — per-request override for A/B
+
+
+def _resolve_engine(override: str | None) -> str:
+    """Which assistant engine handles this turn.
+
+    Priority: per-request override > env ZIGGY_ASSISTANT_ENGINE > settings
+    assistant.engine > "v1" (the working fallback). v2 is the single tool-calling
+    agent (core.agent.runner); v1 is the legacy quick_parse + handlers path.
+    """
+    if override in ("v1", "v2"):
+        return override
+    env = os.getenv("ZIGGY_ASSISTANT_ENGINE")
+    if env in ("v1", "v2"):
+        return env
+    try:
+        from core.settings_loader import settings
+        val = (settings.get("assistant") or {}).get("engine")
+        if val in ("v1", "v2"):
+            return val
+    except Exception:
+        pass
+    return "v1"
 
 
 class DirectIntentRequest(BaseModel):
@@ -154,6 +177,29 @@ async def process_chat(req: ChatRequest):
              input=req.text,
              source=req.source,
              endpoint="/api/chat")
+
+    # ── v2 engine: single tool-calling agent ───────────────────────────────
+    if _resolve_engine(req.engine) == "v2":
+        from core.agent.runner import run_agent
+        channel = "voice" if "voice" in (req.source or "") else "chat"
+        result = await run_agent(req.text, req.chat_history, channel=channel)
+        reply = result.get("message", "")
+        await manager.broadcast({
+            "type": "ziggy_response",
+            "input": req.text,
+            "reply": reply,
+            "source": req.source,
+            "ok": result.get("ok", True),
+            "request_id": request_id,
+            **({"data": result.get("data")} if result.get("data") else {}),
+        })
+        return {
+            "reply": reply,
+            "ok": result.get("ok", True),
+            "data": result.get("data", {}),
+            "request_id": request_id,
+            "engine": "v2",
+        }
 
     parsed = quick_parse(req.text, chat_history=req.chat_history)
     parsed["source"] = req.source
@@ -348,6 +394,19 @@ async def process_voice(request: Request, file: UploadFile = File(...)):
 
         if not transcription.strip():
             return {"reply": "", "transcription": "", "ok": False, "error": "No speech detected"}
+
+        # v2 engine: single agent, voice channel (terse spoken replies).
+        if _resolve_engine(None) == "v2":
+            from core.agent.runner import run_agent
+            result = await run_agent(transcription, None, channel="voice")
+            reply = result.get("message", "")
+            await manager.broadcast({
+                "type": "ziggy_response", "input": transcription, "reply": reply,
+                "source": "web_voice", "ok": result.get("ok", True),
+                "request_id": request_id,
+            })
+            return {"transcription": transcription, "reply": reply, "lang": lang,
+                    "ok": result.get("ok", True), "request_id": request_id, "engine": "v2"}
 
         intent_data = quick_parse(transcription)
         intent_data["source"] = "web_voice"
