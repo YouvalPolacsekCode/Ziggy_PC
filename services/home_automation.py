@@ -17,6 +17,59 @@ from core.debug_bus import bus, BASIC, VERBOSE, TRACE
 DEFAULT_TIMEOUT: int = 10
 
 # ---------------------------------------------------------------------------
+# Command-ledger integration (for self-heal correlation)
+# ---------------------------------------------------------------------------
+# Domains where an on/off intent is meaningful. Kept local (mirrors
+# manual_overrides.CONTROLLABLE_DOMAINS) to avoid importing that module here.
+_INTENT_DOMAINS = frozenset({
+    "light", "switch", "fan", "media_player", "cover", "lock", "valve",
+    "input_boolean", "humidifier", "climate",
+})
+
+
+def _intended_state_for(service: str, entity_id: str) -> Optional[str]:
+    """Map an HA service (+ current cache for `toggle`) to a normalised target state."""
+    s = (service or "").lower()
+    if s in ("turn_on", "open", "unlock", "open_cover", "unlock_valve"):
+        return "on"
+    if s in ("turn_off", "close", "lock", "close_cover", "lock_valve"):
+        return "off"
+    if s == "toggle":
+        cur = _state_from_cache(entity_id)
+        cur_s = (cur or {}).get("state")
+        if cur_s in ("on", "off"):
+            return "off" if cur_s == "on" else "on"
+        return None
+    return None
+
+
+def _record_intent(entity_id: str, intended: Optional[str], origin: str) -> None:
+    """Best-effort record of Ziggy's intended command for self-heal correlation."""
+    if not entity_id or intended is None:
+        return
+    domain = entity_id.split(".", 1)[0]
+    if domain not in _INTENT_DOMAINS:
+        return
+    try:
+        from services import command_ledger
+        command_ledger.record(entity_id, intended, origin=origin)
+    except Exception:
+        pass
+
+
+def force_poll(entity_id: str) -> Dict[str, Any]:
+    """Ask HA to actively re-poll a device's real state (not a cache read).
+
+    Used by self-heal to confirm a device's state is genuinely wrong rather than
+    a stale report. Issued with origin 'self_heal' so it is never mis-counted.
+    """
+    return call_service(
+        "homeassistant", "update_entity", {"entity_id": entity_id},
+        origin="self_heal",
+    )
+
+
+# ---------------------------------------------------------------------------
 # resolve_entity() cache
 # ---------------------------------------------------------------------------
 #
@@ -77,7 +130,8 @@ def _ha_endpoint(path: str) -> str:
 # Generic helpers
 # ---------------------------------------------------------------------------
 
-def call_service(domain: str, service: str, data: Dict[str, Any]) -> Dict[str, Any]:
+def call_service(domain: str, service: str, data: Dict[str, Any],
+                 origin: str = "ziggy") -> Dict[str, Any]:
     import time as _time
     endpoint = _ha_endpoint(f"/api/services/{domain}/{service}")
     bus.emit("ha", VERBOSE, "ha_service_call",
@@ -91,6 +145,9 @@ def call_service(domain: str, service: str, data: Dict[str, Any]) -> Dict[str, A
                 payload = resp.json()
             except Exception:
                 payload = None
+            _eid = (data or {}).get("entity_id")
+            if isinstance(_eid, str):
+                _record_intent(_eid, _intended_state_for(service, _eid), origin)
             log_info(f"[HA] {domain}.{service} OK | data={data}")
             bus.emit("ha", BASIC, "ha_service_ok",
                      domain=domain, service=service, duration_ms=duration_ms,
@@ -380,12 +437,13 @@ def turn_off_everything() -> Dict[str, Any]:
 # Light helpers
 # ---------------------------------------------------------------------------
 
-def toggle_light(entity_id: str, turn_on: bool = True) -> Tuple[int, str]:
+def toggle_light(entity_id: str, turn_on: bool = True, origin: str = "ziggy") -> Tuple[int, str]:
     action = "turn_on" if turn_on else "turn_off"
     endpoint = _ha_endpoint(f"/api/services/light/{action}")
     try:
         response = _session.post(endpoint, headers=_headers(), json={"entity_id": entity_id}, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
+            _record_intent(entity_id, "on" if turn_on else "off", origin)
             log_info(f"[HA] {action.upper()} sent to {entity_id}")
         else:
             log_error(f"[HA] Failed to {action} {entity_id}: {response.status_code} - {response.text}")
