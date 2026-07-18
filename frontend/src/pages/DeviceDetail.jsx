@@ -16,7 +16,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, selfHealRefresh } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
 import { useT, useTranslatedName } from '../lib/i18n'
@@ -503,6 +503,18 @@ export default function DeviceDetail() {
 
   const handleRefresh = async () => {
     setRefreshing(true)
+    // Force a REAL device poll (not just a cache re-read) and, if the device
+    // disagrees with what Ziggy last asked for, run one recovery pass. This is
+    // the manual counterpart to automatic self-heal — the old refresh only
+    // re-fetched the cached (possibly wrong) state.
+    try {
+      const res = await selfHealRefresh(entityId)
+      if (res?.outcome === 'recovered') {
+        addToast(t('deviceDetail.refreshRecovered'), 'success')
+      } else if (res?.outcome === 'failed') {
+        addToast(t('deviceDetail.refreshFailed'), 'error')
+      }
+    } catch { /* fall through to a plain reload */ }
     await load({ background: false })
     setRefreshing(false)
   }

@@ -504,6 +504,8 @@ export default {
   // ── DeviceDetail page ──────────────────────────────────────────────
   'deviceDetail.back':            'Back',
   'deviceDetail.refresh':         'Refresh',
+  'deviceDetail.refreshRecovered': 'This device was unreliable — Ziggy nudged it back to the right state.',
+  'deviceDetail.refreshFailed':   "This device isn't responding reliably. It may need to be replaced.",
   'deviceDetail.rename':          'Rename',
   'deviceDetail.tabControls':     'Controls',
   'deviceDetail.tabInfo':         'Info',
@@ -848,6 +850,16 @@ export default {
   'automations.failedToDelete':'Failed to delete',
   'automations.saved':         'Automation saved',
   // Smart Light Schedule (circadian bundle)
+  'automations.smartRoom.title':           'Build a Smart Room',
+  'automations.smartRoom.pickPrompt':      'Which room should Ziggy make smart?',
+  'automations.smartRoom.noRooms':         'No rooms found yet. Add devices to a room first, then come back.',
+  'automations.smartRoom.designing':       'Designing your smart {room}…',
+  'automations.smartRoom.created':         'Smart room created.',
+  'automations.smartRoom.designFailed':    'Ziggy couldn’t design that room right now. Try again.',
+  'automations.smartRoom.nothingToBuild':  'There’s nothing Ziggy can set up automatically in {room} yet — it needs more sensors or devices there.',
+  'automations.smartRoom.chooseAnother':   'Choose another room',
+  'automations.smartRoom.tryAgain':        'Try again',
+
   'automations.circadian.title':           'Smart Light Schedule',
   'automations.circadian.subtitle':        'Match your lights to the time of day',
   'automations.circadian.lights':          'Lights to include',

@@ -769,6 +769,15 @@ export const callHaService = (domain, service, data) =>
 export const controlDevice = (entityId, action, source = 'web') =>
   post('/ha/control', { entity_id: entityId, action, source })
 
+// Self-heal — force a real device poll and, if it disagrees with intent, heal
+// once. Backs the device refresh button. Returns {ok, outcome, state}.
+export const selfHealRefresh = (entityId) =>
+  post('/self-heal/refresh', { entity_id: entityId })
+export const selfHealSnooze = (entityId, minutes = 720) =>
+  post('/self-heal/snooze', { entity_id: entityId, minutes })
+export const getSelfHealLog = (limit = 100) =>
+  get(`/self-heal/log?limit=${limit}`)
+
 // Capabilities catalog
 export const getCapabilities = () => get('/capabilities')
 

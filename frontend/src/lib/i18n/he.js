@@ -502,6 +502,8 @@ export default {
   // ── DeviceDetail page ──────────────────────────────────────────────
   'deviceDetail.back':            'חזרה',
   'deviceDetail.refresh':         'רענון',
+  'deviceDetail.refreshRecovered': 'המכשיר לא היה יציב — זיגי החזיר אותו למצב הנכון.',
+  'deviceDetail.refreshFailed':   'המכשיר לא מגיב באופן אמין. ייתכן שצריך להחליף אותו.',
   'deviceDetail.rename':          'שינוי שם',
   'deviceDetail.tabControls':     'בקרות',
   'deviceDetail.tabInfo':         'מידע',
@@ -843,6 +845,16 @@ export default {
   'automations.failedToDelete':'המחיקה נכשלה',
   'automations.saved':         'האוטומציה נשמרה',
   // לוח זמנים חכם לתאורה (צרור צירקדי)
+  'automations.smartRoom.title':           'בניית חדר חכם',
+  'automations.smartRoom.pickPrompt':      'איזה חדר להפוך לחכם?',
+  'automations.smartRoom.noRooms':         'עדיין אין חדרים. יש לשייך מכשירים לחדר ואז לחזור לכאן.',
+  'automations.smartRoom.designing':       'מעצב עבורך את {room}…',
+  'automations.smartRoom.created':         'החדר החכם נוצר.',
+  'automations.smartRoom.designFailed':    'לא הצלחתי לעצב את החדר כרגע. אפשר לנסות שוב.',
+  'automations.smartRoom.nothingToBuild':  'אין כרגע מה להגדיר אוטומטית ב{room} — חסרים שם חיישנים או מכשירים.',
+  'automations.smartRoom.chooseAnother':   'בחירת חדר אחר',
+  'automations.smartRoom.tryAgain':        'לנסות שוב',
+
   'automations.circadian.title':           'לוח זמנים חכם לתאורה',
   'automations.circadian.subtitle':        'התאמת תאורה אוטומטית לשעות היום',
   'automations.circadian.lights':          'אורות לכלול',
