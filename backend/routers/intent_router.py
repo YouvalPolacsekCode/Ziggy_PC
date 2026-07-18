@@ -179,27 +179,35 @@ async def process_chat(req: ChatRequest):
              endpoint="/api/chat")
 
     # ── v2 engine: single tool-calling agent ───────────────────────────────
+    # Defensive: if the flag says v2 but the agent module is somehow missing
+    # (e.g. a partial deploy), fall through to v1 rather than 500 on every
+    # chat. v1 stays the always-available safety net.
     if _resolve_engine(req.engine) == "v2":
-        from core.agent.runner import run_agent
-        channel = "voice" if "voice" in (req.source or "") else "chat"
-        result = await run_agent(req.text, req.chat_history, channel=channel)
-        reply = result.get("message", "")
-        await manager.broadcast({
-            "type": "ziggy_response",
-            "input": req.text,
-            "reply": reply,
-            "source": req.source,
-            "ok": result.get("ok", True),
-            "request_id": request_id,
-            **({"data": result.get("data")} if result.get("data") else {}),
-        })
-        return {
-            "reply": reply,
-            "ok": result.get("ok", True),
-            "data": result.get("data", {}),
-            "request_id": request_id,
-            "engine": "v2",
-        }
+        try:
+            from core.agent.runner import run_agent
+        except Exception as e:
+            log_error(f"[chat] v2 engine requested but unavailable, using v1: {e}")
+            run_agent = None
+        if run_agent is not None:
+            channel = "voice" if "voice" in (req.source or "") else "chat"
+            result = await run_agent(req.text, req.chat_history, channel=channel)
+            reply = result.get("message", "")
+            await manager.broadcast({
+                "type": "ziggy_response",
+                "input": req.text,
+                "reply": reply,
+                "source": req.source,
+                "ok": result.get("ok", True),
+                "request_id": request_id,
+                **({"data": result.get("data")} if result.get("data") else {}),
+            })
+            return {
+                "reply": reply,
+                "ok": result.get("ok", True),
+                "data": result.get("data", {}),
+                "request_id": request_id,
+                "engine": "v2",
+            }
 
     parsed = quick_parse(req.text, chat_history=req.chat_history)
     parsed["source"] = req.source
@@ -396,7 +404,12 @@ async def process_voice(request: Request, file: UploadFile = File(...)):
             return {"reply": "", "transcription": "", "ok": False, "error": "No speech detected"}
 
         # v2 engine: single agent, voice channel (terse spoken replies).
-        if _resolve_engine(None) == "v2":
+        try:
+            _v2 = _resolve_engine(None) == "v2"
+            from core.agent.runner import run_agent as _run_agent  # noqa
+        except Exception:
+            _v2 = False
+        if _v2:
             from core.agent.runner import run_agent
             result = await run_agent(transcription, None, channel="voice")
             reply = result.get("message", "")
