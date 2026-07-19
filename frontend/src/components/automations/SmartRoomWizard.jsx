@@ -27,23 +27,27 @@ function actionableCount(bundle) {
        + (a.automations?.length || 0)
 }
 
-export default function SmartRoomWizard({ onSaved, onClose }) {
+export default function SmartRoomWizard({ onSaved, onClose, initialRoom = null, initialRoomName = '' }) {
   const t = useT()
   const lang = useLangStore((s) => s.lang)
 
   const [rooms, setRooms]       = useState([])
   const [loading, setLoading]   = useState(true)
-  const [step, setStep]         = useState('pick')   // pick | designing | needOccupancy | preview | decline | error
+  // Edit mode (initialRoom) skips the picker and designs that room immediately.
+  const [step, setStep]         = useState(initialRoom ? 'designing' : 'pick')
   const [bundle, setBundle]     = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
-  const [room, setRoom]         = useState(null)     // {id, name}
+  const [room, setRoom]         = useState(initialRoom ? { id: initialRoom, name: initialRoomName || initialRoom } : null)
 
   useEffect(() => {
     let alive = true
     getRooms()
       .then((r) => { if (alive) { setRooms(r?.rooms || []); setLoading(false) } })
       .catch(() => { if (alive) { setRooms([]); setLoading(false) } })
+    // In edit mode, design the target room straight away.
+    if (initialRoom) design({ id: initialRoom, name: initialRoomName || initialRoom })
     return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Design the recipe for a room, optionally with a just-created occupancy entity.

@@ -5,7 +5,7 @@ import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getSuggestionsFeed, deleteCircadianBundle } from '../lib/api'
+import { getSuggestionsFeed, deleteCircadianBundle, deleteSmartRoom } from '../lib/api'
 import { RoutinesListPanel } from './Routines'
 import QuickAsks from './QuickAsks'
 import { useT } from '../lib/i18n'
@@ -15,6 +15,8 @@ import AutomationCard from '../components/automations/AutomationCard'
 import CircadianBundleWizard from '../components/automations/CircadianBundleWizard'
 import SmartRoomWizard from '../components/automations/SmartRoomWizard'
 import CircadianGroupRow from '../components/automations/CircadianGroupRow'
+import SmartRoomGroupRow from '../components/automations/SmartRoomGroupRow'
+import SmartRoomViewModal from '../components/automations/SmartRoomViewModal'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData } from '../components/automations/templates/SuggestedTab'
@@ -51,7 +53,9 @@ export default function Automations() {
   // template, or by Edit on the grouped row in the Your-Automations section.
   const [circadianTarget,   setCircadianTarget]   = useState(null)
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
-  const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)
+  const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
+  const [smartRoomView,     setSmartRoomView]     = useState(null)   // group being viewed
+  const [smartRoomEdit,     setSmartRoomEdit]     = useState(null)   // {room, roomName} being edited
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
   const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
@@ -59,34 +63,52 @@ export default function Automations() {
   // Group the 4 ziggy_circadian_* automations behind a single "Smart Light
   // Schedule" row in the Your-Automations section. The user sees one
   // toggleable feature, not 4 cryptic clock entries.
-  const { circadianGroup, visibleAutomations } = useMemo(() => {
+  const { circadianGroup, smartRoomGroups, visibleAutomations } = useMemo(() => {
     // Group by the ENTITY object-id prefix (HA derives it from the alias),
-    // NOT the config-id prefix `ziggy_circadian_` — the two differ, which is
-    // why the schedule used to not group at all (Bug 6).
+    // NOT the config-id prefix `ziggy_circadian_` — the two differ.
     const CIRCADIAN_PREFIX = 'ziggy_smart_light_schedule_'
-    const members = automations.filter(a => a.id?.startsWith(CIRCADIAN_PREFIX))
-    if (members.length === 0) return { circadianGroup: null, visibleAutomations: automations }
-    const visible = automations.filter(a => !a.id?.startsWith(CIRCADIAN_PREFIX))
+    const SMART_ROOM_RE = /^ziggy_smart_room_(.+)_(day|night|off)$/
 
-    const bedtimeAuto = members.find(a => a.id === `${CIRCADIAN_PREFIX}bedtime`)
-    const bedtime = bedtimeAuto?.trigger?.time?.slice(0, 5) || '22:00'
-    const lightSet = new Set()
-    members.forEach(m => (m.actions || []).forEach(act => {
-      const eid = act.entity_id
-      if (typeof eid === 'string' && eid.startsWith('light.')) lightSet.add(eid)
-      else if (Array.isArray(eid)) eid.forEach(x => x?.startsWith?.('light.') && lightSet.add(x))
+    // ── Smart Room groups: one card per room from its ziggy_smart_room_<room>_* rules ──
+    const srMap = {}
+    automations.forEach(a => {
+      const m = (a.id || '').match(SMART_ROOM_RE)
+      if (m) (srMap[m[1]] = srMap[m[1]] || []).push(a)
+    })
+    const smartRoomGroups = Object.entries(srMap).map(([room, members]) => ({
+      room,
+      roomName: roomNameMap[room] || room.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      members,
+      count: members.length,
+      allEnabled: members.every(m => m.enabled),
+      anyEnabled: members.some(m => m.enabled),
     }))
-    const lights = Array.from(lightSet)
-    const allEnabled = members.every(m => m.enabled)
-    const anyEnabled = members.some(m => m.enabled)
-    // auto_on is stored per member; default to true (matches the builder default).
-    const autoOn = members.find(m => m.auto_on != null)?.auto_on ?? true
 
-    return {
-      circadianGroup: { members, lights, bedtime, autoOn, allEnabled, anyEnabled, count: members.length },
-      visibleAutomations: visible,
+    const circMembers = automations.filter(a => a.id?.startsWith(CIRCADIAN_PREFIX))
+    const visible = automations.filter(a =>
+      !a.id?.startsWith(CIRCADIAN_PREFIX) && !SMART_ROOM_RE.test(a.id || ''))
+
+    let circadianGroup = null
+    if (circMembers.length > 0) {
+      const bedtimeAuto = circMembers.find(a => a.id === `${CIRCADIAN_PREFIX}bedtime`)
+      const bedtime = bedtimeAuto?.trigger?.time?.slice(0, 5) || '22:00'
+      const lightSet = new Set()
+      circMembers.forEach(m => (m.actions || []).forEach(act => {
+        const eid = act.entity_id
+        if (typeof eid === 'string' && eid.startsWith('light.')) lightSet.add(eid)
+        else if (Array.isArray(eid)) eid.forEach(x => x?.startsWith?.('light.') && lightSet.add(x))
+      }))
+      circadianGroup = {
+        members: circMembers, lights: Array.from(lightSet), bedtime,
+        autoOn: circMembers.find(m => m.auto_on != null)?.auto_on ?? true,
+        allEnabled: circMembers.every(m => m.enabled),
+        anyEnabled: circMembers.some(m => m.enabled),
+        count: circMembers.length,
+      }
     }
-  }, [automations])
+
+    return { circadianGroup, smartRoomGroups, visibleAutomations: visible }
+  }, [automations, roomNameMap])
 
   // Only fetch what isn't cached. Re-fetching on every revisit toggles the
   // store's `loading` flag, which flashes skeleton placeholders mid-mount.
@@ -140,6 +162,26 @@ export default function Automations() {
     setSmartRoomTarget(null)
     addToast(t('automations.smartRoom.created'), 'success')
     await fetchAutomations({ force: true })
+  }
+
+  // ── Smart Room grouped-card handlers ─────────────────────────────────────
+  const handleSmartRoomToggleAll = async (group, toEnabled) => {
+    try {
+      await Promise.all(group.members.map(m => toggleAutomation(m.id, toEnabled)))
+      await fetchAutomations({ force: true })
+    } catch { addToast(t('automations.failedToTrigger'), 'error') }
+  }
+  const handleSmartRoomEditSaved = async () => {
+    setSmartRoomEdit(null)
+    addToast(t('automations.smartRoom.created'), 'success')
+    await fetchAutomations({ force: true })
+  }
+  const handleSmartRoomDelete = async (group) => {
+    try {
+      await deleteSmartRoom(group.room)
+      addToast(t('automations.smartRoom.deleted'), 'success')
+      await fetchAutomations({ force: true })
+    } catch { addToast(t('automations.failedToTrigger'), 'error') }
   }
 
   const handleCircadianClose = () => setCircadianTarget(null)
@@ -292,6 +334,16 @@ export default function Automations() {
                   }}
                 />
               )}
+              {smartRoomGroups.map(group => (
+                <SmartRoomGroupRow
+                  key={group.room}
+                  group={group}
+                  onToggleAll={(toEnabled) => handleSmartRoomToggleAll(group, toEnabled)}
+                  onView={() => setSmartRoomView(group)}
+                  onEdit={() => setSmartRoomEdit({ room: group.room, roomName: group.roomName })}
+                  onDelete={() => handleSmartRoomDelete(group)}
+                />
+              ))}
               {visibleAutomations.map(a => (
                 <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
                   onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
@@ -410,6 +462,24 @@ export default function Automations() {
           <SmartRoomWizard
             onSaved={handleSmartRoomSaved}
             onClose={handleSmartRoomClose}
+          />
+        )}
+      </Modal>
+
+      {/* Smart Room — dedicated View (behavior in one place) */}
+      <Modal open={!!smartRoomView} onClose={() => setSmartRoomView(null)}
+             title={smartRoomView ? t('automations.smartRoom.cardTitle', { room: smartRoomView.roomName }) : ''}>
+        {smartRoomView && <SmartRoomViewModal group={smartRoomView} />}
+      </Modal>
+
+      {/* Smart Room — Edit re-opens the recipe flow for that room (overwrites in place) */}
+      <Modal open={!!smartRoomEdit} onClose={() => setSmartRoomEdit(null)} title={t('automations.smartRoom.title')}>
+        {smartRoomEdit && (
+          <SmartRoomWizard
+            initialRoom={smartRoomEdit.room}
+            initialRoomName={smartRoomEdit.roomName}
+            onSaved={handleSmartRoomEditSaved}
+            onClose={() => setSmartRoomEdit(null)}
           />
         )}
       </Modal>

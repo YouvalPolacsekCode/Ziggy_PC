@@ -388,6 +388,46 @@ async def design_smart_room_endpoint(body: SmartRoomDesignBody):
     return result
 
 
+@router.delete("/api/automations/smart-room/{room}")
+async def delete_smart_room_endpoint(room: str):
+    """Tear down a room's Smart Room automations (the 3 ziggy_smart_room_<room>_*
+    rules) + the sleep flag + good-night/morning voice. KEEPS the fused presence
+    sensor (reusable). Mirrors the Circadian bundle delete."""
+    from services.room_alias_bank import resolve_room
+    from services.ha_automations import delete_automation as ha_delete_automation
+    from core.automation_file import delete_automation as ziggy_delete_automation
+    from services.local_automation_actions import (
+        delete_ziggy_actions, delete_automation_meta, set_local_state,
+    )
+    slug = resolve_room((room or "").lower().strip())
+    removed: list[str] = []
+    for part in ("day", "night", "off"):
+        aid = f"ziggy_smart_room_{slug}_{part}"
+        try:
+            ha_ok = await asyncio.to_thread(ha_delete_automation, aid)
+            z_ok = ziggy_delete_automation(aid)
+            delete_ziggy_actions(aid)
+            delete_automation_meta(aid)
+            if ha_ok or z_ok:
+                removed.append(aid)
+        except Exception:
+            pass
+    # Clear the sleep flag (keep the KV key, just reset it) + drop voice phrases.
+    try:
+        set_local_state("modes", f"{slug}_sleep", False)
+    except Exception:
+        pass
+    try:
+        from services.voice_intents import unregister_voice_intent
+        for ph in ("good night", "good morning", "לילה טוב", "בוקר טוב"):
+            await asyncio.to_thread(unregister_voice_intent, ph)
+    except Exception:
+        pass
+    _bus.emit("automation", _BASIC, "smart_room_deleted", room=slug,
+              removed=len(removed), result="ok")
+    return {"ok": True, "room": slug, "removed": removed, "kept_presence_sensor": True}
+
+
 @router.post("/api/blueprints/import")
 async def import_blueprint_endpoint(body: BlueprintImportBody):
     """Parse a user-pasted blueprint YAML string and register it in the

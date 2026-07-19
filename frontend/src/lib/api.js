@@ -463,6 +463,8 @@ export const designAutomationBundle  = (outcome, language) =>
 // when the room has no fused presence sensor yet.
 export const designSmartRoom = (room, occupancy_entity, language) =>
   post('/automations/smart-room/design', { room, occupancy_entity, language })
+// Tear down a room's Smart Room automations (keeps the fused presence sensor).
+export const deleteSmartRoom = (room) => del(`/automations/smart-room/${encodeURIComponent(room)}`)
 export const applyAutomationBundle   = (bundle) =>
   post('/automations/bundles/apply', { bundle })
 // Applied Pro-Mode bundles — list every accept + sweep-delete (undo accept).

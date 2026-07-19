@@ -122,7 +122,11 @@ def execute_bundle(bundle: dict) -> dict:
                 save_result = save_automation(data)
             else:
                 data = {
-                    "name":        name,
+                    # An `alias` (English, stable) is used as the HA name so the
+                    # entity object-id is predictable + groupable and re-apply
+                    # overwrites in place. `name` (may be Hebrew) is kept for
+                    # reporting only. Recipes set alias; LLM bundles don't → name.
+                    "name":        auto.get("alias") or name,
                     "description": auto.get("description", f"Created by Ziggy Pro (bundle:{bundle_id})"),
                     "trigger":     auto.get("trigger", {}),
                     "conditions":  auto.get("conditions", []),

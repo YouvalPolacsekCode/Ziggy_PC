@@ -171,10 +171,23 @@ def build_smart_room_bundle(
     caps = _light_color_caps()
     has_presence = bool(presence)
 
+    # English room title for the HA alias — see _alias() below.
+    en_label = _room_label(room_slug, "en")
+
+    def _alias(part: str) -> str:
+        # STABLE ENGLISH alias so HA derives a predictable entity object-id
+        # (ziggy_smart_room_<room>_<part>) that MATCHES the config-id _slug()
+        # produces. Hebrew names slug to a uuid → id mismatch → empty view/edit
+        # + duplicate-on-re-apply. Mirrors the Circadian bundle's approach.
+        # The user never sees this alias: members are hidden behind the group
+        # card and the preview shows the Hebrew `name` instead.
+        return f"Ziggy Smart Room {en_label} {part}"
+
     # ── Automations ─────────────────────────────────────────────────────────
     autos: list[dict] = [
         {
             "name": (f"אור נדלק ב{label} ביום" if lang == "he" else f"{label} lights on — daytime"),
+            "alias": _alias("Day"),
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "on"},
             # Daytime window = after night_end (06:30) and before night_start (19:00).
@@ -184,6 +197,7 @@ def build_smart_room_bundle(
         },
         {
             "name": (f"אור נדלק ב{label} בלילה" if lang == "he" else f"{label} lights on — night (warm/dim)"),
+            "alias": _alias("Night"),
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "on"},
             "conditions": [{"type": "time", "after": opt["night_start"], "before": opt["night_end"]}],
@@ -192,6 +206,7 @@ def build_smart_room_bundle(
         },
         {
             "name": (f"אור נכבה ב{label} כשאין אף אחד" if lang == "he" else f"{label} lights off — empty"),
+            "alias": _alias("Off"),
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "off",
                         "for_minutes": int(opt["off_delay_minutes"])},
