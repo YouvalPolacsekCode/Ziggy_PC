@@ -7,7 +7,6 @@ import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { getSuggestionsFeed, deleteCircadianBundle, deleteSmartRoom } from '../lib/api'
 import { RoutinesListPanel } from './Routines'
-import QuickAsks from './QuickAsks'
 import { useT } from '../lib/i18n'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
 import AutomationViewModal from '../components/automations/AutomationViewModal'
@@ -19,7 +18,7 @@ import SmartRoomGroupRow from '../components/automations/SmartRoomGroupRow'
 import SmartRoomViewModal from '../components/automations/SmartRoomViewModal'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
-import SuggestedTab, { suggestionToWizardData } from '../components/automations/templates/SuggestedTab'
+import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
@@ -43,6 +42,10 @@ export default function Automations() {
     return s
   }, [entities])
   const [tab,               setTab]               = useState('automations')
+  // Library (OOTB templates + community blueprints) and Suggested (habit feed)
+  // are no longer tabs — they open as modals from the Automations tab.
+  const [showLibrary,       setShowLibrary]       = useState(false)
+  const [showSuggestions,   setShowSuggestions]   = useState(false)
   const [showWizard,        setShowWizard]        = useState(false)
   const [editTarget,        setEditTarget]        = useState(null)
   const [viewTarget,        setViewTarget]        = useState(null)
@@ -58,7 +61,6 @@ export default function Automations() {
   const [smartRoomEdit,     setSmartRoomEdit]     = useState(null)   // {room, roomName} being edited
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
-  const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
 
   // Group the 4 ziggy_circadian_* automations behind a single "Smart Light
   // Schedule" row in the Your-Automations section. The user sees one
@@ -254,16 +256,14 @@ export default function Automations() {
         </div>
       </div>
 
-      {/* Tab switcher — segmented pill style. Templates (merged Library +
-          Community + Recommended) and Suggested (habit-learned proactive feed)
-          are their own tabs. Scrolls horizontally on narrow screens. */}
+      {/* Tab switcher — two tabs on one conceptual line: what runs
+          automatically (Automations) vs what you trigger (Routines). Library
+          and Suggested moved into the Automations tab as a modal + inline
+          nudges; Quick-asks split out to Chat/Dashboard chips. */}
       <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20, overflowX: 'auto' }}>
         {[
           { id: 'automations', label: t('automations.tabActive'),     count: enabled },
-          { id: 'templates',   label: t('automations.tabTemplates'),  count: 0 },
-          { id: 'suggested',   label: t('automations.tabSuggested'),  count: pendingSuggestions.length },
           { id: 'routines',    label: t('automations.tabRoutines'),   count: routines.length },
-          { id: 'quick-asks',  label: t('automations.tabQuickAsks'),  count: 0 },
         ].map(tabDef => (
           <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
             flex: '1 0 auto', padding: '8px 12px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
@@ -292,6 +292,36 @@ export default function Automations() {
           transition={{ duration: 0.14, ease: 'easeOut' }}
         >
 
+      {/* Habit-learned suggestions — inline nudges here, full list in the
+          Suggestions inbox modal. "Later" snoozes (stays in the inbox), ✕
+          rejects. Self-hides when nothing is pending. */}
+      <SuggestionNudgeStrip
+        suggestions={suggestions}
+        onConfigure={handleConfigureSuggestion}
+        onReject={async id => { try { await reject(id); addToast(t('automations.suggested.dismissed'), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+        onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+        onOpenInbox={() => setShowSuggestions(true)}
+      />
+
+      {/* Add from Library — OOTB curated templates + community blueprints, in a
+          modal so it doesn't compete with the "what's running" list. Hidden on
+          the empty state, which has its own Library CTA. */}
+      {(loading || automations.length > 0) && (
+        <button
+          onClick={() => setShowLibrary(true)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            padding: '12px 14px', borderRadius: 12, marginBottom: 18, cursor: 'pointer', fontFamily: 'inherit',
+            background: 'color-mix(in srgb, var(--accent, var(--info)) 6%, var(--surface))',
+            border: '0.5px dashed color-mix(in srgb, var(--accent, var(--info)) 30%, var(--line))',
+            fontSize: 13, fontWeight: 600, color: 'var(--ink-2)',
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          {t('automations.addFromLibrary')}
+        </button>
+      )}
+
       {loading && automations.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
@@ -305,7 +335,7 @@ export default function Automations() {
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('automations.emptyHint')}</p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
             <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.createAutomation')}</button>
-            <button onClick={() => setTab('templates')} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.tabTemplates')}</button>
+            <button onClick={() => setShowLibrary(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.library')}</button>
           </div>
         </div>
       )}
@@ -357,44 +387,6 @@ export default function Automations() {
         </motion.div>
       )}
 
-      {/* ─── Templates tab (merged Library + Community + Recommended) ─── */}
-      {tab === 'templates' && (
-        <motion.div
-          key="templates"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.14, ease: 'easeOut' }}
-        >
-          <TemplatesTab
-            onConfigureNative={handleConfigureTemplate}
-            onConfigureCommunity={(blueprintId) => setCommunityTarget(blueprintId)}
-            onSensorCreated={() => addToast(t('automations.smartSensor.created'), 'success')}
-          />
-        </motion.div>
-      )}
-
-      {/* ─── Suggested tab (habit-learned proactive feed) ─── */}
-      {tab === 'suggested' && (
-        <motion.div
-          key="suggested"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.14, ease: 'easeOut' }}
-        >
-          <SuggestedTab
-            suggestions={suggestions}
-            loading={sugLoading}
-            analyzing={analyzing}
-            onConfigure={handleConfigureSuggestion}
-            onReject={async id => { try { await reject(id); addToast(t('automations.suggested.dismissed'), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
-            onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
-            onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? t(r.new_count === 1 ? 'automations.suggested.foundNewOne' : 'automations.suggested.foundNew', { n: r.new_count }) : t('automations.suggested.noNewPatterns'), 'success') } catch { addToast(t('automations.suggested.analysisFailed'), 'error') } }}
-          />
-        </motion.div>
-      )}
-
       {/* ─── Routines tab ─── */}
       {tab === 'routines' && (
         <motion.div
@@ -408,24 +400,38 @@ export default function Automations() {
         </motion.div>
       )}
 
-      {/* ─── Quick Asks tab ─── */}
-      {tab === 'quick-asks' && (
-        <motion.div
-          key="quick-asks"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.14, ease: 'easeOut' }}
-        >
-          <QuickAsks embedded />
-        </motion.div>
-      )}
-
       </AnimatePresence>
 
-      {/* Community templates modal — deep-linked from the Templates tab to a
-          single template's input form. Creates the automation through the
-          standard save_automation path; after success we refresh the list. */}
+      {/* Library — OOTB curated templates + community blueprints. Relocated
+          from the old Templates tab into a modal so the Automations tab stays a
+          clean "what's running" list. Configuring one closes the library and
+          hands off to the matching wizard. */}
+      <Modal open={showLibrary} onClose={() => setShowLibrary(false)} title={t('automations.libraryTitle')} maxWidth={620}>
+        <TemplatesTab
+          onConfigureNative={(tpl) => { setShowLibrary(false); handleConfigureTemplate(tpl) }}
+          onConfigureCommunity={(blueprintId) => { setShowLibrary(false); setCommunityTarget(blueprintId) }}
+          onSensorCreated={() => addToast(t('automations.smartSensor.created'), 'success')}
+        />
+      </Modal>
+
+      {/* Suggestions inbox — the full pending/history habit feed. "Later"
+          snoozes (item stays here), ✕ rejects. This is where a nudge the user
+          waved off inline can be re-found and added later. */}
+      <Modal open={showSuggestions} onClose={() => setShowSuggestions(false)} title={t('automations.tabSuggested')} maxWidth={560}>
+        <SuggestedTab
+          suggestions={suggestions}
+          loading={sugLoading}
+          analyzing={analyzing}
+          onConfigure={(s) => { setShowSuggestions(false); handleConfigureSuggestion(s) }}
+          onReject={async id => { try { await reject(id); addToast(t('automations.suggested.dismissed'), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+          onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
+          onAnalyze={async () => { try { const r = await runAnalysis(); addToast(r?.new_count > 0 ? t(r.new_count === 1 ? 'automations.suggested.foundNewOne' : 'automations.suggested.foundNew', { n: r.new_count }) : t('automations.suggested.noNewPatterns'), 'success') } catch { addToast(t('automations.suggested.analysisFailed'), 'error') } }}
+        />
+      </Modal>
+
+      {/* Community templates modal — deep-linked from the Library to a single
+          template's input form. Creates the automation through the standard
+          save_automation path; after success we refresh the list. */}
       <BlueprintsModal
         open={!!communityTarget}
         initialBlueprintId={communityTarget}

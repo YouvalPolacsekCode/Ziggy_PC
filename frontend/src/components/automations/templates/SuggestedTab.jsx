@@ -116,6 +116,36 @@ function suggestionToWizardData(suggestion) {
   }
 }
 
+// Inline nudge strip for the Automations tab. Shows the freshest `max` pending
+// suggestions as full cards + a "see all" opener into the Suggestions inbox.
+// Renders nothing when there's nothing pending, so it's zero-footprint on a
+// home with no learned patterns yet. Reuses the same SuggestionCard as the
+// inbox so Add / Later(snooze) / ✕(reject) behave identically in both places.
+function SuggestionNudgeStrip({ suggestions, onConfigure, onReject, onSnooze, onOpenInbox, max = 2 }) {
+  const t = useT()
+  const pending = (suggestions || []).filter(s => s.status === 'pending')
+  if (pending.length === 0) return null
+  const shown = pending.slice(0, max)
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <p className="z-eyebrow" style={{ margin: 0 }}>💡 {t('automations.tabSuggested')}</p>
+        <button onClick={onOpenInbox} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--ink-mute)', padding: 0 }}>
+          {t('automations.suggested.seeAll', { n: pending.length })}
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <AnimatePresence mode="popLayout">
+          {shown.map(s => (
+            <SuggestionCard key={s.id} suggestion={s} onConfigure={() => onConfigure(s)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
 function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, onSnooze, onAnalyze }) {
   const t = useT()
   const [subtab, setSubtab] = useState('pending')
@@ -163,5 +193,5 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
   )
 }
 
-export { suggestionToWizardData }
+export { suggestionToWizardData, SuggestionNudgeStrip }
 export default SuggestedTab
