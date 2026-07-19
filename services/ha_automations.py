@@ -33,6 +33,35 @@ def _slug(name: str) -> str:
     return s or uuid.uuid4().hex
 
 
+def _dedupe_auto_id(base_id: str) -> str:
+    """Return base_id, or base_id_2/_3/… if an automation already owns it.
+
+    "Add" from the Library is always available (2026-07-19 addendum A3): a
+    second add of the same template must create a NEW instance, not silently
+    overwrite the first — before this, save_automation slugged the name and
+    the second "Motion Light" clobbered the first. Only the create path calls
+    this; updates pass auto_id explicitly and keep overwriting in place.
+    """
+    existing: set = set()
+    try:
+        from services.ha_subscriber import state_cache
+        existing |= {eid[len("automation."):] for eid in (state_cache or {})
+                     if eid.startswith("automation.")}
+    except Exception:
+        pass
+    try:
+        from core.automation_file import list_automations as _list_ziggy
+        existing |= {a.get("id") for a in _list_ziggy() if a.get("id")}
+    except Exception:
+        pass
+    if base_id not in existing:
+        return base_id
+    n = 2
+    while f"{base_id}_{n}" in existing:
+        n += 1
+    return f"{base_id}_{n}"
+
+
 def needs_ha(data: dict) -> bool:
     """Return True when the automation requires Home Assistant to store or trigger.
 
@@ -444,7 +473,7 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         return _save_paired_automation(data, auto_id)
 
     if not auto_id:
-        auto_id = _slug(data.get("name", "ziggy_automation"))
+        auto_id = _dedupe_auto_id(_slug(data.get("name", "ziggy_automation")))
 
     ziggy_actions = data.get("actions", [])
     trigger = data.get("trigger", {})

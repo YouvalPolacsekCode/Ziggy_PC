@@ -35,6 +35,28 @@ def _slug(name: str) -> str:
     return s or uuid.uuid4().hex
 
 
+def _dedupe_script_id(base_id: str) -> str:
+    """Return base_id, or base_id_2/_3/… if a script already owns it.
+
+    Mirrors ha_automations._dedupe_auto_id (2026-07-19 addendum A3): adding
+    the same Library routine twice must create a second instance, not
+    overwrite the first. Create-path only — updates pass script_id explicitly.
+    """
+    existing: set = set()
+    try:
+        from services.ha_subscriber import state_cache
+        existing |= {eid[len("script."):] for eid in (state_cache or {})
+                     if eid.startswith("script.")}
+    except Exception:
+        pass
+    if base_id not in existing:
+        return base_id
+    n = 2
+    while f"{base_id}_{n}" in existing:
+        n += 1
+    return f"{base_id}_{n}"
+
+
 def _load_routine_meta() -> dict:
     if not os.path.exists(_ROUTINE_META_FILE):
         return {}
@@ -212,7 +234,7 @@ def get_script_for_ui(script_id: str) -> Optional[dict]:
 
 def save_script(data: dict, script_id: Optional[str] = None) -> dict:
     if not script_id:
-        script_id = _slug(data.get("name", "ziggy_script"))
+        script_id = _dedupe_script_id(_slug(data.get("name", "ziggy_script")))
     sequence = [_step_to_ha(s) for s in data.get("steps", [])]
     sequence = [s for s in sequence if s is not None]
     ha_cfg = {

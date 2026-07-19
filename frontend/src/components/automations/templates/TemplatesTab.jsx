@@ -1,33 +1,39 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useT, useLang } from '../../../lib/i18n'
-import { getAutomationTemplates, listBlueprints } from '../../../lib/api'
+import { getAutomationTemplates, getSuggestedRoutines, listBlueprints } from '../../../lib/api'
 import { Modal } from '../../ui/Modal'
 import TemplateCard from './TemplateCard'
 import OccupancySensorForm from '../OccupancySensorForm'
 
-// ── TemplatesTab ────────────────────────────────────────────────────────────
+// ── TemplatesTab — the unified Library (2026-07-19 IA addendum A2/A4) ───────
 //
-// The single merged Templates surface. Collapses three previously-separate
-// surfaces — the Library (Ziggy-native templates), Community templates
-// (bundled HA blueprints), and the device-matched "Recommended" strip — into
-// one filterable list:  [ All | Not set up | By category ▾ ].
+// ONE flat shelf serving both Actions tabs, split by the only line that
+// matters — what pulls the trigger:
 //
-// Additive rule: the two source-of-truth data layers are untouched. We fetch
-// both (getAutomationTemplates + listBlueprints), NORMALISE at render into a
-// common item shape for filtering only, and delegate the actual card rendering
-// + configure flow back to each source's existing component/handler.
+//   ⚡ Automatic  — automation templates (+ user-pasted blueprints); it
+//                   starts itself. → TemplateCard + onConfigureNative /
+//                   CommunityCard + onConfigureCommunity(blueprint_id)
+//   👆 On-demand — routine templates; you start it.
+//                   → TemplateCard + onConfigureRoutine(template)
 //
-//   • native    → <TemplateCard> + onConfigureNative (wizard / circadian)
-//   • community → <CommunityCard> + onConfigureCommunity(blueprint_id)
-//                 (parent opens BlueprintsModal deep-linked to that template)
-//
-// "Suggested" (habit-learned proactive feed) is a DIFFERENT concept and stays
-// its own tab — it is not merged here.
+// No "curated vs community" distinction — the backend already hides bundled
+// blueprints (all dups of curated items); anything user-pasted just shows as
+// a normal Automatic card. Data layers untouched: we fetch the three sources
+// and NORMALISE at render for filtering only.
 
-function normalise(native, community) {
+function normalise(native, routines, community) {
   const nativeItems = (native || []).map(tpl => ({
     key:      `n:${tpl.id}`,
     source:   'native',
+    kind:     'automatic',
+    category: tpl.category || 'general',
+    notSetUp: !tpl.already_exists,
+    raw:      tpl,
+  }))
+  const routineItems = (routines || []).map(tpl => ({
+    key:      `r:${tpl.id}`,
+    source:   'routine',
+    kind:     'ondemand',
     category: tpl.category || 'general',
     notSetUp: !tpl.already_exists,
     raw:      tpl,
@@ -35,21 +41,23 @@ function normalise(native, community) {
   const communityItems = (community || []).map(tpl => ({
     key:      `c:${tpl.id}`,
     source:   'community',
-    category: tpl.category || 'community',
-    // Community templates don't track instantiation, so they're always a
+    kind:     'automatic',
+    category: tpl.category || 'general',
+    // User-pasted blueprints don't track instantiation, so they're always a
     // "next step" the user hasn't set up.
     notSetUp: true,
     raw:      tpl,
   }))
-  return [...nativeItems, ...communityItems]
+  return [...nativeItems, ...communityItems, ...routineItems]
 }
 
-function TemplatesTab({ onConfigureNative, onConfigureCommunity, onSensorCreated }) {
+function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRoutine, onSensorCreated }) {
   const t    = useT()
   const lang = useLang()
   const isHe = lang === 'he'
 
   const [native,    setNative]    = useState([])
+  const [routines,  setRoutines]  = useState([])
   const [community, setCommunity] = useState([])
   const [loading,   setLoading]   = useState(true)
   const [setupFilter, setSetupFilter] = useState('all')  // 'all' | 'notSetUp'
@@ -59,17 +67,18 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onSensorCreated
   useEffect(() => {
     let alive = true
     setLoading(true)
-    Promise.allSettled([getAutomationTemplates(), listBlueprints()])
-      .then(([nat, com]) => {
+    Promise.allSettled([getAutomationTemplates(), getSuggestedRoutines(), listBlueprints()])
+      .then(([nat, rout, com]) => {
         if (!alive) return
-        if (nat.status === 'fulfilled') setNative(nat.value?.templates || [])
-        if (com.status === 'fulfilled') setCommunity(com.value?.templates || [])
+        if (nat.status === 'fulfilled')  setNative(nat.value?.templates || [])
+        if (rout.status === 'fulfilled') setRoutines(rout.value?.suggested || [])
+        if (com.status === 'fulfilled')  setCommunity(com.value?.templates || [])
       })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
 
-  const items = useMemo(() => normalise(native, community), [native, community])
+  const items = useMemo(() => normalise(native, routines, community), [native, routines, community])
 
   const categories = useMemo(
     () => Array.from(new Set(items.map(i => i.category).filter(Boolean))).sort(),
@@ -148,15 +157,26 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onSensorCreated
         </p>
       )}
 
-      {!loading && filtered.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {filtered.map(item => (
-            item.source === 'native'
-              ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureNative} />
-              : <CommunityCard key={item.key} template={item.raw} isHe={isHe} t={t} onConfigure={onConfigureCommunity} />
-          ))}
-        </div>
-      )}
+      {!loading && filtered.length > 0 && (() => {
+        const renderItem = (item) =>
+          item.source === 'native'    ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureNative} />
+          : item.source === 'routine' ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureRoutine} />
+          :                             <CommunityCard key={item.key} template={item.raw} isHe={isHe} t={t} onConfigure={onConfigureCommunity} />
+        const automatic = filtered.filter(i => i.kind === 'automatic')
+        const ondemand  = filtered.filter(i => i.kind === 'ondemand')
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {automatic.length > 0 && (
+              <p className="z-eyebrow" style={{ margin: '2px 0 3px' }}>⚡ {t('automations.librarySectionAutomatic')}</p>
+            )}
+            {automatic.map(renderItem)}
+            {ondemand.length > 0 && (
+              <p className="z-eyebrow" style={{ margin: '14px 0 3px' }}>👆 {t('automations.librarySectionOnDemand')}</p>
+            )}
+            {ondemand.map(renderItem)}
+          </div>
+        )
+      })()}
 
       <Modal open={showSensorForm} onClose={() => setShowSensorForm(false)} title={t('automations.smartSensor.title')}>
         <OccupancySensorForm
@@ -168,8 +188,9 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onSensorCreated
   )
 }
 
-// One community-template row. Mirrors TemplateCard's chrome so the merged list
-// reads as a single surface; the "Community" badge is the only source tell.
+// One user-pasted-blueprint row. Mirrors TemplateCard's chrome so the unified
+// Library reads as a single surface — no source badge (2026-07-19: the
+// curated/community distinction is gone; a template is a template).
 function CommunityCard({ template, isHe, t, onConfigure }) {
   const name = (isHe && template.name_he) ? template.name_he : template.name
   const desc = (isHe && template.description_he) ? template.description_he : (template.description || '').split('\n')[0]
@@ -187,9 +208,6 @@ function CommunityCard({ template, isHe, t, onConfigure }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
           <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', margin: 0 }} dir="auto">{name}</p>
-          <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 700, fontFamily: '"IBM Plex Mono", monospace', background: 'var(--bg-2)', color: 'var(--ink-faint)' }}>
-            {t('automations.templatesTab.communityBadge')}
-          </span>
         </div>
         {desc && <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.4 }} dir="auto">{desc}</p>}
         <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>

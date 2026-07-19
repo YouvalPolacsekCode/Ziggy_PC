@@ -1,6 +1,31 @@
 import React, { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useT } from '../../../lib/i18n'
+import { useT, useLang } from '../../../lib/i18n'
+
+// Trigger chip — makes the Automatic/On-demand line visible per-card instead
+// of something the user must reason about. trigger_kind comes from the
+// template registry ("automatic" | "tap"; "say" arrives with Phase 2's
+// phrase registration).
+const TRIGGER_CHIP = {
+  automatic: { icon: '⚡', labelKey: 'automations.chipAutomatic' },
+  tap:       { icon: '👆', labelKey: 'automations.chipTap' },
+  say:       { icon: '🗣', labelKey: 'automations.chipSay' },
+}
+
+export function TriggerChip({ kind }) {
+  const t = useT()
+  const chip = TRIGGER_CHIP[kind]
+  if (!chip) return null
+  return (
+    <span style={{
+      fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600,
+      fontFamily: '"IBM Plex Mono", monospace', display: 'inline-flex',
+      alignItems: 'center', gap: 3, background: 'var(--bg-2)', color: 'var(--ink-mute)',
+    }}>
+      <span aria-hidden="true">{chip.icon}</span>{t(chip.labelKey)}
+    </span>
+  )
+}
 
 // ── TemplateCard ──────────────────────────────────────────────────────────────
 const TIER_STYLE = {
@@ -11,6 +36,8 @@ const TIER_STYLE = {
 
 function TemplateCard({ template, onConfigure }) {
   const t = useT()
+  const lang = useLang()
+  const displayName = (lang === 'he' && template.name_he) ? template.name_he : template.name
   const tier        = template.tier || (template.can_run ? 'ready' : 'unavailable')
   const ts          = TIER_STYLE[tier] || TIER_STYLE.unavailable
   const matched     = template.matched_labels || []
@@ -55,7 +82,8 @@ function TemplateCard({ template, onConfigure }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Name row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }} dir="auto">{template.name}</p>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }} dir="auto">{displayName}</p>
+          <TriggerChip kind={template.trigger_kind} />
           <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 700, fontFamily: '"IBM Plex Mono", monospace', background: ts.badgeBg, color: ts.badgeColor }}>
             {t(ts.badgeKey === 'ready' ? 'automations.template.ready' : ts.badgeKey === 'incomplete' ? 'automations.template.incomplete' : 'automations.template.notAvailable')}
           </span>

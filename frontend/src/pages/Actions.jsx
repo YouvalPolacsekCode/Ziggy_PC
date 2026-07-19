@@ -6,7 +6,7 @@ import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { getSuggestionsFeed, deleteCircadianBundle, deleteSmartRoom } from '../lib/api'
-import { RoutinesListPanel } from './Routines'
+import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
 import AutomationViewModal from '../components/automations/AutomationViewModal'
@@ -23,7 +23,7 @@ import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../c
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
   const t = useT()
-  const { automations, routines, loading, fetchAutomations, fetchRoutines, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig } = useAutomationStore()
+  const { automations, routines, loading, fetchAutomations, fetchRoutines, addAutomation, removeAutomation, toggleAutomation, triggerAutomation, loadAutomationConfig, saveRoutine } = useAutomationStore()
   const { suggestions, loading: sugLoading, fetch: fetchSuggestions, setFromFeed: setSuggestionsFromFeed, accept, reject, snooze, runAnalysis, analyzing, pendingCount } = useSuggestionStore()
   const { addToast } = useUIStore()
   // Per-field selectors — pulling the whole deviceStore here would re-render
@@ -47,6 +47,9 @@ export default function Automations() {
   const [showLibrary,       setShowLibrary]       = useState(false)
   const [showSuggestions,   setShowSuggestions]   = useState(false)
   const [showWizard,        setShowWizard]        = useState(false)
+  // On-demand Library items open RoutineWizard prefilled (parallel to
+  // editTarget+showWizard for the automation wizard).
+  const [routineTarget,     setRoutineTarget]     = useState(null)
   const [editTarget,        setEditTarget]        = useState(null)
   const [viewTarget,        setViewTarget]        = useState(null)
   // Community-template deep link: holds the blueprint_id whose input form the
@@ -197,6 +200,22 @@ export default function Automations() {
     try { await fetchAutomations({ force: true }) } catch {}
   }
 
+  // On-demand Library item → RoutineWizard prefilled with the template's
+  // steps. Saving lands it as a routine and jumps to the On-demand tab.
+  const handleConfigureRoutine = (template) => {
+    if (!template?.wizard_prefill) return
+    setRoutineTarget(template.wizard_prefill)
+  }
+  const handleRoutineSave = async (data) => {
+    try {
+      await saveRoutine(data)
+      addToast(t('routines.saved'), 'success')
+      setRoutineTarget(null)
+      setTab('routines')
+      await fetchRoutines({ force: true })
+    } catch { addToast(t('automations.failedToSave'), 'error') }
+  }
+
   // Accepting a suggestion opens the wizard pre-filled with the suggestion's
   // trigger + actions so the user can review/edit before the automation lands.
   const handleConfigureSuggestion = (suggestion) => {
@@ -248,9 +267,14 @@ export default function Automations() {
             {t('automations.countSummary', { enabled, total: automations.length })}
           </p>
         </div>
+        {/* Library is page-level (serves both tabs), custom-create is the
+            secondary "blank" path. */}
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <button onClick={() => setShowLibrary(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            {t('automations.library')}
+          </button>
+          <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-secondary" style={{ padding: '9px 12px', borderRadius: 10, fontSize: 13 }} title={t('automations.newCustom')}>
             {t('automations.headerAdd')}
           </button>
         </div>
@@ -262,8 +286,8 @@ export default function Automations() {
           nudges; Quick-asks split out to Chat/Dashboard chips. */}
       <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20, overflowX: 'auto' }}>
         {[
-          { id: 'automations', label: t('automations.tabActive'),     count: enabled },
-          { id: 'routines',    label: t('automations.tabRoutines'),   count: routines.length },
+          { id: 'automations', label: t('automations.tabAutomatic'),  count: enabled },
+          { id: 'routines',    label: t('automations.tabOnDemand'),   count: routines.length },
         ].map(tabDef => (
           <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
             flex: '1 0 auto', padding: '8px 12px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
@@ -302,25 +326,6 @@ export default function Automations() {
         onSnooze={async (id, days) => { try { await snooze(id, days); addToast(t('automations.suggested.snoozedFor', { n: days }), 'success') } catch { addToast(t('automations.suggested.failed'), 'error') } }}
         onOpenInbox={() => setShowSuggestions(true)}
       />
-
-      {/* Add from Library — OOTB curated templates + community blueprints, in a
-          modal so it doesn't compete with the "what's running" list. Hidden on
-          the empty state, which has its own Library CTA. */}
-      {(loading || automations.length > 0) && (
-        <button
-          onClick={() => setShowLibrary(true)}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            padding: '12px 14px', borderRadius: 12, marginBottom: 18, cursor: 'pointer', fontFamily: 'inherit',
-            background: 'color-mix(in srgb, var(--accent, var(--info)) 6%, var(--surface))',
-            border: '0.5px dashed color-mix(in srgb, var(--accent, var(--info)) 30%, var(--line))',
-            fontSize: 13, fontWeight: 600, color: 'var(--ink-2)',
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          {t('automations.addFromLibrary')}
-        </button>
-      )}
 
       {loading && automations.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -410,8 +415,17 @@ export default function Automations() {
         <TemplatesTab
           onConfigureNative={(tpl) => { setShowLibrary(false); handleConfigureTemplate(tpl) }}
           onConfigureCommunity={(blueprintId) => { setShowLibrary(false); setCommunityTarget(blueprintId) }}
+          onConfigureRoutine={(tpl) => { setShowLibrary(false); handleConfigureRoutine(tpl) }}
           onSensorCreated={() => addToast(t('automations.smartSensor.created'), 'success')}
         />
+      </Modal>
+
+      {/* On-demand Library item → RoutineWizard prefilled */}
+      <Modal open={!!routineTarget} onClose={() => setRoutineTarget(null)}
+             title={routineTarget ? t('automations.configureTitle', { name: routineTarget.name }) : ''}>
+        {routineTarget && (
+          <RoutineWizard initial={routineTarget} onSave={handleRoutineSave} onClose={() => setRoutineTarget(null)} />
+        )}
       </Modal>
 
       {/* Suggestions inbox — the full pending/history habit feed. "Later"
