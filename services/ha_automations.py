@@ -627,13 +627,33 @@ def _save_paired_automation(data: dict, base_auto_id: Optional[str] = None) -> d
 
 
 def delete_automation(auto_id: str) -> bool:
+    # HA's config API is keyed by the automation's config `id`, which DIFFERS
+    # from the entity object-id whenever the alias isn't plain ASCII (a Hebrew
+    # alias slugs to a transliteration for the entity, but the config id is a
+    # uuid). The list/UI carries the entity object-id, so deleting by it 404s
+    # ("fail to delete"). Resolve the real config id from the entity's `id`
+    # attribute first, then fall back to the given id (covers ASCII-named ones
+    # where the two already match).
+    candidates: list[str] = [auto_id]
     try:
-        resp = requests.delete(f"{HA_URL()}/api/config/automation/config/{auto_id}",
-                               headers=HEADERS(), timeout=10)
-        return resp.status_code in (200, 204)
+        st = requests.get(f"{HA_URL()}/api/states/automation.{auto_id}",
+                          headers=HEADERS(), timeout=10)
+        if st.status_code == 200:
+            cfg_id = (st.json().get("attributes") or {}).get("id")
+            if cfg_id and cfg_id != auto_id:
+                candidates.insert(0, cfg_id)   # try the real config id first
     except Exception as e:
-        log_error(f"[HA Automations] delete {auto_id}: {e}")
-        return False
+        log_error(f"[HA Automations] resolve config id for {auto_id}: {e}")
+
+    for cid in candidates:
+        try:
+            resp = requests.delete(f"{HA_URL()}/api/config/automation/config/{cid}",
+                                   headers=HEADERS(), timeout=10)
+            if resp.status_code in (200, 204):
+                return True
+        except Exception as e:
+            log_error(f"[HA Automations] delete {cid}: {e}")
+    return False
 
 
 def toggle_automation(auto_id: str, enable: bool) -> bool:
