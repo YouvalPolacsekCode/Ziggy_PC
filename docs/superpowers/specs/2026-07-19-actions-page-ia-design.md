@@ -78,3 +78,104 @@ This is deferred because it touches the routines/voice-intent/smart-room couplin
 - No standalone templates/suggested/quick-asks tab remains.
 - Informational quick-asks still reachable from Chat/Dashboard.
 - App builds; no dead imports or broken routes.
+
+---
+
+# Curation + UX Addendum (2026-07-19)
+
+Refines the framing and locks the curated Library content. Supersedes the tab
+labels and Library placement above where they conflict.
+
+## A1. Reframe: the split is the *trigger*, not the actions
+
+An automation and a routine can run identical actions — the only real
+difference is **what pulls the trigger**. So the two groups are relabelled to
+*be* that question, with no jargon:
+
+- **Automatic** — *it starts itself* (a sensor, a state, or the clock). Was "Automations".
+- **On-demand** — *you start it* (a tap or a spoken phrase). Was "Routines".
+
+Every Library card carries a **trigger chip** so the distinction is visible
+per-item, never something the user must reason about: **⚡ Automatic · 👆 Tap ·
+🗣 Say "…"**. The two tabs are just a filter on that chip.
+
+Consequence: scheduled **Sleep Mode** / **Morning Routine** are *Automatic*
+(the clock fires them); their spoken/tapped twins **Good Night** / **Good
+Morning** are separate *On-demand* items — same body, different trigger.
+
+## A2. Library = one flat shelf, page-level, serves both
+
+- **No "curated vs community" distinction.** One Library. Merge both source
+  lists, drop the Community badge, dedup overlaps to a single winner each.
+- **Library is page-level, not owned by a tab** — the "Add" entry point lives in
+  the Actions header (above the tabs), opening one unified Library that contains
+  both Automatic and On-demand items. Picking one lands it in the right tab.
+
+## A3. "Add" — no "multi" concept
+
+Multiplicity is emergent, not a feature. Every Library item's **Add** button is
+**always available** (used items are never hidden). **Add** opens the configure
+step, which asks for *whatever that item binds to* — decided by the item, not a
+mode the user picks (Motion Light → a room + light; a plug schedule → a
+device). Each Add creates **one uniquely-identified instance** (unique id +
+distinguishing name, e.g. "Motion Light — Bedroom") so a second Add never
+overwrites the first. Smart Room's per-room id scheme is the existing pattern to
+extend to the other room-scoped items. Naturally-once items (Leave Home, Smart
+Light Schedule, and the On-demand set) simply won't be added twice in practice.
+
+## A4. The curated Library (14 items)
+
+**⚡ Automatic (8)** — fires itself:
+| Item | Starts on | What it does |
+|---|---|---|
+| Leave Home | everyone leaves | lights + AC off |
+| Pre-cool on Arrival | you head home | AC starts so it's cool on arrival |
+| Smart Climate Control | room too warm | AC starts |
+| Window Open — AC Off | window opens w/ AC on | push with one-tap shutoff |
+| Motion Light | motion (room; opt. night-only) | light on, off after a bit |
+| Smart Light Schedule | time of day | lights cool/bright noon → warm/soft night |
+| Night Watch | you're in bed | dims lights, silently alerts if something stirs |
+| Smart Room | *(you pick a room)* | builds a room's whole presence/lighting/comfort set |
+
+**👆🗣 On-demand (6)** — you start it:
+| Item | Trigger | What it does |
+|---|---|---|
+| Good Night | 🗣 / 👆 | lights off, AC to sleep temp |
+| Good Morning | 🗣 / 👆 | lights on, comfortable temp |
+| Movie Night | 🗣 / 👆 | living-room dim, TV on, AC comfy |
+| Leaving | 👆 | everything off |
+| Away / Vacation | 👆 | everything off + simulate presence for N days |
+| Shabbat | 🗣 / 👆 | fixed Shabbat lighting + AC preset, no mid-Shabbat switching |
+
+**Dropped from the Library** (and why): Welcome Home, Morning Routine·Sleep Mode
+kept only as Automatic (their On-demand twins added), AC Schedule, Open/Close
+Blinds, TV Off When Empty, Child Room Monitor — trimmed as low-value or
+device-narrow. The alert-class items (Water Leak, Low Battery, Doorbell, Child
+Room too-hot) are **not** Library automations: alerting is always-on, owned by
+the Alerts/anomaly engine.
+
+## A5. Alerts verification (checked in code, 2026-07-19)
+
+- **Per-device battery: already live.** `anomaly_engine.py` ANOM-08 fires
+  "*{device} battery is low ({n}%)*" below 20%, per-entity, 24h cooldown,
+  enabled by default. No Library item needed.
+- **Water leak: intentionally out.** No leak anomaly rule exists and the user
+  does not want leak alerting — **not** added. (Leak sensors are still detected
+  and grouped; only the proactive alert is absent, by decision.)
+
+## A6. On-demand starter set = the new Routines seed
+
+`services/routine_templates.py` `ROUTINE_TEMPLATES` is currently **empty**. The
+6 On-demand items above are the starter set that fills it. Good Night / Good
+Morning / Shabbat carry a spoken phrase (rides the `voice_intents` phrase engine
+— but per Phase 2 the *emission* of routines from smart-room stays with the
+concurrent session; here we only seed the curated routine templates + their tap
+trigger, and register phrases where the existing engine already supports it).
+
+## A7. Build order (Phase 1b — this addendum)
+1. Relabel tabs Automatic · On-demand (i18n + Actions.jsx); add trigger chips to Library/Active cards.
+2. Move the Library "Add" from inside the Automations tab to a page-level header action; unify content (drop Community badge, dedup), typed Automatic/On-demand with a filter.
+3. Curate `automation_templates.py` to the 8 Automatic items (merge the 3 motion variants → one; drop the trimmed ones from the surfaced set).
+4. Seed `routine_templates.py` with the 6 On-demand items.
+5. "Add" always available + unique-instance ids for room-scoped items (extend Smart Room's id scheme).
+6. Keep Phase 2 (Routine-as-primitive, smart-room emits routines, action-quick-asks fold) with the concurrent session.
