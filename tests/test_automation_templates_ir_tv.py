@@ -1,13 +1,17 @@
 """Resolution tests for the IR-TV automation template (`tv_off_when_empty`).
 
 Covers: registry presence, can_run capability gating (needs an IR blaster AND
-a motion OR presence sensor), Suggested-tab surfacing, and the build_prefill
-shape — trigger / ir_device_state condition / single `ir_command power` action.
-The existing 16-template library must keep resolving unchanged.
+a motion OR presence sensor), and the build_prefill shape — trigger /
+ir_device_state condition / single `ir_command power` action.
+
+Curation (2026-07-19 IA addendum A4): tv_off_when_empty is RETIRED from the
+surfaced Library, so it resolves via RETIRED_TEMPLATES. Its builder must keep
+working — automations users already created from it still edit/run.
 """
 import services.automation_templates as at
 from services.automation_templates import (
     TEMPLATES,
+    RETIRED_TEMPLATES,
     build_prefill,
     can_run,
     matches_suggestion,
@@ -16,29 +20,40 @@ from services.automation_templates import (
 
 
 def _tpl(tid):
-    return next((t for t in TEMPLATES if t["id"] == tid), None)
+    return next((t for t in TEMPLATES + RETIRED_TEMPLATES if t["id"] == tid), None)
 
 
 def test_ir_tv_template_registered():
     tpl = _tpl("tv_off_when_empty")
-    assert tpl is not None, "tv_off_when_empty missing from TEMPLATES"
+    assert tpl is not None, "tv_off_when_empty missing from template registry"
     assert tpl["category"] == "comfort"
     assert tpl["required_capabilities"] == ["has_ir_blaster"]
     assert ["motion_sensor", "presence_sensor"] in tpl["required_any"]
     # Israel-first: ships a Hebrew name for localized surfaces.
     assert tpl.get("name_he")
+    # Curated out of the Library surface (2026-07-19) but never deleted.
+    assert tpl.get("retired") is True
 
 
-def test_existing_library_intact():
-    # Forward-port must be additive: the curated ids all still resolve.
+def test_curated_library_is_exactly_the_8():
+    # The curation gate: only the 8 approved Automatic templates surface.
     ids = {t["id"] for t in TEMPLATES}
-    for expected in (
-        "leave_home", "welcome_home", "precool_on_arrival", "sleep_mode",
-        "morning_routine", "smart_climate", "child_room_monitor",
+    assert ids == {
+        "leave_home", "precool_on_arrival", "smart_climate",
         "motion_night_light", "night_watch", "circadian_lighting",
-        "ac_window_interlock", "fake_occupancy",
-    ):
-        assert expected in ids
+        "smart_room", "ac_window_interlock",
+    }
+    # Every surfaced template declares its trigger kind for the UI chips.
+    assert all(t.get("trigger_kind") == "automatic" for t in TEMPLATES)
+
+
+def test_retired_stay_resolvable():
+    # Retired templates keep resolving (existing installs reference them).
+    retired_ids = {t["id"] for t in RETIRED_TEMPLATES}
+    assert {
+        "welcome_home", "sleep_mode", "morning_routine",
+        "child_room_monitor", "tv_off_when_empty", "fake_occupancy",
+    } == retired_ids
 
 
 def test_can_run_needs_ir_blaster_and_a_sensor():

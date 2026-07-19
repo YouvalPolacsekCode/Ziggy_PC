@@ -1,5 +1,9 @@
 """
-Curated prebuilt automation template library — 9 templates.
+Curated prebuilt automation template library.
+
+Curation (2026-07-19 IA addendum): 8 surfaced "Automatic" templates; retired
+ones stay defined below but are filtered out at the export gate. The 6
+"On-demand" starters live in routine_templates.py.
 
 Design rules:
 - required_capabilities  — ALL must be present for can_run = True
@@ -123,6 +127,7 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "welcome_home",
+        "retired":               True,   # curation 2026-07-19: covered by Leave Home / Smart Room; see spec addendum A4
         "name":                  "Welcome Home",
         "description":           "Turn the lights on the second you open the front door.",
         "category":              "presence",
@@ -164,6 +169,7 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "sleep_mode",
+        "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Sleep Mode",
         "description":           "Lights off and AC at sleep temperature when you go to bed.",
         "category":              "routine",
@@ -183,6 +189,7 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "morning_routine",
+        "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Morning Routine",
         "description":           "Lights on and a comfortable temperature waiting for you when you wake up.",
         "category":              "routine",
@@ -225,6 +232,7 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "child_room_monitor",
+        "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Child Room Comfort Monitor",
         "description":           "Send you an alert when a room gets too hot — handy for a kid's room.",
         "category":              "safety",
@@ -245,8 +253,12 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "motion_night_light",
-        "name":                  "Motion Night Light",
-        "description":           "Light up the room with a gentle glow when you walk past at night.",
+        # Curation 2026-07-19: renamed from "Motion Night Light" — this is now
+        # THE one motion-light template (absorbs the motion_light /
+        # bathroom_motion_light blueprints). Night-only is a tweakable
+        # condition in the wizard, not a separate template.
+        "name":                  "Motion Light",
+        "description":           "Light on when you walk in, off a couple of minutes later. Night-only if you want.",
         "category":              "comfort",
         "icon":                  "👣",
         "required_capabilities": ["motion_sensor", "light_on_off"],
@@ -390,6 +402,7 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "tv_off_when_empty",
+        "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "TV Off When Room Empty",
         "name_he":               "כיבוי טלוויזיה בחדר ריק",
         "description":           "When the room's been empty for a while and the TV is still on, Ziggy powers it off over IR.",
@@ -415,6 +428,7 @@ TEMPLATES: list[dict] = [
 
     {
         "id":                    "fake_occupancy",
+        "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Away — Simulate Presence",
         "name_he":               "מצב חופשה — הדמיית נוכחות",
         "description":           "Make the home look lived-in while you're away — Ziggy cycles lights and TV randomly through the day.",
@@ -435,6 +449,20 @@ TEMPLATES: list[dict] = [
         "tags":                  ["away", "safety", "presence", "vacation"],
     },
 ]
+
+
+# ── Curation gate (2026-07-19 IA addendum A4) ────────────────────────────────
+# Retired templates stay fully defined above (their builders/prefills remain
+# valid for automations users already created from them) but never surface —
+# this single filter is the gate every consumer reads through: the Library
+# endpoint, Suggested matching, and habit-signal resurfacing all iterate
+# TEMPLATES. Every surfaced automation template is trigger_kind="automatic"
+# (it fires itself); On-demand items live in routine_templates.py.
+RETIRED_TEMPLATES: list[dict] = [t for t in TEMPLATES if t.get("retired")]
+TEMPLATES = [t for t in TEMPLATES if not t.get("retired")]
+for _t in TEMPLATES:
+    _t.setdefault("trigger_kind", "automatic")
+del _t
 
 
 # ---------------------------------------------------------------------------
@@ -792,12 +820,14 @@ def _motion_night_light(cap_map: dict) -> dict:
     motion = first_entity(cap_map, "motion_sensor")
     light  = first_entity(cap_map, "light_on_off")
 
-    # Condition: nighttime only (21:00 – 07:00)
+    # Night-only ships as a prefilled condition the user can simply delete in
+    # the wizard to make the light all-hours (this is THE one motion-light
+    # template — see curation note in the registry).
     conditions = [{"type": "time", "after": "21:00", "before": "07:00"}]
 
     return {
-        "name":        "Motion Night Light",
-        "description": "Turns on a light when motion is detected at night, off after 2 min",
+        "name":        "Motion Light",
+        "description": "Turns on a light when motion is detected (night-only by default), off after 2 min",
         "trigger":     {"type": "state", "entity_id": motion or "", "state": "on"},
         "conditions":  conditions,
         "actions":     [
@@ -1288,7 +1318,13 @@ def get_blueprint_templates() -> list[dict]:
     """
     try:
         from services.blueprint_importer import list_blueprints
-        return [_blueprint_to_template_dict(bp) for bp in list_blueprints()]
+        # Curation (2026-07-19, addendum A2/A4): the bundled blueprints are all
+        # either duplicates of curated Library items or trimmed — none surface
+        # in the unified Library. User-pasted (source="user") blueprints still
+        # show. The blueprint infra itself is untouched: the Pro-Mode designer
+        # and instantiate paths keep the full list via blueprint_importer.
+        return [_blueprint_to_template_dict(bp) for bp in list_blueprints()
+                if bp.source != "bundled"]
     except Exception:
         return []
 
