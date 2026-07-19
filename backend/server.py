@@ -46,6 +46,7 @@ from backend.routers.self_heal_router import router as self_heal_router
 from backend.routers.update_router import router as update_router
 from backend.routers.deploy_router import router as deploy_router
 from backend.routers.ui_prefs_router import router as ui_prefs_router
+from backend.routers.device_presets_router import router as device_presets_router
 from backend.routers.mobile_router import router as mobile_router
 from backend.routers.edge_health_router import router as edge_health_router
 from backend.routers.first_boot_router import router as first_boot_router
@@ -503,6 +504,7 @@ app.include_router(self_heal_router,     dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
 app.include_router(deploy_router,        dependencies=_auth)
 app.include_router(ui_prefs_router,      dependencies=_auth)
+app.include_router(device_presets_router, dependencies=_auth)
 # TTS picker + audition + selection persistence. All routes touch ElevenLabs
 # or settings, so they require auth.
 app.include_router(tts_router,           dependencies=_auth)

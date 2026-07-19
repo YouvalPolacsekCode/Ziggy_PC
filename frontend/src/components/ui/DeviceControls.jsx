@@ -3,12 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   SkipBack, SkipForward, Play, Pause, Volume2, VolumeX,
   ArrowUp, ArrowDown, Lock, LockOpen, Home, Square, Minus, Plus,
-  Shuffle, Repeat, ChevronDown, X, Tv2,
+  Shuffle, Repeat, ChevronDown, X, Tv2, Check,
 } from 'lucide-react'
 import { Slider } from './Slider'
 import { cn, lightRgb } from '../../lib/utils'
 import { DOMAIN_REGISTRY, TOGGLEABLE_DOMAINS as _REGISTRY_TOGGLEABLE } from '../../lib/domainRegistry'
 import { useT } from '../../lib/i18n'
+import { useUIStore } from '../../stores/uiStore'
+import {
+  getDevicePresets, addDevicePreset, renameDevicePreset, deleteDevicePreset,
+} from '../../lib/api'
 
 // Capitalise + de-snake a raw HA mode/option for display.
 const _humanize = (s) => String(s).replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
@@ -263,6 +267,190 @@ const COLOR_PRESETS = [
   { name: 'Candle', labelKey: 'deviceControls.presetCandle', hex: '#C99845' },
 ]
 
+// ─── Device presets (named saved positions) ────────────────────────────────
+// A preset is a still position — brightness + the light's active colour — that
+// the user captures on the card and recalls in one tap. Home-scoped store lives
+// behind /api/device/{id}/presets; applying is just a turn_on with the settings.
+const MAX_DEVICE_PRESETS = 6
+
+function presetSwatchColor(settings) {
+  const rgb = lightRgb({
+    rgb_color: settings.rgb_color,
+    color_temp_kelvin: settings.color_temp_kelvin,
+    color_mode: settings.rgb_color ? 'rgb' : 'color_temp',
+  })
+  return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : 'var(--gold)'
+}
+
+// Is the light currently sitting on this preset? Brightness must be close AND
+// the colour must match on the SAME dimension (temp-vs-temp or rgb-vs-rgb).
+function settingsMatch(preset, live) {
+  if (!preset || !live) return false
+  if (Math.abs((preset.brightness_pct ?? -1) - (live.brightness_pct ?? -99)) > 3) return false
+  const presetHasTemp = preset.color_temp_kelvin != null
+  const presetHasRgb = !!preset.rgb_color
+  if (!presetHasTemp && !presetHasRgb) return true  // brightness-only preset (plain dimmer)
+  if (presetHasTemp && live.color_temp_kelvin != null)
+    return Math.abs(preset.color_temp_kelvin - live.color_temp_kelvin) <= 150
+  if (presetHasRgb && live.rgb_color)
+    return preset.rgb_color.every((c, i) => Math.abs(c - live.rgb_color[i]) <= 25)
+  return false
+}
+
+const _presetIconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', padding: 2 }
+const _presetMenuItem = { display: 'block', width: '100%', textAlign: 'start', padding: '9px 14px', fontSize: 12.5, fontFamily: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }
+const _presetSavePill = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', border: '1px dashed var(--line-2)', background: 'transparent', color: 'var(--ink-faint)' }
+const _presetPill = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px 7px 8px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--line)', background: active ? 'var(--ink)' : 'var(--surface-2)', color: active ? 'var(--bg)' : 'var(--ink-mute)' })
+
+function PresetGauge({ settings, active }) {
+  const fill = Math.max(6, Math.min(100, settings.brightness_pct || 0))
+  return (
+    <span style={{ width: 15, height: 15, borderRadius: 5, position: 'relative', overflow: 'hidden', flex: '0 0 auto',
+      background: active ? 'rgba(255,255,255,0.18)' : 'var(--surface)',
+      boxShadow: active ? 'inset 0 0 0 1px rgba(255,255,255,0.2)' : 'inset 0 0 0 1px rgba(0,0,0,0.08)' }}>
+      <span style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${fill}%`, background: presetSwatchColor(settings) }} />
+    </span>
+  )
+}
+
+function PresetInput({ value, onChange, onConfirm, onCancel, t, placeholder }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 4px 3px 8px', borderRadius: 999, border: '0.5px solid var(--line)', background: 'var(--surface-2)' }}>
+      <input autoFocus value={value} placeholder={placeholder || ''}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') onConfirm(); else if (e.key === 'Escape') onCancel() }}
+        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, fontFamily: 'inherit', color: 'var(--ink)', width: 92 }} />
+      <button onClick={onConfirm} title={t('deviceControls.presetSaveConfirm')} style={{ ..._presetIconBtn, color: 'var(--ok)' }}><Check size={14} /></button>
+      <button onClick={onCancel} title={t('deviceControls.presetCancel')} style={{ ..._presetIconBtn, color: 'var(--ink-faint)' }}><X size={14} /></button>
+    </span>
+  )
+}
+
+function PresetMenu({ onRename, onDelete, onClose, t }) {
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+      <div style={{ position: 'absolute', top: 'calc(100% + 4px)', insetInlineStart: 0, zIndex: 41, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 10, boxShadow: '0 6px 20px rgba(0,0,0,0.18)', overflow: 'hidden', minWidth: 120 }}>
+        <button onClick={onRename} style={_presetMenuItem}>{t('deviceControls.presetRename')}</button>
+        <button onClick={onDelete} style={{ ..._presetMenuItem, color: 'var(--err, #d05252)' }}>{t('deviceControls.presetDelete')}</button>
+      </div>
+    </>
+  )
+}
+
+function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
+  const t = useT()
+  const addToast = useUIStore((s) => s.addToast)
+  const [presets, setPresets] = useState([])
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [name, setName] = useState('')
+  const [menuFor, setMenuFor] = useState(null)
+  const pressTimer = useRef(null)
+
+  useEffect(() => {
+    let alive = true
+    getDevicePresets(entityId)
+      .then((r) => { if (alive) setPresets(r.presets || []) })
+      .catch(() => { /* row just stays empty; never blocks the card */ })
+    return () => { alive = false }
+  }, [entityId])
+
+  const atCap = presets.length >= MAX_DEVICE_PRESETS
+  const reset = () => { setAdding(false); setEditingId(null); setName('') }
+  const beginAdd = () => { setMenuFor(null); setEditingId(null); setName(suggestedName || ''); setAdding(true) }
+
+  const confirmAdd = async () => {
+    const nm = name.trim()
+    if (!nm) return reset()
+    try {
+      const r = await addDevicePreset(entityId, nm, live)
+      setPresets((p) => [...p, r.preset])
+      reset()
+    } catch (e) {
+      const code = e?.detail?.code || e?.code
+      addToast(code === 'preset_limit' ? t('deviceControls.presetLimitReached')
+        : (e?.userMessage || e?.message || t('deviceControls.presetSaveFailed')), 'error')
+      reset()
+    }
+  }
+
+  const confirmRename = async (id) => {
+    const nm = name.trim()
+    if (!nm) return reset()
+    try {
+      const r = await renameDevicePreset(entityId, id, nm)
+      setPresets((p) => p.map((x) => (x.id === id ? r.preset : x)))
+    } catch (e) {
+      addToast(e?.message || t('deviceControls.presetSaveFailed'), 'error')
+    }
+    reset()
+  }
+
+  const remove = async (id) => {
+    setMenuFor(null)
+    const prev = presets
+    setPresets((p) => p.filter((x) => x.id !== id))
+    try {
+      await deleteDevicePreset(entityId, id)
+    } catch (e) {
+      setPresets(prev)
+      addToast(e?.message || t('deviceControls.presetSaveFailed'), 'error')
+    }
+  }
+
+  const startPress = (id) => { pressTimer.current = setTimeout(() => setMenuFor(id), 450) }
+  const endPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }
+
+  return (
+    <div>
+      <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.presets')}</span>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {presets.map((p) => {
+          if (editingId === p.id) {
+            return <PresetInput key={p.id} value={name} onChange={setName}
+              onConfirm={() => confirmRename(p.id)} onCancel={reset} t={t} />
+          }
+          const active = isOn && settingsMatch(p.settings, live)
+          return (
+            <div key={p.id} style={{ position: 'relative' }}>
+              <button
+                onClick={() => { if (menuFor === p.id) { setMenuFor(null); return } onApply(p.settings) }}
+                onPointerDown={() => startPress(p.id)}
+                onPointerUp={endPress}
+                onPointerLeave={endPress}
+                onContextMenu={(e) => { e.preventDefault(); setMenuFor(p.id) }}
+                style={_presetPill(active)}
+              >
+                <PresetGauge settings={p.settings} active={active} />
+                <span>{p.name}</span>
+                <span style={{ fontSize: 10, opacity: 0.6, fontFamily: 'ui-monospace, monospace' }}>{p.settings.brightness_pct}%</span>
+              </button>
+              {menuFor === p.id && (
+                <PresetMenu
+                  onRename={() => { setEditingId(p.id); setName(p.name); setMenuFor(null) }}
+                  onDelete={() => remove(p.id)}
+                  onClose={() => setMenuFor(null)}
+                  t={t}
+                />
+              )}
+            </div>
+          )
+        })}
+
+        {adding
+          ? <PresetInput value={name} onChange={setName} onConfirm={confirmAdd} onCancel={reset}
+              t={t} placeholder={t('deviceControls.presetNamePlaceholder')} />
+          : !atCap && (
+            <button onClick={beginAdd} title={t('deviceControls.savePresetTitle')} style={_presetSavePill}>
+              <Plus size={13} /> {t('deviceControls.savePreset')}
+            </button>
+          )}
+      </div>
+    </div>
+  )
+}
+
 export function LightControls({ entity, onService }) {
   const t = useT()
   const isOn = isEntityOn(entity)
@@ -345,6 +533,17 @@ export function LightControls({ entity, onService }) {
     ? `rgb(${livePreviewRgb[0]}, ${livePreviewRgb[1]}, ${livePreviewRgb[2]})`
     : 'var(--gold)'
 
+  // Live position for the presets row: brightness + the ACTIVE colour dimension
+  // (rgb when the bulb is in a colour mode, otherwise colour-temp).
+  const _inColorMode = supportsColor && ['hs', 'rgb', 'xy', 'rgbw', 'rgbww'].includes(entity.color_mode) && !!currentRgb
+  const livePresetSettings = {
+    brightness_pct: brightness,
+    ...(_inColorMode ? { rgb_color: currentRgb }
+        : supportsColorTemp ? { color_temp_kelvin: colorTemp } : {}),
+  }
+  const _tempWord = colorTemp < 3500 ? t('deviceControls.tempWarm') : colorTemp < 5000 ? t('deviceControls.tempNeutral') : t('deviceControls.tempCool')
+  const suggestedPresetName = _inColorMode ? `${brightness}%` : `${_humanize(_tempWord)} ${brightness}%`
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4, maxWidth: 320, width: '100%', margin: '0 auto' }}>
       {/* Brightness lamp — tap to toggle, hold + vertical drag for brightness */}
@@ -391,10 +590,19 @@ export function LightControls({ entity, onService }) {
         </div>
       )}
 
-      {/* Color presets */}
+      {/* Saved-position presets — brightness + colour, captured and recalled in a tap */}
+      <DevicePresetsRow
+        entityId={entity.entity_id}
+        live={livePresetSettings}
+        isOn={isOn}
+        suggestedName={suggestedPresetName}
+        onApply={(s) => onService('turn_on', s)}
+      />
+
+      {/* Colours — quick tint (keeps current brightness) */}
       {supportsColor && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.presets')}</span>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.colors')}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             {COLOR_PRESETS.map(p => {
               const rgb = hexToRgb(p.hex)

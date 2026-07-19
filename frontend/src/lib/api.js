@@ -971,3 +971,12 @@ export const setMediaVolume        = (speakerEntity, level) => post('/media/volu
 export const getMediaState         = () => get('/media/state')
 
 export const mediaDiagnostics      = () => get('/media/diagnostics')
+
+// Device presets — named saved positions (brightness + colour) per light card.
+export const getDevicePresets    = (entityId) => get(`/device/${encodeURIComponent(entityId)}/presets`)
+export const addDevicePreset     = (entityId, name, settings) =>
+  post(`/device/${encodeURIComponent(entityId)}/presets`, { name, settings })
+export const renameDevicePreset  = (entityId, presetId, name) =>
+  patch(`/device/${encodeURIComponent(entityId)}/presets/${presetId}`, { name })
+export const deleteDevicePreset  = (entityId, presetId) =>
+  del(`/device/${encodeURIComponent(entityId)}/presets/${presetId}`)
