@@ -687,7 +687,7 @@ export function RoutinesListPanel({ embedded = false }) {
   // saveRoutine handles both create AND update (id present = update in place).
   // Without this, edits would slugify-on-name → orphan the original script
   // and append a duplicate card to the UI list.
-  const handleSave   = async data => { try { await saveRoutine(data); addToast(data.id ? 'Routine updated' : 'Routine saved', 'success') } catch { addToast('Failed to save routine', 'error') } }
+  const handleSave   = async data => { try { await saveRoutine(data); addToast(data.id ? t('routines.updated') : t('routines.saved'), 'success') } catch { addToast(t('routines.failedToSave'), 'error') } }
   const handleDelete = async id => { try { await removeRoutine(id); addToast('Deleted', 'success') } catch { addToast('Failed to delete', 'error') } }
   // No optimistic "Running…" toast — App.jsx's WS execution_result handler
   // surfaces the actual outcome (success step count or failure detail). Two
@@ -757,15 +757,15 @@ export function RoutinesListPanel({ embedded = false }) {
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          New routine
+          {t('routines.add')}
         </button>
       )}
 
-      <Modal open={showWizard} onClose={handleClose} title={editTarget ? 'Edit Routine' : 'New Routine'}>
+      <Modal open={showWizard} onClose={handleClose} title={editTarget ? t('routines.editTitle') : t('routines.newTitle')}>
         <RoutineWizard initial={editTarget} onSave={handleSave} onClose={handleClose} />
       </Modal>
 
-      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Routine details">
+      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title={t('routines.detailsTitle')}>
         <RoutineViewModal
           routine={viewTarget}
           onEdit={(r) => {
