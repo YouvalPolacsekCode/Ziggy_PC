@@ -46,6 +46,9 @@ export default function Automations() {
   // are no longer tabs — they open as modals from the Automations tab.
   const [showLibrary,       setShowLibrary]       = useState(false)
   const [showSuggestions,   setShowSuggestions]   = useState(false)
+  // Header ➕ chooser: custom-create asks Automatic vs On-demand, then opens
+  // the matching blank wizard.
+  const [showCreateChooser, setShowCreateChooser] = useState(false)
   const [showWizard,        setShowWizard]        = useState(false)
   // On-demand Library items open RoutineWizard prefilled (parallel to
   // editTarget+showWizard for the automation wizard).
@@ -267,15 +270,19 @@ export default function Automations() {
             {t('automations.countSummary', { enabled, total: automations.length })}
           </p>
         </div>
-        {/* Library is page-level (serves both tabs), custom-create is the
-            secondary "blank" path. */}
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button onClick={() => setShowLibrary(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        {/* Library is page-level (serves both tabs); the ➕ is the custom-create
+            path — it asks Automatic vs On-demand, then opens the blank wizard. */}
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+          <button onClick={() => setShowLibrary(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>
             {t('automations.library')}
           </button>
-          <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-secondary" style={{ padding: '9px 12px', borderRadius: 10, fontSize: 13 }} title={t('automations.newCustom')}>
-            {t('automations.headerAdd')}
+          <button
+            onClick={() => setShowCreateChooser(true)}
+            className="z-btn-primary"
+            aria-label={t('automations.createChooserTitle')}
+            style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
         </div>
       </div>
@@ -401,7 +408,7 @@ export default function Automations() {
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.14, ease: 'easeOut' }}
         >
-          <RoutinesListPanel />
+          <RoutinesListPanel embedded />
         </motion.div>
       )}
 
@@ -420,9 +427,33 @@ export default function Automations() {
         />
       </Modal>
 
-      {/* On-demand Library item → RoutineWizard prefilled */}
+      {/* Header ➕ chooser — the one custom-create entry point for both kinds. */}
+      <Modal open={showCreateChooser} onClose={() => setShowCreateChooser(false)} title={t('automations.createChooserTitle')} maxWidth={420}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[
+            { icon: '⚡', label: t('automations.tabAutomatic'), desc: t('automations.createAutomaticDesc'),
+              onPick: () => { setShowCreateChooser(false); setEditTarget(null); setShowWizard(true) } },
+            { icon: '👆', label: t('automations.tabOnDemand'), desc: t('automations.createOnDemandDesc'),
+              onPick: () => { setShowCreateChooser(false); setRoutineTarget({ name: '', description: '', icon: '⚡', steps: [] }) } },
+          ].map(opt => (
+            <button key={opt.label} onClick={opt.onPick} style={{
+              display: 'flex', alignItems: 'center', gap: 14, textAlign: 'start', cursor: 'pointer',
+              padding: '16px 18px', borderRadius: 14, fontFamily: 'inherit',
+              background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+            }} dir="auto">
+              <span style={{ fontSize: 24, flexShrink: 0 }} aria-hidden="true">{opt.icon}</span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{opt.label}</span>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{opt.desc}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      {/* On-demand — Library item prefilled OR blank custom create */}
       <Modal open={!!routineTarget} onClose={() => setRoutineTarget(null)}
-             title={routineTarget ? t('automations.configureTitle', { name: routineTarget.name }) : ''}>
+             title={routineTarget?.name ? t('automations.configureTitle', { name: routineTarget.name }) : t('routines.create')}>
         {routineTarget && (
           <RoutineWizard initial={routineTarget} onSave={handleRoutineSave} onClose={() => setRoutineTarget(null)} />
         )}

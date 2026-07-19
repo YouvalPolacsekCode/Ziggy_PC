@@ -7,7 +7,7 @@ import { EntitySelect, getActionsForDomain, getActionLabel } from '../components
 import { useAutomationStore } from '../stores/automationStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getEntityState, getSuggestedRoutines } from '../lib/api'
+import { getEntityState } from '../lib/api'
 import IRDeviceSelect from '../components/IRDeviceSelect'
 import MediaPlayActionEditor from '../components/media/MediaPlayActionEditor'
 import { useFeature } from '../stores/featuresStore'
@@ -667,31 +667,22 @@ const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template
  * chrome. Used standalone via the <Routines /> page default export AND as a
  * tab body inside the Automations page.
  */
-export function RoutinesListPanel() {
+/**
+ * embedded — true when rendered as the Actions "On-demand" tab: creation
+ * affordances are hidden there (the page-level ➕ / Library own creation);
+ * the standalone /routines page keeps its own create buttons.
+ */
+export function RoutinesListPanel({ embedded = false }) {
   const { routines, loading, fetchRoutines, saveRoutine, removeRoutine, runRoutine, loadRoutineConfig } = useAutomationStore()
   const { addToast } = useUIStore()
   const t = useT()
   const [showWizard, setShowWizard] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [viewTarget, setViewTarget] = useState(null)
-  // Suggested routine templates from /api/routines/suggested. Filtered to
-  // `tier !== 'unavailable'` and `already_exists !== true` so we never show
-  // a card the user can't act on or that duplicates an existing routine.
-  const [suggested, setSuggested] = useState([])
 
   // Only fetch on first visit — re-fetching on every mount toggles `loading`
   // in the store, which flashes skeletons mid-tab-transition and looks jumpy.
   useEffect(() => { if (routines.length === 0) fetchRoutines() }, [])
-
-  // Suggested routines: fire-and-forget. A failure (e.g. backend not yet
-  // restarted with the new endpoint) leaves `suggested` empty — the section
-  // just doesn't render. No skeleton, no error toast: this is an additive
-  // surface and the existing routines list is the primary content.
-  useEffect(() => {
-    getSuggestedRoutines()
-      .then(r => setSuggested(Array.isArray(r?.suggested) ? r.suggested : []))
-      .catch(() => setSuggested([]))
-  }, [])
 
   // saveRoutine handles both create AND update (id present = update in place).
   // Without this, edits would slugify-on-name → orphan the original script
@@ -722,24 +713,11 @@ export function RoutinesListPanel() {
   const handleView = async r => {
     try { const config = await loadRoutineConfig(r.id); setViewTarget(config || r) } catch { setViewTarget(r) }
   }
-  // Configure a suggested-routine template: open the wizard with the template's
-  // prefill so the user reviews and saves. Suggested templates never auto-deploy.
-  const handleConfigureSuggested = (template) => {
-    const prefill = template.wizard_prefill || {
-      name: template.name || '',
-      description: template.description || '',
-      icon: template.icon || '⚡',
-      steps: [],
-    }
-    setEditTarget(prefill)
-    setShowWizard(true)
-  }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
 
-  // Filter once: hide unavailable tier (user can't act on it) and dedupe
-  // against existing routines so we don't suggest something the user already
-  // built. Computed here (not in useMemo) — the suggested list is tiny.
-  const suggestedToRender = suggested.filter(s => s.tier !== 'unavailable' && !s.already_exists)
+  // Curated starter routines are NOT surfaced here (2026-07-19 feedback):
+  // unconfigured templates live in the Library only — this panel shows what
+  // the user actually HAS.
 
   return (
     <>
@@ -749,27 +727,13 @@ export function RoutinesListPanel() {
         </div>
       )}
 
-      {/* Suggested routines section — renders above the existing list so the
-          user sees curated next steps first. Hidden entirely when empty so
-          there's no visual weight when no template matches the user's setup. */}
-      {suggestedToRender.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 8, color: 'var(--ink-mute)' }}>
-            {t('routines.suggested.sectionTitle')}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {suggestedToRender.map(s => (
-              <SuggestedRoutineCard key={s.id} template={s} onConfigure={handleConfigureSuggested} />
-            ))}
-          </div>
-        </div>
-      )}
-
       {!loading && routines.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('routines.empty')}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('routines.emptyHint')}</p>
-          <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('routines.create')}</button>
+          {!embedded && (
+            <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('routines.create')}</button>
+          )}
         </div>
       )}
 
@@ -781,7 +745,7 @@ export function RoutinesListPanel() {
         </div>
       </AnimatePresence>
 
-      {!loading && routines.length > 0 && (
+      {!embedded && !loading && routines.length > 0 && (
         <button
           onClick={() => setShowWizard(true)}
           style={{
