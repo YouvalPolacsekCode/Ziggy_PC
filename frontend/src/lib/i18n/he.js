@@ -887,6 +887,7 @@ export default {
   'automations.smartRoom.wiz.brightness':   'בהירות',
   'automations.smartRoom.wiz.warmth':       'חום',
   'automations.smartRoom.wiz.nightWindow':  'לילה',
+  'automations.smartRoom.wiz.dayWindow':    'שעות יום',
   'automations.smartRoom.wiz.guardTitle':   'כלל · שמירת לילה',
   'automations.smartRoom.wiz.guardWhen':    'לילה · מישהו כבר בחדר',
   'automations.smartRoom.wiz.guardDo':      'נשאר חשוך (לא נדלק)',

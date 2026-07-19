@@ -892,6 +892,7 @@ export default {
   'automations.smartRoom.wiz.brightness':   'Brightness',
   'automations.smartRoom.wiz.warmth':       'Warmth',
   'automations.smartRoom.wiz.nightWindow':  'Night',
+  'automations.smartRoom.wiz.dayWindow':    'Daytime',
   'automations.smartRoom.wiz.guardTitle':   'Rule · night guard',
   'automations.smartRoom.wiz.guardWhen':    'night · someone already in the room',
   'automations.smartRoom.wiz.guardDo':      'stay dark (don’t turn on)',

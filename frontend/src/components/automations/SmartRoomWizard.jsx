@@ -27,7 +27,7 @@ const DEFAULT_OPTS = {
   guard_hold_seconds: 30,   // how long someone counts as "still here" after going still
 }
 
-const STEPS = ['presence', 'day', 'night', 'guard', 'off', 'summary']
+const STEPS = ['presence', 'day', 'night', 'off', 'summary']
 
 // tiny styled controls -------------------------------------------------------
 const fieldRow = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '7px 0' }
@@ -238,37 +238,30 @@ export default function SmartRoomWizard({ onSaved, onClose, initialRoom = null, 
   }
 
   if (step === 'day') {
+    // The day step defines the day/night boundary: daytime = night_end → night_start.
     return (
       <RuleStep icon="☀️" title={t('automations.smartRoom.wiz.dayTitle')} idx={nStep} total={total} onBack={back} onNext={next} t={t}
         when={t('automations.smartRoom.wiz.dayWhen', { from: opts.night_end, to: opts.night_start })}
         doLine={t('automations.smartRoom.wiz.onDo', { pct: opts.day_brightness })}>
+        <div style={fieldRow}><span style={lbl}>{t('automations.smartRoom.wiz.dayWindow')}</span>
+          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <Time value={opts.night_end} onChange={(v) => setOpt('night_end', v)} /><span style={lbl}>–</span><Time value={opts.night_start} onChange={(v) => setOpt('night_start', v)} />
+          </span></div>
         <div style={fieldRow}><span style={lbl}>{t('automations.smartRoom.wiz.brightness')}</span><Range min={10} max={100} step={5} value={opts.day_brightness} onChange={(v) => setOpt('day_brightness', v)} suffix="%" /></div>
       </RuleStep>
     )
   }
 
   if (step === 'night') {
+    // Night is the inverse of the day window set in step 2 (no time control here).
+    // Its empty-room-only trigger IS the sleeping-wife guard — noted, not a separate screen.
     return (
       <RuleStep icon="🌙" title={t('automations.smartRoom.wiz.nightTitle')} idx={nStep} total={total} onBack={back} onNext={next} t={t}
         when={t('automations.smartRoom.wiz.nightWhen', { from: opts.night_start, to: opts.night_end })}
         doLine={t('automations.smartRoom.wiz.onDoWarm', { pct: opts.night_brightness, k: opts.night_kelvin })}>
         <div style={fieldRow}><span style={lbl}>{t('automations.smartRoom.wiz.brightness')}</span><Range min={5} max={100} step={5} value={opts.night_brightness} onChange={(v) => setOpt('night_brightness', v)} suffix="%" /></div>
         <div style={fieldRow}><span style={lbl}>{t('automations.smartRoom.wiz.warmth')}</span><Range min={2000} max={4000} step={100} value={opts.night_kelvin} onChange={(v) => setOpt('night_kelvin', v)} suffix="K" /></div>
-        <div style={fieldRow}><span style={lbl}>{t('automations.smartRoom.wiz.nightWindow')}</span><span style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Time value={opts.night_start} onChange={(v) => setOpt('night_start', v)} /><span style={lbl}>–</span><Time value={opts.night_end} onChange={(v) => setOpt('night_end', v)} /></span></div>
-      </RuleStep>
-    )
-  }
-
-  if (step === 'guard') {
-    return (
-      <RuleStep icon="😴" title={t('automations.smartRoom.wiz.guardTitle')} idx={nStep} total={total} onBack={back} onNext={next} t={t}
-        when={t('automations.smartRoom.wiz.guardWhen')}
-        doLine={t('automations.smartRoom.wiz.guardDo')}>
-        <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', margin: '0 0 4px', lineHeight: 1.5 }} dir="auto">{t('automations.smartRoom.wiz.guardWhy')}</p>
-        <div style={fieldRow}>
-          <span style={lbl}>{t('automations.smartRoom.wiz.guardHold')}</span>
-          <span style={val}>{opts.guard_hold_seconds}{t('automations.smartRoom.wiz.sec')} · <span style={{ fontFamily: 'inherit', fontWeight: 400, color: 'var(--ink-faint)' }}>{t('automations.smartRoom.wiz.guardHoldNote')}</span></span>
-        </div>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '4px 0 0', lineHeight: 1.5 }} dir="auto">😴 {t('automations.smartRoom.wiz.guardWhy')}</p>
       </RuleStep>
     )
   }
@@ -293,14 +286,19 @@ export default function SmartRoomWizard({ onSaved, onClose, initialRoom = null, 
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {[
-          ['☀️', t('automations.smartRoom.wiz.sumDay', { pct: opts.day_brightness })],
-          ['🌙', t('automations.smartRoom.wiz.sumNight', { pct: opts.night_brightness, k: opts.night_kelvin })],
-          ['😴', t('automations.smartRoom.wiz.sumGuard')],
-          ['🚪', t('automations.smartRoom.wiz.sumOff', { n: opts.off_delay_minutes })],
-        ].map(([ic, txt], i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
-            <span style={{ fontSize: 15 }}>{ic}</span><span style={{ fontSize: 12.5, color: 'var(--ink)' }} dir="auto">{txt}</span>
-          </div>
+          ['presence', '🧍', sensorLabel],
+          ['day', '☀️', t('automations.smartRoom.wiz.sumDay', { pct: opts.day_brightness })],
+          ['night', '🌙', t('automations.smartRoom.wiz.sumNight', { pct: opts.night_brightness, k: opts.night_kelvin })],
+          ['off', '🚪', t('automations.smartRoom.wiz.sumOff', { n: opts.off_delay_minutes })],
+        ].map(([stepName, ic, txt]) => (
+          <button key={stepName} type="button" onClick={() => setStepIdx(STEPS.indexOf(stepName))}
+            style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '9px 10px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', width: '100%', textAlign: 'start', fontFamily: 'inherit' }}>
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{ic}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--ink)' }} dir="auto">{txt}</span>
+            </span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
         ))}
       </div>
       <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: 0 }} dir="auto">{t('automations.smartRoom.wiz.sumUses', { sensor: sensorLabel })}</p>
