@@ -40,9 +40,6 @@ export default function SmartRoomViewModal({ group }) {
         ))}
       </div>
 
-      <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, textAlign: 'center' }}>
-        {t('automations.smartRoom.viewActive', { n: activeCount, total: members.length })}
-      </p>
     </div>
   )
 }

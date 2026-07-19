@@ -35,11 +35,6 @@ function SmartRoomGroupRow({ group, onToggleAll, onView, onEdit, onDelete }) {
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }} dir="auto">
             {t('automations.smartRoom.cardSubtitle')}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint }}>
-              {t('automations.smartRoom.cardRuleCount', { n: count })}
-            </span>
-          </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
           <Toggle checked={allEnabled} onCheckedChange={() => onToggleAll(!allEnabled)} />

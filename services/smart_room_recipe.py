@@ -246,6 +246,8 @@ def build_smart_room_bundle(
         "rationale": rationale,
         "decline": None,
         "recipe": "smart_room",
+        "occupancy_entity": occ,      # the fused presence sensor all rules trigger on
+        "has_presence": has_presence,
         "artifacts": {
             "occupancy_sensors": [],       # caller already ensured OCC exists
             "kv_state": kv,
