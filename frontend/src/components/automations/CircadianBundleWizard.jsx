@@ -2,25 +2,62 @@ import React, { useMemo, useState } from 'react'
 import { Input } from '../ui/Input'
 import { useT } from '../../lib/i18n'
 import { useDeviceStore } from '../../stores/deviceStore'
-import { saveCircadianBundle, deleteCircadianBundle } from '../../lib/api'
+import { saveCircadian, deleteCircadian } from '../../lib/api'
 import { entityDisplayName } from '../../lib/utils'
 
 // ── CircadianBundleWizard ─────────────────────────────────────────────────────
-// Dedicated wizard for the "Smart Light Schedule" suggestion (D1). The
-// regular AutomationWizard speaks the single-trigger/single-action schema;
-// circadian is 4 HA automations under the hood, so this wizard renders only
-// the two user-tunable knobs (lights + bedtime) and POSTs to the dedicated
-// /api/automations/circadian-bundle endpoint via saveCircadianBundle().
-//
-// Lights pool comes from initial.defaults.lights (server-pre-filtered to
-// has_color_temp_light). Falling back to filtering the live deviceStore
-// covers the edit flow where the wizard reopens on an existing bundle.
+// Smart Light Schedule = a continuous adaptive ramp (services/circadian_engine).
+// The only things worth setting are the two extremes + your sleep timing; the
+// curve between them is interpolated. So this wizard is: pick lights, set the
+// Day peak (cool+bright) and Night floor (warm+dim), and your wake/bedtime.
+
+const DEF = { peak: { kelvin: 5500, pct: 100 }, floor: { kelvin: 2200, pct: 30 }, wake: '07:00', bedtime: '22:00' }
+const KMIN = 2000, KMAX = 6500
+
+function warmthWord(t, k) {
+  if (k <= 2400) return t('automations.circadian.warmthAmber')
+  if (k <= 3200) return t('automations.circadian.warmthWarm')
+  if (k <= 4500) return t('automations.circadian.warmthNeutral')
+  return t('automations.circadian.warmthCool')
+}
+
+function Slider({ label, value, min, max, step, suffix, onChange }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{label}</span>
+        <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600 }}>{value}{suffix}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: 'var(--ok)' }} />
+    </div>
+  )
+}
+
+function AnchorEditor({ t, title, hint, anchor, onChange }) {
+  return (
+    <div style={{ border: '0.5px solid var(--line)', borderRadius: 12, padding: '12px 14px', background: 'var(--surface)' }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: '0 0 2px' }} dir="auto">{title}</p>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '0 0 12px' }} dir="auto">{hint}</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Slider label={`${t('automations.circadian.warmth')} · ${warmthWord(t, anchor.kelvin)}`}
+          value={anchor.kelvin} min={KMIN} max={KMAX} step={100} suffix="K"
+          onChange={v => onChange({ ...anchor, kelvin: v })} />
+        <Slider label={t('automations.circadian.brightness')}
+          value={anchor.pct} min={1} max={100} step={1} suffix="%"
+          onChange={v => onChange({ ...anchor, pct: v })} />
+      </div>
+    </div>
+  )
+}
+
 function CircadianBundleWizard({ initial, onSaved, onClose }) {
   const t = useT()
   const { entities } = useDeviceStore()
 
   const candidateLights = useMemo(() => {
-    const fromPrefill = (initial?.defaults?.lights || initial?.lights || []).filter(Boolean)
+    const fromPrefill = (initial?.lights || initial?.defaults?.lights || []).filter(Boolean)
     if (fromPrefill.length > 0) return fromPrefill
     return (entities || [])
       .filter(e => {
@@ -35,61 +72,46 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
       .map(e => e.entity_id)
   }, [initial, entities])
 
-  const [selected, setSelected] = useState(() => {
-    const pre = initial?.selectedLights || initial?.defaults?.lights || candidateLights
-    return new Set(pre)
-  })
-  const [bedtime, setBedtime] = useState(initial?.defaults?.bedtime || initial?.bedtime || '22:00')
-  // Default ON — matches the user expectation that all selected lights follow
-  // the schedule. Restored from an existing bundle when editing.
-  const [autoOn, setAutoOn]   = useState(() => {
-    const v = initial?.autoOn ?? initial?.defaults?.autoOn
-    return v == null ? true : !!v
-  })
-  const [saving, setSaving]   = useState(false)
-  const [error,  setError]    = useState(null)
-
-  const toggle = (eid) => setSelected(prev => {
-    const next = new Set(prev)
-    if (next.has(eid)) next.delete(eid); else next.add(eid)
-    return next
-  })
+  const [selected, setSelected] = useState(() => new Set(initial?.lights || candidateLights))
+  const [peak,    setPeak]    = useState(initial?.peak  || DEF.peak)
+  const [floor,   setFloor]   = useState(initial?.floor || DEF.floor)
+  const [wake,    setWake]    = useState(initial?.wake    || DEF.wake)
+  const [bedtime, setBedtime] = useState(initial?.bedtime || DEF.bedtime)
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState(null)
 
   const isUpdate = !!initial?._isInstalled
   const noLights = candidateLights.length === 0
-  const canSave  = !noLights && selected.size > 0 && /^\d{2}:\d{2}$/.test(bedtime) && !saving
+  const timeOk   = /^\d{2}:\d{2}$/.test(wake) && /^\d{2}:\d{2}$/.test(bedtime)
+  const canSave  = !noLights && selected.size > 0 && timeOk && !saving
+
+  const toggle = (eid) => setSelected(prev => {
+    const next = new Set(prev); next.has(eid) ? next.delete(eid) : next.add(eid); return next
+  })
+  const labelFor = (eid) => entityDisplayName(entities?.find(e => e.entity_id === eid)) || eid
 
   const handleConfirm = async () => {
     setSaving(true); setError(null)
     try {
-      await saveCircadianBundle({ lights: Array.from(selected), bedtime, auto_on: autoOn })
+      await saveCircadian({ lights: Array.from(selected), peak, floor, wake, bedtime })
       await onSaved?.({ updated: isUpdate })
     } catch (e) {
-      setError(e?.userMessage || e?.message || t('automations.circadian.failed'))
-      setSaving(false)
+      setError(e?.userMessage || e?.message || t('automations.circadian.failed')); setSaving(false)
     }
   }
-
   const handleRemove = async () => {
     setSaving(true); setError(null)
-    try {
-      await deleteCircadianBundle()
-      await onSaved?.({ removed: true })
-    } catch (e) {
-      setError(e?.userMessage || e?.message || t('automations.circadian.failed'))
-      setSaving(false)
-    }
+    try { await deleteCircadian(); await onSaved?.({ removed: true }) }
+    catch (e) { setError(e?.userMessage || e?.message || t('automations.circadian.failed')); setSaving(false) }
   }
-
-  const labelFor = (eid) => entityDisplayName(entities?.find(e => e.entity_id === eid)) || eid
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px' }}>
-      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }} dir="auto">
         {t('automations.circadian.subtitle')}
       </p>
 
-      {/* Lights multi-select (color-temp lights only) */}
+      {/* Lights */}
       <div>
         <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.lights')}</p>
         {noLights ? (
@@ -101,28 +123,15 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
             {candidateLights.map(eid => {
               const checked = selected.has(eid)
               return (
-                <button
-                  key={eid}
-                  type="button"
-                  onClick={() => toggle(eid)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 10px', borderRadius: 8,
+                <button key={eid} type="button" onClick={() => toggle(eid)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
                     background: checked ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'transparent',
-                    border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{
-                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                    border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit' }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0,
                     border: `1.5px solid ${checked ? 'var(--ok)' : 'var(--line)'}`,
                     background: checked ? 'var(--ok)' : 'transparent',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {checked && (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 12l5 5L20 6"/>
-                      </svg>
-                    )}
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>}
                   </span>
                   <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{labelFor(eid)}</span>
                 </button>
@@ -130,106 +139,43 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
             })}
           </div>
         )}
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
-          {t('automations.circadian.lightsHelp')}
-        </p>
       </div>
 
-      {/* Bedtime */}
-      <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.bedtime')}</p>
-        <Input
-          type="time"
-          value={bedtime}
-          onChange={e => setBedtime(e.target.value)}
-          style={{ maxWidth: 140 }}
-        />
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
-          {t('automations.circadian.bedtimeHelp')}
-        </p>
-      </div>
+      {/* Two anchors */}
+      <AnchorEditor t={t} title={`☀️ ${t('automations.circadian.dayPeak')}`} hint={t('automations.circadian.dayPeakHint')} anchor={peak}  onChange={setPeak} />
+      <AnchorEditor t={t} title={`🌙 ${t('automations.circadian.nightFloor')}`} hint={t('automations.circadian.nightFloorHint')} anchor={floor} onChange={setFloor} />
 
-      {/* Turn-on behaviour */}
-      <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.autoOnLabel')}</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {[
-            { on: true,  label: t('automations.circadian.autoOnTurnOn') },
-            { on: false, label: t('automations.circadian.autoOnAdjust') },
-          ].map(opt => {
-            const active = autoOn === opt.on
-            return (
-              <button
-                key={String(opt.on)}
-                type="button"
-                onClick={() => setAutoOn(opt.on)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '9px 11px', borderRadius: 10, textAlign: 'start', fontFamily: 'inherit',
-                  background: active ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'var(--surface)',
-                  border: `0.5px solid ${active ? 'var(--ok)' : 'var(--line)'}`,
-                  cursor: 'pointer',
-                }}
-                dir="auto"
-              >
-                <span style={{
-                  width: 16, height: 16, borderRadius: 999, flexShrink: 0,
-                  border: `1.5px solid ${active ? 'var(--ok)' : 'var(--line)'}`,
-                  background: active ? 'var(--ok)' : 'transparent',
-                }} />
-                <span style={{ fontSize: 13, color: 'var(--ink)' }}>{opt.label}</span>
-              </button>
-            )
-          })}
+      {/* Timing */}
+      <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <p className="z-eyebrow" style={{ marginBottom: 6 }}>{t('automations.circadian.wake')}</p>
+          <Input type="time" value={wake} onChange={e => setWake(e.target.value)} />
         </div>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.45 }}>
-          {t('automations.circadian.autoOnHelp')}
-        </p>
-      </div>
-
-      {/* Daily-schedule preview */}
-      <div>
-        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.preview')}</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontFamily: '"IBM Plex Mono", monospace', fontSize: 11.5, color: 'var(--ink-2)' }}>
-          <div>🌅 {t('automations.circadian.previewSunrise')}</div>
-          <div>☀️ {t('automations.circadian.previewNoon')}</div>
-          <div>🌇 {t('automations.circadian.previewSunset')}</div>
-          <div>🌙 {t('automations.circadian.previewBedtime', { time: bedtime || '22:00' })}</div>
+        <div style={{ flex: 1 }}>
+          <p className="z-eyebrow" style={{ marginBottom: 6 }}>{t('automations.circadian.bedtime')}</p>
+          <Input type="time" value={bedtime} onChange={e => setBedtime(e.target.value)} />
         </div>
       </div>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '-6px 0 0', lineHeight: 1.45 }} dir="auto">
+        {t('automations.circadian.timingHelp')}
+      </p>
 
       {error && (
-        <p style={{ fontSize: 12, color: 'var(--accent)', padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}>
-          {error}
-        </p>
+        <p style={{ fontSize: 12, color: 'var(--accent)', padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}>{error}</p>
       )}
 
-      {/* Footer actions */}
+      {/* Footer */}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           {isUpdate && (
-            <button
-              type="button"
-              onClick={handleRemove}
-              disabled={saving}
-              className="z-btn-secondary"
-              style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13, color: 'var(--accent)' }}
-            >
+            <button type="button" onClick={handleRemove} disabled={saving} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13, color: 'var(--accent)' }}>
               {t('automations.circadian.delete')}
             </button>
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={onClose} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={!canSave}
-            className="z-btn-primary"
-            style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13, opacity: canSave ? 1 : 0.5 }}
-          >
+          <button type="button" onClick={onClose} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>{t('common.cancel')}</button>
+          <button type="button" onClick={handleConfirm} disabled={!canSave} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13, opacity: canSave ? 1 : 0.5 }}>
             {isUpdate ? t('automations.circadian.update') : t('automations.circadian.confirm')}
           </button>
         </div>

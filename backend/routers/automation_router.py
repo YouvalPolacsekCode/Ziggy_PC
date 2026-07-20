@@ -545,6 +545,9 @@ class CircadianConfigBody(BaseModel):
     floor:   Optional[CircadianAnchor] = None
     wake:    Optional[str] = None
     bedtime: Optional[str] = None
+    # None → enabled iff there are lights. Pass explicitly to pause/resume
+    # without losing the config (the card's toggle).
+    enabled: Optional[bool] = None
 
 
 @router.get("/api/automations/circadian")
@@ -558,7 +561,7 @@ async def get_circadian():
 async def save_circadian(body: CircadianConfigBody):
     from services.circadian_engine import save_config, sync_now, DEFAULTS
     cfg = {
-        "enabled": bool(body.lights),
+        "enabled": bool(body.lights) if body.enabled is None else bool(body.enabled),
         "lights":  body.lights,
         "peak":    body.peak.model_dump()  if body.peak  else DEFAULTS["peak"],
         "floor":   body.floor.model_dump() if body.floor else DEFAULTS["floor"],
@@ -572,7 +575,7 @@ async def save_circadian(body: CircadianConfigBody):
         await asyncio.to_thread(delete_bundle)
     except Exception:
         pass
-    applied = await asyncio.to_thread(sync_now) if body.lights else {}
+    applied = await asyncio.to_thread(sync_now) if (cfg["enabled"] and body.lights) else {}
     _bus.emit("automation", _BASIC, "circadian_saved",
               light_count=len(body.lights), applied=applied.get("applied"), result="ok")
     return {"ok": True, "config": saved, "applied": applied}

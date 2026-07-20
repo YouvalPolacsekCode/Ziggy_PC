@@ -5,7 +5,7 @@ import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getSuggestionsFeed, deleteCircadianBundle, deleteSmartRoom } from '../lib/api'
+import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom } from '../lib/api'
 import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
@@ -14,6 +14,7 @@ import AutomationCard from '../components/automations/AutomationCard'
 import CircadianBundleWizard from '../components/automations/CircadianBundleWizard'
 import SmartRoomWizard from '../components/automations/SmartRoomWizard'
 import CircadianGroupRow from '../components/automations/CircadianGroupRow'
+import CircadianViewModal from '../components/automations/CircadianViewModal'
 import SmartRoomGroupRow from '../components/automations/SmartRoomGroupRow'
 import SmartRoomViewModal from '../components/automations/SmartRoomViewModal'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
@@ -61,6 +62,10 @@ export default function Automations() {
   // Circadian bundle wizard — opened by Configure on the Smart Light Schedule
   // template, or by Edit on the grouped row in the Your-Automations section.
   const [circadianTarget,   setCircadianTarget]   = useState(null)
+  // Smart Light Schedule is now sourced from the ramp-engine config endpoint,
+  // not from HA automations (they're migrated away). Status drives the card + view.
+  const [circadianStatus,   setCircadianStatus]   = useState(null)
+  const [showCircadianView, setShowCircadianView] = useState(false)
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
   const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
   const [smartRoomView,     setSmartRoomView]     = useState(null)   // group being viewed
@@ -123,6 +128,7 @@ export default function Automations() {
   useEffect(() => {
     if (automations.length === 0)        fetchAutomations()
     if (routines.length === 0)           fetchRoutines()
+    getCircadian().then(setCircadianStatus).catch(() => {})
 
     // Habit suggestions for the Suggested tab. Prefer the unified feed (one
     // fetch), fall back to the legacy endpoint if it errors so an outage of
@@ -153,16 +159,35 @@ export default function Automations() {
     setShowWizard(true)
   }
 
-  // Open the circadian wizard in edit mode for an installed bundle. Called
-  // from the grouped Smart Light Schedule row in the Your-Automations section.
-  const handleEditCircadianBundle = (group) => {
+  const refetchCircadian = () => getCircadian().then(setCircadianStatus).catch(() => {})
+
+  // Open the wizard in edit mode from the live engine config.
+  const handleEditCircadian = () => {
+    if (!circadianStatus) return
+    setShowCircadianView(false)
     setCircadianTarget({
       _isInstalled: true,
-      selectedLights: group.lights,
-      bedtime: group.bedtime,
-      autoOn: group.autoOn,
-      defaults: { lights: group.lights, bedtime: group.bedtime, autoOn: group.autoOn },
+      lights:  circadianStatus.lights,
+      peak:    circadianStatus.peak,
+      floor:   circadianStatus.floor,
+      wake:    circadianStatus.wake,
+      bedtime: circadianStatus.bedtime,
     })
+  }
+  const handleCircadianSync = async () => {
+    try { await syncCircadian(); addToast(t('automations.circadian.synced'), 'success'); await refetchCircadian() }
+    catch { addToast(t('automations.circadian.failed'), 'error') }
+  }
+  const handleCircadianToggle = async (enabled) => {
+    try {
+      await saveCircadian({ ...circadianStatus, enabled })
+      addToast(enabled ? t('automations.circadian.resumed') : t('automations.circadian.pausedToast'), 'success')
+      await refetchCircadian()
+    } catch { addToast(t('automations.circadian.failed'), 'error') }
+  }
+  const handleCircadianDelete = async () => {
+    try { await deleteCircadian(); addToast(t('automations.circadian.deleted'), 'success'); await refetchCircadian() }
+    catch { addToast(t('automations.circadian.failed'), 'error') }
   }
 
   const handleSmartRoomClose = () => setSmartRoomTarget(null)
@@ -200,7 +225,7 @@ export default function Automations() {
               : (updated ? t('automations.circadian.updated') : t('automations.circadian.saved')),
       'success',
     )
-    try { await fetchAutomations({ force: true }) } catch {}
+    try { await refetchCircadian() } catch {}
   }
 
   // On-demand Library item → RoutineWizard prefilled with the template's
@@ -358,22 +383,14 @@ export default function Automations() {
           <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.myAutomations')}</p>
           <AnimatePresence mode="popLayout">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {circadianGroup && (
+              {circadianStatus && (circadianStatus.lights || []).length > 0 && (
                 <CircadianGroupRow
-                  group={circadianGroup}
-                  onToggleAll={async (toEnabled) => {
-                    try {
-                      await Promise.all(circadianGroup.members.map(m => toggleAutomation(m.id, toEnabled)))
-                    } catch { addToast(t('automations.circadian.failed'), 'error') }
-                  }}
-                  onEdit={() => handleEditCircadianBundle(circadianGroup)}
-                  onDelete={async () => {
-                    try {
-                      await deleteCircadianBundle()
-                      addToast(t('automations.circadian.deleted'), 'success')
-                      await fetchAutomations({ force: true })
-                    } catch { addToast(t('automations.circadian.failed'), 'error') }
-                  }}
+                  status={circadianStatus}
+                  onToggle={handleCircadianToggle}
+                  onSync={handleCircadianSync}
+                  onView={() => setShowCircadianView(true)}
+                  onEdit={handleEditCircadian}
+                  onDelete={handleCircadianDelete}
                 />
               )}
               {smartRoomGroups.map(group => (
@@ -493,6 +510,15 @@ export default function Automations() {
         editTarget ? t('automations.editTitle', { name: editTarget.name }) : t('automations.newCustom')
       }>
         <AutomationWizard key={editTarget?.id || '__new__'} initial={editTarget} onSave={handleSave} onClose={handleClose} />
+      </Modal>
+
+      {/* Smart Light Schedule — read-only View (what it's doing right now). */}
+      <Modal open={showCircadianView} onClose={() => setShowCircadianView(false)} title={t('automations.circadian.installedBadge')}>
+        <CircadianViewModal
+          status={circadianStatus}
+          onSync={async () => { await handleCircadianSync() }}
+          onEdit={handleEditCircadian}
+        />
       </Modal>
 
       {/* Smart Light Schedule (circadian) wizard — separate modal. */}
