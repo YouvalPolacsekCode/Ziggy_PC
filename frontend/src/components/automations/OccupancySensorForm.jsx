@@ -51,17 +51,24 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
   const t = useT()
   const rooms = useDeviceStore(s => s.rooms)
   const allEntities = useDeviceStore(s => s.entities)
+  const occupancySensors = useDeviceStore(s => s.occupancySensors)
   const entityMap = useMemo(
     () => Object.fromEntries((allEntities || []).map(e => [e.entity_id, e])),
     [allEntities],
+  )
+  // Ziggy's own fused presence sensors are NOT valid sources — you can't build a
+  // fused sensor out of another fused sensor. Exclude them from the candidates.
+  const fusedIds = useMemo(
+    () => new Set((occupancySensors || []).map(s => s.entity_id).filter(Boolean)),
+    [occupancySensors],
   )
 
   const roomOptions = useMemo(() => (rooms || []).map(r => ({
     ...r,
     candidates: (r.entities || [])
       .map(id => entityMap[id])
-      .filter(e => e && e.domain === 'binary_sensor' && OCC_TYPE[e.device_class]),
-  })), [rooms, entityMap])
+      .filter(e => e && e.domain === 'binary_sensor' && OCC_TYPE[e.device_class] && !fusedIds.has(e.entity_id)),
+  })), [rooms, entityMap, fusedIds])
 
   const initId = useMemo(() => {
     if (initialRoom) {
