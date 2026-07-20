@@ -126,6 +126,86 @@ def test_rename_empty_rejected(dp):
         dp.rename_preset("light.k", p["id"], "  ")
 
 
+def test_new_preset_is_not_default(dp):
+    p = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    assert p["is_default"] is False
+    assert dp.get_default("light.k") is None
+
+
+def test_set_and_get_default(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    dp.add_preset("light.k", "Bright", {"brightness_pct": 90})
+    dp.set_default("light.k", a["id"])
+    d = dp.get_default("light.k")
+    assert d["id"] == a["id"]
+    assert d["is_default"] is True
+
+
+def test_default_is_exclusive(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    b = dp.add_preset("light.k", "Bright", {"brightness_pct": 90})
+    dp.set_default("light.k", a["id"])
+    dp.set_default("light.k", b["id"])
+    defaults = [p for p in dp.list_presets("light.k") if p["is_default"]]
+    assert len(defaults) == 1
+    assert defaults[0]["id"] == b["id"]
+
+
+def test_set_default_unknown_raises(dp):
+    dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    with pytest.raises(KeyError):
+        dp.set_default("light.k", "nope")
+
+
+def test_clear_default(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    dp.set_default("light.k", a["id"])
+    assert dp.clear_default("light.k") is True
+    assert dp.get_default("light.k") is None
+    assert dp.clear_default("light.k") is False  # nothing to clear now
+
+
+def test_deleting_default_leaves_no_default(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    dp.set_default("light.k", a["id"])
+    dp.delete_preset("light.k", a["id"])
+    assert dp.get_default("light.k") is None
+
+
+def test_default_survives_rename(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    dp.set_default("light.k", a["id"])
+    dp.rename_preset("light.k", a["id"], "Snug")
+    d = dp.get_default("light.k")
+    assert d["id"] == a["id"] and d["name"] == "Snug" and d["is_default"] is True
+
+
+def test_resolve_default_returns_settings_for_bare_turn_on(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40, "color_temp_kelvin": 2700})
+    dp.set_default("light.k", a["id"])
+    assert dp.resolve_default_turn_on("light.k", {}) == {"brightness_pct": 40, "color_temp_kelvin": 2700}
+    assert dp.resolve_default_turn_on("light.k", {"entity_id": "light.k"}) == {"brightness_pct": 40, "color_temp_kelvin": 2700}
+
+
+def test_resolve_default_yields_nothing_when_look_specified(dp):
+    a = dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    dp.set_default("light.k", a["id"])
+    assert dp.resolve_default_turn_on("light.k", {"brightness_pct": 80}) == {}
+    assert dp.resolve_default_turn_on("light.k", {"rgb_color": [1, 2, 3]}) == {}
+    assert dp.resolve_default_turn_on("light.k", {"effect": "blink"}) == {}
+
+
+def test_resolve_default_none_when_no_default(dp):
+    dp.add_preset("light.k", "Cozy", {"brightness_pct": 40})
+    assert dp.resolve_default_turn_on("light.k", {}) == {}
+
+
+def test_resolve_default_only_for_lights(dp):
+    # A switch/other domain never gets a light default injected.
+    assert dp.resolve_default_turn_on("switch.k", {}) == {}
+    assert dp.resolve_default_turn_on(None, {}) == {}
+
+
 def test_persistence_hits_disk(dp):
     # No in-memory cache: the store is the file. Prove the write landed on disk
     # and a fresh read (as a new process would do) sees it.

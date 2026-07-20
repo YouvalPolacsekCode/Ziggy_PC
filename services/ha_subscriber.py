@@ -148,12 +148,26 @@ async def _restore_entity_state(entity_id: str) -> None:
     try:
         from services.state_memory import get_restore_payload
         from services.home_automation import call_service
-        payload = get_restore_payload(entity_id)
+        domain = entity_id.split(".")[0]
+        # A light with a default preset wakes into it after a power cut; other
+        # entities (and lights without a default) fall back to last-known state.
+        payload = None
+        source = "state_memory"
+        if domain == "light":
+            try:
+                from services.device_presets import get_default
+                default = get_default(entity_id)
+                if default:
+                    payload = {"entity_id": entity_id, **default["settings"]}
+                    source = "default_preset"
+            except Exception as e:
+                log_error(f"[StateRestore] default lookup failed for {entity_id}: {e}")
+        if payload is None:
+            payload = get_restore_payload(entity_id)
         if payload:
-            domain = entity_id.split(".")[0]
             result = call_service(domain, "turn_on", payload)
             if result.get("ok"):
-                log_info(f"[StateRestore] Restored {entity_id} → {payload}")
+                log_info(f"[StateRestore] Restored {entity_id} → {payload} (via {source})")
             else:
                 log_error(f"[StateRestore] Failed to restore {entity_id}: {result.get('message')}")
     except Exception as e:

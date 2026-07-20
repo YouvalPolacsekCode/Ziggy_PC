@@ -440,8 +440,17 @@ def turn_off_everything() -> Dict[str, Any]:
 def toggle_light(entity_id: str, turn_on: bool = True, origin: str = "ziggy") -> Tuple[int, str]:
     action = "turn_on" if turn_on else "turn_off"
     endpoint = _ha_endpoint(f"/api/services/light/{action}")
+    payload: Dict[str, Any] = {"entity_id": entity_id}
+    # A bare on (voice/intent "turn on the kitchen") wakes the light in its
+    # default preset, if one is set. Never overrides an explicit look.
+    if turn_on:
+        try:
+            from services.device_presets import resolve_default_turn_on
+            payload.update(resolve_default_turn_on(entity_id, {}))
+        except Exception as e:
+            log_error(f"[HA] default-preset resolve skipped for {entity_id}: {e}")
     try:
-        response = _session.post(endpoint, headers=_headers(), json={"entity_id": entity_id}, timeout=DEFAULT_TIMEOUT)
+        response = _session.post(endpoint, headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
             _record_intent(entity_id, "on" if turn_on else "off", origin)
             log_info(f"[HA] {action.upper()} sent to {entity_id}")

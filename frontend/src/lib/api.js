@@ -980,3 +980,7 @@ export const renameDevicePreset  = (entityId, presetId, name) =>
   patch(`/device/${encodeURIComponent(entityId)}/presets/${presetId}`, { name })
 export const deleteDevicePreset  = (entityId, presetId) =>
   del(`/device/${encodeURIComponent(entityId)}/presets/${presetId}`)
+export const setDefaultDevicePreset   = (entityId, presetId) =>
+  put(`/device/${encodeURIComponent(entityId)}/presets/${presetId}/default`)
+export const clearDefaultDevicePreset = (entityId) =>
+  del(`/device/${encodeURIComponent(entityId)}/default`)

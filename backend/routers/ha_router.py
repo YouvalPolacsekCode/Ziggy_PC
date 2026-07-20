@@ -313,6 +313,17 @@ async def ha_call_service(body: HaServiceCall):
             },
         )
 
+    # Default-preset injection: a bare light turn_on (no brightness/colour/effect
+    # specified) wakes the light in its default preset, if the user set one.
+    if body.service == "turn_on" and body.domain == "light":
+        eid = body.data.get("entity_id")
+        if isinstance(eid, str):
+            try:
+                from services.device_presets import resolve_default_turn_on
+                body.data.update(resolve_default_turn_on(eid, body.data))
+            except Exception as _e:
+                log_info(f"[HASvc] default-preset resolve skipped for {eid}: {_e}")
+
     # call_service is sync (requests.post) — running it inline on an async
     # endpoint blocks the event loop for the full HA round-trip (100-300 ms
     # typical, up to several seconds on a slow tunnel or unresponsive

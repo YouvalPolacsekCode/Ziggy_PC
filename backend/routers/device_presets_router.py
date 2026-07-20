@@ -76,3 +76,20 @@ async def remove_preset(entity_id: str, preset_id: str,
     if not removed:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Preset not found."})
     return {"status": "ok"}
+
+
+@router.put("/api/device/{entity_id}/presets/{preset_id}/default")
+async def make_default(entity_id: str, preset_id: str,
+                       user: dict = Depends(get_current_user)):
+    eid = unquote(entity_id)
+    try:
+        preset = device_presets.set_default(eid, preset_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Preset not found."})
+    return {"preset": preset}
+
+
+@router.delete("/api/device/{entity_id}/default")
+async def unset_default(entity_id: str, user: dict = Depends(get_current_user)):
+    device_presets.clear_default(unquote(entity_id))
+    return {"status": "ok"}

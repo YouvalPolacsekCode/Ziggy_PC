@@ -1513,6 +1513,8 @@ export default {
   'deviceControls.presetCancel':        'Cancel',
   'deviceControls.presetRename':        'Rename',
   'deviceControls.presetDelete':        'Delete',
+  'deviceControls.presetSetDefault':    'Set as default',
+  'deviceControls.presetClearDefault':  'Remove default',
   'deviceControls.presetLimitReached':  'You can save up to 6 presets. Delete one to add another.',
   'deviceControls.presetSaveFailed':    'Could not save preset.',
   'deviceControls.effects':             'Effects',

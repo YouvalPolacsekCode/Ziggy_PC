@@ -33,6 +33,14 @@ _MAX_NAME_LEN = 40
 # frontend sends (entity_id, effect, HA plumbing) is dropped.
 _ALLOWED_KEYS = {"brightness_pct", "color_temp_kelvin", "rgb_color"}
 
+# A "look" the caller already asked for. If a light turn_on carries ANY of these,
+# the caller has an explicit intent, so a default preset must NOT override it.
+_LOOK_KEYS = {
+    "brightness", "brightness_pct", "brightness_step", "brightness_step_pct",
+    "color_temp", "color_temp_kelvin", "rgb_color", "rgbw_color", "rgbww_color",
+    "hs_color", "xy_color", "color_name", "white", "effect", "flash",
+}
+
 
 class PresetLimitError(Exception):
     """Raised when an entity already holds MAX_PRESETS_PER_ENTITY presets."""
@@ -122,6 +130,7 @@ def add_preset(entity_id: str, name: str, settings: dict) -> dict:
         "id": uuid.uuid4().hex[:12],
         "name": clean_name,
         "settings": clean_settings,
+        "is_default": False,
         "saved_at": datetime.now().isoformat(),
     }
     presets.append(preset)
@@ -143,7 +152,11 @@ def rename_preset(entity_id: str, preset_id: str, name: str) -> dict:
 
 
 def delete_preset(entity_id: str, preset_id: str) -> bool:
-    """Delete a preset. Returns True if one was removed, False if not found."""
+    """Delete a preset. Returns True if one was removed, False if not found.
+
+    Deleting the default simply leaves the entity with no default (the flag
+    goes away with the preset).
+    """
     store = _load()
     presets = store.get(entity_id, [])
     remaining = [p for p in presets if p["id"] != preset_id]
@@ -155,3 +168,62 @@ def delete_preset(entity_id: str, preset_id: str) -> bool:
         store.pop(entity_id, None)
     _save(store)
     return True
+
+
+# ── Default preset ──────────────────────────────────────────────────────────
+# At most one preset per entity carries is_default=True. When it's set, a bare
+# turn_on (no explicit look) wakes the light in that preset — including after a
+# power cut. See resolve_default_turn_on() and the turn_on/restore call sites.
+
+def set_default(entity_id: str, preset_id: str) -> dict:
+    """Make preset_id the entity's default (clearing any previous default).
+
+    Returns the new default preset. Raises KeyError if the preset is unknown.
+    """
+    store = _load()
+    presets = store.get(entity_id, [])
+    found = None
+    for p in presets:
+        p["is_default"] = (p["id"] == preset_id)
+        if p["is_default"]:
+            found = p
+    if found is None:
+        raise KeyError(preset_id)
+    _save(store)
+    return found
+
+
+def clear_default(entity_id: str) -> bool:
+    """Remove the entity's default, if any. Returns True if one was cleared."""
+    store = _load()
+    changed = False
+    for p in store.get(entity_id, []):
+        if p.get("is_default"):
+            p["is_default"] = False
+            changed = True
+    if changed:
+        _save(store)
+    return changed
+
+
+def get_default(entity_id: str) -> Optional[dict]:
+    """Return the entity's default preset, or None."""
+    for p in _load().get(entity_id, []):
+        if p.get("is_default"):
+            return p
+    return None
+
+
+def resolve_default_turn_on(entity_id: str, provided: Optional[dict]) -> dict:
+    """Settings to merge into a light turn_on so it wakes in its default preset.
+
+    Returns {} (no override) when: the entity isn't a light, the caller already
+    specified a look (any _LOOK_KEYS present), or there is no default. Otherwise
+    returns a copy of the default preset's settings.
+    """
+    if not isinstance(entity_id, str) or entity_id.split(".")[0] != "light":
+        return {}
+    if any(k in (provided or {}) for k in _LOOK_KEYS):
+        return {}
+    default = get_default(entity_id)
+    return dict(default["settings"]) if default else {}

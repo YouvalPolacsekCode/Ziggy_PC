@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   SkipBack, SkipForward, Play, Pause, Volume2, VolumeX,
   ArrowUp, ArrowDown, Lock, LockOpen, Home, Square, Minus, Plus,
-  Shuffle, Repeat, ChevronDown, X, Tv2, Check,
+  Shuffle, Repeat, ChevronDown, X, Tv2, Check, Star,
 } from 'lucide-react'
 import { Slider } from './Slider'
 import { cn, lightRgb } from '../../lib/utils'
@@ -12,6 +12,7 @@ import { useT } from '../../lib/i18n'
 import { useUIStore } from '../../stores/uiStore'
 import {
   getDevicePresets, addDevicePreset, renameDevicePreset, deleteDevicePreset,
+  setDefaultDevicePreset, clearDefaultDevicePreset,
 } from '../../lib/api'
 
 // Capitalise + de-snake a raw HA mode/option for display.
@@ -326,11 +327,15 @@ function PresetInput({ value, onChange, onConfirm, onCancel, t, placeholder }) {
   )
 }
 
-function PresetMenu({ onRename, onDelete, onClose, t }) {
+function PresetMenu({ isDefault, onToggleDefault, onRename, onDelete, onClose, t }) {
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-      <div style={{ position: 'absolute', top: 'calc(100% + 4px)', insetInlineStart: 0, zIndex: 41, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 10, boxShadow: '0 6px 20px rgba(0,0,0,0.18)', overflow: 'hidden', minWidth: 120 }}>
+      <div style={{ position: 'absolute', top: 'calc(100% + 4px)', insetInlineStart: 0, zIndex: 41, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 10, boxShadow: '0 6px 20px rgba(0,0,0,0.18)', overflow: 'hidden', minWidth: 140 }}>
+        <button onClick={onToggleDefault} style={{ ..._presetMenuItem, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Star size={13} fill={isDefault ? 'currentColor' : 'none'} />
+          {isDefault ? t('deviceControls.presetClearDefault') : t('deviceControls.presetSetDefault')}
+        </button>
         <button onClick={onRename} style={_presetMenuItem}>{t('deviceControls.presetRename')}</button>
         <button onClick={onDelete} style={{ ..._presetMenuItem, color: 'var(--err, #d05252)' }}>{t('deviceControls.presetDelete')}</button>
       </div>
@@ -399,6 +404,20 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
     }
   }
 
+  const toggleDefault = async (p) => {
+    setMenuFor(null)
+    const makeDefault = !p.is_default
+    // Optimistic: exactly one default at a time.
+    setPresets((list) => list.map((x) => ({ ...x, is_default: makeDefault && x.id === p.id })))
+    try {
+      if (makeDefault) await setDefaultDevicePreset(entityId, p.id)
+      else await clearDefaultDevicePreset(entityId)
+    } catch (e) {
+      getDevicePresets(entityId).then((r) => setPresets(r.presets || [])).catch(() => {})
+      addToast(e?.message || t('deviceControls.presetSaveFailed'), 'error')
+    }
+  }
+
   const startPress = (id) => { pressTimer.current = setTimeout(() => setMenuFor(id), 450) }
   const endPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }
 
@@ -423,11 +442,14 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
                 style={_presetPill(active)}
               >
                 <PresetGauge settings={p.settings} active={active} />
+                {p.is_default && <Star size={11} fill="currentColor" style={{ opacity: 0.9 }} />}
                 <span>{p.name}</span>
                 <span style={{ fontSize: 10, opacity: 0.6, fontFamily: 'ui-monospace, monospace' }}>{p.settings.brightness_pct}%</span>
               </button>
               {menuFor === p.id && (
                 <PresetMenu
+                  isDefault={!!p.is_default}
+                  onToggleDefault={() => toggleDefault(p)}
                   onRename={() => { setEditingId(p.id); setName(p.name); setMenuFor(null) }}
                   onDelete={() => remove(p.id)}
                   onClose={() => setMenuFor(null)}

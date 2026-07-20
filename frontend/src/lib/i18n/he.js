@@ -1473,6 +1473,8 @@ export default {
   'deviceControls.presetCancel':        'ביטול',
   'deviceControls.presetRename':        'שינוי שם',
   'deviceControls.presetDelete':        'מחיקה',
+  'deviceControls.presetSetDefault':    'קביעה כברירת מחדל',
+  'deviceControls.presetClearDefault':  'הסרת ברירת מחדל',
   'deviceControls.presetLimitReached':  'אפשר לשמור עד 6 תבניות. מחקו אחת כדי להוסיף חדשה.',
   'deviceControls.presetSaveFailed':    'לא הצלחנו לשמור את התבנית.',
   'deviceControls.effects':             'אפקטים',
