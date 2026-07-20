@@ -227,7 +227,41 @@ async def get_automation_templates():
     cap_map = _cap_snapshot(all_states, ir_devices)
     signal_fires = _safe_signal_fires()
 
-    return {"templates": [_enrich_template(t, cap_map, signal_fires=signal_fires) for t in TEMPLATES]}
+    # Existing automations → `already_exists` so the "Not set up" filter actually
+    # filters. Name-matching covers regular templates; the bundle features
+    # (Smart Light Schedule / Smart Room / Smart Climate) instantiate under
+    # generated names or config, so detect those by their real state.
+    try:
+        autos = await asyncio.to_thread(ha_list_automations)
+    except Exception:
+        autos = []
+    existing_names = {(a.get("name") or a.get("alias") or "").strip().lower() for a in autos}
+    existing_names.discard("")
+    auto_ids = [a.get("id") or "" for a in autos]
+
+    installed_bundles: set = set()
+    try:
+        from services.circadian_engine import load_config as _circ_cfg
+        if (_circ_cfg().get("lights") or []):
+            installed_bundles.add("circadian_lighting")
+    except Exception:
+        pass
+    try:
+        from services.smart_climate_engine import load_config as _clim_cfg
+        if (_clim_cfg().get("rooms") or {}):
+            installed_bundles.add("smart_climate")
+    except Exception:
+        pass
+    if any(i.startswith("ziggy_smart_room_") for i in auto_ids):
+        installed_bundles.add("smart_room")
+
+    def _enrich(t):
+        e = _enrich_template(t, cap_map, existing_names=existing_names, signal_fires=signal_fires)
+        if t.get("id") in installed_bundles:
+            e["already_exists"] = True
+        return e
+
+    return {"templates": [_enrich(t) for t in TEMPLATES]}
 
 
 # ── Community templates (HA Blueprints, surfaced as Ziggy templates) ────────

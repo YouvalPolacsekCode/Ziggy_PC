@@ -111,8 +111,16 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
             onChange={e => setCategory(e.target.value)}
             aria-label={t('automations.templatesTab.filterByCategory')}
             style={{
-              ...chipStyle(category !== ''),
-              appearance: 'none', paddingRight: 26,
+              // NOTE: use backgroundColor (longhand), NOT the `background`
+              // shorthand — the shorthand resets backgroundImage and wipes the
+              // arrow, leaving the native select's default control background.
+              padding: '5px 13px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+              backgroundColor: category !== '' ? 'var(--ink)' : 'var(--surface)',
+              color: category !== '' ? 'var(--bg)' : 'var(--ink-mute)',
+              border: category !== '' ? 'none' : '0.5px solid var(--line)',
+              cursor: 'pointer', fontFamily: 'inherit',
+              appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+              paddingInlineEnd: 26,
               backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${category !== '' ? 'white' : 'gray'}' d='M0 0h10L5 6z'/></svg>")`,
               backgroundRepeat: 'no-repeat',
               backgroundPosition: isHe ? 'left 9px center' : 'right 9px center',
