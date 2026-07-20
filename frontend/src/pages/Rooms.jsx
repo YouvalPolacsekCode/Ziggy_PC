@@ -1213,6 +1213,45 @@ export function RoomDetail() {
                   display: 'flex', flexDirection: 'column',
                 }}
               >
+                {/* Average temperature — only when the room has 2+ temp sensors.
+                    Tap toggles it; ✓ shows the current state. */}
+                {tempSensorCount >= 2 && (
+                  <button
+                    role="menuitemcheckbox"
+                    aria-checked={avgOn}
+                    onClick={() => { setMenuOpen(false); setRoomShowAvgTemp(roomId, !avgOn) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '9px 12px', borderRadius: 8,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span style={{ fontSize: 13, width: 14, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">🌡️</span>
+                    <span style={{ flex: 1 }}>{t('rooms.avgTemp.title')}</span>
+                    {avgOn && <Check size={14} style={{ color: 'var(--ok)', flexShrink: 0 }} />}
+                  </button>
+                )}
+                {/* Combine sensors — only when the room has 2+ presence sensors. */}
+                {fusableCount >= 2 && (
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setShowCombineSensors(true) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '9px 12px', borderRadius: 8,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span style={{ fontSize: 13, width: 14, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">🧩</span>
+                    <span style={{ flex: 1 }}>{t('rooms.combineSensors.title')}</span>
+                  </button>
+                )}
                 <button
                   role="menuitem"
                   onClick={() => { setMenuOpen(false); setEditRoom(room) }}
@@ -1278,31 +1317,6 @@ export function RoomDetail() {
       </div>
 
       <div style={{ padding: '16px 20px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
-        {/* Average-temperature toggle — only meaningful with 2+ temp sensors.
-            When on, the room tile + hero show the mean instead of one sensor. */}
-        {tempSensorCount >= 2 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }} dir="auto">{t('rooms.avgTemp.title')}</p>
-              <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '2px 0 0' }} dir="auto">{t('rooms.avgTemp.hint', { n: tempSensorCount })}</p>
-            </div>
-            <Toggle checked={avgOn} onCheckedChange={(v) => setRoomShowAvgTemp(roomId, v)} />
-          </div>
-        )}
-        {/* Combine sensors — only when the room has 2+ presence-type sensors to
-            actually fuse (a single-source fusion is just a redundant wrapper). */}
-        {fusableCount >= 2 && (
-          <button type="button" onClick={() => setShowCombineSensors(true)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%',
-              padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)',
-              cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }} dir="auto">🧩 {t('rooms.combineSensors.title')}</p>
-              <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '2px 0 0' }} dir="auto">{t('rooms.combineSensors.hint', { n: fusableCount })}</p>
-            </div>
-            <ChevronRight size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-          </button>
-        )}
         {/* Devices — grouped by domain type */}
         {(() => {
           const hiddenCount = roomDevices.filter(e => e.entity_id && hiddenEntities.has(e.entity_id)).length
