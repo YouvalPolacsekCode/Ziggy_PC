@@ -20,7 +20,7 @@ import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
-import { findRoomMetric, averageRoomMetric, inferBinarySensorClass } from '../lib/devices'
+import { findRoomMetric, averageRoomMetric, roomOccupancy, fusedOccupancyIdSet, inferBinarySensorClass } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
 import { useT, useTranslatedName } from '../lib/i18n'
 
@@ -128,8 +128,14 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
             HA reports a `unit_of_measurement` attribute (°C / °F); we
             normalize to °C for the threshold comparison so the chip behaves
             sensibly regardless of locale. */}
-        {(room.tempSensor || room.humSensor) && (
-          <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 5 }}>
+        {(room.tempSensor || room.humSensor || room.occupied) && (
+          <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 5, alignItems: 'center' }}>
+            {room.occupied && (
+              <span title={t('rooms.occupied')} aria-label={t('rooms.occupied')}
+                style={{ fontSize: 10.5, background: 'rgba(108,191,140,0.55)', backdropFilter: 'blur(8px)', padding: '3px 6px', borderRadius: 999, lineHeight: 1 }}>
+                👤
+              </span>
+            )}
             {room.tempSensor && (() => {
               const raw = parseFloat(room.tempSensor.state)
               const unit = room.tempSensor.unit_of_measurement
@@ -379,6 +385,7 @@ export function RoomsList() {
   const roomsOrder      = useDeviceStore(s => s.roomsOrder)
   const setRoomsOrder   = useDeviceStore(s => s.setRoomsOrder)
   const roomShowAvgTemp = useDeviceStore(s => s.roomShowAvgTemp)
+  const occupancySensors = useDeviceStore(s => s.occupancySensors)
   const deviceGroups    = useDeviceStore(s => s.deviceGroups)
   const groupByEntityId = useDeviceStore(s => s.groupByEntityId)
   const groupById       = useDeviceStore(s => s.groupById)
@@ -431,6 +438,7 @@ export function RoomsList() {
                     ? averageRoomMetric(r.devices, 'temperature', entityMap)
                     : null) || findRoomMetric(r.devices, 'temperature', entityMap),
     humSensor:    findRoomMetric(r.devices, 'humidity',    entityMap),
+    occupied:     roomOccupancy(r, entityMap, occupancySensors),
   }))
   // Apply user-defined room order: saved IDs first in saved order, unsaved
   // rooms appended in their natural (server) order. Used for both the grid
@@ -947,6 +955,7 @@ export function RoomDetail() {
   const groupById         = useDeviceStore(s => s.groupById)
   const roomShowAvgTemp   = useDeviceStore(s => s.roomShowAvgTemp)
   const setRoomShowAvgTemp = useDeviceStore(s => s.setRoomShowAvgTemp)
+  const occupancySensors  = useDeviceStore(s => s.occupancySensors)
   const ziggyRooms = useMemo(
     () => useDeviceStore.getState().getGroupedZiggyRooms(),
     [rawZiggyRooms, deviceGroups, groupByEntityId, groupById],
@@ -1007,8 +1016,13 @@ export function RoomDetail() {
   // DeviceCard.memo entirely (its `entity` prop was always "new"), turning
   // a single light flicker into N reconciliations and stretching the
   // click→navigate latency on big rooms.
+  const fusedOccIds = useMemo(() => fusedOccupancyIdSet(occupancySensors), [occupancySensors])
   const roomDevices = useMemo(() => {
-    const raw = (room?.devices || []).map((d) => ({
+    const raw = (room?.devices || [])
+      // Fused presence sensors are Ziggy plumbing (they drive Smart Room + the
+      // room's "occupied" chip) — never surface them as a device tile.
+      .filter((d) => !(d.entity_id && fusedOccIds.has(d.entity_id)))
+      .map((d) => ({
       ...d,
       entity_id: d.entity_id || null,
       state: d.ha_state ?? 'unknown',
@@ -1025,7 +1039,7 @@ export function RoomDetail() {
       raw.filter((d) => d._linkedIr?.id).map((d) => d._linkedIr.id)
     )
     return raw.filter((d) => !(d._is_ir && d._ir_device_id && haPairedIrIds.has(d._ir_device_id)))
-  }, [room?.devices])
+  }, [room?.devices, fusedOccIds])
 
   const avgOn = !!roomShowAvgTemp?.[String(roomId)]
   const { entityCount, activeCount, offlineCount, tempSensor, humSensor, tempSensorCount } = useMemo(() => {
@@ -1043,6 +1057,9 @@ export function RoomDetail() {
       tempSensorCount: avgMetric?.count || (single ? 1 : 0),
     }
   }, [roomDevices, avgOn])
+
+  const entityMapRD = useMemo(() => Object.fromEntries(entities.map((e) => [e.entity_id, e])), [entities])
+  const occupied = useMemo(() => roomOccupancy(room, entityMapRD, occupancySensors), [room, entityMapRD, occupancySensors])
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -1229,6 +1246,11 @@ export function RoomDetail() {
                 {tempSensor && `${parseFloat(tempSensor.state).toFixed(1)}°`}
                 {tempSensor && humSensor && ' · '}
                 {humSensor && `${parseFloat(humSensor.state).toFixed(0)}%`}
+              </span>
+            )}
+            {occupied && (
+              <span title={t('rooms.occupied')} style={{ fontSize: 11, opacity: 0.9, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                👤 {t('rooms.occupied')}
               </span>
             )}
           </div>

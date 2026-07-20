@@ -11,7 +11,7 @@ import { useWsMessages } from '../hooks/useWebSocket'
 import { greetingByTime, humanizeSlug, entityDisplayName } from '../lib/utils'
 import { getActivity, getActiveAnomalies, getHealth, getPresencePersons, sendDirectIntent } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
-import { findRoomMetric, deviceFacts, sendDeviceCommand, kindMeta } from '../lib/devices'
+import { findRoomMetric, roomOccupancy, deviceFacts, sendDeviceCommand, kindMeta } from '../lib/devices'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
@@ -21,7 +21,7 @@ import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
 
-function buildRoomSummary(room, entityMap) {
+function buildRoomSummary(room, entityMap, occupancySensors) {
   const devices    = room.devices || []
   const ent        = d => entityMap[d.entity_id]
   const lights     = devices.filter(d => d.domain === 'light' && d.ha_state === 'on')
@@ -61,7 +61,8 @@ function buildRoomSummary(room, entityMap) {
   if (switches.length === 1) parts.push(tt('dashboard.switchOn', { name: switches[0].display_name || tt('dashboard.switchLabel') }))
   else if (switches.length > 1) parts.push(tt('dashboard.switchesOnN', { n: switches.length }))
 
-  return { id: room.id, name: room.name, activeCount, offlineCount, parts, tempSensor, humSensor, hasMotion }
+  const occupied = roomOccupancy(room, entityMap, occupancySensors)
+  return { id: room.id, name: room.name, activeCount, offlineCount, parts, tempSensor, humSensor, hasMotion, occupied }
 }
 
 // ── Activity formatter ────────────────────────────────────────────────────────
@@ -412,8 +413,11 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                     the two surfaces read as the same design system. Unit is
                     sniffed from HA's unit_of_measurement attribute so the
                     threshold stays sensible whether the sensor reports °C or °F. */}
-                {isActive && (summary.tempSensor || summary.humSensor) && (
-                  <div style={{ position: 'absolute', top: 11, insetInlineStart: 12, display: 'flex', gap: 5 }}>
+                {isActive && (summary.tempSensor || summary.humSensor || summary.occupied) && (
+                  <div style={{ position: 'absolute', top: 11, insetInlineStart: 12, display: 'flex', gap: 5, alignItems: 'center' }}>
+                    {summary.occupied && (
+                      <span title={t('rooms.occupied')} style={{ fontSize: 10.5, background: 'color-mix(in srgb, var(--ok) 55%, transparent)', backdropFilter: 'blur(8px)', padding: '3px 6px', borderRadius: 999, lineHeight: 1 }}>👤</span>
+                    )}
                     {summary.tempSensor && (() => {
                       const raw = parseFloat(summary.tempSensor.state)
                       const unit = summary.tempSensor.unit_of_measurement
@@ -551,8 +555,11 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
                 boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
               }} />
 
-              {(summary.tempSensor || summary.humSensor) && (
-                <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 4 }}>
+              {(summary.tempSensor || summary.humSensor || summary.occupied) && (
+                <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {summary.occupied && (
+                    <span title={t('rooms.occupied')} style={{ fontSize: 10, background: 'color-mix(in srgb, var(--ok) 55%, transparent)', backdropFilter: 'blur(8px)', padding: '2px 5px', borderRadius: 999, lineHeight: 1 }}>👤</span>
+                  )}
                   {summary.tempSensor && (() => {
                     const raw = parseFloat(summary.tempSensor.state)
                     const unit = summary.tempSensor.unit_of_measurement
@@ -793,6 +800,7 @@ export default function Dashboard() {
   // even when none of the entities the Dashboard cares about changed.
   const entities                = useDeviceStore(s => s.entities)
   const ziggyRooms              = useDeviceStore(s => s.ziggyRooms)
+  const occupancySensors        = useDeviceStore(s => s.occupancySensors)
   const roomsOrder              = useDeviceStore(s => s.roomsOrder)
   const quickControlIds         = useDeviceStore(s => s.quickControlIds)
   const pinnedShortcuts         = useDeviceStore(s => s.pinnedShortcuts)
@@ -910,8 +918,8 @@ export default function Dashboard() {
     [entities],
   )
   const roomSummaries = useMemo(
-    () => ziggyRooms.map(r => buildRoomSummary(r, entityMap)),
-    [ziggyRooms, entityMap],
+    () => ziggyRooms.map(r => buildRoomSummary(r, entityMap, occupancySensors)),
+    [ziggyRooms, entityMap, occupancySensors],
   )
   // Apply the user-defined room order first, THEN stably sort by activity.
   // Array.prototype.sort is stable per spec (ES2019+), so within each bucket

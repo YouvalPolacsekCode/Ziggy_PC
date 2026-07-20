@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices, getUiPrefs, putUiPrefs, getDeviceGroups, withRetry } from '../lib/api'
+import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices, getUiPrefs, putUiPrefs, getDeviceGroups, listOccupancySensors, withRetry } from '../lib/api'
 import { CONTROLLABLE_DOMAINS, TOGGLEABLE_DOMAINS, DOMAIN_REGISTRY } from '../lib/domainRegistry'
 import { entityDisplayName } from '../lib/utils'
 
@@ -167,6 +167,10 @@ export const useDeviceStore = create((set, get) => ({
   deviceStatusMap: {},
   // DeviceRegistry rooms with enriched devices (Rooms page)
   ziggyRooms: [],
+  // Ziggy-created fused presence sensors [{room, entity_id, sensors}] — used to
+  // hide these virtual helpers from the room device grid and to drive the
+  // room-tile "occupied" indicator. Sourced from GET /api/occupancy-sensors.
+  occupancySensors: [],
   // Unclaimed devices (status=UNCLAIMED — new HA entities not yet placed)
   unclaimedDevices: [],
   // Devices intentionally left without a room (room=null, non-UNCLAIMED)
@@ -403,13 +407,16 @@ export const useDeviceStore = create((set, get) => ({
       // chips / D-pad on the PWA because _linkedIr got cleared on every flaky
       // fan-out). Only entities + rooms throw if both attempts fail — those
       // are existential.
-      const [entRes, roomsRes, roomsDevRes, irRaw, groupsRes] = await Promise.all([
+      const [entRes, roomsRes, roomsDevRes, irRaw, groupsRes, occRaw] = await Promise.all([
         withRetry(() => getEntities()),
         withRetry(() => getRooms()),
         withRetry(() => getRoomsWithDevices()).catch(() => null),
         withRetry(() => getIrDevices()).catch(() => null),
         withRetry(() => getDeviceGroups()).catch(() => null),
+        withRetry(() => listOccupancySensors()).catch(() => null),
       ])
+      // Fused presence sensors (Ziggy plumbing) — keep last-good on a flaky fetch.
+      const occList = Array.isArray(occRaw) ? occRaw : prevState.occupancySensors
 
       // Substitute last-good for any endpoint that failed both tries. The
       // store's previous values stay authoritative until a successful refetch.
@@ -498,6 +505,7 @@ export const useDeviceStore = create((set, get) => ({
         deviceGroups: groupsList,
         groupByEntityId,
         groupById,
+        occupancySensors: occList || [],
         loading: false,
         lastUpdated: Date.now(),
       })

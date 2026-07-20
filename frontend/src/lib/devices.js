@@ -1359,6 +1359,42 @@ export function averageRoomMetric(roomDevices, deviceClass, entityMap) {
   }
 }
 
+// ── Room occupancy (fused presence sensors) ──────────────────────────────────
+// Set of entity_ids for Ziggy-created fused presence sensors — used to keep
+// these virtual helpers out of the room device grid.
+export function fusedOccupancyIdSet(occupancySensors) {
+  return new Set((occupancySensors || []).map((s) => s.entity_id).filter(Boolean))
+}
+
+const _OCC_CLASSES = new Set(['occupancy', 'presence'])
+// Is the room occupied right now? Prefer the room's fused presence sensor; fall
+// back to any presence/occupancy binary_sensor among the room's devices reading
+// "on". Returns null when the room has no presence signal at all (so callers can
+// hide the indicator entirely rather than show "not occupied").
+export function roomOccupancy(room, entityMap, occupancySensors) {
+  const rid = String(room?.id ?? '').toLowerCase()
+  const rname = (room?.name || '').toLowerCase()
+  const fused = (occupancySensors || []).find((s) => {
+    const sr = String(s.room ?? '').toLowerCase()
+    return sr === rid || sr === rname || sr.replace(/_/g, ' ') === rname
+  })
+  if (fused) {
+    const e = entityMap?.[fused.entity_id]
+    if (e && !_BAD_SENSOR_STATES.has(e.state)) return e.state === 'on'
+  }
+  let sawSignal = false
+  for (const d of (room?.devices || [])) {
+    const e = entityMap?.[d.entity_id] || d
+    if (_OCC_CLASSES.has(e?.device_class)) {
+      const st = e?.state ?? d?.ha_state
+      if (_BAD_SENSOR_STATES.has(st)) continue
+      sawSignal = true
+      if (st === 'on') return true
+    }
+  }
+  return sawSignal ? false : null
+}
+
 // Sort an entity list by kind, then by name within kind.
 export function sortByKind(entities) {
   return [...entities].sort((a, b) => {

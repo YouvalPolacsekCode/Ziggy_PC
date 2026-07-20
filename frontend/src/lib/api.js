@@ -430,6 +430,11 @@ export const snoozeAutomation = (id, minutes) => post(`/automations/${id}/snooze
 // tool routes to; the created sensor shows up in the Devices page automatically.
 export const createOccupancySensor = (body) => post('/occupancy-sensors', body)
 
+// List the Ziggy-created fused presence sensors ({room, entity_id, sensors}).
+// Used to keep these virtual helpers out of the room device grid and to drive
+// the room-tile "occupied" indicator.
+export const listOccupancySensors = () => get('/occupancy-sensors').then((r) => r.sensors ?? [])
+
 // Delete a Ziggy-created smart (occupancy) sensor by its opaque HA config-entry
 // id. Removes it from HA and clears Ziggy's KV so it doesn't reappear on the
 // Devices page. The entry_id is carried on the smart-sensor device record and

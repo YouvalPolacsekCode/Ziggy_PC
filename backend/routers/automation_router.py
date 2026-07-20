@@ -795,6 +795,18 @@ async def create_automation_endpoint(body: AutomationBody):
     return {"ok": True, "automation": automation}
 
 
+@router.get("/api/occupancy-sensors")
+async def list_occupancy_sensors_endpoint():
+    """List the Ziggy-created fused presence sensors ({room, entity_id, sensors}).
+
+    The frontend uses this to (a) keep these virtual helpers out of the room
+    device grid — they're plumbing, not a device you control — and (b) drive the
+    room-tile "occupied" indicator off the room's fused sensor."""
+    from services.template_sensors import list_occupancy_sensors
+    sensors = await asyncio.to_thread(list_occupancy_sensors)
+    return {"sensors": sensors}
+
+
 @router.post("/api/occupancy-sensors")
 async def create_occupancy_sensor_endpoint(body: OccupancySensorBody):
     """Spawn a Ziggy smart presence sensor from the Automation Builder UI.

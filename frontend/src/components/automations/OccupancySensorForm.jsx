@@ -1,213 +1,216 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useT } from '../../lib/i18n'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { createOccupancySensor } from '../../lib/api'
 import { Input } from '../ui/Input'
+import { entityDisplayName } from '../../lib/utils'
 
 // ── OccupancySensorForm ────────────────────────────────────────────────────
 //
-// Standalone creator for a Ziggy smart presence sensor. Fuses a room's motion
-// / presence / door-recently-open binary sensors into one "is anyone here"
-// entity via POST /api/occupancy-sensors (same handler the LLM tool routes to).
+// Stepped creator for a Ziggy smart presence sensor (matches the automation
+// wizards' vibe): pick a room → pick the actual sensors to combine (by name,
+// not abstract signal types) → set the clear delay. Fuses the chosen binary
+// sensors into one "is anyone here" entity via POST /api/occupancy-sensors.
 //
-// Reused in two places: launched from the Automation Builder's "When someone
-// is in a room" trigger (when the room has no sensor yet) and from the
-// Templates tab CTA. It's just the panel — callers supply modal chrome.
+// Reused from the Automation Builder's "someone is in a room" trigger and the
+// Library CTA — callers supply the modal chrome; this is just the panel.
 //
-// Room → sensor resolution happens client-side from deviceStore so the backend
-// stays a thin wrapper: we pass explicit entity ids, never guess server-side.
+// room.entities from /api/rooms are entity_id STRINGS, so resolve them through
+// the store's entity list before reading domain/device_class.
 
-// Which binary_sensor device_classes each signal toggle maps to.
-const SIGNAL_CLASSES = {
-  motion:   ['motion'],
-  presence: ['presence', 'occupancy'],
-  door:     ['door', 'opening'],
+// binary_sensor device_class → the friendly signal type we show.
+const OCC_TYPE = {
+  motion: 'motion',
+  presence: 'presence', occupancy: 'presence',
+  door: 'door', opening: 'door',
 }
 
-function OccupancySensorForm({ onCreated, onClose, initialRoom = '' }) {
-  const t = useT()
-  const rooms    = useDeviceStore(s => s.rooms)
-  const entities = useDeviceStore(s => s.entities)
-
-  const entityMap = useMemo(
-    () => Object.fromEntries(entities.map(e => [e.entity_id, e])),
-    [entities],
-  )
-
-  // Show EVERY room, but mark whether it has a fusable binary sensor. Rooms
-  // without one are shown disabled (with a hint) instead of hidden — hiding
-  // them made the picker look broken ("only 3 of my 7 rooms"). `create` still
-  // needs at least one sensor, which the disabled state + resolved guard cover.
-  const roomOptions = useMemo(() => {
-    const relevant = new Set([...SIGNAL_CLASSES.motion, ...SIGNAL_CLASSES.presence, ...SIGNAL_CLASSES.door])
-    return (rooms || []).map(area => {
-      const entities = area.entities || []
-      const hasSignal = entities.some(eid => {
-        const e = entityMap[eid]
-        return e && e.domain === 'binary_sensor' && relevant.has(e.device_class)
-      })
-      return { id: area.id, name: area.name, entities, hasSignal }
-    })
-  }, [rooms, entityMap])
-
-  const [roomId, setRoomId] = useState(() => {
-    if (initialRoom) {
-      const hit = (rooms || []).find(a => a.id === initialRoom || a.name === initialRoom)
-      if (hit) return hit.id
-    }
-    // Default to the first room that can actually be fused, not just the first room.
-    return (roomOptions.find(r => r.hasSignal) || roomOptions[0])?.id || ''
-  })
-  const [signals, setSignals] = useState({ motion: true, presence: true, door: true })
-  const [delayOff, setDelayOff] = useState(30)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const selectedRoom = roomOptions.find(r => r.id === roomId) || null
-
-  // Entities that will actually be fused, given the room + checked signals.
-  const resolved = useMemo(() => {
-    if (!selectedRoom) return []
-    const classes = new Set(
-      Object.entries(signals).filter(([, on]) => on).flatMap(([sig]) => SIGNAL_CLASSES[sig]),
-    )
-    return selectedRoom.entities
-      .map(eid => entityMap[eid])
-      .filter(e => e && e.domain === 'binary_sensor' && classes.has(e.device_class))
-      .map(e => e.entity_id)
-  }, [selectedRoom, signals, entityMap])
-
-  const toggleSignal = key => setSignals(prev => ({ ...prev, [key]: !prev[key] }))
-
-  const handleCreate = async () => {
-    if (!selectedRoom || resolved.length === 0) return
-    setSaving(true)
-    setError('')
-    try {
-      const result = await createOccupancySensor({
-        room: selectedRoom.name,
-        sensor_entities: resolved,
-        delay_off_seconds: Number(delayOff) || 30,
-      })
-      if (typeof onCreated === 'function') onCreated(result)
-      if (typeof onClose === 'function') onClose()
-    } catch (e) {
-      setError(e?.userMessage || e?.message || t('automations.smartSensor.failed'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const chip = (key, label) => {
-    const on = signals[key]
-    return (
-      <button
-        key={key}
-        type="button"
-        onClick={() => toggleSignal(key)}
-        style={{
-          padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-          background: on ? 'var(--ink)' : 'var(--surface)',
-          color: on ? 'var(--bg)' : 'var(--ink-mute)',
-          border: on ? 'none' : '0.5px solid var(--line)',
-          cursor: 'pointer', fontFamily: 'inherit',
-        }}
-        dir="auto"
-      >
-        {on ? '✓ ' : ''}{label}
-      </button>
-    )
-  }
-
+function StepShell({ t, title, idx, total, onBack, onPrimary, primaryLabel, primaryDisabled, extra, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <p style={{ fontSize: 12.5, color: 'var(--ink-mute)', lineHeight: 1.5, margin: 0 }} dir="auto">
-        {t('automations.smartSensor.intro')}
-      </p>
-
-      {/* Room */}
-      <div>
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }} dir="auto">
-          {t('automations.smartSensor.roomLabel')}
-        </label>
-        {roomOptions.length === 0 ? (
-          <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }} dir="auto">
-            {t('automations.smartSensor.noneFound')}
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {roomOptions.map(r => {
-              const sel = r.id === roomId
-              const disabled = !r.hasSignal
-              return (
-                <button key={r.id} type="button"
-                  onClick={() => { if (!disabled) setRoomId(r.id) }}
-                  disabled={disabled}
-                  title={disabled ? t('automations.smartSensor.noneFound') : undefined}
-                  style={{
-                    padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                    background: sel ? 'var(--ink)' : 'var(--surface)',
-                    color: sel ? 'var(--bg)' : (disabled ? 'var(--ink-faint)' : 'var(--ink-mute)'),
-                    border: sel ? 'none' : '0.5px solid var(--line)',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    opacity: disabled ? 0.5 : 1, fontFamily: 'inherit',
-                  }} dir="auto">{r.name}</button>
-              )
-            })}
-          </div>
-        )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 2px' }} dir="auto">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <p className="z-eyebrow" style={{ margin: 0 }}>{title}</p>
+        <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{idx}/{total}</span>
       </div>
-
-      {/* Signals */}
-      <div>
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }} dir="auto">
-          {t('automations.smartSensor.signalsLabel')}
-        </label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {chip('motion',   t('automations.smartSensor.motion'))}
-          {chip('presence', t('automations.smartSensor.presence'))}
-          {chip('door',     t('automations.smartSensor.door'))}
-        </div>
-        {selectedRoom && (
-          <p style={{ fontSize: 11, color: resolved.length ? 'var(--ink-faint)' : 'var(--warn)', margin: '6px 0 0' }} dir="auto">
-            {resolved.length
-              ? t('automations.smartSensor.resolved', { n: resolved.length, room: selectedRoom.name })
-              : t('automations.smartSensor.noneFound')}
-          </p>
-        )}
-      </div>
-
-      {/* Delay-off */}
-      <Input
-        label={t('automations.smartSensor.delayLabel')}
-        type="number"
-        min={0}
-        placeholder={t('automations.smartSensor.delayPh')}
-        value={delayOff}
-        onChange={e => setDelayOff(e.target.value)}
-      />
-
-      {error && (
-        <p style={{ color: 'var(--err, #d33)', fontSize: 12, margin: 0 }} dir="auto">{error}</p>
-      )}
-
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-        {onClose && (
-          <button onClick={onClose} className="z-btn-secondary" disabled={saving} style={{ fontSize: 13, padding: '8px 14px', borderRadius: 10 }}>
-            {t('common.close')}
-          </button>
-        )}
-        <button
-          onClick={handleCreate}
-          className="z-btn-primary"
-          disabled={saving || !selectedRoom || resolved.length === 0}
-          style={{ fontSize: 13, padding: '8px 14px', borderRadius: 10, opacity: (!selectedRoom || resolved.length === 0) ? 0.4 : 1 }}
-        >
-          {saving ? t('automations.smartSensor.creating') : t('automations.smartSensor.create')}
+      {children}
+      {extra}
+      <div style={{ display: 'flex', gap: 8, paddingTop: 2 }}>
+        <button type="button" onClick={onBack} className="z-btn-secondary" style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13 }}>
+          {t('automations.smartSensor.back')}
+        </button>
+        <button type="button" onClick={onPrimary} disabled={primaryDisabled} className="z-btn-primary"
+          style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, opacity: primaryDisabled ? 0.5 : 1 }}>
+          {primaryLabel}
         </button>
       </div>
     </div>
   )
 }
 
-export default OccupancySensorForm
+export default function OccupancySensorForm({ onCreated, onClose, initialRoom = '' }) {
+  const t = useT()
+  const rooms = useDeviceStore(s => s.rooms)
+  const allEntities = useDeviceStore(s => s.entities)
+  const entityMap = useMemo(
+    () => Object.fromEntries((allEntities || []).map(e => [e.entity_id, e])),
+    [allEntities],
+  )
+
+  const roomOptions = useMemo(() => (rooms || []).map(r => ({
+    ...r,
+    candidates: (r.entities || [])
+      .map(id => entityMap[id])
+      .filter(e => e && e.domain === 'binary_sensor' && OCC_TYPE[e.device_class]),
+  })), [rooms, entityMap])
+
+  const initId = useMemo(() => {
+    if (initialRoom) {
+      const hit = roomOptions.find(r => String(r.id) === String(initialRoom) || r.name === initialRoom)
+      if (hit) return String(hit.id)
+    }
+    return String((roomOptions.find(r => r.candidates.length) || roomOptions[0])?.id || '')
+  }, [initialRoom, roomOptions])
+
+  const [roomId, setRoomId]   = useState(initId)
+  const [selected, setSelected] = useState(() => new Set())
+  const [delayOff, setDelayOff] = useState(30)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState('')
+  const [stepIdx, setStepIdx] = useState(initialRoom ? 1 : 0)
+
+  const room = roomOptions.find(r => String(r.id) === String(roomId)) || null
+  const candidates = room?.candidates || []
+
+  // Default-select every fusable sensor when the room changes.
+  useEffect(() => {
+    setSelected(new Set(candidates.map(e => e.entity_id)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId])
+
+  const steps = ['room', 'devices', 'delay']
+  const current = steps[stepIdx]
+  const total = steps.length
+  const goBack = () => (stepIdx <= 0 ? onClose?.() : setStepIdx(i => i - 1))
+  const goNext = () => setStepIdx(i => Math.min(i + 1, steps.length - 1))
+  const toggle = (id) => setSelected(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
+  const handleCreate = async () => {
+    if (!room || selected.size === 0) return
+    setSaving(true); setError('')
+    try {
+      const result = await createOccupancySensor({
+        room: room.name,
+        sensor_entities: Array.from(selected),
+        delay_off_seconds: Number(delayOff) || 30,
+      })
+      onCreated?.(result)
+      onClose?.()
+    } catch (e) {
+      setError(e?.userMessage || e?.message || t('automations.smartSensor.failed')); setSaving(false)
+    }
+  }
+
+  const errBox = error && (
+    <p style={{ fontSize: 12, color: 'var(--accent)', padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}>{error}</p>
+  )
+
+  // ── Step: Room ──────────────────────────────────────────────────────────
+  if (current === 'room') {
+    return (
+      <StepShell t={t} title={t('automations.smartSensor.roomLabel')} idx={1} total={total}
+        onBack={onClose} onPrimary={goNext} primaryLabel={t('automations.smartSensor.next')}
+        primaryDisabled={!room || candidates.length === 0}>
+        <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }} dir="auto">
+          {t('automations.smartSensor.intro')}
+        </p>
+        {roomOptions.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartSensor.noneFound')}</p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {roomOptions.map(r => {
+              const sel = String(r.id) === String(roomId)
+              const disabled = r.candidates.length === 0
+              return (
+                <button key={r.id} type="button" disabled={disabled}
+                  onClick={() => setRoomId(String(r.id))}
+                  title={disabled ? t('automations.smartSensor.noDevices') : undefined}
+                  style={{ padding: '10px 12px', borderRadius: 10, textAlign: 'start', fontFamily: 'inherit', fontSize: 13,
+                    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
+                    border: `1px solid ${sel ? 'var(--ok)' : 'var(--line)'}`,
+                    background: sel ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'var(--surface)',
+                    color: 'var(--ink)' }} dir="auto">
+                  {r.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </StepShell>
+    )
+  }
+
+  // ── Step: Devices ───────────────────────────────────────────────────────
+  if (current === 'devices') {
+    return (
+      <StepShell t={t} title={t('automations.smartSensor.devicesLabel')} idx={stepIdx + 1} total={total}
+        onBack={goBack} onPrimary={goNext} primaryLabel={t('automations.smartSensor.next')}
+        primaryDisabled={selected.size === 0}
+        extra={candidates.length > 0 && (
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: 0 }} dir="auto">
+            {t('automations.smartSensor.selectedCount', { n: selected.size })}
+          </p>
+        )}>
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }} dir="auto">{t('automations.smartSensor.devicesHint')}</p>
+        {candidates.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--warn)', padding: '10px 12px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 10 }} dir="auto">
+            {t('automations.smartSensor.noDevices')}
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, border: '0.5px solid var(--line)', borderRadius: 10, padding: 6, background: 'var(--surface)' }}>
+            {candidates.map(e => {
+              const on = selected.has(e.entity_id)
+              return (
+                <button key={e.entity_id} type="button" onClick={() => toggle(e.entity_id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8,
+                    background: on ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit' }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                    border: `1.5px solid ${on ? 'var(--ok)' : 'var(--line)'}`,
+                    background: on ? 'var(--ok)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+                      {entityDisplayName(e) || e.entity_id}
+                    </span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-faint)' }} dir="auto">
+                      {t(`automations.smartSensor.type.${OCC_TYPE[e.device_class]}`)}
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </StepShell>
+    )
+  }
+
+  // ── Step: Clear delay ───────────────────────────────────────────────────
+  return (
+    <StepShell t={t} title={t('automations.smartSensor.delayLabel')} idx={stepIdx + 1} total={total}
+      onBack={goBack} onPrimary={handleCreate}
+      primaryLabel={saving ? t('automations.smartSensor.creating') : t('automations.smartSensor.create')}
+      primaryDisabled={saving || !room || selected.size === 0}
+      extra={errBox}>
+      <Input type="number" inputMode="numeric" min={0} placeholder={t('automations.smartSensor.delayPh')}
+        value={delayOff} onChange={e => setDelayOff(e.target.value)} />
+      <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, lineHeight: 1.45 }} dir="auto">
+        {t('automations.smartSensor.delayHint')}
+      </p>
+    </StepShell>
+  )
+}
