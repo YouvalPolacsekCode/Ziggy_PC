@@ -42,6 +42,7 @@ def _enrich_routine_template(tmpl: dict, cap_map: dict, existing_names: set | No
         build_wizard_prefill, can_run as rt_can_run,
         get_matched_caps, get_missing_required, get_missing_optional, friendly_cap,
     )
+    from services.automation_templates import short_cap
 
     runnable   = rt_can_run(tmpl, cap_map)
     matched    = get_matched_caps(tmpl, cap_map)
@@ -50,11 +51,11 @@ def _enrich_routine_template(tmpl: dict, cap_map: dict, existing_names: set | No
     prefill    = build_wizard_prefill(tmpl, cap_map) if runnable else None
 
     matched_labels = [
-        {"cap": c, "label": friendly_cap(tmpl, c), "entity": (cap_map.get(c) or [None])[0]}
+        {"cap": c, "label": friendly_cap(tmpl, c), "short": short_cap(c), "entity": (cap_map.get(c) or [None])[0]}
         for c in matched
     ]
-    missing_req_labels = [{"cap": c, "label": friendly_cap(tmpl, c)} for c in miss_req]
-    missing_opt_labels = [{"cap": c, "label": friendly_cap(tmpl, c)} for c in miss_opt]
+    missing_req_labels = [{"cap": c, "label": friendly_cap(tmpl, c), "short": short_cap(c)} for c in miss_req]
+    missing_opt_labels = [{"cap": c, "label": friendly_cap(tmpl, c), "short": short_cap(c)} for c in miss_opt]
 
     already_exists = False
     if existing_names is not None:

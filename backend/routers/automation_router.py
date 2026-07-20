@@ -136,7 +136,7 @@ def _enrich_template(tmpl, cap_map, existing_names=None, signal_fires=None):
     """
     from services.automation_templates import (
         build_prefill, can_run as tmpl_can_run,
-        get_matched_caps, get_missing_required, get_missing_optional, friendly_cap,
+        get_matched_caps, get_missing_required, get_missing_optional, friendly_cap, short_cap,
     )
 
     runnable   = tmpl_can_run(tmpl, cap_map)
@@ -146,12 +146,14 @@ def _enrich_template(tmpl, cap_map, existing_names=None, signal_fires=None):
     prefill    = build_prefill(tmpl, cap_map) if runnable else None
 
     # Friendly labels split into what you have vs. what's missing
+    # `short` is the bare device name for the friendly "Needs a X" card line;
+    # `label` keeps the fuller description for anywhere that still wants it.
     matched_labels = [
-        {"cap": c, "label": friendly_cap(tmpl, c), "entity": (cap_map.get(c) or [None])[0]}
+        {"cap": c, "label": friendly_cap(tmpl, c), "short": short_cap(c), "entity": (cap_map.get(c) or [None])[0]}
         for c in matched
     ]
-    missing_req_labels = [{"cap": c, "label": friendly_cap(tmpl, c)} for c in miss_req]
-    missing_opt_labels = [{"cap": c, "label": friendly_cap(tmpl, c)} for c in miss_opt]
+    missing_req_labels = [{"cap": c, "label": friendly_cap(tmpl, c), "short": short_cap(c)} for c in miss_req]
+    missing_opt_labels = [{"cap": c, "label": friendly_cap(tmpl, c), "short": short_cap(c)} for c in miss_opt]
 
     already_exists = False
     if existing_names is not None:

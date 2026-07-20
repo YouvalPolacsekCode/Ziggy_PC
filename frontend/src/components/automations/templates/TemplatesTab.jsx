@@ -158,9 +158,11 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
       )}
 
       {!loading && filtered.length > 0 && (() => {
+        // showTriggerChip={false}: each section is already single-kind (header
+        // says ⚡ / 👆), so a per-card chip would just repeat it.
         const renderItem = (item) =>
-          item.source === 'native'    ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureNative} />
-          : item.source === 'routine' ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureRoutine} />
+          item.source === 'native'    ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureNative} showTriggerChip={false} />
+          : item.source === 'routine' ? <TemplateCard key={item.key} template={item.raw} onConfigure={onConfigureRoutine} showTriggerChip={false} />
           :                             <CommunityCard key={item.key} template={item.raw} isHe={isHe} t={t} onConfigure={onConfigureCommunity} />
         const automatic = filtered.filter(i => i.kind === 'automatic')
         const ondemand  = filtered.filter(i => i.kind === 'ondemand')

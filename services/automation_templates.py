@@ -63,13 +63,13 @@ def _first_tv_ir_device() -> dict | None:
 # ---------------------------------------------------------------------------
 
 CAP_FRIENDLY: dict[str, str] = {
-    "climate_control":            "Smart AC / thermostat (Wi-Fi)",
+    "climate_control":            "Smart AC",
     "ir_ac_control":              "IR AC blaster",
     "light_on_off":                "Smart lights",
     "light_dimmable":              "Dimmable lights",
     "motion_sensor":               "Motion sensor",
     "presence_sensor":             "Presence sensor",
-    "phone_presence":              "GPS / phone location tracker",
+    "phone_presence":              "Phone location",
     "door_sensor":                 "Door sensor",
     "window_sensor":               "Window sensor",
     "leak_sensor":                 "Water leak sensor",
@@ -83,16 +83,16 @@ CAP_FRIENDLY: dict[str, str] = {
     "has_motion_sensor":           "Motion sensor",
     "has_door_sensor":             "Door sensor",
     "has_window_sensor":           "Window sensor",
-    "has_mmwave_sensor":           "mmWave presence sensor",
+    "has_mmwave_sensor":           "Presence sensor",
     "has_smart_plug":              "Smart plug",
     "has_energy_monitoring_plug":  "Energy-monitoring plug",
     "has_power_monitoring":        "Power monitor",
     "has_dimmable_light":          "Dimmable lights",
-    "has_color_temp_light":        "Color-temperature smart light",
-    "has_climate_entity":          "Smart AC / thermostat",
+    "has_color_temp_light":        "Color-adjustable light",
+    "has_climate_entity":          "Smart AC",
     "has_weather_entity":          "Weather data",
     "has_ir_blaster":              "IR blaster",
-    "has_zone_presence":           "Zone-tracked presence",
+    "has_zone_presence":           "Phone location",
 }
 
 
@@ -136,9 +136,9 @@ TEMPLATES: list[dict] = [
         "optional_capabilities": ["phone_presence", "climate_control", "ir_ac_control"],
         "relevant_capabilities": ["door_sensor", "light_on_off", "phone_presence", "climate_control", "ir_ac_control"],
         "capability_labels": {
-            "door_sensor":     "Door sensor — exact moment of arrival (trigger)",
+            "door_sensor":     "Door sensor — knows the moment you walk in",
             "light_on_off":    "Smart lights — will be turned on",
-            "phone_presence":  "GPS tracker — confirms it's you, not a visitor (condition)",
+            "phone_presence":  "Phone location — checks it's really you",
             "climate_control": "Smart AC — optional comfort on arrival",
             "ir_ac_control":   "IR AC — optional comfort via IR on arrival",
         },
@@ -156,7 +156,7 @@ TEMPLATES: list[dict] = [
         "optional_capabilities": ["room_temperature", "climate_control", "ir_ac_control"],
         "relevant_capabilities": ["phone_presence", "room_temperature", "climate_control", "ir_ac_control"],
         "capability_labels": {
-            "phone_presence":   "GPS tracker (person.X or device_tracker.X) — location trigger",
+            "phone_presence":   "Phone location — knows when you're heading home",
             "room_temperature": "Temperature sensor — condition: only run when room > 24 °C",
             "climate_control":  "Smart AC — will be set to cool at 22 °C",
             "ir_ac_control":    "IR AC blaster — will be activated via IR",
@@ -219,7 +219,7 @@ TEMPLATES: list[dict] = [
         "optional_capabilities": ["phone_presence", "climate_control", "ir_ac_control"],
         "relevant_capabilities": ["room_temperature", "phone_presence", "climate_control", "ir_ac_control"],
         "capability_labels": {
-            "room_temperature": "Temperature sensor — monitors room heat (trigger)",
+            "room_temperature": "Temperature sensor — watches the room's warmth",
             "phone_presence":   "GPS tracker — condition: only cools when you're home",
             "climate_control":  "Smart AC — set to cool mode at 22 °C",
             "ir_ac_control":    "IR AC blaster — turned on via IR command",
@@ -241,7 +241,7 @@ TEMPLATES: list[dict] = [
         "optional_capabilities": ["climate_control", "ir_ac_control"],
         "relevant_capabilities": ["room_temperature", "climate_control", "ir_ac_control"],
         "capability_labels": {
-            "room_temperature": "Temperature sensor — monitors room heat (trigger at > 28 °C)",
+            "room_temperature": "Temperature sensor — notices when it gets too hot",
             "climate_control":  "Smart AC — optional: auto-cool the room",
             "ir_ac_control":    "IR AC — optional: auto-cool via IR",
         },
@@ -286,8 +286,8 @@ TEMPLATES: list[dict] = [
         "optional_capabilities": ["motion_sensor", "light_on_off"],
         "relevant_capabilities": ["presence_sensor", "motion_sensor", "light_dimmable", "light_on_off"],
         "capability_labels": {
-            "presence_sensor":  "mmWave presence sensors — bedroom (arms night) and living room (triggers alert)",
-            "motion_sensor":    "Motion sensor — fallback alert trigger if living room has no mmWave",
+            "presence_sensor":  "Presence sensors in the bedroom and living room",
+            "motion_sensor":    "Motion sensor — backup for the living room",
             "light_dimmable":   "Dimmable lights — dimmed to 10% at night, restored at sunrise",
             "light_on_off":     "Smart lights — additional non-dimmable lights are turned off instead of dimmed",
         },
@@ -386,7 +386,7 @@ TEMPLATES: list[dict] = [
         "optional_capabilities": ["door_sensor"],
         "relevant_capabilities": ["window_sensor", "door_sensor", "ir_ac_control"],
         "capability_labels": {
-            "window_sensor":  "Window sensor — fires the moment a window opens (preferred trigger)",
+            "window_sensor":  "Window sensor — knows when a window opens",
             "door_sensor":    "Door sensor — used as the trigger if no window sensor is paired",
             "ir_ac_control":  "IR AC — the AC that gets paused / resumed via IR",
         },
@@ -418,7 +418,7 @@ TEMPLATES: list[dict] = [
         "capability_labels": {
             "has_ir_blaster":   "IR blaster — sends the TV its power command",
             "motion_sensor":    "Motion sensor — fires the room-empty trigger",
-            "presence_sensor":  "Presence sensor — preferred trigger (mmWave holds through stillness)",
+            "presence_sensor":  "Presence sensor — senses you even when you're still",
         },
         "safety_level":          "safe",
         "tags":                  ["comfort", "energy", "tv", "ir"],
@@ -515,6 +515,12 @@ def get_missing_optional(template: dict, cap_map: dict) -> list[str]:
 def friendly_cap(template: dict, cap: str) -> str:
     local = template.get("capability_labels", {}).get(cap)
     return local if local else CAP_FRIENDLY.get(cap, cap.replace("_", " "))
+
+
+def short_cap(cap: str) -> str:
+    """Just the clean device name (no per-template verbose override) — used for
+    the friendly 'Needs a X' line on Library cards."""
+    return CAP_FRIENDLY.get(cap, cap.replace("_", " ").replace("has ", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -888,7 +894,7 @@ def _night_watch(cap_map: dict) -> dict:
     # Stage 1 — saved enabled. Fires at the configured time and arms Stage 2.
     stage_activate: dict = {
         "name":        "Night Watch — Activate",
-        "description": "Dims non-bedroom lights and arms the living-room alert once the bedroom mmWave confirms presence.",
+        "description": "Dims the other lights and watches the living room once you're settled in bed.",
         "trigger":     {"type": "time", "time": default_time},
         "conditions":  [
             {"entity_id": bedroom_sensor or "", "operator": "is", "value": "on"},
@@ -994,7 +1000,7 @@ def _night_watch(cap_map: dict) -> dict:
         "warnings":      warnings,
         "wizard_fields": [
             {"key": "trigger_time",       "label": "Activation time",    "type": "time",   "default": default_time},
-            {"key": "bedroom_sensor",     "label": "Bedroom mmWave",     "type": "entity", "capability": "presence_sensor", "default": bedroom_sensor or ""},
+            {"key": "bedroom_sensor",     "label": "Bedroom presence sensor", "type": "entity", "capability": "presence_sensor", "default": bedroom_sensor or ""},
             {"key": "living_room_sensor", "label": "Living room sensor", "type": "entity", "capability": ["presence_sensor", "motion_sensor"], "default": living_room_sensor or ""},
             {"key": "lights_to_dim",      "label": "Lights to dim",      "type": "entities", "capability": ["light_dimmable", "light_on_off"], "default": ([dimmable] if dimmable else []) + onoff_lights, "multi": True},
             {"key": "dim_level",          "label": "Dim level (%)",      "type": "percent", "default": dim_level, "min": 1, "max": 100},
