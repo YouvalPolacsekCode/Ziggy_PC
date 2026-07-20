@@ -101,14 +101,9 @@ def main():
         daemon=True,
     ))
 
-    # Smart Light Schedule — continuous adaptive ramp. Cheap when disabled
-    # (tick early-outs on cfg.enabled=False), so always spawn it.
-    from services.circadian_engine import start_scheduler as start_circadian
-    threads.append(threading.Thread(
-        target=thread_wrapper("Circadian", start_circadian),
-        name="Circadian",
-        daemon=True,
-    ))
+    # Smart Light Schedule ramp engine is started from backend/server.py's
+    # FastAPI startup (the prod entrypoint runs uvicorn directly, not this
+    # file) so it's not spawned here — doing both would double-run it in dev.
 
     if settings.get("sensor_alerts", {}).get("enabled", True):
         from services.sensor_alerts import start_sensor_alerts

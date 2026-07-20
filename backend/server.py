@@ -135,6 +135,17 @@ async def _startup():
     asyncio.create_task(_start_ir_listener())
     asyncio.create_task(_run_update_checker())
     asyncio.create_task(_ensure_ha_location())
+
+    # Smart Light Schedule ramp engine. start_scheduler() is a blocking loop
+    # (interruptible waits), so it runs in a daemon thread rather than on the
+    # event loop. This is the prod entrypoint — the container runs uvicorn
+    # directly, not core/ziggy_main, so ziggy_main's thread list never runs here.
+    try:
+        import threading as _threading
+        from services.circadian_engine import start_scheduler as _start_circadian
+        _threading.Thread(target=_start_circadian, name="Circadian", daemon=True).start()
+    except Exception as _e:
+        log_info(f"[Circadian] scheduler start failed: {_e}")
     # Warm the HA service catalog so the first call to /api/devices/X/commands
     # returns instantly. Without this, the catalog stays empty until the
     # first request triggers it, and that request blocks while the WS round-
