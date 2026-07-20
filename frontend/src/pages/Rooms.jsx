@@ -14,6 +14,7 @@ import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { EntitySelect } from '../components/ui/EntitySelect'
+import OccupancySensorForm from '../components/automations/OccupancySensorForm'
 import { useDeviceStore, applyRoomsOrder } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
@@ -37,6 +38,8 @@ const roomDomainGroup = domainGroup
 //                against --tile-base. Both code paths live in TileCard
 //                (DeviceCard.jsx) so flipping this constant cleanly reverts.
 const ROOM_TILE_STYLE = 'inverted'
+// binary_sensor device_classes that can be fused into a room presence sensor.
+const FUSABLE_PRESENCE_DC = new Set(['motion', 'presence', 'occupancy', 'door', 'opening'])
 
 // Resolve a room-device entry (shape from /rooms/devices) to the canonical
 // entity from the store. Room devices use _is_ir / _ir_device_id markers and
@@ -1060,6 +1063,14 @@ export function RoomDetail() {
 
   const entityMapRD = useMemo(() => Object.fromEntries(entities.map((e) => [e.entity_id, e])), [entities])
   const occupied = useMemo(() => roomOccupancy(room, entityMapRD, occupancySensors), [room, entityMapRD, occupancySensors])
+  // "Combine sensors" is only offered when the room has 2+ presence-type sensors
+  // to actually fuse — otherwise it'd just wrap one sensor and make a redundant
+  // entity (roomDevices already excludes any existing fused sensor).
+  const fusableCount = useMemo(
+    () => roomDevices.filter((d) => d.domain === 'binary_sensor' && FUSABLE_PRESENCE_DC.has(d.device_class)).length,
+    [roomDevices],
+  )
+  const [showCombineSensors, setShowCombineSensors] = useState(false)
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -1278,6 +1289,20 @@ export function RoomDetail() {
             <Toggle checked={avgOn} onCheckedChange={(v) => setRoomShowAvgTemp(roomId, v)} />
           </div>
         )}
+        {/* Combine sensors — only when the room has 2+ presence-type sensors to
+            actually fuse (a single-source fusion is just a redundant wrapper). */}
+        {fusableCount >= 2 && (
+          <button type="button" onClick={() => setShowCombineSensors(true)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%',
+              padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)',
+              cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }} dir="auto">🧩 {t('rooms.combineSensors.title')}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '2px 0 0' }} dir="auto">{t('rooms.combineSensors.hint', { n: fusableCount })}</p>
+            </div>
+            <ChevronRight size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+          </button>
+        )}
         {/* Devices — grouped by domain type */}
         {(() => {
           const hiddenCount = roomDevices.filter(e => e.entity_id && hiddenEntities.has(e.entity_id)).length
@@ -1374,6 +1399,21 @@ export function RoomDetail() {
             {saving ? t('rooms.assigning') : t('rooms.assignToRoomBtn')}
           </button>
         </div>
+      </Modal>
+
+      {/* Combine this room's sensors into one presence signal (gated to 2+). */}
+      <Modal open={showCombineSensors} onClose={() => setShowCombineSensors(false)} title={t('automations.smartSensor.title')}>
+        {showCombineSensors && (
+          <OccupancySensorForm
+            initialRoom={roomId}
+            onCreated={async () => {
+              setShowCombineSensors(false)
+              addToast(t('automations.smartSensor.created'), 'success')
+              try { await fetchAll({ force: true }) } catch {}
+            }}
+            onClose={() => setShowCombineSensors(false)}
+          />
+        )}
       </Modal>
 
       {/* Header kebab-menu modals — same Edit / Delete UX as the Rooms-list tiles. */}

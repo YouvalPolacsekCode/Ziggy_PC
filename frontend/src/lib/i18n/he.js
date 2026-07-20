@@ -678,6 +678,8 @@ export default {
   'rooms.avgTemp.title':    'טמפרטורה ממוצעת',
   'rooms.avgTemp.hint':     'להציג באריח של החדר את הממוצע של {n} החיישנים, במקום רק אחד.',
   'rooms.occupied':         'תפוס',
+  'rooms.combineSensors.title':'שילוב חיישנים',
+  'rooms.combineSensors.hint':'לאחד את {n} חיישני הנוכחות של החדר לאות אחד של ״מישהו כאן״ לאוטומציות.',
   'rooms.notFound':         'החדר לא נמצא',
   'rooms.viewLiveSecurity': 'צפייה בשידור חי באבטחה',
   'rooms.live':             'שידור חי ▶',

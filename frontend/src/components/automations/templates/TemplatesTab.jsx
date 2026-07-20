@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useT, useLang } from '../../../lib/i18n'
 import { getAutomationTemplates, getSuggestedRoutines, listBlueprints } from '../../../lib/api'
-import { Modal } from '../../ui/Modal'
 import TemplateCard from './TemplateCard'
-import OccupancySensorForm from '../OccupancySensorForm'
 
 // ── TemplatesTab — the unified Library (2026-07-19 IA addendum A2/A4) ───────
 //
@@ -51,7 +49,7 @@ function normalise(native, routines, community) {
   return [...nativeItems, ...communityItems, ...routineItems]
 }
 
-function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRoutine, onSensorCreated }) {
+function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRoutine }) {
   const t    = useT()
   const lang = useLang()
   const isHe = lang === 'he'
@@ -62,7 +60,6 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
   const [loading,   setLoading]   = useState(true)
   const [setupFilter, setSetupFilter] = useState('all')  // 'all' | 'notSetUp'
   const [category,    setCategory]    = useState('')      // '' = all categories
-  const [showSensorForm, setShowSensorForm] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -130,20 +127,9 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
         </div>
       </div>
 
-      {/* Presence-sensor CTA — a template-adjacent "make a room smart" helper. */}
-      <button
-        onClick={() => setShowSensorForm(true)}
-        style={{
-          width: '100%', textAlign: isHe ? 'right' : 'left', cursor: 'pointer', fontFamily: 'inherit',
-          padding: '10px 14px', borderRadius: 12, marginBottom: 14,
-          background: `color-mix(in srgb, var(--accent, var(--info)) 6%, var(--surface))`,
-          border: `0.5px solid color-mix(in srgb, var(--accent, var(--info)) 25%, var(--line))`,
-          fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 500,
-        }}
-        dir="auto"
-      >
-        ✨ {t('automations.templatesTab.sensorCta')}
-      </button>
+      {/* Presence-sensor creation lives on the room page (only when a room has
+          2+ sensors to combine) + inside the Builder/Smart-Room flows that need
+          it — not here. A fused sensor is plumbing, not an automation. */}
 
       {loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -180,12 +166,6 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
         )
       })()}
 
-      <Modal open={showSensorForm} onClose={() => setShowSensorForm(false)} title={t('automations.smartSensor.title')}>
-        <OccupancySensorForm
-          onCreated={(res) => { if (typeof onSensorCreated === 'function') onSensorCreated(res) }}
-          onClose={() => setShowSensorForm(false)}
-        />
-      </Modal>
     </div>
   )
 }

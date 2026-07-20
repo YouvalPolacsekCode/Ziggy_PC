@@ -680,6 +680,8 @@ export default {
   'rooms.avgTemp.title':    'Average temperature',
   'rooms.avgTemp.hint':     'Show the mean of this room’s {n} sensors on its tile, instead of just one.',
   'rooms.occupied':         'Occupied',
+  'rooms.combineSensors.title':'Combine sensors',
+  'rooms.combineSensors.hint':'Fuse this room’s {n} presence sensors into one "someone’s here" signal for automations.',
   'rooms.notFound':         'Room not found',
   'rooms.viewLiveSecurity': 'View live in Security',
   'rooms.live':             'LIVE ▶',
