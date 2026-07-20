@@ -5,6 +5,8 @@
 // outside React render contexts (e.g. when building a card preview from a
 // memo, where useT() isn't available).
 import { t as tStatic } from '../i18n'
+import { entityDisplayName } from '../utils'
+import { useDeviceStore } from '../../stores/deviceStore'
 
 export function formatRelativeTime(iso) {
   if (!iso) return null
@@ -24,18 +26,18 @@ export function triggerSummary(trigger) {
       ? tStatic('automations.summary.everyDayAt', { time: trigger.time.slice(0, 5) })
       : tStatic('automations.summary.timeNoTime')
     case 'state': {
-      let s = tStatic('automations.summary.whenBecomes', { entity: trigger.entity_id || tStatic('automations.summary.unknownDevice'), state: trigger.state || 'on/off' })
+      let s = tStatic('automations.summary.whenBecomes', { entity: friendlyEntityName(trigger.entity_id) || tStatic('automations.summary.unknownDevice'), state: trigger.state || 'on/off' })
       if (trigger.for_minutes) s += ' ' + tStatic('automations.summary.forMinutes', { n: trigger.for_minutes })
       return s
     }
     case 'numeric_state': {
-      const ent = trigger.entity_id || 'sensor'
+      const ent = friendlyEntityName(trigger.entity_id) || 'sensor'
       if (trigger.above !== undefined && trigger.above !== '') return tStatic('automations.summary.risesAbove', { entity: ent, value: trigger.above })
       if (trigger.below !== undefined && trigger.below !== '') return tStatic('automations.summary.dropsBelow', { entity: ent, value: trigger.below })
       return tStatic('automations.summary.crossesThreshold', { entity: ent })
     }
     case 'zone': {
-      const who  = trigger.entity_id || 'person'
+      const who  = friendlyEntityName(trigger.entity_id) || 'person'
       const zone = (trigger.zone || 'zone.home').replace('zone.', '')
       return tStatic(trigger.event === 'leave' ? 'automations.summary.zoneLeaves' : 'automations.summary.zoneEnters', { who, zone })
     }
@@ -51,10 +53,20 @@ export function triggerSummary(trigger) {
   }
 }
 
-// Strip the HA domain prefix from an entity_id when showing it inline in a
-// summary, so users see "kitchen main" not "switch.kitchen_main".
+// Resolve an entity_id to its real device name (never leak an id/hex object-id
+// to the user). Reads the always-loaded device store; falls back to a stripped
+// slug only when the entity is genuinely unknown (e.g. deleted).
 export function friendlyEntityName(entityId) {
   if (!entityId) return ''
+  try {
+    const ents = useDeviceStore.getState()?.entities || []
+    const e = ents.find((x) => x.entity_id === entityId)
+    if (e) return entityDisplayName(e) || e.friendly_name || _stripEntityId(entityId)
+  } catch { /* store not ready — fall through */ }
+  return _stripEntityId(entityId)
+}
+
+function _stripEntityId(entityId) {
   const tail = entityId.includes('.') ? entityId.split('.').slice(1).join('.') : entityId
   return tail.replace(/_/g, ' ')
 }

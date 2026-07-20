@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { Search, ChevronDown } from 'lucide-react'
 import { getEntities, getRooms } from '../../lib/api'
-import { domainIcon, slugToTitle } from '../../lib/utils'
+import { domainIcon, slugToTitle, entityDisplayName } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import { useT, t as _t } from '../../lib/i18n'
+import { useDeviceStore } from '../../stores/deviceStore'
 
 // Resolve an action's display label. Prefers labelKey (i18n) and falls back to
 // the static English label so existing non-React consumers stay valid.
@@ -168,6 +169,10 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
   const [search, setSearch] = useState('')
   const [entities, setEntities] = useState([])
   const [haRooms, setHaRooms] = useState([])
+  // Always-loaded store entities — used to resolve the SELECTED value's display
+  // name even before the dropdown lazily fetches its own list (otherwise a
+  // pre-filled value shows "Unknown device" until the dropdown is opened).
+  const storeEntities = useDeviceStore((s) => s.entities)
   const [loading, setLoading] = useState(false)
   const ref = useRef(null)
   const triggerRef = useRef(null)
@@ -300,6 +305,7 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
   ]
 
   const selectedEntity = entities.find((e) => e.entity_id === value)
+                      || storeEntities.find((e) => e.entity_id === value)
 
   return (
     <div ref={ref} className="relative flex flex-col gap-1.5">
@@ -321,7 +327,7 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
         {selectedEntity ? (
           <>
             <span>{domainIcon(selectedEntity.domain)}</span>
-            <span className="flex-1 truncate text-sm">{selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
+            <span className="flex-1 truncate text-sm">{entityDisplayName(selectedEntity) || selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
           </>
         ) : value ? (
           <span className="flex-1 truncate text-ink-mute text-sm">{t('entitySelect.unknownDevice')}</span>
