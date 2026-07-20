@@ -15,6 +15,17 @@ const COOL_DEF = { on: 25, off: 24 }   // room ≥25 → cool on; ≤24 → off
 const HEAT_DEF = { on: 19, off: 20 }   // room ≤19 → heat on; ≥20 → off
 const IR_CLIMATE_TYPES = new Set(['ac', 'air_conditioner', 'split', 'heater'])
 
+// Zigbee/Z2M devices expose config toggles as switch.* sub-entities (do-not-
+// disturb, child-lock, permit-join, LED, AI tuning…). Those are NOT actuators —
+// they must never appear as a device you can "switch on" for climate. Keep the
+// picker to real plugs/relays: drop anything flagged config/diagnostic, or whose
+// id carries a known Z2M config suffix.
+const SWITCH_CONFIG_DENY = /_(do_not_disturb|child_lock|permit_join|led|led_disabled|led_disabled_night|indicator|ai_[a-z_]+|sensitivity|interference|selfidentification|power_outage_memory|power_on_behavior|auto_update|update|calibration|identify)$|_ai_|permit_join/i
+function isRealSwitch(e) {
+  if (e.entity_category === 'config' || e.entity_category === 'diagnostic') return false
+  return !SWITCH_CONFIG_DENY.test(e.entity_id || '')
+}
+
 function deviceLabel(t, d) {
   const how = {
     climate: t('automations.smartClimate.viaSmart'),
@@ -129,7 +140,7 @@ export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
       const name = e.friendly_name || e.display_name || e.name || e.entity_id
       if (e.domain === 'climate')     out.push({ kind: 'climate', id: e.entity_id, name, room: room.name })
       else if (e.domain === 'fan')    out.push({ kind: 'fan',     id: e.entity_id, name, room: room.name })
-      else if (e.domain === 'switch') out.push({ kind: 'switch',  id: e.entity_id, name, room: room.name })
+      else if (e.domain === 'switch' && isRealSwitch(e)) out.push({ kind: 'switch', id: e.entity_id, name, room: room.name })
     }
     for (const ir of irDevices) {
       const ty = (ir.type || ir.device_type || '').toLowerCase()
