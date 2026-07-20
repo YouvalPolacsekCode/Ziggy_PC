@@ -352,6 +352,7 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
   const [name, setName] = useState('')
   const [menuFor, setMenuFor] = useState(null)
   const pressTimer = useRef(null)
+  const pressState = useRef({ id: null, long: false })
 
   useEffect(() => {
     let alive = true
@@ -418,8 +419,21 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
     }
   }
 
-  const startPress = (id) => { pressTimer.current = setTimeout(() => setMenuFor(id), 450) }
-  const endPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }
+  // Tap vs long-press detected purely with pointer events (mirrors BrightnessLamp).
+  // Mixing onClick with a timer was unreliable on touch — a tap often ends as
+  // pointercancel, so the synthetic click never fired and apply was dropped.
+  const startPress = (id) => {
+    pressState.current = { id, long: false }
+    clearTimeout(pressTimer.current)
+    pressTimer.current = setTimeout(() => { pressState.current.long = true; setMenuFor(id) }, 500)
+  }
+  const finishPress = (p) => {
+    clearTimeout(pressTimer.current)
+    const tapped = pressState.current.id === p.id && !pressState.current.long && menuFor !== p.id
+    pressState.current = { id: null, long: false }
+    if (tapped) onApply(p.settings)
+  }
+  const cancelPress = () => { clearTimeout(pressTimer.current); pressState.current = { id: null, long: false } }
 
   return (
     <div>
@@ -434,12 +448,12 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
           return (
             <div key={p.id} style={{ position: 'relative' }}>
               <button
-                onClick={() => { if (menuFor === p.id) { setMenuFor(null); return } onApply(p.settings) }}
                 onPointerDown={() => startPress(p.id)}
-                onPointerUp={endPress}
-                onPointerLeave={endPress}
+                onPointerUp={() => finishPress(p)}
+                onPointerCancel={cancelPress}
+                onPointerLeave={cancelPress}
                 onContextMenu={(e) => { e.preventDefault(); setMenuFor(p.id) }}
-                style={_presetPill(active)}
+                style={{ ..._presetPill(active), touchAction: 'manipulation' }}
               >
                 <PresetGauge settings={p.settings} active={active} />
                 {p.is_default && <Star size={11} fill="currentColor" style={{ opacity: 0.9 }} />}
@@ -480,15 +494,19 @@ export function LightControls({ entity, onService }) {
   const [brightness, setBrightness] = useState(rawBrightness)
 
   const colorModes = entity.supported_color_modes || []
-  const supportsColorTemp = colorModes.includes('color_temp') || entity.color_temp != null
+  const supportsColorTemp = colorModes.includes('color_temp') || entity.color_temp != null || entity.color_temp_kelvin != null
   const supportsColor = colorModes.some((m) => ['hs', 'rgb', 'xy', 'rgbw', 'rgbww'].includes(m))
   const effectList = entity.effect_list || []
   const currentRgb = entity.rgb_color
 
-  const minK = entity.max_mireds ? Math.round(1000000 / entity.max_mireds) : 2700
-  const maxK = entity.min_mireds ? Math.round(1000000 / entity.min_mireds) : 6500
-  const rawK = entity.color_temp ? Math.round(1000000 / entity.color_temp) : 2700
-  const [colorTemp, setColorTemp] = useState(rawK)
+  // Bulbs report colour temperature as KELVIN (modern z2m/HA) or MIREDS (older).
+  // Prefer kelvin; fall back to mireds; else sane 2700–6500 defaults. Reading
+  // mireds-only broke kelvin-only bulbs: the live value stayed null so the
+  // warmth slider never tracked real state (only optimistic drags moved it).
+  const minK = entity.min_color_temp_kelvin ?? (entity.max_mireds ? Math.round(1000000 / entity.max_mireds) : 2700)
+  const maxK = entity.max_color_temp_kelvin ?? (entity.min_mireds ? Math.round(1000000 / entity.min_mireds) : 6500)
+  const liveK = entity.color_temp_kelvin ?? (entity.color_temp ? Math.round(1000000 / entity.color_temp) : null)
+  const [colorTemp, setColorTemp] = useState(liveK ?? 2700)
 
   // Persistent commit lock: after the user commits a value we hold it locally until HA's
   // reported value actually matches (within tolerance). If HA's WS reply briefly overwrites
@@ -515,17 +533,16 @@ export function LightControls({ entity, onService }) {
   }, [entity.brightness])
 
   useEffect(() => {
-    if (entity.color_temp == null) return
-    const next = Math.round(1000000 / entity.color_temp)
+    if (liveK == null) return
     if (lastCommittedTemp.current != null) {
-      if (Math.abs(next - lastCommittedTemp.current) <= 100) {
+      if (Math.abs(liveK - lastCommittedTemp.current) <= 100) {
         lastCommittedTemp.current = null
-        setColorTemp(next)
+        setColorTemp(liveK)
       }
       return
     }
-    setColorTemp(next)
-  }, [entity.color_temp])
+    setColorTemp(liveK)
+  }, [liveK])
 
   // Commit handlers: arm the lock and fire HA service. We DON'T optimistically write to
   // the store here — doing so would echo through entity.brightness and trick the useEffect
