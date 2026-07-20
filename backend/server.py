@@ -146,6 +146,16 @@ async def _startup():
         _threading.Thread(target=_start_circadian, name="Circadian", daemon=True).start()
     except Exception as _e:
         log_info(f"[Circadian] scheduler start failed: {_e}")
+
+    # Smart Climate Control thermostat engine — same daemon-thread pattern as the
+    # ramp engine (blocking interruptible loop). Real responsiveness comes from
+    # the ha_subscriber temperature hook; this loop is the ~5 min safety net.
+    try:
+        import threading as _threading
+        from services.smart_climate_engine import start_scheduler as _start_climate
+        _threading.Thread(target=_start_climate, name="SmartClimate", daemon=True).start()
+    except Exception as _e:
+        log_info(f"[SmartClimate] scheduler start failed: {_e}")
     # Warm the HA service catalog so the first call to /api/devices/X/commands
     # returns instantly. Without this, the catalog stays empty until the
     # first request triggers it, and that request blocks while the WS round-

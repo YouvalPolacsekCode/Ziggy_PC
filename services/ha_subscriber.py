@@ -267,6 +267,17 @@ async def _process_event(event: dict) -> None:
         except Exception as e:
             log_error(f"[HASubscriber] circadian hook {entity_id}: {e}")
 
+    # Smart Climate Control hook — a watched room temperature sensor reported a
+    # new reading. Evaluate that room's thermostat now (event-driven; the engine's
+    # ~5 min loop is only a safety net). Cheap early-out on non-sensors.
+    if entity_id.startswith("sensor.") and prev_s != new_s:
+        try:
+            from services import smart_climate_engine as _clim
+            if entity_id in _clim.configured_sensors():
+                _clim.on_temperature_changed(entity_id, new_s)
+        except Exception as e:
+            log_error(f"[HASubscriber] smart-climate hook {entity_id}: {e}")
+
     # TRACE-level: emit every HA state change (very noisy — only in trace mode)
     _dbus.emit("ha", TRACE, "ha_state_changed",
                entity_id=entity_id, prev_state=prev_s, new_state=new_s)

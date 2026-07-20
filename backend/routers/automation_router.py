@@ -601,6 +601,90 @@ async def sync_circadian():
     return result
 
 
+# ── Smart Climate Control — Ziggy-as-thermostat (2026-07-20) ─────────────────
+# Per-room hysteresis engine: watch a temperature reading, switch a device
+# on/off with a deadband. No setpoint is sent to the device — Ziggy owns the
+# cutoff. Cooling and/or heating edge per room. See services/smart_climate_engine.py.
+
+class ClimateDevice(BaseModel):
+    kind: str                    # "climate" | "ir_ac" | "fan" | "switch"
+    id:   str
+    name: Optional[str] = ""
+    room: Optional[str] = ""
+
+
+class ClimateEdge(BaseModel):
+    device: ClimateDevice
+    on:     float
+    off:    float
+
+
+class ClimateRoomBody(BaseModel):
+    room:     str
+    roomName: Optional[str] = None
+    sensor:   str
+    cooling:  Optional[ClimateEdge] = None
+    heating:  Optional[ClimateEdge] = None
+    enabled:  Optional[bool] = True
+
+
+@router.get("/api/automations/smart_climate")
+async def get_smart_climate():
+    """All configured rooms + each room's live temperature and believed on/off state."""
+    from services.smart_climate_engine import status
+    return await asyncio.to_thread(status)
+
+
+@router.post("/api/automations/smart_climate")
+async def save_smart_climate(body: ClimateRoomBody):
+    from services.smart_climate_engine import save_room, sync_room
+    saved = await asyncio.to_thread(
+        save_room, body.room,
+        sensor=body.sensor,
+        cooling=body.cooling.model_dump() if body.cooling else None,
+        heating=body.heating.model_dump() if body.heating else None,
+        enabled=True if body.enabled is None else bool(body.enabled),
+        room_name=body.roomName,
+    )
+    # Apply immediately so the device snaps to the right state on save.
+    applied = await asyncio.to_thread(sync_room, body.room) if saved.get("enabled") else {}
+    _bus.emit("automation", _BASIC, "smart_climate_saved",
+              room=body.room, has_cooling=bool(body.cooling),
+              has_heating=bool(body.heating), result="ok")
+    return {"ok": True, "config": saved, "applied": applied}
+
+
+@router.post("/api/automations/smart_climate/{room}/toggle")
+async def toggle_smart_climate(room: str, body: dict):
+    from services.smart_climate_engine import set_enabled, sync_room
+    enabled = bool(body.get("enabled", True))
+    rc = await asyncio.to_thread(set_enabled, room, enabled)
+    if rc is None:
+        raise HTTPException(status_code=404, detail="Room not configured")
+    if enabled:
+        await asyncio.to_thread(sync_room, room)
+    _bus.emit("automation", _BASIC, "smart_climate_toggled",
+              room=room, enabled=enabled, result="ok")
+    return {"ok": True, "config": rc}
+
+
+@router.delete("/api/automations/smart_climate/{room}")
+async def delete_smart_climate(room: str):
+    from services.smart_climate_engine import delete_room
+    res = await asyncio.to_thread(delete_room, room)
+    _bus.emit("automation", _BASIC, "smart_climate_deleted", room=room, result="ok")
+    return {"ok": True, **res}
+
+
+@router.post("/api/automations/smart_climate/{room}/sync")
+async def sync_smart_climate(room: str):
+    """▶ — force-evaluate the room now and re-assert the correct device state."""
+    from services.smart_climate_engine import sync_room
+    result = await asyncio.to_thread(sync_room, room)
+    _bus.emit("automation", _BASIC, "smart_climate_synced", room=room, result="ok")
+    return result
+
+
 # ── Pro Mode bundles — list / delete (undo-accept) ───────────────────────────
 # Registered BEFORE the /{automation_id} catch-all so "bundles" isn't captured
 # as an automation id. A bundle is the set of artifacts a single Pro Mode accept

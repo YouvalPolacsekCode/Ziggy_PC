@@ -212,17 +212,18 @@ TEMPLATES: list[dict] = [
     {
         "id":                    "smart_climate",
         "name":                  "Smart Climate Control",
-        "description":           "Start the AC automatically when a room gets too warm.",
+        "name_he":               "בקרת אקלים חכמה",
+        "description":           "Keep a room comfortable — Ziggy watches the temperature and switches your AC, fan or heater on and off around it. Cooling and heating, any device.",
+        "description_he":        "לשמור על חדר נעים — זיגי עוקב אחרי הטמפרטורה ומדליק ומכבה את המזגן, המאוורר או התנור סביבה. קירור וגם חימום, כל מכשיר.",
         "category":              "climate",
         "icon":                  "🌡️",
         "required_capabilities": ["room_temperature"],
-        "optional_capabilities": ["phone_presence", "climate_control", "ir_ac_control"],
-        "relevant_capabilities": ["room_temperature", "phone_presence", "climate_control", "ir_ac_control"],
+        "optional_capabilities": ["climate_control", "ir_ac_control"],
+        "relevant_capabilities": ["room_temperature", "climate_control", "ir_ac_control"],
         "capability_labels": {
-            "room_temperature": "Temperature sensor — watches the room's warmth",
-            "phone_presence":   "GPS tracker — condition: only cools when you're home",
-            "climate_control":  "Smart AC — set to cool mode at 22 °C",
-            "ir_ac_control":    "IR AC blaster — turned on via IR command",
+            "room_temperature": "Temperature sensor — the room reading Ziggy watches",
+            "climate_control":  "Smart AC — switched on and off to hold the room comfortable",
+            "ir_ac_control":    "IR AC — switched on and off to hold the room comfortable",
         },
         "safety_level":          "safe",
         "tags":                  ["climate", "temperature", "comfort"],
@@ -755,45 +756,20 @@ def _morning_routine(cap_map: dict) -> dict:
 
 
 def _smart_climate(cap_map: dict) -> dict:
-    temp    = first_entity(cap_map, "room_temperature")
-    climate = first_entity(cap_map, "climate_control")
-    phone   = first_entity(cap_map, "phone_presence")
+    """Prefill for the Smart Climate Control thermostat.
 
-    # Condition: someone is home — no point cooling an empty house
-    conditions = []
-    if phone:
-        conditions.append({"entity_id": phone, "operator": "is", "value": "home"})
-
-    actions: list[dict] = []
-    if climate:
-        actions.append({
-            "type": "call_service", "entity_id": climate,
-            "service": "climate.set_hvac_mode",
-            "service_value": "set_hvac_mode",
-            "service_data": {"hvac_mode": "cool"},
-        })
-        actions.append({
-            "type": "call_service", "entity_id": climate,
-            "service": "climate.set_temperature",
-            "service_value": "set_temperature",
-            "service_data": {"temperature": 22},
-        })
-    else:
-        # IR blaster or no AC entity — route through Ziggy intent
-        actions.append({"type": "send_intent", "text": "Turn on AC"})
-    actions.append({
-        "type": "notify",
-        "message": "Room is getting hot — AC activated.",
-        "title": "Smart Climate",
-    })
-
+    This template doesn't slot into the trigger/action wizard — Ziggy runs it as
+    a per-room hysteresis engine (services/smart_climate_engine.py), not an HA
+    automation. The Configure flow reads the `bundle: "climate"` marker and opens
+    the dedicated SmartClimate wizard (pick a room → a temperature reading →
+    a cooling device + on/off temps, optional heating), which POSTs to
+    /api/automations/smart_climate. No trigger/actions are built here.
+    """
     return {
         "name":        "Smart Climate Control",
-        "description": "Activates AC when room temperature exceeds 26 °C",
-        "trigger":     {"type": "numeric_state", "entity_id": temp or "", "above": 26},
-        "conditions":  conditions,
-        "actions":     actions,
-        "rooms":       [],
+        "description": "Keep a room comfortable — Ziggy watches the temperature and switches your AC, fan or heater on and off. No thermostat needed.",
+        "bundle":      "climate",
+        "endpoint":    "/api/automations/smart_climate",
     }
 
 
