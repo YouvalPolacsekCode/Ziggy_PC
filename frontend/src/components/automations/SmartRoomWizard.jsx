@@ -1,8 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useT, useLangStore } from '../../lib/i18n'
 import { getRooms, designSmartRoom, applyAutomationBundle } from '../../lib/api'
+import { useDeviceStore } from '../../stores/deviceStore'
+import { entityDisplayName } from '../../lib/utils'
 import OccupancySensorForm from './OccupancySensorForm'
+
+// binary_sensor device_class → the presence "type" shown in the picker.
+const SR_OCC_TYPE = { motion: 'motion', presence: 'presence', occupancy: 'presence' }
 
 // ── SmartRoomWizard ───────────────────────────────────────────────────────────
 // Step-by-step, terse/technical creation of a Smart Room. Replaces the generic
@@ -106,6 +111,38 @@ export default function SmartRoomWizard({ onSaved, onClose, initialRoom = null, 
   const setOpt = (k, v) => setOpts((o) => ({ ...o, [k]: v }))
   const roomLabel = room?.name || room?.id || ''
   const sensorLabel = t('automations.smartRoom.wiz.presenceName', { room: roomLabel })
+
+  // Presence-source picker candidates for the chosen room: the room's raw
+  // motion/presence/occupancy sensors + any existing merged sensor. room.entities
+  // from /api/rooms are entity_id STRINGS → resolve through the store's entities.
+  const storeRooms  = useDeviceStore((s) => s.rooms)
+  const allEntities = useDeviceStore((s) => s.entities)
+  const occSensors  = useDeviceStore((s) => s.occupancySensors)
+  const entityMap = useMemo(
+    () => Object.fromEntries((allEntities || []).map((e) => [e.entity_id, e])),
+    [allEntities],
+  )
+  const presenceCandidates = useMemo(() => {
+    if (!room) return []
+    const area = (storeRooms || []).find(
+      (r) => String(r.id) === String(room.id) || r.name === room.name)
+    const fusedIds = new Set((occSensors || []).map((s) => s.entity_id))
+    const out = []
+    for (const id of (area?.entities || [])) {
+      const e = entityMap[id]
+      if (e && e.domain === 'binary_sensor' && SR_OCC_TYPE[e.device_class] && !fusedIds.has(id)) {
+        out.push({ id, name: entityDisplayName(e) || id, kind: SR_OCC_TYPE[e.device_class] })
+      }
+    }
+    const rn = (room.name || '').toLowerCase(), rid = String(room.id).toLowerCase()
+    for (const s of (occSensors || [])) {
+      const sr = String(s.room || '').toLowerCase()
+      if (sr === rid || sr === rn || sr.replace(/_/g, ' ') === rn) {
+        out.push({ id: s.entity_id, name: t('automations.smartRoom.wiz.mergedSensor'), kind: 'merged' })
+      }
+    }
+    return out
+  }, [room, storeRooms, entityMap, occSensors, t])
 
   useEffect(() => {
     let alive = true
@@ -222,16 +259,43 @@ export default function SmartRoomWizard({ onSaved, onClose, initialRoom = null, 
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.smartRoom.wiz.presenceTitle')}</p>
           <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{nStep}/{total}</span>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <span style={{ fontSize: 20 }}>🧍</span>
-          <div style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
-            <div style={{ fontWeight: 600 }}>{sensorLabel}</div>
-            <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', margin: '4px 0 0' }}>{t('automations.smartRoom.wiz.presenceIntro')}</p>
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.5 }} dir="auto">{t('automations.smartRoom.wiz.pickSensor')}</p>
+
+        {presenceCandidates.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--warn)', padding: '10px 12px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 10 }} dir="auto">
+            {t('automations.smartRoom.wiz.noPresence')}
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, border: '0.5px solid var(--line)', borderRadius: 10, padding: 6, background: 'var(--surface)' }}>
+            {presenceCandidates.map((c) => {
+              const sel = c.id === occEntity
+              return (
+                <button key={c.id} type="button" onClick={() => setOccEntity(c.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8,
+                    background: sel ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit' }}>
+                  <span style={{ width: 15, height: 15, borderRadius: 999, flexShrink: 0,
+                    border: `1.5px solid ${sel ? 'var(--ok)' : 'var(--line)'}`, background: sel ? 'var(--ok)' : 'transparent' }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{c.name}</span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-faint)' }} dir="auto">
+                      {c.kind === 'merged' ? t('automations.smartRoom.wiz.mergedType') : t(`automations.smartSensor.type.${c.kind}`)}
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
-        </div>
+        )}
+
+        <button type="button" onClick={() => setPhase('needSensor')}
+          style={{ alignSelf: 'flex-start', background: 'none', border: '1px dashed var(--line)', borderRadius: 10, padding: '9px 14px', fontSize: 12.5, color: 'var(--ink-mute)', cursor: 'pointer', fontFamily: 'inherit' }} dir="auto">
+          + {t('automations.smartRoom.wiz.createMerged')}
+        </button>
+
         <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
           <button type="button" onClick={() => (initialRoom ? onClose?.() : setPhase('pick'))} className="z-btn-secondary" style={{ flex: 1 }}>{t('automations.smartRoom.wiz.back')}</button>
-          <button type="button" onClick={next} className="z-btn-primary" style={{ flex: 1 }}>{t('automations.smartRoom.wiz.next')}</button>
+          <button type="button" onClick={next} disabled={!occEntity} className="z-btn-primary" style={{ flex: 1, opacity: occEntity ? 1 : 0.5 }}>{t('automations.smartRoom.wiz.next')}</button>
         </div>
       </div>
     )
