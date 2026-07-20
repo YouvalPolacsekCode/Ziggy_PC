@@ -5,7 +5,7 @@ import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom } from '../lib/api'
+import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom, getClimate, toggleClimate, syncClimate, deleteClimate } from '../lib/api'
 import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
@@ -17,6 +17,9 @@ import CircadianGroupRow from '../components/automations/CircadianGroupRow'
 import CircadianViewModal from '../components/automations/CircadianViewModal'
 import SmartRoomGroupRow from '../components/automations/SmartRoomGroupRow'
 import SmartRoomViewModal from '../components/automations/SmartRoomViewModal'
+import ClimateBundleWizard from '../components/automations/ClimateBundleWizard'
+import ClimateGroupRow from '../components/automations/ClimateGroupRow'
+import ClimateViewModal from '../components/automations/ClimateViewModal'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -66,6 +69,12 @@ export default function Automations() {
   // not from HA automations (they're migrated away). Status drives the card + view.
   const [circadianStatus,   setCircadianStatus]   = useState(null)
   const [showCircadianView, setShowCircadianView] = useState(false)
+  // Smart Climate Control — per-room thermostat engine. Status is {rooms:{room:{…}}}.
+  // climateTarget opens the wizard (create/edit); climateView holds the room slice
+  // being viewed read-only. All sourced from the /smart_climate config endpoint.
+  const [climateStatus,     setClimateStatus]     = useState(null)
+  const [climateTarget,     setClimateTarget]     = useState(null)
+  const [climateView,       setClimateView]       = useState(null)   // {room, slice}
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
   const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
   const [smartRoomView,     setSmartRoomView]     = useState(null)   // group being viewed
@@ -129,6 +138,7 @@ export default function Automations() {
     if (automations.length === 0)        fetchAutomations()
     if (routines.length === 0)           fetchRoutines()
     getCircadian().then(setCircadianStatus).catch(() => {})
+    getClimate().then(setClimateStatus).catch(() => {})
 
     // Habit suggestions for the Suggested tab. Prefer the unified feed (one
     // fetch), fall back to the legacy endpoint if it errors so an outage of
@@ -153,6 +163,11 @@ export default function Automations() {
     // Smart Room bundle — pick a room, then the designer + BundlePreviewCard.
     if (template.wizard_prefill.bundle === 'smart_room') {
       setSmartRoomTarget({ _templateId: template.id })
+      return
+    }
+    // Smart Climate bundle — pick a room → a temp reading → a device to switch.
+    if (template.wizard_prefill.bundle === 'climate') {
+      setClimateTarget({ _isInstalled: false })
       return
     }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
@@ -226,6 +241,44 @@ export default function Automations() {
       'success',
     )
     try { await refetchCircadian() } catch {}
+  }
+
+  // ── Smart Climate handlers (per-room) ────────────────────────────────────
+  const refetchClimate = () => getClimate().then(setClimateStatus).catch(() => {})
+  const handleEditClimate = (room, slice) => {
+    setClimateView(null)
+    setClimateTarget({
+      _isInstalled: true,
+      room,
+      sensor:  slice.sensor,
+      cooling: slice.cooling,
+      heating: slice.heating,
+    })
+  }
+  const handleClimateSync = async (room) => {
+    try { await syncClimate(room); addToast(t('automations.smartClimate.synced'), 'success'); await refetchClimate() }
+    catch { addToast(t('automations.smartClimate.failed'), 'error') }
+  }
+  const handleClimateToggle = async (room, enabled) => {
+    try {
+      await toggleClimate(room, enabled)
+      addToast(enabled ? t('automations.smartClimate.resumed') : t('automations.smartClimate.pausedToast'), 'success')
+      await refetchClimate()
+    } catch { addToast(t('automations.smartClimate.failed'), 'error') }
+  }
+  const handleClimateDelete = async (room) => {
+    try { await deleteClimate(room); addToast(t('automations.smartClimate.deleted'), 'success'); await refetchClimate() }
+    catch { addToast(t('automations.smartClimate.failed'), 'error') }
+  }
+  const handleClimateClose = () => setClimateTarget(null)
+  const handleClimateSaved = async ({ updated, removed }) => {
+    setClimateTarget(null)
+    addToast(
+      removed ? t('automations.smartClimate.deleted')
+              : (updated ? t('automations.smartClimate.updated') : t('automations.smartClimate.saved')),
+      'success',
+    )
+    try { await refetchClimate() } catch {}
   }
 
   // On-demand Library item → RoutineWizard prefilled with the template's
@@ -393,6 +446,17 @@ export default function Automations() {
                   onDelete={handleCircadianDelete}
                 />
               )}
+              {Object.entries(climateStatus?.rooms || {}).map(([room, slice]) => (
+                <ClimateGroupRow
+                  key={`climate-${room}`}
+                  status={slice}
+                  onToggle={(enabled) => handleClimateToggle(room, enabled)}
+                  onSync={() => handleClimateSync(room)}
+                  onView={() => setClimateView({ room, slice })}
+                  onEdit={() => handleEditClimate(room, slice)}
+                  onDelete={() => handleClimateDelete(room)}
+                />
+              ))}
               {smartRoomGroups.map(group => (
                 <SmartRoomGroupRow
                   key={group.room}
@@ -529,6 +593,30 @@ export default function Automations() {
             initial={circadianTarget}
             onSaved={handleCircadianSaved}
             onClose={handleCircadianClose}
+          />
+        )}
+      </Modal>
+
+      {/* Smart Climate — read-only View (what it's doing in this room now). */}
+      <Modal open={!!climateView} onClose={() => setClimateView(null)}
+             title={climateView ? t('automations.smartClimate.cardTitle', { room: climateView.slice?.roomName || climateView.room }) : ''}>
+        {climateView && (
+          <ClimateViewModal
+            status={climateView.slice}
+            onSync={async () => { await handleClimateSync(climateView.room) }}
+            onEdit={() => handleEditClimate(climateView.room, climateView.slice)}
+          />
+        )}
+      </Modal>
+
+      {/* Smart Climate Control wizard — pick room → reading → device band. */}
+      <Modal open={!!climateTarget} onClose={handleClimateClose} title={t('automations.smartClimate.title')}>
+        {climateTarget && (
+          <ClimateBundleWizard
+            key={climateTarget._isInstalled ? `edit-${climateTarget.room}` : 'new'}
+            initial={climateTarget}
+            onSaved={handleClimateSaved}
+            onClose={handleClimateClose}
           />
         )}
       </Modal>

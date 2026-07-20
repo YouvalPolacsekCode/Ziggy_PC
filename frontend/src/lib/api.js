@@ -483,6 +483,16 @@ export const saveCircadian   = ({ lights, peak, floor, wake, bedtime, enabled })
 export const deleteCircadian = () => del('/automations/circadian')
 export const syncCircadian   = () => post('/automations/circadian/sync', {})
 
+// Smart Climate Control — per-room Ziggy-as-thermostat engine.
+// See services/smart_climate_engine.py. Ziggy watches a room's temperature and
+// switches a device on/off with a deadband; no setpoint is sent to the device.
+export const getClimate    = () => get('/automations/smart_climate')
+export const saveClimate   = (body) => post('/automations/smart_climate', body)
+export const toggleClimate = (room, enabled) =>
+  post(`/automations/smart_climate/${encodeURIComponent(room)}/toggle`, { enabled })
+export const deleteClimate = (room) => del(`/automations/smart_climate/${encodeURIComponent(room)}`)
+export const syncClimate   = (room) => post(`/automations/smart_climate/${encodeURIComponent(room)}/sync`, {})
+
 // Manual overrides
 export const getOverrides = () => get('/overrides')
 export const clearOverride = (entityId) => del(`/overrides/${encodeURIComponent(entityId)}`)
