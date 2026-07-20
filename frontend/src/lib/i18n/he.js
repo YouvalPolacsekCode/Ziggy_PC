@@ -1497,6 +1497,7 @@ export default {
   'deviceControls.tempWarm':            'חמים',
   'deviceControls.tempCool':            'קר',
   'deviceControls.presets':             'תבניות',
+  'deviceControls.presetDefaultShadowed': '⏰ בלוח הזמנים החכם — ברירת מחדל לא תחול.',
   'deviceControls.colors':              'צבעים',
   'deviceControls.savePreset':          'שמירה',
   'deviceControls.savePresetTitle':     'שמירת המצב הנוכחי',

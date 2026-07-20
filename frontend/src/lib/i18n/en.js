@@ -1537,6 +1537,7 @@ export default {
   'deviceControls.tempWarm':            'warm',
   'deviceControls.tempCool':            'cool',
   'deviceControls.presets':             'Presets',
+  'deviceControls.presetDefaultShadowed': '⏰ On the Smart Light Schedule — default won’t apply.',
   'deviceControls.colors':              'Colors',
   'deviceControls.savePreset':          'Save',
   'deviceControls.savePresetTitle':     'Save this position',

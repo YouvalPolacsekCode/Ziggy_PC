@@ -32,7 +32,16 @@ class PresetRename(BaseModel):
 
 @router.get("/api/device/{entity_id}/presets")
 async def get_presets(entity_id: str, user: dict = Depends(get_current_user)):
-    return {"presets": device_presets.list_presets(unquote(entity_id))}
+    eid = unquote(entity_id)
+    # on_schedule: the light is on the Smart Light Schedule, which wins on
+    # turn-on — so a default preset won't apply. The card shows a note.
+    on_schedule = False
+    try:
+        from services.circadian_engine import scheduled_lights, load_config
+        on_schedule = load_config().get("enabled") and eid in scheduled_lights()
+    except Exception:
+        pass
+    return {"presets": device_presets.list_presets(eid), "on_schedule": bool(on_schedule)}
 
 
 @router.post("/api/device/{entity_id}/presets")

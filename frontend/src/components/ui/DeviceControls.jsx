@@ -347,6 +347,9 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
   const t = useT()
   const addToast = useUIStore((s) => s.addToast)
   const [presets, setPresets] = useState([])
+  // Light is on the Smart Light Schedule → the schedule wins on turn-on, so a
+  // default preset won't apply. Drives the note below.
+  const [onSchedule, setOnSchedule] = useState(false)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [name, setName] = useState('')
@@ -357,7 +360,7 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
   useEffect(() => {
     let alive = true
     getDevicePresets(entityId)
-      .then((r) => { if (alive) setPresets(r.presets || []) })
+      .then((r) => { if (alive) { setPresets(r.presets || []); setOnSchedule(!!r.on_schedule) } })
       .catch(() => { /* row just stays empty; never blocks the card */ })
     return () => { alive = false }
   }, [entityId])
@@ -483,6 +486,11 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
             </button>
           )}
       </div>
+      {onSchedule && presets.some((p) => p.is_default) && (
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '8px 0 0', lineHeight: 1.4 }} dir="auto">
+          {t('deviceControls.presetDefaultShadowed')}
+        </p>
+      )}
     </div>
   )
 }
