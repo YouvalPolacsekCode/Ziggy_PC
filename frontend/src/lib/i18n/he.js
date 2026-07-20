@@ -1006,6 +1006,8 @@ export default {
   'automations.smartClimate.bandLineCool':   'מקרר מעל {on}° · כבוי מתחת {off}°',
   'automations.smartClimate.bandLineHeat':   'מחמם מתחת {on}° · כבוי מעל {off}°',
   'automations.smartClimate.deviceLine':     'מפעיל: {name}',
+  'automations.smartClimate.next':           'הבא',
+  'automations.smartClimate.back':           'חזרה',
   'automations.smartClimate.view':           'צפייה',
   'automations.smartClimate.edit':           'עריכה',
   'automations.smartClimate.syncNow':        'סנכרון עכשיו',

@@ -1011,6 +1011,8 @@ export default {
   'automations.smartClimate.bandLineCool':   'Cools above {on}° · off below {off}°',
   'automations.smartClimate.bandLineHeat':   'Heats below {on}° · off above {off}°',
   'automations.smartClimate.deviceLine':     'Switches: {name}',
+  'automations.smartClimate.next':           'Next',
+  'automations.smartClimate.back':           'Back',
   'automations.smartClimate.view':           'View',
   'automations.smartClimate.edit':           'Edit',
   'automations.smartClimate.syncNow':        'Sync now',
