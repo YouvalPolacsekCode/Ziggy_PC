@@ -1380,6 +1380,8 @@ export default {
   'routines.stepType.delay':       'המתנה',
   'routines.stepType.notify':      'התראה',
   'routines.stepType.message':     'שליחת פקודה',
+  'routines.stepType.turnOffAllLights': 'כיבוי כל האורות',
+  'routines.stepType.turnOffEverything': 'כיבוי הכול (כולל טלוויזיה)',
   'routines.validate.device':      'יש לבחור מכשיר',
   'routines.validate.ir':          'יש לבחור פקודת אינפרא',
   'routines.validate.automation':  'יש לבחור פעולה',

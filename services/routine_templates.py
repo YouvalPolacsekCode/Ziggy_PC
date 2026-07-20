@@ -67,7 +67,10 @@ def _first(cap_map: dict, *caps: str) -> str:
 
 
 def _good_night_steps(cap_map: dict) -> list[dict]:
-    steps: list[dict] = [{"type": "message", "text": "Turn off all lights"}]
+    # Lights + TV/media off (climate is intentionally left alone). Reliable
+    # batched primitive, not the flaky text→intent step. Fully editable in the
+    # wizard — trim to lights-only or add an AC-to-sleep step.
+    steps: list[dict] = [{"type": "turn_off_everything"}]
     ac = _first(cap_map, "climate_control", "has_climate_entity")
     if ac:
         # Israeli sleep default — quiet cool, not off. User tunes in the wizard.
@@ -103,8 +106,8 @@ def _movie_night_steps(cap_map: dict) -> list[dict]:
 
 
 def _leaving_steps(cap_map: dict) -> list[dict]:
-    # One step, whole home — the intent pipeline's turn_off_everything.
-    return [{"type": "message", "text": "Turn off everything"}]
+    # One step, whole home — reliable batched primitive (lights + TV/media).
+    return [{"type": "turn_off_everything"}]
 
 
 def _away_steps(cap_map: dict) -> list[dict]:

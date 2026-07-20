@@ -1413,6 +1413,8 @@ export default {
   'routines.stepType.delay':       'Wait',
   'routines.stepType.notify':      'Notify',
   'routines.stepType.message':     'Send command',
+  'routines.stepType.turnOffAllLights': 'Turn off all lights',
+  'routines.stepType.turnOffEverything': 'Turn off everything (incl. TV)',
   // Routine step validators
   'routines.validate.device':      'Pick a device',
   'routines.validate.ir':          'Pick an IR command',

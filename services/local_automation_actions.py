@@ -117,6 +117,11 @@ _LOCAL_TYPES = {
     # Music playback (Spotify / YT Music) on a speaker the user has enabled
     # in Settings → Music. Self-gated on media_music; refuses to run when off.
     "media_play",
+    # Whole-home "off" scene primitives — reliable batched shutdowns that call
+    # services.home_automation directly (NOT via the flaky text→intent hop).
+    # Used by Good Night / Leaving and available in the routine wizard.
+    "turn_off_all_lights",   # every light off (lights only)
+    "turn_off_everything",   # lights + TV/media off
 }
 
 
@@ -849,6 +854,23 @@ async def execute_ziggy_actions(
                             result = {"ok": True, "message": f"restored {restored} entity(s) from {namespace}.{state_key}"}
                         except Exception as e:
                             result = {"ok": False, "message": f"restore_entity_states failed: {e}"}
+
+                # ── Whole-home "off" scenes — call the primitive directly ────────
+                elif kind == "turn_off_all_lights":
+                    try:
+                        from services.home_automation import turn_off_all_lights
+                        r = await asyncio.to_thread(turn_off_all_lights)
+                        result = {"ok": True, "message": "All lights off", "data": r}
+                    except Exception as e:
+                        result = {"ok": False, "message": f"turn_off_all_lights failed: {e}"}
+
+                elif kind == "turn_off_everything":
+                    try:
+                        from services.home_automation import turn_off_everything
+                        r = await asyncio.to_thread(turn_off_everything)
+                        result = {"ok": True, "message": "Everything off", "data": r}
+                    except Exception as e:
+                        result = {"ok": False, "message": f"turn_off_everything failed: {e}"}
 
                 # ── Natural-language command through Ziggy's intent pipeline ─────
                 elif kind in ("send_intent", "message"):

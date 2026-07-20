@@ -44,6 +44,9 @@ const DAYS  = [{ id: 'mon', label: 'M' }, { id: 'tue', label: 'T' }, { id: 'wed'
 // Step type list — labels are translation keys, resolved at render time.
 const STEP_TYPES = [
   { value: 'device',     labelKey: 'routines.stepType.device' },
+  // Whole-home "off" scenes — no fields; reliable batched shutdowns.
+  { value: 'turn_off_all_lights', labelKey: 'routines.stepType.turnOffAllLights' },
+  { value: 'turn_off_everything', labelKey: 'routines.stepType.turnOffEverything' },
   { value: 'automation', labelKey: 'routines.stepType.automation' },
   { value: 'ir_command', labelKey: 'routines.stepType.ir_command' },
   { value: 'delay',      labelKey: 'routines.stepType.delay' },
@@ -185,6 +188,8 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
     : step.type === 'automation' ? `▶ ${step.automation_name || step.automation_id || 'Automation'}`
     : step.type === 'delay' ? `Wait ${step.delay_seconds || '?'}s`
     : step.type === 'notify' ? `📣 ${step.message || 'Notification'}`
+    : step.type === 'turn_off_all_lights' ? `💡 ${t('routines.stepType.turnOffAllLights')}`
+    : step.type === 'turn_off_everything' ? `🌙 ${t('routines.stepType.turnOffEverything')}`
     : step.type === 'media_play' ? `🎵 ${t('media.action.playMedia')}`
     : step.text || 'Send command'
 

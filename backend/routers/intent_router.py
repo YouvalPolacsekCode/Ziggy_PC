@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 import tempfile
 import time
 import uuid
@@ -111,6 +113,52 @@ def _resolve_engine(override: str | None) -> str:
     return "v1"
 
 
+# ── Phrase → routine shortcut ──────────────────────────────────────────────
+# Before any engine handles the turn: if the user's text exactly matches an
+# On-demand routine's name (normalized), run that routine deterministically.
+# Makes "good night" (and any named routine) fire identically on v1/v2/voice —
+# no LLM guesswork for a nightly command, and a future "Hey Ziggy good night"
+# from a speaker (STT → text → here) rides the same path.
+
+def _norm_phrase(s: str | None) -> str:
+    # Keep word chars + Hebrew; collapse everything else to single spaces.
+    return re.sub(r"[^\w֐-׿]+", " ", (s or "").lower()).strip()
+
+
+async def _match_routine_phrase(text: str) -> dict | None:
+    q = _norm_phrase(text)
+    if not q:
+        return None
+    try:
+        from services.ha_scripts import list_scripts
+        routines = await asyncio.to_thread(list_scripts)
+    except Exception:
+        return None
+    for r in (routines or []):
+        if _norm_phrase(r.get("name")) == q:   # exact full match — no substrings
+            return r
+    return None
+
+
+async def _run_routine_phrase(routine: dict, req_text: str, source: str, request_id: str) -> dict:
+    from services.local_automation_actions import execute_ziggy_actions
+    name = routine.get("name") or "Routine"
+    ok = True
+    try:
+        await execute_ziggy_actions(routine["id"], name)
+    except Exception as e:
+        log_error(f"[chat] routine '{name}' run failed: {e}")
+        ok = False
+    reply = f"✓ {name}" if ok else f"Couldn't run {name}."
+    bus.emit("intent", BASIC, "routine_phrase_run",
+             request_id=request_id, routine=name, result="ok" if ok else "error")
+    await manager.broadcast({
+        "type": "ziggy_response", "input": req_text, "reply": reply,
+        "source": source, "ok": ok, "request_id": request_id,
+    })
+    return {"reply": reply, "ok": ok, "data": {}, "request_id": request_id, "engine": "routine"}
+
+
 class DirectIntentRequest(BaseModel):
     intent: str
     params: dict = {}
@@ -177,6 +225,11 @@ async def process_chat(req: ChatRequest):
              input=req.text,
              source=req.source,
              endpoint="/api/chat")
+
+    # ── Phrase → routine shortcut (before any engine) ──────────────────────
+    _routine = await _match_routine_phrase(req.text)
+    if _routine:
+        return await _run_routine_phrase(_routine, req.text, req.source, request_id)
 
     # ── v2 engine: single tool-calling agent ───────────────────────────────
     # Defensive: if the flag says v2 but the agent module is somehow missing
@@ -402,6 +455,15 @@ async def process_voice(request: Request, file: UploadFile = File(...)):
 
         if not transcription.strip():
             return {"reply": "", "transcription": "", "ok": False, "error": "No speech detected"}
+
+        # Phrase → routine shortcut (before any engine), same as /api/chat — so
+        # a spoken "good night" runs the routine deterministically.
+        _routine = await _match_routine_phrase(transcription)
+        if _routine:
+            res = await _run_routine_phrase(_routine, transcription, "web_voice", request_id)
+            res["transcription"] = transcription
+            res["lang"] = lang
+            return res
 
         # v2 engine: single agent, voice channel (terse spoken replies).
         try:
