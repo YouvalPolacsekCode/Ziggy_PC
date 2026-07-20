@@ -249,6 +249,24 @@ async def _process_event(event: dict) -> None:
     except Exception:
         pass
 
+    # Smart Light Schedule hook — a scheduled light joining/leaving the ramp.
+    # off→on: enroll it (snap to the current ramp point). Staying on but with a
+    # hand-changed brightness/color (not our own write): mark it manual so the
+    # engine backs off "until manually set". Cheap early-out on non-lights.
+    if entity_id.startswith("light."):
+        try:
+            from services import circadian_engine as _circ
+            if entity_id in _circ.scheduled_lights():
+                if prev_s != "on" and new_s == "on":
+                    _circ.on_light_turned_on(entity_id)
+                elif prev_s == "on" and new_s == "on" and not was_ziggy_initiated(entity_id):
+                    old_a = old_state.get("attributes", {}) or {}
+                    if (old_a.get("brightness") != attrs.get("brightness")
+                            or old_a.get("color_temp_kelvin") != attrs.get("color_temp_kelvin")):
+                        _circ.mark_manual(entity_id)
+        except Exception as e:
+            log_error(f"[HASubscriber] circadian hook {entity_id}: {e}")
+
     # TRACE-level: emit every HA state change (very noisy — only in trace mode)
     _dbus.emit("ha", TRACE, "ha_state_changed",
                entity_id=entity_id, prev_state=prev_s, new_state=new_s)

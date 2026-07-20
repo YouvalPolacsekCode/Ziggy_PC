@@ -101,6 +101,15 @@ def main():
         daemon=True,
     ))
 
+    # Smart Light Schedule — continuous adaptive ramp. Cheap when disabled
+    # (tick early-outs on cfg.enabled=False), so always spawn it.
+    from services.circadian_engine import start_scheduler as start_circadian
+    threads.append(threading.Thread(
+        target=thread_wrapper("Circadian", start_circadian),
+        name="Circadian",
+        daemon=True,
+    ))
+
     if settings.get("sensor_alerts", {}).get("enabled", True):
         from services.sensor_alerts import start_sensor_alerts
         _sensor_notify = lambda msg: push_notify_sync("Sensor Alert", msg, "/", "sensor_alert")

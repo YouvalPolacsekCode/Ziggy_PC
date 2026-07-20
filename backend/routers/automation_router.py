@@ -529,6 +529,75 @@ async def delete_circadian_bundle():
     return result
 
 
+# ── Smart Light Schedule — continuous adaptive ramp (2026-07-20) ─────────────
+# Replaces the 4-automation bundle above with a Ziggy-driven ramp engine. Two
+# anchors (day peak / night floor) + wake/bedtime; applied on light turn-on and
+# every ~10 min, respecting manual override. See services/circadian_engine.py.
+
+class CircadianAnchor(BaseModel):
+    kelvin: int
+    pct:    int
+
+
+class CircadianConfigBody(BaseModel):
+    lights:  list[str]
+    peak:    Optional[CircadianAnchor] = None
+    floor:   Optional[CircadianAnchor] = None
+    wake:    Optional[str] = None
+    bedtime: Optional[str] = None
+
+
+@router.get("/api/automations/circadian")
+async def get_circadian():
+    """Config + the current ramp point right now + any hand-overridden lights."""
+    from services.circadian_engine import status
+    return await asyncio.to_thread(status)
+
+
+@router.post("/api/automations/circadian")
+async def save_circadian(body: CircadianConfigBody):
+    from services.circadian_engine import save_config, sync_now, DEFAULTS
+    cfg = {
+        "enabled": bool(body.lights),
+        "lights":  body.lights,
+        "peak":    body.peak.model_dump()  if body.peak  else DEFAULTS["peak"],
+        "floor":   body.floor.model_dump() if body.floor else DEFAULTS["floor"],
+        "wake":    body.wake    or DEFAULTS["wake"],
+        "bedtime": body.bedtime or DEFAULTS["bedtime"],
+    }
+    saved = await asyncio.to_thread(save_config, cfg)
+    # Retire the legacy 4-automation bundle so the two don't both drive the lights.
+    try:
+        from services.circadian_builder import delete_bundle
+        await asyncio.to_thread(delete_bundle)
+    except Exception:
+        pass
+    applied = await asyncio.to_thread(sync_now) if body.lights else {}
+    _bus.emit("automation", _BASIC, "circadian_saved",
+              light_count=len(body.lights), applied=applied.get("applied"), result="ok")
+    return {"ok": True, "config": saved, "applied": applied}
+
+
+@router.delete("/api/automations/circadian")
+async def delete_circadian():
+    from services.circadian_engine import save_config, DEFAULTS
+    from services.circadian_builder import delete_bundle
+    await asyncio.to_thread(delete_bundle)               # sweep any legacy automations too
+    saved = await asyncio.to_thread(save_config, {**DEFAULTS, "enabled": False, "lights": []})
+    _bus.emit("automation", _BASIC, "circadian_deleted", result="ok")
+    return {"ok": True, "config": saved}
+
+
+@router.post("/api/automations/circadian/sync")
+async def sync_circadian():
+    """Play button — re-enroll all scheduled lights and snap them to now."""
+    from services.circadian_engine import sync_now
+    result = await asyncio.to_thread(sync_now)
+    _bus.emit("automation", _BASIC, "circadian_synced",
+              applied=result.get("applied"), result="ok")
+    return result
+
+
 # ── Pro Mode bundles — list / delete (undo-accept) ───────────────────────────
 # Registered BEFORE the /{automation_id} catch-all so "bundles" isn't captured
 # as an automation id. A bundle is the set of artifacts a single Pro Mode accept
