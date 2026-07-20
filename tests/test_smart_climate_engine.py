@@ -118,3 +118,27 @@ def test_clean_edge_rejects_deviceless():
 def test_clean_edge_defaults_bad_numbers():
     e = eng._clean_edge({"device": {"kind": "fan", "id": "fan.x"}, "on": "hot", "off": None}, "cool")
     assert e["on"] == 25 and e["off"] == 24  # COOL_DEFAULTS
+
+
+# ── average reading ──────────────────────────────────────────────────────────
+
+def test_room_temp_single(monkeypatch):
+    monkeypatch.setattr(eng, "_read_one", lambda s: {"sensor.a": 25.0}.get(s))
+    assert eng.room_temp({"sensor": "sensor.a"}) == 25.0
+
+
+def test_room_temp_average(monkeypatch):
+    vals = {"sensor.a": 24.0, "sensor.b": 26.0}
+    monkeypatch.setattr(eng, "_read_one", lambda s: vals.get(s))
+    assert eng.room_temp({"sensor": "sensor.a", "sensors": ["sensor.a", "sensor.b"]}) == 25.0
+
+
+def test_room_temp_average_skips_offline(monkeypatch):
+    vals = {"sensor.a": 30.0, "sensor.b": None}   # b offline
+    monkeypatch.setattr(eng, "_read_one", lambda s: vals.get(s))
+    assert eng.room_temp({"sensors": ["sensor.a", "sensor.b"]}) == 30.0
+
+
+def test_room_temp_average_all_offline(monkeypatch):
+    monkeypatch.setattr(eng, "_read_one", lambda s: None)
+    assert eng.room_temp({"sensors": ["sensor.a", "sensor.b"]}) is None

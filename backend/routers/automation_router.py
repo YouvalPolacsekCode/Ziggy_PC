@@ -623,6 +623,8 @@ class ClimateRoomBody(BaseModel):
     room:     str
     roomName: Optional[str] = None
     sensor:   str
+    # Non-empty → watch the AVERAGE of these sensors instead of `sensor`.
+    sensors:  Optional[list[str]] = None
     cooling:  Optional[ClimateEdge] = None
     heating:  Optional[ClimateEdge] = None
     enabled:  Optional[bool] = True
@@ -641,6 +643,7 @@ async def save_smart_climate(body: ClimateRoomBody):
     saved = await asyncio.to_thread(
         save_room, body.room,
         sensor=body.sensor,
+        sensors=body.sensors,
         cooling=body.cooling.model_dump() if body.cooling else None,
         heating=body.heating.model_dump() if body.heating else None,
         enabled=True if body.enabled is None else bool(body.enabled),

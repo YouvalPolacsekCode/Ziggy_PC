@@ -20,7 +20,7 @@ import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
 import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
-import { findRoomMetric, inferBinarySensorClass } from '../lib/devices'
+import { findRoomMetric, averageRoomMetric, inferBinarySensorClass } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
 import { useT, useTranslatedName } from '../lib/i18n'
 
@@ -378,6 +378,7 @@ export function RoomsList() {
   const getNoRoom       = useDeviceStore(s => s.getNoRoom)
   const roomsOrder      = useDeviceStore(s => s.roomsOrder)
   const setRoomsOrder   = useDeviceStore(s => s.setRoomsOrder)
+  const roomShowAvgTemp = useDeviceStore(s => s.roomShowAvgTemp)
   const deviceGroups    = useDeviceStore(s => s.deviceGroups)
   const groupByEntityId = useDeviceStore(s => s.groupByEntityId)
   const groupById       = useDeviceStore(s => s.groupById)
@@ -424,7 +425,11 @@ export function RoomsList() {
     // findRoomMetric also looks at _group.metrics, so a multi-sensor device
     // (Roni Room Sensor) keeps surfacing humidity as a room chip even though
     // grouping absorbed humidity into the temperature primary's siblings.
-    tempSensor:   findRoomMetric(r.devices, 'temperature', entityMap),
+    // When the user turned on "average" for this room, the tile shows the mean
+    // of ALL its temp sensors instead of the first one.
+    tempSensor:   (roomShowAvgTemp?.[String(r.id)]
+                    ? averageRoomMetric(r.devices, 'temperature', entityMap)
+                    : null) || findRoomMetric(r.devices, 'temperature', entityMap),
     humSensor:    findRoomMetric(r.devices, 'humidity',    entityMap),
   }))
   // Apply user-defined room order: saved IDs first in saved order, unsaved
@@ -940,6 +945,8 @@ export function RoomDetail() {
   const deviceGroups      = useDeviceStore(s => s.deviceGroups)
   const groupByEntityId   = useDeviceStore(s => s.groupByEntityId)
   const groupById         = useDeviceStore(s => s.groupById)
+  const roomShowAvgTemp   = useDeviceStore(s => s.roomShowAvgTemp)
+  const setRoomShowAvgTemp = useDeviceStore(s => s.setRoomShowAvgTemp)
   const ziggyRooms = useMemo(
     () => useDeviceStore.getState().getGroupedZiggyRooms(),
     [rawZiggyRooms, deviceGroups, groupByEntityId, groupById],
@@ -1020,16 +1027,22 @@ export function RoomDetail() {
     return raw.filter((d) => !(d._is_ir && d._ir_device_id && haPairedIrIds.has(d._ir_device_id)))
   }, [room?.devices])
 
-  const { entityCount, activeCount, offlineCount, tempSensor, humSensor } = useMemo(() => ({
-    entityCount:  roomDevices.length,
-    activeCount:  roomDevices.filter((d) => isEntityOn(d)).length,
-    offlineCount: roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length,
+  const avgOn = !!roomShowAvgTemp?.[String(roomId)]
+  const { entityCount, activeCount, offlineCount, tempSensor, humSensor, tempSensorCount } = useMemo(() => {
     // Walk the room's primary devices AND each device's grouped siblings, so
     // a multi-sensor node's humidity/temperature surfaces in the room hero
     // even when grouping made it a metric pill rather than its own card.
-    tempSensor:   findRoomMetric(roomDevices, 'temperature'),
-    humSensor:    findRoomMetric(roomDevices, 'humidity'),
-  }), [roomDevices])
+    const avgMetric = averageRoomMetric(roomDevices, 'temperature')
+    const single    = findRoomMetric(roomDevices, 'temperature')
+    return {
+      entityCount:  roomDevices.length,
+      activeCount:  roomDevices.filter((d) => isEntityOn(d)).length,
+      offlineCount: roomDevices.filter((d) => d.state === 'unavailable' || d.state === 'unknown').length,
+      tempSensor:   (avgOn ? avgMetric : null) || single,
+      humSensor:    findRoomMetric(roomDevices, 'humidity'),
+      tempSensorCount: avgMetric?.count || (single ? 1 : 0),
+    }
+  }, [roomDevices, avgOn])
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -1232,6 +1245,17 @@ export function RoomDetail() {
       </div>
 
       <div style={{ padding: '16px 20px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+        {/* Average-temperature toggle — only meaningful with 2+ temp sensors.
+            When on, the room tile + hero show the mean instead of one sensor. */}
+        {tempSensorCount >= 2 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }} dir="auto">{t('rooms.avgTemp.title')}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '2px 0 0' }} dir="auto">{t('rooms.avgTemp.hint', { n: tempSensorCount })}</p>
+            </div>
+            <Toggle checked={avgOn} onCheckedChange={(v) => setRoomShowAvgTemp(roomId, v)} />
+          </div>
+        )}
         {/* Devices — grouped by domain type */}
         {(() => {
           const hiddenCount = roomDevices.filter(e => e.entity_id && hiddenEntities.has(e.entity_id)).length

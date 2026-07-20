@@ -224,6 +224,18 @@ export const useDeviceStore = create((set, get) => ({
     putUiPrefs({ roomsOrder: clean }).catch(() => {})
   },
 
+  // Per-room "show the AVERAGE of the room's temp sensors on its tile" flags,
+  // { roomId: true }. Absent = off (tile shows the first sensor). Persisted via
+  // /api/ui/prefs, mirroring roomsOrder.
+  roomShowAvgTemp: {},
+  setRoomShowAvgTemp: (roomId, on) => {
+    const next = { ...get().roomShowAvgTemp }
+    if (on) next[String(roomId)] = true
+    else delete next[String(roomId)]
+    set({ roomShowAvgTemp: next })
+    putUiPrefs({ roomShowAvgTemp: next }).catch(() => {})
+  },
+
   togglePinnedShortcut: (type, id) => {
     const current = get().pinnedShortcuts
     const idx = current.findIndex(s => s.type === type && s.id === id)
@@ -250,6 +262,7 @@ export const useDeviceStore = create((set, get) => ({
       const remoteHasPhotos    = remote.roomPhotos && Object.keys(remote.roomPhotos).length > 0
       const remoteHasCustom    = remote.roomCustomPhotos && Object.keys(remote.roomCustomPhotos).length > 0
       const remoteHasRoomsOrd  = Array.isArray(remote.roomsOrder) && remote.roomsOrder.length > 0
+      const remoteHasAvgTemp   = remote.roomShowAvgTemp && Object.keys(remote.roomShowAvgTemp).length > 0
       const remoteTheme        = remote.theme === 'light' || remote.theme === 'dark' ? remote.theme : null
 
       // Theme: server value wins so a re-installed PWA respects the user's
@@ -325,6 +338,12 @@ export const useDeviceStore = create((set, get) => ({
         set({ roomsOrder: clean })
       } else if (get().roomsOrder.length > 0) {
         putUiPrefs({ roomsOrder: get().roomsOrder }).catch(() => {})
+      }
+
+      if (remoteHasAvgTemp) {
+        set({ roomShowAvgTemp: { ...remote.roomShowAvgTemp } })
+      } else if (Object.keys(get().roomShowAvgTemp).length > 0) {
+        putUiPrefs({ roomShowAvgTemp: get().roomShowAvgTemp }).catch(() => {})
       }
     } catch {
       // Network down / not authenticated yet — local cache is fine to use.

@@ -109,9 +109,16 @@ def _clean_edge(edge: Optional[dict], direction: str) -> Optional[dict]:
 
 def save_room(room: str, *, sensor: str, cooling: Optional[dict],
               heating: Optional[dict], enabled: bool = True,
-              room_name: Optional[str] = None) -> dict:
+              room_name: Optional[str] = None,
+              sensors: Optional[list] = None) -> dict:
     """Create/replace one room's climate config. Carries `last` forward so a
-    re-save doesn't forget which state Ziggy already drove the device into."""
+    re-save doesn't forget which state Ziggy already drove the device into.
+
+    `sensors` (optional): when a non-empty list, Ziggy watches the AVERAGE of
+    those temperature sensors instead of the single `sensor` (skipping any that
+    are offline). The set is captured here at save time — adding a sensor to the
+    room later means re-saving to include it."""
+    clean_sensors = [s for s in (sensors or []) if isinstance(s, str) and s.startswith("sensor.")]
     with _lock:
         cfg = load_config()
         rooms = cfg.setdefault("rooms", {})
@@ -120,6 +127,7 @@ def save_room(room: str, *, sensor: str, cooling: Optional[dict],
             "enabled": bool(enabled),
             "roomName": room_name or prev.get("roomName") or room,
             "sensor": sensor or "",
+            "sensors": clean_sensors,          # non-empty → average mode
             "cooling": _clean_edge(cooling, "cool"),
             "heating": _clean_edge(heating, "heat"),
             "last": prev.get("last") or {"cooling": None, "heating": None},
@@ -150,11 +158,17 @@ def delete_room(room: str) -> dict:
 
 
 def configured_sensors() -> set[str]:
-    """Temperature sensors any enabled room watches — the ha_subscriber filter."""
+    """Temperature sensors any enabled room watches — the ha_subscriber filter.
+    Includes every sensor of an averaged room so a new reading on any one of
+    them re-evaluates the room."""
     out: set[str] = set()
     for rc in (load_config().get("rooms") or {}).values():
-        if rc.get("enabled") and rc.get("sensor"):
+        if not rc.get("enabled"):
+            continue
+        if rc.get("sensor"):
             out.add(rc["sensor"])
+        for s in (rc.get("sensors") or []):
+            out.add(s)
     return out
 
 
@@ -249,7 +263,7 @@ def _drive(device: dict, action: str, direction: str) -> bool:
 
 # ── reading the room ───────────────────────────────────────────────────────────
 
-def _room_temp(sensor: Optional[str]) -> Optional[float]:
+def _read_one(sensor: Optional[str]) -> Optional[float]:
     if not sensor:
         return None
     try:
@@ -261,6 +275,16 @@ def _room_temp(sensor: Optional[str]) -> Optional[float]:
         return float(v)
     except Exception:
         return None
+
+
+def room_temp(rc: dict) -> Optional[float]:
+    """The room's current temperature per its config: the AVERAGE of `sensors`
+    (skipping offline ones) when that list is non-empty, else the single `sensor`."""
+    sensors = rc.get("sensors") or []
+    if sensors:
+        vals = [v for v in (_read_one(s) for s in sensors) if v is not None]
+        return round(sum(vals) / len(vals), 2) if vals else None
+    return _read_one(rc.get("sensor"))
 
 
 def _persist_last(room: str, changed: dict) -> None:
@@ -283,7 +307,7 @@ def evaluate_room(room: str, rc: dict, *, force: bool = False) -> dict:
     actuate on a decision (or on force), and persist the new `last`."""
     if not rc or (not rc.get("enabled") and not force):
         return {"ran": False}
-    temp = _room_temp(rc.get("sensor"))
+    temp = room_temp(rc)
     if temp is None:
         return {"ran": False, "reason": "no_reading"}
     last = rc.get("last") or {}
@@ -344,7 +368,7 @@ def status() -> dict:
         out[room] = {
             **rc,
             "current": {
-                "temp": _room_temp(rc.get("sensor")),
+                "temp": room_temp(rc),
                 "cooling_state": last.get("cooling"),
                 "heating_state": last.get("heating"),
             },

@@ -179,6 +179,7 @@ def _empty_prefs() -> dict:
         "roomPhotos":        {},  # { roomId: presetKey } — overrides which preset photo a room uses
         "roomCustomPhotos":  {},  # { roomId: dataUrl }   — user-uploaded image (base64 JPEG)
         "roomsOrder":        [],  # [roomId, …] user-defined room display order; rooms not listed fall to the end in their natural order
+        "roomShowAvgTemp":   {},  # { roomId: true } — show the AVERAGE of the room's temp sensors on its tile (default off = first sensor)
         "theme":             None,  # 'light' | 'dark' | None (use system default)
     }
 
@@ -217,6 +218,14 @@ def _sanitize_room_photos(obj) -> dict:
     if not isinstance(obj, dict):
         return {}
     return {str(k): str(v) for k, v in obj.items() if k and v}
+
+
+def _sanitize_room_show_avg(obj) -> dict:
+    """Per-room 'show average temp on tile' flags: { roomId: true }. Only keeps
+    truthy entries so the map stays sparse (absent = off)."""
+    if not isinstance(obj, dict):
+        return {}
+    return {str(k): True for k, v in obj.items() if k and v}
 
 
 # Per-image cap: 800px JPEG @ 0.82 ≈ 200-400KB → 800KB is 2x headroom for big rooms.
@@ -273,6 +282,7 @@ class PrefsUpdate(BaseModel):
     roomPhotos:        Optional[dict] = None
     roomCustomPhotos:  Optional[dict] = None
     roomsOrder:        Optional[list] = None
+    roomShowAvgTemp:   Optional[dict] = None
     theme:             Optional[str]  = None
 
 
@@ -301,6 +311,8 @@ async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
         current["roomCustomPhotos"] = _sanitize_room_custom_photos(body.roomCustomPhotos)
     if body.roomsOrder is not None:
         current["roomsOrder"] = _sanitize_rooms_order(body.roomsOrder)
+    if body.roomShowAvgTemp is not None:
+        current["roomShowAvgTemp"] = _sanitize_room_show_avg(body.roomShowAvgTemp)
     if body.theme is not None:
         current["theme"] = _sanitize_theme(body.theme)
 
@@ -310,6 +322,6 @@ async def put_prefs(body: PrefsUpdate, user: dict = Depends(get_current_user)):
     _bus.emit("settings", _VERBOSE, "ui_prefs_updated",
               user=key,
               fields=[f for f in ("pinnedShortcuts","quickControlIds","roomPhotos",
-                                   "roomCustomPhotos","roomsOrder","theme")
+                                   "roomCustomPhotos","roomsOrder","roomShowAvgTemp","theme")
                        if getattr(body, f) is not None])
     return current

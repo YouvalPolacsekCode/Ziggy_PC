@@ -1322,6 +1322,43 @@ export function findRoomMetric(roomDevices, deviceClass, entityMap) {
   return null
 }
 
+// Like findRoomMetric, but AVERAGES every matching sensor in the room (skipping
+// offline/unknown ones) instead of returning the first. Same return shape so
+// callers reading `.state` / `.unit_of_measurement` work unchanged. Returns null
+// when nothing valid to average. `count` = how many sensors went into the mean.
+export function averageRoomMetric(roomDevices, deviceClass, entityMap) {
+  if (!Array.isArray(roomDevices)) return null
+  const readings = []   // { value, unit }
+  const seen = new Set()
+  const push = (id, rawState, unit) => {
+    if (id && seen.has(id)) return           // don't double-count the same entity
+    const v = parseFloat(rawState)
+    if (_BAD_SENSOR_STATES.has(rawState) || Number.isNaN(v)) return
+    if (id) seen.add(id)
+    readings.push({ value: v, unit })
+  }
+  for (const d of roomDevices) {
+    const e = entityMap?.[d.entity_id]
+    if (e && e.device_class === deviceClass) {
+      push(d.entity_id, e.state, e.unit_of_measurement || e.attributes?.unit_of_measurement)
+    } else if (!e && d.device_class === deviceClass) {
+      push(d.entity_id, d.state, d.unit_of_measurement)
+    }
+    for (const m of (d._group?.metrics || [])) {
+      if (m.device_class === deviceClass) push(m.entity_id, m.state, m.unit)
+    }
+  }
+  if (!readings.length) return null
+  const mean = readings.reduce((a, r) => a + r.value, 0) / readings.length
+  return {
+    state: String(Math.round(mean * 10) / 10),
+    unit_of_measurement: readings[0].unit || '°C',
+    device_class: deviceClass,
+    count: readings.length,
+    isAverage: true,
+  }
+}
+
 // Sort an entity list by kind, then by name within kind.
 export function sortByKind(entities) {
   return [...entities].sort((a, b) => {

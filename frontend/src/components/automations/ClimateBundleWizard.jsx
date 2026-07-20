@@ -133,6 +133,8 @@ export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
   const isUpdate = !!initial?._isInstalled
   const [roomId,  setRoomId]  = useState(initial?.room || '')
   const [sensor,  setSensor]  = useState(initial?.sensor || '')
+  // Average mode: watch the mean of the room's temp sensors instead of one.
+  const [useAvg,  setUseAvg]  = useState(!!(initial?.sensors && initial.sensors.length))
   const [cooling, setCooling] = useState(initial?.cooling || null)
   const [heating, setHeating] = useState(initial?.heating || null)
   const [showHeating, setShowHeating] = useState(!!initial?.heating)
@@ -191,8 +193,15 @@ export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room?.id])
 
+  // Live mean of the room's temp sensors, for the "Average" row label.
+  const avgValue = useMemo(() => {
+    const vals = tempSensors.map(e => parseFloat(e.state)).filter(v => !Number.isNaN(v))
+    return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null
+  }, [tempSensors])
+
   const hasDevice = (e) => !!e?.device
-  const canSave = !!room && !!sensor && (hasDevice(cooling) || (showHeating && hasDevice(heating)))
+  const readingOk = useAvg ? tempSensors.length > 0 : !!sensor
+  const canSave = !!room && readingOk && (hasDevice(cooling) || (showHeating && hasDevice(heating)))
 
   const steps = useMemo(
     () => ['room', 'reading', 'cooling', ...(showHeating ? ['heating'] : [])],
@@ -209,7 +218,8 @@ export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
       await saveClimate({
         room: String(room.id),
         roomName: room.name,
-        sensor,
+        sensor:  useAvg ? '' : sensor,
+        sensors: useAvg ? tempSensors.map(e => e.entity_id) : null,
         cooling: hasDevice(cooling) ? cooling : null,
         heating: (showHeating && hasDevice(heating)) ? heating : null,
         enabled: true,
@@ -266,18 +276,31 @@ export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
     return (
       <StepShell t={t} title={t('automations.smartClimate.reading')} idx={stepIdx + 1} total={total}
         onBack={goBack} onPrimary={goNext} primaryLabel={t('automations.smartClimate.next')}
-        primaryDisabled={!sensor}>
+        primaryDisabled={!readingOk}>
         {tempSensors.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--warn)', padding: '10px 12px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 10 }} dir="auto">
             {t('automations.smartClimate.noSensor')}
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, border: '0.5px solid var(--line)', borderRadius: 10, padding: 6, background: 'var(--surface)' }}>
+            {/* Average of all the room's sensors — only meaningful with 2+. */}
+            {tempSensors.length >= 2 && (
+              <button type="button" onClick={() => setUseAvg(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
+                  background: useAvg ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'transparent',
+                  border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit' }}>
+                <span style={{ width: 15, height: 15, borderRadius: 999, flexShrink: 0,
+                  border: `1.5px solid ${useAvg ? 'var(--ok)' : 'var(--line)'}`, background: useAvg ? 'var(--ok)' : 'transparent' }} />
+                <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1, fontWeight: 600 }} dir="auto">
+                  {t('automations.smartClimate.avgOption', { n: tempSensors.length })}{avgValue != null ? ` · ${avgValue}°` : ''}
+                </span>
+              </button>
+            )}
             {tempSensors.map(e => {
-              const sel = e.entity_id === sensor
+              const sel = !useAvg && e.entity_id === sensor
               const val = e.state != null && e.state !== '' ? ` · ${e.state}°` : ''
               return (
-                <button key={e.entity_id} type="button" onClick={() => setSensor(e.entity_id)}
+                <button key={e.entity_id} type="button" onClick={() => { setUseAvg(false); setSensor(e.entity_id) }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
                     background: sel ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'transparent',
                     border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit' }}>
