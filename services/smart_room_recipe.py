@@ -160,10 +160,20 @@ def build_smart_room_bundle(
         return {"ok": False, "error": "no_lights",
                 "bundle": {"name": label, "language": lang, "decline": decline, "artifacts": {}}}
 
-    # Occupancy entity: explicit arg > existing sensor for the room.
-    occ = occupancy_entity or resolve_occupancy_entity(home, room_slug)
+    # Occupancy source, in precedence order:
+    #   explicit arg  >  an existing Ziggy merged sensor  >  ANY raw room
+    #   presence/occupancy sensor  >  a raw motion sensor.
+    # No fused sensor is required — a single raw sensor is a perfectly valid
+    # trigger. We only ask the user to create/merge one when the room has NO
+    # presence signal at all (then the wizard offers choose-or-create).
+    # Prefer presence/occupancy (holds steady while still) over motion (flaps),
+    # so the "off when empty" rule doesn't misfire on a bare PIR.
+    occ = (occupancy_entity
+           or resolve_occupancy_entity(home, room_slug)
+           or (presence[0] if presence else None)
+           or (motion[0] if motion else None))
     if not occ:
-        # Caller must create one (via OccupancySensorForm) then retry with occupancy_entity.
+        # Nothing to trigger on — the wizard offers choose-an-existing / create-merged.
         return {"ok": False, "needs_occupancy": True, "room": room_slug,
                 "sensors": {"motion": motion, "presence": presence},
                 "has_presence": bool(presence)}

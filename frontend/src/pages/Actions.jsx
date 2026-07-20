@@ -77,8 +77,7 @@ export default function Automations() {
   const [climateView,       setClimateView]       = useState(null)   // {room, slice}
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
   const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
-  const [smartRoomView,     setSmartRoomView]     = useState(null)   // group being viewed
-  const [smartRoomEdit,     setSmartRoomEdit]     = useState(null)   // {room, roomName} being edited
+  const [smartRoomView,     setSmartRoomView]     = useState(null)   // room slug being viewed/edited (one modal)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
 
@@ -218,11 +217,6 @@ export default function Automations() {
       await Promise.all(group.members.map(m => toggleAutomation(m.id, toEnabled)))
       await fetchAutomations({ force: true })
     } catch { addToast(t('automations.failedToTrigger'), 'error') }
-  }
-  const handleSmartRoomEditSaved = async () => {
-    setSmartRoomEdit(null)
-    addToast(t('automations.smartRoom.created'), 'success')
-    await fetchAutomations({ force: true })
   }
   const handleSmartRoomDelete = async (group) => {
     try {
@@ -462,8 +456,8 @@ export default function Automations() {
                   key={group.room}
                   group={group}
                   onToggleAll={(toEnabled) => handleSmartRoomToggleAll(group, toEnabled)}
-                  onView={() => setSmartRoomView(group)}
-                  onEdit={() => setSmartRoomEdit({ room: group.room, roomName: group.roomName })}
+                  onView={() => setSmartRoomView(group.room)}
+                  onEdit={() => setSmartRoomView(group.room)}
                   onDelete={() => handleSmartRoomDelete(group)}
                 />
               ))}
@@ -631,23 +625,29 @@ export default function Automations() {
         )}
       </Modal>
 
-      {/* Smart Room — dedicated View (behavior in one place) */}
-      <Modal open={!!smartRoomView} onClose={() => setSmartRoomView(null)}
-             title={smartRoomView ? t('automations.smartRoom.cardTitle', { room: smartRoomView.roomName }) : ''}>
-        {smartRoomView && <SmartRoomViewModal group={smartRoomView} />}
-      </Modal>
-
-      {/* Smart Room — Edit re-opens the recipe flow for that room (overwrites in place) */}
-      <Modal open={!!smartRoomEdit} onClose={() => setSmartRoomEdit(null)} title={t('automations.smartRoom.title')}>
-        {smartRoomEdit && (
-          <SmartRoomWizard
-            initialRoom={smartRoomEdit.room}
-            initialRoomName={smartRoomEdit.roomName}
-            onSaved={handleSmartRoomEditSaved}
-            onClose={() => setSmartRoomEdit(null)}
-          />
-        )}
-      </Modal>
+      {/* Smart Room — one modal for View AND Edit: the room's automations as
+          editable steps. Edit opens the standard editor per member (overwrites
+          in place by id); no more full re-wizard on edit. Members derived live
+          so toggles/edits reflect immediately. */}
+      {(() => {
+        const srGroup = smartRoomGroups.find(g => g.room === smartRoomView) || null
+        return (
+          <Modal open={!!smartRoomView} onClose={() => setSmartRoomView(null)}
+                 title={srGroup ? t('automations.smartRoom.cardTitle', { room: srGroup.roomName }) : ''}>
+            {srGroup && (
+              <SmartRoomViewModal
+                group={srGroup}
+                onEditMember={(m) => { setSmartRoomView(null); handleEdit(m) }}
+                onToggleMember={async (m, en) => {
+                  try { await toggleAutomation(m.id, en); await fetchAutomations({ force: true }) }
+                  catch { addToast(t('automations.failedToTrigger'), 'error') }
+                }}
+                onDelete={async () => { setSmartRoomView(null); await handleSmartRoomDelete(srGroup) }}
+              />
+            )}
+          </Modal>
+        )
+      })()}
 
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title={t('automations.detailsTitle')}>
         <AutomationViewModal
