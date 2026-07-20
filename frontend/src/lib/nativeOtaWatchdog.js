@@ -38,18 +38,6 @@ export function initOtaWatchdog() {
   setTimeout(async () => {
     log('start')
 
-    // Dev-mode escape hatch — when we're iterating locally and pushing
-    // APKs by hand, the cloud OTA bundle is stale by definition. Setting
-    // localStorage.ZIGGY_OTA_DISABLED = '1' from devtools (or having it
-    // present from a previous dev session) skips the entire flow so the
-    // freshly-bundled APK assets keep running across reopens.
-    try {
-      if (localStorage.getItem('ZIGGY_OTA_DISABLED') === '1') {
-        log('disabled via localStorage.ZIGGY_OTA_DISABLED — using APK bundle')
-        return
-      }
-    } catch {}
-
     const updater = plugin('CapacitorUpdater')
     if (!updater) {
       warn('CapacitorUpdater plugin not on bridge — APK likely missing the plugin')
@@ -57,18 +45,40 @@ export function initOtaWatchdog() {
     }
     log('plugin lookup ok')
 
-    // ── Step 1: health-check the backend ──────────────────────────────────
-    const healthy = await _healthCheck()
-    log('health check:', healthy ? 'OK' : 'FAIL')
-    if (!healthy) return
-
-    // ── Step 2: confirm THIS bundle is good ───────────────────────────────
+    // ── Step 1: confirm THIS bundle is good — FIRST, unconditionally ──────
+    // capgo reverts a just-applied bundle if notifyAppReady() isn't called
+    // within capacitor.config.ts:appReadyTimeout (10s). This MUST NOT be
+    // gated behind the network health-check: on a cold start the network
+    // often isn't ready, _healthCheck() returns false, and the old code
+    // returned early WITHOUT confirming — so capgo reverted the fresh bundle
+    // back to the stale builtin APK assets, producing a visible version
+    // flip-flop (features appearing/disappearing across relaunches). The
+    // running JS reaching this line already proves the bundle loads, so it's
+    // safe (and necessary) to confirm it before anything that can fail.
     try {
       await updater.notifyAppReady()
       log('notifyAppReady ok')
     } catch (e) {
       warn('notifyAppReady failed:', String(e))
     }
+
+    // Dev-mode escape hatch — when we're iterating locally and pushing
+    // APKs by hand, the cloud OTA bundle is stale by definition. Setting
+    // localStorage.ZIGGY_OTA_DISABLED = '1' from devtools (or having it
+    // present from a previous dev session) skips the UPDATE CHECK so the
+    // freshly-bundled APK assets keep running across reopens. (notifyAppReady
+    // above still runs so whatever bundle IS active never gets reverted.)
+    try {
+      if (localStorage.getItem('ZIGGY_OTA_DISABLED') === '1') {
+        log('update check disabled via localStorage.ZIGGY_OTA_DISABLED')
+        return
+      }
+    } catch {}
+
+    // ── Step 2: health-check the backend before the update check ──────────
+    const healthy = await _healthCheck()
+    log('health check:', healthy ? 'OK' : 'FAIL')
+    if (!healthy) return
 
     // ── Step 3: check for a newer bundle, stage it for next launch ───────
     try {
