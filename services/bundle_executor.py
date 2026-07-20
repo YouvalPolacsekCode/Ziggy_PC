@@ -127,7 +127,9 @@ def execute_bundle(bundle: dict) -> dict:
                     # overwrites in place. `name` (may be Hebrew) is kept for
                     # reporting only. Recipes set alias; LLM bundles don't → name.
                     "name":        auto.get("alias") or name,
-                    "description": auto.get("description", f"Created by Ziggy Pro (bundle:{bundle_id})"),
+                    # No bundle id in the user-facing description (it's an internal
+                    # handle, tracked separately in the `bundle_id` field below).
+                    "description": auto.get("description", "Created by Ziggy Pro"),
                     "trigger":     auto.get("trigger", {}),
                     "conditions":  auto.get("conditions", []),
                     "actions":     auto.get("actions", []),
