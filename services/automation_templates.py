@@ -110,7 +110,11 @@ TEMPLATES: list[dict] = [
         "description":           "Turn off the lights and AC the moment everyone's left the house.",
         "category":              "presence",
         "icon":                  "🚪",
-        "required_capabilities": ["door_sensor"],          # weakest req so it always shows
+        # Needs SOME way to know everyone left — a phone/GPS, a motion sensor, or
+        # a door sensor. Any ONE of them is enough (the builder picks the best
+        # available). required_any expresses that OR without forcing all three.
+        "required_capabilities": [],
+        "required_any":          [["phone_presence", "motion_sensor", "door_sensor"]],
         "optional_capabilities": ["phone_presence", "motion_sensor", "light_on_off", "climate_control", "ir_ac_control"],
         "relevant_capabilities": ["phone_presence", "motion_sensor", "door_sensor", "light_on_off", "climate_control", "ir_ac_control"],
         "capability_labels": {
@@ -572,21 +576,34 @@ def _leave_home(cap_map: dict) -> dict:
     if motion:
         conditions.append({"entity_id": motion, "operator": "is", "value": "off"})
 
-    actions: list[dict] = [{"type": "send_intent", "text": "Turn off all lights"}]
+    ir_ac = first_entity(cap_map, "ir_ac_control")
+
+    # Reliable whole-home lights-off (runs natively via execute_ziggy_actions —
+    # NOT the flaky send_intent→chat path that no-ops on the v2 agent).
+    actions: list[dict] = [{"type": "turn_off_all_lights"}]
+    turned_off = ["lights"]
     if climate:
         actions.append({
             "type": "call_service", "entity_id": climate,
-            "service": "homeassistant.turn_off", "service_value": "turn_off",
+            "service": "climate.turn_off", "service_value": "turn_off",
         })
+        turned_off.append("AC")
+    elif ir_ac:
+        # Dumb AC on the IR blaster — power it off over IR.
+        actions.append({"type": "ir_command", "ir_device_id": ir_ac, "ir_command": "power_off"})
+        turned_off.append("AC")
+    # Honest notify — only claims what it actually turned off.
     actions.append({
         "type": "notify",
-        "message": "Everyone left — lights and AC turned off.",
+        "message": ("Everyone left — turned off the "
+                    + (" and ".join(turned_off) if len(turned_off) == 1
+                       else ", ".join(turned_off[:-1]) + " and " + turned_off[-1]) + "."),
         "title": "Leave Home",
     })
 
     return {
         "name":        "Leave Home",
-        "description": "Turns off lights and AC when everyone leaves home",
+        "description": "Turns off the lights (and AC) when everyone leaves home",
         "trigger":     trigger,
         "conditions":  conditions,
         "actions":     actions,

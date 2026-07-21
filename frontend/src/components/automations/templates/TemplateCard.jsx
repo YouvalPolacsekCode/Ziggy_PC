@@ -40,7 +40,12 @@ function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
   const isReady = tier === 'ready'
   const missReq = template.missing_req_labels || []
   const missOpt = template.missing_opt_labels || []
-  const canAdd  = tier === 'ready' || tier === 'partial'
+  // Add is enabled ONLY when the automation is actually runnable (all required
+  // sensors present) — that's when a wizard_prefill exists. A 'partial' template
+  // (has some relevant sensors but missing a required one) has no prefill, so
+  // enabling Add there was a dead click that just closed the Library. Missing
+  // sensors → Add disabled, and the card shows "Needs: …".
+  const canAdd  = tier === 'ready' && !!template.wizard_prefill
   const [expanded, setExpanded] = useState(false)
 
   const nameOf = (arr) => arr.map(m => m.short || m.label).join(' + ')
