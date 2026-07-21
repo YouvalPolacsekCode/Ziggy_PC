@@ -245,6 +245,24 @@ def _eval_single_condition(cond: dict) -> tuple[bool, str]:
             passed = True
         return passed, f"ir:{ir_id}={actual} (op={operator}, expected={expected})"
 
+    # Presence condition — gates on Ziggy's OWN presence engine (persons.json),
+    # NOT an HA entity. Lets automations require "everyone's out" / "someone's
+    # home" without any HA person/device_tracker. Shape:
+    #   {"type": "presence", "value": "all_away"|"anyone_home"}
+    if ctype == "presence":
+        try:
+            from services.presence_store import all_away, any_home, load_persons
+        except Exception as e:
+            return False, f"presence unavailable: {e}"
+        if not load_persons():
+            return False, "presence: no one is being tracked"
+        want = str(cond.get("value", "all_away")).lower()
+        if want in ("all_away", "away", "everyone_away"):
+            return all_away(), f"presence all_away={all_away()}"
+        if want in ("anyone_home", "any_home", "home", "someone_home"):
+            return any_home(), f"presence any_home={any_home()}"
+        return True, f"presence: unknown value {want!r} — skipped"
+
     # entity condition (default)
     entity_id = cond.get("entity_id", "")
     if not entity_id:
