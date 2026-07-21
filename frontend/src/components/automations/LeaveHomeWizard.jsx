@@ -45,16 +45,22 @@ export default function LeaveHomeWizard({ initial, onSaved, onClose }) {
 
   const isUpdate = !!initial?._isInstalled
   const motionIds = useMemo(() => motionEnts.map((e) => e.entity_id), [motionEnts])
-  const presenceIds = useMemo(() => presence.map((e) => e.entity_id), [presence])
+  // Only presence entities that are ACTUALLY tracking (state home/away) can drive
+  // a leave trigger — an unconfigured HA person sits at "unknown" and would never
+  // fire. So the Phone source only appears once presence is really wired up.
+  const usablePresence = useMemo(
+    () => presence.filter((e) => ['home', 'not_home', 'away'].includes(String(e.state || '').toLowerCase())),
+    [presence])
+  const presenceIds = useMemo(() => usablePresence.map((e) => e.entity_id), [usablePresence])
 
   // Available trigger sources.
   const sources = useMemo(() => {
     const out = []
-    if (presence.length)  out.push('phone')
-    if (motionEnts.length) out.push('motion')
-    if (doorEnts.length)   out.push('door')
+    if (usablePresence.length) out.push('phone')
+    if (motionEnts.length)     out.push('motion')
+    if (doorEnts.length)       out.push('door')
     return out
-  }, [presence, motionEnts, doorEnts])
+  }, [usablePresence, motionEnts, doorEnts])
 
   // Derive initial state from the existing automation (edit) or defaults (create).
   const derived = useMemo(() => {
@@ -156,7 +162,7 @@ export default function LeaveHomeWizard({ initial, onSaved, onClose }) {
     } catch (e) { setError(e?.userMessage || e?.message || t('automations.leaveHome.failed')); setSaving(false) }
   }
 
-  const alertAvailable = presence.length > 0 && motionEnts.length > 0
+  const alertAvailable = usablePresence.length > 0 && motionEnts.length > 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px' }} dir="auto">
@@ -172,7 +178,7 @@ export default function LeaveHomeWizard({ initial, onSaved, onClose }) {
             {sources.map((k) => {
               const sel = k === source
               const icon = k === 'phone' ? '📍' : k === 'motion' ? '🚶' : '🚪'
-              const cnt = k === 'phone' ? presence.length : k === 'motion' ? motionEnts.length : doorEnts.length
+              const cnt = k === 'phone' ? usablePresence.length : k === 'motion' ? motionEnts.length : doorEnts.length
               return (
                 <button key={k} type="button" onClick={() => setSource(k)}
                   style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 10px', borderRadius: 8,
