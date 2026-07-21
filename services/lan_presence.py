@@ -31,8 +31,13 @@ so push + automations work the same as for GPS-driven transitions.
 from __future__ import annotations
 
 import asyncio
+import os
+import select
 import shutil
+import socket
+import struct
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -63,6 +68,90 @@ def _lan_cfg(key: str):
 
 
 # ── probe primitives ──────────────────────────────────────────────────────────
+
+# Sequence counter so back-to-back probes in one process don't accept each
+# other's echo replies. Probes run sequentially inside one sweep, but bumping
+# this per call is cheap insurance and keeps reply-matching unambiguous.
+_icmp_seq = 0
+
+
+def _icmp_checksum(data: bytes) -> int:
+    """Standard 16-bit one's-complement checksum for an ICMP packet."""
+    if len(data) % 2:
+        data += b"\x00"
+    total = sum(struct.unpack("!%dH" % (len(data) // 2), data))
+    total = (total >> 16) + (total & 0xFFFF)
+    total += total >> 16
+    return (~total) & 0xFFFF
+
+
+def _icmp_reachable_raw(host: str, timeout_s: float) -> bool:
+    """One ICMP echo via a raw socket — no `ping` binary required.
+
+    The `iputils` `ping` executable is NOT present in the Ziggy container image,
+    so the `subprocess`-based `_icmp_reachable` below silently no-ops there
+    (shutil.which → None). Docker's default capability set includes CAP_NET_RAW,
+    so we can craft the echo request ourselves. This is the PRIMARY probe; the
+    binary path stays as a fallback for hosts/images where raw sockets are
+    blocked but `ping` exists.
+
+    Returns True only on a matching echo reply from the target within timeout.
+    `.local` (mDNS) names resolve only if the host has an mDNS-aware resolver
+    (avahi/nss-mdns); otherwise getaddrinfo raises and we return False — the
+    user is guided toward a fixed IP / DHCP reservation for exactly this reason.
+    """
+    global _icmp_seq
+    try:
+        dest = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_RAW)[0][4][0]
+    except OSError:
+        return False
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+    except (PermissionError, OSError):
+        # No CAP_NET_RAW — let the caller fall back to the ping binary / TCP.
+        return False
+
+    try:
+        sock.setblocking(False)
+        ident = os.getpid() & 0xFFFF
+        _icmp_seq = (_icmp_seq + 1) & 0xFFFF
+        seq = _icmp_seq
+        payload = b"ziggy-presence"
+        header = struct.pack("!BBHHH", 8, 0, 0, ident, seq)          # type=8 (echo), code=0, csum=0
+        chksum = _icmp_checksum(header + payload)
+        packet = struct.pack("!BBHHH", 8, 0, chksum, ident, seq) + payload
+
+        try:
+            sock.sendto(packet, (dest, 0))
+        except OSError:
+            return False
+
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            ready, _, _ = select.select([sock], [], [], remaining)
+            if not ready:
+                return False
+            try:
+                data, addr = sock.recvfrom(1024)
+            except OSError:
+                return False
+            # Only a reply from the host we pinged counts.
+            if addr[0] != dest:
+                continue
+            ihl = (data[0] & 0x0F) * 4          # IPv4 header length
+            icmp = data[ihl:ihl + 8]
+            if len(icmp) < 8:
+                continue
+            r_type, _r_code, _csum, r_id, r_seq = struct.unpack("!BBHHH", icmp)
+            if r_type == 0 and r_id == ident and r_seq == seq:   # echo reply, ours
+                return True
+    finally:
+        sock.close()
+
 
 def _icmp_reachable(host: str, timeout_s: float) -> bool:
     """One ICMP echo. Returns True if exit code 0.
@@ -108,8 +197,14 @@ def _tcp_reachable(host: str, ports: list[int], timeout_s: float) -> bool:
 
 
 def _probe_host(host: str) -> bool:
-    """Best-effort reachability check. Returns True if any method succeeded."""
+    """Best-effort reachability check. Returns True if any method succeeded.
+
+    Order: raw-socket ICMP (works in the container — no `ping` binary needed),
+    then the `ping` executable if present, then the opt-in TCP probe.
+    """
     timeout_s = float(_lan_cfg("lan_icmp_timeout_seconds"))
+    if _icmp_reachable_raw(host, timeout_s):
+        return True
     if _icmp_reachable(host, timeout_s):
         return True
     if bool(_lan_cfg("lan_use_tcp_probe")):

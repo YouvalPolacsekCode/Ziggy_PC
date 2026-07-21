@@ -62,7 +62,7 @@ import { useCameraStore } from './stores/cameraStore'
 import { useFeaturesStore, useFeature } from './stores/featuresStore'
 import LoginPage from './pages/LoginPage'
 import AcceptInvite from './pages/AcceptInvite'
-import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings } from './lib/api'
+import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings, getPresenceZone } from './lib/api'
 import { entityDisplayName, humanizeSlug } from './lib/utils'
 import { setLang as setI18nLang, t as i18nT } from './lib/i18n'
 import { isNative } from './lib/native'
@@ -659,6 +659,132 @@ export default function App() {
       alive = false
       if (watchId) { try { Geo.clearWatch({ id: watchId }) } catch {} }
       if (keepAlive) clearInterval(keepAlive)
+    }
+  }, [authenticated])
+
+  // Native BACKGROUND presence — the signal that actually survives the app
+  // backgrounding / the screen locking, which the foreground watch above can't.
+  // Wired to the custom `ziggy-presence` Capacitor plugin (window.Capacitor.
+  // Plugins.ZiggyPresence): OS-level geofence + significant-location-changes wake
+  // the app to report crossing the home boundary even when it's closed, so
+  // `all_persons_left` (Leave Home) fires for real. Gated on the same "Track my
+  // location" toggle as the foreground/web paths. Web/PWA = no-op (no plugin).
+  useEffect(() => {
+    if (!isNative()) return
+    if (!authenticated) return
+    const ZP = window?.Capacitor?.Plugins?.ZiggyPresence
+    if (!ZP) return
+
+    const HOME_GEOFENCE_ID = 'home'
+    const TRACK_ME_KEY = 'ziggy_track_me_on'
+    const MIN_PING_INTERVAL_MS = 15 * 1000
+    const isOn = () => localStorage.getItem(TRACK_ME_KEY) === '1'
+
+    let listeners = []
+    let alive = true
+    let started = false
+    let token = null
+    let lastPingAt = 0
+
+    const postPing = (lat, lon, accuracy, { force = false } = {}) => {
+      if (!token) return
+      if (typeof lat !== 'number' || typeof lon !== 'number') return
+      const now = Date.now()
+      if (!force && now - lastPingAt < MIN_PING_INTERVAL_MS) return
+      lastPingAt = now
+      fetch('/api/presence/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, lat, lon, accuracy }),
+      }).catch(() => {})
+    }
+
+    // A geofence enter/exit event carries the *region centre* (= home) as its
+    // lat/lon, NOT the phone's real position. Posting that on an EXIT would read
+    // as "still home" and defeat leave-detection entirely. So on any crossing we
+    // ignore the event coords and grab a real one-shot fix instead — that fix is
+    // what the engine's hysteresis/dwell turns into a confirmed home→not_home.
+    const pingFreshFix = async () => {
+      const Geo = window?.Capacitor?.Plugins?.Geolocation
+      if (!Geo?.getCurrentPosition) return
+      try {
+        const pos = await Geo.getCurrentPosition({ enableHighAccuracy: true, timeout: 20000 })
+        if (pos?.coords) postPing(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, { force: true })
+      } catch {}
+    }
+
+    const start = async () => {
+      if (started) return
+      try {
+        const res = await getMyPresencePerson()
+        token = res?.person?.token
+      } catch { return }
+      if (!token || !alive) return
+
+      // Always-location is required for background geofence wakeups; motion lets
+      // the native side defer "arrived" while you're driving past home.
+      try {
+        const perm = await ZP.checkPermissions()
+        if (perm?.location !== 'always') {
+          await ZP.requestPermissions({ location: 'always', motion: true })
+        } else if (perm?.motion === 'prompt') {
+          await ZP.requestPermissions({ motion: true })
+        }
+      } catch {}
+      if (!alive) return
+
+      // Geofence the home zone (radius floored at 100 m — the iOS region minimum).
+      try {
+        const z = await getPresenceZone()
+        if (z?.lat != null && z?.lon != null) {
+          await ZP.addGeofence({
+            id: HOME_GEOFENCE_ID,
+            lat: z.lat,
+            lon: z.lon,
+            radius_m: Math.max(z.radius || 100, 100),
+            notify_on_enter: true,
+            notify_on_exit: true,
+          })
+        }
+      } catch {}
+
+      try { await ZP.startBackgroundLocation({ accuracy: 'balanced', distance_filter_m: 50 }) } catch {}
+      try { await ZP.startActivityRecognition() } catch {}
+
+      try {
+        const l1 = await ZP.addListener('location', (e) => {
+          if (e && typeof e.lat === 'number') postPing(e.lat, e.lon, e.accuracy_m)
+        })
+        const l2 = await ZP.addListener('geofence', () => { pingFreshFix() })
+        listeners.push(l1, l2)
+      } catch {}
+      started = true
+    }
+
+    const stop = async () => {
+      if (!started) return
+      started = false
+      for (const l of listeners) { try { await l.remove?.() } catch {} }
+      listeners = []
+      try { await ZP.stopBackgroundLocation() } catch {}
+      try { await ZP.stopActivityRecognition() } catch {}
+      try { await ZP.removeGeofence({ id: HOME_GEOFENCE_ID }) } catch {}
+    }
+
+    const sync = () => {
+      if (!alive) return
+      if (isOn()) start()
+      else stop()
+    }
+
+    sync()
+    const onToggle = () => sync()
+    window.addEventListener('ziggy:trackme-changed', onToggle)
+
+    return () => {
+      alive = false
+      window.removeEventListener('ziggy:trackme-changed', onToggle)
+      stop()
     }
   }, [authenticated])
 

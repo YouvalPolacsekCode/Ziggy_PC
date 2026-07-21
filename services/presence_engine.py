@@ -159,6 +159,7 @@ _NEW_FIELDS = (
     "lan_host",         # IP, hostname, or *.local (mDNS) name of this person's phone on the home LAN
     "lan_last_probe",   # ISO UTC of last LAN probe attempt
     "lan_last_seen",    # ISO UTC of last successful LAN probe (reachable on LAN)
+    "lan_host_suggested",  # client IP captured server-side on a same-home-LAN ping; a candidate lan_host we offer the user to accept (never probed until they do)
 )
 
 # zone_states is a dict, not None — keep it separate so the empty default is {}.

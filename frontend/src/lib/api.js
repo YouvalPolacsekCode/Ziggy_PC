@@ -772,6 +772,7 @@ export const savePresenceZone         = (data)         => patch('/presence/zone'
 export const getMyPresencePerson      = ()             => get('/presence/my-person')
 export const getPresenceDebug         = ()             => get('/presence/debug')
 export const setPresenceLanHost       = (id, host)     => patch(`/presence/persons/${id}/lan-host`, { lan_host: host })
+export const setMyPresenceLanHost     = (host)         => patch('/presence/me/lan-host', { lan_host: host })
 export const pingMePresence           = (lat, lon, accuracy, ts) => post('/presence/me/ping', { lat, lon, accuracy, ts })
 
 // Extra geofence zones (beyond the primary "Home" zone, which lives in /presence/zone)

@@ -36,9 +36,10 @@ import {
   getUsers, updateUser, deleteUser,
   createInvite, listInvites, revokeInvite,
   getPresenceZone, savePresenceZone, getPresenceDebug,
-  pingMePresence, getMyPresencePerson,
+  pingMePresence, getMyPresencePerson, setMyPresenceLanHost,
   listPresenceZones, createPresenceZone, updatePresenceZone, deletePresenceZone,
 } from '../lib/api'
+import { isNative } from '../lib/native'
 import { MemoryPanel } from './Memory'
 import { PushPreferenceCenter } from './AdminSettings'
 import { useT, setLang as setI18nLang, LANGS } from '../lib/i18n'
@@ -445,6 +446,12 @@ function PresenceSection() {
   const watchIdRef = useRef(null)
   const lastPingRef = useRef(0)
 
+  // ── "Phone at home" — LAN-reachability presence (keeps you 'home' while the
+  //    app is closed, so leaving is detected cleanly against a solid baseline) ─
+  const [lanHost,        setLanHost]        = useState('')
+  const [lanSuggestion,  setLanSuggestion]  = useState('')
+  const [lanSaving,      setLanSaving]      = useState(false)
+
   const stopWatch = () => {
     if (watchIdRef.current != null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchIdRef.current)
@@ -489,6 +496,9 @@ function PresenceSection() {
     const next = !trackMe
     localStorage.setItem(TRACK_ME_KEY, next ? '1' : '0')
     setTrackMe(next)
+    // Nudge the native background-presence effect in App.jsx to start/stop
+    // immediately instead of waiting for a remount. No-op on web.
+    try { window.dispatchEvent(new CustomEvent('ziggy:trackme-changed', { detail: { on: next } })) } catch {}
   }
 
   const load = async () => {
@@ -501,7 +511,25 @@ function PresenceSection() {
       const z = await listPresenceZones()
       setExtraZones(z.zones ?? [])
     } catch { setExtraZones([]) }
+    try {
+      const me = await getMyPresencePerson()
+      setLanHost(me?.person?.lan_host || '')
+      setLanSuggestion(me?.person?.lan_host_suggested || '')
+    } catch {}
     finally { setLoading(false) }
+  }
+
+  const saveLanHost = async (value) => {
+    const host = (value ?? lanHost).trim()
+    setLanSaving(true)
+    try {
+      await setMyPresenceLanHost(host)
+      setLanHost(host)
+      setLanSuggestion('')
+      addToast(host ? t('homeSensing.phoneAtHome.saved') : t('homeSensing.phoneAtHome.cleared'), 'success')
+    } catch (e) {
+      addToast(e.message || t('homeSensing.phoneAtHome.saveFailed'), 'error')
+    } finally { setLanSaving(false) }
   }
 
   const addZone = async () => {
@@ -612,6 +640,42 @@ function PresenceSection() {
             </p>
           </div>
           <Toggle checked={trackMe} onCheckedChange={toggleTrackMe} />
+        </div>
+      </div>
+
+      {/* Phone-at-home (LAN reachability) card */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ padding: '11px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.phoneAtHome.title')}</p>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, lineHeight: 1.5 }} dir="auto">
+              {t('homeSensing.phoneAtHome.desc')}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              value={lanHost}
+              onChange={e => setLanHost(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveLanHost() }}
+              className="z-input" dir="ltr"
+              placeholder={t('homeSensing.phoneAtHome.placeholder')}
+              style={{ flex: 1, height: 32, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }}
+            />
+            <button onClick={() => saveLanHost()} disabled={lanSaving} className="z-btn-primary"
+                    style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12 }}>
+              {lanSaving ? '…' : t('homeSensing.phoneAtHome.save')}
+            </button>
+          </div>
+          {lanSuggestion && lanSuggestion !== lanHost && (
+            <button onClick={() => saveLanHost(lanSuggestion)} disabled={lanSaving}
+                    style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', cursor: 'pointer',
+                             color: 'var(--accent)', fontSize: 11, padding: '2px 0' }} dir="auto">
+              {t('homeSensing.phoneAtHome.useSuggestion', { ip: lanSuggestion })}
+            </button>
+          )}
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }} dir="auto">
+            {t('homeSensing.phoneAtHome.tip')}
+          </p>
         </div>
       </div>
 

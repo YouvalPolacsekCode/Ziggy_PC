@@ -221,6 +221,32 @@ async def get_my_person(user=Depends(get_current_user)):
     return {"person": person}
 
 
+@router.patch("/api/presence/me/lan-host")
+async def set_my_lan_host(body: LanHostPatch, request: Request, user=Depends(get_current_user)):
+    """Logged-in user sets (or clears) the home-LAN address of their OWN phone.
+
+    This is the user-facing counterpart to the admin `persons/{id}/lan-host`
+    route: it resolves the caller's person (auto-creating on first use, same as
+    /me/ping) so a household member can enable LAN-reachability presence for
+    themselves without admin rights. Setting a host also clears any pending
+    auto-suggestion. Empty/null disables LAN probing for this person.
+    """
+    person = await asyncio.to_thread(_resolve_or_create_my_person, user)
+    host = (body.lan_host or "").strip() or None
+    if host is not None and (" " in host or len(host) > 253):
+        raise HTTPException(status_code=400, detail="Enter an IP address or a name like phone.local — no spaces.")
+
+    persons = await _load_async()
+    for p in persons:
+        if p["id"] == person["id"]:
+            p["lan_host"] = host
+            p["lan_host_suggested"] = None  # accepted (or explicitly cleared) — drop the hint
+            break
+    await _save_async(persons)
+    log_info(f"[Presence] {person['name']} (self): lan_host = {host}")
+    return {"ok": True, "lan_host": host}
+
+
 @router.get("/api/presence/persons")
 async def list_persons(_user=Depends(get_current_user)):
     return {"persons": presence_engine.list_persons()}
@@ -484,6 +510,37 @@ def _resolve_or_create_my_person(user: dict) -> dict:
     return new_person
 
 
+def _remember_lan_host_suggestion(person_id: str, client_ip: str) -> None:
+    """Persist the client's home-LAN IP as a *candidate* lan_host.
+
+    Only runs when the ping originated on the home LAN (RFC-1918 client IP) and
+    the person hasn't set an explicit `lan_host` yet. It never enables probing on
+    its own — it just gives the Settings screen something concrete to offer
+    ("Use 10.100.x.y?"). Cheap: a no-op unless the suggestion actually changed.
+    """
+    if not client_ip or not _is_private_ip(client_ip):
+        return
+    try:
+        persons = _load()
+        changed = False
+        for p in persons:
+            if p.get("id") != person_id:
+                continue
+            # Don't override an explicit choice, and don't rewrite an identical
+            # suggestion (keeps persons.json writes idempotent under ping load).
+            if (p.get("lan_host") or "").strip():
+                return
+            if p.get("lan_host_suggested") == client_ip:
+                return
+            p["lan_host_suggested"] = client_ip
+            changed = True
+            break
+        if changed:
+            _save(persons)
+    except Exception as exc:
+        log_error(f"[Presence] lan_host suggestion write failed: {exc}")
+
+
 def _client_ts_from_body(ts_val: Optional[float]) -> Optional[datetime]:
     """Accept ms-since-epoch or seconds-since-epoch (distinguished by magnitude)."""
     if ts_val is None:
@@ -512,10 +569,14 @@ async def ping_me(body: MePingBody, request: Request, user=Depends(get_current_u
     client_ts = _client_ts_from_body(body.ts)
     wifi_hint = _client_is_on_home_lan(request)
     if wifi_hint:
+        client_ip = _extract_client_ip(request)
         log_info(
             f"[Presence] wifi_home_hint=True for {person['name']} "
-            f"(client_ip={_extract_client_ip(request)!r})"
+            f"(client_ip={client_ip!r})"
         )
+        # Same LAN → this IP is a candidate for LAN-reachability presence.
+        # Best-effort, off the event loop so the hot ping path never blocks.
+        await asyncio.to_thread(_remember_lan_host_suggestion, person["id"], client_ip)
 
     decision = presence_engine.ingest_ping_for_person_id(
         person_id     = person["id"],
