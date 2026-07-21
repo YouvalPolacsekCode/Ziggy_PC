@@ -311,7 +311,7 @@ function Row({ label, sub, checked, onChange, border }) {
         <span style={{ display: 'block', fontSize: 13, color: 'var(--ink)' }} dir="auto">{label}</span>
         {sub && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 1 }} dir="auto">{sub}</span>}
       </span>
-      <Toggle checked={checked} onChange={onChange} />
+      <Toggle checked={checked} onCheckedChange={onChange} />
     </div>
   )
 }
