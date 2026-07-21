@@ -942,6 +942,13 @@ export default {
   'automations.precool.updated':           'Pre-cool updated',
   'automations.precool.deleted':           'Pre-cool removed',
   'automations.precool.failed':            'Something went wrong — try again',
+
+  'automations.bundle.viewingHint':        'Viewing — tap Edit to make changes',
+  'automations.bundle.edit':               'Edit',
+  'automations.confirmDelete.title':       'Remove this?',
+  'automations.confirmDelete.body':        'Remove “{name}”? This can’t be undone.',
+  'automations.confirmDelete.confirm':     'Remove',
+  'automations.thisAction':                'this action',
   'automations.smartRoom.title':           'Build a Smart Room',
   'automations.smartRoom.pickPrompt':      'Which room should Ziggy make smart?',
   'automations.smartRoom.noRooms':         'No rooms found yet. Add devices to a room first, then come back.',

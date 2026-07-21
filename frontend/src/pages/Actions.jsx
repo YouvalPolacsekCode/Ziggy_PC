@@ -22,6 +22,7 @@ import ClimateGroupRow from '../components/automations/ClimateGroupRow'
 import ClimateViewModal from '../components/automations/ClimateViewModal'
 import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
 import PrecoolWizard from '../components/automations/PrecoolWizard'
+import BundleGate from '../components/automations/BundleGate'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -81,6 +82,10 @@ export default function Automations() {
   const [leaveHomeTarget,   setLeaveHomeTarget]   = useState(null)
   // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
   const [precoolTarget,     setPrecoolTarget]     = useState(null)
+  // Promise-based delete confirmation shared by every card / view / wizard
+  // delete path — nothing gets removed without a second, explicit yes.
+  const [confirmState,      setConfirmState]      = useState(null)   // { label, resolve }
+  const confirmDelete = (label) => new Promise((resolve) => setConfirmState({ label, resolve }))
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
   const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
   const [smartRoomView,     setSmartRoomView]     = useState(null)   // room slug being viewed/edited (one modal)
@@ -218,6 +223,7 @@ export default function Automations() {
     } catch { addToast(t('automations.circadian.failed'), 'error') }
   }
   const handleCircadianDelete = async () => {
+    if (!await confirmDelete(t('automations.circadian.title'))) return
     try { await deleteCircadian(); addToast(t('automations.circadian.deleted'), 'success'); await refetchCircadian() }
     catch { addToast(t('automations.circadian.failed'), 'error') }
   }
@@ -237,6 +243,7 @@ export default function Automations() {
     } catch { addToast(t('automations.failedToTrigger'), 'error') }
   }
   const handleSmartRoomDelete = async (group) => {
+    if (!await confirmDelete(group.roomName || group.room || t('automations.smartRoom.title'))) return
     try {
       await deleteSmartRoom(group.room)
       addToast(t('automations.smartRoom.deleted'), 'success')
@@ -278,7 +285,8 @@ export default function Automations() {
       await refetchClimate()
     } catch { addToast(t('automations.smartClimate.failed'), 'error') }
   }
-  const handleClimateDelete = async (room) => {
+  const handleClimateDelete = async (room, roomLabel) => {
+    if (!await confirmDelete(roomLabel || room || t('automations.smartClimate.title'))) return
     try { await deleteClimate(room); addToast(t('automations.smartClimate.deleted'), 'success'); await refetchClimate() }
     catch { addToast(t('automations.smartClimate.failed'), 'error') }
   }
@@ -334,6 +342,8 @@ export default function Automations() {
     }
   }
   const handleDelete = async (id) => {
+    const a = automations.find(x => x.id === id)
+    if (!await confirmDelete(a?.name || t('automations.thisAction'))) return
     try { await removeAutomation(id); addToast(t('automations.deleted'), 'success') }
     catch { addToast(t('automations.failedToDelete'), 'error') }
   }
@@ -495,7 +505,7 @@ export default function Automations() {
                   onSync={() => handleClimateSync(room)}
                   onView={() => setClimateView({ room, slice })}
                   onEdit={() => handleEditClimate(room, slice)}
-                  onDelete={() => handleClimateDelete(room)}
+                  onDelete={() => handleClimateDelete(room, slice?.roomName)}
                 />
               ))}
               {smartRoomGroups.map(group => (
@@ -634,6 +644,7 @@ export default function Automations() {
             initial={circadianTarget}
             onSaved={handleCircadianSaved}
             onClose={handleCircadianClose}
+            confirmDelete={confirmDelete}
           />
         )}
       </Modal>
@@ -658,31 +669,51 @@ export default function Automations() {
             initial={climateTarget}
             onSaved={handleClimateSaved}
             onClose={handleClimateClose}
+            confirmDelete={confirmDelete}
           />
+        )}
+      </Modal>
+
+      {/* Delete confirmation — shared by every delete path (card, view, wizard). */}
+      <Modal open={!!confirmState} onClose={() => { const r = confirmState?.resolve; setConfirmState(null); r?.(false) }} title={t('automations.confirmDelete.title')} maxWidth={380}>
+        {confirmState && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px' }} dir="auto">
+            <p style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }} dir="auto">{t('automations.confirmDelete.body', { name: confirmState.label })}</p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => { const r = confirmState.resolve; setConfirmState(null); r(false) }} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>{t('common.cancel')}</button>
+              <button type="button" onClick={() => { const r = confirmState.resolve; setConfirmState(null); r(true) }} className="z-btn-primary" style={{ padding: '9px 16px', borderRadius: 10, fontSize: 13, background: 'var(--accent)' }}>{t('automations.confirmDelete.confirm')}</button>
+            </div>
+          </div>
         )}
       </Modal>
 
       {/* Pre-cool on Arrival — dedicated view/edit (one modal). */}
       <Modal open={!!precoolTarget} onClose={() => setPrecoolTarget(null)} title={t('automations.precool.title')}>
         {precoolTarget && (
-          <PrecoolWizard
-            key={precoolTarget._isInstalled ? 'edit' : 'new'}
-            initial={precoolTarget}
-            onSaved={handlePrecoolSaved}
-            onClose={() => setPrecoolTarget(null)}
-          />
+          <BundleGate locked={!!precoolTarget._isInstalled}>
+            <PrecoolWizard
+              key={precoolTarget._isInstalled ? 'edit' : 'new'}
+              initial={precoolTarget}
+              onSaved={handlePrecoolSaved}
+              onClose={() => setPrecoolTarget(null)}
+              confirmDelete={confirmDelete}
+            />
+          </BundleGate>
         )}
       </Modal>
 
       {/* Leave Home — dedicated plain-language view/edit (one modal). */}
       <Modal open={!!leaveHomeTarget} onClose={() => setLeaveHomeTarget(null)} title={t('automations.leaveHome.title')}>
         {leaveHomeTarget && (
-          <LeaveHomeWizard
-            key={leaveHomeTarget._isInstalled ? 'edit' : 'new'}
-            initial={leaveHomeTarget}
-            onSaved={handleLeaveHomeSaved}
-            onClose={() => setLeaveHomeTarget(null)}
-          />
+          <BundleGate locked={!!leaveHomeTarget._isInstalled}>
+            <LeaveHomeWizard
+              key={leaveHomeTarget._isInstalled ? 'edit' : 'new'}
+              initial={leaveHomeTarget}
+              onSaved={handleLeaveHomeSaved}
+              onClose={() => setLeaveHomeTarget(null)}
+              confirmDelete={confirmDelete}
+            />
+          </BundleGate>
         )}
       </Modal>
 

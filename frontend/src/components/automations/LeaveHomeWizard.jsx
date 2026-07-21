@@ -26,7 +26,7 @@ import { entityDisplayName } from '../../lib/utils'
 const LEAVE_HOME_ID = 'ziggy_leave_home'
 const ALERT_ID = 'ziggy_leave_home_alert'
 
-export default function LeaveHomeWizard({ initial, onSaved, onClose }) {
+export default function LeaveHomeWizard({ initial, onSaved, onClose, confirmDelete }) {
   const t = useT()
   const storeEntities = useDeviceStore((s) => s.entities)
 
@@ -171,6 +171,7 @@ export default function LeaveHomeWizard({ initial, onSaved, onClose }) {
     }
   }
   const handleRemove = async () => {
+    if (confirmDelete && !(await confirmDelete(t('automations.leaveHome.title')))) return
     setSaving(true); setError(null)
     try {
       await deleteAutomation(initial?.id || LEAVE_HOME_ID)

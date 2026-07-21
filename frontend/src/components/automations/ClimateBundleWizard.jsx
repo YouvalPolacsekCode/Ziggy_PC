@@ -117,7 +117,7 @@ function StepShell({ t, title, idx, total, onBack, onPrimary, primaryLabel, prim
   )
 }
 
-export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
+export default function ClimateBundleWizard({ initial, onSaved, onClose, confirmDelete }) {
   const t = useT()
   const rooms      = useDeviceStore(s => s.rooms)
   const allEntities = useDeviceStore(s => s.entities)
@@ -230,6 +230,7 @@ export default function ClimateBundleWizard({ initial, onSaved, onClose }) {
     }
   }
   const handleRemove = async () => {
+    if (confirmDelete && !(await confirmDelete(room?.name || t('automations.smartClimate.title')))) return
     setSaving(true); setError(null)
     try { await deleteClimate(String(room.id)); await onSaved?.({ removed: true }) }
     catch (e) { setError(e?.userMessage || e?.message || t('automations.smartClimate.failed')); setSaving(false) }

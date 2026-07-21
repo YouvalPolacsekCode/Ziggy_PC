@@ -52,7 +52,7 @@ function AnchorEditor({ t, title, hint, anchor, onChange }) {
   )
 }
 
-function CircadianBundleWizard({ initial, onSaved, onClose }) {
+function CircadianBundleWizard({ initial, onSaved, onClose, confirmDelete }) {
   const t = useT()
   const { entities } = useDeviceStore()
 
@@ -100,6 +100,7 @@ function CircadianBundleWizard({ initial, onSaved, onClose }) {
     }
   }
   const handleRemove = async () => {
+    if (confirmDelete && !(await confirmDelete(t('automations.circadian.title')))) return
     setSaving(true); setError(null)
     try { await deleteCircadian(); await onSaved?.({ removed: true }) }
     catch (e) { setError(e?.userMessage || e?.message || t('automations.circadian.failed')); setSaving(false) }

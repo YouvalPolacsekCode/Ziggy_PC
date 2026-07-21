@@ -937,6 +937,13 @@ export default {
   'automations.precool.updated':           'קירור לקראת הגעה עודכן',
   'automations.precool.deleted':           'קירור לקראת הגעה הוסר',
   'automations.precool.failed':            'משהו השתבש — כדאי לנסות שוב',
+
+  'automations.bundle.viewingHint':        'צפייה — יש ללחוץ עריכה כדי לשנות',
+  'automations.bundle.edit':               'עריכה',
+  'automations.confirmDelete.title':       'להסיר?',
+  'automations.confirmDelete.body':        'להסיר את «{name}»? אי אפשר לבטל את זה.',
+  'automations.confirmDelete.confirm':     'הסרה',
+  'automations.thisAction':                'הפעולה הזאת',
   'automations.smartRoom.title':           'בניית חדר חכם',
   'automations.smartRoom.pickPrompt':      'איזה חדר להפוך לחכם?',
   'automations.smartRoom.noRooms':         'עדיין אין חדרים. יש לשייך מכשירים לחדר ואז לחזור לכאן.',

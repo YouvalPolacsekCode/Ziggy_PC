@@ -28,7 +28,7 @@ const NEAR_HOME_NAME = 'Near Home'
 const DEFAULT_TEMP = 24     // Israeli AC default
 const DEFAULT_RADIUS_KM = 2
 
-export default function PrecoolWizard({ initial, onSaved, onClose }) {
+export default function PrecoolWizard({ initial, onSaved, onClose, confirmDelete }) {
   const t = useT()
   const storeEntities = useDeviceStore((s) => s.entities)
 
@@ -147,6 +147,7 @@ export default function PrecoolWizard({ initial, onSaved, onClose }) {
     }
   }
   const handleRemove = async () => {
+    if (confirmDelete && !(await confirmDelete(t('automations.precool.title')))) return
     setSaving(true); setError(null)
     try {
       await deleteAutomation(initial?.id || PRECOOL_ID)
