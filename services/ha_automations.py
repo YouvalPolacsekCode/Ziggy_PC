@@ -280,9 +280,15 @@ def list_automations() -> list:
             for eid, entry in cache_items:
                 if not eid.startswith("automation."):
                     continue
-                auto_id = eid[len("automation."):]
-                ha_ids.add(auto_id)
                 attrs = entry.get("attributes", {}) or {}
+                # Key off the config `id`, NOT the entity slug: HA derives the
+                # entity slug from the alias, so "Leave Home" → automation.leave_home
+                # while the config id (what we stored meta/actions under, and what
+                # the UI must carry) is ziggy_leave_home. Using the slug orphaned
+                # the store lookups (blank card, alert not hidden, edit couldn't
+                # prefill). Fall back to the slug for ASCII names where they match.
+                auto_id = attrs.get("id") or eid[len("automation."):]
+                ha_ids.add(auto_id)
                 meta = get_automation_meta(auto_id)
                 ha_result.append({
                     "id": auto_id,
@@ -304,9 +310,10 @@ def list_automations() -> list:
                     eid = s.get("entity_id", "")
                     if not eid.startswith("automation."):
                         continue
-                    auto_id = eid[len("automation."):]
-                    ha_ids.add(auto_id)
                     attrs = s.get("attributes", {})
+                    # Key off the config `id` (see cache-branch note above).
+                    auto_id = attrs.get("id") or eid[len("automation."):]
+                    ha_ids.add(auto_id)
                     meta = get_automation_meta(auto_id)
                     ha_result.append({
                         "id": auto_id,
@@ -685,12 +692,39 @@ def delete_automation(auto_id: str) -> bool:
     return False
 
 
+def _resolve_automation_entity(auto_id: str) -> str:
+    """Map a config id (or entity slug) to the live HA entity_id.
+
+    The UI now carries the config `id` (e.g. ziggy_leave_home), but toggle /
+    trigger act on the ENTITY (automation.leave_home), which HA slugs from the
+    alias. Try the direct slug first (fast path — true whenever alias-slug ==
+    id, e.g. the Ziggy-prefixed smart-room automations), then scan states for
+    the automation whose attributes.id matches."""
+    direct = f"automation.{auto_id}"
+    try:
+        st = requests.get(f"{HA_URL()}/api/states/{direct}", headers=HEADERS(), timeout=10)
+        if st.status_code == 200:
+            return direct
+    except Exception:
+        pass
+    try:
+        resp = requests.get(f"{HA_URL()}/api/states", headers=HEADERS(), timeout=10)
+        if resp.status_code == 200:
+            for s in resp.json():
+                eid = s.get("entity_id", "")
+                if eid.startswith("automation.") and (s.get("attributes") or {}).get("id") == auto_id:
+                    return eid
+    except Exception as e:
+        log_error(f"[HA Automations] resolve entity for {auto_id}: {e}")
+    return direct
+
+
 def toggle_automation(auto_id: str, enable: bool) -> bool:
     service = "turn_on" if enable else "turn_off"
     try:
         resp = requests.post(f"{HA_URL()}/api/services/automation/{service}",
                              headers=HEADERS(),
-                             json={"entity_id": f"automation.{auto_id}"},
+                             json={"entity_id": _resolve_automation_entity(auto_id)},
                              timeout=10)
         return resp.status_code == 200
     except Exception as e:
@@ -702,7 +736,7 @@ def trigger_automation(auto_id: str) -> bool:
     try:
         resp = requests.post(f"{HA_URL()}/api/services/automation/trigger",
                              headers=HEADERS(),
-                             json={"entity_id": f"automation.{auto_id}"},
+                             json={"entity_id": _resolve_automation_entity(auto_id)},
                              timeout=10)
         return resp.status_code == 200
     except Exception as e:
