@@ -110,7 +110,9 @@ export default function Automations() {
 
     const circMembers = automations.filter(a => a.id?.startsWith(CIRCADIAN_PREFIX))
     const visible = automations.filter(a =>
-      !a.id?.startsWith(CIRCADIAN_PREFIX) && !SMART_ROOM_RE.test(a.id || ''))
+      !a.id?.startsWith(CIRCADIAN_PREFIX) && !SMART_ROOM_RE.test(a.id || '')
+      // The away-alert is managed inside the Leave Home wizard, not its own card.
+      && a.id !== 'ziggy_leave_home_alert')
 
     let circadianGroup = null
     if (circMembers.length > 0) {
@@ -330,8 +332,9 @@ export default function Automations() {
   // Leave Home has its own dedicated modal — route both edit and view to it.
   const isLeaveHome = (a) => a?.id === 'ziggy_leave_home' || a?.id === 'leave_home' || (a?.name || '').toLowerCase() === 'leave home'
   const openLeaveHome = async (automation) => {
-    try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, ...(config || automation) }) }
-    catch { setLeaveHomeTarget({ _isInstalled: true, ...automation }) }
+    const securityAlert = automations.some(a => a.id === 'ziggy_leave_home_alert')
+    try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...(config || automation) }) }
+    catch { setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...automation }) }
   }
   const handleEdit = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)

@@ -346,9 +346,14 @@ export async function speakTtsStream({ text, lang, signal }) {
   return res
 }
 
-// Devices / HA entities
-export const getEntities = (domain) =>
-  get(domain ? `/ha/entities?domain=${domain}` : '/ha/entities')
+// Devices / HA entities. `all:true` bypasses entity_filter (needed to reach
+// person/device_tracker, which are hidden from the normal device list).
+export const getEntities = (domain, opts = {}) => {
+  const params = []
+  if (domain) params.push(`domain=${domain}`)
+  if (opts.all) params.push('all=true')
+  return get(`/ha/entities${params.length ? '?' + params.join('&') : ''}`)
+}
 export const getEntityProtocols = () => get('/ha/entity-protocols')
 export const getEntityState = (entityId) => get(`/ha/state/${entityId}`)
 export const getEntityDetails = (entityId) => get(`/ha/entity/${encodeURIComponent(entityId)}/details`)
