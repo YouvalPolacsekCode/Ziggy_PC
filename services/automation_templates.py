@@ -604,6 +604,12 @@ def _leave_home(cap_map: dict) -> dict:
     return {
         "name":        "Leave Home",
         "description": "Turns off the lights (and AC) when everyone leaves home",
+        # Dedicated plain-language wizard (frontend reads bundle:"leave_home").
+        # The trigger/actions below are the sensible base; the wizard lets the
+        # user pick the trigger source + toggle AC/notify, then saves via
+        # create_automation (id ziggy_leave_home). Falls back to the generic
+        # wizard if the frontend doesn't recognise the marker.
+        "bundle":      "leave_home",
         "trigger":     trigger,
         "conditions":  conditions,
         "actions":     actions,

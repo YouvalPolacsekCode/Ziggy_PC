@@ -20,6 +20,7 @@ import SmartRoomViewModal from '../components/automations/SmartRoomViewModal'
 import ClimateBundleWizard from '../components/automations/ClimateBundleWizard'
 import ClimateGroupRow from '../components/automations/ClimateGroupRow'
 import ClimateViewModal from '../components/automations/ClimateViewModal'
+import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -75,6 +76,8 @@ export default function Automations() {
   const [climateStatus,     setClimateStatus]     = useState(null)
   const [climateTarget,     setClimateTarget]     = useState(null)
   const [climateView,       setClimateView]       = useState(null)   // {room, slice}
+  // Leave Home — dedicated wizard (create from Library / edit the ziggy_leave_home automation).
+  const [leaveHomeTarget,   setLeaveHomeTarget]   = useState(null)
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
   const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
   const [smartRoomView,     setSmartRoomView]     = useState(null)   // room slug being viewed/edited (one modal)
@@ -167,6 +170,11 @@ export default function Automations() {
     // Smart Climate bundle — pick a room → a temp reading → a device to switch.
     if (template.wizard_prefill.bundle === 'climate') {
       setClimateTarget({ _isInstalled: false })
+      return
+    }
+    // Leave Home — dedicated plain-language wizard (auto-detects the trigger).
+    if (template.wizard_prefill.bundle === 'leave_home') {
+      setLeaveHomeTarget({ _isInstalled: false, ...template.wizard_prefill })
       return
     }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
@@ -319,14 +327,28 @@ export default function Automations() {
     try { await removeAutomation(id); addToast(t('automations.deleted'), 'success') }
     catch { addToast(t('automations.failedToDelete'), 'error') }
   }
+  // Leave Home has its own dedicated modal — route both edit and view to it.
+  const isLeaveHome = (a) => a?.id === 'ziggy_leave_home' || a?.id === 'leave_home' || (a?.name || '').toLowerCase() === 'leave home'
+  const openLeaveHome = async (automation) => {
+    try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, ...(config || automation) }) }
+    catch { setLeaveHomeTarget({ _isInstalled: true, ...automation }) }
+  }
   const handleEdit = async (automation) => {
+    if (isLeaveHome(automation)) return openLeaveHome(automation)
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
     catch { setEditTarget(automation) }
     setShowWizard(true)
   }
   const handleView = async (automation) => {
+    if (isLeaveHome(automation)) return openLeaveHome(automation)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
+  }
+  const handleLeaveHomeSaved = async ({ updated, removed }) => {
+    setLeaveHomeTarget(null)
+    addToast(removed ? t('automations.leaveHome.deleted')
+             : (updated ? t('automations.leaveHome.updated') : t('automations.leaveHome.saved')), 'success')
+    await fetchAutomations({ force: true })
   }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
   const enabled = automations.filter(a => a.enabled).length
@@ -611,6 +633,18 @@ export default function Automations() {
             initial={climateTarget}
             onSaved={handleClimateSaved}
             onClose={handleClimateClose}
+          />
+        )}
+      </Modal>
+
+      {/* Leave Home — dedicated plain-language view/edit (one modal). */}
+      <Modal open={!!leaveHomeTarget} onClose={() => setLeaveHomeTarget(null)} title={t('automations.leaveHome.title')}>
+        {leaveHomeTarget && (
+          <LeaveHomeWizard
+            key={leaveHomeTarget._isInstalled ? 'edit' : 'new'}
+            initial={leaveHomeTarget}
+            onSaved={handleLeaveHomeSaved}
+            onClose={() => setLeaveHomeTarget(null)}
           />
         )}
       </Modal>
