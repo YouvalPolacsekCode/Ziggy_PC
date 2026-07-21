@@ -21,6 +21,7 @@ import ClimateBundleWizard from '../components/automations/ClimateBundleWizard'
 import ClimateGroupRow from '../components/automations/ClimateGroupRow'
 import ClimateViewModal from '../components/automations/ClimateViewModal'
 import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
+import PrecoolWizard from '../components/automations/PrecoolWizard'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -78,6 +79,8 @@ export default function Automations() {
   const [climateView,       setClimateView]       = useState(null)   // {room, slice}
   // Leave Home — dedicated wizard (create from Library / edit the ziggy_leave_home automation).
   const [leaveHomeTarget,   setLeaveHomeTarget]   = useState(null)
+  // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
+  const [precoolTarget,     setPrecoolTarget]     = useState(null)
   // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
   const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
   const [smartRoomView,     setSmartRoomView]     = useState(null)   // room slug being viewed/edited (one modal)
@@ -177,6 +180,11 @@ export default function Automations() {
     // Leave Home — dedicated plain-language wizard (auto-detects the trigger).
     if (template.wizard_prefill.bundle === 'leave_home') {
       setLeaveHomeTarget({ _isInstalled: false, ...template.wizard_prefill })
+      return
+    }
+    // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
+    if (template.wizard_prefill.bundle === 'precool') {
+      setPrecoolTarget({ _isInstalled: false, ...template.wizard_prefill })
       return
     }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
@@ -336,14 +344,22 @@ export default function Automations() {
     try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...(config || automation) }) }
     catch { setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...automation }) }
   }
+  // Pre-cool on Arrival has its own dedicated modal — route both edit and view to it.
+  const isPrecool = (a) => a?.id === 'ziggy_precool_arrival' || a?.id === 'precool_on_arrival' || (a?.name || '').toLowerCase().replace(/[^a-z]/g, '').includes('precool')
+  const openPrecool = async (automation) => {
+    try { const config = await loadAutomationConfig(automation.id); setPrecoolTarget({ _isInstalled: true, ...(config || automation) }) }
+    catch { setPrecoolTarget({ _isInstalled: true, ...automation }) }
+  }
   const handleEdit = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
+    if (isPrecool(automation)) return openPrecool(automation)
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
     catch { setEditTarget(automation) }
     setShowWizard(true)
   }
   const handleView = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
+    if (isPrecool(automation)) return openPrecool(automation)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
   }
@@ -351,6 +367,12 @@ export default function Automations() {
     setLeaveHomeTarget(null)
     addToast(removed ? t('automations.leaveHome.deleted')
              : (updated ? t('automations.leaveHome.updated') : t('automations.leaveHome.saved')), 'success')
+    await fetchAutomations({ force: true })
+  }
+  const handlePrecoolSaved = async ({ updated, removed }) => {
+    setPrecoolTarget(null)
+    addToast(removed ? t('automations.precool.deleted')
+             : (updated ? t('automations.precool.updated') : t('automations.precool.saved')), 'success')
     await fetchAutomations({ force: true })
   }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
@@ -636,6 +658,18 @@ export default function Automations() {
             initial={climateTarget}
             onSaved={handleClimateSaved}
             onClose={handleClimateClose}
+          />
+        )}
+      </Modal>
+
+      {/* Pre-cool on Arrival — dedicated view/edit (one modal). */}
+      <Modal open={!!precoolTarget} onClose={() => setPrecoolTarget(null)} title={t('automations.precool.title')}>
+        {precoolTarget && (
+          <PrecoolWizard
+            key={precoolTarget._isInstalled ? 'edit' : 'new'}
+            initial={precoolTarget}
+            onSaved={handlePrecoolSaved}
+            onClose={() => setPrecoolTarget(null)}
           />
         )}
       </Modal>

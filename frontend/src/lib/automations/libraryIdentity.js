@@ -11,6 +11,7 @@ const LIBRARY_EMOJI = {
   leave_home:          '🚪',
   welcome_home:        '🏠',
   precool_on_arrival:  '🏡',
+  precool_arrival:     '🏡',
   sleep_mode:          '🌙',
   morning_routine:     '☀️',
   smart_climate:       '🌡️',

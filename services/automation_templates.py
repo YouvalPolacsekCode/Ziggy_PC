@@ -156,7 +156,10 @@ TEMPLATES: list[dict] = [
         "description":           "Start the AC on your way home so the room is already cool when you walk in.",
         "category":              "climate",
         "icon":                  "🏡",
-        "required_capabilities": ["phone_presence"],
+        # Needs an AC to control; presence (GPS) is gated inside the dedicated
+        # wizard (it uses Ziggy's own presence engine, not an HA device capability).
+        "required_capabilities": [],
+        "required_any":          [["climate_control", "ir_ac_control"]],
         "optional_capabilities": ["room_temperature", "climate_control", "ir_ac_control"],
         "relevant_capabilities": ["phone_presence", "room_temperature", "climate_control", "ir_ac_control"],
         "capability_labels": {
@@ -661,47 +664,18 @@ def _welcome_home(cap_map: dict) -> dict:
 
 
 def _precool_on_arrival(cap_map: dict) -> dict:
-    tracker = first_entity(cap_map, "phone_presence")
-    temp    = first_entity(cap_map, "room_temperature")
+    # Dedicated wizard (PrecoolWizard.jsx) owns the real build — it uses Ziggy's
+    # native presence (a "Near Home" geofence + zone_entered trigger) so the AC
+    # gets a head start, and native climate/IR actions instead of send_intent.
+    # This prefill just marks the bundle + seeds sensible defaults; the wizard
+    # reads the live device store itself.
     climate = first_entity(cap_map, "climate_control")
-
-    actions: list[dict] = []
-    if climate:
-        actions.append({
-            "type": "call_service", "entity_id": climate,
-            "service": "homeassistant.turn_on", "service_value": "turn_on",
-        })
-        actions.append({
-            "type": "call_service", "entity_id": climate,
-            "service": "climate.set_temperature",
-            "service_value": "set_temperature",
-            "service_data": {"temperature": 22},
-        })
-    else:
-        # IR AC or nothing — let Ziggy's intent pipeline handle it
-        actions.append({"type": "send_intent", "text": "Turn on AC"})
-    actions.append({
-        "type": "notify",
-        "message": "You're heading home — AC is cooling down for your arrival.",
-        "title": "Pre-cool on Arrival",
-    })
-
-    # Condition: only run if it's actually hot (temp sensor available)
-    conditions = []
-    if temp:
-        conditions.append({"entity_id": temp, "operator": "above", "value": "24"})
-
     return {
+        "bundle":      "precool",
         "name":        "Pre-cool on Arrival",
-        "description": "Turns on AC when you enter home zone (or a wider Near Home zone)",
-        "trigger":     {
-            "type":      "zone",
-            "entity_id": tracker or "",
-            "zone":      "zone.home",
-            "event":     "enter",
-        },
-        "conditions":  conditions,
-        "actions":     actions,
+        "description": "Starts the AC while you're on your way so the room is cool when you walk in",
+        "climate":     climate or "",
+        "temperature": 24,
         "rooms":       [],
     }
 
