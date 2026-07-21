@@ -62,7 +62,7 @@ import { useCameraStore } from './stores/cameraStore'
 import { useFeaturesStore, useFeature } from './stores/featuresStore'
 import LoginPage from './pages/LoginPage'
 import AcceptInvite from './pages/AcceptInvite'
-import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings, getPresenceZone } from './lib/api'
+import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings, getPresenceZone, reportMyLanIp } from './lib/api'
 import { entityDisplayName, humanizeSlug } from './lib/utils'
 import { setLang as setI18nLang, t as i18nT } from './lib/i18n'
 import { isNative } from './lib/native'
@@ -699,6 +699,18 @@ export default function App() {
       }).catch(() => {})
     }
 
+    // Zero-config LAN presence: read our OWN Wi-Fi IP natively (the device's own
+    // IP isn't hidden — only the MAC is) and report it so Ziggy can probe the
+    // phone on the home network without the user typing an address. Re-reported
+    // on every network change / app resume, so a DHCP reassignment self-heals.
+    const reportLanIp = async () => {
+        if (!ZP.getLanIp) return
+        try {
+            const { ip } = await ZP.getLanIp()
+            await reportMyLanIp(ip || null)   // null when off Wi-Fi → server keeps/clears sanely
+        } catch {}
+    }
+
     // A geofence enter/exit event carries the *region centre* (= home) as its
     // lat/lon, NOT the phone's real position. Posting that on an EXIT would read
     // as "still home" and defeat leave-detection entirely. So on any crossing we
@@ -758,14 +770,34 @@ export default function App() {
         const l2 = await ZP.addListener('geofence', () => { pingFreshFix() })
         listeners.push(l1, l2)
       } catch {}
+
+      // Report our LAN IP now, and again whenever the network flips or the app
+      // comes back to foreground (covers reconnect + DHCP reassignment).
+      reportLanIp()
+      try {
+        const Net = window?.Capacitor?.Plugins?.Network
+        if (Net?.addListener) listeners.push(await Net.addListener('networkStatusChange', () => { reportLanIp() }))
+      } catch {}
+      try {
+        const AppP = window?.Capacitor?.Plugins?.App
+        if (AppP?.addListener) listeners.push(await AppP.addListener('appStateChange', (s) => { if (s?.isActive) reportLanIp() }))
+      } catch {}
+
       started = true
     }
 
-    const stop = async () => {
-      if (!started) return
-      started = false
+    // full=true (user turned tracking OFF): tear down native monitoring AND
+    // stop LAN auto-tracking — the user withdrew consent.
+    // full=false (effect unmount, e.g. logout/app teardown): only detach JS
+    // listeners; LEAVE the OS geofence/SLC running so background presence
+    // survives the app closing (that's the whole point), and DON'T clear LAN.
+    const stop = async ({ full }) => {
       for (const l of listeners) { try { await l.remove?.() } catch {} }
       listeners = []
+      if (!full) { started = false; return }
+      if (!started) return
+      started = false
+      try { await reportMyLanIp(null) } catch {}
       try { await ZP.stopBackgroundLocation() } catch {}
       try { await ZP.stopActivityRecognition() } catch {}
       try { await ZP.removeGeofence({ id: HOME_GEOFENCE_ID }) } catch {}
@@ -774,7 +806,7 @@ export default function App() {
     const sync = () => {
       if (!alive) return
       if (isOn()) start()
-      else stop()
+      else stop({ full: true })
     }
 
     sync()
@@ -784,7 +816,7 @@ export default function App() {
     return () => {
       alive = false
       window.removeEventListener('ziggy:trackme-changed', onToggle)
-      stop()
+      stop({ full: false })
     }
   }, [authenticated])
 

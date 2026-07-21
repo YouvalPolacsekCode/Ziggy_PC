@@ -205,6 +205,12 @@ class LanHostPatch(BaseModel):
     lan_host: Optional[str] = None  # "youval-iphone.local" or "192.168.1.42"
 
 
+class LanHostAutoBody(BaseModel):
+    # The phone's OWN Wi-Fi IP, read natively by the app and self-reported.
+    # None/empty means "I'm no longer on Wi-Fi / stop auto-tracking me by LAN."
+    lan_ip: Optional[str] = None
+
+
 class ZonePatch(BaseModel):
     lat:      float
     lon:      float
@@ -241,10 +247,71 @@ async def set_my_lan_host(body: LanHostPatch, request: Request, user=Depends(get
         if p["id"] == person["id"]:
             p["lan_host"] = host
             p["lan_host_suggested"] = None  # accepted (or explicitly cleared) — drop the hint
+            # A non-empty manual entry LOCKS out auto (the app must not clobber
+            # it). Clearing the field reverts to automatic so the app's next
+            # self-report reconfigures it — "clear = go back to auto".
+            p["lan_host_auto"] = host is None
             break
     await _save_async(persons)
-    log_info(f"[Presence] {person['name']} (self): lan_host = {host}")
+    log_info(f"[Presence] {person['name']} (self): lan_host = {host} (manual, auto={host is None})")
     return {"ok": True, "lan_host": host}
+
+
+@router.post("/api/presence/me/lan-host/auto")
+async def report_my_lan_ip(body: LanHostAutoBody, user=Depends(get_current_user)):
+    """Zero-config LAN presence: the native app reports the phone's OWN Wi-Fi IP.
+
+    Why this exists: the app reaches Ziggy through the cloud tunnel, so the
+    server can't see the phone's LAN IP from the request. But the app CAN read
+    its own Wi-Fi address natively (the device's own IP isn't hidden — only the
+    MAC is) and post it here. The app re-reports on every reconnect / resume, so
+    a DHCP reassignment self-heals within one network change.
+
+    Rules:
+      * Only RFC-1918 private IPs are accepted (never point the hub's probe at a
+        public host).
+      * A user's MANUAL entry (lan_host_auto == False) is never overwritten.
+      * lan_ip null/empty means "off Wi-Fi / stop" → clears an auto-managed host
+        (leaves a manual one alone).
+    """
+    person = await asyncio.to_thread(_resolve_or_create_my_person, user)
+    ip = (body.lan_ip or "").strip() or None
+    if ip is not None and not _is_private_ip(ip):
+        # Not a home-LAN address (public IP, CGNAT, garbage) — ignore quietly so
+        # a phone on cellular reporting a bogus value can't misconfigure probing.
+        return {"ok": True, "lan_host": None, "managed": "ignored_non_private"}
+
+    persons = await _load_async()
+    result = "unchanged"
+    new_host = None
+    for p in persons:
+        if p["id"] != person["id"]:
+            continue
+        manual = (p.get("lan_host_auto") is False) and bool((p.get("lan_host") or "").strip())
+        if manual:
+            new_host = p.get("lan_host")
+            result = "manual_kept"
+            break
+        if ip is None:
+            # Stop signal — drop an auto host, stay in auto mode for next time.
+            if p.get("lan_host"):
+                p["lan_host"] = None
+                result = "cleared"
+            p["lan_host_auto"] = True
+        else:
+            if p.get("lan_host") != ip:
+                result = "updated"
+            else:
+                result = "confirmed"
+            p["lan_host"] = ip
+            p["lan_host_auto"] = True
+            p["lan_host_suggested"] = None
+            new_host = ip
+        break
+    if result in ("updated", "cleared"):
+        await _save_async(persons)
+        log_info(f"[Presence] {person['name']} (auto): lan_host {result} -> {new_host}")
+    return {"ok": True, "lan_host": new_host, "managed": result}
 
 
 @router.get("/api/presence/persons")

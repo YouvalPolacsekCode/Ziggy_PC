@@ -53,6 +53,11 @@ _DEFAULTS = {
     "lan_use_tcp_probe":          False,
     "lan_tcp_probe_ports":        [62078, 5353],
     "lan_icmp_timeout_seconds":   2,
+    # Phones drop a packet or briefly nap on Wi-Fi even while sitting at home;
+    # a single lost echo shouldn't read as "unreachable". Retry a couple times
+    # before giving up — one reply across the attempts is enough. The engine's
+    # lan_offline_grace still guards against a genuinely-departed phone.
+    "lan_icmp_attempts":          3,
 }
 
 
@@ -203,8 +208,10 @@ def _probe_host(host: str) -> bool:
     then the `ping` executable if present, then the opt-in TCP probe.
     """
     timeout_s = float(_lan_cfg("lan_icmp_timeout_seconds"))
-    if _icmp_reachable_raw(host, timeout_s):
-        return True
+    attempts = max(1, int(_lan_cfg("lan_icmp_attempts")))
+    for _ in range(attempts):
+        if _icmp_reachable_raw(host, timeout_s):
+            return True
     if _icmp_reachable(host, timeout_s):
         return True
     if bool(_lan_cfg("lan_use_tcp_probe")):

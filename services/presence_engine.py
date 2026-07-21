@@ -160,6 +160,7 @@ _NEW_FIELDS = (
     "lan_last_probe",   # ISO UTC of last LAN probe attempt
     "lan_last_seen",    # ISO UTC of last successful LAN probe (reachable on LAN)
     "lan_host_suggested",  # client IP captured server-side on a same-home-LAN ping; a candidate lan_host we offer the user to accept (never probed until they do)
+    "lan_host_auto",       # True → lan_host is auto-managed (the app self-reports its own Wi-Fi IP; re-reported on every reconnect so DHCP changes self-heal). False → user typed it manually; auto reports must not clobber it.
 )
 
 # zone_states is a dict, not None — keep it separate so the empty default is {}.
