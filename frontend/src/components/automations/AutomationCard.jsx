@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 import { Toggle } from '../ui/Toggle'
 import { useT, useTranslatedName } from '../../lib/i18n'
 import { getTriggerTypes } from '../../lib/automations/types'
+import { libraryEmoji } from '../../lib/automations/libraryIdentity'
+import { behaviorSummary } from '../../lib/automations/summaries'
 
 // ── AutomationCard ────────────────────────────────────────────────────────────
 // React.memo'd so a state_changed WS bump that doesn't touch this card's
@@ -13,7 +15,11 @@ const AutomationCard = React.memo(function AutomationCard({
 }) {
   const t = useT()
   const automationName = useTranslatedName(automation.name)
-  const automationDesc = useTranslatedName(automation.description)
+  // Human one-liner: prefer the hand-written description, else derive from what
+  // the automation actually does — never leave it as a bare "N steps".
+  const rawSummary = automation.description || behaviorSummary(automation)
+  const automationDesc = useTranslatedName(rawSummary)
+  const emoji = libraryEmoji(automation)
   const triggerLabel = getTriggerTypes().find(tt => tt.value === automation.trigger?.type)?.label
 
   // Check if any action entity is currently unavailable. offlineEntityIds is
@@ -43,16 +49,20 @@ const AutomationCard = React.memo(function AutomationCard({
             webhook: <><circle cx="12" cy="12" r="3"/><path d="M12 9V5a2 2 0 0 0-4 0M9 12H5a2 2 0 0 0 0 4M12 15v4a2 2 0 0 0 4 0M15 12h4a2 2 0 0 0 0-4"/></>,
           }
           return (
-            <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))` }}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? tint : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                {iconMap[triggerType] || <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>}
-              </svg>
+            <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`, opacity: automation.enabled ? 1 : 0.55 }}>
+              {emoji ? (
+                <span style={{ fontSize: 19, lineHeight: 1 }}>{emoji}</span>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? tint : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  {iconMap[triggerType] || <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>}
+                </svg>
+              )}
             </div>
           )
         })()}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationName}</p>
-          {automation.description && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationDesc}</p>}
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationDesc || t('automations.card.notConfigured')}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
             {triggerLabel && (
               <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--info)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--info)' : 'var(--ink-faint)' }}>
@@ -60,7 +70,6 @@ const AutomationCard = React.memo(function AutomationCard({
               </span>
             )}
             {automation.trigger?.time && <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{automation.trigger.time}</span>}
-            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('automations.card.stepsCount', { n: automation.actions?.length || 0 })}</span>
             {(automation.rooms || []).length > 0 && <span style={{ fontSize: 10.5, color: 'var(--ink-mute)' }}>{t('automations.card.roomsCount', { n: (automation.rooms || []).length })}</span>}
           </div>
           {hasOfflineDep && (

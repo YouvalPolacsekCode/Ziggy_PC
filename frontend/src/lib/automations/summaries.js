@@ -93,8 +93,20 @@ export function actionSummary(action) {
       return tStatic('automations.summary.fakeOccupancy', { n, window: win, days: dys })
     }
     case 'media_play':   return tStatic('media.action.playMedia')
+    case 'turn_off_all_lights': return tStatic('automations.summary.allLightsOff')
+    case 'turn_off_everything': return tStatic('automations.summary.everythingOff')
     default:             return action.type
   }
+}
+
+// One-line, human "what it does" derived from an automation's actions — used on
+// the card when there's no hand-written description. Keeps every automation
+// speaking plain language instead of "N steps".
+export function behaviorSummary(automation, max = 3) {
+  const parts = (automation?.actions || []).map(actionSummary).filter(Boolean)
+  if (!parts.length) return ''
+  const shown = parts.slice(0, max).join(' · ')
+  return parts.length > max ? `${shown} +${parts.length - max}` : shown
 }
 
 export function conditionSummary(c) {

@@ -1182,6 +1182,9 @@ export default {
   // תוויות כרטיס אוטומציה
   'automations.card.stepsCount':         '{n} שלבים',
   'automations.card.roomsCount':         '{n} חדרים',
+  'automations.card.notConfigured':      'צריך רק להשלים — לחיצה על עריכה',
+  'automations.summary.allLightsOff':    'לכבות את כל האורות',
+  'automations.summary.everythingOff':   'לכבות הכול',
   'automations.card.view':               'הצגה',
   // ברירות מחדל לפעולות
   'automations.fallback.turnOn':         'הפעלה',

@@ -1194,6 +1194,9 @@ export default {
   // Automation card labels
   'automations.card.stepsCount':         '{n} steps',
   'automations.card.roomsCount':         '{n} rooms',
+  'automations.card.notConfigured':      'Tap edit to finish setting this up',
+  'automations.summary.allLightsOff':    'Turn off all lights',
+  'automations.summary.everythingOff':   'Turn everything off',
   'automations.card.view':               'View',
   // Action fallback (when entity has no domain registered)
   'automations.fallback.turnOn':         'Turn On',
