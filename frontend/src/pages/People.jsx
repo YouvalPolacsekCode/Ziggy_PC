@@ -9,6 +9,8 @@
 // never re-implemented here. Enforcement on real device commands is separately
 // gated by features.permission_enforcement (off | shadow | enforce).
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ChevronLeft } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   getPermissionsOverview, permissionsExplain, bindPermissionRole,
@@ -164,10 +166,19 @@ export default function People() {
 function Shell({ children }) {
   return (
     <div style={{ maxWidth: 1120, margin: '0 auto', padding: '20px 16px 60px' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 22, letterSpacing: '-.02em' }}>People &amp; Permissions</h1>
-        <p style={{ margin: '3px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
-          Set what each person can control. Every decision below is computed by the policy engine.</p>
+      <Link to="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+        fontSize: 12.5, color: 'var(--ink-soft)', textDecoration: 'none', marginBottom: 10 }}>
+        <ChevronLeft size={13} /> Settings
+      </Link>
+      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end',
+        justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, letterSpacing: '-.02em' }}>People &amp; Access</h1>
+          <p style={{ margin: '3px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
+            Set what each person can control. Every decision below is computed by the policy engine.</p>
+        </div>
+        <Link to="/settings/users" style={{ fontSize: 12.5, fontWeight: 550, color: 'var(--accent)',
+          textDecoration: 'none', whiteSpace: 'nowrap' }}>Manage login accounts →</Link>
       </div>
       {children}
     </div>

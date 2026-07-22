@@ -397,7 +397,8 @@ function AppRoutes() {
         <Route path="settings/home-sensing"  element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/mobile"        element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/users"         element={<UsersPage />} />
-        <Route path="people"                 element={<People />} />
+        <Route path="settings/people"        element={<People />} />
+        <Route path="people"                 element={<Navigate to="/settings/people" replace />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
         <Route path="alerts" element={<Anomalies />} />

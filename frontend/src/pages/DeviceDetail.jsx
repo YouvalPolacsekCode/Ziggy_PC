@@ -16,7 +16,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, selfHealRefresh } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, selfHealRefresh, whoCanDo } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn } from '../lib/utils'
 import { useT, useTranslatedName } from '../lib/i18n'
@@ -369,6 +369,47 @@ function CameraPanel({ entityId, navigate }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+
+// Primary control verb per HA domain — used to ask "who can operate this?".
+const DOMAIN_PRIMARY_ACTION = {
+  light: 'light.onoff', switch: 'light.onoff', lock: 'lock.unlock', camera: 'camera.live',
+  climate: 'climate.setpoint', fan: 'climate.mode', media_player: 'media.playback',
+  cover: 'cover.open', alarm_control_panel: 'alarm.disarm',
+}
+
+// Best-effort "Who can use this" card. Reads the permission platform's who_can
+// query; renders NOTHING on error/empty (permissions not bootstrapped, or the
+// viewer isn't an admin — the endpoint is admin-gated), so it never disturbs
+// the device page for anyone who isn't managing access.
+function WhoCanUse({ entityId }) {
+  const [people, setPeople] = useState(null)
+  useEffect(() => {
+    if (!entityId) return
+    let live = true
+    const domain = entityId.split('.')[0]
+    const action = DOMAIN_PRIMARY_ACTION[domain] || `${domain}.onoff`
+    whoCanDo(`device:${entityId}`, action)
+      .then(d => { if (live) setPeople(d?.principals || []) })
+      .catch(() => { if (live) setPeople([]) })
+    return () => { live = false }
+  }, [entityId])
+  if (!people || people.length === 0) return null
+  const names = people.map(p => p.split(':')[1])
+  return (
+    <Card className="p-4 mb-3">
+      <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">Who can use this</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {names.map(n => (
+          <span key={n} style={{ fontSize: 12.5, fontWeight: 550, color: 'var(--ink)',
+            background: 'var(--surface-2, var(--ground))', border: '1px solid var(--line)',
+            borderRadius: 999, padding: '4px 11px' }}>{n}</span>
+        ))}
+      </div>
+      <Link to="/settings/people" style={{ display: 'inline-block', marginTop: 11, fontSize: 12,
+        fontWeight: 550, color: 'var(--accent)', textDecoration: 'none' }}>Manage access →</Link>
+    </Card>
+  )
+}
 
 export default function DeviceDetail() {
   const t = useT()
@@ -1245,6 +1286,9 @@ export default function DeviceDetail() {
         )}
       </Card>
       )}
+
+      {/* ── Who can use this (permission platform; best-effort, admin-only) ── */}
+      <WhoCanUse entityId={entityId} />
 
       {/* ── Danger zone ── */}
       {showData && (

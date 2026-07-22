@@ -1346,7 +1346,7 @@ export default function Settings() {
         <HubCard icon={Bell}        title={t('adminSettings.sectionNotifications')} subtitle={t('settings.notificationsSub')} to="/settings/notifications" />
         <HubCard icon={MapPin}      title={t('settings.location')}        subtitle={t('settings.locationSub')}        to="/settings/location" />
         {isSuperAdmin && (
-          <HubCard icon={Users}     title={t('settings.usersAndAccess')}  subtitle={t('settings.usersSub')}           to="/settings/users" />
+          <HubCard icon={Users}     title="People & Access"  subtitle="Members, roles and what each person can control"  to="/settings/people" />
         )}
         <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
         <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
