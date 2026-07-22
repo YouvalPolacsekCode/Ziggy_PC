@@ -182,14 +182,11 @@ export default function People() {
                 <Segmented options={ov.presets} value={pendingRole} disabled={busy}
                   onChange={setPendingRole} labels={PRESET_LABEL} />
                 {pendingRole && pendingRole !== person.role && (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
-                    <button onClick={saveRole} disabled={busy} style={{ ...btn, marginTop: 0 }}>
-                      {busy ? 'Saving…' : `Save — ${PRESET_LABEL[pendingRole]}`}</button>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
+                    <button onClick={saveRole} disabled={busy} style={savePill}>
+                      {busy ? 'Saving…' : 'Save'}</button>
                     <button onClick={() => setPendingRole(person.role)} disabled={busy}
-                      style={{ ...btn, marginTop: 0, background: 'transparent', color: 'var(--ink-soft)',
-                        border: '1px solid var(--line)' }}>Cancel</button>
-                    <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-                      currently {PRESET_LABEL[person.role] || '—'}</span>
+                      style={linkBtn}>Cancel</button>
                   </div>
                 )}
                 {person.role === 'kid' && (
@@ -711,6 +708,14 @@ const selectStyle = {
 const btn = {
   marginTop: 14, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff',
   borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+}
+const savePill = {
+  border: 0, background: 'var(--accent)', color: '#fff', borderRadius: 999,
+  padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+}
+const linkBtn = {
+  border: 0, background: 'transparent', color: 'var(--ink-soft)', fontSize: 12.5,
+  fontWeight: 500, cursor: 'pointer', padding: '6px 4px',
 }
 function decBox(kind) {
   const c = kind === 'y' ? 'var(--ok, #0f9d6a)' : kind === 'x' ? 'var(--accent-strong, #dc4b52)' : 'var(--line)'
