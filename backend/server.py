@@ -177,6 +177,18 @@ async def _warm_ha_catalog():
     except Exception as e:
         log_info(f"[HACapabilities] startup warm failed: {e}")
 
+    # Permission platform: mirror the live device model + auth users into the
+    # policy store so the People/permission UI has real data to show. Diff-based
+    # + fully guarded — a hiccup here must never block boot, and it changes no
+    # runtime behaviour on its own (enforcement is gated by a separate flag).
+    try:
+        from services.permissions.reconcile import ensure_bootstrapped
+        out = ensure_bootstrapped()
+        log_info(f"[Permissions] bootstrap: {out.get('devices')} {out.get('users')}"
+                 + (f" ({out['error']})" if out.get("error") else ""))
+    except Exception as e:
+        log_info(f"[Permissions] bootstrap skipped: {e}")
+
 
 async def _run_update_checker():
     """Run the HA update check once in the background after startup."""

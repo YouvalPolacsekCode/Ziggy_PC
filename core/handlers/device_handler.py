@@ -144,6 +144,24 @@ async def handle_control_device(params: dict, *, source: str = "unknown") -> dic
             f"פעולות זמינות: {available}.",
         ))
 
+    # Permission platform (additive, flag-gated by features.permission_enforcement;
+    # default "off" = zero behaviour change). In "shadow" it only audits what it
+    # WOULD decide; in "enforce" it blocks a denied action, but only when an actor
+    # was threaded through (no identity ⇒ fail-open to legacy behaviour).
+    try:
+        from services.permissions import shadow as _perm_shadow
+        _verdict = _perm_shadow.evaluate_command(
+            actor=params.get("_actor"), domain=domain, service=service,
+            entity_id=entity_id, source=source)
+        if _verdict.get("would_block"):
+            return err(L(
+                "You don't have permission to do that.",
+                "אין לך הרשאה לבצע פעולה זו.",
+            ))
+    except Exception:
+        # Policy evaluation must never break device control.
+        pass
+
     result = call_service(domain, service, {"entity_id": entity_id})
     if not result.get("ok"):
         return err(result.get("message", L(f"Failed to {action} {meta.label.lower()}.",

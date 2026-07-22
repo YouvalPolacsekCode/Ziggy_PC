@@ -165,8 +165,20 @@ class DirectIntentRequest(BaseModel):
     source: str = "web"
 
 
+def _actor_ref(request: Request | None) -> str | None:
+    """Principal ref for the authenticated caller, for the permission platform.
+
+    Additive: used only by shadow/enforce evaluation in the device handler.
+    Returns None when no user is attached (unauthenticated/internal), which the
+    permission layer treats as fail-open."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    if isinstance(user, dict) and user.get("username"):
+        return f"person:{user['username']}"
+    return None
+
+
 @router.post("/api/intent")
-async def process_intent(req: IntentRequest):
+async def process_intent(req: IntentRequest, request: Request):
     request_id = _new_request_id()
 
     bus.emit("intent", BASIC, "request_received",
@@ -179,6 +191,11 @@ async def process_intent(req: IntentRequest):
     intent_data["source"] = req.source
     intent_data["request_id"] = request_id
     intent_data["_raw_input"] = req.text
+    # Thread the caller identity so the permission platform can attribute the
+    # command (no-op unless features.permission_enforcement is enabled).
+    _actor = _actor_ref(request)
+    if _actor:
+        intent_data.setdefault("params", {})["_actor"] = _actor
 
     bus.emit("intent", VERBOSE, "intent_parsed",
              request_id=request_id,
