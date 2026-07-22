@@ -190,6 +190,13 @@ export default function People() {
         }
         /* Very narrow phones: stack the paired Playground controls too. */
         @media(max-width:420px){ .perm-two{grid-template-columns:1fr!important} }
+        /* Collapsible per-room device groups on the kid screen. */
+        .kid-room{border-top:1px solid var(--line-soft,var(--line))}
+        .kid-room>summary{list-style:none;cursor:pointer;display:flex;align-items:center;
+          justify-content:space-between;gap:10px;padding:11px 2px}
+        .kid-room>summary::-webkit-details-marker{display:none}
+        .kid-room>summary .chev{transition:transform .15s;color:var(--ink-faint);font-size:11px;flex:none}
+        .kid-room[open]>summary .chev{transform:rotate(90deg)}
       `}</style>
     </Shell>
   )
@@ -273,6 +280,11 @@ function Segmented({ options, value, onChange, labels, disabled }) {
 // role denies them anyway) — matching "hide dangerous controls".
 const KID_CAP = { any_of: [{ scope_tag: 'lighting' }, { scope_tag: 'media' }, { scope_tag: 'climate' }] }
 const DANGEROUS = new Set(['lock', 'camera', 'alarm', 'garage'])
+// The user-facing device *tiles* — what the Devices page shows. Excludes the
+// read-only sub-entities (temperature/energy/occupancy/illuminance/…) that a
+// physical device also exposes; you don't grant a kid "access" to a sensor.
+const CONTROLLABLE = new Set(['light', 'switch', 'media', 'climate', 'lock',
+  'camera', 'garage', 'cover', 'fan', 'alarm'])
 
 function kidGrantId(person, dev) { return `kidallow:${person.name}:${dev.id}` }
 
@@ -343,33 +355,53 @@ function KidAccess({ person, ov, onChange }) {
 
   if (grants === null) return <div style={{ color: 'var(--ink-faint)', fontSize: 12, marginTop: 12 }}>Loading…</div>
 
+  // Only the real controllable device tiles — not the sub-entity sensors.
+  const tiles = ov.devices.filter(d => CONTROLLABLE.has(d.class))
   const rooms = {}
-  for (const d of ov.devices) { (rooms[d.space_id || 'home'] ||= []).push(d) }
+  for (const d of tiles) { (rooms[d.space_id || 'home'] ||= []).push(d) }
+  const roomEntries = Object.entries(rooms).sort((a, b) => a[0].localeCompare(b[0]))
 
   return (
     <div>
       <div style={{ ...eyebrow, margin: '18px 0 6px' }}>Devices {person.name} can use</div>
-      {Object.entries(rooms).map(([room, devs]) => (
-        <div key={room}>
-          <div style={{ fontSize: 11, fontWeight: 640, color: 'var(--ink-faint)', margin: '10px 0 2px',
-            textTransform: 'capitalize' }}>{(room || 'home').replace(/_/g, ' ')}</div>
-          {devs.map(d => {
-            const danger = DANGEROUS.has(d.class)
-            const on = enabled.has(d.id)
-            return (
-              <div key={d.ref} style={rowStyle}>
-                <div>
-                  <div style={{ fontSize: 13 }}>{(CLASS_ICON[d.class] || '•') + ' ' + deviceName(d)}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-                    {danger ? 'Dangerous — kids can’t be given this' : d.class}</div>
-                </div>
-                <Toggle on={on} locked={danger} busy={saving === d.id}
-                  onClick={() => !danger && toggleDevice(d)} />
-              </div>
-            )
-          })}
-        </div>
-      ))}
+      {roomEntries.length === 0 && (
+        <div style={{ color: 'var(--ink-faint)', fontSize: 12.5 }}>No controllable devices in this home.</div>
+      )}
+      {roomEntries.map(([room, devs]) => {
+        const onCount = devs.filter(d => enabled.has(d.id)).length
+        return (
+          <details key={room} className="kid-room">
+            <summary>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <span className="chev">▸</span>
+                <span style={{ textTransform: 'capitalize', fontWeight: 550, fontSize: 13,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(room || 'home').replace(/_/g, ' ')}</span>
+              </span>
+              <span style={{ fontSize: 11.5, color: onCount ? 'var(--accent)' : 'var(--ink-faint)',
+                flex: 'none', fontWeight: 550 }}>{onCount}/{devs.length} on</span>
+            </summary>
+            <div style={{ paddingBottom: 6 }}>
+              {devs.map(d => {
+                const danger = DANGEROUS.has(d.class)
+                const on = enabled.has(d.id)
+                return (
+                  <div key={d.ref} style={rowStyle}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap' }}>{(CLASS_ICON[d.class] || '•') + ' ' + deviceName(d)}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                        {danger ? 'Dangerous — kids can’t be given this' : d.class}</div>
+                    </div>
+                    <Toggle on={on} locked={danger} busy={saving === d.id}
+                      onClick={() => !danger && toggleDevice(d)} />
+                  </div>
+                )
+              })}
+            </div>
+          </details>
+        )
+      })}
 
       <div style={{ ...eyebrow, margin: '18px 0 6px' }}>Allowed hours</div>
       <div style={rowStyle}>
@@ -488,9 +520,11 @@ function Pill({ state }) {
 }
 
 function Playground({ person, ov, version }) {
-  const [device, setDevice] = useState(ov.devices[0]?.ref || '')
+  // Only real device tiles, not sub-entity sensors.
+  const tiles = useMemo(() => ov.devices.filter(d => CONTROLLABLE.has(d.class)), [ov.devices])
+  const [device, setDevice] = useState(tiles[0]?.ref || '')
   const [channel, setChannel] = useState('app')
-  const dev = ov.devices.find(d => d.ref === device)
+  const dev = tiles.find(d => d.ref === device)
   const actions = dev ? capsForClass(dev.class, ov.capabilities) : []
   const [action, setAction] = useState(actions[0] || '')
   const [res, setRes] = useState(null)
@@ -517,7 +551,7 @@ function Playground({ person, ov, version }) {
       <div style={{ padding: 16 }}>
         <Field label="Device">
           <select value={device} onChange={e => setDevice(e.target.value)} style={selectStyle}>
-            {ov.devices.map(d => (
+            {tiles.map(d => (
               <option key={d.ref} value={d.ref}>
                 {(CLASS_ICON[d.class] || '•') + ' ' + deviceName(d)}
               </option>
