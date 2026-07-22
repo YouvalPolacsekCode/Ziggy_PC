@@ -38,8 +38,11 @@ _CAPABILITY_RULES: dict[str, list] = {
             and "brightness" in (e.get("attributes") or {}),
     ],
     "motion_sensor": [
+        # mmWave presence/occupancy sensors ARE motion triggers (Z2M exposes
+        # them as occupancy/presence, not motion) — count them so Motion Light /
+        # motion-triggered templates light up for homes with radar sensors.
         lambda e: e["entity_id"].startswith("binary_sensor.")
-            and _dc(e, "motion"),
+            and _dc(e, ("motion", "occupancy", "presence")),
     ],
     "presence_sensor": [
         lambda e: e["entity_id"].startswith("binary_sensor.")

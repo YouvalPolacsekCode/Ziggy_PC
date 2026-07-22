@@ -3,7 +3,7 @@ import { Input } from '../ui/Input'
 import { Toggle } from '../ui/Toggle'
 import { useT } from '../../lib/i18n'
 import { useDeviceStore } from '../../stores/deviceStore'
-import { createAutomation, deleteAutomation } from '../../lib/api'
+import { createAutomation, deleteAutomation, getEntities } from '../../lib/api'
 import { entityDisplayName } from '../../lib/utils'
 
 // ── MotionLightWizard ─────────────────────────────────────────────────────────
@@ -24,7 +24,17 @@ export default function MotionLightWizard({ initial, onSaved, onClose, confirmDe
   const motionEnts = useMemo(
     () => storeEntities.filter((e) => e.domain === 'binary_sensor' && ['motion', 'occupancy', 'presence'].includes(e.device_class)),
     [storeEntities])
-  const lightEnts = useMemo(() => storeEntities.filter((e) => e.domain === 'light'), [storeEntities])
+  // Lights fetched UNFILTERED — the grouped device store can absorb some lights.
+  const [lightEnts, setLightEnts] = useState(() => storeEntities.filter((e) => e.domain === 'light'))
+  useEffect(() => {
+    let alive = true
+    getEntities('light', { all: true }).then((r) => {
+      if (!alive) return
+      const list = (r?.entities || []).map((e) => ({ ...e, domain: e.domain || 'light' }))
+      if (list.length) setLightEnts(list)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
 
   const isUpdate = !!initial?._isInstalled
 
