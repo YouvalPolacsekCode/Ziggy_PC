@@ -32,8 +32,53 @@ import os
 import threading
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from core.logger_module import log_info, log_error
+
+# The container runs in UTC, but the ramp anchors (wake/noon/bedtime) are the
+# user's LOCAL wall-clock times — so "now" must be the home's local time, or the
+# whole schedule runs shifted by the UTC offset (e.g. Israel evening reads as
+# afternoon → too bright/cool). Resolve the home timezone from HA's core config
+# (canonical), fall back to the Israel-first default. Cached once resolved.
+_home_tz_cache: Optional[ZoneInfo] = None
+_DEFAULT_HOME_TZ = "Asia/Jerusalem"
+
+
+def _home_tz() -> ZoneInfo:
+    global _home_tz_cache
+    if _home_tz_cache is not None:
+        return _home_tz_cache
+    tz_name = None
+    try:
+        from core.settings_loader import settings
+        tz_name = (settings.get("home") or {}).get("timezone") or None
+    except Exception:
+        pass
+    if not tz_name:
+        try:
+            import requests
+            from services.home_automation import _ha_url, _headers
+            resp = requests.get(f"{_ha_url()}/api/config", headers=_headers(), timeout=4)
+            if resp.ok:
+                tz_name = resp.json().get("time_zone")
+        except Exception:
+            pass
+    if tz_name:
+        try:
+            _home_tz_cache = ZoneInfo(tz_name)   # only cache a real resolution
+            return _home_tz_cache
+        except Exception:
+            pass
+    try:
+        return ZoneInfo(_DEFAULT_HOME_TZ)        # not cached — retry HA next call
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def home_now() -> datetime:
+    """Current time in the home's local timezone (tz-aware)."""
+    return datetime.now(_home_tz())
 
 _CONFIG_FILE = "user_files/circadian_config.json"
 
@@ -136,7 +181,7 @@ def compute_target(now: datetime, cfg: dict) -> tuple[int, int]:
 
 def current_target(cfg: Optional[dict] = None) -> tuple[int, int]:
     cfg = cfg or load_config()
-    k, b = compute_target(datetime.now(), cfg)
+    k, b = compute_target(home_now(), cfg)
     global _last_target
     _last_target = (k, b)
     return k, b
