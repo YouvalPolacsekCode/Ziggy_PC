@@ -45,6 +45,22 @@ const eyebrow = {
   color: 'var(--ink-faint)',
 }
 
+// Frontend safety net: NEVER show a raw entity_id. Humanize anything that looks
+// like one (contains a dot) or is missing a proper name.
+function humanizeId(raw) {
+  if (!raw) return ''
+  const obj = raw.includes('.') ? raw.split('.').slice(1).join('.') : raw
+  return obj.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim() || raw
+}
+function deviceName(d) {
+  const n = d && d.name
+  if (n && !n.includes('.')) return n            // already a friendly name
+  return humanizeId(n || (d && d.id) || '')
+}
+function resourceName(ref) {
+  return humanizeId((ref || '').split(':').slice(1).join(':'))
+}
+
 function capsForClass(cls, allCaps) {
   const byCls = { light: ['light.onoff', 'light.brightness'], media: ['media.playback'],
     climate: ['climate.setpoint'], lock: ['lock.unlock', 'lock.lock'], camera: ['camera.live'],
@@ -332,7 +348,7 @@ function KidAccess({ person, ov, onChange }) {
             return (
               <div key={d.ref} style={rowStyle}>
                 <div>
-                  <div style={{ fontSize: 13 }}>{(CLASS_ICON[d.class] || '•') + ' ' + d.name}</div>
+                  <div style={{ fontSize: 13 }}>{(CLASS_ICON[d.class] || '•') + ' ' + deviceName(d)}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
                     {danger ? 'Dangerous — kids can’t be given this' : d.class}</div>
                 </div>
@@ -492,7 +508,7 @@ function Playground({ person, ov, version }) {
           <select value={device} onChange={e => setDevice(e.target.value)} style={selectStyle}>
             {ov.devices.map(d => (
               <option key={d.ref} value={d.ref}>
-                {(CLASS_ICON[d.class] || '•') + ' ' + d.name}
+                {(CLASS_ICON[d.class] || '•') + ' ' + deviceName(d)}
               </option>
             ))}
           </select>
@@ -588,8 +604,7 @@ function AuditStrip() {
               background: r.effect === 'allow' ? 'var(--ok, #0f9d6a)' : 'var(--accent-strong, #dc4b52)' }} />
             <span style={{ color: 'var(--ink)', fontWeight: 550 }}>{(r.subject || '').split(':')[1]}</span>
             <span style={{ fontFamily: 'var(--mono, monospace)', color: 'var(--ink-soft)' }}>{r.action}</span>
-            <span style={{ color: 'var(--ink-faint)', marginLeft: 'auto',
-              fontFamily: 'var(--mono, monospace)' }}>{(r.resource || '').split(':')[1]}</span>
+            <span style={{ color: 'var(--ink-faint)', marginLeft: 'auto' }}>{resourceName(r.resource)}</span>
           </div>
         ))}
       </div>

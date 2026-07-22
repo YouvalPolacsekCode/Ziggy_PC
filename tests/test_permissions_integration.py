@@ -50,6 +50,30 @@ def test_reconcile_creates_spaces_and_devices(svc):
     assert "outdoor" in st.devices["camera.porch"].tags
 
 
+def test_reconcile_stores_human_names_never_entity_ids(svc):
+    # Without a friendly map, names are humanized from the entity_id.
+    reconcile_devices(svc, [
+        {"entity_id": "light.living_room_lamp", "room": "living_room", "device_type": "light"},
+    ])
+    dev = svc.state().devices["light.living_room_lamp"]
+    assert dev.attrs["name"] == "Living Room Lamp"
+    assert "." not in dev.attrs["name"]
+    # With a friendly map (HA), the friendly name wins.
+    reconcile_devices(svc, [
+        {"entity_id": "lock.front", "room": "entryway", "device_type": "lock"},
+    ], friendly={"lock.front": "Front Door"})
+    assert svc.state().devices["lock.front"].attrs["name"] == "Front Door"
+
+
+def test_reconcile_backfills_name_on_change(svc):
+    # A device that landed before names existed gets its name backfilled.
+    svc.add_device("light.x", "light", space_id="home", attrs={"source": "registry"})
+    counts = reconcile_devices(svc, [
+        {"entity_id": "light.x", "room": "home", "device_type": "light"}])
+    assert counts["devices_updated"] == 1
+    assert svc.state().devices["light.x"].attrs["name"] == "X"
+
+
 def test_reconcile_is_idempotent(svc):
     reconcile_devices(svc, REGISTRY_DEVICES)
     seq1 = svc.store.latest_seq()
