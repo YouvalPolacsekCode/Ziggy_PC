@@ -22,6 +22,7 @@ import ClimateGroupRow from '../components/automations/ClimateGroupRow'
 import ClimateViewModal from '../components/automations/ClimateViewModal'
 import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
 import PrecoolWizard from '../components/automations/PrecoolWizard'
+import WindowAcWizard from '../components/automations/WindowAcWizard'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -81,6 +82,8 @@ export default function Automations() {
   const [leaveHomeTarget,   setLeaveHomeTarget]   = useState(null)
   // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
   const [precoolTarget,     setPrecoolTarget]     = useState(null)
+  // Window Open — AC Off — dedicated wizard (smart/IR AC, notify vs auto-off).
+  const [windowAcTarget,    setWindowAcTarget]    = useState(null)
   // Promise-based delete confirmation shared by every card / view / wizard
   // delete path — nothing gets removed without a second, explicit yes.
   const [confirmState,      setConfirmState]      = useState(null)   // { label, resolve }
@@ -189,6 +192,11 @@ export default function Automations() {
     // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
     if (template.wizard_prefill.bundle === 'precool') {
       setPrecoolTarget({ _isInstalled: false, ...template.wizard_prefill })
+      return
+    }
+    // Window Open — AC Off — dedicated wizard.
+    if (template.wizard_prefill.bundle === 'window_ac') {
+      setWindowAcTarget({ _isInstalled: false, ...template.wizard_prefill })
       return
     }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
@@ -359,9 +367,16 @@ export default function Automations() {
     try { const config = await loadAutomationConfig(automation.id); setPrecoolTarget({ _isInstalled: true, ...(config || automation) }) }
     catch { setPrecoolTarget({ _isInstalled: true, ...automation }) }
   }
+  // Window Open — AC Off has its own dedicated modal.
+  const isWindowAc = (a) => a?.id === 'ziggy_window_ac_off' || a?.id === 'ac_window_interlock' || (a?.name || '').toLowerCase().includes('window')
+  const openWindowAc = async (automation) => {
+    try { const config = await loadAutomationConfig(automation.id); setWindowAcTarget({ _isInstalled: true, ...(config || automation) }) }
+    catch { setWindowAcTarget({ _isInstalled: true, ...automation }) }
+  }
   const handleEdit = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
     if (isPrecool(automation)) return openPrecool(automation)
+    if (isWindowAc(automation)) return openWindowAc(automation)
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
     catch { setEditTarget(automation) }
     setShowWizard(true)
@@ -369,6 +384,7 @@ export default function Automations() {
   const handleView = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
     if (isPrecool(automation)) return openPrecool(automation)
+    if (isWindowAc(automation)) return openWindowAc(automation)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
   }
@@ -382,6 +398,12 @@ export default function Automations() {
     setPrecoolTarget(null)
     addToast(removed ? t('automations.precool.deleted')
              : (updated ? t('automations.precool.updated') : t('automations.precool.saved')), 'success')
+    await fetchAutomations({ force: true })
+  }
+  const handleWindowAcSaved = async ({ updated, removed }) => {
+    setWindowAcTarget(null)
+    addToast(removed ? t('automations.windowAc.deleted')
+             : (updated ? t('automations.windowAc.updated') : t('automations.windowAc.saved')), 'success')
     await fetchAutomations({ force: true })
   }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
@@ -694,6 +716,19 @@ export default function Automations() {
             initial={precoolTarget}
             onSaved={handlePrecoolSaved}
             onClose={() => setPrecoolTarget(null)}
+            confirmDelete={confirmDelete}
+          />
+        )}
+      </Modal>
+
+      {/* Window Open — AC Off — dedicated view/edit (one modal). */}
+      <Modal open={!!windowAcTarget} onClose={() => setWindowAcTarget(null)} title={t('automations.windowAc.title')}>
+        {windowAcTarget && (
+          <WindowAcWizard
+            key={windowAcTarget._isInstalled ? 'edit' : 'new'}
+            initial={windowAcTarget}
+            onSaved={handleWindowAcSaved}
+            onClose={() => setWindowAcTarget(null)}
             confirmDelete={confirmDelete}
           />
         )}

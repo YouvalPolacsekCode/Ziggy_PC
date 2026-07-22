@@ -387,10 +387,10 @@ TEMPLATES: list[dict] = [
         "description":           "When a window opens with the AC running, get a push with a one-tap shutoff.",
         "category":              "climate",
         "icon":                  "🪟",
-        # ir_ac_control is the only universal requirement; a window OR door sensor
-        # satisfies the trigger side (handled via required_any below).
-        "required_capabilities": ["ir_ac_control"],
-        "required_any":          [["window_sensor", "door_sensor"]],
+        # Needs an AC (smart OR IR) AND a window/door sensor. The dedicated wizard
+        # supports both AC kinds + notify/auto modes.
+        "required_capabilities": [],
+        "required_any":          [["ir_ac_control", "climate_control"], ["window_sensor", "door_sensor"]],
         "optional_capabilities": ["door_sensor"],
         "relevant_capabilities": ["window_sensor", "door_sensor", "ir_ac_control"],
         "capability_labels": {
@@ -1051,6 +1051,21 @@ def _smart_room(cap_map: dict) -> dict:
 
 
 def _ac_window_interlock(cap_map: dict) -> dict:
+    # Dedicated wizard (WindowAcWizard.jsx) owns the real build — smart AC or IR,
+    # all/chosen windows, notify vs auto-off (+ resume-on-close), localized copy.
+    # This prefill just marks the bundle + seeds a default AC; the wizard reads
+    # the live device store itself.
+    ac = first_entity(cap_map, "climate_control") or first_entity(cap_map, "ir_ac_control")
+    return {
+        "bundle":      "window_ac",
+        "name":        "Window Open — AC Off",
+        "description": "Notifies (or turns off the AC) when a window opens while the AC is running",
+        "ac":          ac or "",
+        "rooms":       [],
+    }
+
+
+def _ac_window_interlock_legacy(cap_map: dict) -> dict:
     # Sensor selection: prefer a window sensor (matches the user-facing name);
     # fall back to a door sensor so households with door-only contacts still
     # get the protection.

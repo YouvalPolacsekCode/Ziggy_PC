@@ -21,6 +21,7 @@ const LIBRARY_EMOJI = {
   circadian_lighting:  '🌅',
   smart_room:          '🪄',
   ac_window_interlock: '🪟',
+  window_ac_off:       '🪟',
   tv_off_when_empty:   '📺',
   fake_occupancy:      '🌙',
   good_night:          '🌙',
