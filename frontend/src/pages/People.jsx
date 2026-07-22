@@ -14,7 +14,8 @@ import { ChevronLeft } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   getPermissionsOverview, permissionsExplain, bindPermissionRole,
-  bootstrapPermissions, getPermissionAudit,
+  bootstrapPermissions, getPermissionAudit, getPrincipalGrants,
+  issuePermissionGrant, revokePermissionGrant,
 } from '../lib/api'
 
 const PRESET_LABEL = {
@@ -58,6 +59,8 @@ export default function People() {
   const [err, setErr] = useState('')
   const [sel, setSel] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [version, setVersion] = useState(0)   // bump to re-evaluate live panels
+  const bump = () => setVersion(v => v + 1)
 
   const [forbidden, setForbidden] = useState(false)
   const load = () => getPermissionsOverview()
@@ -143,10 +146,13 @@ export default function People() {
                 <div style={{ ...eyebrow, marginBottom: 7 }}>Access level</div>
                 <Segmented options={ov.presets} value={person.role} disabled={busy}
                   onChange={setPreset} labels={PRESET_LABEL} />
+                {person.role === 'kid' && (
+                  <KidAccess person={person} ov={ov} onChange={bump} />
+                )}
                 <div style={{ ...eyebrow, margin: '18px 0 8px' }}>
                   What {person.name} can do — live from the engine
                 </div>
-                <CapabilityMatrix person={person} ov={ov} />
+                <CapabilityMatrix person={person} ov={ov} version={version} />
               </div>
             </div>
           )}
@@ -154,7 +160,7 @@ export default function People() {
 
         <div style={{ position: 'sticky', top: 14, display: 'flex', flexDirection: 'column', gap: 18 }}
           className="perm-right">
-          {person && <Playground person={person} ov={ov} />}
+          {person && <Playground person={person} ov={ov} version={version} />}
           <AuditStrip />
         </div>
       </div>
@@ -233,7 +239,161 @@ function Segmented({ options, value, onChange, labels, disabled }) {
   )
 }
 
-function CapabilityMatrix({ person, ov }) {
+// ── Kid one-screen: per-device allowlist + allowed hours ────────────────────
+// A kid is default-deny; each enabled device becomes an explicit allow grant
+// with a deterministic id (kidallow:<user>:<deviceId>) carrying an optional
+// time-window condition. Security-class devices are never offerable (the kid
+// role denies them anyway) — matching "hide dangerous controls".
+const KID_CAP = { any_of: [{ scope_tag: 'lighting' }, { scope_tag: 'media' }, { scope_tag: 'climate' }] }
+const DANGEROUS = new Set(['lock', 'camera', 'alarm', 'garage'])
+
+function kidGrantId(person, dev) { return `kidallow:${person.name}:${dev.id}` }
+
+function KidAccess({ person, ov, onChange }) {
+  const [grants, setGrants] = useState(null)
+  const [hoursOn, setHoursOn] = useState(false)
+  const [from, setFrom] = useState('07:00')
+  const [to, setTo] = useState('20:00')
+  const [saving, setSaving] = useState('')
+
+  const load = () => getPrincipalGrants(person.ref).then(d => {
+    const gs = d.grants || []
+    setGrants(gs)
+    // Derive the allowed-hours window from any existing kid allow grant.
+    const withCond = gs.find(g => g.id.startsWith(`kidallow:${person.name}:`) && g.condition)
+    if (withCond?.condition?.between) {
+      setHoursOn(true); setFrom(withCond.condition.between[1]); setTo(withCond.condition.between[2])
+    } else { setHoursOn(false) }
+  }).catch(() => setGrants([]))
+
+  useEffect(() => { load() }, [person.ref]) // eslint-disable-line
+
+  const enabled = useMemo(() => {
+    const s = new Set()
+    for (const g of grants || []) {
+      const pre = `kidallow:${person.name}:`
+      if (g.id.startsWith(pre) && g.effect === 'allow') s.add(g.id.slice(pre.length))
+    }
+    return s
+  }, [grants, person.name])
+
+  function conditionNow() {
+    return hoursOn ? { between: [{ var: 'time.local' }, from, to] } : null
+  }
+
+  async function toggleDevice(dev) {
+    const id = kidGrantId(person, dev)
+    setSaving(dev.id)
+    try {
+      if (enabled.has(dev.id)) {
+        await revokePermissionGrant(id)
+      } else {
+        await issuePermissionGrant({
+          id, principal: person.ref, effect: 'allow',
+          resource: { resource: dev.ref }, capability: KID_CAP, condition: conditionNow(),
+        })
+      }
+      await load(); onChange && onChange()
+    } finally { setSaving('') }
+  }
+
+  async function applyHours(nextOn, nextFrom, nextTo) {
+    setHoursOn(nextOn); if (nextFrom) setFrom(nextFrom); if (nextTo) setTo(nextTo)
+    const cond = nextOn ? { between: [{ var: 'time.local' }, nextFrom || from, nextTo || to] } : null
+    setSaving('hours')
+    try {
+      // Re-issue every enabled device grant with the new window (same id ⇒ overwrite).
+      for (const dev of ov.devices) {
+        if (!enabled.has(dev.id)) continue
+        await issuePermissionGrant({
+          id: kidGrantId(person, dev), principal: person.ref, effect: 'allow',
+          resource: { resource: dev.ref }, capability: KID_CAP, condition: cond,
+        })
+      }
+      await load(); onChange && onChange()
+    } finally { setSaving('') }
+  }
+
+  if (grants === null) return <div style={{ color: 'var(--ink-faint)', fontSize: 12, marginTop: 12 }}>Loading…</div>
+
+  const rooms = {}
+  for (const d of ov.devices) { (rooms[d.space_id || 'home'] ||= []).push(d) }
+
+  return (
+    <div>
+      <div style={{ ...eyebrow, margin: '18px 0 6px' }}>Devices {person.name} can use</div>
+      {Object.entries(rooms).map(([room, devs]) => (
+        <div key={room}>
+          <div style={{ fontSize: 11, fontWeight: 640, color: 'var(--ink-faint)', margin: '10px 0 2px',
+            textTransform: 'capitalize' }}>{(room || 'home').replace(/_/g, ' ')}</div>
+          {devs.map(d => {
+            const danger = DANGEROUS.has(d.class)
+            const on = enabled.has(d.id)
+            return (
+              <div key={d.ref} style={rowStyle}>
+                <div>
+                  <div style={{ fontSize: 13 }}>{(CLASS_ICON[d.class] || '•') + ' ' + d.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                    {danger ? 'Dangerous — kids can’t be given this' : d.class}</div>
+                </div>
+                <Toggle on={on} locked={danger} busy={saving === d.id}
+                  onClick={() => !danger && toggleDevice(d)} />
+              </div>
+            )
+          })}
+        </div>
+      ))}
+
+      <div style={{ ...eyebrow, margin: '18px 0 6px' }}>Allowed hours</div>
+      <div style={rowStyle}>
+        <div>
+          <div style={{ fontSize: 13 }}>Only during set hours</div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+            Outside this window, {person.name}’s controls are blocked</div>
+        </div>
+        <Toggle on={hoursOn} busy={saving === 'hours'}
+          onClick={() => applyHours(!hoursOn, from, to)} />
+      </div>
+      {hoursOn && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8 }}>
+          <input type="time" value={from} onChange={e => applyHours(true, e.target.value, to)}
+            style={timeInput} />
+          <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>to</span>
+          <input type="time" value={to} onChange={e => applyHours(true, from, e.target.value)}
+            style={timeInput} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+const rowStyle = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+  padding: '9px 0', borderTop: '1px solid var(--line-soft, var(--line))',
+}
+const timeInput = {
+  fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', background: 'var(--surface-2, var(--ground))',
+  border: '1px solid var(--line)', borderRadius: 9, padding: '6px 9px',
+}
+
+function Toggle({ on, locked, busy, onClick }) {
+  return (
+    <button onClick={onClick} disabled={locked || busy} aria-pressed={!!on} style={{
+      width: 42, height: 25, borderRadius: 99, border: 0, position: 'relative', flex: 'none',
+      cursor: locked ? 'not-allowed' : busy ? 'wait' : 'pointer', padding: 0, transition: '.2s',
+      opacity: busy ? 0.6 : 1,
+      background: locked ? 'var(--danger-soft, #fbe7e8)' : on ? 'var(--accent)' : 'var(--line)',
+    }}>
+      <span style={{
+        position: 'absolute', top: 2.5, width: 20, height: 20, borderRadius: '50%',
+        left: on ? 19.5 : 2.5, transition: '.2s', boxShadow: '0 1px 3px rgba(0,0,0,.3)',
+        background: locked ? 'var(--accent-strong, #dc4b52)' : '#fff',
+      }} />
+    </button>
+  )
+}
+
+function CapabilityMatrix({ person, ov, version }) {
   const checks = [
     { ico: '💡', label: 'Everyday devices (lights, media)', action: 'light.onoff', clsPick: 'light' },
     { ico: '🌡', label: 'Thermostat', action: 'climate.setpoint', clsPick: 'climate' },
@@ -260,7 +420,7 @@ function CapabilityMatrix({ person, ov }) {
     }
     run()
     return () => { live = false }
-  }, [person.ref, person.role]) // eslint-disable-line
+  }, [person.ref, person.role, version]) // eslint-disable-line
 
   if (!rows) return <div style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Checking…</div>
   return (
@@ -288,7 +448,7 @@ function Pill({ state }) {
     padding: '2px 8px', borderRadius: 6, color: c, background: bg }}>{t}</span>
 }
 
-function Playground({ person, ov }) {
+function Playground({ person, ov, version }) {
   const [device, setDevice] = useState(ov.devices[0]?.ref || '')
   const [channel, setChannel] = useState('app')
   const dev = ov.devices.find(d => d.ref === device)
@@ -310,7 +470,7 @@ function Playground({ person, ov }) {
     }).then(r => { if (live) setRes(r) }).catch(() => live && setRes(null))
       .finally(() => live && setLoading(false))
     return () => { live = false }
-  }, [person.ref, person.role, device, action, channel])
+  }, [person.ref, person.role, device, action, channel, version])
 
   return (
     <div style={card}>

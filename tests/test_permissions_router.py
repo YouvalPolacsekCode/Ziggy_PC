@@ -175,6 +175,45 @@ def test_bind_role_changes_access(client):
     assert after.json()["allowed"] is True
 
 
+def test_kid_device_allowlist_roundtrip(client):
+    """The per-kid toggle: issue a device-level allow grant, kid can now use
+    that device; the grants endpoint reflects it; revoke removes access."""
+    app, svc = client
+    svc.add_device("kr_light", "light", space_id="home")
+    c = _as(app, "super_admin", "emma")
+    # Kid can't use the light yet (default-deny).
+    d0 = c.post("/api/permissions/authorize/explain",
+                json={"subject": "person:noam", "action": "light.onoff",
+                      "resource": "device:kr_light"})
+    assert d0.json()["allowed"] is False
+    # Parent enables it via a device-level grant.
+    r = c.post("/api/permissions/grants", json={
+        "id": "kidallow:noam:kr_light", "principal": "person:noam", "effect": "allow",
+        "resource": {"resource": "device:kr_light"},
+        "capability": {"any_of": [{"scope_tag": "lighting"}]}})
+    assert r.status_code == 200
+    # Grants endpoint shows it.
+    gr = c.get("/api/permissions/principals/person:noam/grants")
+    assert any(g["id"] == "kidallow:noam:kr_light" for g in gr.json()["grants"])
+    # Kid can now use it.
+    d1 = c.post("/api/permissions/authorize/explain",
+                json={"subject": "person:noam", "action": "light.onoff",
+                      "resource": "device:kr_light"})
+    assert d1.json()["allowed"] is True
+    # Revoke → back to denied.
+    assert c.delete("/api/permissions/grants/kidallow:noam:kr_light").status_code == 200
+    d2 = c.post("/api/permissions/authorize/explain",
+                json={"subject": "person:noam", "action": "light.onoff",
+                      "resource": "device:kr_light"})
+    assert d2.json()["allowed"] is False
+
+
+def test_principal_grants_requires_admin(client):
+    app, _ = client
+    assert _as(app, "user", "noam").get(
+        "/api/permissions/principals/person:noam/grants").status_code == 403
+
+
 def test_audit_endpoint(client):
     app, _ = client
     c = _as(app, "super_admin", "emma")

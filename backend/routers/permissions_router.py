@@ -114,6 +114,15 @@ async def principal_capabilities(ref: str, resource: str = Query(...),
             "capabilities": get_service().capabilities_of(ref, resource)}
 
 
+@router.get("/api/permissions/principals/{ref:path}/grants")
+async def principal_grants(ref: str, user: dict = Depends(require_role("admin"))):
+    """A principal's direct grants — powers the per-person access editor (e.g.
+    the kid device allowlist), so the UI reflects exactly what is granted."""
+    st = get_service().state()
+    grants = [g.to_json() for g in st.grants.values() if g.principal.ref == ref]
+    return {"principal": ref, "grants": grants}
+
+
 @router.get("/api/permissions/resources/{ref:path}/principals")
 async def resource_principals(ref: str, action: str = Query(...),
                               user: dict = Depends(require_role("admin"))):

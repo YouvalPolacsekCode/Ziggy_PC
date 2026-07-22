@@ -1028,3 +1028,5 @@ export const getPermissionAudit = (params = {}) => {
   return get(`/permissions/audit${q ? '?' + q : ''}`)
 }
 export const bootstrapPermissions = () => post('/permissions/bootstrap', {})
+export const getPrincipalGrants = (ref) =>
+  get(`/permissions/principals/${encodeURIComponent(ref)}/grants`)
