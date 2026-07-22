@@ -302,6 +302,34 @@ async def bootstrap(user: dict = _admin):
     return {"status": "ok", "seeded": seeded, "scope": DEFAULT_HOME_SCOPE}
 
 
+@router.get("/api/permissions/overview")
+async def overview(user: dict = Depends(get_current_user)):
+    """Everything the People/permissions UI needs in one call: principals (with
+    their preset role if seeded via a legacy binding), spaces, and devices."""
+    svc = get_service()
+    st = svc.state()
+    people = []
+    for ref, meta in st.principals.items():
+        if not ref.startswith("person:"):
+            continue
+        # Infer the bound preset from the person's legacy binding, if any.
+        role = None
+        for b in st.bindings.values():
+            if b.get("principal") == ref:
+                role = b.get("role")
+                break
+        people.append({"ref": ref, "name": ref.split(":", 1)[1],
+                       "attrs": meta.get("attrs", {}), "role": role})
+    spaces = [{"id": s.id, "type": s.type, "parent_ids": s.parent_ids}
+              for s in st.spaces.values()]
+    devices = [{"ref": d.ref, "id": d.id, "class": d.device_class,
+                "space_id": d.space_id, "tags": sorted(d.tags),
+                "name": d.attrs.get("name", d.id)} for d in st.devices.values()]
+    return {"people": people, "spaces": spaces, "devices": devices,
+            "capabilities": [c.key for c in svc.capabilities.all()],
+            "presets": ["owner", "admin", "adult", "teen", "kid", "guest"]}
+
+
 @router.get("/api/permissions/audit")
 async def read_audit(subject: Optional[str] = None, resource: Optional[str] = None,
                      limit: int = 100, user: dict = Depends(require_role("admin"))):

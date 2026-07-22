@@ -100,6 +100,40 @@ def test_who_can_query(client):
     assert "person:noam" not in r.json()["principals"]
 
 
+def test_overview_returns_people_and_devices(client):
+    app, _ = client
+    c = _as(app, "user", "noam")
+    r = c.get("/api/permissions/overview")
+    assert r.status_code == 200
+    body = r.json()
+    names = {p["name"] for p in body["people"]}
+    assert {"emma", "noam"} <= names
+    assert any(d["id"] == "front_lock" for d in body["devices"])
+    assert "owner" in body["presets"]
+
+
+def test_bind_role_changes_access(client):
+    app, svc = client
+    c = _as(app, "super_admin", "emma")
+    # Noam starts as a kid → cannot unlock. Promote to adult → can (via app).
+    before = c.post("/api/permissions/authorize/explain",
+                    json={"subject": "person:noam", "action": "lock.unlock",
+                          "resource": "device:front_lock",
+                          "context": {"session": {"channel": "app", "trust_level": 3},
+                                      "subject": {"age": 20}}})
+    assert before.json()["allowed"] is False
+    r = c.post("/api/permissions/role-bindings",
+               json={"binding_id": "ui:noam", "principal": "person:noam",
+                     "scope": "space:home", "role": "adult"})
+    assert r.status_code == 200
+    after = c.post("/api/permissions/authorize/explain",
+                   json={"subject": "person:noam", "action": "lock.unlock",
+                         "resource": "device:front_lock",
+                         "context": {"session": {"channel": "app", "trust_level": 3},
+                                     "subject": {"age": 20}}})
+    assert after.json()["allowed"] is True
+
+
 def test_audit_endpoint(client):
     app, _ = client
     c = _as(app, "super_admin", "emma")

@@ -45,6 +45,7 @@ const HAUpdate        = lazy(() => import('./pages/HAUpdate'))
 const FeatureFlags    = lazy(() => import('./pages/FeatureFlags'))
 const OtaReleases     = lazy(() => import('./pages/OtaReleases'))
 const AuditLog        = lazy(() => import('./pages/AuditLog'))
+const People          = lazy(() => import('./pages/People'))
 const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
 const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
@@ -396,6 +397,7 @@ function AppRoutes() {
         <Route path="settings/home-sensing"  element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/mobile"        element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/users"         element={<UsersPage />} />
+        <Route path="people"                 element={<People />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
         <Route path="alerts" element={<Anomalies />} />

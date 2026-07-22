@@ -112,6 +112,13 @@ class PermissionService:
         subj.setdefault("ref", subject.ref)
         data["subject"] = subj
         data.setdefault("context", {"actor_kind": ActorKind.HUMAN.value})
+        # Canonicalize channel/trust to top-level so conditions authored against
+        # {"var": "channel"} / {"var": "session.trust_level"} work no matter how
+        # the caller nested them (ContextBuilder sets the alias; raw API dicts
+        # may only carry session.channel).
+        session = data.get("session") or {}
+        if "channel" not in data and session.get("channel"):
+            data["channel"] = session["channel"]
         return Context(data)
 
     # ------------------------------------------------------------------
@@ -205,6 +212,15 @@ class PermissionService:
         # write time, not silently mis-applied on replay.
         expand_role(role, principal=Principal.parse(principal), scope_ref=scope,
                     binding_id=binding_id, condition=condition, expires_at=expires_at)
+        # "Access Level" is singular per person per scope: a new binding REPLACES
+        # any prior binding for the same (principal, scope) so an old preset's
+        # grants (e.g. the kid deny-security) can't linger and shadow the new one.
+        state, _, _ = self._ensure()
+        for bid, meta in list(state.bindings.items()):
+            if bid == binding_id:
+                continue
+            if meta.get("principal") == principal and meta.get("scope") == scope:
+                self.unbind_role(bid, actor=actor)
         return self.store.append("role_bound", {
             "binding_id": binding_id, "principal": principal, "scope": scope,
             "role": role, "condition": condition, "expires_at": expires_at}, actor=actor)

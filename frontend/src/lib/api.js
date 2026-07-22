@@ -1009,3 +1009,22 @@ export const setDefaultDevicePreset   = (entityId, presetId) =>
   put(`/device/${encodeURIComponent(entityId)}/presets/${presetId}/default`)
 export const clearDefaultDevicePreset = (entityId) =>
   del(`/device/${encodeURIComponent(entityId)}/default`)
+
+// ── Permission platform (PDP) ──────────────────────────────────────────────
+// The People/permissions screens are clients of the policy engine. `overview`
+// returns principals + spaces + devices; `authorizeExplain` returns a full
+// allow/deny + obligations + trace for a (subject, action, resource, context).
+export const getPermissionsOverview = () => get('/permissions/overview')
+export const permissionsAuthorize = (body) => post('/permissions/authorize', body)
+export const permissionsExplain = (body) => post('/permissions/authorize/explain', body)
+export const bindPermissionRole = (body) => post('/permissions/role-bindings', body)
+export const issuePermissionGrant = (body) => post('/permissions/grants', body)
+export const revokePermissionGrant = (grantId, cascade = false) =>
+  del(`/permissions/grants/${encodeURIComponent(grantId)}${cascade ? '?cascade=true' : ''}`)
+export const whoCanDo = (resourceRef, action) =>
+  get(`/permissions/resources/${encodeURIComponent(resourceRef)}/principals?action=${encodeURIComponent(action)}`)
+export const getPermissionAudit = (params = {}) => {
+  const q = new URLSearchParams(params).toString()
+  return get(`/permissions/audit${q ? '?' + q : ''}`)
+}
+export const bootstrapPermissions = () => post('/permissions/bootstrap', {})
