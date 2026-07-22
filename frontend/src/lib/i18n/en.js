@@ -943,8 +943,6 @@ export default {
   'automations.precool.deleted':           'Pre-cool removed',
   'automations.precool.failed':            'Something went wrong — try again',
 
-  'automations.bundle.viewingHint':        'Viewing — tap Edit to make changes',
-  'automations.bundle.edit':               'Edit',
   'automations.confirmDelete.title':       'Remove this?',
   'automations.confirmDelete.body':        'Remove “{name}”? This can’t be undone.',
   'automations.confirmDelete.confirm':     'Remove',

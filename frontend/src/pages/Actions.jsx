@@ -22,7 +22,6 @@ import ClimateGroupRow from '../components/automations/ClimateGroupRow'
 import ClimateViewModal from '../components/automations/ClimateViewModal'
 import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
 import PrecoolWizard from '../components/automations/PrecoolWizard'
-import BundleGate from '../components/automations/BundleGate'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -349,16 +348,16 @@ export default function Automations() {
   }
   // Leave Home has its own dedicated modal — route both edit and view to it.
   const isLeaveHome = (a) => a?.id === 'ziggy_leave_home' || a?.id === 'leave_home' || (a?.name || '').toLowerCase() === 'leave home'
-  const openLeaveHome = async (automation, { locked = false } = {}) => {
+  const openLeaveHome = async (automation) => {
     const securityAlert = automations.some(a => a.id === 'ziggy_leave_home_alert')
-    try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, _locked: locked, securityAlert, ...(config || automation) }) }
-    catch { setLeaveHomeTarget({ _isInstalled: true, _locked: locked, securityAlert, ...automation }) }
+    try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...(config || automation) }) }
+    catch { setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...automation }) }
   }
   // Pre-cool on Arrival has its own dedicated modal — route both edit and view to it.
   const isPrecool = (a) => a?.id === 'ziggy_precool_arrival' || a?.id === 'precool_on_arrival' || (a?.name || '').toLowerCase().replace(/[^a-z]/g, '').includes('precool')
-  const openPrecool = async (automation, { locked = false } = {}) => {
-    try { const config = await loadAutomationConfig(automation.id); setPrecoolTarget({ _isInstalled: true, _locked: locked, ...(config || automation) }) }
-    catch { setPrecoolTarget({ _isInstalled: true, _locked: locked, ...automation }) }
+  const openPrecool = async (automation) => {
+    try { const config = await loadAutomationConfig(automation.id); setPrecoolTarget({ _isInstalled: true, ...(config || automation) }) }
+    catch { setPrecoolTarget({ _isInstalled: true, ...automation }) }
   }
   const handleEdit = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
@@ -368,8 +367,8 @@ export default function Automations() {
     setShowWizard(true)
   }
   const handleView = async (automation) => {
-    if (isLeaveHome(automation)) return openLeaveHome(automation, { locked: true })
-    if (isPrecool(automation)) return openPrecool(automation, { locked: true })
+    if (isLeaveHome(automation)) return openLeaveHome(automation)
+    if (isPrecool(automation)) return openPrecool(automation)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
   }
@@ -690,30 +689,26 @@ export default function Automations() {
       {/* Pre-cool on Arrival — dedicated view/edit (one modal). */}
       <Modal open={!!precoolTarget} onClose={() => setPrecoolTarget(null)} title={t('automations.precool.title')}>
         {precoolTarget && (
-          <BundleGate locked={!!precoolTarget._locked}>
-            <PrecoolWizard
-              key={precoolTarget._isInstalled ? 'edit' : 'new'}
-              initial={precoolTarget}
-              onSaved={handlePrecoolSaved}
-              onClose={() => setPrecoolTarget(null)}
-              confirmDelete={confirmDelete}
-            />
-          </BundleGate>
+          <PrecoolWizard
+            key={precoolTarget._isInstalled ? 'edit' : 'new'}
+            initial={precoolTarget}
+            onSaved={handlePrecoolSaved}
+            onClose={() => setPrecoolTarget(null)}
+            confirmDelete={confirmDelete}
+          />
         )}
       </Modal>
 
       {/* Leave Home — dedicated plain-language view/edit (one modal). */}
       <Modal open={!!leaveHomeTarget} onClose={() => setLeaveHomeTarget(null)} title={t('automations.leaveHome.title')}>
         {leaveHomeTarget && (
-          <BundleGate locked={!!leaveHomeTarget._locked}>
-            <LeaveHomeWizard
-              key={leaveHomeTarget._isInstalled ? 'edit' : 'new'}
-              initial={leaveHomeTarget}
-              onSaved={handleLeaveHomeSaved}
-              onClose={() => setLeaveHomeTarget(null)}
-              confirmDelete={confirmDelete}
-            />
-          </BundleGate>
+          <LeaveHomeWizard
+            key={leaveHomeTarget._isInstalled ? 'edit' : 'new'}
+            initial={leaveHomeTarget}
+            onSaved={handleLeaveHomeSaved}
+            onClose={() => setLeaveHomeTarget(null)}
+            confirmDelete={confirmDelete}
+          />
         )}
       </Modal>
 

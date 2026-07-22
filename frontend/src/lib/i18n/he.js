@@ -938,8 +938,6 @@ export default {
   'automations.precool.deleted':           'קירור לקראת הגעה הוסר',
   'automations.precool.failed':            'משהו השתבש — כדאי לנסות שוב',
 
-  'automations.bundle.viewingHint':        'צפייה — יש ללחוץ עריכה כדי לשנות',
-  'automations.bundle.edit':               'עריכה',
   'automations.confirmDelete.title':       'להסיר?',
   'automations.confirmDelete.body':        'להסיר את «{name}»? אי אפשר לבטל את זה.',
   'automations.confirmDelete.confirm':     'הסרה',
