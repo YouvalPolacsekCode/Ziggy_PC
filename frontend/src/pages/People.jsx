@@ -57,11 +57,26 @@ export default function People() {
   const [sel, setSel] = useState(null)
   const [busy, setBusy] = useState(false)
 
+  const [forbidden, setForbidden] = useState(false)
   const load = () => getPermissionsOverview()
     .then(d => { setOv(d); if (!sel && d.people?.length) setSel(d.people[0].ref) })
-    .catch(e => setErr(e?.message || 'Could not load permissions.'))
+    .catch(e => {
+      if (e?.status === 403) { setForbidden(true); return }
+      setErr(e?.message || 'Could not load permissions.')
+    })
 
   useEffect(() => { load() }, []) // eslint-disable-line
+
+  if (forbidden) return (
+    <Shell>
+      <div style={{ ...card, padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 30 }}>🔒</div>
+        <h3 style={{ margin: '10px 0 4px' }}>Admins only</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: 13, margin: 0 }}>
+          Managing people and permissions is limited to the home’s owner and admins.</p>
+      </div>
+    </Shell>
+  )
 
   const person = useMemo(() => ov?.people.find(p => p.ref === sel) || null, [ov, sel])
 

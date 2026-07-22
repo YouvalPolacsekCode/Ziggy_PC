@@ -102,7 +102,7 @@ def test_who_can_query(client):
 
 def test_overview_returns_people_and_devices(client):
     app, _ = client
-    c = _as(app, "user", "noam")
+    c = _as(app, "admin", "david")
     r = c.get("/api/permissions/overview")
     assert r.status_code == 200
     body = r.json()
@@ -110,6 +110,47 @@ def test_overview_returns_people_and_devices(client):
     assert {"emma", "noam"} <= names
     assert any(d["id"] == "front_lock" for d in body["devices"])
     assert "owner" in body["presets"]
+
+
+def test_overview_is_denied_to_non_admin(client):
+    """A kid/guest account must not be able to enumerate the household."""
+    app, _ = client
+    c = _as(app, "user", "noam")
+    assert c.get("/api/permissions/overview").status_code == 403
+
+
+def test_delegate_requires_holding_the_parent_grant(client):
+    """A non-admin cannot delegate a grant they do not hold (no escalation from
+    the owner's authority)."""
+    app, svc = client
+    # Owner (emma) holds a delegatable whole-home grant.
+    admin = _as(app, "super_admin", "emma")
+    admin.post("/api/permissions/grants", json={
+        "id": "emma_all", "principal": "person:emma", "resource": {"node": "space:home"},
+        "capability": "*", "delegatable": True, "max_depth": 1})
+    child = {"id": "steal", "principal": "person:noam", "resource": {"node": "space:home"},
+             "capability": {"scope_tag": "lighting"}}
+    # Noam (a plain user) tries to delegate FROM emma's grant → forbidden.
+    noam = _as(app, "user", "noam")
+    r = noam.post("/api/permissions/delegate",
+                  json={"parent_id": "emma_all", "child": child})
+    assert r.status_code == 403
+    # An admin may delegate on the household's behalf. (_as rebinds the shared
+    # app's auth override, so re-establish the admin identity before this call.)
+    admin2 = _as(app, "super_admin", "emma")
+    r2 = admin2.post("/api/permissions/delegate",
+                     json={"parent_id": "emma_all", "child": child})
+    assert r2.status_code == 200
+
+
+def test_delegate_unknown_parent_is_404(client):
+    app, _ = client
+    c = _as(app, "super_admin", "emma")
+    r = c.post("/api/permissions/delegate", json={
+        "parent_id": "ghost",
+        "child": {"id": "x", "principal": "person:noam",
+                  "resource": {"node": "space:home"}, "capability": "*"}})
+    assert r.status_code == 404
 
 
 def test_bind_role_changes_access(client):

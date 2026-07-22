@@ -268,13 +268,26 @@ class DelegateBody(BaseModel):
 
 @router.post("/api/permissions/delegate")
 async def delegate(body: DelegateBody, user: dict = Depends(get_current_user)):
+    from backend.routers.auth_deps import ROLE_ORDER
+    svc = get_service()
+    # Access control: you may only re-delegate a grant you actually HOLD (you are
+    # its principal), unless you're an admin. Attenuation alone is not enough —
+    # without this a guest could mint a subset of the owner's authority to
+    # themselves. Verify ownership of the parent grant before anything else.
+    parent = svc.state().grants.get(body.parent_id)
+    if parent is None:
+        raise HTTPException(status_code=404, detail="Unknown parent grant.")
+    is_admin = ROLE_ORDER.get(user.get("role", "user"), 0) >= ROLE_ORDER["admin"]
+    if not is_admin and parent.principal.ref != _self_ref(user):
+        raise HTTPException(status_code=403,
+                            detail="You can only delegate a grant you hold.")
     c = body.child
     child = Grant(
         id=c.id, principal=Principal.parse(c.principal), effect=Effect(c.effect),
         resource=c.resource, capability=c.capability, condition=c.condition,
         expires_at=c.expires_at, max_uses=c.max_uses)
     try:
-        seq = get_service().delegate(body.parent_id, child, actor=_self_ref(user))
+        seq = svc.delegate(body.parent_id, child, actor=_self_ref(user))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status": "ok", "seq": seq}
@@ -303,9 +316,13 @@ async def bootstrap(user: dict = _admin):
 
 
 @router.get("/api/permissions/overview")
-async def overview(user: dict = Depends(get_current_user)):
+async def overview(user: dict = Depends(require_role("admin"))):
     """Everything the People/permissions UI needs in one call: principals (with
-    their preset role if seeded via a legacy binding), spaces, and devices."""
+    their preset role if seeded via a legacy binding), spaces, and devices.
+
+    Admin-gated: it enumerates every household member (names, ages, roles) and
+    every device, which a kid/guest account must not be able to read. Managing
+    people is an Owner/Admin function, matching the product's role model."""
     svc = get_service()
     st = svc.state()
     people = []
