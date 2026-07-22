@@ -58,6 +58,7 @@ from backend.routers.alerts_router import router as alerts_router
 from backend.routers.lifecycle_router import router as lifecycle_router
 from backend.routers.onboarding_router import router as onboarding_router
 from backend.routers.consent_router import router as consent_router
+from backend.routers.permissions_router import router as permissions_router
 
 app = FastAPI(title="Ziggy API", version="1.0")
 
@@ -514,6 +515,10 @@ app.include_router(lifecycle_router,     dependencies=_auth)
 # Consent capture/gating (voice transcript, support tunnel, background location).
 # Reads authenticated; record is owner-gated at the handler level.
 app.include_router(consent_router,       dependencies=_auth)
+# Permission platform (PDP). Every route carries its own get_current_user /
+# require_role gate; the global _auth is belt-and-suspenders. Additive — the
+# legacy require_role model elsewhere is untouched.
+app.include_router(permissions_router,   dependencies=_auth)
 # presence_router registers WITHOUT global _auth — its public routes (/ping, /join,
 # /manifest.json) are token-secured at the handler level; protected read/write routes
 # carry their own Depends(get_current_user) or Depends(require_role) directly.
