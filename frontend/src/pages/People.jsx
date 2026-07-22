@@ -365,6 +365,11 @@ function KidAccess({ person, ov, onChange }) {
 
   if (grants === null) return <div style={{ color: 'var(--ink-faint)', fontSize: 12, marginTop: 12 }}>Loading…</div>
 
+  // Real HA area names from the overview (fall back to the humanized slug).
+  const spaceName = {}
+  for (const s of ov.spaces || []) { if (s.name) spaceName[s.id] = s.name }
+  const roomLabel = (key) => spaceName[key] || humanizeRoom(key)
+
   // Only the real controllable device tiles — not the sub-entity sensors.
   const tiles = ov.devices.filter(d => CONTROLLABLE.has(d.class))
   const rooms = {}
@@ -386,7 +391,7 @@ function KidAccess({ person, ov, onChange }) {
                 <span className="chev">▸</span>
                 <span style={{ textTransform: 'capitalize', fontWeight: 550, fontSize: 13,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {humanizeRoom(room)}</span>
+                  {roomLabel(room)}</span>
               </span>
               <span style={{ fontSize: 11.5, color: onCount ? 'var(--accent)' : 'var(--ink-faint)',
                 flex: 'none', fontWeight: 550 }}>{onCount}/{devs.length} on</span>

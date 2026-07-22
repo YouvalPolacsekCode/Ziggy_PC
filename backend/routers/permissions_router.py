@@ -346,7 +346,18 @@ async def overview(user: dict = Depends(require_role("admin"))):
                 break
         people.append({"ref": ref, "name": ref.split(":", 1)[1],
                        "attrs": meta.get("attrs", {}), "role": role})
-    spaces = [{"id": s.id, "type": s.type, "parent_ids": s.parent_ids}
+    # Real HA area names for rooms (the ziggy room key IS the HA area_id). Live +
+    # cached; falls back to the slug if HA is unreachable so the page still loads.
+    area_name: dict = {}
+    try:
+        from services import ha_areas
+        for a in (await ha_areas.get_areas()):
+            if a.get("id"):
+                area_name[a["id"]] = a.get("name")
+    except Exception:
+        pass
+    spaces = [{"id": s.id, "type": s.type, "parent_ids": s.parent_ids,
+               "name": ("Home" if s.type == "home" else area_name.get(s.id))}
               for s in st.spaces.values()]
     devices = [{"ref": d.ref, "id": d.id, "class": d.device_class,
                 "space_id": d.space_id, "tags": sorted(d.tags),
