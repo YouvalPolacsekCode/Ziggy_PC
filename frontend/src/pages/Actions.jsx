@@ -131,7 +131,9 @@ export default function Automations() {
       // Night Watch's alert + disarm stages are plumbing — only the activate
       // stage (ziggy_night_watch) shows as the card.
       && a.id !== 'ziggy_night_watch_alert' && a.id !== 'ziggy_night_watch_disarm'
-      && a.id !== 'night_watch_alert' && a.id !== 'night_watch_disarm')
+      && a.id !== 'night_watch_alert' && a.id !== 'night_watch_disarm'
+      // Motion Light per-room stages fold into the one Motion Light card.
+      && !(a.id || '').startsWith('ziggy_motion_light_'))
 
     let circadianGroup = null
     if (circMembers.length > 0) {
@@ -785,6 +787,7 @@ export default function Automations() {
           <MotionLightWizard
             key={motionLightTarget._isInstalled ? 'edit' : 'new'}
             initial={motionLightTarget}
+            automations={automations}
             onSaved={handleMotionLightSaved}
             onClose={() => setMotionLightTarget(null)}
             confirmDelete={confirmDelete}
