@@ -679,9 +679,20 @@ export default function App() {
     if (!ZP) return
 
     const HOME_GEOFENCE_ID = 'home'
+    const NEAR_HOME_GEOFENCE_ID = 'home_near'
+    const NEAR_HOME_RADIUS_M = 2500      // wide approach ring — boost precision starts here
+    const BOOST_MAX_MS = 20 * 60 * 1000  // stop the precision boost after 20 min if we never arrive
     const TRACK_ME_KEY = 'ziggy_track_me_on'
     const MIN_PING_INTERVAL_MS = 15 * 1000
     const isOn = () => localStorage.getItem(TRACK_ME_KEY) === '1'
+    // Android only shows a persistent notification while the continuous
+    // foreground service runs, so on Android we DON'T run it at rest — the base
+    // state is geofence + LAN (no notification). Precision spins up only while
+    // you're inside the approach ring (smart-boost), so the notification appears
+    // for those few minutes and reads as the feature it is. iOS uses
+    // significant-location-changes in the background with no notification at all.
+    const isAndroid = window?.Capacitor?.getPlatform?.() === 'android'
+    const BOOST_NOTIF = { title: 'Ziggy', text: 'Getting your home ready for you…' }
 
     let listeners = []
     let alive = true
@@ -728,6 +739,30 @@ export default function App() {
       } catch {}
     }
 
+    // ── Smart-boost (Android) ─────────────────────────────────────────────
+    // Spin the continuous foreground tracker up ONLY while you're heading home
+    // (inside the wide approach ring), so Pre-cool gets precise timing — then
+    // shut it back off on arrival. This is what lets Android stay
+    // notification-free at rest while keeping Pre-cool sharp. No-op on iOS
+    // (its background SLC already runs, notification-free).
+    let boostOn = false
+    let boostTimer = null
+    const startBoost = async () => {
+      if (!isAndroid || boostOn) return
+      boostOn = true
+      try {
+        await ZP.startBackgroundLocation({ accuracy: 'high', distance_filter_m: 25, android_foreground_notification: BOOST_NOTIF })
+      } catch { boostOn = false }
+      if (boostTimer) clearTimeout(boostTimer)
+      boostTimer = setTimeout(() => { stopBoost() }, BOOST_MAX_MS)
+    }
+    const stopBoost = async () => {
+      if (boostTimer) { clearTimeout(boostTimer); boostTimer = null }
+      if (!isAndroid || !boostOn) return
+      boostOn = false
+      try { await ZP.stopBackgroundLocation() } catch {}
+    }
+
     const start = async () => {
       if (started) return
       try {
@@ -748,7 +783,9 @@ export default function App() {
       } catch {}
       if (!alive) return
 
-      // Geofence the home zone (radius floored at 100 m — the iOS region minimum).
+      // Geofence the home zone (radius floored at 100 m — the iOS region minimum)
+      // PLUS a wide "near home" approach ring. Home = arrive/leave; near-home
+      // enter = the cue to boost precision for Pre-cool.
       try {
         const z = await getPresenceZone()
         if (z?.lat != null && z?.lon != null) {
@@ -760,17 +797,40 @@ export default function App() {
             notify_on_enter: true,
             notify_on_exit: true,
           })
+          try {
+            await ZP.addGeofence({
+              id: NEAR_HOME_GEOFENCE_ID,
+              lat: z.lat,
+              lon: z.lon,
+              radius_m: NEAR_HOME_RADIUS_M,
+              notify_on_enter: true,
+              notify_on_exit: false,
+            })
+          } catch {}
         }
       } catch {}
 
-      try { await ZP.startBackgroundLocation({ accuracy: 'balanced', distance_filter_m: 50 }) } catch {}
+      // iOS: significant-location-changes in the background (no notification).
+      // Android: stay notification-free at rest — geofence + LAN cover presence;
+      // precision boosts only inside the approach ring (see the geofence handler).
+      if (!isAndroid) {
+        try { await ZP.startBackgroundLocation({ accuracy: 'balanced', distance_filter_m: 50 }) } catch {}
+      }
       try { await ZP.startActivityRecognition() } catch {}
 
       try {
         const l1 = await ZP.addListener('location', (e) => {
           if (e && typeof e.lat === 'number') postPing(e.lat, e.lon, e.accuracy_m)
         })
-        const l2 = await ZP.addListener('geofence', () => { pingFreshFix() })
+        const l2 = await ZP.addListener('geofence', (ev) => {
+          pingFreshFix()
+          // Smart-boost: crossing INTO the wide approach ring → boost precision
+          // for Pre-cool; arriving home → stop it (notification gone).
+          if (ev?.transition === 'enter') {
+            if (ev.id === HOME_GEOFENCE_ID) stopBoost()
+            else startBoost()
+          }
+        })
         listeners.push(l1, l2)
       } catch {}
 
@@ -797,6 +857,7 @@ export default function App() {
     const stop = async ({ full }) => {
       for (const l of listeners) { try { await l.remove?.() } catch {} }
       listeners = []
+      await stopBoost()
       if (!full) { started = false; return }
       if (!started) return
       started = false
@@ -804,6 +865,7 @@ export default function App() {
       try { await ZP.stopBackgroundLocation() } catch {}
       try { await ZP.stopActivityRecognition() } catch {}
       try { await ZP.removeGeofence({ id: HOME_GEOFENCE_ID }) } catch {}
+      try { await ZP.removeGeofence({ id: NEAR_HOME_GEOFENCE_ID }) } catch {}
     }
 
     const sync = () => {

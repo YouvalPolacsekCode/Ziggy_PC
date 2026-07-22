@@ -814,7 +814,11 @@ function LocationStep({ onDone }) {
         // geofences, plus any extra zones the backend already knows about
         // (Work, Gym, School, …). Failures here are non-fatal — onboarding
         // continues even if geofences can't be added so the user isn't blocked.
-        if (status === 'always' || status === 'while_using') {
+        // iOS: kick off background significant-location (no notification).
+        // Android: stay notification-free — geofences (below) + LAN cover it;
+        // the continuous tracker only runs while approaching home (smart-boost
+        // in App.jsx). So don't start it here.
+        if ((status === 'always' || status === 'while_using') && window?.Capacitor?.getPlatform?.() !== 'android') {
           try { await Pres.startBackgroundLocation({ accuracy: 'balanced' }) } catch {}
         }
         if (status === 'always') {

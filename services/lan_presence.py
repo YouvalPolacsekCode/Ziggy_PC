@@ -54,8 +54,11 @@ _DEFAULTS = {
     # last fix still puts the person inside the home zone and it's no older than
     # this. Stops a Wi-Fi nap (battery saver, overnight) from reading as a
     # departure now that background GPS is the authoritative position signal.
-    # 0 disables the veto (pure LAN behaviour).
-    "lan_grace_gps_veto_minutes": 180,
+    # 0 disables the veto (pure LAN behaviour). Generous because presence now
+    # runs geofence-first (continuous GPS only while approaching home), so a
+    # phone sitting home sends no fresh fix for hours — but a real departure
+    # fires a geofence-exit fresh fix that moves the position and lifts the veto.
+    "lan_grace_gps_veto_minutes": 720,
     "lan_use_tcp_probe":          False,
     "lan_tcp_probe_ports":        [62078, 5353],
     "lan_icmp_timeout_seconds":   2,
