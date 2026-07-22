@@ -394,23 +394,31 @@ function Toggle({ on, locked, busy, onClick }) {
 }
 
 function CapabilityMatrix({ person, ov, version }) {
-  const checks = [
-    { ico: '💡', label: 'Everyday devices (lights, media)', action: 'light.onoff', clsPick: 'light' },
-    { ico: '🌡', label: 'Thermostat', action: 'climate.setpoint', clsPick: 'climate' },
-    { ico: '🔒', label: 'Unlock the front door', action: 'lock.unlock', clsPick: 'lock' },
-    { ico: '📷', label: 'View cameras', action: 'camera.live', clsPick: 'camera' },
+  // Only offer checks for capabilities this home actually has — no thermostat
+  // device ⇒ no "Thermostat" row, etc. Each check picks the first present
+  // device of its class(es) and is evaluated against that real device.
+  const CHECKS = [
+    { ico: '💡', label: 'Lights', action: 'light.onoff', classes: ['light', 'switch'] },
+    { ico: '📺', label: 'Media & TV', action: 'media.playback', classes: ['media'] },
+    { ico: '🌡', label: 'Thermostat', action: 'climate.setpoint', classes: ['climate'] },
+    { ico: '🔒', label: 'Unlock the front door', action: 'lock.unlock', classes: ['lock'] },
+    { ico: '🚪', label: 'Garage', action: 'cover.open', classes: ['garage'] },
+    { ico: '🛡', label: 'Disarm the alarm', action: 'alarm.disarm', classes: ['alarm'] },
+    { ico: '📷', label: 'View cameras', action: 'camera.live', classes: ['camera'] },
   ]
+  const present = useMemo(() => CHECKS
+    .map(c => ({ ...c, dev: ov.devices.find(d => c.classes.includes(d.class)) }))
+    .filter(c => c.dev), [ov.devices]) // eslint-disable-line
+
   const [rows, setRows] = useState(null)
   useEffect(() => {
     let live = true
     async function run() {
       const out = []
-      for (const c of checks) {
-        const dev = ov.devices.find(d => d.class === c.clsPick)
-        if (!dev) { out.push({ ...c, state: 'n/a' }); continue }
+      for (const c of present) {
         try {
           const r = await permissionsExplain({
-            subject: person.ref, action: c.action, resource: dev.ref,
+            subject: person.ref, action: c.action, resource: c.dev.ref,
             context: { session: { channel: 'app', trust_level: 3 } },
           })
           out.push({ ...c, state: r.allowed ? 'yes' : 'no' })
@@ -423,6 +431,10 @@ function CapabilityMatrix({ person, ov, version }) {
   }, [person.ref, person.role, version]) // eslint-disable-line
 
   if (!rows) return <div style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Checking…</div>
+  if (!rows.length) return (
+    <div style={{ color: 'var(--ink-faint)', fontSize: 12.5 }}>
+      No controllable devices in this home yet.</div>
+  )
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
       {rows.map((r, i) => (
