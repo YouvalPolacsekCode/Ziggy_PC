@@ -60,6 +60,16 @@ function deviceName(d) {
 function resourceName(ref) {
   return humanizeId((ref || '').split(':').slice(1).join(':'))
 }
+// Room keys lose the apostrophe ("roni's room" → "roni_s_room"). Restore the
+// possessive so the header reads "Roni's Room" (CSS capitalize handles case),
+// not "Roni S Room".
+function humanizeRoom(key) {
+  return (key || 'home')
+    .replace(/_s_/g, "'s ")
+    .replace(/_s$/, "'s")
+    .replace(/_/g, ' ')
+    .trim()
+}
 
 function capsForClass(cls, allCaps) {
   const byCls = { light: ['light.onoff', 'light.brightness'], media: ['media.playback'],
@@ -376,7 +386,7 @@ function KidAccess({ person, ov, onChange }) {
                 <span className="chev">▸</span>
                 <span style={{ textTransform: 'capitalize', fontWeight: 550, fontSize: 13,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {(room || 'home').replace(/_/g, ' ')}</span>
+                  {humanizeRoom(room)}</span>
               </span>
               <span style={{ fontSize: 11.5, color: onCount ? 'var(--accent)' : 'var(--ink-faint)',
                 flex: 'none', fontWeight: 550 }}>{onCount}/{devs.length} on</span>

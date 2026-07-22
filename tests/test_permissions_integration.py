@@ -74,6 +74,24 @@ def test_reconcile_backfills_name_on_change(svc):
     assert svc.state().devices["light.x"].attrs["name"] == "X"
 
 
+def test_reconcile_skips_ha_internal_entities(svc):
+    # permit-join, per-device config switches and battery sub-entities are HA/Z2M
+    # internals — they must never enter the permission model as devices.
+    reconcile_devices(svc, [
+        {"entity_id": "light.lamp", "room": "den", "device_type": "light"},
+        {"entity_id": "switch.zigbee2mqtt_bridge_permit_join", "room": "den", "device_type": "switch"},
+        {"entity_id": "switch.0x1234_do_not_disturb", "room": "den", "device_type": "switch"},
+        {"entity_id": "switch.0x1234_child_lock", "room": "den", "device_type": "switch"},
+        {"entity_id": "sensor.lamp_battery", "room": "den", "device_type": "sensor"},
+    ])
+    devs = set(svc.state().devices)
+    assert "light.lamp" in devs
+    assert "switch.zigbee2mqtt_bridge_permit_join" not in devs
+    assert "switch.0x1234_do_not_disturb" not in devs
+    assert "switch.0x1234_child_lock" not in devs
+    assert "sensor.lamp_battery" not in devs
+
+
 def test_reconcile_is_idempotent(svc):
     reconcile_devices(svc, REGISTRY_DEVICES)
     seq1 = svc.store.latest_seq()

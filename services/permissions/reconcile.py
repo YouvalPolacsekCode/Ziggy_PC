@@ -97,11 +97,19 @@ def reconcile_devices(service: PermissionService, devices: list[dict],
                               actor="system:reconcile")
             counts["spaces_added"] += 1
 
+    # Skip HA/Z2M internals (permit-join, per-device config switches, battery/
+    # firmware sub-entities, …) using the app's canonical filter, so the
+    # permission model never lists a non-device entity.
+    try:
+        from services.entity_filter import _should_hide
+    except Exception:
+        _should_hide = lambda _eid: False  # noqa: E731 - defensive fallback
+
     # Desired devices.
     desired: dict[str, dict] = {}
     for d in devices:
         eid = d.get("entity_id")
-        if not eid:
+        if not eid or _should_hide(eid):
             continue
         desired[eid] = {
             "class": _class_for(d.get("device_type")),

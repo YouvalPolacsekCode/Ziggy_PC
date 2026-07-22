@@ -58,6 +58,14 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         r"^sensor\.sun_next_",         # all HA sun sub-sensors — data available via global_sensors, not devices
         r"^sensor\.phone_",            # HA Companion app sensors (battery, charger, etc.)
         r"^(sensor|binary_sensor)\.sagemcom_", # router integration entities (speed, IP, WAN status)
+        # Zigbee2MQTT per-device CONFIG switches + the coordinator's permit-join
+        # toggle. These are HA/Z2M internals, never user-facing "devices" — they
+        # were leaking into device lists (and the permission kid-allowlist) as
+        # stray switches.
+        r"_permit_join$",
+        r"_do_not_disturb$",
+        r"_child_lock$",
+        r"_power_on_behavior$",
     ]
 ]
 
