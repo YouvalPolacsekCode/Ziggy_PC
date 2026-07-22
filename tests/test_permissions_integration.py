@@ -82,13 +82,17 @@ def test_reconcile_skips_ha_internal_entities(svc):
         {"entity_id": "switch.zigbee2mqtt_bridge_permit_join", "room": "den", "device_type": "switch"},
         {"entity_id": "switch.0x1234_do_not_disturb", "room": "den", "device_type": "switch"},
         {"entity_id": "switch.0x1234_child_lock", "room": "den", "device_type": "switch"},
+        {"entity_id": "switch.0x54ef_ai_sensitivity_adaptive", "room": "den", "device_type": "switch"},
         {"entity_id": "sensor.lamp_battery", "room": "den", "device_type": "sensor"},
+        {"entity_id": "switch.0x60a423", "room": "den", "device_type": "switch"},  # real plug — keep
     ])
     devs = set(svc.state().devices)
     assert "light.lamp" in devs
+    assert "switch.0x60a423" in devs  # a real relay switch is NOT hidden
     assert "switch.zigbee2mqtt_bridge_permit_join" not in devs
     assert "switch.0x1234_do_not_disturb" not in devs
     assert "switch.0x1234_child_lock" not in devs
+    assert "switch.0x54ef_ai_sensitivity_adaptive" not in devs
     assert "sensor.lamp_battery" not in devs
 
 

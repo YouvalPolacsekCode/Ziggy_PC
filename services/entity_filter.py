@@ -66,6 +66,11 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         r"_do_not_disturb$",
         r"_child_lock$",
         r"_power_on_behavior$",
+        # Aqara FP presence-sensor AI config toggles (ai_sensitivity_adaptive,
+        # ai_interference_source_selfidentification, …). Z2M exposes these as
+        # plain switches with no entity_category, so they masquerade as devices;
+        # "_ai_" in a switch id is never a real controllable device.
+        r"^switch\..*_ai_",
     ]
 ]
 
