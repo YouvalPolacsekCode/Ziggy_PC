@@ -42,6 +42,12 @@ class AutomationBody(BaseModel):
     # save_automation already reads data["conditions"] / data["mode"].
     conditions: Optional[list] = []
     mode: Optional[str] = "single"
+    # Paired multi-stage automations (e.g. Night Watch): save_automation fans
+    # these out atomically via _save_paired_automation. Declared so the wizard's
+    # payload survives model_dump (Pydantic v2 drops undeclared fields).
+    paired: Optional[bool] = False
+    stages: Optional[list] = None
+    base_id: Optional[str] = None
 
 
 class OccupancySensorBody(BaseModel):

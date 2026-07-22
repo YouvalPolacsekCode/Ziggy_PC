@@ -796,24 +796,14 @@ def _child_room_monitor(cap_map: dict) -> dict:
 
 
 def _motion_night_light(cap_map: dict) -> dict:
-    motion = first_entity(cap_map, "motion_sensor")
-    light  = first_entity(cap_map, "light_on_off")
-
-    # Night-only ships as a prefilled condition the user can simply delete in
-    # the wizard to make the light all-hours (this is THE one motion-light
-    # template — see curation note in the registry).
-    conditions = [{"type": "time", "after": "21:00", "before": "07:00"}]
-
+    # Dedicated wizard (MotionLightWizard.jsx) owns the real build — all/chosen
+    # motion sensors + lights, brightness, linger, night-only window, and a
+    # re-extending off (wait_for_state + executor dedup). This just marks the
+    # bundle.
     return {
+        "bundle":      "motion_light",
         "name":        "Motion Light",
-        "description": "Turns on a light when motion is detected (night-only by default), off after 2 min",
-        "trigger":     {"type": "state", "entity_id": motion or "", "state": "on"},
-        "conditions":  conditions,
-        "actions":     [
-            {"type": "call_service", "entity_id": light or "", "service": "homeassistant.turn_on",  "service_value": "turn_on"},
-            {"type": "delay",        "seconds": 120},
-            {"type": "call_service", "entity_id": light or "", "service": "homeassistant.turn_off", "service_value": "turn_off"},
-        ],
+        "description": "Light on when you walk in, off a while after the motion stops",
         "rooms":       [],
     }
 
@@ -839,6 +829,18 @@ def _motion_night_light(cap_map: dict) -> dict:
 # saved disabled and not armed until Stage 1 fires.
 
 def _night_watch(cap_map: dict) -> dict:
+    # Dedicated wizard (NightWatchWizard.jsx) owns the real build — it emits the
+    # paired 3-stage structure (activate/alert/disarm) with the user's sensors,
+    # time, dim level, lights, and localized copy. This just marks the bundle.
+    return {
+        "bundle":      "night_watch",
+        "name":        "Night Watch",
+        "description": "Dim the lights once you're in bed, and quietly alert you if something stirs while you sleep.",
+        "rooms":       [],
+    }
+
+
+def _night_watch_legacy(cap_map: dict) -> dict:
     bedroom_sensor      = first_entity(cap_map, "presence_sensor")
     living_room_sensor  = first_entity(cap_map, "presence_sensor", "motion_sensor")
 

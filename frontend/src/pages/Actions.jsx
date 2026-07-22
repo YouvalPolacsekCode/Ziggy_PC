@@ -23,6 +23,8 @@ import ClimateViewModal from '../components/automations/ClimateViewModal'
 import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
 import PrecoolWizard from '../components/automations/PrecoolWizard'
 import WindowAcWizard from '../components/automations/WindowAcWizard'
+import MotionLightWizard from '../components/automations/MotionLightWizard'
+import NightWatchWizard from '../components/automations/NightWatchWizard'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -84,6 +86,9 @@ export default function Automations() {
   const [precoolTarget,     setPrecoolTarget]     = useState(null)
   // Window Open — AC Off — dedicated wizard (smart/IR AC, notify vs auto-off).
   const [windowAcTarget,    setWindowAcTarget]    = useState(null)
+  // Motion Light + Night Watch — dedicated wizards.
+  const [motionLightTarget, setMotionLightTarget] = useState(null)
+  const [nightWatchTarget,  setNightWatchTarget]  = useState(null)
   // Promise-based delete confirmation shared by every card / view / wizard
   // delete path — nothing gets removed without a second, explicit yes.
   const [confirmState,      setConfirmState]      = useState(null)   // { label, resolve }
@@ -122,7 +127,11 @@ export default function Automations() {
     const visible = automations.filter(a =>
       !a.id?.startsWith(CIRCADIAN_PREFIX) && !SMART_ROOM_RE.test(a.id || '')
       // The away-alert is managed inside the Leave Home wizard, not its own card.
-      && a.id !== 'ziggy_leave_home_alert')
+      && a.id !== 'ziggy_leave_home_alert'
+      // Night Watch's alert + disarm stages are plumbing — only the activate
+      // stage (ziggy_night_watch) shows as the card.
+      && a.id !== 'ziggy_night_watch_alert' && a.id !== 'ziggy_night_watch_disarm'
+      && a.id !== 'night_watch_alert' && a.id !== 'night_watch_disarm')
 
     let circadianGroup = null
     if (circMembers.length > 0) {
@@ -197,6 +206,16 @@ export default function Automations() {
     // Window Open — AC Off — dedicated wizard.
     if (template.wizard_prefill.bundle === 'window_ac') {
       setWindowAcTarget({ _isInstalled: false, ...template.wizard_prefill })
+      return
+    }
+    // Motion Light — dedicated wizard.
+    if (template.wizard_prefill.bundle === 'motion_light') {
+      setMotionLightTarget({ _isInstalled: false, ...template.wizard_prefill })
+      return
+    }
+    // Night Watch — dedicated wizard (paired 3-stage).
+    if (template.wizard_prefill.bundle === 'night_watch') {
+      setNightWatchTarget({ _isInstalled: false, ...template.wizard_prefill })
       return
     }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
@@ -373,10 +392,22 @@ export default function Automations() {
     try { const config = await loadAutomationConfig(automation.id); setWindowAcTarget({ _isInstalled: true, ...(config || automation) }) }
     catch { setWindowAcTarget({ _isInstalled: true, ...automation }) }
   }
+  const isMotionLight = (a) => a?.id === 'ziggy_motion_light' || a?.id === 'motion_night_light' || (a?.name || '').toLowerCase() === 'motion light'
+  const openMotionLight = async (automation) => {
+    try { const config = await loadAutomationConfig(automation.id); setMotionLightTarget({ _isInstalled: true, ...(config || automation) }) }
+    catch { setMotionLightTarget({ _isInstalled: true, ...automation }) }
+  }
+  const isNightWatch = (a) => a?.id === 'ziggy_night_watch' || a?.id === 'night_watch' || (a?.name || '').toLowerCase() === 'night watch'
+  const openNightWatch = async (automation) => {
+    try { const config = await loadAutomationConfig(automation.id); setNightWatchTarget({ _isInstalled: true, ...(config || automation) }) }
+    catch { setNightWatchTarget({ _isInstalled: true, ...automation }) }
+  }
   const handleEdit = async (automation) => {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
     if (isPrecool(automation)) return openPrecool(automation)
     if (isWindowAc(automation)) return openWindowAc(automation)
+    if (isMotionLight(automation)) return openMotionLight(automation)
+    if (isNightWatch(automation)) return openNightWatch(automation)
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
     catch { setEditTarget(automation) }
     setShowWizard(true)
@@ -385,6 +416,8 @@ export default function Automations() {
     if (isLeaveHome(automation)) return openLeaveHome(automation)
     if (isPrecool(automation)) return openPrecool(automation)
     if (isWindowAc(automation)) return openWindowAc(automation)
+    if (isMotionLight(automation)) return openMotionLight(automation)
+    if (isNightWatch(automation)) return openNightWatch(automation)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
   }
@@ -404,6 +437,18 @@ export default function Automations() {
     setWindowAcTarget(null)
     addToast(removed ? t('automations.windowAc.deleted')
              : (updated ? t('automations.windowAc.updated') : t('automations.windowAc.saved')), 'success')
+    await fetchAutomations({ force: true })
+  }
+  const handleMotionLightSaved = async ({ updated, removed }) => {
+    setMotionLightTarget(null)
+    addToast(removed ? t('automations.motionLight.deleted')
+             : (updated ? t('automations.motionLight.updated') : t('automations.motionLight.saved')), 'success')
+    await fetchAutomations({ force: true })
+  }
+  const handleNightWatchSaved = async ({ updated, removed }) => {
+    setNightWatchTarget(null)
+    addToast(removed ? t('automations.nightWatch.deleted')
+             : (updated ? t('automations.nightWatch.updated') : t('automations.nightWatch.saved')), 'success')
     await fetchAutomations({ force: true })
   }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
@@ -729,6 +774,32 @@ export default function Automations() {
             initial={windowAcTarget}
             onSaved={handleWindowAcSaved}
             onClose={() => setWindowAcTarget(null)}
+            confirmDelete={confirmDelete}
+          />
+        )}
+      </Modal>
+
+      {/* Motion Light — dedicated view/edit (one modal). */}
+      <Modal open={!!motionLightTarget} onClose={() => setMotionLightTarget(null)} title={t('automations.motionLight.title')}>
+        {motionLightTarget && (
+          <MotionLightWizard
+            key={motionLightTarget._isInstalled ? 'edit' : 'new'}
+            initial={motionLightTarget}
+            onSaved={handleMotionLightSaved}
+            onClose={() => setMotionLightTarget(null)}
+            confirmDelete={confirmDelete}
+          />
+        )}
+      </Modal>
+
+      {/* Night Watch — dedicated view/edit (one modal). */}
+      <Modal open={!!nightWatchTarget} onClose={() => setNightWatchTarget(null)} title={t('automations.nightWatch.title')}>
+        {nightWatchTarget && (
+          <NightWatchWizard
+            key={nightWatchTarget._isInstalled ? 'edit' : 'new'}
+            initial={nightWatchTarget}
+            onSaved={handleNightWatchSaved}
+            onClose={() => setNightWatchTarget(null)}
             confirmDelete={confirmDelete}
           />
         )}

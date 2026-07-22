@@ -17,6 +17,7 @@ const LIBRARY_EMOJI = {
   smart_climate:       '🌡️',
   child_room_monitor:  '👶',
   motion_night_light:  '👣',
+  motion_light:        '👣',
   night_watch:         '🌃',
   circadian_lighting:  '🌅',
   smart_room:          '🪄',
