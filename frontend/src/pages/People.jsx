@@ -140,9 +140,8 @@ export default function People() {
 
   return (
     <Shell>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 18,
-        alignItems: 'start' }} className="perm-grid">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div className="perm-grid">
+        <div className="perm-col" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div style={card}>
             <Head title="People" sub="tap to select" />
             <div style={{ padding: 16 }}>
@@ -174,20 +173,32 @@ export default function People() {
           )}
         </div>
 
-        <div style={{ position: 'sticky', top: 14, display: 'flex', flexDirection: 'column', gap: 18 }}
-          className="perm-right">
+        <div className="perm-col perm-right" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {person && <Playground person={person} ov={ov} version={version} />}
           <AuditStrip />
         </div>
       </div>
-      <style>{`@media(max-width:900px){.perm-grid{grid-template-columns:1fr!important}.perm-right{position:static!important}}`}</style>
+      <style>{`
+        /* Mobile-first: single column by default so the page can never overflow
+           the viewport; upgrade to two columns only when there's room. */
+        .perm-grid{display:flex;flex-direction:column;gap:18px;width:100%}
+        .perm-grid>.perm-col{min-width:0;max-width:100%}
+        .perm-grid select,.perm-grid input{max-width:100%}
+        @media(min-width:920px){
+          .perm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+          .perm-right{position:sticky;top:14px}
+        }
+        /* Very narrow phones: stack the paired Playground controls too. */
+        @media(max-width:420px){ .perm-two{grid-template-columns:1fr!important} }
+      `}</style>
     </Shell>
   )
 }
 
 function Shell({ children }) {
   return (
-    <div style={{ maxWidth: 1120, margin: '0 auto', padding: '20px 16px 60px' }}>
+    <div style={{ maxWidth: 1120, margin: '0 auto', padding: '20px 16px 60px',
+      width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
       <Link to="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
         fontSize: 12.5, color: 'var(--ink-soft)', textDecoration: 'none', marginBottom: 10 }}>
         <ChevronLeft size={13} /> Settings
@@ -513,7 +524,7 @@ function Playground({ person, ov, version }) {
             ))}
           </select>
         </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
+        <div className="perm-two" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
           <Field label="Action">
             <select value={action} onChange={e => setAction(e.target.value)} style={selectStyle}>
               {actions.map(a => <option key={a} value={a}>{ACTION_LABEL[a] || a}</option>)}
@@ -551,7 +562,8 @@ function Decision({ res, loading, channel }) {
             color: allowed ? 'var(--ok, #0f9d6a)' : 'var(--accent-strong, #dc4b52)' }}>
             {allowed ? 'ALLOWED' : 'DENIED'}</span>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 8 }}>{res.reason}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 8,
+          overflowWrap: 'anywhere' }}>{res.reason}</div>
         {res.obligations?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 11 }}>
             {res.obligations.map((o, i) => {
@@ -575,7 +587,7 @@ function Decision({ res, loading, channel }) {
             <summary style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ink-soft)', cursor: 'pointer' }}>
               How Ziggy decided ({res.trace.length})</summary>
             <div style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11, lineHeight: 1.7,
-              marginTop: 8, color: 'var(--ink-soft)' }}>
+              marginTop: 8, color: 'var(--ink-soft)', overflowWrap: 'anywhere' }}>
               {res.trace.map((t, i) => (
                 <div key={i}>{t.stage === 'combine'
                   ? `└─ ${t.result}`
