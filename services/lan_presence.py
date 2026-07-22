@@ -50,6 +50,12 @@ from services.presence_side_effects import schedule_side_effects
 _DEFAULTS = {
     "lan_probe_interval_seconds": 60,
     "lan_offline_grace_minutes":  10,
+    # LAN↔GPS fusion: after the offline grace, DON'T flip to not_home if GPS's
+    # last fix still puts the person inside the home zone and it's no older than
+    # this. Stops a Wi-Fi nap (battery saver, overnight) from reading as a
+    # departure now that background GPS is the authoritative position signal.
+    # 0 disables the veto (pure LAN behaviour).
+    "lan_grace_gps_veto_minutes": 180,
     "lan_use_tcp_probe":          False,
     "lan_tcp_probe_ports":        [62078, 5353],
     "lan_icmp_timeout_seconds":   2,
@@ -281,6 +287,18 @@ async def probe_all_persons() -> None:
         offline_for = now - last_seen
         if offline_for < timedelta(minutes=grace_min):
             continue  # within grace — no signal
+
+        # LAN↔GPS fusion: Wi-Fi gone past grace, but if GPS still places them
+        # inside the home zone (fresh enough), they haven't left — the phone
+        # just dropped Wi-Fi. Don't fire not_home. Background GPS reports a real
+        # departure (position moves out / geofence-exit ping), which lifts the veto.
+        veto_min = float(_lan_cfg("lan_grace_gps_veto_minutes"))
+        if veto_min > 0 and presence_engine.gps_recent_home(person, veto_min, now=now):
+            log_info(
+                f"[LAN] {host} offline {int(offline_for.total_seconds())}s but GPS still "
+                f"places {person.get('name')} in the home zone — not flipping to not_home"
+            )
+            continue
 
         decision = presence_engine.ingest_external_state(
             person_id     = person_id,

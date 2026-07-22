@@ -156,6 +156,7 @@ _NEW_FIELDS = (
     "last_transition_at",
     "last_transition_to",
     "last_decision",
+    "last_gps_at",      # ISO UTC of the last accepted GPS ping (NOT bumped by LAN — the true GPS-fix freshness, used for LAN↔GPS fusion)
     "lan_host",         # IP, hostname, or *.local (mDNS) name of this person's phone on the home LAN
     "lan_last_probe",   # ISO UTC of last LAN probe attempt
     "lan_last_seen",    # ISO UTC of last successful LAN probe (reachable on LAN)
@@ -318,6 +319,36 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlam  = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def gps_recent_home(person: dict, max_age_minutes: float, now: Optional[datetime] = None) -> bool:
+    """True when the person's LAST GPS fix is inside the home zone AND fresh
+    enough to trust. Used to VETO a LAN-grace 'not_home': if Wi-Fi drops but GPS
+    still has you home, you haven't left — the phone just napped off Wi-Fi.
+
+    Position is the real discriminator (a real departure moves last_lat/lon
+    outside home, or the geofence-exit ping already flipped you). The freshness
+    bound only stops a stone-dead GPS (no fix in a long time) from vetoing
+    forever — beyond max_age we can't vouch for "home" and let LAN decide.
+    """
+    lat = person.get("last_lat")
+    lon = person.get("last_lon")
+    if lat is None or lon is None:
+        return False
+    gps_at = _parse_iso(person.get("last_gps_at"))
+    if gps_at is None:
+        return False
+    n = now or _now()
+    if (n - gps_at) > timedelta(minutes=max_age_minutes):
+        return False
+    zone = _home_zone()
+    if not zone:
+        return False
+    hlat, hlon, radius = zone
+    try:
+        return haversine_m(float(lat), float(lon), hlat, hlon) <= float(radius)
+    except (TypeError, ValueError):
+        return False
 
 
 def _home_zone() -> Optional[tuple[float, float, float]]:
@@ -751,6 +782,7 @@ def _ingest_position_locked(
 
     # Always record the position even if we don't transition.
     person["last_seen"]     = ts.isoformat()
+    person["last_gps_at"]   = ts.isoformat()   # GPS-specific stamp (last_seen is also bumped by LAN)
     person["last_lat"]      = lat
     person["last_lon"]      = lon
     if accuracy is not None:
