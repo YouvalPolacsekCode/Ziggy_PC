@@ -98,6 +98,16 @@ export default function People() {
 
   useEffect(() => { load() }, []) // eslint-disable-line
 
+  // Access-level is a PENDING selection until saved — the person card keeps
+  // showing the saved role; changing the segmented control only stages a change
+  // that a Save button commits. Reset whenever the selected person (or data)
+  // changes. (Kept above the early returns to respect the rules of hooks.)
+  const [pendingRole, setPendingRole] = useState(null)
+  useEffect(() => {
+    const p = ov?.people?.find(x => x.ref === sel)
+    setPendingRole(p?.role ?? null)
+  }, [sel, ov])
+
   if (forbidden) return (
     <Shell>
       <div style={{ ...card, padding: 24, textAlign: 'center' }}>
@@ -111,15 +121,15 @@ export default function People() {
 
   const person = useMemo(() => ov?.people.find(p => p.ref === sel) || null, [ov, sel])
 
-  async function setPreset(role) {
-    if (!person) return
+  async function saveRole() {
+    if (!person || !pendingRole || pendingRole === person.role) return
     setBusy(true)
     try {
       await bindPermissionRole({
         binding_id: `ui:${person.name}`, principal: person.ref,
-        scope: 'space:home', role,
+        scope: 'space:home', role: pendingRole,
       })
-      await load()
+      await load()   // reload → person.role updates → effect clears the dirty state
     } catch (e) { setErr(e?.message || 'Could not update access.') }
     finally { setBusy(false) }
   }
@@ -169,8 +179,19 @@ export default function People() {
               <Head title={`${person.name}’s access`} sub={person.role ? PRESET_LABEL[person.role] : 'no role'} />
               <div style={{ padding: 16 }}>
                 <div style={{ ...eyebrow, marginBottom: 7 }}>Access level</div>
-                <Segmented options={ov.presets} value={person.role} disabled={busy}
-                  onChange={setPreset} labels={PRESET_LABEL} />
+                <Segmented options={ov.presets} value={pendingRole} disabled={busy}
+                  onChange={setPendingRole} labels={PRESET_LABEL} />
+                {pendingRole && pendingRole !== person.role && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
+                    <button onClick={saveRole} disabled={busy} style={{ ...btn, marginTop: 0 }}>
+                      {busy ? 'Saving…' : `Save — ${PRESET_LABEL[pendingRole]}`}</button>
+                    <button onClick={() => setPendingRole(person.role)} disabled={busy}
+                      style={{ ...btn, marginTop: 0, background: 'transparent', color: 'var(--ink-soft)',
+                        border: '1px solid var(--line)' }}>Cancel</button>
+                    <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                      currently {PRESET_LABEL[person.role] || '—'}</span>
+                  </div>
+                )}
                 {person.role === 'kid' && (
                   <KidAccess person={person} ov={ov} onChange={bump} />
                 )}
