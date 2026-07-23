@@ -180,9 +180,10 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
   // Step type list — append "Play media" when the media_music flag is on so
   // existing routine steps still resolve their label even after the flag
   // gets disabled later.
-  const stepTypeOptions = mediaMusic
+  const stepTypeOptions = (mediaMusic
     ? [...STEP_TYPES, { value: 'media_play', labelKey: 'media.action.playMedia' }]
     : STEP_TYPES
+  ).map(o => ({ ...o, label: o.label || t(o.labelKey) }))   // Select renders o.label; STEP_TYPES only carry labelKey → was blank
   const stepLabel = step.type === 'device' ? `${getActionLabel(availableActions.find(a => a.value === step.action), t) || 'Control'} · ${step.entity_id || '?'}`
     : step.type === 'ir_command' ? `📡 ${step.ir_device_name || 'IR'} → ${step.ir_sequence || step.ir_command || '?'}`
     : step.type === 'automation' ? `▶ ${step.automation_name || step.automation_id || 'Automation'}`
