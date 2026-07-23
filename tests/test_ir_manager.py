@@ -246,6 +246,56 @@ def test_send_ir_command_success():
 
 
 # ---------------------------------------------------------------------------
+# create_ir_device — room must never be fabricated from the device name
+# ---------------------------------------------------------------------------
+
+def test_create_ir_device_no_room_leaves_room_empty():
+    """Regression: an IR device created without a room must NOT inherit its own
+    name as the room. A self-named room leaks into /api/rooms/all and gets
+    promoted to a real HA area by sync_rooms_to_ha — a phantom room named after
+    the device (bug: 'Test ac' appeared as a room)."""
+    from services.ir_manager import create_ir_device
+    dev = create_ir_device(
+        name="Test ac",
+        device_type="ac",
+        blaster_entity_id="remote.broadlink",
+        room="",  # user did not pick a room
+    )
+    # Empty room → device shows under "No Room", not a phantom "Test Ac" room.
+    assert dev["room"] == "", f"expected empty room, got {dev['room']!r}"
+    # The HA namespace (storage key for learned IR codes) must stay non-empty
+    # and stable even with no room.
+    assert dev["ha_device_namespace"], "ha_device_namespace must not be empty"
+    assert dev["ha_device_namespace"].endswith("_ac")
+
+
+def test_create_ir_device_none_room_leaves_room_empty():
+    """Same guard when room is None rather than an empty string."""
+    from services.ir_manager import create_ir_device
+    dev = create_ir_device(
+        name="Bedroom Fan",
+        device_type="fan",
+        blaster_entity_id="remote.broadlink",
+        room=None,
+    )
+    assert dev["room"] == ""
+    assert dev["ha_device_namespace"]
+
+
+def test_create_ir_device_with_room_normalizes_room():
+    """When a room IS given it is stored normalized and drives the namespace."""
+    from services.ir_manager import create_ir_device
+    dev = create_ir_device(
+        name="Living Room TV",
+        device_type="tv",
+        blaster_entity_id="remote.broadlink",
+        room="Living Room",
+    )
+    assert dev["room"] == "living_room"
+    assert dev["ha_device_namespace"] == "living_room_tv"
+
+
+# ---------------------------------------------------------------------------
 # apply_decoded_ac_state — physical AC remote → device state (Phase 2)
 # ---------------------------------------------------------------------------
 

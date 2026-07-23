@@ -128,10 +128,20 @@ def create_ir_device(
     blaster_host: Optional[str] = None,
     blaster_mac: Optional[str] = None,
 ) -> dict:
-    room_norm = (room or name).lower().replace(" ", "_")
-    ha_device_namespace = f"{room_norm}_{device_type.lower()}"
+    # Room must reflect the user's choice ONLY. Never fall back to the device
+    # name here: a self-named room ("Test ac") leaks into /api/rooms/all and is
+    # promoted to a real HA area by sync_rooms_to_ha() — a phantom room named
+    # after the device. Empty room is a first-class "No Room" state (matches the
+    # unassign path in update_ir_device).
+    room_norm = (room or "").strip().lower().replace(" ", "_")
+    device_id = f"ir_{uuid.uuid4().hex[:10]}"
+    # The HA namespace is Broadlink's per-device storage key for learned IR
+    # codes — it must stay non-empty and stable even with no room. Fall back to
+    # the device name (then the id) for the namespace base ONLY, never the room.
+    namespace_base = room_norm or name.strip().lower().replace(" ", "_") or device_id
+    ha_device_namespace = f"{namespace_base}_{device_type.lower()}"
     device: dict = {
-        "id": f"ir_{uuid.uuid4().hex[:10]}",
+        "id": device_id,
         "name": name.strip(),
         "type": device_type.lower(),
         "blaster_entity_id": blaster_entity_id,
