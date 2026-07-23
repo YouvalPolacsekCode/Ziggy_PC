@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working agreement (READ FIRST — non-negotiable)
+
+**Do the whole job, not the cheap partial version.** When a tool, feature, or task has more capability available, use it FULLY unless the user explicitly narrowed the scope. Do not ship the fast/token-cheap subset, stop, and present it as "done" — that has cost real features being silently missed and is treated as laziness. If you are deliberately skipping part of a capability, that skip MUST be surfaced explicitly ("I excluded X because Y — say the word to include it"), never left implicit.
+
+- "Set up X" / "use X here" means set up **all of X** and verify it end-to-end, then report what's on and what (if anything) was intentionally left off and why.
+- Cost/token-efficiency is a consideration to *raise*, not a license to quietly do less. Recommend the lean option, but if the user says "do everything," do everything.
+- Prefer over-delivering + flagging the trade-offs to under-delivering + waiting to be caught.
+
+## Codebase navigation — use graphify FIRST
+
+A full code+docs knowledge graph is built at `graphify-out/graph.json` (self-updates on every git commit via a hook). For ANY "how does X work / what calls Y / where does A reach B / what's the architecture" question, **query the graph before grepping or reading many files** — it's far more token-efficient:
+
+```bash
+graphify query "how does a chat intent reach a Home Assistant call" --budget 2000
+graphify path "intent_router" "home_automation"   # shortest path between two concepts
+graphify explain "smart_climate_engine"            # a node + its neighbors
+graphify affected "call_service"                   # reverse deps: what breaks if this changes
+graphify god-nodes                                 # most-connected architectural hubs
+```
+
+The graph covers all 603 source files (frontend, services, core, backend, relay, tests) plus the real docs/specs/configs, with LLM-named communities (subsystems). Rebuild after big refactors: `graphify update .` (code, free) or re-run the doc-semantic pass for docs.
+
 ## Project Overview
 
 **Ziggy** is a locally-hosted AI smart home platform combining natural language control, Home Assistant integration, and a full-stack React web interface. The architecture is:

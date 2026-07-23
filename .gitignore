@@ -89,3 +89,9 @@ docker/ha-config-dev/secrets.yaml
 # external_converters/. These are per-hub secrets/state and must not
 # be in git. The .example/ template stays tracked.
 docker/z2m-data/
+
+# Graphify knowledge graph output
+graphify-out/
+
+# Runtime TTS cache
+cache/
