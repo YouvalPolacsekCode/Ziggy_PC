@@ -85,7 +85,7 @@ OWNER_EMAIL="${OWNER_EMAIL:-}"
 TZ_VAL="${TZ:-Asia/Jerusalem}"
 HA_VERSION="${HA_VERSION:-2026.6.1}"
 MOSQUITTO_VERSION="${MOSQUITTO_VERSION:-2.0.20}"
-Z2M_VERSION="${Z2M_VERSION:-2.1.1}"
+Z2M_VERSION="${Z2M_VERSION:-2.12.1}"   # validated on Canary at scale (17 devices); older 2.1.1 is unvalidated
 B2_BUCKET="${B2_BUCKET:-ziggy-backups-prod}"
 B2_ENDPOINT="${B2_ENDPOINT:-https://s3.eu-central-003.backblazeb2.com}"
 COORDINATOR_TYPE="${COORDINATOR_TYPE:-smlight}"
@@ -467,6 +467,30 @@ _mqtt_pub() {  # topic payload
     -t "$1" -m "$2" 2>/dev/null
 }
 
+# Wait up to $1 seconds (default 150) for z2m to report bridge/state=online.
+# Returns 0 on online, 1 on timeout — adapter init can take ~30-60s.
+_wait_z2m_online() {
+  local deadline=$(( $(date +%s) + ${1:-150} )) state=""
+  until [[ $(date +%s) -gt $deadline ]]; do
+    state="$(_mqtt_sub_one 'zigbee2mqtt/bridge/state' 8 || true)"
+    case "$state" in *online*) return 0 ;; esac
+    sleep 5
+  done
+  return 1
+}
+# The SLZB-07 / Sonoff-E (Silabs EFR32) driver name depends on firmware:
+# fw ≤7.3.x wants adapter 'ezsp'; fw ≥7.4 wants 'ember'. We image with
+# ZIGBEE_ADAPTER (default ezsp), but a dongle flashed with newer firmware would
+# never come online — so on timeout we flip ezsp↔ember in the LIVE
+# configuration.yaml, restart ONLY z2m, and retry once before failing.
+_z2m_alt_adapter() { case "$1" in ember) echo ezsp ;; *) echo ember ;; esac; }
+_z2m_set_adapter() {   # $1 = new adapter → rewrite `adapter:` in the live z2m config
+  local newad="$1" cfg="$REPO_DIR/docker/z2m-data/configuration.yaml"
+  [[ -f "$cfg" ]] || return 1
+  _maybe_sudo sed -i.bak -E "s/^([[:space:]]*adapter:).*/\1 $newad/" "$cfg" \
+    && { _maybe_sudo rm -f "$cfg.bak" 2>/dev/null || true; return 0; } || return 1
+}
+
 step_zigbee_pair() {
   if [[ "$ENABLE_ZIGBEE" != "1" ]]; then
     _log "zigbee-pair: ENABLE_ZIGBEE!=1 — skipping (no coordinator to read)"
@@ -477,18 +501,23 @@ step_zigbee_pair() {
     return 0
   fi
 
-  # 1) Wait for Zigbee2MQTT to come online (adapter init can take ~30-60s).
-  _log "zigbee-pair: waiting for Zigbee2MQTT to come online…"
-  local deadline=$(( $(date +%s) + 150 )) state=""
-  until [[ $(date +%s) -gt $deadline ]]; do
-    state="$(_mqtt_sub_one 'zigbee2mqtt/bridge/state' 8 || true)"
-    case "$state" in *online*) break ;; esac
-    sleep 5
-  done
-  case "$state" in
-    *online*) _ok "zigbee-pair: Zigbee2MQTT is online" ;;
-    *) _die "zigbee-pair: Zigbee2MQTT never reported 'online' (last='$state'). Check the dongle is plugged in / reachable and z2m logs: docker compose logs zigbee2mqtt" ;;
-  esac
+  # 1) Wait for Zigbee2MQTT to come online (adapter init can take ~30-60s). If the
+  #    configured adapter never initializes (wrong ezsp/ember for the dongle's
+  #    firmware), flip the adapter once and retry before failing.
+  local cur_adapter="$ZIGBEE_ADAPTER"
+  _log "zigbee-pair: waiting for Zigbee2MQTT to come online (adapter=$cur_adapter)…"
+  if ! _wait_z2m_online 150; then
+    local alt; alt="$(_z2m_alt_adapter "$cur_adapter")"
+    _log "zigbee-pair: z2m did not come online on '$cur_adapter' — retrying with adapter '$alt' (SLZB-07 fw ≥7.4 needs 'ember', ≤7.3 needs 'ezsp')"
+    if _z2m_set_adapter "$alt"; then
+      _compose restart zigbee2mqtt >/dev/null 2>&1 || _compose up -d zigbee2mqtt >/dev/null 2>&1 || true
+      cur_adapter="$alt"
+      _wait_z2m_online 150 || _die "zigbee-pair: Zigbee2MQTT never reported 'online' on either adapter (ezsp/ember). Check the dongle is plugged in / reachable and: docker compose logs zigbee2mqtt"
+    else
+      _die "zigbee-pair: z2m offline and could not rewrite adapter in configuration.yaml to retry"
+    fi
+  fi
+  _ok "zigbee-pair: Zigbee2MQTT is online (adapter=$cur_adapter)"
 
   # 2) Read the REAL coordinator IEEE from the retained bridge/info topic.
   local info ieee
