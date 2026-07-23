@@ -84,6 +84,13 @@ _CONFIG_FILE = "user_files/circadian_config.json"
 
 DEFAULTS = {
     "enabled":  False,
+    # auto_on=False → only adjust lights that are already ON (never switch a light
+    # on/off; the ramp just re-tints on-lights). This is the default and the right
+    # mode when occupancy/Smart Room owns on/off.
+    # auto_on=True  → the schedule also switches scheduled lights ON to the ramp
+    # point (keeps them lit at the right level; a light turned off comes back on
+    # at the next tick). The old "turn on lights vs only adjust on-lights" picker.
+    "auto_on":  False,
     "lights":   [],
     "peak":     {"kelvin": 5500, "pct": 100},   # day: cool + bright, at solar noon
     "floor":    {"kelvin": 2200, "pct": 30},    # night: warm + dim
@@ -249,9 +256,13 @@ def tick() -> dict:
     k, b = current_target(cfg)
     with _lock:
         manual = set(_manual)
-    targets = [e for e in _live_on(cfg["lights"]) if e not in manual]
+    # auto_on: also switch scheduled lights ON to the ramp; otherwise only re-tint
+    # the ones already on (the coexistence-safe default — occupancy owns on/off).
+    pool = cfg["lights"] if cfg.get("auto_on") else _live_on(cfg["lights"])
+    targets = [e for e in pool if e not in manual]
     n = apply(targets, k, b) if targets else 0
-    log_info(f"[Circadian] tick → {k}K/{b}% on {n} light(s); skipped {len(manual)} manual")
+    log_info(f"[Circadian] tick → {k}K/{b}% on {n} light(s); skipped {len(manual)} manual"
+             f"{' (auto_on)' if cfg.get('auto_on') else ''}")
     return {"ran": True, "kelvin": k, "pct": b, "applied": n, "manual": len(manual)}
 
 
@@ -283,7 +294,8 @@ def sync_now() -> dict:
     if not lights:
         return {"ok": True, "applied": 0}
     k, b = current_target(cfg)
-    n = apply(_live_on(lights), k, b, enroll=True)
+    pool = lights if cfg.get("auto_on") else _live_on(lights)
+    n = apply(pool, k, b, enroll=True)
     log_info(f"[Circadian] sync_now → {k}K/{b}% on {n} light(s)")
     return {"ok": True, "kelvin": k, "pct": b, "applied": n}
 

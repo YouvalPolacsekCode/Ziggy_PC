@@ -62,19 +62,44 @@ def _light_supports_color_temp(entity_id: str, caps: dict) -> bool:
     return "color_temp" in modes
 
 
-def _turn_on_actions(lights: list[str], brightness: int, kelvin: Optional[int], caps: dict) -> list[dict]:
+def _turn_on_actions(lights: list[str], brightness: int, kelvin: Optional[int], caps: dict,
+                     schedule_owned: Optional[set] = None) -> list[dict]:
     """One call_service action per light. brightness_pct always (Zigbee lights
-    dim); color_temp_kelvin only for lights that advertise color_temp support."""
+    dim); color_temp_kelvin only for lights that advertise color_temp support.
+
+    Lights in `schedule_owned` are on the Smart Light Schedule — Smart Room only
+    switches them ON and lets the schedule own brightness/colour (the engine
+    snaps them to the current ramp on turn-on). Forcing a fixed brightness here
+    would fight the schedule (light jumps to 100%/30% then the schedule drags it
+    back). So for those we emit a plain turn_on with no brightness/colour data.
+    """
+    owned = schedule_owned or set()
     actions: list[dict] = []
     for eid in lights:
-        data: dict[str, Any] = {"brightness_pct": int(brightness)}
-        if kelvin is not None and _light_supports_color_temp(eid, caps):
-            data["color_temp_kelvin"] = int(kelvin)
+        if eid in owned:
+            data: dict[str, Any] = {}          # schedule owns brightness + colour
+        else:
+            data = {"brightness_pct": int(brightness)}
+            if kelvin is not None and _light_supports_color_temp(eid, caps):
+                data["color_temp_kelvin"] = int(kelvin)
         actions.append({
             "type": "call_service", "entity_id": eid,
             "service": "light.turn_on", "service_data": data,
         })
     return actions
+
+
+def _scheduled_lights_set() -> set:
+    """Lights currently enrolled in the Smart Light Schedule (only when it's
+    enabled). Best-effort — never let a schedule read break bundle building."""
+    try:
+        from services.circadian_engine import load_config
+        cfg = load_config()
+        if cfg.get("enabled"):
+            return set(cfg.get("lights") or [])
+    except Exception:
+        pass
+    return set()
 
 
 def _turn_off_actions(lights: list[str]) -> list[dict]:
@@ -180,6 +205,9 @@ def build_smart_room_bundle(
 
     caps = _light_color_caps()
     has_presence = bool(presence)
+    # Lights on the Smart Light Schedule: Smart Room switches them on, the
+    # schedule owns their brightness/colour (no fixed brightness forced here).
+    sched_owned = _scheduled_lights_set()
 
     # English room title for the HA alias — see _alias() below.
     en_label = _room_label(room_slug, "en")
@@ -202,7 +230,7 @@ def build_smart_room_bundle(
             "trigger": {"type": "state", "entity_id": occ, "state": "on"},
             # Daytime window = after night_end (06:30) and before night_start (19:00).
             "conditions": [{"type": "time", "after": opt["night_end"], "before": opt["night_start"]}],
-            "actions": _turn_on_actions(lights, opt["day_brightness"], None, caps),
+            "actions": _turn_on_actions(lights, opt["day_brightness"], None, caps, sched_owned),
             "mode": "single",
         },
         {
@@ -211,7 +239,7 @@ def build_smart_room_bundle(
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "on"},
             "conditions": [{"type": "time", "after": opt["night_start"], "before": opt["night_end"]}],
-            "actions": _turn_on_actions(lights, opt["night_brightness"], opt["night_kelvin"], caps),
+            "actions": _turn_on_actions(lights, opt["night_brightness"], opt["night_kelvin"], caps, sched_owned),
             "mode": "single",
         },
         {

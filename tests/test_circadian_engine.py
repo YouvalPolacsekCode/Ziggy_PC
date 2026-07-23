@@ -83,6 +83,31 @@ def test_tick_skips_off_and_manual(monkeypatch):
     ce._manual.clear()
 
 
+def test_tick_auto_on_targets_all_scheduled_lights(monkeypatch):
+    """auto_on=True → the schedule also switches OFF scheduled lights on, so tick
+    targets every scheduled light, not just the ones already on."""
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: {**CFG, "auto_on": True})
+    monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a"])   # only a is on
+    applied = {}
+    monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: applied.setdefault("eids", eids) or len(eids))
+    ce.tick()
+    assert applied["eids"] == ["light.a", "light.b"]                # b included despite being off
+    ce._manual.clear()
+
+
+def test_tick_default_only_adjusts_on_lights(monkeypatch):
+    """auto_on falsy (default) → only re-tint already-on lights (never switch on)."""
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: {**CFG, "auto_on": False})
+    monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a"])
+    applied = {}
+    monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: applied.setdefault("eids", eids) or len(eids))
+    ce.tick()
+    assert applied["eids"] == ["light.a"]                          # b (off) NOT switched on
+    ce._manual.clear()
+
+
 def test_turn_on_enrolls_and_applies(monkeypatch):
     ce._manual.clear(); ce._manual.add("light.a")
     monkeypatch.setattr(ce, "load_config", lambda: CFG)

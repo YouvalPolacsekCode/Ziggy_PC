@@ -77,6 +77,7 @@ function CircadianBundleWizard({ initial, onSaved, onClose, confirmDelete }) {
   const [floor,   setFloor]   = useState(initial?.floor || DEF.floor)
   const [wake,    setWake]    = useState(initial?.wake    || DEF.wake)
   const [bedtime, setBedtime] = useState(initial?.bedtime || DEF.bedtime)
+  const [autoOn,  setAutoOn]  = useState(!!initial?.auto_on)
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState(null)
 
@@ -93,7 +94,7 @@ function CircadianBundleWizard({ initial, onSaved, onClose, confirmDelete }) {
   const handleConfirm = async () => {
     setSaving(true); setError(null)
     try {
-      await saveCircadian({ lights: Array.from(selected), peak, floor, wake, bedtime })
+      await saveCircadian({ lights: Array.from(selected), peak, floor, wake, bedtime, auto_on: autoOn })
       await onSaved?.({ updated: isUpdate })
     } catch (e) {
       setError(e?.userMessage || e?.message || t('automations.circadian.failed')); setSaving(false)
@@ -160,6 +161,37 @@ function CircadianBundleWizard({ initial, onSaved, onClose, confirmDelete }) {
       <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '-6px 0 0', lineHeight: 1.45 }} dir="auto">
         {t('automations.circadian.timingHelp')}
       </p>
+
+      {/* Picker: only-adjust-on-lights (default, coexists with occupancy) vs also-turn-on */}
+      <div>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.circadian.applyMode')}</p>
+        <div role="radiogroup" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[
+            { val: false, label: t('automations.circadian.modeOnlyOn'),  help: t('automations.circadian.modeOnlyOnHelp') },
+            { val: true,  label: t('automations.circadian.modeTurnOn'),  help: t('automations.circadian.modeTurnOnHelp') },
+          ].map(opt => {
+            const active = autoOn === opt.val
+            return (
+              <button key={String(opt.val)} type="button" role="radio" aria-checked={active}
+                onClick={() => setAutoOn(opt.val)}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10,
+                  textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
+                  background: active ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'var(--surface)',
+                  border: `0.5px solid ${active ? 'var(--ok)' : 'var(--line)'}` }}>
+                <span style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+                  border: `1.5px solid ${active ? 'var(--ok)' : 'var(--line)'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {active && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)' }} />}
+                </span>
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: 13, color: 'var(--ink)' }} dir="auto">{opt.label}</span>
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--ink-faint)', lineHeight: 1.4, marginTop: 2 }} dir="auto">{opt.help}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       {error && (
         <p style={{ fontSize: 12, color: 'var(--accent)', padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}>{error}</p>

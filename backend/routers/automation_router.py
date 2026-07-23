@@ -588,6 +588,9 @@ class CircadianConfigBody(BaseModel):
     # None → enabled iff there are lights. Pass explicitly to pause/resume
     # without losing the config (the card's toggle).
     enabled: Optional[bool] = None
+    # False (default) → only adjust already-on lights. True → the schedule also
+    # switches scheduled lights on. None → keep the current setting. (The picker.)
+    auto_on: Optional[bool] = None
 
 
 @router.get("/api/automations/circadian")
@@ -599,9 +602,12 @@ async def get_circadian():
 
 @router.post("/api/automations/circadian")
 async def save_circadian(body: CircadianConfigBody):
-    from services.circadian_engine import save_config, sync_now, DEFAULTS
+    from services.circadian_engine import save_config, sync_now, load_config, DEFAULTS
+    # None → keep the current auto_on (don't clobber it on an unrelated save).
+    prev_auto_on = load_config().get("auto_on", DEFAULTS["auto_on"])
     cfg = {
         "enabled": bool(body.lights) if body.enabled is None else bool(body.enabled),
+        "auto_on": prev_auto_on if body.auto_on is None else bool(body.auto_on),
         "lights":  body.lights,
         "peak":    body.peak.model_dump()  if body.peak  else DEFAULTS["peak"],
         "floor":   body.floor.model_dump() if body.floor else DEFAULTS["floor"],

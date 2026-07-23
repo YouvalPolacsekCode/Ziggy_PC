@@ -51,6 +51,32 @@ def test_full_recipe_shape(monkeypatch):
     assert [v["phrase"] for v in a["voice_intents"]] == ["good night", "good morning"]
 
 
+def test_scheduled_light_defers_brightness_to_schedule(monkeypatch):
+    """Coexistence: a light on the Smart Light Schedule must be switched ON with
+    NO brightness/colour — the schedule owns those. Otherwise Smart Room's fixed
+    100%/30% fights the circadian ramp (light jumps then snaps back)."""
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {"light.bedroom": ["color_temp", "brightness"]})
+    # light.bedroom is enrolled in the Smart Light Schedule.
+    monkeypatch.setattr(sr, "_scheduled_lights_set", lambda: {"light.bedroom"})
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="en")
+    day, night, off = r["bundle"]["artifacts"]["automations"]
+    # Day + night: plain turn_on, schedule owns brightness/colour.
+    assert day["actions"][0]["service"] == "light.turn_on"
+    assert day["actions"][0]["service_data"] == {}
+    assert night["actions"][0]["service_data"] == {}
+    # Off (occupancy control) is unchanged — Smart Room still owns on/off.
+    assert off["actions"][0]["service"] == "light.turn_off"
+
+
+def test_unscheduled_light_keeps_fixed_brightness(monkeypatch):
+    """A light NOT on the schedule still gets Smart Room's fixed brightness."""
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {"light.bedroom": ["color_temp", "brightness"]})
+    monkeypatch.setattr(sr, "_scheduled_lights_set", lambda: set())
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="en")
+    day = r["bundle"]["artifacts"]["automations"][0]
+    assert day["actions"][0]["service_data"]["brightness_pct"] == 100
+
+
 def test_night_dim_without_color_temp_support(monkeypatch):
     # A light with no color_temp support gets brightness only — no color key.
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {"light.bedroom": ["onoff"]})
