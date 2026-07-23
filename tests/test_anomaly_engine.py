@@ -398,6 +398,131 @@ class TestAnom06:
         assert entry["action_available"] is True
         assert entry["suggested_action"] == f"turn_off:{entity}"
 
+    @pytest.mark.asyncio
+    async def test_no_fire_on_hidden_config_switch(self, monkeypatch):
+        """A Z2M presence-sensor AI config toggle (switch.*_ai_*) is always 'on'
+        by design and must never raise a 'device left on' alert. This was ~37%
+        of all anomaly-alert spam on the real home."""
+        monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        entity = "switch.bedroom_presence_ai_interference_source_selfidentification"
+        cache  = {entity: {"state": "on",
+                           "attributes": {"friendly_name": "Bedroom Presence AI"},
+                           "last_changed": ""}}
+        engine._last_on[entity] = time.time() - 5 * 3600
+        active = {}
+        await engine.evaluate("sensor.dummy", cache, active)
+        assert not any(e["rule_id"] == "ANOM-06" for room in active.values() for e in room)
+
+    @pytest.mark.asyncio
+    async def test_fires_on_real_relay_switch(self, monkeypatch):
+        """A real relay switch (no config-entity markers) still alerts — the
+        hide-filter must not swallow genuine 'left it on' signals."""
+        monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        entity = "switch.ronis_lamp"
+        cache  = {entity: {"state": "on", "attributes": {"friendly_name": "Roni's Lamp"}, "last_changed": ""}}
+        engine._last_on[entity] = time.time() - 5 * 3600
+        active = {}
+        await engine.evaluate("sensor.dummy", cache, active)
+        assert any(e["rule_id"] == "ANOM-06" for room in active.values() for e in room)
+
+
+# ── Re-fire dedup: an ongoing episode logs once, not once per cooldown ────────
+
+class TestReFireDedup:
+    def setup_method(self):
+        _reset_state()
+
+    @pytest.mark.asyncio
+    async def test_ongoing_condition_logs_history_once(self, monkeypatch):
+        """While a condition stays true, later rule-loop runs (even past the
+        cooldown) must refresh the live card in place — NOT log a new history
+        row or re-push. A light left on used to log ~20 rows as it climbed."""
+        monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        fired = []
+        monkeypatch.setattr(engine, "_log_history_fired",
+                            lambda *a, **k: fired.append(a))
+
+        entity = "switch.iron"
+        cache  = {entity: {"state": "on", "attributes": {"friendly_name": "Iron"}, "last_changed": ""}}
+        engine._last_on[entity] = time.time() - 5 * 3600
+        active = {}
+
+        await engine.evaluate("sensor.dummy", cache, active)
+        assert len(fired) == 1
+        since_first = next(e["since"] for room in active.values()
+                           for e in room if e["rule_id"] == "ANOM-06")
+
+        # Jump well past the 30-min cooldown; the switch is still on.
+        frozen = time.time() + 3600
+        monkeypatch.setattr(time, "time", lambda: frozen)
+        await engine.evaluate("sensor.dummy", cache, active)
+
+        # Still exactly one history write — same ongoing episode, refreshed.
+        assert len(fired) == 1
+        since_second = next(e["since"] for room in active.values()
+                            for e in room if e["rule_id"] == "ANOM-06")
+        assert since_second == since_first
+
+    @pytest.mark.asyncio
+    async def test_ongoing_condition_refreshes_message(self, monkeypatch):
+        """The live card's message/confidence update as the episode ages even
+        though no new history row is written."""
+        monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        monkeypatch.setattr(engine, "_log_history_fired", lambda *a, **k: None)
+
+        entity = "switch.iron"
+        cache  = {entity: {"state": "on", "attributes": {"friendly_name": "Iron"}, "last_changed": ""}}
+        engine._last_on[entity] = time.time() - 5 * 3600
+        active = {}
+
+        await engine.evaluate("sensor.dummy", cache, active)
+        msg_first = next(e["message"] for room in active.values()
+                         for e in room if e["rule_id"] == "ANOM-06")
+
+        frozen = time.time() + 3 * 3600   # 3h later → longer "on for X hours"
+        monkeypatch.setattr(time, "time", lambda: frozen)
+        await engine.evaluate("sensor.dummy", cache, active)
+        msg_second = next(e["message"] for room in active.values()
+                          for e in room if e["rule_id"] == "ANOM-06")
+        assert msg_first != msg_second   # duration climbed, card refreshed
+
+
+# ── ANOM-09: bulk-offline must ignore Z2M config entities ────────────────────
+
+class TestAnom09BulkOffline:
+    def setup_method(self):
+        _reset_state()
+        engine._recent_unavailable.clear()
+
+    @pytest.mark.asyncio
+    async def test_config_entities_dont_count_as_offline(self, monkeypatch):
+        """Z2M per-device config entities (select.*_power_on_behavior,
+        number.*_calibration) all flip to 'unknown' together on a z2m restart.
+        They are not real devices and must not trigger the bulk-offline critical
+        (this was firing false criticals on the real home)."""
+        monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        active = {}
+        for eid in ("select.0xabc_power_on_behavior",
+                    "select.0xdef_indicator_mode",
+                    "number.0xabc_temperature_calibration",
+                    "number.0xdef_humidity_calibration",
+                    "select.0xghi_color_power_on_behavior"):
+            cache = {eid: {"state": "unknown", "attributes": {}, "last_changed": ""}}
+            await engine.evaluate(eid, cache, active)
+        assert len(engine._recent_unavailable) == 0
+        assert not any(e["rule_id"] == "ANOM-09" for room in active.values() for e in room)
+
+    @pytest.mark.asyncio
+    async def test_real_devices_offline_still_fire(self, monkeypatch):
+        """Genuine physical devices dropping together still raise the critical."""
+        monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        active = {}
+        cache = {eid: {"state": "unavailable", "attributes": {}, "last_changed": ""}
+                 for eid in ("light.bedroom", "light.kitchen", "light.office")}
+        for eid in ("light.bedroom", "light.kitchen", "light.office"):
+            await engine.evaluate(eid, cache, active)
+        assert any(e["rule_id"] == "ANOM-09" for room in active.values() for e in room)
+
 
 # ── Snooze persistence ────────────────────────────────────────────────────────
 

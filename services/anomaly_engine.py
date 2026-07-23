@@ -43,6 +43,7 @@ import pytz
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from services.ha_areas import get_areas
+from services.entity_filter import is_hidden_entity
 from services.presence_store import all_away as _ziggy_all_away, home_person_names as _ziggy_home_names, load_persons as _ziggy_load_persons, effective_state as _ziggy_effective_state
 
 # ── SQLite (shared DB with map_router) ───────────────────────────────────────
@@ -408,6 +409,27 @@ def _push_anomaly(active: dict, room_id: str, rule: AnomalyRule,
         log_error(f"[AnomalyEngine] WS push failed: {e}")
 
 
+def _refresh_anomaly(active: dict, room_id: str, rule: AnomalyRule,
+                     result: AnomalyResult) -> None:
+    """Update an already-active anomaly's live fields in place.
+
+    Same rule+room is a continuing episode, not a new alert: refresh the
+    message / confidence / action so the room card and alerts inbox show the
+    current state (e.g. "on for 6h" → "on for 7h"), but keep `since` (episode
+    start) and emit NO history row, push, or WS 'active' event. Clearing the
+    condition logs cleared_at, giving one history row per episode instead of a
+    fresh row every cooldown.
+    """
+    for e in active.get(room_id, []):
+        if e["rule_id"] == rule.rule_id:
+            e["message"]          = result.message
+            e["confidence"]       = round(result.confidence, 2)
+            e["action_available"] = result.action_available
+            e["suggested_action"] = result.suggested_action
+            e["context"]          = result.context
+            break
+
+
 def _clear_anomaly(active: dict, room_id: str, rule_id: str) -> None:
     if room_id not in active:
         return
@@ -680,6 +702,14 @@ def _rule_anom06(ec: EvalContext) -> AnomalyResult | None:
         return None
     if not (eid.startswith("switch.") or eid.startswith("light.") or eid.startswith("plug.")):
         return None
+    # Never alert on Z2M/HA config or diagnostic entities (presence-sensor AI
+    # toggles, permit-join, per-device config switches). They're "on" by design
+    # and were the single biggest source of anomaly-alert spam (~37% of alerts
+    # on the real home). Reuse the same hide predicate the device lists use —
+    # single source of truth. Scoped to ANOM-06 on purpose: ANOM-08 (low
+    # battery) legitimately reads the '_battery' entities this predicate hides.
+    if is_hidden_entity(eid):
+        return None
 
     on_since = _last_on.get(eid, ec.now)
     runtime  = ec.now - on_since
@@ -886,6 +916,21 @@ def _dispatch(rule: AnomalyRule, ec: EvalContext, active: dict, room_id: str) ->
 
     if _is_snoozed(room_id, rule.rule_id):
         return
+
+    # Already-active condition = ONE ongoing episode. Refresh the live card in
+    # place but do NOT log a new history row or re-push every cooldown — that
+    # re-fire was the alert spam (a light left on logged ~20 identical rows as
+    # it climbed 4h→10h; a door open logged 9). History now holds one row per
+    # episode (fired_at → cleared_at).
+    already_active = any(
+        e["rule_id"] == rule.rule_id for e in active.get(room_id, [])
+    )
+    if already_active:
+        _refresh_anomaly(active, room_id, rule, result)
+        return
+
+    # New episode: cooldown guards against re-notifying a condition that just
+    # cleared and immediately flapped back on.
     if not _cooldown_ok(room_id, rule.rule_id, rule.cooldown_s):
         return
 
@@ -998,7 +1043,14 @@ async def evaluate(changed_entity: str, cache: dict, active: dict) -> None:
     # bulk-offline count without a real network event.
     if new_state in ("unavailable", "unknown"):
         domain = changed_entity.split(".")[0]
-        if domain not in _NON_PHYS_DOMAINS:
+        # A "physical device" for bulk-offline must be a real device, not a
+        # Z2M/HA config or diagnostic entity. Z2M exposes per-device config as
+        # select.*_power_on_behavior / number.*_calibration etc. that all flip
+        # to "unknown" together on a z2m restart — counting them fired false
+        # coordinator-failure criticals. is_hidden_entity() (same predicate the
+        # device lists use) excludes exactly those; a real light/plug/sensor
+        # dropping still counts.
+        if domain not in _NON_PHYS_DOMAINS and not is_hidden_entity(changed_entity):
             try:
                 from services.command_router import is_expected_offline
                 if not is_expected_offline(changed_entity):

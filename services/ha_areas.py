@@ -142,6 +142,35 @@ async def get_areas() -> list:
         raise  # propagate — server.py converts to 502
 
 
+def resolve_room_name(room_id: str | None, name_by_id: dict[str, str]) -> str | None:
+    """Human room label for an anomaly/alert `room_id`.
+
+    Anomalies bucket by HA area_id; entity-scoped rules on a device with NO
+    area fall back to the raw entity_id (contains a ".") — that must never be
+    shown as a room (it would leak entity_ids like
+    'binary_sensor.0xa4c138…contact'). Home-scoped rules use "home".
+
+    Returns the HA area's real display name (e.g. "Roni's Room"), or None when
+    the room_id is home-scoped, an entity_id form, or an unknown area — callers
+    render None as 'No Room' / 'Home', never the raw id.
+    """
+    if not room_id or room_id == "home":
+        return None
+    if "." in room_id:
+        return None
+    return name_by_id.get(room_id)
+
+
+async def get_area_name_map() -> dict[str, str]:
+    """{area_id → display name} from the registry (single source of truth for
+    room names). Verbatim HA names, so "Roni's Room" stays correct."""
+    try:
+        areas = await get_areas()
+        return {a["id"]: a["name"] for a in areas}
+    except Exception:
+        return {}
+
+
 async def create_area(name: str) -> dict:
     try:
         res, = await _ws({"type": "config/area_registry/create", "name": name})

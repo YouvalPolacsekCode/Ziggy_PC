@@ -29,6 +29,10 @@ async def list_alerts(limit: int = 20, severity: Optional[str] = None,
     except Exception:
         active_anomalies = {}
 
+    # Resolve room_id → real HA area name (single source), never leak entity_ids.
+    from services.ha_areas import get_area_name_map, resolve_room_name
+    name_by_id = await get_area_name_map()
+
     limit = max(1, min(int(limit or 20), 100))
     out = []
     for room_id, items in (active_anomalies or {}).items():
@@ -37,6 +41,7 @@ async def list_alerts(limit: int = 20, severity: Optional[str] = None,
                 continue
             out.append({
                 "room_id":    room_id,
+                "room_name":  resolve_room_name(room_id, name_by_id),
                 "rule_id":    it.get("rule_id"),
                 "severity":   it.get("severity") or "warning",
                 "message":    it.get("message") or "",

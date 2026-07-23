@@ -90,6 +90,16 @@ def _should_hide(entity_id: str) -> bool:
     return any(p.search(entity_id) for p in _HIDDEN_PATTERNS)
 
 
+def is_hidden_entity(entity_id: str) -> bool:
+    """Public single-entity predicate: True when this entity is a system/internal
+    entity Ziggy hides from device lists — config switches (Z2M presence-sensor
+    AI toggles, permit-join, child-lock…), firmware/battery sub-entities, helper
+    domains, etc. Single source of truth (delegates to _should_hide) so the
+    anomaly engine's "device left on" rule doesn't fire on config toggles that
+    are always on by design."""
+    return _should_hide(entity_id)
+
+
 def normalize_name(entity_id: str, friendly_name: str | None) -> str:
     """Return a clean, human-readable display name for an entity.
 

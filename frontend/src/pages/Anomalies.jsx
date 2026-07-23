@@ -29,11 +29,16 @@ function duration(firedAt, clearedAt) {
   return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
 }
 
-function humanRoom(roomId) {
-  if (!roomId) return 'Home'
-  // entity_id form e.g. "switch.iron" → "Iron"
-  if (roomId.includes('.')) return roomId.split('.')[1].replace(/_/g, ' ')
-  return roomId.replace(/_/g, ' ')
+function humanRoom(roomId, roomName) {
+  // Server resolves room_id → the real HA area name (single source of truth,
+  // e.g. "Roni's Room"). Trust it when present.
+  if (roomName) return roomName
+  if (!roomId || roomId === 'home') return 'Home'
+  // An entity_id-form key (contains '.') or a raw Zigbee id means the device
+  // isn't assigned to a room — NEVER leak the entity_id/hex as a "room".
+  if (roomId.includes('.') || /^0x[0-9a-f]{6,}/i.test(roomId)) return 'No Room'
+  // Last-resort: title-case the area slug so it reads like the rest of the app.
+  return roomId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 const SEV_COLOR = { critical: 'var(--err)', warning: 'var(--warn)', info: 'var(--info)' }
@@ -205,10 +210,10 @@ function ActionButton({ roomId, ruleId, action, color, onDone }) {
 // ── Unified anomaly card — used for both Active and History tabs ─────────────
 // variant='active'  → "since" timestamp, action button + snooze
 // variant='history' → "fired_at" timestamp, CLEARED/ACTIVE pill, dim if cleared
-function AnomalyCard({ anomaly, roomId, variant = 'active', onChange }) {
+function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }) {
   const sev       = anomaly.severity || 'warning'
   const color     = SEV_COLOR[sev] || SEV_COLOR.warning
-  const room      = humanRoom(roomId)
+  const room      = humanRoom(roomId, roomName)
   const ruleId    = anomaly.rule_id
   const ruleLabel = RULE_LABELS[ruleId] || ''
 
@@ -349,6 +354,7 @@ export default function Anomalies() {
   const { addToast } = useUIStore()
   const [tab,     setTab]     = useState('active')
   const [active,  setActive]  = useState({})   // { room_id: [anomaly, …] }
+  const [roomNames, setRoomNames] = useState({})   // { room_id: "Living Room" | null }
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [histLoading, setHistLoading] = useState(false)
@@ -363,6 +369,7 @@ export default function Anomalies() {
     try {
       const r = await getActiveAnomalies()
       setActive(r.anomalies ?? {})
+      setRoomNames(r.room_names ?? {})
     } catch {
       addToast('Could not load alerts', 'error')
     } finally {
@@ -467,7 +474,7 @@ export default function Anomalies() {
 
   // Flatten active anomalies to a list with roomId attached, sorted by severity
   const activeList = Object.entries(active)
-    .flatMap(([roomId, items]) => items.map(a => ({ ...a, _roomId: roomId })))
+    .flatMap(([roomId, items]) => items.map(a => ({ ...a, _roomId: roomId, _roomName: roomNames[roomId] })))
     .sort((a, b) => {
       const order = { critical: 0, warning: 1, info: 2 }
       return (order[a.severity] ?? 3) - (order[b.severity] ?? 3)
@@ -555,6 +562,7 @@ export default function Anomalies() {
                           key={`${a._roomId}:${a.rule_id}`}
                           anomaly={a}
                           roomId={a._roomId}
+                          roomName={a._roomName}
                           variant="active"
                           onChange={refreshAfterChange}
                         />
@@ -571,6 +579,7 @@ export default function Anomalies() {
                           key={`${a._roomId}:${a.rule_id}`}
                           anomaly={a}
                           roomId={a._roomId}
+                          roomName={a._roomName}
                           variant="active"
                           onChange={refreshAfterChange}
                         />
@@ -611,6 +620,7 @@ export default function Anomalies() {
                   key={entry.id ?? `${entry.room_id}:${entry.rule_id}:${entry.fired_at}:${i}`}
                   anomaly={entry}
                   roomId={entry.room_id}
+                  roomName={entry.room_name}
                   variant="history"
                 />
               ))}

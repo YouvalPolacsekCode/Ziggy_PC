@@ -81,3 +81,34 @@ def test_unassign_none_skips_self_heal(snapshot):
     assert res["ok"] is True
     assert created == []
     assert calls[0]["area_id"] is None
+
+
+# ── resolve_room_name: anomaly/alert room_id → real area name, never leak ─────
+
+class TestResolveRoomName:
+    """room_id can be an area_id (mapped), an entity_id (unassigned device
+    fallback — must NEVER be shown), or 'home' (home-scoped rule)."""
+
+    NAMES = {"living_room": "Living Room", "roni_s_room": "Roni's Room"}
+
+    def test_mapped_area_returns_real_name(self):
+        assert ha_areas.resolve_room_name("living_room", self.NAMES) == "Living Room"
+
+    def test_possessive_area_name_preserved(self):
+        # slug 'roni_s_room' could never recover the apostrophe by title-casing;
+        # the registry name is the single source of truth.
+        assert ha_areas.resolve_room_name("roni_s_room", self.NAMES) == "Roni's Room"
+
+    def test_entity_id_fallback_never_leaks(self):
+        # An unassigned device buckets under its entity_id — must resolve to None
+        # (caller renders 'No Room'), not the raw entity_id.
+        assert ha_areas.resolve_room_name(
+            "binary_sensor.0xa4c13812c31bffff_contact", self.NAMES) is None
+
+    def test_home_scope_is_none(self):
+        assert ha_areas.resolve_room_name("home", self.NAMES) is None
+        assert ha_areas.resolve_room_name("", self.NAMES) is None
+        assert ha_areas.resolve_room_name(None, self.NAMES) is None
+
+    def test_unknown_area_id_is_none(self):
+        assert ha_areas.resolve_room_name("garage", self.NAMES) is None

@@ -270,15 +270,24 @@ async def get_active_anomalies():
         from services.ha_subscriber import active_anomalies
     except ImportError:
         active_anomalies = {}
-    return {"anomalies": active_anomalies}
+    # Resolve each bucket's room_id → real HA area name (single source), so the
+    # UI never has to guess a name from a slug or leak an entity_id as a room.
+    from services.ha_areas import get_area_name_map, resolve_room_name
+    name_by_id = await get_area_name_map()
+    room_names = {
+        rid: resolve_room_name(rid, name_by_id) for rid in active_anomalies
+    }
+    return {"anomalies": active_anomalies, "room_names": room_names}
 
 
 @router.get("/api/map/anomalies/history")
 async def get_anomaly_history(limit: int = 50):
     """Return the most recent anomaly history entries from SQLite."""
     import aiosqlite
+    from services.ha_areas import get_area_name_map, resolve_room_name
     try:
         await _init_db()
+        name_by_id = await get_area_name_map()
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -287,7 +296,14 @@ async def get_anomaly_history(limit: int = 50):
                 (limit,),
             ) as cur:
                 rows = await cur.fetchall()
-                return {"history": [dict(r) for r in rows]}
+                out = []
+                for r in rows:
+                    row = dict(r)
+                    # Real area name for the row's room_id; None → 'No Room'/'Home'
+                    # in the UI (never leak an entity_id-form room_id).
+                    row["room_name"] = resolve_room_name(row.get("room_id"), name_by_id)
+                    out.append(row)
+                return {"history": out}
     except Exception as e:
         log_error(f"[MapRouter] History read failed: {e}")
         return {"history": []}
