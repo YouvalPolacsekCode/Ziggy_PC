@@ -56,6 +56,10 @@ echo "New SHA:    $NEW_SHA"
 
 echo
 echo "Rebuilding containers..."
+# Pass the real commit as GIT_SHA so the frontend build layer's cache key
+# changes every deploy — otherwise `.env`'s static GIT_SHA=dev lets Docker
+# reuse a stale dist/ and ship old UI while /api/version reports the new sha.
+export GIT_SHA="$(git rev-parse --short HEAD)"
 docker compose up -d --build
 
 # Record this deploy so rollback is trivial.

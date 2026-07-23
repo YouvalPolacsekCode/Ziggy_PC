@@ -60,6 +60,16 @@ function deviceName(d) {
 function resourceName(ref) {
   return humanizeId((ref || '').split(':').slice(1).join(':'))
 }
+// Scrub any embedded entity refs from the (technical) decision trace so a raw
+// entity_id can't surface even there. Only rewrites real device-domain tokens,
+// leaving capability keys / grant ids intact.
+const _ENTITY_RE = /\b(?:light|switch|lock|camera|climate|sensor|binary_sensor|media_player|cover|fan|alarm_control_panel)\.[a-z0-9_x]+/gi
+function humanizeTrace(line) {
+  return String(line)
+    .replace(/device:([^\s]+)/g, (_m, id) => humanizeId(id))
+    .replace(/space:([^\s]+)/g, (_m, id) => humanizeId(id))
+    .replace(_ENTITY_RE, (m) => humanizeId(m))
+}
 // Room keys lose the apostrophe ("roni's room" → "roni_s_room"). Restore the
 // possessive so the header reads "Roni's Room" (CSS capitalize handles case),
 // not "Roni S Room".
@@ -656,9 +666,9 @@ function Decision({ res, loading, channel }) {
             <div style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11, lineHeight: 1.7,
               marginTop: 8, color: 'var(--ink-soft)', overflowWrap: 'anywhere' }}>
               {res.trace.map((t, i) => (
-                <div key={i}>{t.stage === 'combine'
+                <div key={i}>{humanizeTrace(t.stage === 'combine'
                   ? `└─ ${t.result}`
-                  : `• ${t.grant || ''} ${t.note || t.result || ''}`}</div>
+                  : `• ${t.grant || ''} ${t.note || t.result || ''}`)}</div>
               ))}
             </div>
           </details>

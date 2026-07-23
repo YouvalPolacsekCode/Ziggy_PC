@@ -234,8 +234,9 @@ async def process_intent(req: IntentRequest, request: Request):
 
 
 @router.post("/api/chat")
-async def process_chat(req: ChatRequest):
+async def process_chat(req: ChatRequest, request: Request):
     request_id = _new_request_id()
+    _actor = _actor_ref(request)
 
     bus.emit("intent", BASIC, "request_received",
              request_id=request_id,
@@ -283,6 +284,8 @@ async def process_chat(req: ChatRequest):
     parsed["source"] = req.source
     parsed["request_id"] = request_id
     parsed["_raw_input"] = req.text
+    if _actor:
+        parsed.setdefault("params", {})["_actor"] = _actor
 
     top_intent = parsed.get("intent")
 
@@ -541,11 +544,15 @@ async def process_voice(request: Request, file: UploadFile = File(...)):
 
 
 @router.post("/api/direct-intent")
-async def process_direct_intent(req: DirectIntentRequest):
+async def process_direct_intent(req: DirectIntentRequest, request: Request):
     request_id = _new_request_id()
+    params = dict(req.params or {})
+    _actor = _actor_ref(request)
+    if _actor:
+        params["_actor"] = _actor
     intent_data = {
         "intent": req.intent,
-        "params": req.params,
+        "params": params,
         "source": req.source,
         "request_id": request_id,
     }
