@@ -41,8 +41,6 @@ function SmartRoomGroupRow({ group, onToggleAll, onView, onEdit, onDelete }) {
           <div style={{ display: 'flex', gap: 2 }}>
             {iconBtn(onView, t('common.view'),
               <><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></>)}
-            {iconBtn(onEdit, t('common.edit'),
-              <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>)}
             {iconBtn(onDelete, t('common.delete'),
               <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></>, 'var(--accent)')}
           </div>

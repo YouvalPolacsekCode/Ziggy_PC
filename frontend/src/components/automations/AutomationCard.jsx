@@ -85,7 +85,6 @@ const AutomationCard = React.memo(function AutomationCard({
             {[
               { onClick: () => onTrigger(automation.id), color: 'var(--ok)', title: t('automations.view.runNow'), path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
               { onClick: () => onView(automation),       color: 'var(--ink-mute)', title: t('automations.card.view'), path: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></> },
-              { onClick: () => onEdit(automation),       color: 'var(--ink-mute)', title: t('common.edit'),    path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
               { onClick: () => onDelete(automation.id),  color: 'var(--accent)',   title: t('common.delete'),  path: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></> },
             ].map(({ onClick, color, title, path }) => (
               <button key={title} onClick={onClick} title={title} aria-label={title} style={{ background: 'none', border: 'none', cursor: 'pointer', color, padding: 4 }}>
