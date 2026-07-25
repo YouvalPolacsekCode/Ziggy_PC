@@ -422,6 +422,13 @@ export default function AIChat() {
   const capSrPartialRef = useRef(null)
   const capSrErrorRef   = useRef(null)
   const capSrActiveRef  = useRef(false)
+  // True while we're deliberately stopping native SR (release) so its own
+  // 'stopped' event doesn't get treated as a mid-hold pause and restarted.
+  const capSrStoppingRef = useRef(false)
+  // Restart-loop guard: reset to 0 on any real partial result, incremented on
+  // each pause-restart. Caps runaway restarts if the engine 'stopped' fires
+  // repeatedly with no speech in between (error, not a genuine pause).
+  const capSrRestartsRef = useRef(0)
   // Plugin.start() returns a Promise that resolves with the final
   // {matches: string[]} when recognition ends — that's how the plugin
   // surfaces the authoritative final transcript. We stash the promise
@@ -1138,36 +1145,53 @@ export default function AIChat() {
       const osHebrew = typeof navigator !== 'undefined'
         && (navigator.language || '').toLowerCase().startsWith('he')
       const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
+      capSrStoppingRef.current = false
+      capSrRestartsRef.current = 0
+      // Kick (or re-kick) a native recognition session. Don't await — start()
+      // doesn't resolve until recognition ENDS (our stop() or silence), with
+      // the final matches as its value. Stash the promise; finishSrOnlyRecording
+      // awaits it after stop() to harvest the final transcript.
+      const kickCapSr = () => {
+        capSrStartPromiseRef.current = capSR.start({
+          language: srLang,
+          maxResults: 1,
+          partialResults: true,
+          popup: false,
+        }).catch(() => null)  // swallow rejection so finish's await doesn't throw
+        capSrActiveRef.current = true
+      }
       // Wire partial-result listener BEFORE start so we don't miss the
       // first emission. partialResults.matches[0] is the highest-
       // confidence transcript; that's the one we render.
       capSrPartialRef.current = await capSR.addListener('partialResults', (data) => {
         if (!data?.matches?.length) return
+        capSrRestartsRef.current = 0   // real speech → clear the restart-loop guard
         sttRef.current = data.matches[0] || ''
         setLiveTranscript(composeBuffer())
       })
       capSrErrorRef.current = await capSR.addListener('listeningState', (data) => {
-        // 'stopped' fires when the engine gives up (silence / error).
-        // Stay quiet — the explicit release path handles cleanup.
-        if (data?.status === 'stopped') capSrActiveRef.current = false
+        if (data?.status !== 'stopped') return
+        capSrActiveRef.current = false
+        // The native engine endpoints on a silence pause (Android/iOS STT is
+        // built for short commands, not hold-to-talk). While the user is still
+        // holding and we're not deliberately stopping, fold this session's
+        // text into the accumulator and RESTART — mirroring the Web SR onend
+        // restart — so a pause mid-sentence doesn't cut them off. Bail if the
+        // engine keeps stopping with no speech in between (error, not a pause).
+        if (!intentRef.current || capSrStoppingRef.current) return
+        if (capSrRestartsRef.current >= 5) return
+        capSrRestartsRef.current += 1
+        const chunk = (sttRef.current || '').trim()
+        if (chunk) accumulatedSrRef.current = joinDeduped(accumulatedSrRef.current, chunk)
+        sttRef.current = ''
+        interimRef.current = ''
+        try { kickCapSr() } catch {}
       })
       // Listeners are now installed — finishSrOnlyRecording can find &
       // detach them via capSrPartialRef / capSrErrorRef even if the user
       // already released and we're about to return early.
       if (!intentRef.current) return false
-      // CRITICAL: don't await — start() doesn't resolve until recognition
-      // ENDS (either via our stop() call or silence detection), with the
-      // final matches as its value. Stash the promise; finishSrOnlyRecording
-      // awaits it after calling stop() to harvest the final transcript.
-      // Awaiting here blocks startCapacitorSr until release, leaving the
-      // user holding with no React-visible state advancement.
-      capSrStartPromiseRef.current = capSR.start({
-        language: srLang,
-        maxResults: 1,
-        partialResults: true,
-        popup: false,
-      }).catch(() => null)  // swallow rejection so finish's await doesn't throw
-      capSrActiveRef.current = true
+      kickCapSr()
       srStartedRef.current = true
       return true
     } catch {
@@ -1177,6 +1201,7 @@ export default function AIChat() {
   }
 
   const stopCapacitorSr = async () => {
+    capSrStoppingRef.current = true   // our own stop() must not trigger a restart
     const capSR = getCapacitorSR()
     if (capSrPartialRef.current) {
       try { await capSrPartialRef.current.remove() } catch {}
@@ -1200,7 +1225,19 @@ export default function AIChat() {
   }
 
   const startRecording = async () => {
-    if (intentRef.current) return  // already holding
+    if (intentRef.current) {
+      // Genuinely mid-hold? Only if a recorder/SR session is actually live.
+      const holding = capSrActiveRef.current
+        || !!speechRef.current
+        || (mediaRef.current?.state === 'recording')
+      if (holding) return
+      // intentRef stuck true from a release that never fired (pointercancel
+      // swallowed, re-render during TTS) — nothing is actually recording, so
+      // recover instead of silently eating this press (and every one after)
+      // until a remount. See the resetChat note. Any dead native listeners are
+      // inert (their session already stopped); the fresh start re-attaches.
+      intentRef.current = false
+    }
     intentRef.current = true
     // Cut off any TTS playback the moment the user starts a new turn —
     // overlapping the assistant's last reply with their next utterance
@@ -1411,6 +1448,7 @@ export default function AIChat() {
   // stop(), so we give it a short grace window before promoting whatever
   // we got to a real message. Empty result = misfire; nothing posted.
   const finishSrOnlyRecording = async () => {
+    capSrStoppingRef.current = true   // release: stop for real, don't restart on pause
     setRecording(false)
     setOrbState('transcribing')
     // Tell SR (native or web) to stop. For the native plugin, stop()
@@ -1474,11 +1512,11 @@ export default function AIChat() {
       // composeBuffer runs.
       await new Promise(r => setTimeout(r, 700))
     }
-    // Authoritative final from the native plugin wins. Otherwise fall
-    // back to whatever the partial-results listener last wrote into
-    // sttRef / composeBuffer.
-    const dictated = (finalNativeMatches && finalNativeMatches[0])
-      || composeBuffer()
+    // Prefer the accumulated live buffer — it spans every session across
+    // mid-hold pause restarts (accumulatedSrRef + the current sttRef). Merge
+    // the last session's authoritative final in case it's marginally more
+    // complete than the last partial; joinDeduped trims the overlap.
+    const dictated = joinDeduped(composeBuffer(), (finalNativeMatches?.[0] || '').trim())
     if (!dictated) {
       setLiveTranscript('')
       setOrbState('idle')
