@@ -54,6 +54,10 @@ const _listeners        = new Set()   // () => void — fired on any state chang
 // compatible). Set via wsSubscribe(); re-sent after every reconnect so the
 // backend doesn't fall back to firehose mode after a network blip.
 let _subscription       = null
+// Monotonic per-message sequence. Consumers track the last one they handled so
+// a burst (e.g. Sync writing 7 lights → 7 state_changed at once, coalesced into
+// one React render) is processed in full instead of only the newest message.
+let _msgSeq             = 0
 
 function _retryDelay(attempt) {
   return attempt < FAST_RETRY_LIMIT ? FAST_RETRY_MS : SLOW_RETRY_MS
@@ -121,9 +125,10 @@ function _connect() {
         logger.ws('ws_message', { type: data.type })
       }
       // New array reference so React subscribers see the change.
+      const tagged = { ...data, ts: Date.now(), _seq: ++_msgSeq }
       _messages = _messages.length >= MESSAGE_BUFFER_SIZE
-        ? [..._messages.slice(-(MESSAGE_BUFFER_SIZE - 1)), { ...data, ts: Date.now() }]
-        : [..._messages, { ...data, ts: Date.now() }]
+        ? [..._messages.slice(-(MESSAGE_BUFFER_SIZE - 1)), tagged]
+        : [..._messages, tagged]
       _emit()
     } catch { /* ignore non-JSON frames */ }
   }

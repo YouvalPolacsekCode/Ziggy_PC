@@ -245,9 +245,17 @@ function AppRoutes() {
     fetchAll({ force: true }).catch(() => {})
   }, [connected, fetchAll])
 
+  const lastWsSeqRef = useRef(0)
   useEffect(() => {
-    const last = messages[messages.length - 1]
-    if (!last) return
+    // Process EVERY message we haven't handled yet — not just the newest one.
+    // A burst (Sync → 7 state_changed at once) coalesces into a single React
+    // render; taking only messages[last] dropped the other 6 card updates, so
+    // those tiles went stale "if ever". Cursor by monotonic _seq.
+    const fresh = messages.filter((m) => (m?._seq ?? 0) > lastWsSeqRef.current)
+    if (fresh.length === 0) return
+    lastWsSeqRef.current = fresh[fresh.length - 1]._seq
+    for (const last of fresh) {
+    if (!last) continue
 
     // Entity removed in HA (delete via Ziggy or HA's own UI). Drop it from
     // every store index so the Devices/Rooms/Map pages stop showing it
@@ -355,6 +363,7 @@ function AppRoutes() {
           7000,
         )
       }
+    }
     }
   }, [messages])
 
