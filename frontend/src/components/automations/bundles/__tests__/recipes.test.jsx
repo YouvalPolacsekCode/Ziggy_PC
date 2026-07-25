@@ -279,6 +279,43 @@ describe('climate derive', () => {
   })
 })
 
+// ── Smart Room (installed) ───────────────────────────────────────────────────
+describe('smart_room derive (installed)', () => {
+  it('reconstructs the wizard opts from the live day/night/off rules', () => {
+    const auto = (suffix, over) => ({ id: `ziggy_smart_room_office_${suffix}`, enabled: true, ...over })
+    const c = { ...ctx, automations: [
+      auto('day', {
+        trigger: { type: 'state', entity_id: 'binary_sensor.motion_office', state: 'on' },
+        conditions: [{ type: 'time', after: '07:15', before: '20:30' }],
+        actions: [
+          // Schedule-owned light: empty service_data — must be skipped.
+          { type: 'call_service', entity_id: 'light.living', service: 'light.turn_on', service_data: {} },
+          { type: 'call_service', entity_id: 'light.office', service: 'light.turn_on', service_data: { brightness_pct: 85 } },
+        ],
+      }),
+      auto('night', {
+        trigger: { type: 'state', entity_id: 'binary_sensor.motion_office', state: 'on' },
+        conditions: [{ type: 'time', after: '20:30', before: '07:15' }],
+        actions: [{ type: 'call_service', entity_id: 'light.office', service: 'light.turn_on',
+          service_data: { brightness_pct: 25, color_temp_kelvin: 2500 } }],
+      }),
+      auto('off', {
+        trigger: { type: 'state', entity_id: 'binary_sensor.motion_office', state: 'off', for_minutes: 8 },
+        actions: [{ type: 'call_service', entity_id: 'light.office', service: 'light.turn_off' }],
+      }),
+    ] }
+    const v = RECIPES.smart_room.derive({ _isInstalled: true, room: 'office', roomName: 'Office' }, c)
+    expect(v.occEntity).toBe('binary_sensor.motion_office')
+    expect(v.night_end).toBe('07:15')      // day window start
+    expect(v.night_start).toBe('20:30')    // day window end
+    expect(v.day_brightness).toBe(85)      // skipped the schedule-owned light
+    expect(v.night_brightness).toBe(25)
+    expect(v.night_kelvin).toBe(2500)
+    expect(v.off_delay_minutes).toBe(8)
+    expect(RECIPES.smart_room.canSave({ ...v, _installed: true }, c)).toBe(true)
+  })
+})
+
 // ── Automation → recipe routing ──────────────────────────────────────────────
 describe('recipeForAutomation', () => {
   it('routes each installed bundle id to its recipe', () => {

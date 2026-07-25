@@ -1192,6 +1192,7 @@ export default {
   'automations.bundles.to':            'to',
   'automations.bundles.noneAvailable': 'Nothing suitable found in your home yet.',
   'automations.smartRoom.wiz.roomTitle': 'Which room?',
+  'automations.smartRoom.wiz.rulesTitle': 'Room rules',
   'automations.smartClimate.coolOn':         'Turn on above',
   'automations.smartClimate.coolOff':        'Turn off below',
   'automations.smartClimate.heatOn':         'Turn on below',

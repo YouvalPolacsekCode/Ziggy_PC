@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { designSmartRoom, applyAutomationBundle, deleteSmartRoom } from '../../../../lib/api'
+import { designSmartRoom, applyAutomationBundle, deleteSmartRoom, toggleAutomation } from '../../../../lib/api'
 import { entityDisplayName } from '../../../../lib/utils'
 import { Toggle } from '../../../ui/Toggle'
 import { Eyebrow, WarnBox, RadioRow, listBox } from '../engine/fields'
@@ -137,7 +137,7 @@ function PresenceField({ values, setValue, ctx, t }) {
   )
 }
 
-// ── Installed editor: the room's live rules as toggleable, editable steps ────
+// ── Installed helpers: read + round-trip the room's live rules ───────────────
 function partIcon(m) {
   const id = (m.id || '').toLowerCase()
   if (id.endsWith('_day')) return '☀️'
@@ -146,33 +146,61 @@ function partIcon(m) {
   return '⚙️'
 }
 
+const membersOf = (ctx, roomSlug) => (ctx.automations || []).filter((a) => {
+  const m = (a.id || '').match(SMART_ROOM_RE)
+  return m && m[1] === roomSlug
+})
+
+// Reconstruct the wizard opts from the installed rules (the shapes
+// build_smart_room_bundle writes): day/night share the occ trigger; the day
+// rule's time window IS the day boundary; brightness/kelvin live in the
+// turn_on service_data (skipping schedule-owned lights, whose data is empty).
+function deriveInstalledOpts(ctx, roomSlug) {
+  const members = membersOf(ctx, roomSlug)
+  const day = members.find((m) => (m.id || '').endsWith('_day'))
+  const night = members.find((m) => (m.id || '').endsWith('_night'))
+  const off = members.find((m) => (m.id || '').endsWith('_off'))
+  const firstData = (rule, key) => {
+    for (const a of (rule?.actions || [])) {
+      const v = a?.service_data?.[key]
+      if (v != null) return v
+    }
+    return null
+  }
+  const dayWin = (day?.conditions || []).find((c) => c.type === 'time')
+  const trig = (day || night)?.trigger || {}
+  const occ = Array.isArray(trig.entity_id) ? trig.entity_id[0] : trig.entity_id
+  return {
+    occEntity: occ || null,
+    night_end: dayWin?.after || DEFAULT_OPTS.night_end,
+    night_start: dayWin?.before || DEFAULT_OPTS.night_start,
+    day_brightness: firstData(day, 'brightness_pct') ?? DEFAULT_OPTS.day_brightness,
+    night_brightness: firstData(night, 'brightness_pct') ?? DEFAULT_OPTS.night_brightness,
+    night_kelvin: firstData(night, 'color_temp_kelvin') ?? DEFAULT_OPTS.night_kelvin,
+    off_delay_minutes: off?.trigger?.for_minutes ?? DEFAULT_OPTS.off_delay_minutes,
+  }
+}
+
+// Slim per-rule enable strip — kept from the old members view, minus the
+// per-rule editor (the fields below now edit everything directly).
 function MembersField({ values, ctx, t }) {
   // Read members LIVE from the automations list so toggles reflect immediately.
-  const members = (ctx.automations || []).filter((a) => {
-    const m = (a.id || '').match(SMART_ROOM_RE)
-    return m && m[1] === values.room?.id
-  })
-  const { onToggleMember, onEditMember } = ctx.hostActions || {}
+  const members = membersOf(ctx, values.room?.id)
+  const { onToggleMember } = ctx.hostActions || {}
+  if (members.length === 0) {
+    return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.noSteps')}</p>
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <p style={{ fontSize: 12.5, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.45 }} dir="auto">
         {t('automations.smartRoom.stepsIntro')}
       </p>
-      {members.length === 0 && (
-        <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.noSteps')}</p>
-      )}
       {members.map((m) => (
         <div key={m.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px',
           borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
           <span style={{ fontSize: 16, lineHeight: 1.2, flexShrink: 0 }}>{partIcon(m)}</span>
           <span style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4, flex: 1, minWidth: 0 }} dir="auto">{m.name}</span>
           {onToggleMember && <Toggle checked={!!m.enabled} onCheckedChange={(v) => onToggleMember(m, v)} />}
-          {onEditMember && (
-            <button type="button" onClick={() => onEditMember(m)} title={t('common.edit')} aria-label={t('common.edit')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 4, flexShrink: 0 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-          )}
         </div>
       ))}
     </div>
@@ -186,23 +214,62 @@ export default {
   icon: '🛋',
   failedKey: 'automations.smartRoom.designFailed',
   deleteLabel: (values, ctx, t) => values.room?.name || t('automations.smartRoom.title'),
-  saveHidden: (values) => !!values._installed,
 
-  derive: (initial) => ({
-    room: initial?.room ? { id: initial.room, name: initial.roomName || initial.room } : null,
-    occEntity: null,
-    _needsSensor: false,
-    _decline: null,
-    _resolving: false,
-    ...DEFAULT_OPTS,
-  }),
+  derive: (initial, ctx) => {
+    const base = {
+      room: initial?.room ? { id: initial.room, name: initial.roomName || initial.room } : null,
+      occEntity: null,
+      _needsSensor: false,
+      _decline: null,
+      _resolving: false,
+      ...DEFAULT_OPTS,
+    }
+    // Installed: reconstruct the numbers from the live rules so the editor is
+    // the SAME flat surface as every other bundle — view IS edit here too.
+    if (initial?._isInstalled && initial?.room) {
+      return { ...base, ...deriveInstalledOpts(ctx, initial.room) }
+    }
+    return base
+  },
 
   steps: (values, ctx) => {
     if (values._installed) {
-      return [{
-        key: 'members',
-        fields: [{ key: '_members', type: 'custom', render: (p) => <MembersField {...p} /> }],
-      }]
+      return [
+        {
+          key: 'members', titleKey: 'automations.smartRoom.wiz.rulesTitle', icon: '🗂',
+          fields: [{ key: '_members', type: 'custom', render: (p) => <MembersField {...p} /> }],
+        },
+        {
+          key: 'presence', titleKey: 'automations.smartRoom.wiz.presenceTitle', icon: '🧍',
+          fields: [{ key: '_presence', type: 'custom', render: (p) => <PresenceField {...p} /> }],
+        },
+        {
+          key: 'day', titleKey: 'automations.smartRoom.wiz.dayTitle', icon: '☀️',
+          fields: [
+            { key: '_dayWindow', type: 'timeWindow', keys: ['night_end', 'night_start'] },
+            { key: 'day_brightness', type: 'slider', min: 10, max: 100, step: 5, suffix: '%',
+              labelKey: 'automations.smartRoom.wiz.brightness' },
+          ],
+        },
+        {
+          key: 'night', titleKey: 'automations.smartRoom.wiz.nightTitle', icon: '🌙',
+          fields: [
+            { key: 'night_brightness', type: 'slider', min: 5, max: 100, step: 5, suffix: '%',
+              labelKey: 'automations.smartRoom.wiz.brightness' },
+            { key: 'night_kelvin', type: 'slider', min: 2000, max: 4000, step: 100, suffix: 'K',
+              labelKey: 'automations.smartRoom.wiz.warmth' },
+            { key: '_guard', type: 'note', text: (t) => `😴 ${t('automations.smartRoom.wiz.guardWhy')}` },
+          ],
+        },
+        {
+          key: 'off', titleKey: 'automations.smartRoom.wiz.offTitle', icon: '🚪',
+          fields: [
+            { key: 'off_delay_minutes', type: 'number', icon: '🚪',
+              labelKey: 'automations.smartRoom.wiz.offAfter', min: 1, max: 120, width: 56,
+              suffixKey: 'automations.smartRoom.wiz.min' },
+          ],
+        },
+      ]
     }
     return [
       {
@@ -250,20 +317,25 @@ export default {
     ]
   },
 
-  canSave: (v) => !!v._installed || (!!v.room && !!v.occEntity && !v._resolving),
+  canSave: (v) => !!v.room && !!v.occEntity && !v._resolving,
 
   save: async (v, ctx) => {
-    if (v._installed) return
     const opts = {
       day_brightness: v.day_brightness, night_brightness: v.night_brightness,
       night_kelvin: v.night_kelvin, night_start: v.night_start, night_end: v.night_end,
       off_delay_minutes: v.off_delay_minutes, guard_hold_seconds: 30,
     }
+    // Remember which rules the user has switched off — re-applying the bundle
+    // recreates them enabled, and Save must not silently re-arm a paused rule.
+    const disabled = v._installed
+      ? membersOf(ctx, v.room.id).filter((m) => !m.enabled).map((m) => m.id)
+      : []
     const res = await designSmartRoom(v.room.id || v.room.name, v.occEntity || undefined, ctx.lang, opts)
     const b = res?.bundle
     if (!b || res?.needs_occupancy) throw new Error(ctx.t('automations.smartRoom.designFailed'))
     const applied = await applyAutomationBundle(b)
     if (applied?.ok === false && (applied?.created || []).length === 0) throw new Error(ctx.t('automations.smartRoom.designFailed'))
+    for (const id of disabled) { try { await toggleAutomation(id, false) } catch { /* stays enabled */ } }
   },
 
   remove: async (ctx, initial, values) => {

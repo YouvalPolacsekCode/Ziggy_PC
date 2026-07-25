@@ -1187,6 +1187,7 @@ export default {
   'automations.bundles.to':            'עד',
   'automations.bundles.noneAvailable': 'עוד לא נמצא משהו מתאים בבית.',
   'automations.smartRoom.wiz.roomTitle': 'איזה חדר?',
+  'automations.smartRoom.wiz.rulesTitle': 'כללי החדר',
   'automations.smartClimate.coolOn':         'להדליק מעל',
   'automations.smartClimate.coolOff':        'לכבות מתחת ל־',
   'automations.smartClimate.heatOn':         'להדליק מתחת ל־',
