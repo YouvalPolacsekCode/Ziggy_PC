@@ -58,8 +58,10 @@ export default function BundleEditor({ recipe, steps, values, setValue, ctx,
         )}
       </div>
 
-      {/* Locked = same surface, non-interactive. The pencil is the only door. */}
-      <div style={locked ? { pointerEvents: 'none' } : undefined} aria-readonly={locked || undefined}>
+      {/* Locked = same surface, non-interactive and slightly faded — reads as
+          "for looking, not touching". The pencil is the only door. */}
+      <div style={{ opacity: locked ? 0.55 : 1, transition: 'opacity 0.18s ease',
+        ...(locked ? { pointerEvents: 'none' } : {}) }} aria-readonly={locked || undefined}>
         <EditorBody steps={steps} values={values} setValue={setValue} ctx={ctx} isInstalled />
       </div>
 
