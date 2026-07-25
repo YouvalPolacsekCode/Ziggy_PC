@@ -11,20 +11,11 @@ import { useT } from '../lib/i18n'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
 import AutomationViewModal from '../components/automations/AutomationViewModal'
 import AutomationCard from '../components/automations/AutomationCard'
-import CircadianBundleWizard from '../components/automations/CircadianBundleWizard'
-import SmartRoomWizard from '../components/automations/SmartRoomWizard'
 import CircadianGroupRow from '../components/automations/CircadianGroupRow'
-import CircadianViewModal from '../components/automations/CircadianViewModal'
 import SmartRoomGroupRow from '../components/automations/SmartRoomGroupRow'
-import SmartRoomViewModal from '../components/automations/SmartRoomViewModal'
-import ClimateBundleWizard from '../components/automations/ClimateBundleWizard'
 import ClimateGroupRow from '../components/automations/ClimateGroupRow'
-import ClimateViewModal from '../components/automations/ClimateViewModal'
-import LeaveHomeWizard from '../components/automations/LeaveHomeWizard'
-import PrecoolWizard from '../components/automations/PrecoolWizard'
-import WindowAcWizard from '../components/automations/WindowAcWizard'
-import MotionLightWizard from '../components/automations/MotionLightWizard'
-import NightWatchWizard from '../components/automations/NightWatchWizard'
+import BundleHost from '../components/automations/bundles/engine/BundleHost'
+import { RECIPES, recipeForAutomation } from '../components/automations/bundles/recipes'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -67,35 +58,18 @@ export default function Automations() {
   // Community-template deep link: holds the blueprint_id whose input form the
   // BlueprintsModal should open directly (set from the Templates tab).
   const [communityTarget,   setCommunityTarget]   = useState(null)
-  // Circadian bundle wizard — opened by Configure on the Smart Light Schedule
-  // template, or by Edit on the grouped row in the Your-Automations section.
-  const [circadianTarget,   setCircadianTarget]   = useState(null)
-  // Smart Light Schedule is now sourced from the ramp-engine config endpoint,
-  // not from HA automations (they're migrated away). Status drives the card + view.
+  // ONE modal state for every OOTB bundle — the unified engine renders the
+  // stepped create wizard or the flat editor from { recipeId, initial }.
+  const [bundleTarget,      setBundleTarget]      = useState(null)
+  // Smart Light Schedule is sourced from the ramp-engine config endpoint,
+  // not from HA automations (they're migrated away). Status drives the card.
   const [circadianStatus,   setCircadianStatus]   = useState(null)
-  const [showCircadianView, setShowCircadianView] = useState(false)
   // Smart Climate Control — per-room thermostat engine. Status is {rooms:{room:{…}}}.
-  // climateTarget opens the wizard (create/edit); climateView holds the room slice
-  // being viewed read-only. All sourced from the /smart_climate config endpoint.
   const [climateStatus,     setClimateStatus]     = useState(null)
-  const [climateTarget,     setClimateTarget]     = useState(null)
-  const [climateView,       setClimateView]       = useState(null)   // {room, slice}
-  // Leave Home — dedicated wizard (create from Library / edit the ziggy_leave_home automation).
-  const [leaveHomeTarget,   setLeaveHomeTarget]   = useState(null)
-  // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
-  const [precoolTarget,     setPrecoolTarget]     = useState(null)
-  // Window Open — AC Off — dedicated wizard (smart/IR AC, notify vs auto-off).
-  const [windowAcTarget,    setWindowAcTarget]    = useState(null)
-  // Motion Light + Night Watch — dedicated wizards.
-  const [motionLightTarget, setMotionLightTarget] = useState(null)
-  const [nightWatchTarget,  setNightWatchTarget]  = useState(null)
   // Promise-based delete confirmation shared by every card / view / wizard
   // delete path — nothing gets removed without a second, explicit yes.
   const [confirmState,      setConfirmState]      = useState(null)   // { label, resolve }
   const confirmDelete = (label) => new Promise((resolve) => setConfirmState({ label, resolve }))
-  // Smart Room template — opens the pick-room → designer → BundlePreviewCard flow.
-  const [smartRoomTarget,   setSmartRoomTarget]   = useState(null)   // create flow
-  const [smartRoomView,     setSmartRoomView]     = useState(null)   // room slug being viewed/edited (one modal)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
 
@@ -179,45 +153,11 @@ export default function Automations() {
 
   const handleConfigureTemplate = (template) => {
     if (!template.wizard_prefill) return
-    // Bundle templates (e.g. Smart Light Schedule) take the wizard schema
-    // off the rails — route them to a dedicated wizard instead.
-    if (template.wizard_prefill.bundle === 'circadian') {
-      setCircadianTarget({ ...template.wizard_prefill, _templateId: template.id, _isInstalled: false })
-      return
-    }
-    // Smart Room bundle — pick a room, then the designer + BundlePreviewCard.
-    if (template.wizard_prefill.bundle === 'smart_room') {
-      setSmartRoomTarget({ _templateId: template.id })
-      return
-    }
-    // Smart Climate bundle — pick a room → a temp reading → a device to switch.
-    if (template.wizard_prefill.bundle === 'climate') {
-      setClimateTarget({ _isInstalled: false })
-      return
-    }
-    // Leave Home — dedicated plain-language wizard (auto-detects the trigger).
-    if (template.wizard_prefill.bundle === 'leave_home') {
-      setLeaveHomeTarget({ _isInstalled: false, ...template.wizard_prefill })
-      return
-    }
-    // Pre-cool on Arrival — dedicated wizard (Near-Home geofence + native AC).
-    if (template.wizard_prefill.bundle === 'precool') {
-      setPrecoolTarget({ _isInstalled: false, ...template.wizard_prefill })
-      return
-    }
-    // Window Open — AC Off — dedicated wizard.
-    if (template.wizard_prefill.bundle === 'window_ac') {
-      setWindowAcTarget({ _isInstalled: false, ...template.wizard_prefill })
-      return
-    }
-    // Motion Light — dedicated wizard.
-    if (template.wizard_prefill.bundle === 'motion_light') {
-      setMotionLightTarget({ _isInstalled: false, ...template.wizard_prefill })
-      return
-    }
-    // Night Watch — dedicated wizard (paired 3-stage).
-    if (template.wizard_prefill.bundle === 'night_watch') {
-      setNightWatchTarget({ _isInstalled: false, ...template.wizard_prefill })
+    // Bundle templates route to the ONE unified engine — the recipe registry
+    // knows every OOTB bundle by its `wizard_prefill.bundle` id.
+    const bundleId = template.wizard_prefill.bundle
+    if (bundleId && RECIPES[bundleId]) {
+      setBundleTarget({ recipeId: bundleId, initial: { _isInstalled: false, ...template.wizard_prefill, _templateId: template.id } })
       return
     }
     setEditTarget({ ...template.wizard_prefill, _isTemplate: true, _templateId: template.id })
@@ -226,17 +166,21 @@ export default function Automations() {
 
   const refetchCircadian = () => getCircadian().then(setCircadianStatus).catch(() => {})
 
-  // Open the wizard in edit mode from the live engine config.
+  // Open the flat editor from the live engine config (view IS edit).
   const handleEditCircadian = () => {
     if (!circadianStatus) return
-    setShowCircadianView(false)
-    setCircadianTarget({
-      _isInstalled: true,
-      lights:  circadianStatus.lights,
-      peak:    circadianStatus.peak,
-      floor:   circadianStatus.floor,
-      wake:    circadianStatus.wake,
-      bedtime: circadianStatus.bedtime,
+    setBundleTarget({
+      recipeId: 'circadian',
+      initial: {
+        _isInstalled: true,
+        _status:  circadianStatus,
+        lights:   circadianStatus.lights,
+        peak:     circadianStatus.peak,
+        floor:    circadianStatus.floor,
+        wake:     circadianStatus.wake,
+        bedtime:  circadianStatus.bedtime,
+        auto_on:  circadianStatus.auto_on,
+      },
     })
   }
   const handleCircadianSync = async () => {
@@ -256,13 +200,6 @@ export default function Automations() {
     catch { addToast(t('automations.circadian.failed'), 'error') }
   }
 
-  const handleSmartRoomClose = () => setSmartRoomTarget(null)
-  const handleSmartRoomSaved = async () => {
-    setSmartRoomTarget(null)
-    addToast(t('automations.smartRoom.created'), 'success')
-    await fetchAutomations({ force: true })
-  }
-
   // ── Smart Room grouped-card handlers ─────────────────────────────────────
   const handleSmartRoomToggleAll = async (group, toEnabled) => {
     try {
@@ -278,28 +215,25 @@ export default function Automations() {
       await fetchAutomations({ force: true })
     } catch { addToast(t('automations.failedToTrigger'), 'error') }
   }
-
-  const handleCircadianClose = () => setCircadianTarget(null)
-  const handleCircadianSaved = async ({ updated, removed }) => {
-    setCircadianTarget(null)
-    addToast(
-      removed ? t('automations.circadian.deleted')
-              : (updated ? t('automations.circadian.updated') : t('automations.circadian.saved')),
-      'success',
-    )
-    try { await refetchCircadian() } catch {}
-  }
+  const openSmartRoom = (group) => setBundleTarget({
+    recipeId: 'smart_room',
+    initial: { _isInstalled: true, room: group.room, roomName: group.roomName },
+  })
 
   // ── Smart Climate handlers (per-room) ────────────────────────────────────
   const refetchClimate = () => getClimate().then(setClimateStatus).catch(() => {})
   const handleEditClimate = (room, slice) => {
-    setClimateView(null)
-    setClimateTarget({
-      _isInstalled: true,
-      room,
-      sensor:  slice.sensor,
-      cooling: slice.cooling,
-      heating: slice.heating,
+    setBundleTarget({
+      recipeId: 'climate',
+      initial: {
+        _isInstalled: true,
+        _status: slice,
+        room,
+        sensor:  slice.sensor,
+        sensors: slice.sensors,
+        cooling: slice.cooling,
+        heating: slice.heating,
+      },
     })
   }
   const handleClimateSync = async (room) => {
@@ -318,15 +252,24 @@ export default function Automations() {
     try { await deleteClimate(room); addToast(t('automations.smartClimate.deleted'), 'success'); await refetchClimate() }
     catch { addToast(t('automations.smartClimate.failed'), 'error') }
   }
-  const handleClimateClose = () => setClimateTarget(null)
-  const handleClimateSaved = async ({ updated, removed }) => {
-    setClimateTarget(null)
-    addToast(
-      removed ? t('automations.smartClimate.deleted')
-              : (updated ? t('automations.smartClimate.updated') : t('automations.smartClimate.saved')),
-      'success',
-    )
-    try { await refetchClimate() } catch {}
+
+  // ── ONE saved/removed handler for every bundle ───────────────────────────
+  const BUNDLE_NS = {
+    leave_home: 'leaveHome', precool: 'precool', window_ac: 'windowAc',
+    motion_light: 'motionLight', night_watch: 'nightWatch',
+    circadian: 'circadian', climate: 'smartClimate', smart_room: 'smartRoom',
+  }
+  const handleBundleSaved = async ({ updated, removed } = {}) => {
+    const recipeId = bundleTarget?.recipeId
+    setBundleTarget(null)
+    const ns = BUNDLE_NS[recipeId]
+    const key = removed ? 'deleted' : updated ? 'updated' : (recipeId === 'smart_room' ? 'created' : 'saved')
+    if (ns) addToast(t(`automations.${ns}.${key}`), 'success')
+    try {
+      if (recipeId === 'circadian') await refetchCircadian()
+      else if (recipeId === 'climate') await refetchClimate()
+      else await fetchAutomations({ force: true })
+    } catch { /* list refresh best-effort */ }
   }
 
   // On-demand Library item → RoutineWizard prefilled with the template's
@@ -375,83 +318,30 @@ export default function Automations() {
     try { await removeAutomation(id); addToast(t('automations.deleted'), 'success') }
     catch { addToast(t('automations.failedToDelete'), 'error') }
   }
-  // Leave Home has its own dedicated modal — route both edit and view to it.
-  const isLeaveHome = (a) => a?.id === 'ziggy_leave_home' || a?.id === 'leave_home' || (a?.name || '').toLowerCase() === 'leave home'
-  const openLeaveHome = async (automation) => {
-    const securityAlert = automations.some(a => a.id === 'ziggy_leave_home_alert')
-    try { const config = await loadAutomationConfig(automation.id); setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...(config || automation) }) }
-    catch { setLeaveHomeTarget({ _isInstalled: true, securityAlert, ...automation }) }
-  }
-  // Pre-cool on Arrival has its own dedicated modal — route both edit and view to it.
-  const isPrecool = (a) => a?.id === 'ziggy_precool_arrival' || a?.id === 'precool_on_arrival' || (a?.name || '').toLowerCase().replace(/[^a-z]/g, '').includes('precool')
-  const openPrecool = async (automation) => {
-    try { const config = await loadAutomationConfig(automation.id); setPrecoolTarget({ _isInstalled: true, ...(config || automation) }) }
-    catch { setPrecoolTarget({ _isInstalled: true, ...automation }) }
-  }
-  // Window Open — AC Off has its own dedicated modal.
-  const isWindowAc = (a) => a?.id === 'ziggy_window_ac_off' || a?.id === 'ac_window_interlock' || (a?.name || '').toLowerCase().includes('window')
-  const openWindowAc = async (automation) => {
-    try { const config = await loadAutomationConfig(automation.id); setWindowAcTarget({ _isInstalled: true, ...(config || automation) }) }
-    catch { setWindowAcTarget({ _isInstalled: true, ...automation }) }
-  }
-  const isMotionLight = (a) => a?.id === 'ziggy_motion_light' || a?.id === 'motion_night_light' || (a?.name || '').toLowerCase() === 'motion light'
-  const openMotionLight = async (automation) => {
-    try { const config = await loadAutomationConfig(automation.id); setMotionLightTarget({ _isInstalled: true, ...(config || automation) }) }
-    catch { setMotionLightTarget({ _isInstalled: true, ...automation }) }
-  }
-  const isNightWatch = (a) => a?.id === 'ziggy_night_watch' || a?.id === 'night_watch' || (a?.name || '').toLowerCase() === 'night watch'
-  const openNightWatch = async (automation) => {
-    try { const config = await loadAutomationConfig(automation.id); setNightWatchTarget({ _isInstalled: true, ...(config || automation) }) }
-    catch { setNightWatchTarget({ _isInstalled: true, ...automation }) }
+  // An installed bundle automation opens its editor via the ONE registry
+  // lookup (replaces the per-bundle isLeaveHome/isPrecool/… sniffers).
+  const openBundleFor = async (recipeId, automation) => {
+    let config = automation
+    try { config = (await loadAutomationConfig(automation.id)) || automation }
+    catch { /* fall back to the list row */ }
+    const extra = recipeId === 'leave_home'
+      ? { securityAlert: automations.some(a => a.id === 'ziggy_leave_home_alert') }
+      : {}
+    setBundleTarget({ recipeId, initial: { _isInstalled: true, ...extra, ...config } })
   }
   const handleEdit = async (automation) => {
-    if (isLeaveHome(automation)) return openLeaveHome(automation)
-    if (isPrecool(automation)) return openPrecool(automation)
-    if (isWindowAc(automation)) return openWindowAc(automation)
-    if (isMotionLight(automation)) return openMotionLight(automation)
-    if (isNightWatch(automation)) return openNightWatch(automation)
+    const recipeId = recipeForAutomation(automation)
+    if (recipeId) return openBundleFor(recipeId, automation)
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
     catch { setEditTarget(automation) }
     setShowWizard(true)
   }
   const handleView = async (automation) => {
-    if (isLeaveHome(automation)) return openLeaveHome(automation)
-    if (isPrecool(automation)) return openPrecool(automation)
-    if (isWindowAc(automation)) return openWindowAc(automation)
-    if (isMotionLight(automation)) return openMotionLight(automation)
-    if (isNightWatch(automation)) return openNightWatch(automation)
+    // Bundles: view IS edit — same flat editor either way.
+    const recipeId = recipeForAutomation(automation)
+    if (recipeId) return openBundleFor(recipeId, automation)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
-  }
-  const handleLeaveHomeSaved = async ({ updated, removed }) => {
-    setLeaveHomeTarget(null)
-    addToast(removed ? t('automations.leaveHome.deleted')
-             : (updated ? t('automations.leaveHome.updated') : t('automations.leaveHome.saved')), 'success')
-    await fetchAutomations({ force: true })
-  }
-  const handlePrecoolSaved = async ({ updated, removed }) => {
-    setPrecoolTarget(null)
-    addToast(removed ? t('automations.precool.deleted')
-             : (updated ? t('automations.precool.updated') : t('automations.precool.saved')), 'success')
-    await fetchAutomations({ force: true })
-  }
-  const handleWindowAcSaved = async ({ updated, removed }) => {
-    setWindowAcTarget(null)
-    addToast(removed ? t('automations.windowAc.deleted')
-             : (updated ? t('automations.windowAc.updated') : t('automations.windowAc.saved')), 'success')
-    await fetchAutomations({ force: true })
-  }
-  const handleMotionLightSaved = async ({ updated, removed }) => {
-    setMotionLightTarget(null)
-    addToast(removed ? t('automations.motionLight.deleted')
-             : (updated ? t('automations.motionLight.updated') : t('automations.motionLight.saved')), 'success')
-    await fetchAutomations({ force: true })
-  }
-  const handleNightWatchSaved = async ({ updated, removed }) => {
-    setNightWatchTarget(null)
-    addToast(removed ? t('automations.nightWatch.deleted')
-             : (updated ? t('automations.nightWatch.updated') : t('automations.nightWatch.saved')), 'success')
-    await fetchAutomations({ force: true })
   }
   const handleClose = () => { setShowWizard(false); setEditTarget(null) }
   const enabled = automations.filter(a => a.enabled).length
@@ -560,7 +450,7 @@ export default function Automations() {
                   status={circadianStatus}
                   onToggle={handleCircadianToggle}
                   onSync={handleCircadianSync}
-                  onView={() => setShowCircadianView(true)}
+                  onView={handleEditCircadian}
                   onEdit={handleEditCircadian}
                   onDelete={handleCircadianDelete}
                 />
@@ -571,7 +461,7 @@ export default function Automations() {
                   status={slice}
                   onToggle={(enabled) => handleClimateToggle(room, enabled)}
                   onSync={() => handleClimateSync(room)}
-                  onView={() => setClimateView({ room, slice })}
+                  onView={() => handleEditClimate(room, slice)}
                   onEdit={() => handleEditClimate(room, slice)}
                   onDelete={() => handleClimateDelete(room, slice?.roomName)}
                 />
@@ -581,8 +471,8 @@ export default function Automations() {
                   key={group.room}
                   group={group}
                   onToggleAll={(toEnabled) => handleSmartRoomToggleAll(group, toEnabled)}
-                  onView={() => setSmartRoomView(group.room)}
-                  onEdit={() => setSmartRoomView(group.room)}
+                  onView={() => openSmartRoom(group)}
+                  onEdit={() => openSmartRoom(group)}
                   onDelete={() => handleSmartRoomDelete(group)}
                 />
               ))}
@@ -695,48 +585,31 @@ export default function Automations() {
         <AutomationWizard key={editTarget?.id || '__new__'} initial={editTarget} onSave={handleSave} onClose={handleClose} />
       </Modal>
 
-      {/* Smart Light Schedule — read-only View (what it's doing right now). */}
-      <Modal open={showCircadianView} onClose={() => setShowCircadianView(false)} title={t('automations.circadian.installedBadge')}>
-        <CircadianViewModal
-          status={circadianStatus}
-          onSync={async () => { await handleCircadianSync() }}
-          onEdit={handleEditCircadian}
-        />
-      </Modal>
-
-      {/* Smart Light Schedule (circadian) wizard — separate modal. */}
-      <Modal open={!!circadianTarget} onClose={handleCircadianClose} title={t('automations.circadian.title')}>
-        {circadianTarget && (
-          <CircadianBundleWizard
-            key={circadianTarget._isInstalled ? 'edit' : 'new'}
-            initial={circadianTarget}
-            onSaved={handleCircadianSaved}
-            onClose={handleCircadianClose}
-            confirmDelete={confirmDelete}
-          />
-        )}
-      </Modal>
-
-      {/* Smart Climate — read-only View (what it's doing in this room now). */}
-      <Modal open={!!climateView} onClose={() => setClimateView(null)}
-             title={climateView ? t('automations.smartClimate.cardTitle', { room: climateView.slice?.roomName || climateView.room }) : ''}>
-        {climateView && (
-          <ClimateViewModal
-            status={climateView.slice}
-            onSync={async () => { await handleClimateSync(climateView.room) }}
-            onEdit={() => handleEditClimate(climateView.room, climateView.slice)}
-          />
-        )}
-      </Modal>
-
-      {/* Smart Climate Control wizard — pick room → reading → device band. */}
-      <Modal open={!!climateTarget} onClose={handleClimateClose} title={t('automations.smartClimate.title')}>
-        {climateTarget && (
-          <ClimateBundleWizard
-            key={climateTarget._isInstalled ? `edit-${climateTarget.room}` : 'new'}
-            initial={climateTarget}
-            onSaved={handleClimateSaved}
-            onClose={handleClimateClose}
+      {/* ONE modal for every OOTB bundle — stepped create OR flat editor,
+          rendered by the unified engine from { recipeId, initial }. */}
+      <Modal open={!!bundleTarget} onClose={() => setBundleTarget(null)} title={(() => {
+        if (!bundleTarget) return ''
+        const { recipeId, initial } = bundleTarget
+        if (recipeId === 'smart_room' && initial?._isInstalled) return t('automations.smartRoom.cardTitle', { room: initial.roomName || initial.room })
+        if (recipeId === 'climate' && initial?._isInstalled) return t('automations.smartClimate.cardTitle', { room: initial?._status?.roomName || initial.room })
+        return t(RECIPES[recipeId]?.titleKey)
+      })()}>
+        {bundleTarget && (
+          <BundleHost
+            key={`${bundleTarget.recipeId}-${bundleTarget.initial?._isInstalled ? `edit-${bundleTarget.initial?.room || bundleTarget.initial?.id || ''}` : 'new'}`}
+            recipeId={bundleTarget.recipeId}
+            initial={bundleTarget.initial}
+            automations={automations}
+            hostActions={{
+              // Smart Room members: toggle in place, edit via the standard editor.
+              onToggleMember: async (m, en) => {
+                try { await toggleAutomation(m.id, en); await fetchAutomations({ force: true }) }
+                catch { addToast(t('automations.failedToTrigger'), 'error') }
+              },
+              onEditMember: (m) => { setBundleTarget(null); handleEdit(m) },
+            }}
+            onSaved={handleBundleSaved}
+            onClose={() => setBundleTarget(null)}
             confirmDelete={confirmDelete}
           />
         )}
@@ -754,106 +627,6 @@ export default function Automations() {
           </div>
         )}
       </Modal>
-
-      {/* Pre-cool on Arrival — dedicated view/edit (one modal). */}
-      <Modal open={!!precoolTarget} onClose={() => setPrecoolTarget(null)} title={t('automations.precool.title')}>
-        {precoolTarget && (
-          <PrecoolWizard
-            key={precoolTarget._isInstalled ? 'edit' : 'new'}
-            initial={precoolTarget}
-            onSaved={handlePrecoolSaved}
-            onClose={() => setPrecoolTarget(null)}
-            confirmDelete={confirmDelete}
-          />
-        )}
-      </Modal>
-
-      {/* Window Open — AC Off — dedicated view/edit (one modal). */}
-      <Modal open={!!windowAcTarget} onClose={() => setWindowAcTarget(null)} title={t('automations.windowAc.title')}>
-        {windowAcTarget && (
-          <WindowAcWizard
-            key={windowAcTarget._isInstalled ? 'edit' : 'new'}
-            initial={windowAcTarget}
-            onSaved={handleWindowAcSaved}
-            onClose={() => setWindowAcTarget(null)}
-            confirmDelete={confirmDelete}
-          />
-        )}
-      </Modal>
-
-      {/* Motion Light — dedicated view/edit (one modal). */}
-      <Modal open={!!motionLightTarget} onClose={() => setMotionLightTarget(null)} title={t('automations.motionLight.title')}>
-        {motionLightTarget && (
-          <MotionLightWizard
-            key={motionLightTarget._isInstalled ? 'edit' : 'new'}
-            initial={motionLightTarget}
-            automations={automations}
-            onSaved={handleMotionLightSaved}
-            onClose={() => setMotionLightTarget(null)}
-            confirmDelete={confirmDelete}
-          />
-        )}
-      </Modal>
-
-      {/* Night Watch — dedicated view/edit (one modal). */}
-      <Modal open={!!nightWatchTarget} onClose={() => setNightWatchTarget(null)} title={t('automations.nightWatch.title')}>
-        {nightWatchTarget && (
-          <NightWatchWizard
-            key={nightWatchTarget._isInstalled ? 'edit' : 'new'}
-            initial={nightWatchTarget}
-            onSaved={handleNightWatchSaved}
-            onClose={() => setNightWatchTarget(null)}
-            confirmDelete={confirmDelete}
-          />
-        )}
-      </Modal>
-
-      {/* Leave Home — dedicated plain-language view/edit (one modal). */}
-      <Modal open={!!leaveHomeTarget} onClose={() => setLeaveHomeTarget(null)} title={t('automations.leaveHome.title')}>
-        {leaveHomeTarget && (
-          <LeaveHomeWizard
-            key={leaveHomeTarget._isInstalled ? 'edit' : 'new'}
-            initial={leaveHomeTarget}
-            onSaved={handleLeaveHomeSaved}
-            onClose={() => setLeaveHomeTarget(null)}
-            confirmDelete={confirmDelete}
-          />
-        )}
-      </Modal>
-
-      {/* Smart Room bundle — pick a room → designer → BundlePreviewCard */}
-      <Modal open={!!smartRoomTarget} onClose={handleSmartRoomClose} title={t('automations.smartRoom.title')}>
-        {smartRoomTarget && (
-          <SmartRoomWizard
-            onSaved={handleSmartRoomSaved}
-            onClose={handleSmartRoomClose}
-          />
-        )}
-      </Modal>
-
-      {/* Smart Room — one modal for View AND Edit: the room's automations as
-          editable steps. Edit opens the standard editor per member (overwrites
-          in place by id); no more full re-wizard on edit. Members derived live
-          so toggles/edits reflect immediately. */}
-      {(() => {
-        const srGroup = smartRoomGroups.find(g => g.room === smartRoomView) || null
-        return (
-          <Modal open={!!smartRoomView} onClose={() => setSmartRoomView(null)}
-                 title={srGroup ? t('automations.smartRoom.cardTitle', { room: srGroup.roomName }) : ''}>
-            {srGroup && (
-              <SmartRoomViewModal
-                group={srGroup}
-                onEditMember={(m) => { setSmartRoomView(null); handleEdit(m) }}
-                onToggleMember={async (m, en) => {
-                  try { await toggleAutomation(m.id, en); await fetchAutomations({ force: true }) }
-                  catch { addToast(t('automations.failedToTrigger'), 'error') }
-                }}
-                onDelete={async () => { setSmartRoomView(null); await handleSmartRoomDelete(srGroup) }}
-              />
-            )}
-          </Modal>
-        )
-      })()}
 
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title={t('automations.detailsTitle')}>
         <AutomationViewModal

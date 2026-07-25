@@ -5,14 +5,22 @@ import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
 import { getAllRooms } from '../../../lib/api'
 import { getRunModes } from '../../../lib/automations/types'
-import StepIndicator, { STEP_COUNT } from './StepIndicator'
 import TriggerEditor from './TriggerEditor'
 import ConditionRow from './ConditionRow'
 import { AndConnector } from './Atoms'
 import { DraggableActionRow } from './ActionRow'
 import ReviewPanel from './ReviewPanel'
+import { StepFrame } from '../bundles/engine/StepFrame'
 
 // ── AutomationWizard ──────────────────────────────────────────────────────────
+// The free-form builder, rendered through the SAME StepFrame shell as every
+// bundle wizard (same header, dots, counter, nav) — so custom creation and
+// bundle creation speak one visual language. Its step bodies keep their
+// dedicated editors (trigger / conditions / actions / review).
+
+const STEP_KEYS = ['stepName', 'stepTrigger', 'stepConditions', 'stepActions', 'stepReview']
+const STEP_COUNT = STEP_KEYS.length
+
 function AutomationWizard({ initial, onSave, onClose }) {
   const t = useT()
   const [step,             setStep]           = useState(0)
@@ -61,36 +69,38 @@ function AutomationWizard({ initial, onSave, onClose }) {
     setSaving(false); onClose()
   }
 
-  // Track the furthest step the user has reached so back-jumping is free but
-  // forward-jumping past unfilled gates isn't (e.g. you can't skip Name → Review
-  // without first completing the trigger). When editing an existing automation,
-  // every step is unlocked because the data is already filled in.
+  // Track the furthest step reached so back-jumping is free but forward-jumping
+  // past unfilled gates isn't. Editing unlocks every step.
   const [maxReached, setMaxReached] = useState(initial ? STEP_COUNT - 1 : 0)
-  useEffect(() => { if (step > maxReached) setMaxReached(step) }, [step])
+  useEffect(() => { if (step > maxReached) setMaxReached(step) }, [step, maxReached])
 
   // Template-supplied wizard warnings (e.g. Night Watch single-mmWave guard).
-  // Each entry: { id, level: "warn"|"info", text }. Rendered as a small
-  // banner above the wizard steps; user can still proceed.
   const wizardWarnings = Array.isArray(initial?.warnings) ? initial.warnings : []
 
+  const isLast = step === STEP_COUNT - 1
+  const primaryLabel = isLast
+    ? (saving ? t('automations.wizard.saving') : initial ? t('automations.wizard.saveChanges') : t('automations.wizard.create'))
+    : t('automations.bundles.next')
+
   return (
-    <div>
-      <StepIndicator
-        current={step}
-        maxReached={maxReached}
-        onJump={(i) => setStep(i)}
-      />
+    <StepFrame
+      title={t(`automations.wizard.${STEP_KEYS[step]}`)}
+      step={step} total={STEP_COUNT} maxReached={maxReached}
+      onJump={(i) => setStep(i)}
+      onBack={() => (step === 0 ? onClose() : setStep(s => s - 1))}
+      backLabel={step === 0 ? t('common.cancel') : t('automations.bundles.back')}
+      onPrimary={isLast ? handleSave : () => setStep(s => s + 1)}
+      primaryDisabled={isLast ? saving : !canNext()}
+      primaryLabel={primaryLabel}
+    >
       {wizardWarnings.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0 12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {wizardWarnings.map(w => (
             <div
               key={w.id || w.text}
               dir="auto"
               style={{
-                padding: '8px 12px',
-                borderRadius: 8,
-                fontSize: 12.5,
-                lineHeight: 1.45,
+                padding: '8px 12px', borderRadius: 8, fontSize: 12.5, lineHeight: 1.45,
                 background: w.level === 'warn' ? 'rgba(255, 196, 0, 0.12)' : 'var(--surface)',
                 border: '0.5px solid ' + (w.level === 'warn' ? 'rgba(255, 196, 0, 0.45)' : 'var(--line)'),
                 color: 'var(--ink)',
@@ -180,14 +190,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
           )}
         </motion.div>
       </AnimatePresence>
-      <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.back')}</button>}
-        {step < STEP_COUNT - 1
-          ? <button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="z-btn-primary" style={{ flex: 1 }}>{t('common.next')}</button>
-          : <button onClick={handleSave} disabled={saving} className="z-btn-primary" style={{ flex: 1 }}>{saving ? t('automations.wizard.saving') : initial ? t('automations.wizard.saveChanges') : t('automations.wizard.create')}</button>
-        }
-      </div>
-    </div>
+    </StepFrame>
   )
 }
 
