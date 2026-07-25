@@ -14,7 +14,7 @@ import { RECIPES } from '../recipes'
 //   • installed → BundleEditor (flat, live-editable; view IS edit)
 
 export default function BundleHost({ recipeId, initial, automations, hostActions,
-  onSaved, onClose, confirmDelete }) {
+  onSaved, onClose, confirmDelete, startEditing = false }) {
   const t = useT()
   const recipe = RECIPES[recipeId]
   const ctxBase = useBundleCtx({ automations, hostActions })
@@ -101,6 +101,7 @@ export default function BundleHost({ recipeId, initial, automations, hostActions
         error={error} saving={saving} canSave={canSave}
         onSave={doSave} onDelete={doRemove} onClose={onClose}
         hideSave={recipe.saveHidden ? recipe.saveHidden(values, ctx, initial) : false}
+        startEditing={startEditing}
       />
     )
   }

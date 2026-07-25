@@ -80,26 +80,41 @@ describe('BundleWizard (create, stepped)', () => {
   })
 })
 
-describe('BundleEditor (installed, flat — view IS edit)', () => {
-  it('opens an installed Motion Light straight into the live editor', async () => {
-    const installed = {
-      _isInstalled: true, id: 'ziggy_motion_light',
-      trigger: { type: 'state', entity_id: ['binary_sensor.motion_office'], state: 'on' },
-      conditions: [{ type: 'time', after: '21:00', before: '07:00' }],
-      actions: [
-        { type: 'call_service', entity_id: 'light.office', service: 'light.turn_on', service_data: { brightness_pct: 70 } },
-        { type: 'delay', seconds: 120 },
-      ],
-    }
+describe('BundleEditor (installed, flat)', () => {
+  const installed = {
+    _isInstalled: true, id: 'ziggy_motion_light',
+    trigger: { type: 'state', entity_id: ['binary_sensor.motion_office'], state: 'on' },
+    conditions: [{ type: 'time', after: '21:00', before: '07:00' }],
+    actions: [
+      { type: 'call_service', entity_id: 'light.office', service: 'light.turn_on', service_data: { brightness_pct: 70 } },
+      { type: 'delay', seconds: 120 },
+    ],
+  }
+
+  it('opens LOCKED — full flat summary, Close only — and the pencil unlocks editing', async () => {
+    const user = userEvent.setup()
     render(<BundleHost recipeId="motion_light" initial={installed} automations={[installed]}
       onSaved={noop} onClose={noop} confirmDelete={null} />)
 
-    // Every step's fields are flat on ONE surface — no read-only modal.
-    await screen.findByText('Save changes')
-    expect(screen.getByText('Remove')).toBeInTheDocument()
+    // Locked: every section visible with real values, but no Save/Remove.
+    await screen.findByText('Close')
+    expect(screen.queryByText('Save changes')).not.toBeInTheDocument()
+    expect(screen.queryByText('Remove')).not.toBeInTheDocument()
     expect(screen.getByText(/Which motion sensors/i)).toBeInTheDocument()
     expect(screen.getByText(/Which lights/i)).toBeInTheDocument()
-    // The installed brightness round-tripped into a live input.
     expect(screen.getByDisplayValue('70')).toBeInTheDocument()
+
+    // Pencil → the same surface unlocks into edit mode.
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await screen.findByText('Save changes')
+    expect(screen.getByText('Remove')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+  })
+
+  it('a pencil-entry (startEditing) skips the locked view', async () => {
+    render(<BundleHost recipeId="motion_light" initial={installed} automations={[installed]}
+      startEditing onSaved={noop} onClose={noop} confirmDelete={null} />)
+    await screen.findByText('Save changes')
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 })

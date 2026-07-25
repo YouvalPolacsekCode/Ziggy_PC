@@ -170,11 +170,13 @@ export default function Automations() {
 
   const refetchCircadian = () => getCircadian().then(setCircadianStatus).catch(() => {})
 
-  // Open the flat editor from the live engine config (view IS edit).
-  const handleEditCircadian = () => {
+  // Open the schedule's editor from the live engine config — locked view by
+  // default, `editing` jumps straight past the pencil.
+  const handleEditCircadian = (editing = false) => {
     if (!circadianStatus) return
     setBundleTarget({
       recipeId: 'circadian',
+      editing,
       initial: {
         _isInstalled: true,
         _status:  circadianStatus,
@@ -219,16 +221,18 @@ export default function Automations() {
       await fetchAutomations({ force: true })
     } catch { addToast(t('automations.failedToTrigger'), 'error') }
   }
-  const openSmartRoom = (group) => setBundleTarget({
+  const openSmartRoom = (group, editing = false) => setBundleTarget({
     recipeId: 'smart_room',
+    editing,
     initial: { _isInstalled: true, room: group.room, roomName: group.roomName },
   })
 
   // ── Smart Climate handlers (per-room) ────────────────────────────────────
   const refetchClimate = () => getClimate().then(setClimateStatus).catch(() => {})
-  const handleEditClimate = (room, slice) => {
+  const handleEditClimate = (room, slice, editing = false) => {
     setBundleTarget({
       recipeId: 'climate',
+      editing,
       initial: {
         _isInstalled: true,
         _status: slice,
@@ -324,26 +328,26 @@ export default function Automations() {
   }
   // An installed bundle automation opens its editor via the ONE registry
   // lookup (replaces the per-bundle isLeaveHome/isPrecool/… sniffers).
-  const openBundleFor = async (recipeId, automation) => {
+  const openBundleFor = async (recipeId, automation, editing = false) => {
     let config = automation
     try { config = (await loadAutomationConfig(automation.id)) || automation }
     catch { /* fall back to the list row */ }
     const extra = recipeId === 'leave_home'
       ? { securityAlert: automations.some(a => a.id === 'ziggy_leave_home_alert') }
       : {}
-    setBundleTarget({ recipeId, initial: { _isInstalled: true, ...extra, ...config } })
+    setBundleTarget({ recipeId, editing, initial: { _isInstalled: true, ...extra, ...config } })
   }
   const handleEdit = async (automation) => {
     const recipeId = recipeForAutomation(automation)
-    if (recipeId) return openBundleFor(recipeId, automation)
+    if (recipeId) return openBundleFor(recipeId, automation, true)
     try { const config = await loadAutomationConfig(automation.id); setEditTarget(config || automation) }
     catch { setEditTarget(automation) }
     setShowWizard(true)
   }
   const handleView = async (automation) => {
-    // Bundles: view IS edit — same flat editor either way.
+    // Bundles: same flat surface, opened LOCKED — the pencil inside unlocks it.
     const recipeId = recipeForAutomation(automation)
-    if (recipeId) return openBundleFor(recipeId, automation)
+    if (recipeId) return openBundleFor(recipeId, automation, false)
     try { const config = await loadAutomationConfig(automation.id); setViewTarget(config || automation) }
     catch { setViewTarget(automation) }
   }
@@ -459,8 +463,8 @@ export default function Automations() {
                   status={circadianStatus}
                   onToggle={handleCircadianToggle}
                   onSync={handleCircadianSync}
-                  onView={handleEditCircadian}
-                  onEdit={handleEditCircadian}
+                  onView={() => handleEditCircadian(false)}
+                  onEdit={() => handleEditCircadian(true)}
                   onDelete={handleCircadianDelete}
                 />
               )}
@@ -470,8 +474,8 @@ export default function Automations() {
                   status={slice}
                   onToggle={(enabled) => handleClimateToggle(room, enabled)}
                   onSync={() => handleClimateSync(room)}
-                  onView={() => handleEditClimate(room, slice)}
-                  onEdit={() => handleEditClimate(room, slice)}
+                  onView={() => handleEditClimate(room, slice, false)}
+                  onEdit={() => handleEditClimate(room, slice, true)}
                   onDelete={() => handleClimateDelete(room, slice?.roomName)}
                 />
               ))}
@@ -480,8 +484,8 @@ export default function Automations() {
                   key={group.room}
                   group={group}
                   onToggleAll={(toEnabled) => handleSmartRoomToggleAll(group, toEnabled)}
-                  onView={() => openSmartRoom(group)}
-                  onEdit={() => openSmartRoom(group)}
+                  onView={() => openSmartRoom(group, false)}
+                  onEdit={() => openSmartRoom(group, true)}
                   onDelete={() => handleSmartRoomDelete(group)}
                 />
               ))}
@@ -608,6 +612,7 @@ export default function Automations() {
             key={`${bundleTarget.recipeId}-${bundleTarget.initial?._isInstalled ? `edit-${bundleTarget.initial?.room || bundleTarget.initial?.id || ''}` : 'new'}`}
             recipeId={bundleTarget.recipeId}
             initial={bundleTarget.initial}
+            startEditing={!!bundleTarget.editing}
             automations={automations}
             hostActions={{
               // Smart Room members: toggle in place, edit via the standard editor.
