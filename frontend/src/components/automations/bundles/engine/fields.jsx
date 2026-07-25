@@ -394,4 +394,84 @@ export function FieldList({ fields, values, setValue, ctx, isInstalled }) {
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>{out}</div>
 }
 
+// ── Locked summary ───────────────────────────────────────────────────────────
+// The compact read-only view of an installed bundle: ONE line per setting
+// (icon · label · value), derived from the same field definitions — so the
+// summary can never drift from the editor. Notes/warnings are skipped; custom
+// fields opt in via `summary(t, values, ctx) -> string` or `lockedRender`.
+
+function summaryValue(f, values, ctx, t) {
+  const v = values[f.key]
+  switch (f.type) {
+    case 'pickMany': {
+      const items = f.items(ctx, values) || []
+      const ids = (v?.mode === 'choose' || f.allToggle === false) ? (v?.ids || []) : items.map((i) => i.id)
+      if (v?.mode !== 'choose' && f.allToggle !== false) return t('automations.bundles.allN', { n: items.length })
+      if (ids.length === 0) return '—'
+      if (ids.length <= 3) {
+        const label = (id) => items.find((i) => i.id === id)?.label || id
+        return ids.map(label).join(' · ')
+      }
+      return t('automations.bundles.nChosen', { n: ids.length })
+    }
+    case 'pickOne': {
+      const items = f.items(ctx, values) || []
+      return items.find((i) => i.id === v)?.label || (v ?? '—')
+    }
+    case 'choice': {
+      const opt = (f.options || []).find((o) => o.value === v)
+      return opt ? t(opt.labelKey) : '—'
+    }
+    case 'toggle':     return v ? '✓' : '—'
+    case 'number':
+    case 'slider':     return `${v}${f.suffix || (f.suffixKey ? ` ${t(f.suffixKey)}` : '')}`
+    case 'time':       return v || '—'
+    case 'timeWindow': {
+      const [fromKey, toKey] = f.keys || ['after', 'before']
+      return `${values[fromKey] || '—'}–${values[toKey] || '—'}`
+    }
+    default: return null
+  }
+}
+
+function SummaryRow({ icon, label, value }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
+      borderBottom: '0.5px solid var(--line)' }}>
+      <span style={{ fontSize: 15, width: 22, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">{icon || '·'}</span>
+      <span style={{ fontSize: 12.5, color: 'var(--ink-mute)', flex: 1, minWidth: 0 }} dir="auto">{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, textAlign: 'end', maxWidth: '55%',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{value}</span>
+    </div>
+  )
+}
+
+export function SummaryList({ steps, values, ctx }) {
+  const t = useT()
+  const visibleSteps = (steps || []).filter((s) => !s.visibleWhen || s.visibleWhen(values, ctx))
+  const out = []
+  for (const s of visibleSteps) {
+    const fields = (s.fields || []).filter((f) => !f.visibleWhen || f.visibleWhen(values, ctx))
+    for (const f of fields) {
+      if (f.type === 'note' || f.type === 'warnIf') continue
+      if (f.type === 'custom') {
+        if (f.lockedRender) {
+          out.push(<React.Fragment key={f.key}>{f.lockedRender({ values, ctx, t })}</React.Fragment>)
+        } else if (f.summary) {
+          out.push(<SummaryRow key={f.key} icon={s.icon} label={s.titleKey ? t(s.titleKey) : ''}
+            value={f.summary(t, values, ctx)} />)
+        }
+        continue
+      }
+      const value = summaryValue(f, values, ctx, t)
+      if (value == null) continue
+      const label = f.label ? f.label(t, values, ctx)
+        : f.labelKey ? t(f.labelKey)
+        : (s.titleKey ? t(s.titleKey) : '')
+      out.push(<SummaryRow key={f.key} icon={f.icon || s.icon} label={label} value={value} />)
+    }
+  }
+  return <div style={{ display: 'flex', flexDirection: 'column' }}>{out}</div>
+}
+
 export { pickedIds }

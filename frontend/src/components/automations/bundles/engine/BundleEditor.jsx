@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useT } from '../../../../lib/i18n'
-import { FieldList } from './fields'
+import { FieldList, SummaryList } from './fields'
 import { EditorFooter, ErrorBox } from './StepFrame'
 
 // ── BundleEditor ──────────────────────────────────────────────────────────────
@@ -58,12 +58,16 @@ export default function BundleEditor({ recipe, steps, values, setValue, ctx,
         )}
       </div>
 
-      {/* Locked = same surface, non-interactive and slightly faded — reads as
-          "for looking, not touching". The pencil is the only door. */}
-      <div style={{ opacity: locked ? 0.55 : 1, transition: 'opacity 0.18s ease',
-        ...(locked ? { pointerEvents: 'none' } : {}) }} aria-readonly={locked || undefined}>
+      {/* Locked = a COMPACT summary: one line per setting, derived from the
+          same field definitions — fits without scrolling. The pencil expands
+          it into the full editor. */}
+      {locked ? (
+        <div style={{ pointerEvents: 'none' }} aria-readonly>
+          <SummaryList steps={steps} values={values} ctx={ctx} />
+        </div>
+      ) : (
         <EditorBody steps={steps} values={values} setValue={setValue} ctx={ctx} isInstalled />
-      </div>
+      )}
 
       <ErrorBox error={error} />
       {locked ? (

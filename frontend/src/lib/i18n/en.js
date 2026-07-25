@@ -1191,6 +1191,8 @@ export default {
   'automations.bundles.from':          'From',
   'automations.bundles.to':            'to',
   'automations.bundles.noneAvailable': 'Nothing suitable found in your home yet.',
+  'automations.bundles.allN':          'All ({n})',
+  'automations.bundles.nChosen':       '{n} chosen',
   'automations.smartRoom.wiz.roomTitle': 'Which room?',
   'automations.smartRoom.wiz.rulesTitle': 'Room rules',
   'automations.smartClimate.coolOn':         'Turn on above',

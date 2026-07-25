@@ -96,18 +96,20 @@ describe('BundleEditor (installed, flat)', () => {
     render(<BundleHost recipeId="motion_light" initial={installed} automations={[installed]}
       onSaved={noop} onClose={noop} confirmDelete={null} />)
 
-    // Locked: every section visible with real values, but no Save/Remove.
+    // Locked: a COMPACT one-line-per-setting summary — values as text, no
+    // inputs, no Save/Remove. Fits without scrolling.
     await screen.findByText('Close')
     expect(screen.queryByText('Save changes')).not.toBeInTheDocument()
     expect(screen.queryByText('Remove')).not.toBeInTheDocument()
     expect(screen.getByText(/Which motion sensors/i)).toBeInTheDocument()
-    expect(screen.getByText(/Which lights/i)).toBeInTheDocument()
-    expect(screen.getByDisplayValue('70')).toBeInTheDocument()
+    expect(screen.getByText('70%')).toBeInTheDocument()          // summary value
+    expect(screen.queryByDisplayValue('70')).not.toBeInTheDocument() // not an input
 
-    // Pencil → the same surface unlocks into edit mode.
+    // Pencil → the same surface expands into the full editor.
     await user.click(screen.getByRole('button', { name: 'Edit' }))
     await screen.findByText('Save changes')
     expect(screen.getByText('Remove')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('70')).toBeInTheDocument()   // now a live input
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 

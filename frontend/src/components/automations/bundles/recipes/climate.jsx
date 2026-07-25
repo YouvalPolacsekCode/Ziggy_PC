@@ -200,7 +200,8 @@ export default {
   steps: (values, ctx) => [
     {
       key: 'now', visibleWhen: (v) => !!v._installed && !!v._status,
-      fields: [{ key: '_now', type: 'custom', render: (p) => <RightNow {...p} /> }],
+      fields: [{ key: '_now', type: 'custom', render: (p) => <RightNow {...p} />,
+        lockedRender: (p) => <RightNow {...p} /> }],
     },
     {
       key: 'room', titleKey: 'automations.smartClimate.room', icon: '🏠',
@@ -217,13 +218,24 @@ export default {
     {
       key: 'reading', titleKey: 'automations.smartClimate.reading', icon: '🌡️',
       validate: (v, c) => readingOk(v, c),
-      fields: [{ key: '_reading', type: 'custom', render: (p) => <ReadingField {...p} /> }],
+      fields: [{ key: '_reading', type: 'custom', render: (p) => <ReadingField {...p} />,
+        summary: (t, v, c) => {
+          if (v.useAvg) {
+            const room = roomOfValues(c, v)
+            return t('automations.smartClimate.avgOption', { n: tempSensorsOf(c, room).length })
+          }
+          const e = c.entityMap[v.sensor]
+          return e ? (entityDisplayName(e) || v.sensor) : (v.sensor || '—')
+        } }],
     },
     {
       key: 'cooling', titleKey: 'automations.smartClimate.cooling', icon: '❄️',
       fields: [
         { key: '_coolHint', type: 'note', textKey: 'automations.smartClimate.coolingHint' },
-        { key: '_cool', type: 'custom', render: (p) => <EdgeField dir="cool" {...p} /> },
+        { key: '_cool', type: 'custom', render: (p) => <EdgeField dir="cool" {...p} />,
+          summary: (t, v) => v.cooling?.device
+            ? `${v.cooling.device.name} · ${v.cooling.on ?? COOL_DEF.on}°/${v.cooling.off ?? COOL_DEF.off}°`
+            : '—' },
         { key: '_heatToggle', type: 'custom', render: (p) => <HeatingToggle {...p} />,
           visibleWhen: (v) => !v.showHeating },
       ],
@@ -233,7 +245,10 @@ export default {
       visibleWhen: (v) => !!v.showHeating,
       fields: [
         { key: '_heatHint', type: 'note', textKey: 'automations.smartClimate.heatingHint' },
-        { key: '_heat', type: 'custom', render: (p) => <EdgeField dir="heat" {...p} /> },
+        { key: '_heat', type: 'custom', render: (p) => <EdgeField dir="heat" {...p} />,
+          summary: (t, v) => v.heating?.device
+            ? `${v.heating.device.name} · ${v.heating.on ?? HEAT_DEF.on}°/${v.heating.off ?? HEAT_DEF.off}°`
+            : '—' },
         { key: '_heatToggleOff', type: 'custom', render: (p) => <HeatingToggle {...p} /> },
       ],
     },

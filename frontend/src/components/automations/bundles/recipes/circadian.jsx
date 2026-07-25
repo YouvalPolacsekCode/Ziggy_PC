@@ -92,7 +92,7 @@ export default {
     {
       key: 'now', fields: [
         { key: '_now', type: 'custom', visibleWhen: (v) => !!v._installed && !!v._status,
-          render: (p) => <RightNow {...p} /> },
+          render: (p) => <RightNow {...p} />, lockedRender: (p) => <RightNow {...p} /> },
       ],
       visibleWhen: (v) => !!v._installed && !!v._status,
     },

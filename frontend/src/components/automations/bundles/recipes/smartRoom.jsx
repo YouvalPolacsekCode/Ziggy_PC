@@ -237,11 +237,22 @@ export default {
       return [
         {
           key: 'members', titleKey: 'automations.smartRoom.wiz.rulesTitle', icon: '🗂',
-          fields: [{ key: '_members', type: 'custom', render: (p) => <MembersField {...p} /> }],
+          fields: [{ key: '_members', type: 'custom', render: (p) => <MembersField {...p} />,
+            summary: (t, v, c) => {
+              const members = membersOf(c, v.room?.id)
+              const on = members.filter((m) => m.enabled).length
+              return `${on}/${members.length}`
+            } }],
         },
         {
           key: 'presence', titleKey: 'automations.smartRoom.wiz.presenceTitle', icon: '🧍',
-          fields: [{ key: '_presence', type: 'custom', render: (p) => <PresenceField {...p} /> }],
+          fields: [{ key: '_presence', type: 'custom', render: (p) => <PresenceField {...p} />,
+            summary: (t, v, c) => {
+              const cand = presenceCandidates(c, v.room, t).find((x) => x.id === v.occEntity)
+              if (cand) return cand.name
+              const e = c.entityMap[v.occEntity]
+              return e ? (entityDisplayName(e) || v.occEntity) : (v.occEntity || '—')
+            } }],
         },
         {
           key: 'day', titleKey: 'automations.smartRoom.wiz.dayTitle', icon: '☀️',

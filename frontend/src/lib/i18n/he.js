@@ -1186,6 +1186,8 @@ export default {
   'automations.bundles.from':          'מ־',
   'automations.bundles.to':            'עד',
   'automations.bundles.noneAvailable': 'עוד לא נמצא משהו מתאים בבית.',
+  'automations.bundles.allN':          'הכול ({n})',
+  'automations.bundles.nChosen':       'נבחרו {n}',
   'automations.smartRoom.wiz.roomTitle': 'איזה חדר?',
   'automations.smartRoom.wiz.rulesTitle': 'כללי החדר',
   'automations.smartClimate.coolOn':         'להדליק מעל',
