@@ -216,7 +216,9 @@ def _turn_on(eids: list[str], data: dict) -> None:
     from services.home_automation import call_service
     from services.manual_overrides import register_ziggy_call
     for eid in eids:
-        register_ziggy_call(eid)   # so our write isn't misread as a manual change
+        # Pass the commanded value so a slow Zigbee confirmation (>5s later) is
+        # recognised as OURS, not misread as a hand change → no false "manual".
+        register_ziggy_call(eid, expected=data)
     call_service("light", "turn_on", {"entity_id": eids, **data}, origin="circadian")
 
 

@@ -261,8 +261,13 @@ async def _process_event(event: dict) -> None:
                     _circ.on_light_turned_on(entity_id)
                 elif prev_s == "on" and new_s == "on" and not was_ziggy_initiated(entity_id):
                     old_a = old_state.get("attributes", {}) or {}
-                    if (old_a.get("brightness") != attrs.get("brightness")
-                            or old_a.get("color_temp_kelvin") != attrs.get("color_temp_kelvin")):
+                    changed = (old_a.get("brightness") != attrs.get("brightness")
+                               or old_a.get("color_temp_kelvin") != attrs.get("color_temp_kelvin"))
+                    # ...but not if it's just the schedule's OWN write confirming
+                    # late (Zigbee round-trip > the 5s ziggy-call window). Value-
+                    # aware: a real hand change reports a different value → still manual.
+                    from services.manual_overrides import ziggy_write_settling
+                    if changed and not ziggy_write_settling(entity_id, attrs):
                         _circ.mark_manual(entity_id)
         except Exception as e:
             log_error(f"[HASubscriber] circadian hook {entity_id}: {e}")
