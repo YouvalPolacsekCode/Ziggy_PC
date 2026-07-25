@@ -136,7 +136,11 @@ export default function Automations() {
   useEffect(() => {
     if (automations.length === 0)        fetchAutomations()
     if (routines.length === 0)           fetchRoutines()
-    getCircadian().then(setCircadianStatus).catch(() => {})
+    // Resolve to a non-null sentinel even on error so the list's readiness
+    // gate (below) can't hang on a skeleton — the Smart Light Schedule card is
+    // then rendered WITH the rest of the list instead of popping in late and
+    // shoving everything down.
+    getCircadian().then(setCircadianStatus).catch(() => setCircadianStatus({}))
     getClimate().then(setClimateStatus).catch(() => {})
 
     // Habit suggestions for the Suggested tab. Prefer the unified feed (one
@@ -421,14 +425,17 @@ export default function Automations() {
         onOpenInbox={() => setShowSuggestions(true)}
       />
 
-      {loading && automations.length === 0 && (
+      {/* Skeleton until BOTH the automations list AND the Smart Light Schedule
+          status have loaded, so the schedule card appears in place with the
+          rest instead of jumping in after its separate fetch resolves. */}
+      {(circadianStatus === null || (loading && automations.length === 0)) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
       {/* Empty state — nudge toward the Templates tab for a first automation. */}
-      {!loading && automations.length === 0 && (
+      {!loading && circadianStatus !== null && automations.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('automations.empty')}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('automations.emptyHint')}</p>
@@ -440,7 +447,9 @@ export default function Automations() {
       )}
 
       {/* ── Section: Your automations ───────────────────────────────────── */}
-      {automations.length > 0 && (
+      {/* Gated on circadianStatus too so the schedule card renders with the
+          list, not after it (no reflow / jump-into-position). */}
+      {automations.length > 0 && circadianStatus !== null && (
         <div style={{ marginBottom: 24 }}>
           <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.myAutomations')}</p>
           <AnimatePresence mode="popLayout">
