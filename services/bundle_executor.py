@@ -136,7 +136,17 @@ def execute_bundle(bundle: dict) -> dict:
                     "mode":        auto.get("mode", "single"),
                     "bundle_id":   bundle_id,
                 }
-                save_result = save_automation(data)
+                if auto.get("alias"):
+                    # A stable recipe alias (Smart Room, Circadian…) means THIS
+                    # bundle OWNS that automation id — re-apply must overwrite
+                    # in place. Without an explicit auto_id, save_automation's
+                    # _dedupe_auto_id (meant for Library re-adds) would mint
+                    # ..._2 duplicates that fall out of the room's group card
+                    # and fire alongside the originals.
+                    from services.ha_automations import _slug
+                    save_result = save_automation(data, auto_id=_slug(auto["alias"]))
+                else:
+                    save_result = save_automation(data)
 
             if save_result.get("ok"):
                 created.append({
