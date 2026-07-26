@@ -495,8 +495,26 @@ export const useDeviceStore = create((set, get) => ({
         }
       }
 
+      // Stamp each group's device name onto its PRIMARY entity's display_name.
+      // Card surfaces split by kind: DeviceCard reads group.name, but
+      // SmartSensorCard (contact/motion/climate sensors) renders the raw entity
+      // display_name. Without this, a contact sensor the user named "Kitchen
+      // Window" shows as its HA-derived entity name "Kitchen Window Door" (HA's
+      // has_entity_name appends the entity role). Overriding the primary's
+      // display_name here fixes every consumer at once — group-aware or not.
+      const primaryName = {}
+      for (const g of groupsList) {
+        if (g && g.name && g.primary_entity_id) primaryName[g.primary_entity_id] = g.name
+      }
+      const namedEntities = Object.keys(primaryName).length
+        ? allEntities.map(e =>
+            (e && primaryName[e.entity_id] && primaryName[e.entity_id] !== e.display_name)
+              ? { ...e, display_name: primaryName[e.entity_id] }
+              : e)
+        : allEntities
+
       set({
-        entities: allEntities,
+        entities: namedEntities,
         rooms: roomsRes.rooms || [],
         deviceStatusMap: statusMap,
         ziggyRooms: roomsDev.rooms || [],
