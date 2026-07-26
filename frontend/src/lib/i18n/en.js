@@ -542,6 +542,7 @@ export default {
   'deviceDetail.tilesTitle':      'Tiles',
   'deviceDetail.tileIcon':        'Icon',
   'deviceDetail.tileIconDefault': 'Default',
+  'deviceDetail.tilePrefFailed': "Couldn't save that — please try again.",
   'deviceDetail.showAsTileHint':  'Show these as their own tiles',
   'deviceDetail.hideFromZiggy':   'Hide from Ziggy',
   'deviceDetail.showDevice':      'Show device',

@@ -611,6 +611,18 @@ export default function DeviceDetail() {
     }
   }
 
+  // Tile curation (icon / promote-to-tile). Persists the pref, then refreshes
+  // so the change is visible. Errors surface a toast instead of being silently
+  // swallowed (a failed save used to look like "nothing happened").
+  const applyTilePref = async (targetId, opts) => {
+    try {
+      await setTilePref(targetId, opts)
+      await useDeviceStore.getState().fetchAll({ force: true })
+    } catch (e) {
+      addToast(e?.userMessage || e?.message || t('deviceDetail.tilePrefFailed'), 'error')
+    }
+  }
+
   const handleDelete = async (alsoRemoveDevice) => {
     setDeleting(true)
     try {
@@ -1285,7 +1297,7 @@ export default function DeviceDetail() {
               const active = (liveEntity?.icon || '') === ic
               return (
                 <button key={ic}
-                  onClick={async () => { await setTilePref(entityId, { icon: ic }).catch(() => {}); useDeviceStore.getState().fetchAll({ force: true }) }}
+                  onClick={() => applyTilePref(entityId, { icon: ic })}
                   style={{ width: 34, height: 34, borderRadius: 9, fontSize: 18, lineHeight: '32px', cursor: 'pointer',
                     border: active ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
                     background: active ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)' }}
@@ -1293,7 +1305,7 @@ export default function DeviceDetail() {
               )
             })}
             <button
-              onClick={async () => { await setTilePref(entityId, { clear_icon: true }).catch(() => {}); useDeviceStore.getState().fetchAll({ force: true }) }}
+              onClick={() => applyTilePref(entityId, { clear_icon: true })}
               style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 11, cursor: 'pointer',
                 border: '0.5px solid var(--line)', background: 'var(--surface-2)', color: 'var(--ink-mute)' }}
             >{t('deviceDetail.tileIconDefault')}</button>
@@ -1307,7 +1319,7 @@ export default function DeviceDetail() {
                 <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
                   <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
                   <Toggle checked={!!s.is_tile}
-                    onChange={async () => { await setTilePref(s.entity_id, { is_tile: !s.is_tile }).catch(() => {}); useDeviceStore.getState().fetchAll({ force: true }) }} />
+                    onChange={() => applyTilePref(s.entity_id, { is_tile: !s.is_tile })} />
                 </div>
               ))}
             </div>
@@ -1316,8 +1328,10 @@ export default function DeviceDetail() {
       </Card>
       )}
 
-      {/* ── Who can use this (permission platform; best-effort, admin-only) ── */}
-      <WhoCanUse entityId={entityId} />
+      {/* ── Who can use this (permission platform; best-effort, admin-only) ──
+          Info tab only — it's device metadata, not a control, and rendering it
+          ungated made it appear under BOTH the Control and Info tabs. */}
+      {showData && <WhoCanUse entityId={entityId} />}
 
       {/* ── Danger zone ── */}
       {showData && (

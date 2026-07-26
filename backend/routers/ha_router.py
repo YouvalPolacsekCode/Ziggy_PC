@@ -110,6 +110,26 @@ async def ha_entities(domain: Optional[str] = None, all: bool = False):
             if e["entity_id"] in custom_names:
                 e["display_name"] = custom_names[e["entity_id"]]
 
+        # Per-entity tile curation (custom icon / promote-to-tile). Stored in
+        # entity_prefs and applied on /api/devices too — surface it here so the
+        # store's `entities` (which back the Devices grid + device-detail icon
+        # picker) actually reflect a chosen icon. Without this the picker saved
+        # the pref but nothing the UI reads ever changed. Best-effort.
+        try:
+            from services import entity_prefs
+            _prefs = entity_prefs.get_all()
+        except Exception:
+            _prefs = {}
+        if _prefs:
+            for e in filtered:
+                p = _prefs.get(e["entity_id"])
+                if not p:
+                    continue
+                if p.get("icon"):
+                    e["icon"] = p["icon"]
+                if p.get("is_tile"):
+                    e["is_tile"] = True
+
         return {"entities": filtered, "count": len(filtered)}
     except (HTTPException, ZiggyError):
         raise

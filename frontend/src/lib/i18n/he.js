@@ -540,6 +540,7 @@ export default {
   'deviceDetail.tilesTitle':      'אריחים',
   'deviceDetail.tileIcon':        'אייקון',
   'deviceDetail.tileIconDefault': 'ברירת מחדל',
+  'deviceDetail.tilePrefFailed': 'לא הצלחנו לשמור — נסו שוב.',
   'deviceDetail.showAsTileHint':  'הצגה כאריחים נפרדים',
   'deviceDetail.hideFromZiggy':   'הסתרה מזיגי',
   'deviceDetail.showDevice':      'הצגת מכשיר',

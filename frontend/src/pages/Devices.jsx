@@ -2243,9 +2243,12 @@ export default function Devices() {
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
+      {/* Header — wraps on narrow screens so the action buttons drop to a new
+          row instead of overflowing horizontally (which used to shove the
+          "pair device" button off the page edge when the show-hidden pill
+          appeared). */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div style={{ minWidth: 0 }}>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('devices.eyebrow')}</p>
           <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('devices.title')}</h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
@@ -2255,7 +2258,7 @@ export default function Devices() {
             {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginInlineStart: 4 }}>· {t('devices.subtitleNoRoom', { n: noRoomEntities.length })}</span>}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {hiddenCount > 0 && (
             <button onClick={toggleShowHidden} style={{
               display: 'flex', alignItems: 'center', gap: 5,
