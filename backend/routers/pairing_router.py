@@ -222,6 +222,31 @@ def _present_config_step(step: dict) -> dict:
             "description_placeholders": step.get("description_placeholders") or {}}
 
 
+def _present_config_error(res: dict) -> dict:
+    """Reshape a failed flow-step submission into an actionable envelope.
+
+    Returned with HTTP 200 (like the switcher flow, and unlike the old bare 502)
+    so the UI renders the guidance instead of a generic "temporarily unavailable".
+    The frontend keys off `status`; `detail` is the localized fallback text.
+    """
+    if res.get("kind") == "timeout":
+        # HA is still finishing the pairing handshake (or briefly unreachable).
+        # Recoverable — the user can retry once the device settles.
+        return {"ok": False, "status": "timeout",
+                "detail": ("This device is taking longer than usual to respond. "
+                           "Make sure it's powered on and on the same Wi-Fi, then try again.")}
+    if res.get("status_code") == 404:
+        # HA dropped the discovery flow (already consumed, or the device went
+        # offline). It only reappears when the device re-announces itself, so
+        # the right recovery is a fresh scan, not retrying this dead flow id.
+        return {"ok": False, "status": "gone",
+                "detail": ("This device is no longer available to set up. Turn it on, "
+                           "make sure it's on your Wi-Fi, then rescan to find it again.")}
+    # Genuine upstream error — surface HA's real reason rather than flattening it.
+    return {"ok": False, "status": "error",
+            "detail": res.get("error") or "Setup couldn't continue. Please try again."}
+
+
 @router.post("/api/pairing/config-flow/{flow_id}/step")
 async def config_flow_step(flow_id: str, body: FlowStepBody,
                            _user: dict = Depends(require_role("admin"))):
@@ -229,9 +254,13 @@ async def config_flow_step(flow_id: str, body: FlowStepBody,
     user_input to confirm/auto-configure; a form's fields come back for anything
     that needs input. Never redirects to HA."""
     from services.ha_flow_driver import submit_step
-    res = await submit_step(flow_id, body.user_input or {})
+    # 55s (< the frontend's 60s request cap): a device-pairing step such as an
+    # Android TV showing its PIN blocks well past the old 20s default. Failing
+    # inside that window is what produced the "upstream issues" dead-end and the
+    # vanishing device. See tests/test_config_flow_pairing.py.
+    res = await submit_step(flow_id, body.user_input or {}, timeout=55)
     if not res.get("ok"):
-        raise HTTPException(status_code=502, detail=res.get("error", "config flow step failed"))
+        return _present_config_error(res)
     return _present_config_step(res["step"])
 
 

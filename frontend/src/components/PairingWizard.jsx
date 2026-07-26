@@ -674,6 +674,13 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                       onClose?.()
                     }}
                     onCancel={() => setConfiguringFlow(null)}
+                    onGone={() => {
+                      // HA dropped this discovery flow. Drop back to the list and
+                      // re-scan so the device can be picked up fresh, instead of
+                      // stranding the user on a dead flow id.
+                      setConfiguringFlow(null)
+                      handleRefreshFlows()
+                    }}
                   />
                 ) : configFlows.length > 0 ? (
                   <div className="space-y-2 text-left">

@@ -9,17 +9,23 @@ import { Loader2, Check, X, Send } from 'lucide-react'
 import { configFlowStep, configFlowCancel } from '../lib/api'
 import { useT } from '../lib/i18n'
 
-export default function ConfigFlowRunner({ flowId, title, onDone, onCancel }) {
+export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGone }) {
   const t = useT()
   const [step, setStep]   = useState(null)   // reshaped envelope
   const [input, setInput] = useState({})
   const [busy, setBusy]   = useState(true)
   const [error, setError] = useState(null)
+  // Set when HA has dropped the discovery flow (device consumed/offline). This
+  // is NOT a retryable error — retrying a dead flow id just 404s again — so it
+  // renders its own screen whose only action is a fresh scan.
+  const [gone, setGone]   = useState(null)
   const pollRef = useRef(null)
 
   const apply = (env) => {
     setBusy(false)
     if (!env) { setError(t('wizard.configFlow.failed')); return }
+    if (env.status === 'gone')    { setGone(t('wizard.configFlow.gone')); return }
+    if (env.status === 'timeout') { setError(t('wizard.configFlow.timeout')); return }
     if (env.status === 'aborted') { setStep(env); return }
     if (env.ok === false) { setError(env.detail || env.error || t('wizard.configFlow.failed')); return }
     setError(null)
@@ -36,7 +42,19 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel }) {
   // Auto-configure on open: empty submit. Simple devices finish here; ones that
   // need input come back as a form; ones that need on-device confirmation come
   // back as a progress step.
-  useEffect(() => { send({}) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [flowId])
+  //
+  // Guarded to fire exactly once per flow id. Without this guard React StrictMode
+  // (and any rapid remount) double-invokes the effect, firing a SECOND empty
+  // submit that races/clobbers the first — for a one-shot HA discovery flow that
+  // consumes it and yields the "upstream issues" dead-end.
+  const initedFlow = useRef(null)
+  useEffect(() => {
+    if (initedFlow.current === flowId) return
+    initedFlow.current = flowId
+    setStep(null); setInput({}); setError(null); setGone(null)
+    send({})
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [flowId])
 
   // Progress (e.g. "accept on your TV"): poll until it advances.
   useEffect(() => {
@@ -53,6 +71,19 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel }) {
     background: primary ? 'var(--accent)' : 'transparent', color: primary ? 'white' : 'var(--ink-mute)',
     fontWeight: 600, fontSize: 14, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
   })
+
+  if (gone) {
+    return (
+      <div style={box}>
+        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--warn-soft, #fff4e5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={22} className="text-warn" /></div>
+        <div style={{ fontSize: 14, color: 'var(--ink)' }}>{gone}</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => (onGone ? onGone() : onCancel?.())} style={btn(true)}>{t('wizard.configFlow.rescan')}</button>
+          <button onClick={cancel} style={btn(false)}>{t('wizard.configFlow.cancel')}</button>
+        </div>
+      </div>
+    )
+  }
 
   if (error) {
     return (

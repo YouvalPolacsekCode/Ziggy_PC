@@ -102,21 +102,50 @@ async def init_flow(
         return {"ok": False, "error": str(e)}
 
 
-async def submit_step(flow_id: str, user_input: dict[str, Any] | None) -> dict:
-    """Submit user input to the current step of a flow and get the next."""
+async def submit_step(
+    flow_id: str,
+    user_input: dict[str, Any] | None,
+    *,
+    timeout: int = 60,
+) -> dict:
+    """Submit user input to the current step of a flow and get the next.
+
+    `timeout` (seconds) must accommodate device-pairing handshakes: an Android
+    TV's confirm→pair step blocks server-side inside HA for 20–40s (longer if a
+    prior pairing session is wedged) while the TV displays its PIN. The old
+    hardcoded 20s cap fired mid-handshake and the caller reported a bare 502
+    the UI showed as "temporarily unavailable" — right as the TV lit up with the
+    code the user never got a screen to enter. Callers that know a step is slow
+    (pairing) pass a larger value; quick flows keep the default.
+
+    Return shape:
+      success            → {"ok": True, "step": <HA step dict>}
+      HA non-2xx         → {"ok": False, "status_code": int, "error": <clean msg>, "detail": <body>}
+      read/connect stall → {"ok": False, "kind": "timeout", "error": <msg>}
+      other exception    → {"ok": False, "error": str(e)}
+    """
     try:
         endpoint = f"{_ha_url()}/api/config/config_entries/flow/{flow_id}"
-        resp = requests.post(endpoint, headers=_headers(), json=user_input or {}, timeout=20)
+        resp = requests.post(endpoint, headers=_headers(), json=user_input or {}, timeout=timeout)
         if resp.status_code not in (200, 201):
             log_error(f"[FlowDriver] submit_step {flow_id}: HTTP {resp.status_code} — {resp.text}")
             return {
                 "ok": False,
-                "error": f"HA returned {resp.status_code}",
+                "status_code": resp.status_code,
+                # Surface HA's real reason (e.g. "Invalid flow specified") so the
+                # UI can explain what happened instead of a generic status code.
+                "error": _extract_ha_error(resp),
                 "detail": resp.text[:300],
             }
         step = resp.json()
         log_info(f"[FlowDriver] flow {flow_id} → step={step.get('step_id')} type={step.get('type')}")
         return {"ok": True, "step": step}
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        # HA is still working (or unreachable); NOT a hard failure to report as
+        # "upstream broken". The caller decides whether to keep polling / retry.
+        log_error(f"[FlowDriver] submit_step {flow_id}: timed out after {timeout}s ({e})")
+        return {"ok": False, "kind": "timeout",
+                "error": f"Home Assistant did not respond within {timeout}s."}
     except Exception as e:
         log_error(f"[FlowDriver] submit_step {flow_id}: {e}")
         return {"ok": False, "error": str(e)}

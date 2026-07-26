@@ -229,7 +229,7 @@ async function request(method, path, body, { timeoutMs } = {}) {
 }
 
 const get = (path) => request('GET', path)
-const post = (path, body) => request('POST', path, body)
+const post = (path, body, opts) => request('POST', path, body, opts)
 const put = (path, body) => request('PUT', path, body)
 const patch = (path, body) => request('PATCH', path, body)
 const del = (path, body) => request('DELETE', path, body)
@@ -538,8 +538,11 @@ export const switcherPairingRecover = () => post('/pairing/switcher/recover')
 // Generic native config-flow driver — configure ANY discovered WiFi device
 // (TV, Chromecast, plug, …) without ever showing HA. Submit empty user_input
 // to auto-confirm; a form's fields come back for anything that needs input.
+// 60s ceiling (> the backend's 55s step timeout) so device-pairing handshakes
+// — e.g. an Android TV taking 20–40s to display its PIN — get the backend's
+// structured answer instead of the client aborting first and masking it.
 export const configFlowStep = (flowId, userInput) =>
-  post(`/pairing/config-flow/${encodeURIComponent(flowId)}/step`, { user_input: userInput || {} })
+  post(`/pairing/config-flow/${encodeURIComponent(flowId)}/step`, { user_input: userInput || {} }, { timeoutMs: 60_000 })
 export const configFlowCancel = (flowId) =>
   post(`/pairing/config-flow/${encodeURIComponent(flowId)}/cancel`)
 
