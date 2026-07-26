@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Zap, ChevronRight, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen, Trash2 } from 'lucide-react'
+import { ArrowLeft, Zap, ChevronRight, ChevronDown, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
@@ -409,6 +409,51 @@ function WhoCanUse({ entityId }) {
       <Link to="/settings/people" style={{ display: 'inline-block', marginTop: 11, fontSize: 12,
         fontWeight: 550, color: 'var(--accent)', textDecoration: 'none' }}>Manage access →</Link>
     </Card>
+  )
+}
+
+// A gentle "there's more below" nudge — a floating pill that appears only when
+// the page's scroll container has meaningfully more content beneath the fold
+// and the user is still near the top, and fades the moment they scroll. Helps
+// on device pages whose controls fit the first screen, hiding the info/tabs
+// below. Reads the AppShell <main> via closest() (the real scroll container).
+function ScrollDownHint({ label }) {
+  const [show, setShow] = useState(false)
+  const anchorRef = useRef(null)
+  useEffect(() => {
+    const main = anchorRef.current?.closest('main')
+    if (!main) return
+    const check = () => {
+      const below = main.scrollHeight - main.clientHeight - main.scrollTop
+      setShow(below > 140 && main.scrollTop < 48)
+    }
+    check()
+    main.addEventListener('scroll', check, { passive: true })
+    let ro
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(check); ro.observe(main) }
+    return () => { main.removeEventListener('scroll', check); ro?.disconnect() }
+  }, [])
+  return (
+    <div ref={anchorRef} aria-hidden="true">
+      <AnimatePresence>
+        {show && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+              bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', zIndex: 30, pointerEvents: 'none',
+              display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999,
+              background: 'var(--ink)', color: 'var(--bg)', fontSize: 12, fontWeight: 600,
+              boxShadow: '0 4px 18px rgba(0,0,0,0.20)' }}>
+            <motion.span animate={{ y: [0, 2, 0] }} transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ display: 'flex' }}>
+              <ChevronDown size={14} />
+            </motion.span>
+            {label}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 
@@ -833,6 +878,7 @@ export default function DeviceDetail() {
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <ScrollDownHint label={t('deviceDetail.moreBelow')} />
 
       {/* ── Header — centered title with room subtitle, design-matched ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>

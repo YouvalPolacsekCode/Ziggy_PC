@@ -75,18 +75,18 @@ def test_tick_skips_off_and_manual(monkeypatch):
     ce._manual.clear()
     monkeypatch.setattr(ce, "load_config", lambda: CFG)
     monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a", "light.b"])
-    ce._manual.add("light.b")                            # b is hand-controlled
+    ce._bench("light.b")                                 # b is hand-controlled (just now)
     applied = {}
     monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: applied.setdefault("eids", eids) or len(eids))
     ce.tick()
-    assert applied["eids"] == ["light.a"]                # b skipped
+    assert applied["eids"] == ["light.a"]                # b skipped (within grace)
     ce._manual.clear()
 
 
 def test_tick_auto_on_targets_all_scheduled_lights(monkeypatch):
     """auto_on=True → the schedule also switches OFF scheduled lights on, so tick
     targets every scheduled light, not just the ones already on."""
-    ce._manual.clear()
+    ce._manual.clear()  # dict now: entity_id → bench timestamp
     monkeypatch.setattr(ce, "load_config", lambda: {**CFG, "auto_on": True})
     monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a"])   # only a is on
     applied = {}
@@ -109,7 +109,7 @@ def test_tick_default_only_adjusts_on_lights(monkeypatch):
 
 
 def test_turn_on_enrolls_and_applies(monkeypatch):
-    ce._manual.clear(); ce._manual.add("light.a")
+    ce._manual.clear(); ce._bench("light.a")
     monkeypatch.setattr(ce, "load_config", lambda: CFG)
     calls = {}
     monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: calls.update(eids=eids, enroll=kw.get("enroll")))
@@ -126,9 +126,82 @@ def test_mark_manual_only_scheduled(monkeypatch):
 
 
 def test_sync_now_clears_all_manual(monkeypatch):
-    ce._manual.clear(); ce._manual.update({"light.a", "light.b"})
+    ce._manual.clear(); ce._bench("light.a"); ce._bench("light.b")
     monkeypatch.setattr(ce, "load_config", lambda: CFG)
     monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a"])
     monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: len(eids))
     ce.sync_now()
-    assert ce._manual == set()                           # all re-enrolled
+    assert ce._manual == {}                               # all re-enrolled
+
+
+# ── self-heal: a benched light must rejoin the ramp on its own ────────────────
+# The reliability bug (2026-07-26): another automation (or any non-Ziggy write)
+# on a scheduled light looks identical to a hand change, so the light was benched
+# with NO expiry — it silently stayed off-schedule until the user tapped Sync.
+# Grace-bounded self-heal fixes that: after `manual_grace_min`, tick reclaims it.
+
+GRACE_CFG = {**CFG, "manual_grace_min": 30}
+
+
+def test_benched_light_self_heals_after_grace(monkeypatch):
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: GRACE_CFG)
+    monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a", "light.b"])
+    # b was benched 31 min ago — past the 30 min grace → must rejoin.
+    ce._manual["light.b"] = ce._now_ts() - 31 * 60
+    applied = {}
+    monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: applied.setdefault("eids", eids) or len(eids))
+    ce.tick()
+    assert applied["eids"] == ["light.a", "light.b"]     # b reclaimed
+    assert "light.b" not in ce._manual                   # bench evicted
+    ce._manual.clear()
+
+
+def test_benched_light_respected_within_grace(monkeypatch):
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: GRACE_CFG)
+    monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a", "light.b"])
+    ce._manual["light.b"] = ce._now_ts() - 5 * 60        # 5 min ago, still within grace
+    applied = {}
+    monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: applied.setdefault("eids", eids) or len(eids))
+    ce.tick()
+    assert applied["eids"] == ["light.a"]                # b still left alone
+    ce._manual.clear()
+
+
+def test_grace_zero_never_reclaims(monkeypatch):
+    """manual_grace_min=0 → keep the old 'respect until off→on / Sync' behavior."""
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: {**CFG, "manual_grace_min": 0})
+    monkeypatch.setattr(ce, "_live_on", lambda eids: ["light.a", "light.b"])
+    ce._manual["light.b"] = ce._now_ts() - 24 * 3600     # a full day ago
+    applied = {}
+    monkeypatch.setattr(ce, "apply", lambda eids, k, b, **kw: applied.setdefault("eids", eids) or len(eids))
+    ce.tick()
+    assert applied["eids"] == ["light.a"]                # b still benched forever
+    assert "light.b" in ce._manual
+    ce._manual.clear()
+
+
+def test_repeated_mark_keeps_earliest_bench(monkeypatch):
+    """An automation re-writing a light every few minutes must not reset the grace
+    clock — else it would never heal. mark_manual keeps the FIRST bench time."""
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: GRACE_CFG)
+    first = ce._now_ts() - 20 * 60
+    ce._manual["light.a"] = first
+    ce.mark_manual("light.a")                            # re-marked "now"
+    assert ce._manual["light.a"] == first               # earliest kept
+    ce._manual.clear()
+
+
+def test_status_reports_only_within_grace(monkeypatch):
+    ce._manual.clear()
+    monkeypatch.setattr(ce, "load_config", lambda: GRACE_CFG)
+    monkeypatch.setattr(ce, "current_target", lambda cfg=None: (3000, 60))
+    ce._manual["light.a"] = ce._now_ts() - 5 * 60        # within grace
+    ce._manual["light.b"] = ce._now_ts() - 40 * 60       # past grace → healed
+    st = ce.status()
+    assert st["manual_lights"] == ["light.a"]
+    assert "light.b" not in ce._manual                   # status also self-heals
+    ce._manual.clear()

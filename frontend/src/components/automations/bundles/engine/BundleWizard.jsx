@@ -27,6 +27,17 @@ export default function BundleWizard({ recipe, steps, values, setValue, ctx,
   const back = () => (idx === 0 ? onClose?.() : setIdx((i) => i - 1))
   const next = () => setIdx((i) => Math.min(i + 1, visibleSteps.length))
 
+  // A step can own its own navigation (an embedded sub-flow like the
+  // presence-sensor creator). While it does, hide the outer footer so there's
+  // one clear set of buttons, and let it drive the outer "back" via a
+  // monotonic _navBack signal (canceling the forced sub-flow steps us back).
+  const navHidden = !isReview && !!step?.hideNav?.(values, ctx)
+  const navBackSignal = values._navBack || 0
+  useEffect(() => {
+    if (navBackSignal) { setValue('_navBack', 0); back() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navBackSignal])
+
   const title = isReview
     ? t('automations.bundles.review')
     : `${step?.icon ? `${step.icon} ` : ''}${step?.titleKey ? t(step.titleKey) : ''}`
@@ -41,6 +52,7 @@ export default function BundleWizard({ recipe, steps, values, setValue, ctx,
       onPrimary={isReview ? onCreate : next}
       primaryLabel={isReview ? t('automations.bundles.create') : t('automations.bundles.next')}
       primaryDisabled={!stepOk || (isReview && saving)}
+      hideFooter={navHidden}
     >
       {idx === 0 && recipe.subtitleKey && !isReview && (
         <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }} dir="auto">

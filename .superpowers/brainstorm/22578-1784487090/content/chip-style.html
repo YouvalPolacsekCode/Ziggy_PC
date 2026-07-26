@@ -1,0 +1,72 @@
+<h2>How should a saved preset look?</h2>
+<p class="subtitle">Same three presets — <b>Cozy</b> (40%, warm), <b>Bright</b> (85%, cool), <b>Movie</b> (15%, warm) — drawn three ways. The chip has to make "40% warm" and "85% cool" look obviously different at a glance. Tap the one you like.</p>
+
+<style>
+  .zcard{background:#FBF8F2;border:1px solid #ECE6DA;border-radius:18px;padding:18px 18px 20px;max-width:360px;margin:0 auto;font-family:inherit;color:#2B2722}
+  .zeyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9B9384;display:block;margin-bottom:12px;font-weight:600}
+  .zrow{display:flex;gap:10px;align-items:flex-start}
+  .zplus{flex:0 0 auto;width:58px;height:58px;border-radius:14px;border:1.5px dashed #CFC7B7;display:flex;align-items:center;justify-content:center;color:#B7AE9C;font-size:22px}
+  .zname{font-size:10.5px;color:#6E665A;text-align:center;margin-top:6px;font-weight:500}
+  .zpct{font-size:9px;color:#A79E8D;font-family:ui-monospace,monospace}
+  /* A — live preview tiles */
+  .tileA{flex:1;text-align:center}
+  .swA{aspect-ratio:1;border-radius:14px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+  .swA .scrim{position:absolute;inset:0;background:#000}
+  /* B — named pills */
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;background:#F3EEE4;border:.5px solid #E3DBCC;font-size:12px;font-weight:600;color:#3A342B}
+  .dot{width:13px;height:13px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+  .pillpct{font-size:10px;color:#A79E8D;font-family:ui-monospace,monospace;font-weight:500}
+  /* C — swatch + brightness fill */
+  .tileC{flex:1;text-align:center}
+  .swC{aspect-ratio:1;border-radius:14px;position:relative;overflow:hidden;background:#EDE7DA;box-shadow:inset 0 0 0 1px rgba(0,0,0,.04)}
+  .swC .fill{position:absolute;left:0;right:0;bottom:0}
+</style>
+
+<div class="cards" style="gap:20px">
+
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:transparent">
+      <div class="zcard">
+        <span class="zeyebrow">Presets</span>
+        <div class="zrow">
+          <div class="tileA"><div class="swA" style="background:#F2B45C"><div class="scrim" style="opacity:.55"></div></div><div class="zname">Cozy</div></div>
+          <div class="tileA"><div class="swA" style="background:#EEF1F4"><div class="scrim" style="opacity:.06"></div></div><div class="zname">Bright</div></div>
+          <div class="tileA"><div class="swA" style="background:#F0A94A"><div class="scrim" style="opacity:.82"></div></div><div class="zname">Movie</div></div>
+          <div class="zplus" style="width:auto;flex:1;aspect-ratio:1">+</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>A · Live preview tiles</h3><p>The tile literally shows what the light will look like — warmth as the color, brightness as how bright/dark the tile is. "Movie" reads as a deep dim amber; "Bright" as near-white. No numbers needed.</p></div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:transparent">
+      <div class="zcard">
+        <span class="zeyebrow">Presets</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span class="pill"><span class="dot" style="background:#F2B45C"></span>Cozy <span class="pillpct">40%</span></span>
+          <span class="pill"><span class="dot" style="background:#EEF1F4"></span>Bright <span class="pillpct">85%</span></span>
+          <span class="pill"><span class="dot" style="background:#F0A94A"></span>Movie <span class="pillpct">15%</span></span>
+          <span class="pill" style="border-style:dashed;color:#B7AE9C;background:transparent">+ Save</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>B · Named pills</h3><p>Text-first, like your Effects row. A small color dot hints at warmth, the % states brightness. Names lead — easiest to read, most compact, but less of a visual "preview".</p></div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:transparent">
+      <div class="zcard">
+        <span class="zeyebrow">Presets</span>
+        <div class="zrow">
+          <div class="tileC"><div class="swC"><div class="fill" style="height:40%;background:#F2B45C"></div></div><div class="zname">Cozy</div></div>
+          <div class="tileC"><div class="swC"><div class="fill" style="height:85%;background:#EEF1F4"></div></div><div class="zname">Bright</div></div>
+          <div class="tileC"><div class="swC"><div class="fill" style="height:15%;background:#F0A94A"></div></div><div class="zname">Movie</div></div>
+          <div class="zplus" style="width:auto;flex:1;aspect-ratio:1">+</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>C · Swatch + brightness gauge</h3><p>Like your brightness lamp: warmth is the color, and the fill level = brightness (Movie barely filled, Bright almost full). Literal and precise, a touch more "instrument" than "preview".</p></div>
+  </div>
+
+</div>

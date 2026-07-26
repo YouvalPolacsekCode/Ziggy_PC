@@ -137,20 +137,54 @@ function RoomPickField({ values, setValue, ctx, t }) {
   )
 }
 
+// Does the presence step currently need the embedded sensor-creation form?
+// (No sensor chosen yet AND: backend flagged it, OR the user tapped "create",
+// OR the room simply has no presence sources to pick.) Shared by the field and
+// the step's `hideNav` so the outer wizard footer hides while the inner form
+// owns navigation — no more two competing button rows.
+function presenceNeedsInnerForm(values, ctx) {
+  if (values.occEntity) return false
+  if (values._needsSensor || values._creatingSensor) return true
+  return presenceCandidates(ctx, values.room, (k) => k).length === 0
+}
+
 // ── Step 2: presence source (reuse existing sensor or create a merged one) ───
 function PresenceField({ values, setValue, ctx, t }) {
   const room = values.room
   const candidates = useMemo(() => presenceCandidates(ctx, room, t), [ctx, room, t])
-  const [creating, setCreating] = useState(false)
-  if (values._needsSensor || creating || candidates.length === 0) {
+  if (presenceNeedsInnerForm(values, ctx)) {
+    // Forced (no sensors to pick) vs. user-initiated (tapped "create"): only the
+    // forced case has nothing to fall back to, so its cancel steps the OUTER
+    // wizard back (to the room pick). The manual case just returns to the list.
+    const forced = !values._needsSensor && !values._creatingSensor && candidates.length === 0
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, lineHeight: 1.5 }} dir="auto">
           {t('automations.smartRoom.needPresence', { room: room?.name || '' })}
         </p>
         <OccupancySensorForm initialRoom={room?.name || ''}
-          onCreated={(res) => { setValue('occEntity', res?.entity_id || null); setValue('_needsSensor', false); setCreating(false) }}
-          onClose={() => setCreating(false)} />
+          onCreated={(res) => { setValue('occEntity', res?.entity_id || null); setValue('_needsSensor', false); setValue('_creatingSensor', false) }}
+          onClose={() => {
+            setValue('_creatingSensor', false)
+            setValue('_needsSensor', false)
+            if (forced || (!values._creatingSensor && candidates.length === 0)) {
+              setValue('_navBack', (values._navBack || 0) + 1)
+            }
+          }} />
+      </div>
+    )
+  }
+  // A sensor was just created but the candidate list hasn't refetched yet —
+  // confirm it so the user isn't staring at an empty picker.
+  const chosenInList = candidates.some((c) => c.id === values.occEntity)
+  if (values.occEntity && !chosenInList) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', borderRadius: 11,
+          background: 'color-mix(in srgb, var(--ok) 9%, transparent)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}>
+          <span style={{ color: 'var(--ok)', fontSize: 15 }}>✓</span>
+          <span style={{ fontSize: 13, color: 'var(--ink)' }} dir="auto">{t('automations.smartRoom.wiz.sensorReady')}</span>
+        </div>
       </div>
     )
   }
@@ -173,7 +207,7 @@ function PresenceField({ values, setValue, ctx, t }) {
             onClick={() => setValue('occEntity', c.id)} />
         ))}
       </div>
-      <button type="button" onClick={() => setCreating(true)}
+      <button type="button" onClick={() => setValue('_creatingSensor', true)}
         style={{ alignSelf: 'flex-start', background: 'none', border: '1px dashed var(--line)', borderRadius: 10,
           padding: '9px 14px', fontSize: 12.5, color: 'var(--ink-mute)', cursor: 'pointer', fontFamily: 'inherit' }} dir="auto">
         + {t('automations.smartRoom.wiz.createMerged')}
@@ -337,6 +371,7 @@ export default {
         },
         {
           key: 'presence', titleKey: 'automations.smartRoom.wiz.presenceTitle', icon: '🧍',
+          hideNav: (v, c) => presenceNeedsInnerForm(v, c),
           fields: [{ key: '_presence', type: 'custom', render: (p) => <PresenceField {...p} />,
             summary: (t, v, c) => {
               const cand = presenceCandidates(c, v.room, t).find((x) => x.id === v.occEntity)
@@ -392,6 +427,7 @@ export default {
       {
         key: 'presence', titleKey: 'automations.smartRoom.wiz.presenceTitle', icon: '🧍',
         validate: (v) => !!v.occEntity,
+        hideNav: (v, c) => presenceNeedsInnerForm(v, c),
         fields: [{ key: '_presence', type: 'custom', render: (p) => <PresenceField {...p} /> }],
       },
       {

@@ -622,7 +622,8 @@ async def get_circadian():
 async def save_circadian(body: CircadianConfigBody):
     from services.circadian_engine import save_config, sync_now, load_config, DEFAULTS
     # None → keep the current auto_on (don't clobber it on an unrelated save).
-    prev_auto_on = load_config().get("auto_on", DEFAULTS["auto_on"])
+    prev = load_config()
+    prev_auto_on = prev.get("auto_on", DEFAULTS["auto_on"])
     cfg = {
         "enabled": bool(body.lights) if body.enabled is None else bool(body.enabled),
         "auto_on": prev_auto_on if body.auto_on is None else bool(body.auto_on),
@@ -631,6 +632,9 @@ async def save_circadian(body: CircadianConfigBody):
         "floor":   body.floor.model_dump() if body.floor else DEFAULTS["floor"],
         "wake":    body.wake    or DEFAULTS["wake"],
         "bedtime": body.bedtime or DEFAULTS["bedtime"],
+        # Not exposed in the wizard — carry the existing value forward so a
+        # file-level override isn't reset to the default on an unrelated save.
+        "manual_grace_min": prev.get("manual_grace_min", DEFAULTS["manual_grace_min"]),
     }
     saved = await asyncio.to_thread(save_config, cfg)
     # Retire the legacy 4-automation bundle so the two don't both drive the lights.

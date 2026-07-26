@@ -259,6 +259,16 @@ describe('circadian derive', () => {
     const v = RECIPES.circadian.derive({ lights: ['light.living'] }, ctx)
     expect(RECIPES.circadian.canSave({ ...v, wake: 'ten' })).toBe(false)
   })
+  it('carries engine status (incl. off-schedule lights) into the modal', () => {
+    // The "Right now" banner lists manual_lights; that only works if derive
+    // passes _status through. Regression guard for the dropped off-schedule view.
+    const status = { _status: { current: { kelvin: 3200, pct: 55 }, manual_lights: ['light.kitchen', 'light.dining'] } }
+    const v = RECIPES.circadian.derive(status, ctx)
+    expect(v._status.manual_lights).toEqual(['light.kitchen', 'light.dining'])
+    // The now-step is gated on _status, so it renders when status is present.
+    const nowStep = RECIPES.circadian.steps.find((s) => s.key === 'now')
+    expect(nowStep.visibleWhen({ _installed: true, _status: v._status })).toBe(true)
+  })
 })
 
 // ── Smart Climate ────────────────────────────────────────────────────────────

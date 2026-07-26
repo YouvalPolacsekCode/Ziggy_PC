@@ -2127,9 +2127,20 @@ export default function Devices() {
   // Paired IR blasters — infrastructure (not controllable tiles), shown as a
   // small status strip so the user can see "RM4 · online" without digging into
   // Settings → IR Hubs. Loaded once + refreshed after pairing one.
-  const [blasters, setBlasters] = useState([])
+  // Seed from a localStorage cache so the (collapsed) IR-blasters strip is
+  // present on the very first paint instead of popping in a beat later when the
+  // async list resolves — that late insert was the "jumps into position" jank.
+  const [blasters, setBlasters] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ziggy_blasters_cache') || '[]') } catch { return [] }
+  })
   const [blastersOpen, setBlastersOpen] = useState(false)  // collapsed by default
-  const loadBlasters = () => listIrBlasters().then(b => setBlasters(Array.isArray(b) ? b : [])).catch(() => {})
+  const loadBlasters = () => listIrBlasters()
+    .then(b => {
+      const list = Array.isArray(b) ? b : []
+      setBlasters(list)
+      try { localStorage.setItem('ziggy_blasters_cache', JSON.stringify(list)) } catch {}
+    })
+    .catch(() => {})
   useEffect(() => { loadBlasters() }, [])
 
   // Unassigned IR signals — captured physical-remote presses that didn't

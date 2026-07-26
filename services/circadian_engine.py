@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -97,14 +98,65 @@ DEFAULTS = {
     "wake":     "07:00",                         # morning ramp begins
     "bedtime":  "22:00",                         # reaches the floor
     "noon":     "12:00",                         # solar-noon anchor (peak moment)
+    # How long a hand-changed scheduled light is left alone before the ramp
+    # reclaims it (minutes). Bounded so a MIS-detected "manual" (e.g. another
+    # automation, a scene, or a wall dimmer wrote the light — indistinguishable
+    # from a real hand change here) self-heals instead of drifting off-schedule
+    # until the user notices and taps Sync. 30 min matches Ziggy's house-wide
+    # manual-override window (services/manual_overrides.DEFAULT_OVERRIDE_SECONDS).
+    # 0 → never auto-reclaim (respect a hand change until off→on / Sync).
+    "manual_grace_min": 30,
 }
 
-# Engine-owned manual-control set: scheduled lights the user grabbed by hand.
-# Cleared on off→on (enroll) or Sync now. In-memory — a manual override is a
-# transient hint, and losing it on restart just means the next tick re-tints.
-_manual: set[str] = set()
+# Engine-owned manual-control map: scheduled light → epoch ts it was benched
+# (grabbed by hand, or by anything Ziggy didn't attribute to its own write).
+# Cleared on off→on (enroll) or Sync now, and self-heals after `manual_grace_min`.
+# In-memory — a manual override is a transient hint; losing it on restart just
+# means the next tick re-tints.
+_manual: dict[str, float] = {}
 _last_target: tuple[int, int] | None = None     # (kelvin, pct) last computed — for the View modal
 _lock = threading.Lock()
+
+
+def _now_ts() -> float:
+    """Wall-clock epoch seconds, wrapped so tests can inject time."""
+    return time.time()
+
+
+def _grace_s(cfg: dict) -> float:
+    """Seconds a benched light is respected before the ramp reclaims it.
+    0/None/negative → never reclaim (old 'until off→on / Sync' behavior)."""
+    try:
+        mins = float(cfg.get("manual_grace_min", DEFAULTS["manual_grace_min"]))
+    except (TypeError, ValueError):
+        mins = float(DEFAULTS["manual_grace_min"])
+    return max(0.0, mins) * 60.0
+
+
+def _bench(entity_id: str) -> None:
+    """Mark a scheduled light hand-controlled. Keeps the ORIGINAL bench time on a
+    repeat mark, so a light another automation re-writes every few minutes still
+    heals within ONE grace window rather than resetting its clock forever."""
+    if not entity_id:
+        return
+    with _lock:
+        _manual.setdefault(entity_id, _now_ts())
+
+
+def _benched(cfg: dict) -> set[str]:
+    """Scheduled lights currently held back from the ramp: benched by hand and
+    still inside the grace window. Evicts (self-heals) any whose grace elapsed —
+    this is what lets a mis-detected 'manual' rejoin the schedule on its own."""
+    grace = _grace_s(cfg)
+    now = _now_ts()
+    out: set[str] = set()
+    with _lock:
+        for eid, ts in list(_manual.items()):
+            if grace and (now - ts) >= grace:
+                _manual.pop(eid, None)          # grace elapsed → rejoin the ramp
+            else:
+                out.add(eid)
+    return out
 
 
 # ── config ───────────────────────────────────────────────────────────────────
@@ -231,7 +283,7 @@ def apply(eids: list[str], kelvin: int, pct: int, *, enroll: bool = False) -> in
     if enroll:
         with _lock:
             for e in eids:
-                _manual.discard(e)
+                _manual.pop(e, None)
     ct, plain = _split_by_color_temp(eids)
     _turn_on(ct,    {"color_temp_kelvin": int(kelvin), "brightness_pct": int(pct)})
     _turn_on(plain, {"brightness_pct": int(pct)})
@@ -256,8 +308,9 @@ def tick() -> dict:
     if not cfg.get("enabled") or not cfg.get("lights"):
         return {"ran": False}
     k, b = current_target(cfg)
-    with _lock:
-        manual = set(_manual)
+    # _benched() also self-heals: any light whose grace window elapsed is dropped
+    # here and falls back into `targets`, so it rejoins the ramp automatically.
+    manual = _benched(cfg)
     # auto_on: also switch scheduled lights ON to the ramp; otherwise only re-tint
     # the ones already on (the coexistence-safe default — occupancy owns on/off).
     pool = cfg["lights"] if cfg.get("auto_on") else _live_on(cfg["lights"])
@@ -279,11 +332,14 @@ def on_light_turned_on(entity_id: str) -> None:
 
 
 def mark_manual(entity_id: str) -> None:
-    """User grabbed a scheduled light by hand — stop adjusting it until off→on / sync."""
+    """User grabbed a scheduled light by hand — stop adjusting it until off→on,
+    Sync, or the grace window (`manual_grace_min`) elapses."""
     if entity_id in (load_config().get("lights") or []):
-        with _lock:
-            _manual.add(entity_id)
-        log_info(f"[Circadian] {entity_id} taken manual — leaving it until off→on or Sync")
+        already = entity_id in _manual
+        _bench(entity_id)
+        if not already:
+            log_info(f"[Circadian] {entity_id} taken manual — leaving it for the grace window, "
+                     f"or until off→on or Sync")
 
 
 def sync_now() -> dict:
@@ -372,8 +428,7 @@ def status() -> dict:
     """For the View modal + card: config + current point + which lights are hand-controlled."""
     cfg = load_config()
     k, b = current_target(cfg)
-    with _lock:
-        manual = sorted(_manual)
+    manual = sorted(_benched(cfg))       # self-heals expired benches as a side effect
     return {
         **cfg,
         "current": {"kelvin": k, "pct": b},

@@ -92,7 +92,7 @@ export function isLightKind(kind) {
 //     with sensor entries and they read as the same thing.
 const KIND_META = {
   light:        { label: 'Light',      tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '💡' },
-  lamp:         { label: 'Lamp',       tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '🪔' },
+  lamp:         { label: 'Lamp',       tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '💡' },
   led_strip:    { label: 'LED Strip',  tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '🪩' },
   switch:       { label: 'Switch',     tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🎛️' },
   plug:         { label: 'Plug',       tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },

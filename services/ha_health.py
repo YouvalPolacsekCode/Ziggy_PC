@@ -107,7 +107,49 @@ class AckState:
 
 _recovery: RecoveryState = RecoveryState()
 _ack:      AckState      = AckState()
+_ack_loaded: bool        = False   # lazily hydrated from KV once per process
 _coord_cache:    CoordinatorState | None = None
+
+
+# ── Ack persistence ──────────────────────────────────────────────────────────
+# The "It's OK, I know" acknowledgement must survive a backend restart (an OTA
+# deploy, a crash, a reboot) — otherwise every restart re-raises the same
+# "N devices offline" banner the user already dismissed. Persist it to Ziggy's
+# local KV store (the same durable store occupancy sensors use).
+_ACK_KV_NAMESPACE = "health_ack"
+_ACK_KV_KEY = "offline"
+
+
+def _persist_ack() -> None:
+    try:
+        from services.local_automation_actions import set_local_state
+        if _ack.offline_set:
+            set_local_state(_ACK_KV_NAMESPACE, _ACK_KV_KEY, {
+                "offline_set": sorted(_ack.offline_set),
+                "acknowledged_at": _ack.acknowledged_at,
+            })
+        else:
+            set_local_state(_ACK_KV_NAMESPACE, _ACK_KV_KEY, None)
+    except Exception as e:
+        log_error(f"[Health] ack persist failed: {e}")
+
+
+def _load_ack_once() -> None:
+    """Hydrate _ack from KV the first time it's needed after a restart."""
+    global _ack, _ack_loaded
+    if _ack_loaded:
+        return
+    _ack_loaded = True
+    try:
+        from services.local_automation_actions import get_local_state
+        rec = get_local_state(_ACK_KV_NAMESPACE, _ACK_KV_KEY)
+        if isinstance(rec, dict) and rec.get("offline_set"):
+            _ack = AckState(
+                offline_set=frozenset(rec["offline_set"]),
+                acknowledged_at=float(rec.get("acknowledged_at") or 0.0),
+            )
+    except Exception as e:
+        log_error(f"[Health] ack load failed: {e}")
 _coord_cache_at: float                  = 0.0
 
 
@@ -416,6 +458,7 @@ def _apply_acknowledgement(
 ) -> bool:
     """Return True if the user's acknowledgement is still valid."""
     global _ack
+    _load_ack_once()
     if not _ack.offline_set:
         return False
 
@@ -424,17 +467,20 @@ def _apply_acknowledgement(
     if primary in (ISSUE_HA_UNREACHABLE, ISSUE_COORDINATOR_FAILED,
                    ISSUE_COORDINATOR_DEVS_GONE, ISSUE_COORDINATOR_LOADING):
         _ack = AckState()
+        _persist_ack()
         return False
 
     # New device(s) went offline beyond the acked set — invalidate so user
     # is told about the new offline device(s).
     if not offline_primary_ids.issubset(_ack.offline_set):
         _ack = AckState()
+        _persist_ack()
         return False
 
     # Escalated past the hard error threshold — invalidate.
     if offline_share >= ERROR_OFFLINE_SHARE:
         _ack = AckState()
+        _persist_ack()
         return False
 
     return True
@@ -615,19 +661,23 @@ async def trigger_recover_now() -> dict:
 
 def acknowledge_offline(offline_ids: set[str]) -> dict:
     """User tapped 'It's OK, I know' — snapshot the current offline set."""
-    global _ack
+    global _ack, _ack_loaded
+    _ack_loaded = True   # an explicit ack supersedes anything in KV
     _ack = AckState(
         offline_set=frozenset(offline_ids),
         acknowledged_at=time.time(),
     )
+    _persist_ack()
     _dbus.emit("health", VERBOSE, "offline_acknowledged", count=len(offline_ids))
     log_info(f"[Health] user acknowledged {len(offline_ids)} offline device(s)")
     return {"ok": True, "acknowledged_count": len(offline_ids)}
 
 
 def clear_acknowledgement() -> None:
-    global _ack
+    global _ack, _ack_loaded
     _ack = AckState()
+    _ack_loaded = True
+    _persist_ack()
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import { useLocation, Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
@@ -8,6 +9,17 @@ import { ConnectionStatus } from '../ui/ConnectionStatus'
 export function AppShell({ connected }) {
   const location = useLocation()
   const isChatRoute = location.pathname.startsWith('/chat')
+  const mainRef = useRef(null)
+
+  // Reset the scroll container to the top on every route change. React Router
+  // doesn't do this, so navigating from a scrolled list (e.g. the Devices
+  // grid) into a detail page used to land mid-page. Chat manages its own
+  // scroll, so leave it alone. useLayoutEffect runs before paint → no flash of
+  // the wrong scroll position.
+  useLayoutEffect(() => {
+    if (isChatRoute) return
+    if (mainRef.current) mainRef.current.scrollTop = 0
+  }, [location.pathname])
 
   return (
     // Use dvh (via --vh) so the shell tracks the *visible* viewport as
@@ -19,6 +31,7 @@ export function AppShell({ connected }) {
       <Sidebar connected={connected} />
 
       <main
+        ref={mainRef}
         className={`flex-1 min-w-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto scrollbar-thin pb-nav'}`}
         style={{
           background: 'var(--bg)',

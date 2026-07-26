@@ -427,3 +427,51 @@ class TestAcknowledgement:
         )
         assert out["primary"]      == ISSUE_HA_UNREACHABLE
         assert out["ack"]["active"] is False
+
+
+class TestOfflineAckPersistence:
+    """The 'It's OK, I know' ack must survive a backend restart — otherwise
+    every OTA/restart re-raises the same dismissed banner."""
+
+    def _kv(self, monkeypatch):
+        store = {}
+        import services.local_automation_actions as laa
+        monkeypatch.setattr(laa, "set_local_state",
+                            lambda ns, k, v: (store.pop((ns, k), None) if v is None
+                                              else store.__setitem__((ns, k), v)))
+        monkeypatch.setattr(laa, "get_local_state", lambda ns, k: store.get((ns, k)))
+        return store
+
+    def test_acknowledge_persists_to_kv(self, monkeypatch):
+        store = self._kv(monkeypatch)
+        ha_health.clear_acknowledgement()
+        ha_health.acknowledge_offline({"light.a", "switch.b"})
+        rec = store.get((ha_health._ACK_KV_NAMESPACE, ha_health._ACK_KV_KEY))
+        assert rec and set(rec["offline_set"]) == {"light.a", "switch.b"}
+
+    def test_ack_reloads_after_restart(self, monkeypatch):
+        store = self._kv(monkeypatch)
+        # Simulate a prior process having acked these, then a restart: fresh
+        # in-memory _ack + _ack_loaded=False, but KV still holds the record.
+        store[(ha_health._ACK_KV_NAMESPACE, ha_health._ACK_KV_KEY)] = {
+            "offline_set": ["light.a", "switch.b"], "acknowledged_at": 123.0,
+        }
+        monkeypatch.setattr(ha_health, "_ack", ha_health.AckState())
+        monkeypatch.setattr(ha_health, "_ack_loaded", False)
+        # Same offline set → ack still valid (banner suppressed).
+        assert ha_health._apply_acknowledgement(
+            offline_primary_ids={"light.a"}, offline_share=0.1,
+            primary=ha_health.ISSUE_DEVICES_OFFLINE) is True
+
+    def test_new_device_offline_invalidates_and_clears_kv(self, monkeypatch):
+        store = self._kv(monkeypatch)
+        store[(ha_health._ACK_KV_NAMESPACE, ha_health._ACK_KV_KEY)] = {
+            "offline_set": ["light.a"], "acknowledged_at": 123.0,
+        }
+        monkeypatch.setattr(ha_health, "_ack", ha_health.AckState())
+        monkeypatch.setattr(ha_health, "_ack_loaded", False)
+        # A NEW device (switch.b) is offline beyond the acked set → invalidate.
+        assert ha_health._apply_acknowledgement(
+            offline_primary_ids={"light.a", "switch.b"}, offline_share=0.1,
+            primary=ha_health.ISSUE_DEVICES_OFFLINE) is False
+        assert store.get((ha_health._ACK_KV_NAMESPACE, ha_health._ACK_KV_KEY)) is None

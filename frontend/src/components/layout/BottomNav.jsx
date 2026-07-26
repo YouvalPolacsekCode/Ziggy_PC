@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Bell, CheckSquare, MoreHorizontal, Settings, ShieldAlert, WifiOff, Zap } from 'lucide-react'
+import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff, Zap } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
 import { useT } from '../../lib/i18n'
@@ -113,7 +113,8 @@ export function BottomNav({ connected }) {
     ...MORE_BASE.filter(item =>
       !item.feature || (item.feature === 'task_tracking' && taskTrackingEnabled),
     ).map(item => ({ ...item, label: t(item.labelKey) })),
-    ...(hasRole(role, 'super_admin') ? [{ to: '/ops', Icon: ShieldAlert, label: t('nav.opsConsole') }] : []),
+    // Ops console intentionally NOT surfaced in the More menu — it's an admin
+    // tool reachable from Settings; keeping it out declutters the nav.
   ]
   const isMoreActive = moreItems.some(n => location.pathname.startsWith(n.to))
 

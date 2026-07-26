@@ -1,0 +1,52 @@
+<h2>B + C hybrid — pills with preview icons</h2>
+<p class="subtitle">Named pills (readable, compact) with a mini gauge icon: warmth = color, fill = brightness. One small call left — does the <b>%</b> number earn its place, or does the gauge say it for you? Tap the version you prefer.</p>
+
+<style>
+  .zcard{background:#FBF8F2;border:1px solid #ECE6DA;border-radius:18px;padding:18px;max-width:360px;margin:0 auto;font-family:inherit;color:#2B2722}
+  .zeyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9B9384;display:block;margin-bottom:12px;font-weight:600}
+  .prow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 13px 7px 8px;border-radius:999px;background:#F3EEE4;border:.5px solid #E3DBCC;font-size:12.5px;font-weight:600;color:#3A342B}
+  .pill.active{background:#2B2722;color:#FBF8F2;border-color:#2B2722}
+  .gauge{width:16px;height:16px;border-radius:5px;position:relative;overflow:hidden;background:#E6DFD1;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);flex:0 0 auto}
+  .pill.active .gauge{background:rgba(255,255,255,.18);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+  .gauge .f{position:absolute;left:0;right:0;bottom:0}
+  .ppct{font-size:10px;color:#A79E8D;font-family:ui-monospace,monospace;font-weight:500}
+  .pill.active .ppct{color:rgba(255,255,255,.55)}
+  .save{border-style:dashed;color:#B7AE9C;background:transparent;font-weight:500}
+</style>
+
+<div class="cards" style="gap:20px">
+
+  <div class="card" data-choice="clean" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:transparent">
+      <div class="zcard">
+        <span class="zeyebrow">Presets</span>
+        <div class="prow">
+          <span class="pill active"><span class="gauge"><span class="f" style="height:40%;background:#F2B45C"></span></span>Cozy</span>
+          <span class="pill"><span class="gauge"><span class="f" style="height:85%;background:#EEF1F4"></span></span>Bright</span>
+          <span class="pill"><span class="gauge"><span class="f" style="height:15%;background:#F0A94A"></span></span>Movie</span>
+          <span class="pill save">+ Save</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>Clean · icon + name only</h3><p>The gauge already shows warmth &amp; brightness, so the name carries the meaning and nothing repeats. Calmest, most "yours." ("Cozy" shown as the active/applied one.)</p></div>
+  </div>
+
+  <div class="card" data-choice="withpct" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:transparent">
+      <div class="zcard">
+        <span class="zeyebrow">Presets</span>
+        <div class="prow">
+          <span class="pill active"><span class="gauge"><span class="f" style="height:40%;background:#F2B45C"></span></span>Cozy <span class="ppct">40%</span></span>
+          <span class="pill"><span class="gauge"><span class="f" style="height:85%;background:#EEF1F4"></span></span>Bright <span class="ppct">85%</span></span>
+          <span class="pill"><span class="gauge"><span class="f" style="height:15%;background:#F0A94A"></span></span>Movie <span class="ppct">15%</span></span>
+          <span class="pill save">+ Save</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>With % · icon + name + number</h3><p>Same, but the exact brightness is spelled out. More precise/utilitarian; slightly busier. Good if you like knowing the number without opening the preset.</p></div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:22px">Note: the dark pill = the preset that's <b>currently applied</b> (the light matches it right now). Tapping any pill applies it; long-press a pill to rename or delete. <b>+ Save</b> captures the light exactly as it is.</p>

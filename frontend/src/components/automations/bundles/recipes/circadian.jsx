@@ -36,10 +36,16 @@ const lightItems = (ctx, values) => {
 }
 
 // Live "right now" banner — the useful part of the old read-only view modal,
-// kept at the top of the editor for installed schedules.
+// kept at the top of the editor for installed schedules. Also lists any lights
+// currently OFF the schedule (hand-changed / written by another automation) so
+// the user can see why a light isn't tracking — the old view modal showed this
+// and the unified modal had dropped it.
 function RightNow({ values, ctx, t }) {
-  const cur = values._status?.current
+  const status = values._status
+  const cur = status?.current
   if (!cur) return null
+  const offSchedule = status?.manual_lights || []
+  const nameFor = (eid) => entityDisplayName(ctx?.entityMap?.[eid]) || eid
   return (
     <div style={{ borderRadius: 14, padding: '14px 16px',
       background: 'color-mix(in srgb, var(--ok) 7%, var(--surface))',
@@ -49,6 +55,21 @@ function RightNow({ values, ctx, t }) {
         {cur.kelvin}K · {cur.pct}%
       </p>
       <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: '2px 0 0' }} dir="auto">{warmthWord(t, cur.kelvin || 3000)}</p>
+
+      {offSchedule.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '0.5px solid color-mix(in srgb, var(--warn) 25%, var(--line))' }}>
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: 'var(--warn)' }} dir="auto">
+            <span aria-hidden="true">⚠</span>
+            {t('automations.circadian.offScheduleCount', { n: offSchedule.length })}
+          </p>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4 }} dir="auto">
+            {offSchedule.map(nameFor).join(' · ')}
+          </p>
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.4 }} dir="auto">
+            {t('automations.circadian.handControlledHint')}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

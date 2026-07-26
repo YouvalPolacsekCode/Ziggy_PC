@@ -27,7 +27,7 @@ export function StepDots({ count, current, maxReached, onJump }) {
 }
 
 export function StepFrame({ title, step, total, maxReached, onJump, onBack, backLabel,
-  onPrimary, primaryLabel, primaryDisabled, children }) {
+  onPrimary, primaryLabel, primaryDisabled, children, hideFooter = false }) {
   const t = useT()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 2px' }} dir="auto">
@@ -41,16 +41,21 @@ export function StepFrame({ title, step, total, maxReached, onJump, onBack, back
         </span>
       </div>
       {children}
-      <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-        <button type="button" onClick={onBack} className="z-btn-secondary"
-          style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13 }}>
-          {backLabel || t('automations.bundles.back')}
-        </button>
-        <button type="button" onClick={onPrimary} disabled={primaryDisabled} className="z-btn-primary"
-          style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, opacity: primaryDisabled ? 0.5 : 1 }}>
-          {primaryLabel || t('automations.bundles.next')}
-        </button>
-      </div>
+      {/* hideFooter: an embedded sub-flow (e.g. the presence-sensor creator
+          inside Smart Room) owns its own Back/Next, so the outer nav is
+          suppressed to avoid two competing button rows. */}
+      {!hideFooter && (
+        <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+          <button type="button" onClick={onBack} className="z-btn-secondary"
+            style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13 }}>
+            {backLabel || t('automations.bundles.back')}
+          </button>
+          <button type="button" onClick={onPrimary} disabled={primaryDisabled} className="z-btn-primary"
+            style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, opacity: primaryDisabled ? 0.5 : 1 }}>
+            {primaryLabel || t('automations.bundles.next')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
