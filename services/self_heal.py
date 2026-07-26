@@ -425,13 +425,26 @@ def _friendly_name(entity_id: str) -> str:
 
 async def _notify(outcome: str, entity_id: str) -> None:
     name = _friendly_name(entity_id)
+    # Home language (he/en) — mirrors core.result_utils' resolution.
+    sys_block = settings.get("system") or {}
+    raw_lang = sys_block.get("language") or settings.get("language") or "en"
+    lang = "he" if str(raw_lang).lower().startswith("he") else "en"
+    # Localized, actionable body via the shared helper. The "failed" line now
+    # tells the user the fix that actually works for this class of stuck Zigbee
+    # bulb (power-cycle at the wall) instead of jumping straight to "replace it".
+    try:
+        from core.agent.health_speech import describe_self_heal_outcome
+        body = describe_self_heal_outcome(outcome, name, lang)
+    except Exception:
+        body = (f"{name} was unreliable — I got it back to the right state."
+                if outcome == "recovered" else
+                f"I couldn't recover {name} from here. Switch it off at the wall for "
+                f"~20 seconds, then back on. If it keeps happening, it may need replacing.")
     if outcome == "recovered":
-        title = "Device recovered"
-        body = f"{name} was unreliable — I nudged it back to the right state."
+        title = "המכשיר תוקן" if lang == "he" else "Device recovered"
         wtype = "self_heal_recovered"
     else:
-        title = "Device not responding reliably"
-        body = f"{name} isn't responding reliably. It may need to be replaced."
+        title = "מכשיר צריך אתחול" if lang == "he" else "A device needs a quick reset"
         wtype = "self_heal_failed"
 
     try:
