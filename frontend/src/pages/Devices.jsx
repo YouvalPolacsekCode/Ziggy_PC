@@ -495,13 +495,17 @@ function IREditModal({ device, onClose, onSaved }) {
   const handleSave = async () => {
     setSaving(true)
     setError(null)
+    // Idempotent PATCH — retry once so a transient remote-tunnel "upstream
+    // error" doesn't fail an edit (incl. room change) that would otherwise apply.
+    const payload = {
+      name: form.name.trim(),
+      device_type: form.device_type,
+      room: form.room || null,
+      brand: form.brand.trim() || null,
+    }
     try {
-      await patchIrDevice(device.id, {
-        name: form.name.trim(),
-        device_type: form.device_type,
-        room: form.room || null,
-        brand: form.brand.trim() || null,
-      })
+      try { await patchIrDevice(device.id, payload) }
+      catch (first) { await new Promise(r => setTimeout(r, 600)); await patchIrDevice(device.id, payload) }
       onSaved()
     } catch (e) {
       setError(e.message || t('devices.irEdit.saveFailed'))
@@ -2081,7 +2085,10 @@ export default function Devices() {
   }
 
   const handleAssign = async (entityId, roomId) => {
-    try {
+    // The assign call is idempotent (PATCH sets an absolute room). Remote
+    // (tunnel/relay) hops occasionally return a transient "upstream error";
+    // one retry clears it without ever double-applying.
+    const doAssign = async () => {
       if (entityId?.startsWith('ir.')) {
         // IR device — assign by normalized room name slug, not HA area ID.
         // Send '' (empty string) to unassign; backend treats '' as "no room".
@@ -2094,9 +2101,20 @@ export default function Devices() {
       } else {
         await assignEntityToArea(entityId, roomId)
       }
-      await fetchAll()
-      addToast(roomId ? t('devices.assigned') : t('devices.removedFromRoom'), 'success')
-    } catch (e) { addToast(e.message || t('common.failed'), 'error') }
+    }
+    try {
+      try { await doAssign() }
+      catch (first) { await new Promise(r => setTimeout(r, 600)); await doAssign() }
+    } catch (e) {
+      addToast(e.message || t('common.failed'), 'error')
+      return
+    }
+    // The assignment succeeded. Refresh is best-effort — a slow/failed refetch
+    // (common over a remote tunnel, which fires a burst of requests) must NOT
+    // be reported as an assignment failure, which was surfacing "upstream
+    // error" on a room change that actually took effect.
+    addToast(roomId ? t('devices.assigned') : t('devices.removedFromRoom'), 'success')
+    try { await fetchAll() } catch {}
   }
 
   const [showPairing, setShowPairing]         = useState(false)
@@ -2502,7 +2520,21 @@ export default function Devices() {
         // unassigned = getUnassigned() = non-IR entities in DEVICE_DOMAINS not in any HA area.
         const unroomedItems = unassigned.filter(e => entitySet.has(e.entity_id))
 
-        const noRoomItems = noRoomEntities.filter(e => entitySet.has(e.entity_id))
+        // getNoRoom()/getUnassigned() both drop `_ir` entities, and a roomless
+        // IR device isn't in any room's device list either — so without this it
+        // falls through every bucket and is invisible in the default view,
+        // showing only under the 📡 IR filter. Surface roomless IR devices here
+        // (a room-assigned IR device already appears in its roomGroup above).
+        const roomedIrIds = new Set(
+          ziggyRooms.flatMap(r => (r.devices || [])
+            .filter(d => d.ir_device_id)
+            .map(d => `ir.${d.ir_device_id}`))
+        )
+        const irNoRoom = filtered.filter(e => e._ir && !roomedIrIds.has(e.entity_id))
+        const noRoomItems = [
+          ...noRoomEntities.filter(e => entitySet.has(e.entity_id)),
+          ...irNoRoom,
+        ]
 
         return (
           <>
