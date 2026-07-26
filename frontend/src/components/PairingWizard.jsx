@@ -18,14 +18,19 @@ import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
 import logger from '../lib/logger'
 
-const ZIGBEE_DURATION = 60
+// 3 min. 60s was too short for stubborn battery sensors (Aqara motion/contact
+// especially) that need several reset attempts to enter pairing — they'd join
+// AFTER the wizard gave up and land in the device list unconfigured, bypassing
+// this flow. A live pairing session the user actively initiated is a safe time
+// to hold the join window open.
+const ZIGBEE_DURATION = 180
 const ZWAVE_DURATION  = 120
 // Extra polling window after the permit countdown hits 0. Sonoff and other
 // Zigbee 3.0 sensors often complete the join handshake inside the permit
 // window but HA's device-registry interview lags 10–20s behind — without
 // this grace the device shows up in HA but Ziggy has already stopped
 // looking and the user sees a misleading "no device found" screen.
-const POST_PAIR_POLL_GRACE_MS = 20_000
+const POST_PAIR_POLL_GRACE_MS = 30_000
 
 // Static protocol descriptors — labels/descriptions resolved via t() in the component.
 const PROTOCOLS = [
