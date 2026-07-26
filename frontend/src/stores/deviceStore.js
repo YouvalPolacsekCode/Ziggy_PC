@@ -27,6 +27,12 @@ function irToEntity(ir) {
     domain:       IR_TYPE_TO_DOMAIN[ir.type] || 'switch',
     display_name: ir.name,
     friendly_name: ir.name,
+    // Room lives on the IR record (a slug like "living_room"), NOT an HA area —
+    // surface it as entity.room so the devices-page info tab and any
+    // entity.room reader show the assigned room instead of "No Room". The
+    // Rooms page already placed it correctly via backend room-grouping; this
+    // closes the gap where the flat entity carried no room.
+    room:            ir.room || null,
     // IR-specific fields — used by IRDeviceCard / IRQuickControls
     _ir:             true,
     _irDevice:       ir,
