@@ -390,10 +390,34 @@ export function getKind(entity) {
 
 const MEDIA_ACTIVE = new Set(['on', 'playing', 'paused', 'idle'])
 
+// The state to reason about. For a pure IR device this is its assumed state.
+// For a MERGED IR+Wi-Fi device whose Wi-Fi side is offline (state
+// 'unavailable'/'unknown'/null — a Wi-Fi TV drops off the network when powered
+// off), fall back to the linked IR's assumed state (default 'off'): the device
+// is still operable via IR, so the tile must read "Off" and stay controllable
+// instead of collapsing to "Unavailable". A plain (non-IR) device is unchanged.
+export function effectiveState(entity) {
+  if (!entity) return null
+  if (entity._ir) return entity.assumed_state || entity.state
+  const s = entity.state
+  if (entity._linkedIr && (s === 'unavailable' || s === 'unknown' || s == null || s === '')) {
+    return entity._linkedIr.assumed_state || 'off'
+  }
+  return s
+}
+
+// True when the Wi-Fi/HA side can't act right now (offline). Meaningful only
+// for a merged device — its linked IR is the fallback while this holds.
+export function smartSideDown(entity) {
+  if (!entity || entity._ir) return false
+  const s = entity.state
+  return s === 'unavailable' || s === 'unknown' || s == null || s === ''
+}
+
 export function isOn(entity) {
   if (!entity) return false
   const domain = entity.domain || entity.entity_id?.split('.')[0]
-  const state  = entity._ir ? (entity.assumed_state || entity.state) : entity.state
+  const state  = effectiveState(entity)
   if (state === 'unavailable' || state == null) return false
   if (domain === 'media_player') return MEDIA_ACTIVE.has(state)
   if (domain === 'climate')      return state !== 'off' && state !== 'unavailable'
@@ -407,7 +431,8 @@ export function isOn(entity) {
 
 export function isAvailable(entity) {
   if (!entity) return false
-  if (entity._ir) return true                       // IR is always "available" (assumed)
+  if (entity._ir) return true                       // pure IR is always "available" (assumed)
+  if (entity._linkedIr) return true                 // merged: IR can always drive it, even Wi-Fi-offline
   return entity.state !== 'unavailable' && entity.state != null
 }
 
@@ -557,7 +582,6 @@ export function extrasForRemote(entity, consumeSet) {
  */
 export function commandAvailable(entity, command, params = {}) {
   if (!entity) return false
-  if (entity.state === 'unavailable') return false
   const kind = getKind(entity)
   const isIr = !!entity._ir
 
@@ -567,15 +591,22 @@ export function commandAvailable(entity, command, params = {}) {
 
   // HA path: always available unless we've ruled it out above.
   if (!isIr) {
-    // If HA can't natively serve it but a linked IR provides the fallback,
-    // require the linked IR command to be learned.
     const domain = entity.domain || entity.entity_id?.split('.')[0]
+    // Smart side offline: only the linked IR can act right now, and HA's
+    // service is unusable — so require the IR command to be learned rather
+    // than trusting the HA spec. No linked IR → genuinely unavailable.
+    if (smartSideDown(entity)) {
+      if (!entity._linkedIr) return false
+      const candidates = resolveIrCommandName(kind, probe, params)
+      return !!candidates && candidates.some((c) => linkedIrHasCommand(entity, c))
+    }
     const haSpec = HA_SERVICE_BY_DOMAIN[domain]?.[probe]
     if (haSpec) return true
     // Special HA computed paths (e.g. temp_up/temp_down on climate) — these
     // always work as long as HA reports a target temp.
     if ((probe === 'temp_up' || probe === 'temp_down') && kind === KIND.AC) return true
-    // Fall through to linked-IR check below.
+    // HA can't natively serve it but a linked IR provides the fallback —
+    // require the linked IR command to be learned.
     if (entity._linkedIr) {
       const candidates = resolveIrCommandName(kind, probe, params)
       if (!candidates) return false
@@ -713,13 +744,13 @@ const KIND_STATE_LABEL = {
   switch:   (e) => isOn(e) ? 'On' : 'Off',
   plug:     (e) => isOn(e) ? 'On' : 'Off',
   tv:       (e) => {
-    const s = e._ir ? (e.assumed_state || 'off') : e.state
+    const s = effectiveState(e)
     return ({ playing: 'Playing', paused: 'Paused', idle: 'Idle', on: 'On', off: 'Off', standby: 'Standby' })[s] || (s ? s[0].toUpperCase() + s.slice(1) : 'Off')
   },
   soundbar: (e) => isOn(e) ? 'On' : 'Off',
   projector:(e) => isOn(e) ? 'On' : 'Off',
   ac:       (e) => {
-    const s = e._ir ? (e.assumed_state || 'off') : e.state
+    const s = effectiveState(e)
     return ({ off: 'Off', heat: 'Heating', cool: 'Cooling', heat_cool: 'Auto', auto: 'Auto', fan_only: 'Fan', dry: 'Dry' })[s] || (s || 'Off')
   },
   fan:      (e) => isOn(e) ? 'On' : 'Off',
@@ -822,7 +853,7 @@ export function deviceFacts(entity) {
   // "Unavailable" string. Without this, the kind-specific label functions
   // silently mapped `unknown`/`unavailable` into their off-branch ("Closed",
   // "Clear", "Off"), which lied to the user about the device's real state.
-  const _rawState = entity._ir ? (entity.assumed_state || entity.state) : entity.state
+  const _rawState = effectiveState(entity)
   const _isUnavailable = _rawState === 'unavailable' || _rawState === 'unknown' || _rawState == null || _rawState === ''
   const _stateLabel = _isUnavailable ? i18nT('common.unavailable') : labelFn(entity)
   return {
@@ -1237,6 +1268,17 @@ export async function sendDeviceCommand(entity, command, params = {}) {
   // Try HA first if available
   if (!isIr) {
     const domain = entity.domain || entity.entity_id?.split('.')[0]
+    // Smart side offline (e.g. a Wi-Fi TV that's powered off): the HA service
+    // can't reach it, so drive via the linked IR — the reason the device was
+    // merged. Once IR powers it on and the Wi-Fi entity rejoins, subsequent
+    // commands go back over HA automatically (this branch stops firing).
+    if (linked && smartSideDown(entity)) {
+      const candidates = resolveIrCommandName(kind, command, params)
+      const cmd = candidates && pickLearnedIrCommand(linked, candidates)
+      if (cmd) return irSend(linked.id, cmd)
+      // No matching IR command — fall through to the HA attempt below so the
+      // user still gets an honest "not supported" error rather than silence.
+    }
     const map    = HA_SERVICE_BY_DOMAIN[domain]
     const spec   = map?.[command]
     if (spec) {
