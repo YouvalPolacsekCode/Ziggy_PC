@@ -589,6 +589,12 @@ export default function DeviceDetail() {
         await assignEntityToArea(entityId, roomId)
       }
       addToast(roomId ? t('deviceDetail.roomAssigned') : t('deviceDetail.removedFromRoom'), 'success')
+      // The room display reads from the STORE (an HA entity's area, or an IR
+      // device's own room slug on liveEntity._irDevice) — load() only refreshes
+      // the local details object, so without a store refresh currentRoom stays
+      // stale and the change appears not to take. force:true bypasses the
+      // inflight-dedupe so we always pull the just-written room.
+      try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
       load({ background: true })   // refresh details in background, don't block UI
     } catch (e) { addToast(e.message || t('common.failed'), 'error') }
   }
