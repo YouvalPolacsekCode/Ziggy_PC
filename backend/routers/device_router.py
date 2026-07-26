@@ -860,6 +860,45 @@ def _config_entries_to_delete(
     return ids, device_id
 
 
+# Integrations whose ONE config entry backs MANY devices (a hub/bridge). Deleting
+# that entry to remove a single device wipes every device on it — this is exactly
+# what took the whole Zigbee mesh offline on 2026-07-26 (deleting one Aqara sensor
+# deleted the shared `mqtt` config entry). Never delete these; remove the single
+# device instead (via Z2M for Zigbee, or by detaching the entry from the device).
+_HUB_CONFIG_DOMAINS = {
+    "mqtt", "zha", "deconz", "zwave_js", "zwave", "tasmota", "esphome",
+    "matter", "homekit_controller", "zigbee",
+}
+
+
+def _partition_config_entries(
+    entry_ids: set[str],
+    device_entries: list[dict],
+    target_device_ids: set[str],
+    domain_by_entry: dict[str, str],
+) -> tuple[set[str], set[str]]:
+    """Split candidate config entries into (safe_to_delete, blocked).
+
+    A config entry is BLOCKED from deletion when it either:
+      * belongs to a hub/bridge integration (``_HUB_CONFIG_DOMAINS``), or
+      * still backs at least one device we are NOT removing.
+    Deleting a blocked entry would take unrelated devices down with it. Pure so
+    it can be unit-tested (see tests/test_delete_config_entry_safety.py).
+    """
+    safe: set[str] = set()
+    blocked: set[str] = set()
+    for ce in entry_ids:
+        if domain_by_entry.get(ce) in _HUB_CONFIG_DOMAINS:
+            blocked.add(ce)
+            continue
+        entry_devs = {d.get("id") for d in device_entries if ce in (d.get("config_entries") or [])}
+        if entry_devs - set(target_device_ids):
+            blocked.add(ce)   # shared with devices we're keeping
+            continue
+        safe.add(ce)
+    return safe, blocked
+
+
 def _delete_ha_config_entry(entry_id: str, timeout: float = 10.0) -> bool:
     """Delete a config entry via HA's REST API. This nukes the entry AND every
     device/entity it owns, and — unlike the device-registry WS remove — works
@@ -987,21 +1026,84 @@ async def delete_ha_entity(entity_id: str, delete_device: bool = False,
     #    owns AND works when the device is offline — the case that stranded a
     #    powered-off webOS TV. Generic across all integrations.
     if delete_device:
+        import re as _re
         try:
             dev_res, = await _ws({"type": "config/device_registry/list"})
             device_entries = dev_res.get("result") or []
         except Exception as e:
             log_info(f"[API] delete_ha_entity: device_registry list failed: {e}")
             device_entries = []
+        # Config-entry → domain, so we can refuse to delete a hub/bridge entry.
+        domain_by_entry: dict[str, str] = {}
+        try:
+            ce_res, = await _ws({"type": "config/config_entries/list"})
+            for c in (ce_res.get("result") or []):
+                if c.get("entry_id"):
+                    domain_by_entry[c["entry_id"]] = c.get("domain")
+        except Exception as e:
+            log_info(f"[API] delete_ha_entity: config_entries list failed: {e}")
+
+        # The HA devices we're actually removing (target entity + any siblings).
+        removed_set = set(entities_removed) | {entity_id}
+        target_device_ids = {
+            e.get("device_id") for e in entity_entries
+            if e.get("entity_id") in removed_set and e.get("device_id")
+        }
+
         entry_ids, _dev = _config_entries_to_delete(
             entity_id, entity_entries, device_entries, hint=config_entry_hint)
-        # Cover siblings too — a hub device with several config entries.
         for eid in entities_removed:
             more, _ = _config_entries_to_delete(eid, entity_entries, device_entries)
             entry_ids |= more
-        for ce in entry_ids:
+
+        # SAFETY (incident 2026-07-26): only delete config entries that are
+        # EXCLUSIVE to the device(s) we're removing and NOT a shared hub. A
+        # blocked entry (mqtt/zha/…, or one still backing other devices) is left
+        # alone; the single device is removed the correct way below.
+        safe_entry_ids, blocked_entry_ids = _partition_config_entries(
+            entry_ids, device_entries, target_device_ids, domain_by_entry)
+        for ce in sorted(blocked_entry_ids):
+            log_info(f"[API] delete_ha_entity: NOT deleting shared/hub config entry "
+                     f"{ce} (domain={domain_by_entry.get(ce)}) — removing the device instead")
+        for ce in safe_entry_ids:
             if _delete_ha_config_entry(ce):
                 ha_device_removed = True
+
+        # Devices whose (shared) entry we deliberately kept: remove just the one
+        # device. Zigbee2MQTT → ask Z2M to remove it (leaves the network + clears
+        # its retained discovery so HA drops it). Others → detach the entry from
+        # this device (HA removes the device when its last entry detaches).
+        for dev_id in target_device_ids:
+            dev = next((d for d in device_entries if d.get("id") == dev_id), None)
+            if not dev:
+                continue
+            dev_entries = set(dev.get("config_entries") or [])
+            if dev_entries & safe_entry_ids:
+                continue  # already gone via its own exclusive entry
+            ieee = None
+            for e in entity_entries:
+                if e.get("device_id") == dev_id:
+                    mm = _re.search(r"0x[0-9a-fA-F]{16}", e.get("entity_id") or "")
+                    if mm:
+                        ieee = mm.group(0)
+                        break
+            if any(domain_by_entry.get(ce) == "mqtt" for ce in dev_entries) and ieee:
+                try:
+                    from services.mqtt_client import publish as _mqtt_publish
+                    await _mqtt_publish("zigbee2mqtt/bridge/request/device/remove",
+                                        {"id": ieee, "force": True})
+                    ha_device_removed = True
+                    log_info(f"[API] delete_ha_entity: asked Zigbee2MQTT to remove {ieee}")
+                except Exception as e:
+                    log_info(f"[API] delete_ha_entity: Z2M remove failed for {ieee}: {e}")
+            else:
+                for ce in dev_entries:
+                    try:
+                        await _ws({"type": "config/device_registry/remove_config_entry_from_device",
+                                   "device_id": dev_id, "config_entry_id": ce})
+                        ha_device_removed = True
+                    except Exception as e:
+                        log_info(f"[API] delete_ha_entity: detach {ce} from {dev_id} failed: {e}")
 
     # 3b) Delete is final: removing the smart/Wi-Fi side of a merged card must
     #     also remove its linked IR remote, so no orphaned codeset lingers.
