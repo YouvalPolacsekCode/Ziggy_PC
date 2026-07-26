@@ -71,7 +71,7 @@ _SELF_HEAL_LINES: dict[str, tuple[str, str]] = {
         "לא הצלחתי להחזיר את ה{label} מרחוק. כבו אותו מהמפסק בקיר לכ-20 שניות ואז הדליקו "
         "שוב — זה בדרך כלל מסדר תאורה שנתקעה. אם זה חוזר, אולי שווה להחליף.",
         "I couldn't recover the {label} from here. Switch it off at the wall for ~20 seconds, "
-        "then back on — that usually clears a stuck light. If it keeps happening, it may need replacing.",
+        "then back on — that usually clears a stuck bulb. If it keeps happening, it may need replacing.",
     ),
     "healing": (
         "אני עוד עובד על ה{label}, שנייה…",
