@@ -18,7 +18,8 @@ import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
 import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, selfHealRefresh, whoCanDo } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
-import { cn } from '../lib/utils'
+import { cn, normRoomSlug } from '../lib/utils'
+import { patchIrDevice } from '../lib/api'
 import { useT, useTranslatedName } from '../lib/i18n'
 
 // Emoji palette for the per-tile custom icon picker (B: tile curation).
@@ -576,7 +577,17 @@ export default function DeviceDetail() {
 
   const handleAssignRoom = async (roomId) => {
     try {
-      await assignEntityToArea(entityId, roomId)
+      if (isIrTarget) {
+        // IR pseudo-entities (ir.<id>) are NOT HA entities — routing them
+        // through the area registry makes HA reject the unknown entity, which
+        // surfaces to the user as "upstream unavailable" (a 502). Persist the
+        // room slug on the IR record instead (same path the Devices page uses).
+        const room = (rooms || []).find(r => (r.id ?? r.area_id ?? r.name) === roomId)
+        const slug = roomId == null ? '' : (room ? normRoomSlug(room.name || '') : roomId)
+        await patchIrDevice(entityId.slice(3), { room: slug })
+      } else {
+        await assignEntityToArea(entityId, roomId)
+      }
       addToast(roomId ? t('deviceDetail.roomAssigned') : t('deviceDetail.removedFromRoom'), 'success')
       load({ background: true })   // refresh details in background, don't block UI
     } catch (e) { addToast(e.message || t('common.failed'), 'error') }
@@ -749,7 +760,19 @@ export default function DeviceDetail() {
   const displayName = (isGroupPrimary && groupName)
     ? groupName
     : (facts.name || attributes.friendly_name || entityId)
-  const currentRoom = rooms.find(r => (r.entities || []).includes(entityId))
+  // IR pseudo-entities are never listed in an HA area's entities[], so the
+  // registry match below never finds them → the header/Info tab read "No Room"
+  // even when the device IS assigned. Resolve an IR device's room from its own
+  // room slug (the same value the Rooms page groups it by).
+  const currentRoom = (() => {
+    if (facts.isIr) {
+      const slug = facts.linkedIr?.room || entity?.room || ''
+      if (!slug) return null
+      return rooms.find(r => (r.id ?? r.area_id) === slug || normRoomSlug(r.name || '') === slug)
+        || { id: slug, name: slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
+    }
+    return rooms.find(r => (r.entities || []).includes(entityId))
+  })()
 
   // Filter siblings to show only useful ones (hide update/button/number noise)
   const _HIDDEN_SIBLING_DOMAINS = new Set(['button', 'number', 'select', 'update'])

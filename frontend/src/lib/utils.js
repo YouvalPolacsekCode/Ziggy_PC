@@ -193,6 +193,16 @@ export function isHebrew(text) {
 }
 
 /**
+ * Normalize a room name into the slug the IR/room system keys on
+ * (e.g. "Living Room" → "living_room"). IR devices store their room as this
+ * slug (not an HA area_id), so assigning an IR device to a room must slug the
+ * chosen room's name rather than pass an HA area id.
+ */
+export function normRoomSlug(name) {
+  return (name || '').toLowerCase().replace(/[''`]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
+
+/**
  * Returns 'rtl' if the string is Hebrew, otherwise 'ltr'.
  * Use as: dir={textDir(msg.text)}
  */
