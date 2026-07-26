@@ -18,7 +18,15 @@ export function AppShell({ connected }) {
   // the wrong scroll position.
   useLayoutEffect(() => {
     if (isChatRoute) return
+    // Reset every plausible scroller: the <main> container (desktop / when it
+    // scrolls internally) AND the window/document (some mobile WebViews scroll
+    // the page itself, where main.scrollTop is a no-op). Belt and suspenders so
+    // a device page reliably opens at the top on any platform.
     if (mainRef.current) mainRef.current.scrollTop = 0
+    try {
+      window.scrollTo(0, 0)
+      if (document.scrollingElement) document.scrollingElement.scrollTop = 0
+    } catch { /* SSR / non-DOM */ }
   }, [location.pathname])
 
   return (
