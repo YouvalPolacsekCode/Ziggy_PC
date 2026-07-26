@@ -1374,13 +1374,20 @@ const _OCC_CLASSES = new Set(['occupancy', 'presence'])
 export function roomOccupancy(room, entityMap, occupancySensors) {
   const rid = String(room?.id ?? '').toLowerCase()
   const rname = (room?.name || '').toLowerCase()
-  const fused = (occupancySensors || []).find((s) => {
+  const fusedAll = (occupancySensors || []).filter((s) => {
     const sr = String(s.room ?? '').toLowerCase()
     return sr === rid || sr === rname || sr.replace(/_/g, ' ') === rname
   })
-  if (fused) {
+  // A room can hold several smart sensors (main + zones like an en-suite).
+  // The room tile reads the MAIN one (key === room); zone sensors only get a
+  // say when no main exists (then: occupied if ANY zone reads occupied).
+  const main = fusedAll.find((s) => (s.key ?? s.room) === s.room)
+  for (const fused of (main ? [main] : fusedAll)) {
     const e = entityMap?.[fused.entity_id]
-    if (e && !_BAD_SENSOR_STATES.has(e.state)) return e.state === 'on'
+    if (e && !_BAD_SENSOR_STATES.has(e.state)) {
+      if (e.state === 'on') return true
+      if (main) return false
+    }
   }
   let sawSignal = false
   for (const d of (room?.devices || [])) {

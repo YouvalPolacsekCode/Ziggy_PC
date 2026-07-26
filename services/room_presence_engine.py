@@ -348,22 +348,25 @@ def _current_states(entity_ids: set[str]) -> dict[str, str]:
 # -- enrollment ---------------------------------------------------------------
 
 def _machine_from_record(rec: dict) -> RoomStateMachine:
+    # `key` is the sensor's identity (KV key + MQTT topic slug). A room's main
+    # sensor has key == room slug; additional sensors (e.g. an en-suite inside
+    # the bedroom) get {room}_N keys. Legacy records lack `key` → room slug.
     m = RoomStateMachine(
-        room_slug=rec["room"],
+        room_slug=rec.get("key") or rec["room"],
         doors=rec.get("doors") or [],
         motions=rec.get("motions") or [],
         clear_delay_s=rec.get("delay_off_seconds") or DEFAULT_CLEAR_DELAY_S,
         walkout_grace_s=rec.get("walkout_grace_seconds") or DEFAULT_WALKOUT_GRACE_S,
     )
-    m._name = rec.get("name") or rec["room"].replace("_", " ").title()  # for discovery republish
+    m._name = rec.get("name") or str(rec.get("room", "")).replace("_", " ").title()  # for discovery republish
     return m
 
 
 def enroll_room(rec: dict, timeout: float = 8.0) -> dict:
-    """Enroll a door-aware room: publish MQTT discovery + initial state and
-    start tracking. rec: {room, name, doors, motions, delay_off_seconds,
+    """Enroll a door-aware sensor: publish MQTT discovery + initial state and
+    start tracking. rec: {key?, room, name, doors, motions, delay_off_seconds,
     walkout_grace_seconds}. Fails honestly — no half-enrollment left behind."""
-    slug = rec.get("room") or ""
+    slug = rec.get("key") or rec.get("room") or ""
     if not slug or not rec.get("doors"):
         return {"ok": False, "error": "room and at least one door sensor are required"}
 
@@ -433,9 +436,11 @@ def _load_enrolled_from_kv() -> list[dict]:
         state = _load_state()
         rooms = (state.get(_KV_NAMESPACE) or {}) if isinstance(state, dict) else {}
         out = []
-        for slug, meta in rooms.items():
+        for kv_key, meta in rooms.items():
             if isinstance(meta, dict) and meta.get("mode") == "door_aware":
-                out.append({**meta, "room": slug})
+                out.append({**meta,
+                            "room": meta.get("room", kv_key),
+                            "key": meta.get("key", kv_key)})
         return out
     except Exception as e:
         log_error(f"[RoomPresence] KV load failed: {e}")

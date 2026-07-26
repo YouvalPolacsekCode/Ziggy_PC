@@ -318,3 +318,87 @@ def test_reconciler_skips_door_aware_records(monkeypatch):
     assert res["ok"] is True
     assert removed == ["office"]         # the true orphan — and ONLY it
     assert [p["room"] for p in res["pruned"]] == ["office"]
+
+
+# ── multiple sensors per room ────────────────────────────────────────────────
+
+def test_create_new_adds_second_sensor_without_replacing_main(monkeypatch, kv):
+    from services import template_sensors as ts
+    from services import room_presence_engine as engine
+
+    monkeypatch.setattr(ts, "_classify_sources", lambda ents: ([DOOR], [PIR]))
+    enrolled = []
+    monkeypatch.setattr(engine, "enroll_room",
+                        lambda rec, timeout=8.0: (enrolled.append(dict(rec)), {"ok": True})[1])
+    monkeypatch.setattr(engine, "lookup_mqtt_entity_id",
+                        lambda uid, **kw: f"binary_sensor.{uid}")
+    removed = []
+    monkeypatch.setattr(engine, "unenroll_room",
+                        lambda slug, clear_retained=True: (removed.append(slug), {"ok": True})[1])
+
+    main = ts.create_occupancy_sensor("bedroom", [DOOR, PIR])
+    second = ts.create_occupancy_sensor("bedroom", [DOOR, PIR],
+                                        friendly_name="מקלחת הורים", create_new=True)
+    assert main["ok"] and second["ok"]
+    assert main["entry_id"] == "ziggy_mqtt_bedroom"
+    assert second["entry_id"] == "ziggy_mqtt_bedroom_2"
+    assert removed == []                      # nothing was replaced
+    assert set(kv) == {"bedroom", "bedroom_2"}
+    assert kv["bedroom_2"]["room"] == "bedroom"
+    assert kv["bedroom_2"]["name"] == "מקלחת הורים"
+    assert enrolled[1]["key"] == "bedroom_2"  # engine topics keyed by sensor, not room
+
+
+def test_list_reports_room_for_legacy_and_keyed_records(monkeypatch):
+    from services import template_sensors as ts
+    import services.local_automation_actions as laa
+    kv_state = {"occupancy_sensors": {
+        "bedroom": {"entry_id": "e1", "entity_id": "binary_sensor.a", "name": "Bedroom"},
+        "bedroom_2": {"entry_id": "ziggy_mqtt_bedroom_2", "entity_id": "binary_sensor.b",
+                      "name": "En-suite", "room": "bedroom", "key": "bedroom_2",
+                      "mode": "door_aware"},
+    }}
+    monkeypatch.setattr(laa, "_load_state", lambda: kv_state)
+    out = {s["key"]: s for s in ts.list_occupancy_sensors()}
+    assert out["bedroom"]["room"] == "bedroom"      # legacy: key doubles as room
+    assert out["bedroom_2"]["room"] == "bedroom"    # zone: explicit room field
+
+
+def test_resolve_prefers_main_sensor_over_zone(monkeypatch):
+    from services import smart_room_recipe as sr
+    import services.template_sensors as ts
+    monkeypatch.setattr(ts, "list_occupancy_sensors", lambda: [
+        {"room": "bedroom", "key": "bedroom_2", "entity_id": "binary_sensor.ensuite"},
+        {"room": "bedroom", "key": "bedroom", "entity_id": "binary_sensor.bedroom_main"},
+    ])
+    assert sr.resolve_occupancy_entity({}, "bedroom") == "binary_sensor.bedroom_main"
+
+
+def test_resolve_falls_back_to_zone_when_no_main(monkeypatch):
+    from services import smart_room_recipe as sr
+    import services.template_sensors as ts
+    monkeypatch.setattr(ts, "list_occupancy_sensors", lambda: [
+        {"room": "bedroom", "key": "bedroom_2", "entity_id": "binary_sensor.ensuite"},
+    ])
+    assert sr.resolve_occupancy_entity({}, "bedroom") == "binary_sensor.ensuite"
+
+
+def test_delete_zone_by_entry_id_leaves_main_alone(monkeypatch, kv):
+    from services import template_sensors as ts
+    from services import room_presence_engine as engine
+
+    kv["bedroom"] = {"entry_id": "real_entry", "entity_id": "binary_sensor.a", "name": "Bedroom"}
+    kv["bedroom_2"] = {"entry_id": "ziggy_mqtt_bedroom_2", "entity_id": "binary_sensor.b",
+                       "room": "bedroom", "key": "bedroom_2", "mode": "door_aware"}
+    # by-entry lookup walks the real KV loader — point it at our store
+    monkeypatch.setattr(ts, "_find_room_slug_for_entry",
+                        lambda eid: next((k for k, m in kv.items() if m.get("entry_id") == eid), None))
+    removed = []
+    monkeypatch.setattr(engine, "unenroll_room",
+                        lambda slug, clear_retained=True: (removed.append(slug), {"ok": True})[1])
+
+    res = ts.delete_occupancy_sensor_by_entry_id("ziggy_mqtt_bedroom_2")
+    assert res["ok"] is True
+    assert removed == ["bedroom_2"]
+    assert "bedroom_2" not in kv
+    assert "bedroom" in kv                     # main untouched

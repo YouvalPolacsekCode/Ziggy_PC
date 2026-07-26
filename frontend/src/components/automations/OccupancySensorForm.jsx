@@ -82,12 +82,26 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
   const [selected, setSelected] = useState(() => new Set())
   const [delayOff, setDelayOff] = useState(30)
   const [walkoutGrace, setWalkoutGrace] = useState(120)
+  const [mode, setMode]       = useState('replace')   // 'replace' main | 'new' additional
+  const [newName, setNewName] = useState('')
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
   const [stepIdx, setStepIdx] = useState(initialRoom ? 1 : 0)
 
   const room = roomOptions.find(r => String(r.id) === String(roomId)) || null
   const candidates = room?.candidates || []
+
+  // Sensors already created for this room — a second create would REPLACE the
+  // main one unless the user explicitly adds a new named sensor (e.g. an
+  // en-suite bathroom zone inside the bedroom).
+  const existingForRoom = useMemo(() => {
+    if (!room) return []
+    const rid = String(room.id).toLowerCase(), rn = (room.name || '').toLowerCase()
+    return (occupancySensors || []).filter(s => {
+      const sr = String(s.room || '').toLowerCase()
+      return sr === rid || sr === rn || sr.replace(/_/g, ' ') === rn
+    })
+  }, [occupancySensors, room])
 
   // Door among the selection → Ziggy backs the sensor with door-aware logic
   // (open = someone came in; closed with movement inside = stays occupied
@@ -116,11 +130,13 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
     if (!room || selected.size === 0) return
     setSaving(true); setError('')
     try {
+      const addingNew = existingForRoom.length > 0 && mode === 'new'
       const result = await createOccupancySensor({
         room: room.name,
         sensor_entities: Array.from(selected),
         delay_off_seconds: Number(delayOff) || 30,
         ...(hasDoor ? { walkout_grace_seconds: Number(walkoutGrace) || 120 } : {}),
+        ...(addingNew ? { create_new: true, friendly_name: newName.trim() } : {}),
       })
       onCreated?.(result)
       onClose?.()
@@ -170,15 +186,36 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
 
   // ── Step: Devices ───────────────────────────────────────────────────────
   if (current === 'devices') {
+    const needsName = existingForRoom.length > 0 && mode === 'new' && !newName.trim()
     return (
       <StepShell t={t} title={t('automations.smartSensor.devicesLabel')} idx={stepIdx + 1} total={total}
         onBack={goBack} onPrimary={goNext} primaryLabel={t('automations.smartSensor.next')}
-        primaryDisabled={selected.size === 0}
+        primaryDisabled={selected.size === 0 || needsName}
         extra={candidates.length > 0 && (
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: 0 }} dir="auto">
             {t('automations.smartSensor.selectedCount', { n: selected.size })}
           </p>
         )}>
+        {existingForRoom.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px',
+            border: '0.5px solid var(--line)', borderRadius: 10, background: 'var(--surface)' }}>
+            {[['replace', t('automations.smartSensor.modeUpdate', { name: existingForRoom[0].name || room?.name || '' })],
+              ['new', t('automations.smartSensor.modeNew')]].map(([m, label]) => (
+              <button key={m} type="button" onClick={() => setMode(m)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none',
+                  padding: '4px 2px', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit' }}>
+                <span style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+                  border: `1.5px solid ${mode === m ? 'var(--ok)' : 'var(--line)'}`,
+                  background: mode === m ? 'var(--ok)' : 'transparent' }} />
+                <span style={{ fontSize: 12.5, color: 'var(--ink)' }} dir="auto">{label}</span>
+              </button>
+            ))}
+            {mode === 'new' && (
+              <Input value={newName} onChange={e => setNewName(e.target.value)}
+                placeholder={t('automations.smartSensor.newNamePh')} />
+            )}
+          </div>
+        )}
         <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }} dir="auto">{t('automations.smartSensor.devicesHint')}</p>
         {candidates.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--warn)', padding: '10px 12px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 10 }} dir="auto">
@@ -221,7 +258,8 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
     <StepShell t={t} title={t('automations.smartSensor.delayLabel')} idx={stepIdx + 1} total={total}
       onBack={goBack} onPrimary={handleCreate}
       primaryLabel={saving ? t('automations.smartSensor.creating') : t('automations.smartSensor.create')}
-      primaryDisabled={saving || !room || selected.size === 0}
+      primaryDisabled={saving || !room || selected.size === 0
+        || (existingForRoom.length > 0 && mode === 'new' && !newName.trim())}
       extra={errBox}>
       <Input type="number" inputMode="numeric" min={0} placeholder={t('automations.smartSensor.delayPh')}
         value={delayOff} onChange={e => setDelayOff(e.target.value)} />

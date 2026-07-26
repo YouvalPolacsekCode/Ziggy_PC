@@ -135,10 +135,17 @@ def resolve_occupancy_entity(home: dict, room_slug: str) -> Optional[str]:
     target = resolve_room((room_slug or "").lower().strip())
     try:
         from services.template_sensors import list_occupancy_sensors
+        fallback = None
         for rec in list_occupancy_sensors():
             rec_room = resolve_room(str(rec.get("room", "")).lower().strip())
             if rec_room == target and rec.get("entity_id"):
-                return rec["entity_id"]
+                # Prefer the room's MAIN sensor (key == room slug) over
+                # additional zone sensors ({room}_2 — e.g. an en-suite):
+                # the room-wide rules should ride the room-wide signal.
+                if rec.get("key", rec.get("room")) == rec.get("room"):
+                    return rec["entity_id"]
+                fallback = fallback or rec["entity_id"]
+        return fallback
     except Exception as e:
         log_error(f"[smart_room_recipe] occupancy lookup failed: {e}")
     return None

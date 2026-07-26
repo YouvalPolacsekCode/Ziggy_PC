@@ -152,20 +152,29 @@ def _classify_sources(sensor_entities: list[str]) -> tuple[list[str], list[str]]
     return doors, motions
 
 
-def _remove_previous_for_room(room_slug: str) -> None:
-    """Idempotent replace: whatever previously backed this room's presence
-    sensor — HA template entry OR door-aware MQTT entity — is removed first."""
-    existing = get_local_state(_KV_NAMESPACE, room_slug) or {}
+def _remove_previous(kv_key: str) -> None:
+    """Idempotent replace: whatever previously backed this presence sensor —
+    HA template entry OR door-aware MQTT entity — is removed first."""
+    existing = get_local_state(_KV_NAMESPACE, kv_key) or {}
     if not isinstance(existing, dict):
         return
     if existing.get("mode") == "door_aware":
         try:
             from services.room_presence_engine import unenroll_room
-            unenroll_room(room_slug, clear_retained=True)  # best-effort
+            unenroll_room(kv_key, clear_retained=True)  # best-effort
         except Exception as e:
             log_error(f"[template_sensors] previous door-aware cleanup failed: {e}")
     elif existing.get("entry_id"):
         _ha_delete(f"/api/config/config_entries/entry/{existing['entry_id']}")  # best-effort
+
+
+def _next_free_key(room_slug: str) -> str:
+    """First unused KV key for an ADDITIONAL sensor in this room:
+    {room}_2, {room}_3, … ({room} itself is the room's main sensor)."""
+    n = 2
+    while get_local_state(_KV_NAMESPACE, f"{room_slug}_{n}") is not None:
+        n += 1
+    return f"{room_slug}_{n}"
 
 
 def create_occupancy_sensor(
@@ -174,6 +183,7 @@ def create_occupancy_sensor(
     friendly_name: Optional[str] = None,
     delay_off_seconds: int = _DEFAULT_DELAY_OFF_SECONDS,
     walkout_grace_seconds: int = _DEFAULT_WALKOUT_GRACE_SECONDS,
+    create_new: bool = False,
 ) -> dict:
     """Create a template binary_sensor that ORs the given sensors into a single
     'occupied' signal. Idempotent: if a sensor for the same room already
@@ -200,7 +210,14 @@ def create_occupancy_sensor(
             f"Pass the room as its ASCII slug (e.g. 'bedroom') and use friendly_name for Hebrew."
         )}
 
-    name = friendly_name or f"{room.replace('_', ' ').title()} Occupied"
+    # A room's MAIN sensor lives under the room slug (legacy layout, unchanged).
+    # `create_new` adds an ADDITIONAL named sensor under {room}_N instead of
+    # replacing the main one — e.g. an en-suite bathroom inside the bedroom.
+    kv_key = _next_free_key(room_slug) if create_new else room_slug
+    name = friendly_name or (
+        f"{room.replace('_', ' ').title()} Occupied"
+        + (f" {kv_key.rsplit('_', 1)[-1]}" if create_new else "")
+    )
 
     # Door among the sources → the door-aware engine backs this sensor (real
     # latch semantics: open=enter, closed+motion-after-close=stay until open).
@@ -208,7 +225,8 @@ def create_occupancy_sensor(
     doors, motions = _classify_sources(sensor_entities)
     if doors:
         return _create_door_aware(
-            room_slug=room_slug, name=name, sensor_entities=sensor_entities,
+            room_slug=room_slug, kv_key=kv_key, name=name,
+            sensor_entities=sensor_entities,
             doors=doors, motions=motions,
             delay_off_seconds=delay_off_seconds,
             walkout_grace_seconds=walkout_grace_seconds,
@@ -216,8 +234,8 @@ def create_occupancy_sensor(
 
     state_template = _build_state_template(sensor_entities)
 
-    # Idempotency: if we previously created one for this room, remove it first.
-    _remove_previous_for_room(room_slug)
+    # Idempotency: if we previously created one under this key, replace it.
+    _remove_previous(kv_key)
 
     want_delay = isinstance(delay_off_seconds, int) and delay_off_seconds > 0
 
@@ -272,10 +290,12 @@ def create_occupancy_sensor(
     )
 
     # Cache the entry_id → room mapping so we can replace/delete later.
-    set_local_state(_KV_NAMESPACE, room_slug, {
+    set_local_state(_KV_NAMESPACE, kv_key, {
         "entry_id":  entry_id,
         "entity_id": actual_entity_id,
         "name":      name,
+        "room":      room_slug,
+        "key":       kv_key,
         "sensors":   sensor_entities,
         "delay_off_seconds": int(delay_off_seconds) if applied_delay else None,
     })
@@ -293,6 +313,7 @@ def create_occupancy_sensor(
 
 def _create_door_aware(
     room_slug: str,
+    kv_key: str,
     name: str,
     sensor_entities: list[str],
     doors: list[str],
@@ -302,16 +323,17 @@ def _create_door_aware(
 ) -> dict:
     """Create an engine-backed (MQTT-discovered) door-aware presence sensor.
 
-    Same contract as the template path: idempotent per room, returns
+    Same contract as the template path: idempotent per KV key, returns
     {"ok": True, "entity_id", "entry_id", "message"} — entry_id is synthetic
     (no HA config entry exists; delete/reconcile branch on mode instead).
     Fails honestly: on any step failing, retained topics are cleared and no
     KV record is written — nothing half-created."""
     from services import room_presence_engine as engine
 
-    _remove_previous_for_room(room_slug)
+    _remove_previous(kv_key)
 
     rec = {
+        "key": kv_key,
         "room": room_slug,
         "name": name,
         "doors": doors,
@@ -322,27 +344,29 @@ def _create_door_aware(
     }
     res = engine.enroll_room(rec)
     if not res.get("ok"):
-        log_error(f"[template_sensors] door-aware enroll failed room={room_slug}: {res.get('error')}")
+        log_error(f"[template_sensors] door-aware enroll failed key={kv_key}: {res.get('error')}")
         return {"ok": False, "error": (
             "Ziggy couldn't reach the hub's message service to create the smart "
             "sensor. Nothing was created — please try again in a minute."
         )}
 
-    entity_id = engine.lookup_mqtt_entity_id(engine.unique_id(room_slug))
+    entity_id = engine.lookup_mqtt_entity_id(engine.unique_id(kv_key))
     if not entity_id:
         # HA never picked the entity up (MQTT integration missing/broken).
-        engine.unenroll_room(room_slug, clear_retained=True)
-        log_error(f"[template_sensors] door-aware entity never appeared in HA room={room_slug}")
+        engine.unenroll_room(kv_key, clear_retained=True)
+        log_error(f"[template_sensors] door-aware entity never appeared in HA key={kv_key}")
         return {"ok": False, "error": (
             "Ziggy created the sensor logic but the home engine didn't pick it "
             "up. Nothing was left behind — restart the hub and try again."
         )}
 
-    entry_id = f"{_MQTT_ENTRY_PREFIX}{room_slug}"
-    set_local_state(_KV_NAMESPACE, room_slug, {
+    entry_id = f"{_MQTT_ENTRY_PREFIX}{kv_key}"
+    set_local_state(_KV_NAMESPACE, kv_key, {
         "entry_id":  entry_id,
         "entity_id": entity_id,
         "name":      name,
+        "room":      room_slug,
+        "key":       kv_key,
         "sensors":   sensor_entities,
         "delay_off_seconds": int(delay_off_seconds) if delay_off_seconds else None,
         "mode":      "door_aware",
@@ -353,7 +377,7 @@ def _create_door_aware(
 
     msg = (f"Created door-aware presence sensor from {len(sensor_entities)} signal(s) "
            f"({len(doors)} door)")
-    log_info(f"[template_sensors] {msg} room={room_slug} entity={entity_id}")
+    log_info(f"[template_sensors] {msg} key={kv_key} room={room_slug} entity={entity_id}")
     return {"ok": True, "entity_id": entity_id, "entry_id": entry_id,
             "message": msg, "mode": "door_aware"}
 
@@ -442,10 +466,13 @@ def list_occupancy_sensors() -> list[dict]:
     state = _load_state()
     rooms = (state.get(_KV_NAMESPACE) or {}) if isinstance(state, dict) else {}
     out: list[dict] = []
-    for room_slug, meta in rooms.items():
+    for kv_key, meta in rooms.items():
         if isinstance(meta, dict) and meta.get("entry_id"):
             out.append({
-                "room":      room_slug,
+                # Legacy records predate the explicit room/key fields; their
+                # KV key IS the room slug, so falling back is exact.
+                "room":      meta.get("room", kv_key),
+                "key":       meta.get("key", kv_key),
                 "entry_id":  meta["entry_id"],
                 "entity_id": meta.get("entity_id", ""),
                 "name":      meta.get("name", ""),

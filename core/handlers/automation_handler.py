@@ -514,6 +514,7 @@ async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown
     friendly = params.get("friendly_name")  # Hebrew names preserved verbatim
     delay_off = params.get("delay_off_seconds", 30)
     walkout_grace = params.get("walkout_grace_seconds", 120)
+    create_new = bool(params.get("create_new", False))
 
     result = create_occupancy_sensor(
         room=room,
@@ -521,6 +522,7 @@ async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown
         friendly_name=friendly,
         delay_off_seconds=delay_off,
         walkout_grace_seconds=walkout_grace,
+        create_new=create_new,
     )
     if result.get("ok"):
         log_info(f"[Occupancy] {result.get('message')}")

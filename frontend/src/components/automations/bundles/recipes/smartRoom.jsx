@@ -39,10 +39,28 @@ function presenceCandidates(ctx, room, t) {
   for (const s of (ctx.occupancySensors || [])) {
     const sr = String(s.room || '').toLowerCase()
     if (sr === rid || sr === rn || sr.replace(/_/g, ' ') === rn) {
-      out.push({ id: s.entity_id, name: t('automations.smartRoom.wiz.mergedSensor'), kind: 'merged' })
+      // A room can hold several named smart sensors (main + zones like an
+      // en-suite) — show each by its own name so the user picks the right one.
+      out.push({ id: s.entity_id, name: s.name || t('automations.smartRoom.wiz.mergedSensor'), kind: 'merged' })
     }
   }
   return out
+}
+
+// Door/opening sensors in the room that aren't already inside a smart sensor —
+// if any exist and the room has no smart sensor yet, the wizard nudges the
+// user to create one (a raw door sensor alone is a WRONG occupancy trigger:
+// "open" would read as "occupied", so we never list it as a pick).
+function unfusedDoorSensors(ctx, room) {
+  if (!room) return []
+  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
+  const fusedSources = new Set((ctx.occupancySensors || []).flatMap((s) => s.sensors || []))
+  return (area?.entities || []).filter((id) => {
+    const e = ctx.entityMap[id]
+    return e && e.domain === 'binary_sensor'
+      && (e.device_class === 'door' || e.device_class === 'opening')
+      && !fusedSources.has(id)
+  })
 }
 
 // ── Step 1: pick the room (async designer round-trip on select) ──────────────
@@ -117,9 +135,17 @@ function PresenceField({ values, setValue, ctx, t }) {
       </div>
     )
   }
+  const doorsUnfused = unfusedDoorSensors(ctx, room)
+  const hasMerged = candidates.some((c) => c.kind === 'merged')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.5 }} dir="auto">{t('automations.smartRoom.wiz.pickSensor')}</p>
+      {doorsUnfused.length > 0 && !hasMerged && (
+        <p style={{ fontSize: 12.5, color: 'var(--ink)', margin: 0, lineHeight: 1.55, padding: '9px 11px',
+          borderRadius: 10, background: 'color-mix(in srgb, var(--ok) 8%, transparent)' }} dir="auto">
+          {t('automations.smartRoom.wiz.doorNudge')}
+        </p>
+      )}
       <div style={listBox}>
         {candidates.map((c) => (
           <RadioRow key={c.id} sel={c.id === values.occEntity}

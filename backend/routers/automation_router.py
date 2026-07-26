@@ -61,6 +61,10 @@ class OccupancySensorBody(BaseModel):
     # Door-aware only: how long a closed door waits for motion before deciding
     # the room was left empty (walk-out-and-close). Ignored for door-less rooms.
     walkout_grace_seconds: Optional[int] = 120
+    # False (default): create/replace the room's MAIN sensor (legacy behavior).
+    # True: ADD another named sensor to the room (e.g. an en-suite bathroom
+    # zone inside the bedroom) without touching the main one.
+    create_new: Optional[bool] = False
 
 
 class AutomationToggle(BaseModel):
