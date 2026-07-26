@@ -81,12 +81,21 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
   const [roomId, setRoomId]   = useState(initId)
   const [selected, setSelected] = useState(() => new Set())
   const [delayOff, setDelayOff] = useState(30)
+  const [walkoutGrace, setWalkoutGrace] = useState(120)
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
   const [stepIdx, setStepIdx] = useState(initialRoom ? 1 : 0)
 
   const room = roomOptions.find(r => String(r.id) === String(roomId)) || null
   const candidates = room?.candidates || []
+
+  // Door among the selection → Ziggy backs the sensor with door-aware logic
+  // (open = someone came in; closed with movement inside = stays occupied
+  // until the door opens). Adds one timing knob: the walk-out grace.
+  const hasDoor = useMemo(
+    () => candidates.some(e => selected.has(e.entity_id) && OCC_TYPE[e.device_class] === 'door'),
+    [candidates, selected],
+  )
 
   // Default-select every fusable sensor when the room changes.
   useEffect(() => {
@@ -111,6 +120,7 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
         room: room.name,
         sensor_entities: Array.from(selected),
         delay_off_seconds: Number(delayOff) || 30,
+        ...(hasDoor ? { walkout_grace_seconds: Number(walkoutGrace) || 120 } : {}),
       })
       onCreated?.(result)
       onClose?.()
@@ -206,7 +216,7 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
     )
   }
 
-  // ── Step: Clear delay ───────────────────────────────────────────────────
+  // ── Step: Clear delay (+ walk-out grace for door-aware rooms) ───────────
   return (
     <StepShell t={t} title={t('automations.smartSensor.delayLabel')} idx={stepIdx + 1} total={total}
       onBack={goBack} onPrimary={handleCreate}
@@ -218,6 +228,21 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
       <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, lineHeight: 1.45 }} dir="auto">
         {t('automations.smartSensor.delayHint')}
       </p>
+      {hasDoor && (
+        <>
+          <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: 0, lineHeight: 1.5,
+            padding: '8px 10px', borderRadius: 8,
+            background: 'color-mix(in srgb, var(--ok) 7%, transparent)' }} dir="auto">
+            {t('automations.smartSensor.doorNote')}
+          </p>
+          <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.smartSensor.graceLabel')}</p>
+          <Input type="number" inputMode="numeric" min={0} placeholder={t('automations.smartSensor.gracePh')}
+            value={walkoutGrace} onChange={e => setWalkoutGrace(e.target.value)} />
+          <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, lineHeight: 1.45 }} dir="auto">
+            {t('automations.smartSensor.graceHint')}
+          </p>
+        </>
+      )}
     </StepShell>
   )
 }

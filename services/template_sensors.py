@@ -31,6 +31,11 @@ from services.local_automation_actions import set_local_state, get_local_state
 
 _KV_NAMESPACE = "occupancy_sensors"  # entry_id → metadata
 _DEFAULT_DELAY_OFF_SECONDS = 30
+_DEFAULT_WALKOUT_GRACE_SECONDS = 120
+
+# Synthetic entry_id prefix for door-aware (MQTT-backed) sensors — they have
+# no HA config entry; the reconciler and delete paths branch on `mode` instead.
+_MQTT_ENTRY_PREFIX = "ziggy_mqtt_"
 
 
 def _ha_post(path: str, body: dict, timeout: float = 10.0) -> tuple[int, dict]:
@@ -117,11 +122,58 @@ def _abort_flow(flow_id: Optional[str]) -> None:
         _ha_delete(f"/api/config/config_entries/flow/{flow_id}")
 
 
+def _classify_sources(sensor_entities: list[str]) -> tuple[list[str], list[str]]:
+    """Split sources into (doors, motions) by HA device_class. Anything that
+    isn't a door-class contact counts as a motion-like sustain signal (PIR,
+    mmWave presence, occupancy). Best-effort: unknown entities → motion bucket,
+    which degrades to today's OR-like behavior rather than mis-latching."""
+    from services.room_presence_engine import DOOR_CLASSES
+    classes: dict[str, str] = {}
+    try:
+        from services.ha_subscriber import state_cache
+        for eid in sensor_entities:
+            rec = state_cache.get(eid)
+            if rec:
+                classes[eid] = ((rec.get("attributes") or {}).get("device_class") or "")
+    except Exception:
+        pass
+    missing = [e for e in sensor_entities if e not in classes]
+    if missing:
+        try:
+            from services.home_automation import get_all_states
+            for s in get_all_states() or []:
+                eid = s.get("entity_id")
+                if eid in missing:
+                    classes[eid] = ((s.get("attributes") or {}).get("device_class") or "")
+        except Exception as e:
+            log_error(f"[template_sensors] device_class fetch failed: {e}")
+    doors = [e for e in sensor_entities if classes.get(e, "") in DOOR_CLASSES]
+    motions = [e for e in sensor_entities if e not in doors]
+    return doors, motions
+
+
+def _remove_previous_for_room(room_slug: str) -> None:
+    """Idempotent replace: whatever previously backed this room's presence
+    sensor — HA template entry OR door-aware MQTT entity — is removed first."""
+    existing = get_local_state(_KV_NAMESPACE, room_slug) or {}
+    if not isinstance(existing, dict):
+        return
+    if existing.get("mode") == "door_aware":
+        try:
+            from services.room_presence_engine import unenroll_room
+            unenroll_room(room_slug, clear_retained=True)  # best-effort
+        except Exception as e:
+            log_error(f"[template_sensors] previous door-aware cleanup failed: {e}")
+    elif existing.get("entry_id"):
+        _ha_delete(f"/api/config/config_entries/entry/{existing['entry_id']}")  # best-effort
+
+
 def create_occupancy_sensor(
     room: str,
     sensor_entities: list[str],
     friendly_name: Optional[str] = None,
     delay_off_seconds: int = _DEFAULT_DELAY_OFF_SECONDS,
+    walkout_grace_seconds: int = _DEFAULT_WALKOUT_GRACE_SECONDS,
 ) -> dict:
     """Create a template binary_sensor that ORs the given sensors into a single
     'occupied' signal. Idempotent: if a sensor for the same room already
@@ -149,13 +201,23 @@ def create_occupancy_sensor(
         )}
 
     name = friendly_name or f"{room.replace('_', ' ').title()} Occupied"
+
+    # Door among the sources → the door-aware engine backs this sensor (real
+    # latch semantics: open=enter, closed+motion-after-close=stay until open).
+    # No door → the legacy OR template path below, byte-for-byte unchanged.
+    doors, motions = _classify_sources(sensor_entities)
+    if doors:
+        return _create_door_aware(
+            room_slug=room_slug, name=name, sensor_entities=sensor_entities,
+            doors=doors, motions=motions,
+            delay_off_seconds=delay_off_seconds,
+            walkout_grace_seconds=walkout_grace_seconds,
+        )
+
     state_template = _build_state_template(sensor_entities)
 
     # Idempotency: if we previously created one for this room, remove it first.
-    existing = get_local_state(_KV_NAMESPACE, room_slug) or {}
-    prev_entry_id = existing.get("entry_id") if isinstance(existing, dict) else None
-    if prev_entry_id:
-        _ha_delete(f"/api/config/config_entries/entry/{prev_entry_id}")  # best-effort
+    _remove_previous_for_room(room_slug)
 
     want_delay = isinstance(delay_off_seconds, int) and delay_off_seconds > 0
 
@@ -227,6 +289,73 @@ def create_occupancy_sensor(
              f"entity={actual_entity_id} delay_off={'yes' if applied_delay else 'no'}")
     return {"ok": True, "entity_id": actual_entity_id, "entry_id": entry_id,
             "message": msg, "delay_off_applied": applied_delay}
+
+
+def _create_door_aware(
+    room_slug: str,
+    name: str,
+    sensor_entities: list[str],
+    doors: list[str],
+    motions: list[str],
+    delay_off_seconds: int,
+    walkout_grace_seconds: int,
+) -> dict:
+    """Create an engine-backed (MQTT-discovered) door-aware presence sensor.
+
+    Same contract as the template path: idempotent per room, returns
+    {"ok": True, "entity_id", "entry_id", "message"} — entry_id is synthetic
+    (no HA config entry exists; delete/reconcile branch on mode instead).
+    Fails honestly: on any step failing, retained topics are cleared and no
+    KV record is written — nothing half-created."""
+    from services import room_presence_engine as engine
+
+    _remove_previous_for_room(room_slug)
+
+    rec = {
+        "room": room_slug,
+        "name": name,
+        "doors": doors,
+        "motions": motions,
+        "delay_off_seconds": int(delay_off_seconds) if delay_off_seconds else None,
+        "walkout_grace_seconds": int(walkout_grace_seconds) if walkout_grace_seconds
+                                 else _DEFAULT_WALKOUT_GRACE_SECONDS,
+    }
+    res = engine.enroll_room(rec)
+    if not res.get("ok"):
+        log_error(f"[template_sensors] door-aware enroll failed room={room_slug}: {res.get('error')}")
+        return {"ok": False, "error": (
+            "Ziggy couldn't reach the hub's message service to create the smart "
+            "sensor. Nothing was created — please try again in a minute."
+        )}
+
+    entity_id = engine.lookup_mqtt_entity_id(engine.unique_id(room_slug))
+    if not entity_id:
+        # HA never picked the entity up (MQTT integration missing/broken).
+        engine.unenroll_room(room_slug, clear_retained=True)
+        log_error(f"[template_sensors] door-aware entity never appeared in HA room={room_slug}")
+        return {"ok": False, "error": (
+            "Ziggy created the sensor logic but the home engine didn't pick it "
+            "up. Nothing was left behind — restart the hub and try again."
+        )}
+
+    entry_id = f"{_MQTT_ENTRY_PREFIX}{room_slug}"
+    set_local_state(_KV_NAMESPACE, room_slug, {
+        "entry_id":  entry_id,
+        "entity_id": entity_id,
+        "name":      name,
+        "sensors":   sensor_entities,
+        "delay_off_seconds": int(delay_off_seconds) if delay_off_seconds else None,
+        "mode":      "door_aware",
+        "doors":     doors,
+        "motions":   motions,
+        "walkout_grace_seconds": rec["walkout_grace_seconds"],
+    })
+
+    msg = (f"Created door-aware presence sensor from {len(sensor_entities)} signal(s) "
+           f"({len(doors)} door)")
+    log_info(f"[template_sensors] {msg} room={room_slug} entity={entity_id}")
+    return {"ok": True, "entity_id": entity_id, "entry_id": entry_id,
+            "message": msg, "mode": "door_aware"}
 
 
 def probe_template_binary_sensor_fields() -> dict:
@@ -321,6 +450,7 @@ def list_occupancy_sensors() -> list[dict]:
                 "entity_id": meta.get("entity_id", ""),
                 "name":      meta.get("name", ""),
                 "sensors":   meta.get("sensors", []),
+                "mode":      meta.get("mode", "template"),
             })
     return out
 
@@ -334,9 +464,15 @@ def delete_occupancy_sensor(room: str) -> dict:
     entry_id = existing.get("entry_id") if isinstance(existing, dict) else None
     if not entry_id:
         return {"ok": False, "error": f"no occupancy sensor tracked for room '{room}'"}
-    status = _ha_delete(f"/api/config/config_entries/entry/{entry_id}")
-    if status not in (200, 204):
-        return {"ok": False, "error": f"HA rejected delete (status {status})"}
+    if existing.get("mode") == "door_aware":
+        from services.room_presence_engine import unenroll_room
+        res = unenroll_room(room_slug, clear_retained=True)
+        if not res.get("ok"):
+            return {"ok": False, "error": "Could not remove the sensor from the home engine."}
+    else:
+        status = _ha_delete(f"/api/config/config_entries/entry/{entry_id}")
+        if status not in (200, 204):
+            return {"ok": False, "error": f"HA rejected delete (status {status})"}
     set_local_state(_KV_NAMESPACE, room_slug, None)
     return {"ok": True, "message": f"Removed occupancy sensor for {room}"}
 
@@ -369,12 +505,28 @@ def delete_occupancy_sensor_by_entry_id(entry_id: str) -> dict:
     if not entry_id:
         return {"ok": False, "error": "entry_id is required"}
 
+    room_slug = _find_room_slug_for_entry(entry_id)
+
+    # Door-aware sensors have a synthetic entry_id (no HA config entry) —
+    # removal means clearing the retained MQTT topics + engine enrollment.
+    meta = get_local_state(_KV_NAMESPACE, room_slug) if room_slug else None
+    if (isinstance(meta, dict) and meta.get("mode") == "door_aware") \
+            or entry_id.startswith(_MQTT_ENTRY_PREFIX):
+        from services.room_presence_engine import unenroll_room
+        target = room_slug or entry_id[len(_MQTT_ENTRY_PREFIX):]
+        res = unenroll_room(target, clear_retained=True)
+        if not res.get("ok"):
+            return {"ok": False, "error": "Could not remove the sensor from the home engine."}
+        if room_slug:
+            set_local_state(_KV_NAMESPACE, room_slug, None)
+        log_info(f"[template_sensors] deleted door-aware sensor entry={entry_id} room={target}")
+        return {"ok": True, "message": "Removed smart sensor"}
+
     status = _ha_delete(f"/api/config/config_entries/entry/{entry_id}")
     # 404 means HA already has no such entry — treat as success (idempotent).
     if status not in (200, 204, 404):
         return {"ok": False, "error": f"HA rejected delete (status {status})"}
 
-    room_slug = _find_room_slug_for_entry(entry_id)
     if room_slug:
         set_local_state(_KV_NAMESPACE, room_slug, None)
 

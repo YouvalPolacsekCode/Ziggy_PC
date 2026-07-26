@@ -58,6 +58,9 @@ class OccupancySensorBody(BaseModel):
     sensor_entities: Optional[list] = []
     friendly_name: Optional[str] = None
     delay_off_seconds: Optional[int] = 30
+    # Door-aware only: how long a closed door waits for motion before deciding
+    # the room was left empty (walk-out-and-close). Ignored for door-less rooms.
+    walkout_grace_seconds: Optional[int] = 120
 
 
 class AutomationToggle(BaseModel):

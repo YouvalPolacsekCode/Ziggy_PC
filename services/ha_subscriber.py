@@ -283,6 +283,17 @@ async def _process_event(event: dict) -> None:
         except Exception as e:
             log_error(f"[HASubscriber] smart-climate hook {entity_id}: {e}")
 
+    # Door-aware room presence hook — a watched door/motion sensor changed.
+    # The engine's state machine reacts (latch / walk-out grace / quiet clear).
+    # Cheap early-out: frozenset membership, no lock.
+    if entity_id.startswith("binary_sensor.") and prev_s != new_s:
+        try:
+            from services import room_presence_engine as _rp
+            if entity_id in _rp.watched_entities():
+                _rp.on_sensor_event(entity_id, new_s)
+        except Exception as e:
+            log_error(f"[HASubscriber] room-presence hook {entity_id}: {e}")
+
     # TRACE-level: emit every HA state change (very noisy — only in trace mode)
     _dbus.emit("ha", TRACE, "ha_state_changed",
                entity_id=entity_id, prev_state=prev_s, new_state=new_s)

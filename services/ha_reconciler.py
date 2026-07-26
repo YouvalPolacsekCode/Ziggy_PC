@@ -88,6 +88,10 @@ def reconcile_occupancy_sensors() -> dict:
         entry_id = meta.get("entry_id")
         if not entry_id:
             continue
+        # Door-aware sensors are MQTT-backed — no HA config entry exists for
+        # them, so the live-entry check would always "orphan" them. Skip.
+        if meta.get("mode") == "door_aware":
+            continue
         checked += 1
         if entry_id not in live:
             set_local_state(_KV_NAMESPACE, room_slug, None)

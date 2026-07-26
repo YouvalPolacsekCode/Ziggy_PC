@@ -157,6 +157,17 @@ async def _startup():
         _threading.Thread(target=_start_climate, name="SmartClimate", daemon=True).start()
     except Exception as _e:
         log_info(f"[SmartClimate] scheduler start failed: {_e}")
+
+    # Door-aware room presence engine — backs Smart Presence sensors that
+    # include a door among their sources (bathroom latch semantics). Idles
+    # with no MQTT connection until at least one room is enrolled. Event-driven
+    # via the ha_subscriber binary_sensor hook; the loop only runs its timers.
+    try:
+        import threading as _threading
+        from services.room_presence_engine import start_engine as _start_presence
+        _threading.Thread(target=_start_presence, name="RoomPresence", daemon=True).start()
+    except Exception as _e:
+        log_info(f"[RoomPresence] engine start failed: {_e}")
     # Warm the HA service catalog so the first call to /api/devices/X/commands
     # returns instantly. Without this, the catalog stays empty until the
     # first request triggers it, and that request blocks while the WS round-
