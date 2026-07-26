@@ -596,11 +596,17 @@ def _group_name(rows: list[dict], primary: dict, device_name: str | None) -> str
     if device_name:
         return device_name
     raw = primary.get("display_name") or primary.get("name") or primary.get("entity_id") or "Device"
-    # Strip trailing metric-style suffix tokens. Order matters: longest first.
+    # Strip trailing metric-/role-style suffix tokens. Order matters: longest
+    # first. Sensor devices name their primary entity "<device> <role>" (a
+    # contact sensor "Kitchen Window" → entity "Kitchen Window Door") — drop the
+    # role so the card reads as the device, not "Kitchen Window Door".
     _SUFFIXES = (
         " Time Left", " Power Sensor", " Power", " Current", " Voltage",
-        " Energy", " Battery", " Battery Level", " Signal Strength",
-        " Signal", " Link Quality", " Temperature", " Humidity",
+        " Energy", " Battery Level", " Battery", " Signal Strength",
+        " Signal", " Link Quality", " Linkquality", " Temperature", " Humidity",
+        " Water Leak", " Occupancy", " Presence", " Vibration", " Contact",
+        " Opening", " Motion", " Moisture", " Smoke", " Gas", " Tamper",
+        " Illuminance", " Door",
     )
     for suf in _SUFFIXES:
         if raw.endswith(suf):

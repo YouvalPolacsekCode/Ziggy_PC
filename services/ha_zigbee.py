@@ -170,6 +170,10 @@ async def get_device_entities(device_id: str) -> list[str]:
 
 async def rename_device(device_id: str, name: str) -> dict:
     """Set a user-friendly name on an HA device."""
+    # Trim surrounding whitespace + collapse internal runs. A stray trailing
+    # space here becomes a permanent double-space in every derived entity name
+    # ("Kitchen Window " → contact entity "Kitchen Window  Door").
+    name = " ".join((name or "").split())
     try:
         res, = await _ws({
             "type": "config/device_registry/update",
