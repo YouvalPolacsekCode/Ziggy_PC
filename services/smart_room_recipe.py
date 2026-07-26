@@ -151,6 +151,29 @@ def resolve_occupancy_entity(home: dict, room_slug: str) -> Optional[str]:
     return None
 
 
+def _zone_for_entity(occupancy_entity: Optional[str], room_slug: str) -> tuple[str, Optional[str]]:
+    """(zone_slug, zone_name) for the presence sensor driving this Smart Room.
+
+    A room can hold several presence sensors (main + zones like an en-suite —
+    see template_sensors multi-sensor keys). Each sensor key gets its OWN
+    Smart Room rule set: the main sensor keeps the room slug (today's ids,
+    zero migration); a zone sensor ({room}_2) keys its rules by that, so two
+    Smart Rooms in one room never collide. zone_name is the sensor's friendly
+    name for labeling zone bundles (None for the main sensor)."""
+    if occupancy_entity:
+        try:
+            from services.template_sensors import list_occupancy_sensors
+            for rec in list_occupancy_sensors():
+                if rec.get("entity_id") == occupancy_entity:
+                    key = rec.get("key") or rec.get("room") or room_slug
+                    if key != rec.get("room", key):
+                        return key, (rec.get("name") or None)
+                    return key, None
+        except Exception as e:
+            log_error(f"[smart_room_recipe] zone lookup failed: {e}")
+    return room_slug, None
+
+
 def build_smart_room_bundle(
     room_slug: str,
     *,
@@ -184,6 +207,14 @@ def build_smart_room_bundle(
     presence = [e["entity_id"] for e in (ents.get("presence") or []) + (ents.get("occupancy") or [])
                 if e.get("entity_id")]
 
+    # User-chosen light subset (e.g. a zone Smart Room controls only the
+    # en-suite light, not the whole bedroom). Unknown ids are dropped; an
+    # empty result falls through to the honest no-lights decline.
+    chosen = opt.get("lights")
+    if isinstance(chosen, (list, tuple)) and chosen:
+        wanted = {str(c) for c in chosen}
+        lights = [l for l in lights if l in wanted]
+
     # No light → nothing to control. Honest decline.
     if not lights:
         decline = (f"אין תאורה חכמה ב{label} שאפשר לשלוט בה, אז אין ממה להרכיב חדר חכם."
@@ -216,12 +247,19 @@ def build_smart_room_bundle(
     # schedule owns their brightness/colour (no fixed brightness forced here).
     sched_owned = _scheduled_lights_set()
 
-    # English room title for the HA alias — see _alias() below.
-    en_label = _room_label(room_slug, "en")
+    # Zone scoping: rules key off the presence sensor's KV key, so a second
+    # Smart Room in the same room (e.g. the en-suite) coexists with the main
+    # one. Zone bundles show the sensor's friendly name as their label.
+    zone_slug, zone_name = _zone_for_entity(occ, room_slug)
+    if zone_name:
+        label = zone_name
+
+    # English zone title for the HA alias — see _alias() below.
+    en_label = zone_slug.replace("_", " ").title() if zone_name else _room_label(room_slug, "en")
 
     def _alias(part: str) -> str:
         # STABLE ENGLISH alias so HA derives a predictable entity object-id
-        # (ziggy_smart_room_<room>_<part>) that MATCHES the config-id _slug()
+        # (ziggy_smart_room_<zone>_<part>) that MATCHES the config-id _slug()
         # produces. Hebrew names slug to a uuid → id mismatch → empty view/edit
         # + duplicate-on-re-apply. Mirrors the Circadian bundle's approach.
         # The user never sees this alias: members are hidden behind the group
@@ -263,10 +301,12 @@ def build_smart_room_bundle(
     # ── Sleep KV + voice ("good night"/"good morning") ─────────────────────────
     # The KV mode records intent; suppression itself is handled by the occupancy
     # edge (no manual toggle needed). Voice turns the lights off/on directly.
-    kv = [{"namespace": "modes", "key": f"{room_slug}_sleep", "default": False}]
+    # Zone Smart Rooms get NO voice phrases — a second "good night" would
+    # collide with the main room's; the zone is driven purely by its sensor.
+    kv = [{"namespace": "modes", "key": f"{zone_slug}_sleep", "default": False}]
     gn = "לילה טוב" if lang == "he" else "good night"
     gm = "בוקר טוב" if lang == "he" else "good morning"
-    voice = [
+    voice = [] if zone_name else [
         {"phrase": gn, "action_description": (f"turn off the {label} lights and set {room_slug} sleep on")},
         {"phrase": gm, "action_description": (f"turn on the {label} lights and set {room_slug} sleep off")},
     ]
@@ -292,6 +332,8 @@ def build_smart_room_bundle(
         "decline": None,
         "recipe": "smart_room",
         "occupancy_entity": occ,      # the fused presence sensor all rules trigger on
+        "zone": zone_slug,            # rule-set key ({room} main | {room}_N zone)
+        "lights": lights,             # the exact lights these rules control
         "has_presence": has_presence,
         "artifacts": {
             "occupancy_sensors": [],       # caller already ensured OCC exists

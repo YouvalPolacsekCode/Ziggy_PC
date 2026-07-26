@@ -466,12 +466,23 @@ async def delete_smart_room_endpoint(room: str):
         set_local_state("modes", f"{slug}_sleep", False)
     except Exception:
         pass
+    # Voice phrases belong to the MAIN room's Smart Room only — deleting a
+    # ZONE set (slug = a sensor key like bedroom_2, whose record points at a
+    # different room) must not tear down the room's "good night"/"good morning".
+    is_zone = False
     try:
-        from services.voice_intents import unregister_voice_intent
-        for ph in ("good night", "good morning", "לילה טוב", "בוקר טוב"):
-            await asyncio.to_thread(unregister_voice_intent, ph)
+        from services.template_sensors import list_occupancy_sensors
+        rec = next((s for s in list_occupancy_sensors() if s.get("key") == slug), None)
+        is_zone = bool(rec) and rec.get("key") != rec.get("room")
     except Exception:
         pass
+    if not is_zone:
+        try:
+            from services.voice_intents import unregister_voice_intent
+            for ph in ("good night", "good morning", "לילה טוב", "בוקר טוב"):
+                await asyncio.to_thread(unregister_voice_intent, ph)
+        except Exception:
+            pass
     _bus.emit("automation", _BASIC, "smart_room_deleted", room=slug,
               removed=len(removed), result="ok")
     return {"ok": True, "room": slug, "removed": removed, "kept_presence_sensor": True}

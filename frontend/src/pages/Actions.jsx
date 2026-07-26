@@ -30,6 +30,7 @@ export default function Automations() {
   // the page (and every automation card under it) on every WS tick.
   const ziggyRooms = useDeviceStore(s => s.ziggyRooms)
   const entities   = useDeviceStore(s => s.entities)
+  const occupancySensors = useDeviceStore(s => s.occupancySensors)
 
   // Compute the offline-entity set ONCE per page render, share it with every
   // AutomationCard via prop. Each card used to rebuild this set itself on
@@ -90,7 +91,11 @@ export default function Automations() {
     })
     const smartRoomGroups = Object.entries(srMap).map(([room, members]) => ({
       room,
-      roomName: roomNameMap[room] || room.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      // Zone Smart Rooms (rule-set key = a sensor key like bedroom_2) show
+      // their presence sensor's friendly name, not a mangled slug.
+      roomName: roomNameMap[room]
+        || (occupancySensors || []).find(s => (s.key || s.room) === room)?.name
+        || room.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
       members,
       count: members.length,
       allEnabled: members.every(m => m.enabled),
@@ -129,7 +134,7 @@ export default function Automations() {
     }
 
     return { circadianGroup, smartRoomGroups, visibleAutomations: visible }
-  }, [automations, roomNameMap])
+  }, [automations, roomNameMap, occupancySensors])
 
   // Only fetch what isn't cached. Re-fetching on every revisit toggles the
   // store's `loading` flag, which flashes skeleton placeholders mid-mount.

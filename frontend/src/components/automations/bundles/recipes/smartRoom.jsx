@@ -41,10 +41,29 @@ function presenceCandidates(ctx, room, t) {
     if (sr === rid || sr === rn || sr.replace(/_/g, ' ') === rn) {
       // A room can hold several named smart sensors (main + zones like an
       // en-suite) — show each by its own name so the user picks the right one.
-      out.push({ id: s.entity_id, name: s.name || t('automations.smartRoom.wiz.mergedSensor'), kind: 'merged' })
+      out.push({ id: s.entity_id, name: s.name || t('automations.smartRoom.wiz.mergedSensor'),
+                 kind: 'merged', zoneKey: s.key || s.room })
     }
   }
   return out
+}
+
+// The rule-set key for this Smart Room instance: the chosen presence sensor's
+// key ({room} for the main sensor, {room}_N for zones like an en-suite). Raw
+// sensors and unknowns fall back to the room slug — exactly today's behavior.
+function zoneSlugOf(ctx, values) {
+  const rec = (ctx.occupancySensors || []).find((s) => s.entity_id === values.occEntity)
+  return (rec && (rec.key || rec.room)) || String(values.room?.id || '')
+}
+
+// The room's lights, for the per-instance light picker.
+function roomLights(ctx, room) {
+  if (!room) return []
+  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
+  return (area?.entities || [])
+    .map((id) => ctx.entityMap[id])
+    .filter((e) => e && e.domain === 'light')
+    .map((e) => ({ id: e.entity_id, name: entityDisplayName(e) || e.entity_id }))
 }
 
 // Door/opening sensors in the room that aren't already inside a smart sensor —
@@ -163,6 +182,35 @@ function PresenceField({ values, setValue, ctx, t }) {
   )
 }
 
+// ── Step: which lights this Smart Room controls ──────────────────────────────
+// values.lights === null means "all of the room's lights" (default). A zone
+// Smart Room (e.g. en-suite) picks just its own light here.
+function LightsField({ values, setValue, ctx, t }) {
+  const all = roomLights(ctx, values.room)
+  const selected = values.lights == null ? new Set(all.map((l) => l.id)) : new Set(values.lights)
+  const toggle = (id) => {
+    const n = new Set(selected)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    setValue('lights', Array.from(n))
+  }
+  if (all.length === 0) {
+    return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.wiz.noLights')}</p>
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.5 }} dir="auto">
+        {t('automations.smartRoom.wiz.pickLights')}
+      </p>
+      <div style={listBox}>
+        {all.map((l) => (
+          <RadioRow key={l.id} sel={selected.has(l.id)} label={l.name} onClick={() => toggle(l.id)} />
+        ))}
+      </div>
+      {selected.size === 0 && <WarnBox>{t('automations.smartRoom.wiz.needLight')}</WarnBox>}
+    </div>
+  )
+}
+
 // ── Installed helpers: read + round-trip the room's live rules ───────────────
 function partIcon(m) {
   const id = (m.id || '').toLowerCase()
@@ -196,8 +244,16 @@ function deriveInstalledOpts(ctx, roomSlug) {
   const dayWin = (day?.conditions || []).find((c) => c.type === 'time')
   const trig = (day || night)?.trigger || {}
   const occ = Array.isArray(trig.entity_id) ? trig.entity_id[0] : trig.entity_id
+  // The exact lights this instance controls, straight from its actions.
+  const lightsSet = new Set()
+  for (const rule of [day, night, off]) {
+    for (const a of (rule?.actions || [])) {
+      if (a?.entity_id && String(a.entity_id).startsWith('light.')) lightsSet.add(a.entity_id)
+    }
+  }
   return {
     occEntity: occ || null,
+    lights: lightsSet.size ? Array.from(lightsSet) : null,
     night_end: dayWin?.after || DEFAULT_OPTS.night_end,
     night_start: dayWin?.before || DEFAULT_OPTS.night_start,
     day_brightness: firstData(day, 'brightness_pct') ?? DEFAULT_OPTS.day_brightness,
@@ -211,7 +267,7 @@ function deriveInstalledOpts(ctx, roomSlug) {
 // per-rule editor (the fields below now edit everything directly).
 function MembersField({ values, ctx, t }) {
   // Read members LIVE from the automations list so toggles reflect immediately.
-  const members = membersOf(ctx, values.room?.id)
+  const members = membersOf(ctx, zoneSlugOf(ctx, values))
   const { onToggleMember } = ctx.hostActions || {}
   if (members.length === 0) {
     return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.noSteps')}</p>
@@ -245,6 +301,7 @@ export default {
     const base = {
       room: initial?.room ? { id: initial.room, name: initial.roomName || initial.room } : null,
       occEntity: null,
+      lights: null,           // null = all of the room's lights
       _needsSensor: false,
       _decline: null,
       _resolving: false,
@@ -253,7 +310,15 @@ export default {
     // Installed: reconstruct the numbers from the live rules so the editor is
     // the SAME flat surface as every other bundle — view IS edit here too.
     if (initial?._isInstalled && initial?.room) {
-      return { ...base, ...deriveInstalledOpts(ctx, initial.room) }
+      // A ZONE card's `room` is the rule-set key (its sensor's key, e.g.
+      // bedroom_2) — remap to the sensor's real room so room-scoped pickers
+      // (presence candidates, lights) resolve correctly.
+      const zone = (ctx.occupancySensors || []).find(
+        (s) => (s.key || s.room) === initial.room && (s.key || s.room) !== s.room)
+      const room = zone
+        ? { id: zone.room, name: (ctx.rooms || []).find((r) => String(r.id) === String(zone.room))?.name || zone.room }
+        : base.room
+      return { ...base, room, ...deriveInstalledOpts(ctx, initial.room) }
     }
     return base
   },
@@ -265,7 +330,7 @@ export default {
           key: 'members', titleKey: 'automations.smartRoom.wiz.rulesTitle', icon: '🗂',
           fields: [{ key: '_members', type: 'custom', render: (p) => <MembersField {...p} />,
             summary: (t, v, c) => {
-              const members = membersOf(c, v.room?.id)
+              const members = membersOf(c, zoneSlugOf(c, v))
               const on = members.filter((m) => m.enabled).length
               return `${on}/${members.length}`
             } }],
@@ -278,6 +343,16 @@ export default {
               if (cand) return cand.name
               const e = c.entityMap[v.occEntity]
               return e ? (entityDisplayName(e) || v.occEntity) : (v.occEntity || '—')
+            } }],
+        },
+        {
+          key: 'lights', titleKey: 'automations.smartRoom.wiz.lightsTitle', icon: '💡',
+          validate: (v) => v.lights == null || v.lights.length > 0,
+          fields: [{ key: '_lights', type: 'custom', render: (p) => <LightsField {...p} />,
+            summary: (t, v, c) => {
+              const all = roomLights(c, v.room)
+              const n = v.lights == null ? all.length : v.lights.length
+              return t('automations.smartRoom.wiz.lightsCount', { n })
             } }],
         },
         {
@@ -318,6 +393,11 @@ export default {
         key: 'presence', titleKey: 'automations.smartRoom.wiz.presenceTitle', icon: '🧍',
         validate: (v) => !!v.occEntity,
         fields: [{ key: '_presence', type: 'custom', render: (p) => <PresenceField {...p} /> }],
+      },
+      {
+        key: 'lights', titleKey: 'automations.smartRoom.wiz.lightsTitle', icon: '💡',
+        validate: (v) => v.lights == null || v.lights.length > 0,
+        fields: [{ key: '_lights', type: 'custom', render: (p) => <LightsField {...p} /> }],
       },
       {
         key: 'day', titleKey: 'automations.smartRoom.wiz.dayTitle', icon: '☀️',
@@ -361,11 +441,12 @@ export default {
       day_brightness: v.day_brightness, night_brightness: v.night_brightness,
       night_kelvin: v.night_kelvin, night_start: v.night_start, night_end: v.night_end,
       off_delay_minutes: v.off_delay_minutes, guard_hold_seconds: 30,
+      ...(v.lights && v.lights.length ? { lights: v.lights } : {}),
     }
     // Remember which rules the user has switched off — re-applying the bundle
     // recreates them enabled, and Save must not silently re-arm a paused rule.
     const disabled = v._installed
-      ? membersOf(ctx, v.room.id).filter((m) => !m.enabled).map((m) => m.id)
+      ? membersOf(ctx, zoneSlugOf(ctx, v)).filter((m) => !m.enabled).map((m) => m.id)
       : []
     const res = await designSmartRoom(v.room.id || v.room.name, v.occEntity || undefined, ctx.lang, opts)
     const b = res?.bundle
@@ -376,6 +457,10 @@ export default {
   },
 
   remove: async (ctx, initial, values) => {
-    await deleteSmartRoom(values.room?.id || initial?.room)
+    // Delete THIS instance's rule set — never a sibling's. For installed
+    // cards the card's `room` IS the rule-set key (zone or main), which is
+    // exact even if the presence sensor was deleted meanwhile.
+    const slug = initial?._isInstalled ? initial.room : zoneSlugOf(ctx, values)
+    await deleteSmartRoom(slug || values.room?.id)
   },
 }

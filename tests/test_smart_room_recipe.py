@@ -128,3 +128,60 @@ def test_hebrew_names(monkeypatch):
     r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="he")
     assert r["bundle"]["name"] == "חדר שינה חכם"
     assert [v["phrase"] for v in r["bundle"]["artifacts"]["voice_intents"]] == ["לילה טוב", "בוקר טוב"]
+
+
+# ── per-instance lights + zone scoping ───────────────────────────────────────
+
+def test_lights_option_filters_room_lights(monkeypatch):
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
+    home = _home(lights=("light.bedroom", "light.bedroom_bath"))
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=home,
+                                   language="en", options={"lights": ["light.bedroom_bath"]})
+    assert r["ok"]
+    autos = r["bundle"]["artifacts"]["automations"]
+    for a in autos:
+        assert [x["entity_id"] for x in a["actions"]] == ["light.bedroom_bath"]
+    assert r["bundle"]["lights"] == ["light.bedroom_bath"]
+
+
+def test_lights_option_with_no_valid_ids_declines(monkeypatch):
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(),
+                                   language="en", options={"lights": ["light.not_in_room"]})
+    assert not r["ok"] and r["error"] == "no_lights"
+
+
+def test_zone_sensor_gets_zone_keyed_rules_and_no_voice(monkeypatch):
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
+    import services.template_sensors as ts
+    monkeypatch.setattr(ts, "list_occupancy_sensors", lambda: [
+        {"room": "bedroom", "key": "bedroom", "entity_id": OCC, "name": "Bedroom"},
+        {"room": "bedroom", "key": "bedroom_2", "entity_id": "binary_sensor.ensuite_occ",
+         "name": "מקלחת הורים"},
+    ])
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity="binary_sensor.ensuite_occ",
+                                   home=_home(), language="he")
+    assert r["ok"]
+    b = r["bundle"]
+    assert b["zone"] == "bedroom_2"
+    a = b["artifacts"]
+    # Zone-suffixed aliases → distinct rule ids from the main set.
+    assert all("Bedroom 2" in auto["alias"] for auto in a["automations"])
+    # Sensor's friendly name labels the bundle; no voice phrase collision.
+    assert "מקלחת הורים" in b["name"]
+    assert a["voice_intents"] == []
+    assert a["kv_state"][0]["key"] == "bedroom_2_sleep"
+
+
+def test_main_sensor_keeps_legacy_aliases_and_voice(monkeypatch):
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
+    import services.template_sensors as ts
+    monkeypatch.setattr(ts, "list_occupancy_sensors", lambda: [
+        {"room": "bedroom", "key": "bedroom", "entity_id": OCC, "name": "Bedroom"},
+    ])
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="en")
+    assert r["ok"]
+    b = r["bundle"]
+    assert b["zone"] == "bedroom"
+    assert all(a2["alias"].startswith("Ziggy Smart Room Bedroom ") for a2 in b["artifacts"]["automations"])
+    assert len(b["artifacts"]["voice_intents"]) == 2
