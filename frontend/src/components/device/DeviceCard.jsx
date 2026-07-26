@@ -31,6 +31,7 @@ import {
   ChevronRight, Volume2, VolumeX, Cog, BatteryLow,
 } from 'lucide-react'
 import { deviceFacts, sendDeviceCommand, kindMeta, KIND, isLightKind, commandAvailable } from '../../lib/devices'
+import { DeviceIcon } from '../../lib/deviceIcons'
 import { useUIStore } from '../../stores/uiStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import logger from '../../lib/logger'
@@ -70,14 +71,13 @@ const KIND_ICONS = {
   unknown:      Cog,
 }
 
-function KindIcon({ kind, size = 18 }) {
-  // Emoji-first: each kind in lib/devices.js (KIND_META) carries an emoji
-  // glyph (💡 📺 ❄️ …) that reads as the same warm/3D design language as the
-  // home-page Shortcut tiles. Renders just the glyph at the requested size;
-  // KIND_ICONS (Lucide outlines) is kept around for any caller that explicitly
-  // wants the line style.
-  const emoji = kindMeta(kind).icon
-  return <span style={{ fontSize: size, lineHeight: 1 }} aria-hidden="true">{emoji}</span>
+function KindIcon({ kind, customIcon, size = 18 }) {
+  // Delegates to the shared DeviceIcon so the live icon-style toggle (Emoji /
+  // Line / 3D) applies here too. In emoji mode this is identical to before:
+  // each kind in lib/devices.js (KIND_META) carries an emoji glyph. KIND_ICONS
+  // (Lucide outlines) is kept around for any caller that explicitly wants the
+  // line style.
+  return <DeviceIcon kind={kind} customIcon={customIcon} size={size} />
 }
 
 // ─── Inline mini-controls ───────────────────────────────────────────────────

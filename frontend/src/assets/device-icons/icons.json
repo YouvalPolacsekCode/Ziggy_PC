@@ -1,0 +1,251 @@
+{
+  "palette": {
+    "gold": "#E5B80B",
+    "amber": "#F5920B",
+    "blue": "#2E90F5",
+    "rust": "#C1440E",
+    "grey": "#98A2AE",
+    "red": "#E5484D",
+    "green": "#2FA84F"
+  },
+  "categories": {
+    "Lights": [
+      {
+        "name": "light",
+        "label": "Light",
+        "color": "#E5B80B",
+        "colorName": "gold"
+      },
+      {
+        "name": "lamp",
+        "label": "Lamp",
+        "color": "#E5B80B",
+        "colorName": "gold"
+      },
+      {
+        "name": "led-strip",
+        "label": "LED Strip",
+        "color": "#E5B80B",
+        "colorName": "gold"
+      }
+    ],
+    "Switches": [
+      {
+        "name": "switch",
+        "label": "Switch",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "plug",
+        "label": "Plug",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      }
+    ],
+    "Media": [
+      {
+        "name": "tv",
+        "label": "TV",
+        "color": "#C1440E",
+        "colorName": "rust"
+      },
+      {
+        "name": "soundbar",
+        "label": "Soundbar",
+        "color": "#C1440E",
+        "colorName": "rust"
+      },
+      {
+        "name": "receiver",
+        "label": "Receiver",
+        "color": "#C1440E",
+        "colorName": "rust"
+      },
+      {
+        "name": "projector",
+        "label": "Projector",
+        "color": "#C1440E",
+        "colorName": "rust"
+      },
+      {
+        "name": "monitor",
+        "label": "Monitor",
+        "color": "#C1440E",
+        "colorName": "rust"
+      }
+    ],
+    "Climate": [
+      {
+        "name": "ac",
+        "label": "AC",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "fan",
+        "label": "Fan",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "humidifier",
+        "label": "Humidifier",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      }
+    ],
+    "Appliances": [
+      {
+        "name": "kettle",
+        "label": "Kettle",
+        "color": "#F5920B",
+        "colorName": "amber"
+      },
+      {
+        "name": "coffee",
+        "label": "Coffee",
+        "color": "#F5920B",
+        "colorName": "amber"
+      }
+    ],
+    "Covers": [
+      {
+        "name": "blind",
+        "label": "Blind",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      }
+    ],
+    "Security": [
+      {
+        "name": "lock",
+        "label": "Lock",
+        "color": "#F5920B",
+        "colorName": "amber"
+      },
+      {
+        "name": "alarm",
+        "label": "Alarm",
+        "color": "#E5484D",
+        "colorName": "red"
+      },
+      {
+        "name": "camera",
+        "label": "Camera",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      }
+    ],
+    "Water": [
+      {
+        "name": "water-heater",
+        "label": "Water Heater",
+        "color": "#E5484D",
+        "colorName": "red"
+      },
+      {
+        "name": "valve",
+        "label": "Valve",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      }
+    ],
+    "Sensors": [
+      {
+        "name": "motion",
+        "label": "Motion",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "presence",
+        "label": "Presence",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "door",
+        "label": "Door",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      },
+      {
+        "name": "window",
+        "label": "Window",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      },
+      {
+        "name": "temperature",
+        "label": "Temperature",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "humidity",
+        "label": "Humidity",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "leak",
+        "label": "Leak",
+        "color": "#E5484D",
+        "colorName": "red"
+      },
+      {
+        "name": "smoke",
+        "label": "Smoke",
+        "color": "#E5484D",
+        "colorName": "red"
+      },
+      {
+        "name": "power",
+        "label": "Power",
+        "color": "#2E90F5",
+        "colorName": "blue"
+      },
+      {
+        "name": "binary",
+        "label": "Binary",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      }
+    ],
+    "Other": [
+      {
+        "name": "vacuum",
+        "label": "Vacuum",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      },
+      {
+        "name": "mower",
+        "label": "Mower",
+        "color": "#2FA84F",
+        "colorName": "green"
+      },
+      {
+        "name": "person",
+        "label": "Person",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      },
+      {
+        "name": "unknown",
+        "label": "Device/Unknown",
+        "color": "#98A2AE",
+        "colorName": "grey"
+      }
+    ]
+  },
+  "missing": [
+    {
+      "name": "sensor",
+      "label": "Sensor",
+      "category": "Sensors",
+      "reason": "no glyph in source image"
+    }
+  ]
+}

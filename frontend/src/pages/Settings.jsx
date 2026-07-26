@@ -1121,6 +1121,8 @@ export function DisplayPage() {
   const t = useT()
   const theme = useUIStore(s => s.theme)
   const toggleTheme = useUIStore(s => s.toggleTheme)
+  const iconStyle = useUIStore(s => s.iconStyle)
+  const setIconStyle = useUIStore(s => s.setIconStyle)
   const { addToast } = useUIStore()
   const [general, setGeneral] = useState({ language: 'en', timezone: 'UTC' })
   const [saving, setSaving] = useState(false)
@@ -1149,6 +1151,18 @@ export function DisplayPage() {
         <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
           <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
         </SettingRow>
+        <div style={{ padding: '14px 16px', borderTop: '0.5px solid var(--line)' }}>
+          <Select
+            label="Device icons"
+            value={iconStyle}
+            onChange={e => setIconStyle(e.target.value)}
+            options={[
+              { value: 'emoji', label: 'Emoji (default)' },
+              { value: 'line',  label: 'Line — flat SVG' },
+              { value: '3d',    label: '3D — realistic' },
+            ]}
+          />
+        </div>
       </Card>
       <div style={{ marginTop: 22 }}>
         <SectionTitle icon={MapPin}>{t('settings.languageRegion')}</SectionTitle>

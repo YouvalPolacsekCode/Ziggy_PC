@@ -11,7 +11,8 @@ import { useWsMessages } from '../hooks/useWebSocket'
 import { greetingByTime, humanizeSlug, entityDisplayName } from '../lib/utils'
 import { getActivity, getActiveAnomalies, getHealth, getPresencePersons, sendDirectIntent } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
-import { findRoomMetric, roomOccupancy, deviceFacts, sendDeviceCommand, kindMeta } from '../lib/devices'
+import { findRoomMetric, roomOccupancy, deviceFacts, sendDeviceCommand } from '../lib/devices'
+import { DeviceIcon } from '../lib/deviceIcons'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
@@ -186,7 +187,6 @@ function QuickControlTile({ entity }) {
   const arrowBg    = on ? 'color-mix(in srgb, var(--bg) 14%, transparent)' : 'var(--surface-2)'
   const arrowColor = on ? 'var(--bg)' : 'var(--ink-mute)'
   const subColor   = on ? 'color-mix(in srgb, var(--bg) 70%, transparent)' : 'var(--ink-faint)'
-  const emoji      = kindMeta(facts.kind).icon
 
   const sub = (() => {
     if (!facts.isAvailable) return tt('common.offline')
@@ -227,7 +227,7 @@ function QuickControlTile({ entity }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 18, lineHeight: 1,
       }} aria-hidden="true">
-        {emoji}
+        <DeviceIcon kind={facts.kind} size={18} />
       </span>
 
       <div style={{ minWidth: 0 }}>

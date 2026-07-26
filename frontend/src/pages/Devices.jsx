@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button'
 import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
 import { DeviceRemote as UnifiedDeviceRemote } from '../components/device/DeviceRemote'
 import { commandAvailable, getKind, kindMeta, sendDeviceCommand, KIND } from '../lib/devices'
+import { DeviceIcon } from '../lib/deviceIcons'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -1658,7 +1659,7 @@ const DeviceCard = forwardRef(function DeviceCard({
                 🔥 via getKind. Routing both through getKind+kindMeta keeps
                 vendor heuristics (Switcher boilers, future overrides) in
                 one place and the icon consistent across views. */}
-            <span style={{ fontSize: 21, lineHeight: 1 }} aria-hidden="true">{entity.icon || kindMeta(getKind(entity)).icon}</span>
+            <DeviceIcon kind={getKind(entity)} customIcon={entity.icon} size={21} />
             {(isIr || linkedIr) && (
               <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'var(--accent)', color: '#fff', fontSize: 6, fontWeight: 700, padding: '1px 4px', borderRadius: 3, lineHeight: 1.2 }}>IR</span>
             )}

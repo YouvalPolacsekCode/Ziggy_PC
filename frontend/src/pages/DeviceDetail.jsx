@@ -9,6 +9,7 @@ import { TOGGLEABLE_DOMAINS, isEntityOn } from '../components/ui/DeviceControls'
 import { DeviceRemote } from '../components/device/DeviceRemote'
 import SensorHistoryChart from '../components/device/SensorHistoryChart'
 import { deviceFacts, getKind, KIND, sendDeviceCommand } from '../lib/devices'
+import { DeviceIcon, iconChoiceAsset } from '../lib/deviceIcons'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -469,6 +470,7 @@ export default function DeviceDetail() {
   // reference changes (which the optimized updateEntityState only does
   // when state or a tracked attr actually moved).
   const liveEntity     = useDeviceStore(s => s.entities.find(e => e.entity_id === entityId) ?? null)
+  const iconStyle      = useUIStore(s => s.iconStyle)
   const storeRooms     = useDeviceStore(s => s.rooms)
   const hiddenEntities = useDeviceStore(s => s.hiddenEntities)
   const hideEntity     = useDeviceStore(s => s.hideEntity)
@@ -985,7 +987,7 @@ export default function DeviceDetail() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 22, flexShrink: 0,
               }}>
-                {entity.icon || meta.icon}
+                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={22} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1341,13 +1343,17 @@ export default function DeviceDetail() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {TILE_ICON_CHOICES.map(ic => {
               const active = (liveEntity?.icon || '') === ic
+              // In an image icon style, preview the matching asset; still store
+              // the emoji so switching back to Emoji keeps the choice intact.
+              const asset = iconStyle !== 'emoji' ? iconChoiceAsset(ic, iconStyle) : null
               return (
                 <button key={ic}
                   onClick={() => applyTilePref(entityId, { icon: ic })}
                   style={{ width: 34, height: 34, borderRadius: 9, fontSize: 18, lineHeight: '32px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                     border: active ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
                     background: active ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)' }}
-                >{ic}</button>
+                >{asset ? <img src={asset} alt="" aria-hidden="true" style={{ width: 22, height: 22, objectFit: 'contain' }} /> : ic}</button>
               )
             })}
             <button

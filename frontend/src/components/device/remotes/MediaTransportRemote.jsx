@@ -26,6 +26,7 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Home, Menu,
 } from 'lucide-react'
 import { deviceFacts, sendDeviceCommand, commandAvailable } from '../../../lib/devices'
+import { DeviceIcon } from '../../../lib/deviceIcons'
 import { useUIStore } from '../../../stores/uiStore'
 import { usePairedRemoteEntityId, makeFireSmart, navAvailable } from '../../../lib/remoteNav'
 import { useT, t as i18nT } from '../../../lib/i18n'
@@ -233,7 +234,7 @@ function NowPlayingHero({ entity, attrs, facts }) {
         }}>
           {art
             ? <img src={art} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            : <span aria-hidden="true">{facts.meta.icon}</span>}
+            : <DeviceIcon kind={facts.kind} size={24} />}
         </div>
 
         {/* Title + subtitle + app badge */}

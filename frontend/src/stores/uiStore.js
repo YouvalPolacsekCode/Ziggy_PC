@@ -26,6 +26,11 @@ export const useUIStore = create(
   persist(
     (set) => ({
       theme: 'light',
+      // Device icon style: 'emoji' (default, = original behavior), 'line'
+      // (flat SVG set) or '3d' (skeuomorphic PNG set). Purely presentational;
+      // switching back to 'emoji' is a full revert. See lib/deviceIcons.jsx.
+      iconStyle: 'emoji',
+      setIconStyle: (iconStyle) => set({ iconStyle }),
       toasts: [],
       toggleTheme: () =>
         set((s) => {
@@ -79,6 +84,6 @@ export const useUIStore = create(
       },
       removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     }),
-    { name: 'ziggy-ui', partialize: (s) => ({ theme: s.theme }) }
+    { name: 'ziggy-ui', partialize: (s) => ({ theme: s.theme, iconStyle: s.iconStyle }) }
   )
 )
