@@ -2247,51 +2247,59 @@ export default function Devices() {
           row instead of overflowing horizontally (which used to shove the
           "pair device" button off the page edge when the show-hidden pill
           appeared). */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div style={{ minWidth: 0 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('devices.eyebrow')}</p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('devices.title')}</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
-            {t('devices.subtitleActive', { active: activeCount, total: getTotalControllable(), totalEntities: entities.length })}
-            {hiddenCount > 0 && ` · ${t('devices.subtitleHidden', { n: hiddenCount })}`}
-            {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginInlineStart: 4 }}>· {t('devices.subtitleUnassigned', { n: unassigned.length })}</span>}
-            {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginInlineStart: 4 }}>· {t('devices.subtitleNoRoom', { n: noRoomEntities.length })}</span>}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {hiddenCount > 0 && (
-            <button onClick={toggleShowHidden} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-              background: showHidden ? 'var(--ink)' : 'var(--surface)',
-              color: showHidden ? 'var(--bg)' : 'var(--ink-mute)',
-              border: showHidden ? 'none' : '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
-            }}>
-              {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
-              {showHidden ? t('devices.showingHidden') : t('devices.showHidden')}
-            </button>
-          )}
-          {unassignedSignalCount > 0 && (
-            <button
-              onClick={() => setShowUnassignedSignals(true)}
-              title={t('devices.unassignedSignalsTooltip')}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                background: `color-mix(in srgb, var(--accent) 12%, var(--surface))`,
-                color: 'var(--accent)',
-                border: `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`,
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              <Radio size={12} />
-              {t('devices.unknownSignals', { n: unassignedSignalCount })}
-            </button>
-          )}
-          <button onClick={() => setShowPairing(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+      <div style={{ marginBottom: 20 }}>
+        {/* Top row: title + the primary "pair device" action, which stays put
+            (flexShrink:0) and never gets pushed off-screen or onto its own
+            line. The secondary toggles live on a separate row below so
+            appearing/relabelling them can't disturb the pair button. */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('devices.eyebrow')}</p>
+            <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('devices.title')}</h1>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+              {t('devices.subtitleActive', { active: activeCount, total: getTotalControllable(), totalEntities: entities.length })}
+              {hiddenCount > 0 && ` · ${t('devices.subtitleHidden', { n: hiddenCount })}`}
+              {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginInlineStart: 4 }}>· {t('devices.subtitleUnassigned', { n: unassigned.length })}</span>}
+              {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginInlineStart: 4 }}>· {t('devices.subtitleNoRoom', { n: noRoomEntities.length })}</span>}
+            </p>
+          </div>
+          <button onClick={() => setShowPairing(true)} className="z-btn-primary" style={{ flexShrink: 0, padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
             <Plus size={13} /> {t('devices.pairDevice')}
           </button>
         </div>
+        {(hiddenCount > 0 || unassignedSignalCount > 0) && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 10 }}>
+            {hiddenCount > 0 && (
+              <button onClick={toggleShowHidden} style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                background: showHidden ? 'var(--ink)' : 'var(--surface)',
+                color: showHidden ? 'var(--bg)' : 'var(--ink-mute)',
+                border: showHidden ? 'none' : '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                {showHidden ? t('devices.showingHidden') : t('devices.showHidden')}
+              </button>
+            )}
+            {unassignedSignalCount > 0 && (
+              <button
+                onClick={() => setShowUnassignedSignals(true)}
+                title={t('devices.unassignedSignalsTooltip')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                  background: `color-mix(in srgb, var(--accent) 12%, var(--surface))`,
+                  color: 'var(--accent)',
+                  border: `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                <Radio size={12} />
+                {t('devices.unknownSignals', { n: unassignedSignalCount })}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Unassigned banner */}
