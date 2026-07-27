@@ -96,9 +96,11 @@ def test_fan_auto_is_4_not_0():
 
 def test_byte5_is_a_power_on_edge_not_a_state_bit():
     """arikfe reads byte 5 as power state. Our walk shows 0x30 on frames
-    sent while the AC was RUNNING (whole temp ladder) — so 0x30 cannot
-    mean 'off'. Only the 0xc0 ON edge carries information."""
-    assert _decode_tadiran_ac_state(CAP_WALK_POWER_ON).power == "on"
+    sent while the AC was RUNNING (whole temp ladder), and a controlled
+    pair showed a 0xc0 frame turning the AC OFF — the marker alternates
+    per power press without encoding direction. It flags A power press,
+    not which way."""
+    assert _decode_tadiran_ac_state(CAP_WALK_POWER_ON).power == "toggle"
     assert _decode_tadiran_ac_state(CAP_WALK_COOL_16).power is None
     assert _decode_tadiran_ac_state(CAP_MAY_STATE_25).power is None
 

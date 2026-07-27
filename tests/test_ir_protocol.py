@@ -537,11 +537,11 @@ def test_tadiran_state_decode_plain_frame_25c():
 
 
 def test_tadiran_state_decode_power_on_25c():
-    # The May power-ON press: byte 5 carries the 0xc0 ON edge.
+    # The May power press: byte 5 carries the 0xc0 toggle marker.
     payload = bytes.fromhex("0141320000c00017")
     from services.ir_protocol import _decode_tadiran_ac_state
     state = _decode_tadiran_ac_state(payload)
-    assert state.power == "on"
+    assert state.power == "toggle"
     assert state.temp == 25
 
 
@@ -568,7 +568,7 @@ def test_tadiran_real_capture_decodes_with_state():
     # power-ON press (byte5 edge), 22°C (0x2c/2), cool, fan auto — and the
     # nibble-sum checksum holds. The old "25°C" expectation came from the
     # overturned sliding-window temp read.
-    assert result.ac_state.power == "on"
+    assert result.ac_state.power == "toggle"
     assert result.ac_state.temp == 22
     assert result.ac_state.mode == "cool"
     assert result.ac_state.fan == "auto"

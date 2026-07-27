@@ -26,13 +26,13 @@ from services.ir_protocol import (
 )
 
 # (label, payload_hex, expected power/temp) — the 3 pinned real May captures,
-# expectations CORRECTED by the 2026-07-27 walk (temp = byte2/2; power only
-# readable on the byte5 ON edge). The original "off@24 / on@24" labels were a
+# expectations CORRECTED by the 2026-07-27 walk (temp = byte2/2; byte5 0xc0 is a
+# power-press toggle marker, not a state bit). The original "off@24 / on@24" labels were a
 # mislabeled pair one degree apart — see tests/test_ir_protocol_tadiran_walk.py.
 CAPTURES = [
     ("state_24c",    "014130000030000c", None, 24),
     ("state_25c",    "014132000030000e", None, 25),
-    ("power_on_25c", "0141320000c00017", "on", 25),
+    ("power_on_25c", "0141320000c00017", "toggle", 25),
 ]
 
 

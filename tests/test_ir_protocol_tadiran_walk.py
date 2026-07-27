@@ -9,11 +9,12 @@ RX) established the TRUE byte layout, overturning the May-2026 hypothesis:
               mode: 1=cool 2=dry 3=fan 4=heat 5=auto   (all 5 walked live)
               fan:  1=low  2=medium 3=high 4=auto      (full cycle walked)
     byte 2  : temperature * 2   (16..31°C walked press-by-press)
-    byte 5  : 0xc0 on the power-ON press; 0x30 otherwise. NOT a power-state
-              bit: frames sent while the AC is running still carry 0x30, and
-              the power-OFF press emits a payload byte-identical to a plain
-              state frame (see HALF-2 note below). Treat 0xc0 as an ON edge;
-              0x30 says nothing.
+    byte 5  : power-press toggle marker. Alternates 0xc0/0x30 on POWER
+              presses only; does NOT encode direction (a controlled pair
+              with the AC visibly on showed a 0xc0 frame turning it OFF).
+              Settings presses always carry 0x30. The AC toggles on any
+              power press and distinguishes power from settings presses by
+              settings-equality — Ziggy mirrors that in ir_manager.
     byte 6  : 0xc0 = swing on, 0x00 = swing off (both edges walked live)
     byte 7  : checksum = sum of nibbles of bytes 0-6 (mod 256) — 36/36
 
@@ -52,8 +53,8 @@ WALK = [
     ("01153e000030001b", None, "auto", 31, "low"),
     # swing on (state otherwise unchanged)
     ("01153e000030c027", None, "auto", 31, "low"),
-    # finale: power-ON press → byte5 = 0xc0
-    ("01153e0000c0c030", "on", "auto", 31, "low"),
+    # finale: power press → byte5 toggle marker
+    ("01153e0000c0c030", "toggle", "auto", 31, "low"),
     # fan cycle 1→2→3→4→1
     ("01253e000030c028", None, "auto", 31, "medium"),
     ("01353e000030c029", None, "auto", 31, "high"),
@@ -67,7 +68,7 @@ MAY_CAPTURES = [
     # byte 2 says 25°C and byte 5 says no power edge.
     ("014130000030000c", None, "cool", 24, "auto"),
     ("014132000030000e", None, "cool", 25, "auto"),
-    ("0141320000c00017", "on", "cool", 25, "auto"),  # the May power-ON press
+    ("0141320000c00017", "toggle", "cool", 25, "auto"),  # the May power press
 ]
 
 

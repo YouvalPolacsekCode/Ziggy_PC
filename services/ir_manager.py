@@ -708,6 +708,28 @@ def apply_decoded_ac_state(device_id: str, ac_state) -> bool:
     for d in devices:
         if d["id"] != device_id:
             continue
+
+        # Power-toggle semantics for toggle-style AC remotes (validated on
+        # Tadiran, 2026-07-27): power presses carry the SAME settings as a
+        # plain settings press — the AC (and therefore Ziggy) tells them
+        # apart by settings-equality. Two triggers flip power:
+        #   1. the decoder saw the explicit toggle marker (power == "toggle")
+        #   2. no marker, but the frame's settings equal current belief —
+        #      a settings press would have changed something, so this can
+        #      only be the power button.
+        # Missing/unknown current values compare unequal (safe: prefer
+        # "settings update" over a phantom power flip).
+        cur_values = ((d.get("state") or {}).get("values") or {})
+        is_marker = getattr(ac_state, "power", None) == "toggle"
+        settings = {k: decoded[k] for k in ("mode", "temp", "fan", "swing")
+                    if k in decoded}
+        same_settings = bool(settings) and all(
+            cur_values.get(k) == v for k, v in settings.items()
+        )
+        if is_marker or (("power" not in decoded) and same_settings and cur_values):
+            decoded = dict(decoded)
+            decoded["power"] = not bool(cur_values.get("power", False))
+
         _state_apply_decoded(d, decoded)
         brand = getattr(ac_state, "brand", "") or "unknown"
         d["last_command_sent"] = f"physical_remote_{brand}"

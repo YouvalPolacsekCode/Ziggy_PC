@@ -289,7 +289,7 @@ def fuzzy_match_b64(a_b64: str, b_b64: str, **kwargs) -> bool:
 @dataclass(frozen=True)
 class AcState:
     """Decoded HVAC state from a stateful AC remote packet."""
-    power: Optional[str] = None       # 'on' | 'off' | None (unknown for this protocol)
+    power: Optional[str] = None       # 'on' | 'off' | 'toggle' | None (unknown)
     mode: Optional[str] = None        # 'cool' | 'heat' | 'fan' | 'auto' | 'dry'
     temp: Optional[int] = None        # Celsius
     fan: Optional[str] = None         # 'low' | 'medium' | 'high' | 'auto'
@@ -804,11 +804,14 @@ _TADIRAN_FAN_MAP = {
     0x4: "auto",   # walked (wrap target; matches May's fan-auto captures)
 }
 
-# byte 5 values. 0xc0 appears ONLY on the power-ON press (an edge flag, not
-# a state bit — running-AC frames still carry 0x30, and the power-OFF press
-# emits a payload byte-identical to a plain state frame; OFF is encoded in
-# frame half 2, which we don't decode yet).
-_TADIRAN_POWER_ON_EDGE = 0xC0
+# byte 5: power-press toggle marker. The remote alternates 0xc0/0x30 on
+# POWER presses only (never on temp/mode/fan/swing presses, which always
+# carry 0x30). The flavor does NOT encode direction — a controlled pair
+# (2026-07-27, AC visibly on) showed a c0 frame turning the AC OFF. The AC
+# toggles on any power press; it distinguishes power presses from settings
+# presses by settings-equality (identical settings -> toggle; changed
+# settings -> apply). State callers mirror that logic.
+_TADIRAN_POWER_TOGGLE_MARKER = 0xC0
 
 _TADIRAN_TEMP_MIN = 16
 _TADIRAN_TEMP_MAX = 31  # walked to 31 — the unit goes above the assumed 30
@@ -866,7 +869,7 @@ def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
     if tadiran_checksum_ok(payload) is False:
         return None
 
-    power: Optional[str] = "on" if payload[5] == _TADIRAN_POWER_ON_EDGE else None
+    power: Optional[str] = "toggle" if payload[5] == _TADIRAN_POWER_TOGGLE_MARKER else None
 
     raw_temp = payload[2]
     temp: Optional[int] = None

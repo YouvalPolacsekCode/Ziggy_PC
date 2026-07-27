@@ -466,3 +466,67 @@ def test_apply_command_unknown_action_returns_false():
 
     assert result is False
     assert saved == []  # no save = no mutation
+
+
+# ---------------------------------------------------------------------------
+# Tadiran power-toggle semantics (2026-07-27 controlled-pair finding):
+# power presses are toggles. The remote's byte-5 marker alternates but does
+# NOT encode direction; the AC distinguishes a power press from a settings
+# press by settings-equality. Ziggy mirrors that: 'toggle' marker OR a
+# frame whose settings equal current belief -> flip power; changed
+# settings -> apply them, keep power.
+# ---------------------------------------------------------------------------
+
+def _seeded_ac_device(device_id, power, mode="cool", temp=22, fan="low", swing=False):
+    device = _make_device(device_id=device_id, device_type="ac")
+    device["state"] = {
+        "template": "ac",
+        "values": {"power": power, "mode": mode, "temp": temp,
+                   "fan": fan, "swing": swing},
+        "live_at": None, "estimated_at": None,
+    }
+    return device
+
+
+class _Frame:
+    brand = "tadiran"
+    def __init__(self, power=None, mode="cool", temp=22, fan="low", swing=False):
+        self.power, self.mode, self.temp, self.fan, self.swing = \
+            power, mode, temp, fan, swing
+
+
+def _apply(device, frame):
+    saved = []
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", side_effect=lambda d: saved.append([dict(x) for x in d])):
+        from services.ir_manager import apply_decoded_ac_state
+        assert apply_decoded_ac_state(device["id"], frame) is True
+    return saved[-1][0]
+
+
+def test_toggle_marker_flips_power_on_to_off():
+    device = _seeded_ac_device("ir_ac10", power=True)
+    final = _apply(device, _Frame(power="toggle"))
+    assert final["state"]["values"]["power"] is False
+    assert final["state"]["values"]["temp"] == 22  # settings preserved
+
+
+def test_toggle_marker_flips_power_off_to_on():
+    device = _seeded_ac_device("ir_ac11", power=False)
+    final = _apply(device, _Frame(power="toggle"))
+    assert final["state"]["values"]["power"] is True
+
+
+def test_same_settings_frame_is_a_power_toggle():
+    """A no-marker frame whose settings equal current belief can only be
+    the power button (the AC applies the same rule)."""
+    device = _seeded_ac_device("ir_ac12", power=True)
+    final = _apply(device, _Frame(power=None))  # identical settings
+    assert final["state"]["values"]["power"] is False
+
+
+def test_changed_settings_frame_updates_settings_keeps_power():
+    device = _seeded_ac_device("ir_ac13", power=True, temp=22)
+    final = _apply(device, _Frame(power=None, temp=23))
+    assert final["state"]["values"]["temp"] == 23
+    assert final["state"]["values"]["power"] is True
