@@ -100,12 +100,30 @@ export function iconChoiceAsset(emoji, style) {
 
 // Drop-in device icon. In emoji mode (default) renders the emoji span exactly
 // as before; in image mode renders an <img>, falling back to emoji if an asset
-// is missing. `size` sets both the emoji font-size and the image box (px).
-export function DeviceIcon({ kind, customIcon, size = 18, className, style: css }) {
+// is missing.
+//
+// `fill`: render the image to FILL its parent icon box (used on device tiles).
+//   - line SVGs just `contain` the box.
+//   - 3D badges carry transparent margins around a rounded dark badge, so at
+//     `contain` they'd float small inside the box with a "white frame". We
+//     scale them up and clip (overflow hidden + inherited radius) so the badge
+//     covers the box edge-to-edge and reads as the tile itself.
+// Without `fill`, renders at a fixed `size` px (used inline, e.g. sibling rows).
+export function DeviceIcon({ kind, customIcon, size = 18, fill = false, className, style: css }) {
   const iconStyle = useUIStore(s => s.iconStyle)
   if (iconStyle === 'line' || iconStyle === '3d') {
     const src = iconAssetFor(kind, iconStyle, customIcon)
     if (src) {
+      if (fill) {
+        const scale = iconStyle === '3d' ? '166%' : '100%'
+        return (
+          <span aria-hidden="true" className={className}
+            style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+                     justifyContent: 'center', overflow: 'hidden', borderRadius: 'inherit', ...css }}>
+            <img src={src} alt="" style={{ width: scale, height: scale, objectFit: 'contain', flex: 'none' }} />
+          </span>
+        )
+      }
       return (
         <img src={src} alt="" aria-hidden="true" className={className}
           style={{ width: size, height: size, objectFit: 'contain', display: 'inline-block', ...css }} />

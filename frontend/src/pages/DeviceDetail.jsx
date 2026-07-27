@@ -987,7 +987,7 @@ export default function DeviceDetail() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 22, flexShrink: 0,
               }}>
-                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={22} />
+                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={22} fill />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

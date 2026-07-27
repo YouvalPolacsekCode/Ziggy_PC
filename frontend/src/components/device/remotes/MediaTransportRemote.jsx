@@ -234,7 +234,7 @@ function NowPlayingHero({ entity, attrs, facts }) {
         }}>
           {art
             ? <img src={art} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            : <DeviceIcon kind={facts.kind} size={24} />}
+            : <DeviceIcon kind={facts.kind} size={24} fill />}
         </div>
 
         {/* Title + subtitle + app badge */}

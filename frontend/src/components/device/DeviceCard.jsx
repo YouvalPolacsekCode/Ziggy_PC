@@ -71,13 +71,13 @@ const KIND_ICONS = {
   unknown:      Cog,
 }
 
-function KindIcon({ kind, customIcon, size = 18 }) {
+function KindIcon({ kind, customIcon, size = 18, fill = true }) {
   // Delegates to the shared DeviceIcon so the live icon-style toggle (Emoji /
   // Line / 3D) applies here too. In emoji mode this is identical to before:
   // each kind in lib/devices.js (KIND_META) carries an emoji glyph. KIND_ICONS
   // (Lucide outlines) is kept around for any caller that explicitly wants the
   // line style.
-  return <DeviceIcon kind={kind} customIcon={customIcon} size={size} />
+  return <DeviceIcon kind={kind} customIcon={customIcon} size={size} fill={fill} />
 }
 
 // ─── Inline mini-controls ───────────────────────────────────────────────────
