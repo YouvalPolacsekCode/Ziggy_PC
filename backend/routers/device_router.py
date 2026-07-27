@@ -301,6 +301,7 @@ async def _sync_device_to_registry_room(device_id: str, area_id: str | None) -> 
         for d in dr._registry:
             if d.get("entity_id") in entity_ids:
                 d["room"] = room_key
+                d["room_source"] = "user"  # user-driven assignment — authoritative
                 if room_key:
                     if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
                         d["status"] = dr.CONNECTED
@@ -313,6 +314,7 @@ async def _sync_device_to_registry_room(device_id: str, area_id: str | None) -> 
             if eid not in existing_eids:
                 dr._registry.append({
                     "room":        room_key,
+                    "room_source": "user",
                     "device_type": eid.split(".")[0] if "." in eid else "unknown",
                     "entity_id":   eid,
                     "ir_device_id": None,
@@ -353,6 +355,7 @@ async def _sync_entity_to_registry_room(entity_id: str, area_id: str | None) -> 
         for d in dr._registry:
             if d.get("entity_id") == entity_id:
                 d["room"] = room_key
+                d["room_source"] = "user"  # user-driven assignment — authoritative
                 if room_key:
                     if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
                         d["status"] = dr.CONNECTED
@@ -364,6 +367,7 @@ async def _sync_entity_to_registry_room(entity_id: str, area_id: str | None) -> 
         if not found and room_key:
             dr._registry.append({
                 "room":         room_key,
+                "room_source":  "user",
                 "device_type":  entity_id.split(".")[0] if "." in entity_id else "unknown",
                 "entity_id":    entity_id,
                 "ir_device_id": None,
@@ -1184,6 +1188,11 @@ async def patch_registry_entity_room(entity_id: str, body: ZiggyRoomPatch):
         for d in dr._registry:
             if d.get("entity_id") == entity_id:
                 d["room"] = new_room
+                # Explicit user action → mark the room user-owned so the
+                # registry's user-authority invariant never auto-clears or
+                # auto-moves it. Set on unassign (None) too — a deliberate
+                # "no room" is still the user's choice.
+                d["room_source"] = "user"
                 if new_room:
                     if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
                         d["status"] = dr.CONNECTED
@@ -1194,6 +1203,7 @@ async def patch_registry_entity_room(entity_id: str, body: ZiggyRoomPatch):
         if not found:
             dr._registry.append({
                 "room": new_room,
+                "room_source": "user",
                 "device_type": entity_id.split(".")[0] if "." in entity_id else "unknown",
                 "entity_id": entity_id,
                 "ir_device_id": None,

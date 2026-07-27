@@ -549,15 +549,16 @@ def _add_unclaimed(devices: list[dict], live_ids: set[str],
             continue  # config/diagnostic entity — a setting, not a device
         attrs = attrs_by_id.get(eid, {})
         device_type = _infer_device_type(eid, attrs)
-        room = _infer_room(eid, attrs, entity_areas)
+        # Rooms are user-driven only (see _enforce_user_rooms). A newly
+        # discovered device is NEVER auto-placed — not by HA area, not by name.
+        # It surfaces as UNCLAIMED until the user assigns it a room in Ziggy.
         devices.append({
-            "room": room,
+            "room": None,
+            "room_source": None,
             "device_type": device_type,
             "entity_id": eid,
             "ir_device_id": None,
-            # Known room → fully usable from chat. No area → still surfaces
-            # in the Devices page for manual claim.
-            "status": CONNECTED if room else UNCLAIMED,
+            "status": UNCLAIMED,
             "name": eid,
         })
     return devices
@@ -585,7 +586,6 @@ def _heal_unclaimed(devices: list[dict],
     attrs_by_id = {s["entity_id"]: (s.get("attributes") or {})
                    for s in (states or [])}
     entity_areas = entity_areas or {}
-    promoted = 0
     reclassified = 0
     for d in devices:
         status = d.get("status")
@@ -602,23 +602,82 @@ def _heal_unclaimed(devices: list[dict],
         if new_type and new_type != d.get("device_type"):
             d["device_type"] = new_type
             reclassified += 1
-        # Room promotion: fill in a room from HA's area registry when the row
-        # has NONE yet. Runs for UNCLAIMED rows AND for CONNECTED rows with
-        # room=None — the latter covers devices HA-assigned at the DEVICE level
-        # whose room key previously mismatched (see the area_id fix in
-        # reconcile_with_ha). It NEVER overrides an existing room — that's the
-        # user's choice.
-        if d.get("room"):
-            continue
-        room = _infer_room(eid, attrs, entity_areas)
-        if room:
-            d["room"] = room
-            if status == UNCLAIMED:
-                d["status"] = CONNECTED
-            promoted += 1
-    if promoted or reclassified:
-        log_info(f"[DeviceRegistry] heal pass: promoted={promoted}, "
-                 f"device_type reclassified={reclassified}")
+        # NOTE: room promotion removed. Rooms are user-driven only — Ziggy no
+        # longer auto-fills a room from HA area or name inference (that caused
+        # devices to silently jump rooms by name and deleted rooms to return).
+        # A device stays room-less until the user assigns it in Ziggy.
+    if reclassified:
+        log_info(f"[DeviceRegistry] heal pass: device_type reclassified={reclassified}")
+    return devices
+
+
+# ── Room ownership: rooms/assignments are USER-DRIVEN ONLY ──────────────────
+# The product rule (the user never sees HA — rooms are a pure Ziggy concept
+# they control): a device's room is real state ONLY when the user set it in
+# Ziggy. Ziggy must never invent, move, or resurrect a room on its own — no
+# name-based inference, no HA-area following. So every room-carrying row is
+# stamped room_source="user" the moment the user assigns it, and any room
+# value NOT so stamped is treated as auto-junk (stale ghost, old name-inference,
+# YAML re-seed) and cleared. This is what makes deleted rooms never return and
+# stops devices auto-jumping between rooms by name.
+_ROOM_MIGRATION_SENTINEL = "user_files/.room_ownership_migrated"
+
+
+def _grandfather_rooms(devices: list[dict]) -> list[dict]:
+    """One-time: adopt the CURRENT room layout as user-owned.
+
+    room_source didn't exist before, so existing assignments carry no stamp.
+    Without this, the user-authority invariant below would wipe every current
+    room on the first boot after upgrade. We run exactly once (sentinel file)
+    and stamp every already-assigned row as user-owned, preserving the layout.
+    Rooms created after this point only become user-owned via an explicit
+    assignment, so later stray/auto rooms are NOT grandfathered.
+    """
+    import os
+    if os.path.exists(_ROOM_MIGRATION_SENTINEL):
+        return devices
+    n = 0
+    for d in devices:
+        if d.get("room") and not d.get("room_source"):
+            d["room_source"] = "user"
+            n += 1
+    try:
+        os.makedirs(os.path.dirname(_ROOM_MIGRATION_SENTINEL), exist_ok=True)
+        with open(_ROOM_MIGRATION_SENTINEL, "w") as f:
+            f.write("migrated\n")
+    except Exception as e:
+        log_error(f"[DeviceRegistry] room migration sentinel write failed: {e}")
+    if n:
+        log_info(f"[DeviceRegistry] grandfathered {n} existing room "
+                 f"assignment(s) as user-owned (one-time)")
+    return devices
+
+
+def _enforce_user_rooms(devices: list[dict]) -> list[dict]:
+    """User-authority invariant: an HA-connected device's room is real only
+    when the user set it (room_source="user"). Any other room value on such a
+    row — from old name inference, an HA-area follow, a YAML re-seed, or a
+    stale ghost of a deleted room — is auto-junk and gets cleared.
+
+    IR / Ziggy-native rows (no entity_id) are user-managed through their own
+    pairing flow and are left untouched.
+    """
+    n = 0
+    cleared_rooms: set[str] = set()
+    for d in devices:
+        if not d.get("entity_id"):
+            continue  # IR / native row — not auto-placed, leave alone
+        if d.get("origin") == "ziggy_template":
+            continue  # Ziggy smart sensor — room comes from the user's smart-room config
+        if d.get("room") and d.get("room_source") != "user":
+            cleared_rooms.add(d.get("room"))
+            d["room"] = None
+            if d.get("status") == CONNECTED:
+                d["status"] = UNCLAIMED
+            n += 1
+    if n:
+        log_info(f"[DeviceRegistry] cleared {n} non-user room assignment(s) "
+                 f"(auto/ghost, never user-set): {sorted(cleared_rooms)}")
     return devices
 
 
@@ -660,6 +719,10 @@ def init() -> None:
         # immediately on /api/devices even before reconcile_with_ha runs.
         devices = _merge_ir_devices(devices)
         devices = _merge_ziggy_smart_sensors(devices)
+        # Room ownership: adopt the current layout as user-owned (one-time),
+        # then enforce that only user-set rooms survive.
+        devices = _grandfather_rooms(devices)
+        devices = _enforce_user_rooms(devices)
         _registry = devices
         _rebuild_indexes()
         _initialized = True
@@ -743,6 +806,10 @@ async def reconcile_with_ha() -> None:
                                       entity_areas=entity_areas)
             devices = _merge_ir_devices(devices)
             devices = _merge_ziggy_smart_sensors(devices)
+            # Room ownership invariant — clear any room that isn't user-set so
+            # deleted/auto rooms can't resurrect and devices can't auto-move.
+            devices = _grandfather_rooms(devices)
+            devices = _enforce_user_rooms(devices)
             # Purge config/diagnostic entities that may already be persisted as
             # device rows (e.g. a sensor's LED/sensitivity switches).
             devices = [d for d in devices if not _is_hidden_category(d.get("entity_id"))]
@@ -789,6 +856,7 @@ def refresh() -> None:
         # Merge IR devices LAST so the merge can see all HA-bound rows.
         devices = _merge_ir_devices(devices)
         devices = _merge_ziggy_smart_sensors(devices)
+        devices = _enforce_user_rooms(devices)  # only user-set rooms survive
         devices = [d for d in devices if not _is_hidden_category(d.get("entity_id"))]
         _save_persistent(devices)
         _registry = devices
