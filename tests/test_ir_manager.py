@@ -517,12 +517,21 @@ def test_toggle_marker_flips_power_off_to_on():
     assert final["state"]["values"]["power"] is True
 
 
-def test_same_settings_frame_is_a_power_toggle():
-    """A no-marker frame whose settings equal current belief can only be
-    the power button (the AC applies the same rule)."""
+def test_same_settings_frame_never_toggles():
+    """Disproved live 12:51:57: a same-settings frame left the real AC on
+    while the old inference flipped Ziggy's belief (inverted card). Any
+    settings frame means the AC is running."""
     device = _seeded_ac_device("ir_ac12", power=True)
     final = _apply(device, _Frame(power=None))  # identical settings
-    assert final["state"]["values"]["power"] is False
+    assert final["state"]["values"]["power"] is True
+
+
+def test_settings_frame_while_believed_off_turns_on():
+    """A real Tadiran turns on when it receives a settings frame while off."""
+    device = _seeded_ac_device("ir_ac14", power=False, temp=22)
+    final = _apply(device, _Frame(power=None, temp=23))
+    assert final["state"]["values"]["power"] is True
+    assert final["state"]["values"]["temp"] == 23
 
 
 def test_changed_settings_frame_updates_settings_keeps_power():

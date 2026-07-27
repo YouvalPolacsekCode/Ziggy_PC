@@ -709,26 +709,22 @@ def apply_decoded_ac_state(device_id: str, ac_state) -> bool:
         if d["id"] != device_id:
             continue
 
-        # Power-toggle semantics for toggle-style AC remotes (validated on
-        # Tadiran, 2026-07-27): power presses carry the SAME settings as a
-        # plain settings press — the AC (and therefore Ziggy) tells them
-        # apart by settings-equality. Two triggers flip power:
-        #   1. the decoder saw the explicit toggle marker (power == "toggle")
-        #   2. no marker, but the frame's settings equal current belief —
-        #      a settings press would have changed something, so this can
-        #      only be the power button.
-        # Missing/unknown current values compare unequal (safe: prefer
-        # "settings update" over a phantom power flip).
+        # Tadiran power semantics (2026-07-27, corrected twice against the
+        # live AC): the c0 marker frame TOGGLES power. Every OTHER frame
+        # means "running with these settings" — a real Tadiran turns on
+        # when it receives any settings frame while off and never turns
+        # off from one. (An earlier settings-equality inference was
+        # disproved live: a same-settings frame left the AC on while the
+        # inference flipped Ziggy's belief, inverting the card.)
         cur_values = ((d.get("state") or {}).get("values") or {})
         is_marker = getattr(ac_state, "power", None) == "toggle"
-        settings = {k: decoded[k] for k in ("mode", "temp", "fan", "swing")
-                    if k in decoded}
-        same_settings = bool(settings) and all(
-            cur_values.get(k) == v for k, v in settings.items()
-        )
-        if is_marker or (("power" not in decoded) and same_settings and cur_values):
+        if is_marker:
             decoded = dict(decoded)
             decoded["power"] = not bool(cur_values.get("power", False))
+        elif "power" not in decoded and any(
+                k in decoded for k in ("mode", "temp", "fan", "swing")):
+            decoded = dict(decoded)
+            decoded["power"] = True
 
         _state_apply_decoded(d, decoded)
         brand = getattr(ac_state, "brand", "") or "unknown"
