@@ -659,13 +659,15 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                 from services.ir_protocol import decode_protocol_bytes
                 _decode = decode_protocol_bytes(received_bytes)
                 payload_hex = _decode.payload_hex if _decode else "?"
+                payload2_hex = getattr(_decode, "payload2_hex", "") if _decode else ""
             except Exception:
                 payload_hex = "?"
+                payload2_hex = ""
             log_info(
                 f"[IRListener] AC state inferred: device={device_id} "
                 f"power={ac_state.power} mode={ac_state.mode} "
                 f"temp={ac_state.temp} fan={ac_state.fan} ({method}) "
-                f"payload={payload_hex}"
+                f"payload={payload_hex} payload2={payload2_hex or '-'}"
             )
             try:
                 from services.ir_manager import (

@@ -293,6 +293,7 @@ class AcState:
     mode: Optional[str] = None        # 'cool' | 'heat' | 'fan' | 'auto' | 'dry'
     temp: Optional[int] = None        # Celsius
     fan: Optional[str] = None         # 'low' | 'medium' | 'high' | 'auto'
+    swing: Optional[bool] = None      # True/False when the protocol carries it
     brand: str = ""                   # for diagnostics — which decoder produced this
 
 
@@ -316,6 +317,11 @@ class ProtocolDecode:
     payload_bits: int = 0             # bit length of the payload
     ac_state: Optional[AcState] = None    # populated for stateful AC full-state packets
     ac_command: Optional[AcCommand] = None  # populated for short command packets
+    # Second transmission half, when the frame carries one and it decodes.
+    # NOT part of the match key (stored codes pin payload_hex = half 1).
+    # Tadiran: the halves are NOT identical — the power-OFF press is only
+    # distinguishable in half 2 (2026-07-27 walk finding).
+    payload2_hex: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -781,27 +787,31 @@ _TADIRAN_MIN_BITS = 32         # reject very short frames as not-Tadiran
 _TADIRAN_MAX_BITS = 96         # one half's worth + slack
 
 
-# Tentative mode/fan maps for byte 1 (per arikfe/IRTadiran reference layout
-# "fan upper nibble + mode lower nibble"). MARKED EXPERIMENTAL because we
-# only have captures where mode=cool and fan=auto (constant byte 1 = 0x41
-# across all 3 pinned captures). The maps below are the arikfe nibble values
-# extrapolated to other modes/fans; they have NOT been validated against
-# our hardware. If a beta user captures a mode-change or fan-change press
-# and the byte 1 nibble matches these maps, we promote them to validated.
-_TADIRAN_TENTATIVE_MODE_MAP = {
-    0x0: "auto",   # arikfe default
-    0x1: "cool",   # CONFIRMED for our captures (byte 1 = 0x41, cool mode active)
-    0x2: "dry",    # arikfe
-    0x3: "fan",    # arikfe
-    0x4: "heat",   # arikfe
+# Mode/fan maps for byte 1 — REAL-HARDWARE VALIDATED (2026-07-27 remote
+# walk: all 5 modes and the full 4-step fan cycle captured live, every
+# frame checksum-valid). Layout: fan = upper nibble, mode = lower nibble.
+_TADIRAN_MODE_MAP = {
+    0x1: "cool",   # walked
+    0x2: "dry",    # walked
+    0x3: "fan",    # walked
+    0x4: "heat",   # walked
+    0x5: "auto",   # walked (NOT 0x0 as the arikfe reference claims)
 }
-_TADIRAN_TENTATIVE_FAN_MAP = {
-    0x0: "auto",   # arikfe
-    0x1: "low",    # arikfe
-    0x2: "medium", # arikfe
-    0x3: "high",   # arikfe
-    0x4: "auto",   # CONFIRMED for our captures (byte 1 = 0x41, fan auto active)
+_TADIRAN_FAN_MAP = {
+    0x1: "low",    # walked (fan-button cycle 1→2→3→4→1)
+    0x2: "medium", # walked
+    0x3: "high",   # walked
+    0x4: "auto",   # walked (wrap target; matches May's fan-auto captures)
 }
+
+# byte 5 values. 0xc0 appears ONLY on the power-ON press (an edge flag, not
+# a state bit — running-AC frames still carry 0x30, and the power-OFF press
+# emits a payload byte-identical to a plain state frame; OFF is encoded in
+# frame half 2, which we don't decode yet).
+_TADIRAN_POWER_ON_EDGE = 0xC0
+
+_TADIRAN_TEMP_MIN = 16
+_TADIRAN_TEMP_MAX = 31  # walked to 31 — the unit goes above the assumed 30
 
 
 def tadiran_checksum(payload: bytes) -> int:
@@ -830,122 +840,69 @@ def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
     """
     Extract HVAC state fields from a decoded Tadiran payload.
 
-    Bit-position mapping derived from real captures (2026-05-23, user's
-    own Tadiran inverter) and cross-checked against arikfe/IRTadiran
-    (sibling Tadiran sub-model — see below for what matches and what doesn't).
+    Byte layout REAL-HARDWARE VALIDATED by the 2026-07-27 remote walk (36
+    checksum-valid captures: full temp ladder 16-31°C, all 5 modes, full
+    fan cycle, swing on+off, power-on press). This layout matches the
+    arikfe/IRTadiran reference far more closely than the May-2026 analysis
+    concluded — see tests/test_ir_protocol_tadiran_walk.py for the pinned
+    evidence and the story of the overturned power-bit hypothesis.
 
-      Power: byte 2 bit 1 (set = on, clear = off). VALIDATED by all 3 pinned
-             captures. arikfe places power at byte 5 (0x30/0xc0) — does NOT
-             match our unit; byte 2 bit 1 toggling between captures 1→2 (the
-             only press was power-on) is the load-bearing evidence.
-
-      Temperature: two consecutive set bits sliding through bytes 5-6,
-             position = 2 * (temp - 22). VALIDATED for 24°C and 25°C from
-             captures. 22-23°C, 26-29°C extrapolated from same pattern;
-             16-21°C and 30°C entirely unverified — return None rather than
-             guess wrong values. arikfe places temp at byte 2 (value = T*2)
-             — does NOT match our unit; byte 5/6 changing between captures
-             2→3 (the only press was TEMP+) is the load-bearing evidence.
-
-      Mode: tentative — byte 1 lower nibble, per arikfe layout. Our captures
-             have byte 1 = 0x41 (mode_nibble = 1 = "cool") which is consistent
-             with the captures being in cool mode. UNVALIDATED for other
-             modes — needs mode-change captures from real hardware. Returned
-             value is best-effort; callers should treat as low confidence.
-
-      Fan: tentative — byte 1 upper nibble. Our captures have fan_nibble = 4
-             which we map to "auto" (consistent with constant fan across
-             captures). The 0-3 range follows arikfe's documented map.
-             UNVALIDATED for non-auto fan settings.
-
-      Swing: per arikfe, byte 6 high bits (0xc0 = on). Our captures have
-             byte 6 = 0 across all three (no swing). Pass-through for
-             when beta captures land.
-
-    Checksum cross-check vs arikfe formula
-        byte[7] = sum(0..6) - (0xf*(3 + temp/8) + fan*0xf + (swing?0xb4:0))
-      Captures 1 and 2 satisfy this formula EXACTLY. Capture 3 does NOT
-      (expected 0x9e, actual 0x17 — diff of 135). This confirms our unit
-      is a sibling-but-not-identical Tadiran sub-model. The decoder makes
-      no use of the arikfe checksum at runtime; it's documented here as
-      reverse-engineering provenance.
-
-    The checksum this unit ACTUALLY uses (all 3 captures): byte 7 = sum of
-    nibbles of bytes 0-6 — see tadiran_checksum(). 8-byte frames failing it
-    are treated as corrupt RX reads and yield no state (matching unaffected).
+      byte 1: fan (upper nibble) | mode (lower nibble)
+      byte 2: temperature * 2  (16..31°C)
+      byte 5: 0xc0 = power-ON press edge; 0x30 = no power info. NOT a
+              state bit — running-AC frames carry 0x30, and the power-OFF
+              press is byte-identical (in this half) to a state refresh.
+              OFF lives in frame half 2 (not yet decoded) → power is None
+              unless the ON edge is present. State callers keep the last
+              known power on None.
+      byte 6: 0xc0 = swing on, 0x00 = swing off
+      byte 7: nibble-sum checksum (see tadiran_checksum) — 36/36 captures
     """
     if len(payload) < 8:
         return None
 
-    # Checksum gate: an 8-byte frame whose byte 7 doesn't match the nibble
-    # sum is a corrupt RX read — refuse to emit state rather than report a
-    # wrong power/temp. Only 8-byte frames are gated; the checksum position
-    # in longer decodes and short packets is unvalidated, so those pass
-    # through unchanged. Matching (payload_hex) is unaffected either way.
+    # Checksum gate: refuse to emit state from a corrupt RX read.
+    # Matching (payload_hex) is unaffected either way.
     if tadiran_checksum_ok(payload) is False:
         return None
 
-    power = "on" if (payload[2] & 0x02) else "off"
+    power: Optional[str] = "on" if payload[5] == _TADIRAN_POWER_ON_EDGE else None
 
+    raw_temp = payload[2]
     temp: Optional[int] = None
-    # Scan byte 5 for the two-consecutive-ones pattern → temp 22-25
-    for i in range(0, 8, 2):
-        if (payload[5] >> i) & 0x03 == 0x03:
-            temp = 22 + (i // 2)
-            break
-    if temp is None:
-        # Scan byte 6 → temp 26-29
-        for i in range(0, 8, 2):
-            if (payload[6] >> i) & 0x03 == 0x03:
-                temp = 26 + (i // 2)
-                break
+    if raw_temp % 2 == 0 and _TADIRAN_TEMP_MIN <= raw_temp // 2 <= _TADIRAN_TEMP_MAX:
+        temp = raw_temp // 2
 
-    # Tentative mode/fan from byte 1 nibbles (arikfe layout).
-    fan_nibble = (payload[1] >> 4) & 0x0F
-    mode_nibble = payload[1] & 0x0F
-    mode = _TADIRAN_TENTATIVE_MODE_MAP.get(mode_nibble)
-    fan = _TADIRAN_TENTATIVE_FAN_MAP.get(fan_nibble)
+    fan = _TADIRAN_FAN_MAP.get((payload[1] >> 4) & 0x0F)
+    mode = _TADIRAN_MODE_MAP.get(payload[1] & 0x0F)
 
-    # Swing: byte 6 bits 6-7 per arikfe. 0xc0 (top two bits set) = swing on.
-    # Distinct from the temp bit-pattern (which puts pairs of 1s at lower
-    # positions). When byte 6 == 0xc0 AND we already extracted temp 25 via
-    # byte 5, we know byte 6 isn't being used for temp on this frame — so
-    # 0xc0 is unambiguously swing. (Captures C3 uses 0xc0 for temp=25 via
-    # byte 5 NOT being 0; in our captures byte 5=0xc0 means temp=25 — and
-    # byte 6=0 means no swing. The two are disambiguated by whichever byte
-    # carries the two-bit pattern at the right position.)
-    # NOTE: this is brittle on the boundary case temp=29 (byte 6 = 0xc0).
-    # Real hardware captures with swing-on will resolve.
+    swing = payload[6] == 0xC0
 
-    return AcState(power=power, mode=mode, temp=temp, fan=fan, brand="tadiran")
-
-
-def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
-    """
-    Pulse-pair-inversion 64-bit AC frame. Decodes the FIRST half only;
-    the second half is a redundant repeat for transmission reliability.
-    """
-    if len(pulses) < 2 + _TADIRAN_MIN_BITS * 2:
-        return None
-    if not (_near(pulses[0], _TADIRAN_LEADER_MARK, _TADIRAN_LEADER_TOL)
-            and _near(pulses[1], _TADIRAN_LEADER_SPACE, _TADIRAN_LEADER_TOL)):
+    if temp is None and mode is None and fan is None and power is None:
+        # Nothing recognizable — likely a different sub-model. Don't emit
+        # an empty state that would stamp "live" on no information.
         return None
 
+    return AcState(power=power, mode=mode, temp=temp, fan=fan, swing=swing,
+                   brand="tadiran")
+
+
+def _collect_tadiran_half(pulses: list[int], start: int,
+                          max_ambiguous: int = 3) -> tuple[list[int], int]:
+    """Collect one half's bits from pulse-pairs starting at `start`.
+
+    Returns (bits, index_after_last_consumed_pair). Stops at a >3000µs
+    pulse (trailer / inter-half gap), a non-positive pulse, or the
+    _TADIRAN_MAX_BITS cap. Returns ([], start) if too many ambiguous
+    pairs — caller decides whether that kills the decode.
+    """
     bits: list[int] = []
     ambiguous_count = 0
-    # Real-world Broadlink captures occasionally narrow the mark/space ratio
-    # on one or two pulse-pairs (jitter near a bit boundary). We tolerate a
-    # small number of borderline pairs by guessing from whichever side is
-    # larger, but bail above this — keeps NEC/Sony frames (where every pair
-    # is ratio ~1.0) from being misread as a partial Tadiran decode.
-    _MAX_AMBIGUOUS = 3
-    i = 2
+    i = start
     while i + 1 < len(pulses):
         mark, space = pulses[i], pulses[i + 1]
         if mark <= 0 or space <= 0:
             break
-        # End-of-half detector: a very large pulse (>~3000µs) on either side
-        # is the trailer or inter-half gap, not a bit.
         if mark > 3000 or space > 3000:
             break
         if mark >= space * _TADIRAN_PAIR_RATIO_MIN:
@@ -953,23 +910,70 @@ def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
         elif space >= mark * _TADIRAN_PAIR_RATIO_MIN:
             bits.append(0)
         else:
+            # Jitter near a bit boundary: tolerate a few borderline pairs by
+            # guessing from whichever side is larger; bail above the cap —
+            # keeps NEC/Sony frames (ratio ~1.0 everywhere) from being
+            # misread as a partial Tadiran decode.
             ambiguous_count += 1
-            if ambiguous_count > _MAX_AMBIGUOUS:
-                return None
+            if ambiguous_count > max_ambiguous:
+                return [], start
             bits.append(1 if mark > space else 0)
         i += 2
         if len(bits) >= _TADIRAN_MAX_BITS:
             break
+    return bits, i
 
+
+def _try_decode_tadiran(pulses: list[int]) -> Optional[ProtocolDecode]:
+    """
+    Pulse-pair-inversion 64-bit AC frame, transmitted in two halves.
+
+    Half 1 is the settings snapshot (payload_hex — the match key and the
+    ac_state source). Half 2 is NOT a pure repeat: the 2026-07-27 walk
+    showed the power-OFF press differs from a plain state frame only in
+    half 2, so we decode and surface it (payload2_hex) for the OFF
+    reverse-engineering work. State extraction stays on half 1.
+    """
+    if len(pulses) < 2 + _TADIRAN_MIN_BITS * 2:
+        return None
+    if not (_near(pulses[0], _TADIRAN_LEADER_MARK, _TADIRAN_LEADER_TOL)
+            and _near(pulses[1], _TADIRAN_LEADER_SPACE, _TADIRAN_LEADER_TOL)):
+        return None
+
+    bits, after = _collect_tadiran_half(pulses, 2)
     if len(bits) < _TADIRAN_MIN_BITS:
         return None
     payload = _bits_to_bytes(bits, lsb_first=True)
+
+    # Half 2: skip the inter-half gap — the terminating pair's small pulse
+    # (if any), then the >3000µs gap pulse(s) — plus an optional repeated
+    # leader, then collect again. Best-effort — an absent/garbled half 2
+    # must never fail the half-1 decode.
+    payload2_hex = ""
+    j = after
+    small_skipped = 0
+    while j < len(pulses) and 0 < pulses[j] <= 3000 and small_skipped < 4:
+        j += 1
+        small_skipped += 1
+    gap_found = 0
+    while j < len(pulses) and (pulses[j] <= 0 or pulses[j] > 3000):
+        j += 1
+        gap_found += 1
+    if gap_found:  # no inter-half gap → don't guess at a second half
+        if j + 1 < len(pulses) and _near(pulses[j], _TADIRAN_LEADER_MARK, _TADIRAN_LEADER_TOL) \
+                and _near(pulses[j + 1], _TADIRAN_LEADER_SPACE, _TADIRAN_LEADER_TOL):
+            j += 2
+        bits2, _ = _collect_tadiran_half(pulses, j)
+        if len(bits2) >= _TADIRAN_MIN_BITS:
+            payload2_hex = _bits_to_bytes(bits2, lsb_first=True).hex()
+
     ac_state = _decode_tadiran_ac_state(payload)
     return ProtocolDecode(
         family="tadiran_ac",
         payload_hex=payload.hex(),
         payload_bits=len(bits),
         ac_state=ac_state,
+        payload2_hex=payload2_hex,
     )
 
 

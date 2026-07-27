@@ -25,11 +25,14 @@ from services.ir_protocol import (
     tadiran_checksum_ok,
 )
 
-# (label, payload_hex, expected power/temp) — the 3 pinned real captures.
+# (label, payload_hex, expected power/temp) — the 3 pinned real May captures,
+# expectations CORRECTED by the 2026-07-27 walk (temp = byte2/2; power only
+# readable on the byte5 ON edge). The original "off@24 / on@24" labels were a
+# mislabeled pair one degree apart — see tests/test_ir_protocol_tadiran_walk.py.
 CAPTURES = [
-    ("off_24c", "014130000030000c", "off", 24),
-    ("on_24c",  "014132000030000e", "on", 24),
-    ("on_25c",  "0141320000c00017", "on", 25),
+    ("state_24c",    "014130000030000c", None, 24),
+    ("state_25c",    "014132000030000e", None, 25),
+    ("power_on_25c", "0141320000c00017", "on", 25),
 ]
 
 
@@ -53,20 +56,20 @@ def test_valid_captures_still_decode_state(label, hex_payload, power, temp):
     assert state.temp == temp
 
 
-def test_corrupted_power_bit_fails_checksum_and_yields_no_state():
-    """Flip the power bit of capture 2 without fixing byte 7 — a realistic
-    single-bit RX misread. The checksum must catch it and the decoder must
-    refuse to emit state rather than report a wrong power value."""
+def test_corrupted_temp_bit_fails_checksum_and_yields_no_state():
+    """Flip one temp bit without fixing byte 7 — a realistic single-bit RX
+    misread. The checksum must catch it and the decoder must refuse to emit
+    state rather than report a wrong temperature."""
     corrupted = bytearray(bytes.fromhex("014132000030000e"))
-    corrupted[2] &= ~0x02  # power on -> off, checksum now stale
+    corrupted[2] &= ~0x02  # temp 25 -> 24, checksum now stale
     corrupted = bytes(corrupted)
     assert tadiran_checksum_ok(corrupted) is False
     assert _decode_tadiran_ac_state(corrupted) is None
 
 
-def test_corrupted_temp_byte_fails_checksum_and_yields_no_state():
+def test_corrupted_power_byte_fails_checksum_and_yields_no_state():
     corrupted = bytearray(bytes.fromhex("014132000030000e"))
-    corrupted[5] = 0xC0  # 24°C pattern -> 25°C pattern, checksum stale
+    corrupted[5] = 0xC0  # forge a power-ON edge, checksum stale
     corrupted = bytes(corrupted)
     assert tadiran_checksum_ok(corrupted) is False
     assert _decode_tadiran_ac_state(corrupted) is None
@@ -80,8 +83,8 @@ def test_non_8_byte_payload_is_not_gated():
     assert tadiran_checksum_ok(payload_10) is None
     state = _decode_tadiran_ac_state(payload_10)
     assert state is not None
-    assert state.power == "on"
-    assert state.temp == 24
+    assert state.power is None  # no byte-5 ON edge in this frame
+    assert state.temp == 25
 
 
 def test_short_payload_returns_none_everywhere():
