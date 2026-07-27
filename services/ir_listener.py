@@ -676,11 +676,16 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
             except Exception:
                 payload_hex = "?"
                 payload2_hex = ""
+            # raw= is the full Broadlink capture (b64) — kept in the log for
+            # protocol archaeology: the Tadiran OFF press hides its meaning
+            # in a half-2 structure the decoder doesn't parse yet, so the
+            # decoded payloads alone lose information (2026-07-27 finding).
             log_info(
                 f"[IRListener] AC state inferred: device={device_id} "
                 f"power={ac_state.power} mode={ac_state.mode} "
                 f"temp={ac_state.temp} fan={ac_state.fan} ({method}) "
-                f"payload={payload_hex} payload2={payload2_hex or '-'}"
+                f"payload={payload_hex} payload2={payload2_hex or '-'} "
+                f"raw={base64.b64encode(received_bytes).decode()}"
             )
             try:
                 from services.ir_manager import (
