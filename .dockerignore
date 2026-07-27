@@ -85,3 +85,11 @@ logs/
 *.jpg
 ziggy-website/
 ziggy_website/
+
+# ── …but KEEP the bundled device-icon art ────────────────────────────────────
+# These PNG/SVG sets are imported by the frontend build (lib/deviceIcons.jsx via
+# import.meta.glob) and MUST be in the build context, or the 3D icon style ships
+# with no images and silently falls back to emoji. The `*.png` exclude above
+# would otherwise drop them.
+!frontend/src/assets/device-icons/**
+!frontend/src/assets/device-icons-3d/**
