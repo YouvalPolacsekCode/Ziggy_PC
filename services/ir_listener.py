@@ -455,6 +455,19 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
         devices = list_ir_devices(enabled_only=True)
         total_codes = sum(len(d.get("ir_codes") or {}) for d in devices)
 
+        # Stateful-AC guard (2026-07-27 real-hardware finding): full-state AC
+        # frames carry the complete settings snapshot, and any two button
+        # presses that leave the AC in the same settings emit IDENTICAL
+        # frames. On the user's Tadiran, temp presses passing through the
+        # settings a power button was learned at matched the stored power
+        # code and fired bogus "turned on" toasts. Byte/fingerprint/payload
+        # equality therefore CANNOT identify which button was pressed on
+        # these remotes — skip command attribution entirely and let the
+        # AC-state inference path apply the truth the frame actually carries.
+        _early_decode = decode_protocol_bytes(received_bytes)
+        if _early_decode is not None and _early_decode.ac_state is not None:
+            return None
+
         # Pass 1: exact bytes
         for device in devices:
             ir_codes: dict = device.get("ir_codes") or {}
@@ -627,6 +640,15 @@ def _find_ac_command_match(received_bytes: bytes, host: str) -> Optional[tuple[s
 
 async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     """Called when the listener captures a code. Matches and updates state."""
+    # Always count the capture before matching — the "captures in last hour"
+    # metric drives the placement diagnostic. A blaster catching no signals
+    # for an hour while it's been listening is a placement problem.
+    try:
+        from services.ir_metrics import record_capture
+        record_capture(host)
+    except Exception:
+        pass
+
     match = _find_code_match(received_bytes)
 
     # Pass 5: if no learned code matches but the packet decodes to a known AC
@@ -637,6 +659,11 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         ac_match = _find_ac_state_match(received_bytes, host)
         if ac_match:
             device_id, ac_state, method = ac_match
+            try:
+                from services.ir_metrics import record_match
+                record_match(host, "matched_ac_state")
+            except Exception:
+                pass
             # Also log the raw payload so the user can paste it back when
             # the decoded state looks wrong — needed to reverse-engineer
             # remaining bit positions (mode, fan, checksum) and verify
@@ -645,21 +672,32 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                 from services.ir_protocol import decode_protocol_bytes
                 _decode = decode_protocol_bytes(received_bytes)
                 payload_hex = _decode.payload_hex if _decode else "?"
+                payload2_hex = getattr(_decode, "payload2_hex", "") if _decode else ""
             except Exception:
                 payload_hex = "?"
+                payload2_hex = ""
+            # raw= is the full Broadlink capture (b64) — kept in the log for
+            # protocol archaeology: the Tadiran OFF press hides its meaning
+            # in a half-2 structure the decoder doesn't parse yet, so the
+            # decoded payloads alone lose information (2026-07-27 finding).
             log_info(
                 f"[IRListener] AC state inferred: device={device_id} "
                 f"power={ac_state.power} mode={ac_state.mode} "
                 f"temp={ac_state.temp} fan={ac_state.fan} ({method}) "
-                f"payload={payload_hex}"
+                f"payload={payload_hex} payload2={payload2_hex or '-'} "
+                f"raw={base64.b64encode(received_bytes).decode()}"
             )
             try:
-                from services.ir_manager import apply_decoded_ac_state, get_ir_device
+                from services.ir_manager import (
+                    apply_decoded_ac_state, get_ir_device,
+                    get_device_state_snapshot,
+                )
                 applied = apply_decoded_ac_state(device_id, ac_state)
                 updated = get_ir_device(device_id) if applied else None
                 new_state = (
                     updated.get("assumed_state", "unknown") if updated else "unknown"
                 )
+                snapshot = get_device_state_snapshot(updated) if updated else None
                 from backend.ws_manager import manager
                 await manager.broadcast({
                     "type": "ir_command_detected",
@@ -668,6 +706,7 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                     "new_assumed_state": new_state,
                     "source": "physical_remote",
                     "match_method": method,
+                    "state": snapshot,
                     "ac_state": {
                         "power": ac_state.power,
                         "mode": ac_state.mode,
@@ -687,15 +726,24 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         cmd_match = _find_ac_command_match(received_bytes, host)
         if cmd_match:
             device_id, ac_command, method, payload_hex = cmd_match
+            try:
+                from services.ir_metrics import record_match
+                record_match(host, "matched_ac_command")
+            except Exception:
+                pass
             log_info(
                 f"[IRListener] AC command inferred: device={device_id} "
                 f"action={ac_command.action} brand={ac_command.brand} "
                 f"({method}) payload={payload_hex}"
             )
             try:
-                from services.ir_manager import apply_decoded_ac_command, get_ir_device
+                from services.ir_manager import (
+                    apply_decoded_ac_command, get_ir_device,
+                    get_device_state_snapshot,
+                )
                 applied = apply_decoded_ac_command(device_id, ac_command)
                 updated = get_ir_device(device_id) if applied else None
+                snapshot = get_device_state_snapshot(updated) if updated else None
                 from backend.ws_manager import manager
                 await manager.broadcast({
                     "type": "ir_command_detected",
@@ -704,6 +752,7 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
                     "new_assumed_state": (updated or {}).get("assumed_state", "unknown") if updated else "unknown",
                     "source": "physical_remote",
                     "match_method": method,
+                    "state": snapshot,
                     # Send the full ac_memory snapshot so the frontend chip
                     # reflects the incremented value immediately. The
                     # decoder only knows "+1 temp" — the manager applied
@@ -724,6 +773,11 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
     if not match:
         # Unknown code — persist to the unassigned queue and broadcast so the
         # UI's "Unassigned signals" panel can offer to bind it to a device.
+        try:
+            from services.ir_metrics import record_unmatched
+            record_unmatched(host)
+        except Exception:
+            pass
         code_b64 = base64.b64encode(received_bytes).decode()
         try:
             from services.ir_protocol import fingerprint_bytes, parse_broadlink_raw
@@ -759,22 +813,40 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         return
 
     device_id, logical_cmd, match_method = match
+    # Record by match method so the diagnostics endpoint can show which
+    # passes are actually firing — useful for spotting jitter regressions
+    # (e.g. fingerprint suddenly carrying 100% of traffic = something
+    # changed in the capture timing).
+    try:
+        from services.ir_metrics import record_match
+        record_match(host, f"matched_{match_method}")
+    except Exception:
+        pass
     log_info(
         f"[IRListener] Physical remote: device={device_id} command={logical_cmd} "
         f"match={match_method}"
     )
 
-    # Re-use the same post-command logic as Ziggy's own sends
+    # Re-use the same post-command logic as Ziggy's own sends — but pass
+    # source="live" so the state engine sets live_at (RX-confirmed) rather
+    # than estimated_at. This is what flips the UI's confidence chip to
+    # "live" the moment a physical-remote button is pressed.
     try:
-        from services.ir_manager import get_ir_device
+        from services.ir_manager import get_ir_device, get_device_state_snapshot
         from services.ir_manager import _after_command  # type: ignore[attr-defined]
         device = get_ir_device(device_id)
         if device:
-            _after_command(device_id, device, logical_cmd)
+            _after_command(device_id, device, logical_cmd, source="live")
 
         # Reload to get the state _after_command just wrote
         updated = get_ir_device(device_id)
         new_state = updated.get("assumed_state", "unknown") if updated else "unknown"
+
+        # Full state snapshot for the device card — includes confidence band
+        # and the per-template values (volume for TV, temp/mode/fan for AC,
+        # playing for streamer, etc.). The UI doesn't have to know the
+        # device class to render correctly anymore.
+        snapshot = get_device_state_snapshot(updated) if updated else None
 
         # Broadcast so the frontend updates the device card immediately — no refresh needed
         from backend.ws_manager import manager
@@ -785,6 +857,7 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
             "new_assumed_state": new_state,
             "source": "physical_remote",
             "match_method": match_method,
+            "state": snapshot,
         })
     except Exception as e:
         log_error(f"[IRListener] State update after detection failed: {e}")
@@ -825,6 +898,11 @@ async def _listen_loop(host: str) -> None:
             return None
 
     log_info(f"[IRListener] Starting listener for {host}")
+    try:
+        from services.ir_metrics import record_listener_started
+        record_listener_started(host)
+    except Exception:
+        pass
 
     _fail_count = 0          # consecutive connection failures
     _retry_delay = 10        # starts at 10s, caps at 300s
@@ -893,6 +971,14 @@ async def start_listener() -> None:
     we kick off listener loops — listeners would otherwise burn their
     first iteration on a 10s timeout against the dead IP.
     """
+    # Restore RX reliability counters from disk so cross-restart trends are
+    # preserved (e.g. yesterday's match-rate visible in this morning's UI).
+    try:
+        from services.ir_metrics import load_persisted
+        load_persisted()
+    except Exception as e:
+        log_error(f"[IRListener] Failed to restore metrics: {e}")
+
     by_host = _all_ir_devices_by_host()
     if not by_host:
         log_info("[IRListener] No blaster_host configured — IR receive not active. "

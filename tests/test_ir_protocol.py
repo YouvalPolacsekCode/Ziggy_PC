@@ -508,38 +508,40 @@ def test_decode_real_tadiran_capture():
 
 
 # ---------------------------------------------------------------------------
-# Tadiran AC state decoding — ground-truth bit-position mapping derived
-# from three real captures the user took on 2026-05-23. Don't replace
-# these payloads with synthetic ones; they're the validation set that
-# proves the bit positions are right for at least this Tadiran model.
+# Tadiran AC state decoding — real May-2026 captures, expectations updated
+# to the byte map validated by the 2026-07-27 remote walk (36 captures:
+# temp = byte2/2, fan|mode nibbles in byte 1, byte5 0xc0 = power-ON edge,
+# byte6 swing, nibble-sum checksum). The original May press labels were
+# partly wrong; see tests/test_ir_protocol_tadiran_walk.py for the story.
+# Don't replace these payloads with synthetic ones.
 # ---------------------------------------------------------------------------
 
-def test_tadiran_state_decode_power_off():
-    # User captured this after pressing OFF on the physical remote while
-    # the AC was running at 24°C cool.
+def test_tadiran_state_decode_plain_frame_24c():
     payload = bytes.fromhex("014130000030000c")
     from services.ir_protocol import _decode_tadiran_ac_state
     state = _decode_tadiran_ac_state(payload)
     assert state is not None
-    assert state.power == "off"
-    assert state.temp == 24
+    assert state.power is None      # no byte-5 ON edge; OFF lives in half 2
+    assert state.temp == 24         # 0x30 / 2
+    assert state.mode == "cool"
+    assert state.fan == "auto"
     assert state.brand == "tadiran"
 
 
-def test_tadiran_state_decode_power_on_24c():
+def test_tadiran_state_decode_plain_frame_25c():
     payload = bytes.fromhex("014132000030000e")
     from services.ir_protocol import _decode_tadiran_ac_state
     state = _decode_tadiran_ac_state(payload)
-    assert state.power == "on"
-    assert state.temp == 24
+    assert state.power is None
+    assert state.temp == 25         # 0x32 / 2
 
 
 def test_tadiran_state_decode_power_on_25c():
-    # Captured after pressing TEMP+ from 24°C → 25°C.
+    # The May power press: byte 5 carries the 0xc0 toggle marker.
     payload = bytes.fromhex("0141320000c00017")
     from services.ir_protocol import _decode_tadiran_ac_state
     state = _decode_tadiran_ac_state(payload)
-    assert state.power == "on"
+    assert state.power == "toggle"
     assert state.temp == 25
 
 
@@ -562,10 +564,14 @@ def test_tadiran_real_capture_decodes_with_state():
     result = decode_protocol(real_pulses)
     assert result.family == "tadiran_ac"
     assert result.ac_state is not None
-    # This original capture was a power press at 25°C cool — state derived
-    # from byte positions per the user's three-capture bit-mapping pass.
-    assert result.ac_state.power in ("on", "off")
-    assert result.ac_state.temp == 25
+    # Under the walk-validated map (2026-07-27): payload 01412c0000c00020 =
+    # power-ON press (byte5 edge), 22°C (0x2c/2), cool, fan auto — and the
+    # nibble-sum checksum holds. The old "25°C" expectation came from the
+    # overturned sliding-window temp read.
+    assert result.ac_state.power == "toggle"
+    assert result.ac_state.temp == 22
+    assert result.ac_state.mode == "cool"
+    assert result.ac_state.fan == "auto"
 
 
 def test_tadiran_rejects_too_short_frame():
