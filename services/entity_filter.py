@@ -49,6 +49,14 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         r"_firmware$",
         r"_device_temperature$",
         r"_identify$",
+        # Zigbee/Z2M diagnostic sub-sensors — never user devices, and they sit
+        # at 'unknown' until they first report, which was inflating the
+        # "N devices offline" health count with a phantom device whose real
+        # (primary) entity is perfectly online. Hidden here so the offline
+        # count and the Devices page agree.
+        r"_voltage$",
+        r"_linkquality$",
+        r"_last_seen$",
         r"^binary_sensor\.backups_",
         r"^binary_sensor\.remote_ui",
         r"^sensor\.backup_",
