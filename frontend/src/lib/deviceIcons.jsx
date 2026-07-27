@@ -115,7 +115,7 @@ export function DeviceIcon({ kind, customIcon, size = 18, fill = false, classNam
     const src = iconAssetFor(kind, iconStyle, customIcon)
     if (src) {
       if (fill) {
-        const scale = iconStyle === '3d' ? '166%' : '100%'
+        const scale = iconStyle === '3d' ? '116%' : '100%'
         return (
           <span aria-hidden="true" className={className}
             style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
