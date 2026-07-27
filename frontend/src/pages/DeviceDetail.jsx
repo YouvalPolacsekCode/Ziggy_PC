@@ -1338,17 +1338,17 @@ export default function DeviceDetail() {
         <div style={{ marginBottom: 14 }}>
           <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {ICON_CHOICES.map(k => {
-              const tok = `kind:${k}`
+            {ICON_CHOICES.map(name => {
+              const tok = `icon:${name}`
               const active = (liveEntity?.icon || '') === tok
               return (
-                <button key={k}
+                <button key={name}
                   onClick={() => applyTilePref(entityId, { icon: tok })}
-                  style={{ width: 40, height: 40, borderRadius: 10, cursor: 'pointer', padding: 3,
+                  style={{ width: 40, height: 40, borderRadius: 10, cursor: 'pointer', padding: 0, overflow: 'hidden',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     border: active ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
                     background: active ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)' }}
-                ><DeviceIcon kind={k} size={22} fill /></button>
+                ><DeviceIcon customIcon={tok} size={22} fill /></button>
               )
             })}
             <button

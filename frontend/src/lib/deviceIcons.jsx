@@ -114,19 +114,29 @@ export function DeviceIcon({ kind, customIcon, size = 18, fill = false, classNam
   // A custom icon can be an emoji (legacy) OR a `kind:<name>` token from the
   // per-device icon picker. The token pins a specific icon kind regardless of
   // the device's own kind.
-  const kindTok = (typeof customIcon === 'string' && customIcon.startsWith('kind:')) ? customIcon.slice(5) : null
+  // A custom icon token: `kind:<name>` pins a device KIND; `icon:<assetname>`
+  // pins a specific image asset (used by the picker to offer the full set,
+  // incl. assets with no kind like heater/cameras/button).
+  const kindTok  = (typeof customIcon === 'string' && customIcon.startsWith('kind:')) ? customIcon.slice(5) : null
+  const assetTok = (typeof customIcon === 'string' && customIcon.startsWith('icon:')) ? customIcon.slice(5) : null
   const effKind = kindTok || kind
-  const effCustom = kindTok ? null : customIcon
+  const effCustom = (kindTok || assetTok) ? null : customIcon
   if (iconStyle === 'line' || iconStyle === '3d') {
-    const src = iconAssetFor(effKind, iconStyle, effCustom)
+    const src = assetTok
+      ? (urlFor(iconStyle === '3d' ? D3 : LINE, assetTok) || urlFor(D3, assetTok) || urlFor(LINE, assetTok))
+      : iconAssetFor(effKind, iconStyle, effCustom)
     if (src) {
       if (fill) {
-        const scale = '100%'
+        // 3D badges have transparent margins around a light rounded tile; back
+        // them with a neutral light plate so the icon-box's on-state TINT never
+        // shows through the margins as a colored/dark frame. Line SVGs stay
+        // transparent (they use the box tint for state color).
+        const plate = iconStyle === '3d' ? { background: 'var(--surface-2)' } : null
         return (
           <span aria-hidden="true" className={className}
             style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
-                     justifyContent: 'center', overflow: 'hidden', borderRadius: 'inherit', ...css }}>
-            <img src={src} alt="" style={{ width: scale, height: scale, objectFit: 'contain', flex: 'none' }} />
+                     justifyContent: 'center', overflow: 'hidden', borderRadius: 'inherit', ...plate, ...css }}>
+            <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', flex: 'none' }} />
           </span>
         )
       }
@@ -136,7 +146,9 @@ export function DeviceIcon({ kind, customIcon, size = 18, fill = false, classNam
       )
     }
   }
-  const emoji = kindTok ? kindMeta(kindTok).icon : (customIcon || kindMeta(kind).icon)
+  const emoji = kindTok ? kindMeta(kindTok).icon
+    : assetTok ? (ASSET_EMOJI[assetTok] || '📦')
+    : (customIcon || kindMeta(kind).icon)
   return (
     <span aria-hidden="true" className={className} style={{ fontSize: size, lineHeight: 1, ...css }}>{emoji}</span>
   )
@@ -144,20 +156,30 @@ export function DeviceIcon({ kind, customIcon, size = 18, fill = false, classNam
 
 export const ICON_STYLES = ['emoji', 'line', '3d']
 
-// Full set of pickable device-icon kinds for the per-device icon picker,
-// grouped for display. Each renders via KIND_ASSET (so it works in every
-// style) and is stored as a `kind:<name>` custom icon. 36 distinct kinds —
-// no emoji-collapse duplicates.
+// Full pickable set for the per-device icon picker = the 36 DISTINCT icon
+// image assets (no two the same). Stored as `icon:<assetname>` custom icons.
+// Ordered by category for display.
 export const ICON_CHOICES = [
-  'light', 'lamp', 'led_strip',
-  'switch', 'plug',
-  'ac', 'fan', 'humidifier',
-  'kettle', 'coffee',
-  'tv', 'monitor', 'soundbar', 'receiver', 'projector',
-  'cover',
-  'lock', 'alarm', 'camera',
-  'water_heater', 'valve',
-  'motion', 'occupancy', 'door', 'window', 'temperature', 'humidity',
-  'leak', 'smoke', 'power_meter', 'binary', 'sensor',
-  'vacuum', 'lawn_mower', 'person', 'unknown',
+  'light', 'lamp', 'light-strip',
+  'switch', 'plug', 'button',
+  'air-conditioner', 'fan', 'humidifier', 'heater',
+  'kettle', 'coffee-machine',
+  'tv', 'soundbar', 'receiver', 'projector',
+  'blinds',
+  'lock', 'alarm', 'camera', 'cameras',
+  'water-heater', 'valve', 'water',
+  'motion', 'presence', 'door', 'window', 'temperature', 'leak', 'power', 'sensors',
+  'robot-vacuum', 'mower', 'person', 'custom',
 ]
+
+// 3D asset name → emoji, for emoji-mode fallback of an `icon:<name>` custom pick.
+const ASSET_EMOJI = {
+  'light': '💡', 'lamp': '🪔', 'light-strip': '🪩', 'switch': '🎛️', 'plug': '🔌',
+  'button': '🔘', 'air-conditioner': '❄️', 'fan': '💨', 'humidifier': '💧', 'heater': '🔥',
+  'kettle': '🫖', 'coffee-machine': '☕', 'tv': '📺', 'soundbar': '🔊', 'receiver': '🎚️',
+  'projector': '📽️', 'blinds': '🪟', 'lock': '🔒', 'alarm': '🚨', 'camera': '📷',
+  'cameras': '📹', 'water-heater': '🔥', 'valve': '🚰', 'water': '💧', 'motion': '🚶',
+  'presence': '👥', 'door': '🚪', 'window': '🪟', 'temperature': '🌡️', 'leak': '🚱',
+  'power': '🔋', 'sensors': '📡', 'robot-vacuum': '🤖', 'mower': '🌿', 'person': '👤',
+  'custom': '📦',
+}
