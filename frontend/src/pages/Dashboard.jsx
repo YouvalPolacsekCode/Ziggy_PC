@@ -227,7 +227,7 @@ function QuickControlTile({ entity }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 18, lineHeight: 1,
       }} aria-hidden="true">
-        <DeviceIcon kind={facts.kind} size={18} />
+        <DeviceIcon kind={facts.kind} size={18} fill />
       </span>
 
       <div style={{ minWidth: 0 }}>

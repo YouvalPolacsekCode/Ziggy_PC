@@ -9,7 +9,7 @@ import { TOGGLEABLE_DOMAINS, isEntityOn } from '../components/ui/DeviceControls'
 import { DeviceRemote } from '../components/device/DeviceRemote'
 import SensorHistoryChart from '../components/device/SensorHistoryChart'
 import { deviceFacts, getKind, KIND, sendDeviceCommand } from '../lib/devices'
-import { DeviceIcon, iconChoiceAsset } from '../lib/deviceIcons'
+import { DeviceIcon, ICON_CHOICES } from '../lib/deviceIcons'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -23,8 +23,6 @@ import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
 import { useT, useTranslatedName } from '../lib/i18n'
 
-// Emoji palette for the per-tile custom icon picker (B: tile curation).
-const TILE_ICON_CHOICES = ['💡','🪔','🔌','🎛️','❄️','💨','📺','🔊','🌡️','💧','🏃','🧍','🚪','🪟','🔒','📷','🔔','🌙','☀️','🛰️','🪴','🔋']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -470,7 +468,6 @@ export default function DeviceDetail() {
   // reference changes (which the optimized updateEntityState only does
   // when state or a tracked attr actually moved).
   const liveEntity     = useDeviceStore(s => s.entities.find(e => e.entity_id === entityId) ?? null)
-  const iconStyle      = useUIStore(s => s.iconStyle)
   const storeRooms     = useDeviceStore(s => s.rooms)
   const hiddenEntities = useDeviceStore(s => s.hiddenEntities)
   const hideEntity     = useDeviceStore(s => s.hideEntity)
@@ -1341,19 +1338,17 @@ export default function DeviceDetail() {
         <div style={{ marginBottom: 14 }}>
           <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {TILE_ICON_CHOICES.map(ic => {
-              const active = (liveEntity?.icon || '') === ic
-              // In an image icon style, preview the matching asset; still store
-              // the emoji so switching back to Emoji keeps the choice intact.
-              const asset = iconStyle !== 'emoji' ? iconChoiceAsset(ic, iconStyle) : null
+            {ICON_CHOICES.map(k => {
+              const tok = `kind:${k}`
+              const active = (liveEntity?.icon || '') === tok
               return (
-                <button key={ic}
-                  onClick={() => applyTilePref(entityId, { icon: ic })}
-                  style={{ width: 34, height: 34, borderRadius: 9, fontSize: 18, lineHeight: '32px', cursor: 'pointer',
+                <button key={k}
+                  onClick={() => applyTilePref(entityId, { icon: tok })}
+                  style={{ width: 40, height: 40, borderRadius: 10, cursor: 'pointer', padding: 3,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     border: active ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
                     background: active ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)' }}
-                >{asset ? <img src={asset} alt="" aria-hidden="true" style={{ width: 22, height: 22, objectFit: 'contain' }} /> : ic}</button>
+                ><DeviceIcon kind={k} size={22} fill /></button>
               )
             })}
             <button

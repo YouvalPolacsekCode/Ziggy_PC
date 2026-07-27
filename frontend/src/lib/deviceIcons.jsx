@@ -111,11 +111,17 @@ export function iconChoiceAsset(emoji, style) {
 // Without `fill`, renders at a fixed `size` px (used inline, e.g. sibling rows).
 export function DeviceIcon({ kind, customIcon, size = 18, fill = false, className, style: css }) {
   const iconStyle = useUIStore(s => s.iconStyle)
+  // A custom icon can be an emoji (legacy) OR a `kind:<name>` token from the
+  // per-device icon picker. The token pins a specific icon kind regardless of
+  // the device's own kind.
+  const kindTok = (typeof customIcon === 'string' && customIcon.startsWith('kind:')) ? customIcon.slice(5) : null
+  const effKind = kindTok || kind
+  const effCustom = kindTok ? null : customIcon
   if (iconStyle === 'line' || iconStyle === '3d') {
-    const src = iconAssetFor(kind, iconStyle, customIcon)
+    const src = iconAssetFor(effKind, iconStyle, effCustom)
     if (src) {
       if (fill) {
-        const scale = iconStyle === '3d' ? '116%' : '100%'
+        const scale = '100%'
         return (
           <span aria-hidden="true" className={className}
             style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
@@ -130,10 +136,28 @@ export function DeviceIcon({ kind, customIcon, size = 18, fill = false, classNam
       )
     }
   }
-  const emoji = customIcon || kindMeta(kind).icon
+  const emoji = kindTok ? kindMeta(kindTok).icon : (customIcon || kindMeta(kind).icon)
   return (
     <span aria-hidden="true" className={className} style={{ fontSize: size, lineHeight: 1, ...css }}>{emoji}</span>
   )
 }
 
 export const ICON_STYLES = ['emoji', 'line', '3d']
+
+// Full set of pickable device-icon kinds for the per-device icon picker,
+// grouped for display. Each renders via KIND_ASSET (so it works in every
+// style) and is stored as a `kind:<name>` custom icon. 36 distinct kinds —
+// no emoji-collapse duplicates.
+export const ICON_CHOICES = [
+  'light', 'lamp', 'led_strip',
+  'switch', 'plug',
+  'ac', 'fan', 'humidifier',
+  'kettle', 'coffee',
+  'tv', 'monitor', 'soundbar', 'receiver', 'projector',
+  'cover',
+  'lock', 'alarm', 'camera',
+  'water_heater', 'valve',
+  'motion', 'occupancy', 'door', 'window', 'temperature', 'humidity',
+  'leak', 'smoke', 'power_meter', 'binary', 'sensor',
+  'vacuum', 'lawn_mower', 'person', 'unknown',
+]
