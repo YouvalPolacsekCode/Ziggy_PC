@@ -455,6 +455,19 @@ def _find_code_match(received_bytes: bytes) -> Optional[tuple[str, str, str]]:
         devices = list_ir_devices(enabled_only=True)
         total_codes = sum(len(d.get("ir_codes") or {}) for d in devices)
 
+        # Stateful-AC guard (2026-07-27 real-hardware finding): full-state AC
+        # frames carry the complete settings snapshot, and any two button
+        # presses that leave the AC in the same settings emit IDENTICAL
+        # frames. On the user's Tadiran, temp presses passing through the
+        # settings a power button was learned at matched the stored power
+        # code and fired bogus "turned on" toasts. Byte/fingerprint/payload
+        # equality therefore CANNOT identify which button was pressed on
+        # these remotes — skip command attribution entirely and let the
+        # AC-state inference path apply the truth the frame actually carries.
+        _early_decode = decode_protocol_bytes(received_bytes)
+        if _early_decode is not None and _early_decode.ac_state is not None:
+            return None
+
         # Pass 1: exact bytes
         for device in devices:
             ir_codes: dict = device.get("ir_codes") or {}
