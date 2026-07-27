@@ -51,7 +51,7 @@ if [[ -f "$ZIGGY_REPO_DIR/.env" ]]; then
   # shellcheck disable=SC1091
   set -a; . "$ZIGGY_REPO_DIR/.env" 2>/dev/null || true; set +a
 fi
-HA_URL="${HA_URL:-http://localhost:8123}"
+HA_URL="http://localhost:8123"   # host-run check: HA is network_mode:host, always on host localhost (NOT the container's host.docker.internal)
 
 RESULTS=()
 _pass() { RESULTS+=("PASS  $1"); printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
