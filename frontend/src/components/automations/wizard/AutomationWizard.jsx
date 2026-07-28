@@ -5,6 +5,7 @@ import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
 import { getAllRooms } from '../../../lib/api'
 import { getRunModes } from '../../../lib/automations/types'
+import { safeUuid } from '../../../lib/uuid'
 import TriggerEditor from './TriggerEditor'
 import ConditionRow from './ConditionRow'
 import { AndConnector } from './Atoms'
@@ -29,8 +30,8 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const [selectedRooms,    setSelectedRooms]  = useState(initial?.rooms || [])
   const [availableRooms,   setAvailableRooms] = useState([])
   const [trigger,          setTrigger]        = useState(initial?.trigger || { type: 'time', time: '' })
-  const [actions,          setActions]        = useState(() => (initial?.actions || []).map(a => ({ ...a, _key: a._key || crypto.randomUUID() })))
-  const [conditions,       setConditions]     = useState(() => (initial?.conditions || []).map(c => ({ ...c, _key: c._key || crypto.randomUUID() })))
+  const [actions,          setActions]        = useState(() => (initial?.actions || []).map(a => ({ ...a, _key: a._key || safeUuid() })))
+  const [conditions,       setConditions]     = useState(() => (initial?.conditions || []).map(c => ({ ...c, _key: c._key || safeUuid() })))
   const [collapsedActions, setCollapsedActions] = useState(new Set())
   const [mode,             setMode]           = useState(initial?.mode || 'single')
   const [saving,           setSaving]         = useState(false)
@@ -40,7 +41,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const toggleRoom = roomId => setSelectedRooms(prev => prev.includes(roomId) ? prev.filter(id => id !== roomId) : [...prev, roomId])
 
   const addAction = () => {
-    const newKey = crypto.randomUUID()
+    const newKey = safeUuid()
     setCollapsedActions(prev => { const next = new Set(prev); actions.forEach(a => next.add(a._key)); return next })
     setActions(a => [...a, { type: 'call_service', entity_id: '', service: 'homeassistant.turn_on', _key: newKey }])
   }
@@ -155,7 +156,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
                 </div>
               ))}
               <button
-                onClick={() => setConditions(cs => [...cs, { type: 'entity', entity_id: '', operator: 'is', value: 'on', _key: crypto.randomUUID() }])}
+                onClick={() => setConditions(cs => [...cs, { type: 'entity', entity_id: '', operator: 'is', value: 'on', _key: safeUuid() }])}
                 className="z-btn-secondary"
                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
