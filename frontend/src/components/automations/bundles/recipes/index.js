@@ -1,4 +1,5 @@
 import motionLight from './motionLight'
+import { isMotionLightId } from './motionLightIds'
 import nightWatch from './nightWatch'
 import windowAc from './windowAc'
 import leaveHome from './leaveHome'
@@ -30,7 +31,7 @@ export function recipeForAutomation(a) {
   if (id === 'ziggy_leave_home' || id === 'leave_home' || name === 'leave home') return 'leave_home'
   if (id === 'ziggy_precool_arrival' || id === 'precool_on_arrival' || name.replace(/[^a-z]/g, '').includes('precool')) return 'precool'
   if (id === 'ziggy_window_ac_off' || id === 'ac_window_interlock' || name.includes('window')) return 'window_ac'
-  if (id === 'ziggy_motion_light' || id === 'motion_night_light' || name === 'motion light') return 'motion_light'
+  if (isMotionLightId(id) || id === 'motion_night_light' || name === 'motion light') return 'motion_light'
   if (id === 'ziggy_night_watch' || id === 'night_watch' || name === 'night watch') return 'night_watch'
   return null
 }

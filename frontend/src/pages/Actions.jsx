@@ -16,6 +16,7 @@ import SmartRoomGroupRow from '../components/automations/SmartRoomGroupRow'
 import ClimateGroupRow from '../components/automations/ClimateGroupRow'
 import BundleHost from '../components/automations/bundles/engine/BundleHost'
 import { RECIPES, recipeForAutomation } from '../components/automations/bundles/recipes'
+import { isStageId } from '../components/automations/bundles/recipes/motionLightIds'
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
@@ -111,8 +112,9 @@ export default function Automations() {
       // stage (ziggy_night_watch) shows as the card.
       && a.id !== 'ziggy_night_watch_alert' && a.id !== 'ziggy_night_watch_disarm'
       && a.id !== 'night_watch_alert' && a.id !== 'night_watch_disarm'
-      // Motion Light per-room stages fold into the one Motion Light card.
-      && !(a.id || '').startsWith('ziggy_motion_light_'))
+      // Motion Light per-room STAGES fold into their instance card; each
+      // instance base (ziggy_motion_light, _2, …) shows as its own card.
+      && !isStageId(a.id))
 
     let circadianGroup = null
     if (circMembers.length > 0) {

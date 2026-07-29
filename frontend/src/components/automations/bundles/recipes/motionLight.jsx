@@ -1,6 +1,7 @@
 import React from 'react'
 import { createAutomation, deleteAutomation, getEntities } from '../../../../lib/api'
 import { pickedIds, pickFrom } from '../engine/context'
+import { instanceBaseOf, instanceMemberIds, freshInstanceBase, stageId } from './motionLightIds'
 
 // ── Motion Light recipe ───────────────────────────────────────────────────────
 // ROOM-AWARE: each selected sensor drives only the lights in ITS OWN room. When
@@ -45,10 +46,6 @@ function PairPreview({ values, ctx, t }) {
   )
 }
 
-const existingIds = (ctx) => (ctx.automations || [])
-  .filter((a) => a.id === BASE_ID || String(a.id).startsWith(BASE_ID + '_'))
-  .map((a) => a.id)
-
 export default {
   id: 'motion_light',
   titleKey: 'automations.motionLight.title',
@@ -68,8 +65,11 @@ export default {
 
   derive: (initial, ctx) => {
     const isUpdate = !!initial?._isInstalled
-    // Edit: reconstruct the union of sensors + lights across ALL stages.
-    const mine = (ctx.automations || []).filter((a) => a.id === BASE_ID || String(a.id).startsWith(BASE_ID + '_'))
+    // Edit: reconstruct sensors + lights across the stages of THIS instance only
+    // — a second Motion Light must not inherit the first instance's devices.
+    const base = isUpdate && initial?.id ? instanceBaseOf(initial.id) : null
+    const memberSet = base ? new Set(instanceMemberIds(base, (ctx.automations || []).map((a) => a.id))) : null
+    const mine = memberSet ? (ctx.automations || []).filter((a) => memberSet.has(a.id)) : []
     const src = mine.length ? mine : (initial && isUpdate ? [initial] : [])
     const mSet = new Set(), lSet = new Set()
     let bright = 60, linger = 120, timeCond = null
@@ -149,15 +149,19 @@ export default {
     ])
     const roomLabel = (r) => (r === ctx.NO_ROOM ? t('automations.motionLight.otherRoom') : r)
     const groups = pairGroups(v, ctx)
+    // Editing keeps this instance's base; adding mints a fresh, non-colliding
+    // base so "Add" creates a NEW Motion Light instead of overwriting the first.
+    const allIds = (ctx.automations || []).map((a) => a.id)
+    const base = initial?._isInstalled && initial?.id ? instanceBaseOf(initial.id) : freshInstanceBase(allIds)
     let payload, ids
     if (groups.length <= 1) {
       const g = groups[0] || {
         sensors: pickedIds(v.motion, motionItems(ctx)),
         lights: pickedIds(v.lights, lightItems(ctx)),
       }
-      payload = { id: initial?.id || BASE_ID, name: 'Motion Light', description: t('automations.motionLight.desc'),
+      payload = { id: base, name: 'Motion Light', description: t('automations.motionLight.desc'),
         trigger: { type: 'state', entity_id: g.sensors, state: 'on' }, conditions, actions: stageActions(g.sensors, g.lights), rooms: [] }
-      ids = [BASE_ID]
+      ids = [base]
     } else {
       const stages = groups.map((g, i) => ({
         key: slug(g.room === ctx.NO_ROOM ? 'other' : g.room),
@@ -166,17 +170,20 @@ export default {
         trigger: { type: 'state', entity_id: g.sensors, state: 'on' },
         conditions, actions: stageActions(g.sensors, g.lights), rooms: [],
       }))
-      ids = stages.map((s, i) => (i === 0 ? BASE_ID : `${BASE_ID}_${s.key}`))
-      payload = { id: BASE_ID, base_id: BASE_ID, name: 'Motion Light', description: t('automations.motionLight.desc'),
+      ids = stages.map((s, i) => (i === 0 ? base : stageId(base, s.key)))
+      payload = { id: base, base_id: base, name: 'Motion Light', description: t('automations.motionLight.desc'),
         paired: true, stages, trigger: stages[0].trigger, conditions: stages[0].conditions, actions: stages[0].actions, rooms: [] }
     }
     await createAutomation(payload)
-    // Drop any room-stage that's no longer part of the setup.
-    for (const id of existingIds(ctx)) if (!ids.includes(id)) { try { await deleteAutomation(id) } catch { /* stale */ } }
+    // Drop any stage of THIS instance that's no longer part of the setup — never
+    // touch the other instances.
+    for (const id of instanceMemberIds(base, allIds)) if (!ids.includes(id)) { try { await deleteAutomation(id) } catch { /* stale */ } }
   },
 
   remove: async (ctx, initial) => {
-    const ids = existingIds(ctx).length ? existingIds(ctx) : [initial?.id || BASE_ID]
+    const base = initial?.id ? instanceBaseOf(initial.id) : BASE_ID
+    const members = instanceMemberIds(base, (ctx.automations || []).map((a) => a.id))
+    const ids = members.length ? members : [initial?.id || base]
     for (const id of ids) { try { await deleteAutomation(id) } catch { /* already gone */ } }
   },
 }
