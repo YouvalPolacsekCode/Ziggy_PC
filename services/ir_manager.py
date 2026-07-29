@@ -763,52 +763,63 @@ def resolve_ir_device(
 # Single command dispatch
 # ---------------------------------------------------------------------------
 
+def _tx_card_for_device(device: dict):
+    """The tx-validated protocol card this device demonstrably speaks, or
+    None. Evidence-based gate: at least one stored code must decode to the
+    card's family. Never synthesize for an unknown protocol."""
+    from services.ir_protocol import decode_protocol_b64
+    from services.ir_protocol_cards import card_for_family
+
+    for stored_b64 in (device.get("ir_codes") or {}).values():
+        dec = decode_protocol_b64(stored_b64)
+        if dec is None:
+            continue
+        family = "tadiran_ac" if dec.family == "tadiran_short" else dec.family
+        card = card_for_family(family, tx_only=True)
+        if card:
+            return card
+    return None
+
+
 def synthesizable_commands(device: dict) -> list[str]:
     """Commands this device can receive WITHOUT a learned code, composed
-    from a cracked protocol. Empty for devices that don't demonstrably
-    speak one. Used by the API layer so the app enables these controls."""
-    from services.ir_protocol import decode_protocol_b64
-
-    codes: dict = device.get("ir_codes") or {}
-    for stored_b64 in codes.values():
-        dec = decode_protocol_b64(stored_b64)
-        if dec is not None and dec.family in ("tadiran_ac", "tadiran_short"):
-            break
-    else:
+    from a cracked protocol card. Empty for devices that don't demonstrably
+    speak a tx-validated one. Used by the API layer so the app enables
+    these controls."""
+    card = _tx_card_for_device(device)
+    if not card:
         return []
-    return (
-        ["power", "power_on", "power_off", "temp_up", "temp_down", "swing"]
-        + [f"temp_{t}" for t in range(16, 32)]
-        + [f"mode_{m}" for m in ("cool", "dry", "fan", "heat", "auto")]
-        + [f"fan_{f}" for f in ("low", "medium", "high", "auto")]
-    )
+    fields = card.get("fields") or {}
+    cmds = ["power", "power_on", "power_off"]
+    temp = fields.get("temp")
+    if temp:
+        cmds += ["temp_up", "temp_down"]
+        cmds += [f"temp_{t}" for t in range(temp.get("min", 16), temp.get("max", 30) + 1)]
+    if fields.get("mode", {}).get("map"):
+        cmds += [f"mode_{m}" for m in fields["mode"]["map"].values()]
+    if fields.get("fan", {}).get("map"):
+        cmds += [f"fan_{f}" for f in fields["fan"]["map"].values()]
+    if "swing" in fields:
+        cmds.append("swing")
+    return cmds
 
 
 def _synthesize_tadiran_command_b64(device: dict, logical_command: str):
-    """Compose a Broadlink code for `logical_command` from the cracked
-    Tadiran protocol, or None when not applicable.
+    """Compose a Broadlink code for `logical_command` from the device's
+    tx-validated protocol card, or None when not applicable. (Name kept
+    from the Tadiran-only original; now card-driven for every family.)
 
-    Gate: the device must demonstrably speak Tadiran — at least one of its
-    learned codes decodes to the tadiran family. Never synthesize for an
-    unknown protocol; a wrong frame changes someone's real AC.
-
-    Target state = current believed state + the command's delta. power_off
-    (and bare power) use the toggle frame — correct only when the belief
-    matches reality, which the RX listener keeps true. power_on sends a
-    plain settings frame: belief-independent, a Tadiran turns on from any
-    settings frame.
+    Target state = current believed state + the command's delta. On
+    toggle-marker protocols (Tadiran), power_off/power use the toggle
+    frame — correct only when belief matches reality, which the RX
+    listener keeps true — and power_on sends a plain settings frame
+    (belief-independent). On power-bit protocols the bit is set directly.
     """
     import base64 as _b64
-    from services.ir_protocol import decode_protocol_b64, encode_tadiran_state
+    from services.ir_protocol_cards import encode_pulses, encode_state
 
-    codes: dict = device.get("ir_codes") or {}
-    speaks_tadiran = False
-    for stored_b64 in codes.values():
-        dec = decode_protocol_b64(stored_b64)
-        if dec is not None and dec.family in ("tadiran_ac", "tadiran_short"):
-            speaks_tadiran = True
-            break
-    if not speaks_tadiran:
+    card = _tx_card_for_device(device)
+    if not card:
         return None
 
     values = ((device.get("state") or {}).get("values") or {})
@@ -841,12 +852,14 @@ def _synthesize_tadiran_command_b64(device: dict, logical_command: str):
     else:
         return None                # not a state command we can compose
 
-    temp = max(16, min(31, temp))
-    raw = encode_tadiran_state(mode=mode, temp=temp, fan=fan, swing=swing,
-                               power_toggle=toggle)
-    if raw is None:
+    tspec = (card.get("fields") or {}).get("temp") or {}
+    temp = max(tspec.get("min", 16), min(tspec.get("max", 30), temp))
+    power_value = "off" if cmd in ("power_off",) else "on"
+    payload = encode_state(card, mode=mode, temp=temp, fan=fan, swing=swing,
+                           power=power_value, power_toggle=toggle)
+    if payload is None:
         return None
-    return _b64.b64encode(raw).decode()
+    return _b64.b64encode(encode_pulses(card, payload)).decode()
 
 
 def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> dict:
