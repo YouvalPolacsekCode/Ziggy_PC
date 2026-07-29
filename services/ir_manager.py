@@ -763,6 +763,71 @@ def resolve_ir_device(
 # Single command dispatch
 # ---------------------------------------------------------------------------
 
+def _synthesize_tadiran_command_b64(device: dict, logical_command: str):
+    """Compose a Broadlink code for `logical_command` from the cracked
+    Tadiran protocol, or None when not applicable.
+
+    Gate: the device must demonstrably speak Tadiran — at least one of its
+    learned codes decodes to the tadiran family. Never synthesize for an
+    unknown protocol; a wrong frame changes someone's real AC.
+
+    Target state = current believed state + the command's delta. power_off
+    (and bare power) use the toggle frame — correct only when the belief
+    matches reality, which the RX listener keeps true. power_on sends a
+    plain settings frame: belief-independent, a Tadiran turns on from any
+    settings frame.
+    """
+    import base64 as _b64
+    from services.ir_protocol import decode_protocol_b64, encode_tadiran_state
+
+    codes: dict = device.get("ir_codes") or {}
+    speaks_tadiran = False
+    for stored_b64 in codes.values():
+        dec = decode_protocol_b64(stored_b64)
+        if dec is not None and dec.family in ("tadiran_ac", "tadiran_short"):
+            speaks_tadiran = True
+            break
+    if not speaks_tadiran:
+        return None
+
+    values = ((device.get("state") or {}).get("values") or {})
+    mode = values.get("mode") or "cool"
+    fan = values.get("fan") or "auto"
+    swing = bool(values.get("swing", False))
+    try:
+        temp = int(values.get("temp") or 24)
+    except (TypeError, ValueError):
+        temp = 24
+
+    toggle = False
+    cmd = logical_command
+    if cmd in ("power_off", "power"):
+        toggle = True
+    elif cmd == "power_on":
+        pass                       # settings frame turns the unit on
+    elif cmd == "temp_up":
+        temp += 1
+    elif cmd == "temp_down":
+        temp -= 1
+    elif cmd.startswith("temp_") and cmd[5:].isdigit():
+        temp = int(cmd[5:])
+    elif cmd.startswith("mode_"):
+        mode = cmd[5:]
+    elif cmd.startswith("fan_") and cmd != "fan_cycle":
+        fan = cmd[4:]
+    elif cmd == "swing":
+        swing = not swing
+    else:
+        return None                # not a state command we can compose
+
+    temp = max(16, min(31, temp))
+    raw = encode_tadiran_state(mode=mode, temp=temp, fan=fan, swing=swing,
+                               power_toggle=toggle)
+    if raw is None:
+        return None
+    return _b64.b64encode(raw).decode()
+
+
 def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> dict:
     """
     Send one logical command and update assumed state.
@@ -803,6 +868,29 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
                             message=result.get("message"),
                             suggestion="Check blaster_host connectivity and raw IR code validity.")
         return result
+
+    # Path 1.5: synthesize the frame from the cracked protocol. For ACs that
+    # speak a fully reverse-engineered stateful protocol (Tadiran), commands
+    # never learned as buttons are COMPOSED: target state -> bytes ->
+    # checksum -> pulses. This is what turns ~40 listening presses into
+    # unlimited sending. Learned codes still win (path 1) — synthesis only
+    # fills the gaps.
+    if blaster_host and not raw_code_b64:
+        synth_b64 = _synthesize_tadiran_command_b64(device, logical_command)
+        if synth_b64:
+            result = _direct_send(blaster_host, synth_b64, repeats)
+            if result.get("ok"):
+                _after_command(device_id, device, logical_command)
+                _debug_bus.emit("ir", BASIC, "ir_command_sent",
+                                device_id=device_id, command=logical_command,
+                                path="synthesized", result="ok")
+            else:
+                _debug_bus.emit("ir", BASIC, "ir_command_failed",
+                                device_id=device_id, command=logical_command,
+                                path="synthesized", result="error",
+                                message=result.get("message"),
+                                suggestion="Check blaster_host connectivity.")
+            return result
 
     # Path 2: HA remote.send_command (original flow)
     command_map: dict = device.get("commands") or {}

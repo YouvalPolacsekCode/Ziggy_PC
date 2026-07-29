@@ -539,3 +539,86 @@ def test_changed_settings_frame_updates_settings_keeps_power():
     final = _apply(device, _Frame(power=None, temp=23))
     assert final["state"]["values"]["temp"] == 23
     assert final["state"]["values"]["power"] is True
+
+
+# ---------------------------------------------------------------------------
+# TX synthesis (Path 1.5): commands without a learned code are composed
+# from the cracked Tadiran protocol instead of failing.
+# ---------------------------------------------------------------------------
+
+def _tadiran_tx_device(device_id="ir_ac20", power=True, mode="cool", temp=22,
+                       fan="low", swing=False):
+    import base64 as _b64
+    from services.ir_protocol import encode_tadiran_state
+    device = _make_device(device_id=device_id, device_type="ac")
+    device["blaster_host"] = "192.0.2.10"
+    # one real-ish learned tadiran code marks the device as tadiran-speaking
+    stored = encode_tadiran_state(mode="cool", temp=24, fan="auto", swing=False)
+    device["ir_codes"] = {"power_on": _b64.b64encode(stored).decode()}
+    device["state"] = {
+        "template": "ac",
+        "values": {"power": power, "mode": mode, "temp": temp,
+                   "fan": fan, "swing": swing},
+        "live_at": None, "estimated_at": None,
+    }
+    return device
+
+
+def _send_synth(device, command):
+    import base64 as _b64
+    from services.ir_protocol import _try_decode_tadiran, parse_broadlink_raw
+    sent = []
+    def fake_direct(host, b64, repeats):
+        sent.append((host, b64, repeats))
+        return {"ok": True}
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", lambda d: None), \
+         patch("services.ir_manager.get_ir_device", return_value=device), \
+         patch("services.ir_manager._direct_send", side_effect=fake_direct):
+        from services.ir_manager import send_ir_command
+        result = send_ir_command(device["id"], command)
+    assert result.get("ok"), result
+    assert sent, "nothing was transmitted"
+    dec = _try_decode_tadiran(parse_broadlink_raw(_b64.b64decode(sent[-1][1])))
+    assert dec is not None and dec.ac_state is not None
+    return dec.ac_state
+
+
+def test_synthesized_temp_up_sends_current_plus_one():
+    st = _send_synth(_tadiran_tx_device(temp=22), "temp_up")
+    assert st.temp == 23
+    assert st.mode == "cool"
+    assert st.power is None       # settings frame, no toggle marker
+
+
+def test_synthesized_mode_change_keeps_other_settings():
+    st = _send_synth(_tadiran_tx_device(temp=22, fan="high"), "mode_heat")
+    assert st.mode == "heat"
+    assert st.temp == 22
+    assert st.fan == "high"
+
+
+def test_synthesized_power_off_sends_toggle_frame():
+    st = _send_synth(_tadiran_tx_device(power=True), "power_off")
+    assert st.power == "toggle"
+
+
+def test_synthesized_power_on_sends_settings_frame():
+    st = _send_synth(_tadiran_tx_device(power=False), "power_on")
+    assert st.power is None       # settings frame turns the unit on
+
+
+def test_learned_code_still_wins_over_synthesis():
+    import base64 as _b64
+    device = _tadiran_tx_device()
+    canned = _b64.b64encode(b"\x26\x00\x04\x00\x10\x10\x10\x10").decode()
+    device["ir_codes"]["temp_up"] = canned
+    sent = []
+    with patch("services.ir_manager._load", return_value=[device]), \
+         patch("services.ir_manager._save", lambda d: None), \
+         patch("services.ir_manager.get_ir_device", return_value=device), \
+         patch("services.ir_manager._direct_send",
+               side_effect=lambda h, b, r: (sent.append(b) or {"ok": True})):
+        from services.ir_manager import send_ir_command
+        send_ir_command(device["id"], "temp_up")
+    assert sent == [canned]
