@@ -1161,9 +1161,10 @@ function resolveIrCommandName(kind, command, params) {
 
 function pickLearnedIrCommand(irDevice, candidates) {
   if (!irDevice || !candidates) return null
-  const learned = new Set(irDevice.learned_commands || [])
   for (const c of candidates) {
-    if (learned.has(c)) return c
+    // learned OR hub-composable (synth_commands) — same rule as
+    // commandAvailable, or the send path rejects what the UI enabled.
+    if (_irDeviceHasCommand(irDevice, c)) return c
   }
   return null
 }
