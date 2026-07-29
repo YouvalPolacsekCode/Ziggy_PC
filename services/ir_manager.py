@@ -763,6 +763,27 @@ def resolve_ir_device(
 # Single command dispatch
 # ---------------------------------------------------------------------------
 
+def synthesizable_commands(device: dict) -> list[str]:
+    """Commands this device can receive WITHOUT a learned code, composed
+    from a cracked protocol. Empty for devices that don't demonstrably
+    speak one. Used by the API layer so the app enables these controls."""
+    from services.ir_protocol import decode_protocol_b64
+
+    codes: dict = device.get("ir_codes") or {}
+    for stored_b64 in codes.values():
+        dec = decode_protocol_b64(stored_b64)
+        if dec is not None and dec.family in ("tadiran_ac", "tadiran_short"):
+            break
+    else:
+        return []
+    return (
+        ["power", "power_on", "power_off", "temp_up", "temp_down", "swing"]
+        + [f"temp_{t}" for t in range(16, 32)]
+        + [f"mode_{m}" for m in ("cool", "dry", "fan", "heat", "auto")]
+        + [f"fan_{f}" for f in ("low", "medium", "high", "auto")]
+    )
+
+
 def _synthesize_tadiran_command_b64(device: dict, logical_command: str):
     """Compose a Broadlink code for `logical_command` from the cracked
     Tadiran protocol, or None when not applicable.

@@ -622,3 +622,19 @@ def test_learned_code_still_wins_over_synthesis():
         from services.ir_manager import send_ir_command
         send_ir_command(device["id"], "temp_up")
     assert sent == [canned]
+
+
+def test_synthesizable_commands_advertised_for_tadiran_device():
+    device = _tadiran_tx_device()
+    from services.ir_manager import synthesizable_commands
+    cmds = synthesizable_commands(device)
+    for c in ("temp_up", "temp_down", "mode_heat", "fan_high", "swing",
+              "power_on", "power_off", "temp_16", "temp_31"):
+        assert c in cmds
+
+
+def test_synthesizable_commands_empty_for_unknown_protocol():
+    device = _make_device(device_id="ir_tv1", device_type="tv")
+    device["ir_codes"] = {"vol_up": "JgAEABAQEBA="}  # not tadiran
+    from services.ir_manager import synthesizable_commands
+    assert synthesizable_commands(device) == []

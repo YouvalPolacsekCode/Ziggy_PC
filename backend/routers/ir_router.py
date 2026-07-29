@@ -333,14 +333,25 @@ async def ir_diagnostics_reset(host: Optional[str] = None):
 
 @router.get("/api/ir/devices")
 async def get_ir_devices(room: Optional[str] = None, device_type: Optional[str] = None):
-    return {"devices": list_ir_devices(room=room, device_type=device_type, enabled_only=False)}
+    from services.ir_manager import synthesizable_commands
+    devices = []
+    for d in list_ir_devices(room=room, device_type=device_type, enabled_only=False):
+        d = dict(d)
+        # Commands the backend can COMPOSE from a cracked protocol (no
+        # learned code needed) — the app enables these controls too.
+        d["synth_commands"] = synthesizable_commands(d)
+        devices.append(d)
+    return {"devices": devices}
 
 
 @router.get("/api/ir/devices/{device_id}")
 async def get_single_ir_device(device_id: str):
+    from services.ir_manager import synthesizable_commands
     device = get_ir_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="IR device not found")
+    device = dict(device)
+    device["synth_commands"] = synthesizable_commands(device)
     return device
 
 
