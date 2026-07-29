@@ -40,6 +40,9 @@ class HubProvisionBody(BaseModel):
     # baked-in identity and the relay's home row are the SAME id. When omitted
     # the relay mints a `home-{id}` (legacy bench-provision path).
     home_id:     Optional[str] = None
+    # Optional human-facing URL slug: <slug>.ziggy-home.com. Defaults to a slug
+    # derived from home_name. Pass it to pin a clean name (e.g. "david").
+    friendly_slug: Optional[str] = None
 
 
 class HubProvisionBundle(BaseModel):
@@ -54,6 +57,8 @@ class HubProvisionBundle(BaseModel):
     # Consumers (imaging, mobile) should treat THIS as the hub's address, not
     # tunnel_url (bare cfargotunnel.com is not publicly routable).
     reachable_url: str = ""
+    # Human-facing https://<slug>.ziggy-home.com (best-effort; "" if not bound).
+    friendly_url:  str = ""
 
 
 @router.post("/hub", response_model=HubProvisionBundle)
@@ -110,6 +115,7 @@ async def provision_hub_endpoint(body: HubProvisionBody, request: Request) -> Hu
             relay_url             = RELAY_URL,
             existing_tunnel_id    = reuse_tunnel_id,
             existing_relay_secret = reuse_secret,
+            friendly_slug         = body.friendly_slug,
         )
     except Exception as e:
         async with get_db() as db:
@@ -139,6 +145,7 @@ async def provision_hub_endpoint(body: HubProvisionBody, request: Request) -> Hu
         tunnel_url    = result.tunnel_url,
         tunnel_token  = result.tunnel_token,
         reachable_url = result.reachable_url,
+        friendly_url  = result.friendly_url,
     )
 
 

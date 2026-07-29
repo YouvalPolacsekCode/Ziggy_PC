@@ -63,6 +63,7 @@ Optional (founder SSH support access — Linux mini-PC hubs):
 
 import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from typing import Optional
@@ -92,6 +93,21 @@ def _dry_run() -> bool:
 
 def _hub_public_hostname(home_id: str) -> str:
     return f"{home_id}.{CF_HUB_DOMAIN}"
+
+
+def _friendly_slug(name: str) -> str:
+    """A clean, one-label DNS slug from a home name. 'David's Home' → 'davids-home'.
+    Apostrophes are dropped (not hyphenated) so possessives don't split a word."""
+    s = re.sub(r"['’]", "", (name or "").lower())  # David's → davids
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-") or "home"
+
+
+def _friendly_hostname(slug: str) -> str:
+    """Human-facing hub URL host: `<slug>.<CF_HUB_DOMAIN>` — one level under the
+    apex, so it's covered by the free `*.ziggy-home.com` wildcard cert. The
+    tunnel's HTTP catch-all routes any hostname to the hub, so no tunnel reconfig
+    is needed — just the CNAME."""
+    return f"{slug}.{CF_HUB_DOMAIN}"
 
 
 def _reachable_url(home_id: str) -> str:
@@ -310,6 +326,58 @@ async def _cf_upsert_cname(hostname: str, tunnel_id: str) -> str:
     return hostname
 
 
+async def _cf_bind_friendly_alias(slug: str, tunnel_id: str) -> str:
+    """Best-effort human-facing CNAME  <slug>.ziggy-home.com → the tunnel.
+
+    Returns the friendly https URL on success, or "" if it couldn't be bound.
+    CLOBBER-GUARD: if the hostname already exists pointing at a DIFFERENT tunnel
+    (i.e. another home already owns this slug), it is NOT overwritten — a warning
+    is logged and "" is returned so the caller can pick a unique slug. Never
+    fails the provision; the ugly `<home_id>.ziggy-home.com` route is the
+    guaranteed-reachable one, this is just a nicety on top.
+    """
+    hostname = _friendly_hostname(slug)
+    target = f"{tunnel_id}.cfargotunnel.com"
+    url = f"https://{hostname}"
+
+    if _dry_run():
+        logger.info("[dry-run] friendly alias %s -> %s", hostname, target)
+        return url
+    if not CF_ZONE_ID:
+        return ""
+
+    headers = {"Authorization": f"Bearer {CF_API_TOKEN}"}
+    payload = {"type": "CNAME", "name": hostname, "content": target,
+               "proxied": True, "ttl": 1}
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(
+                f"{CF_BASE}/zones/{CF_ZONE_ID}/dns_records",
+                headers=headers, params={"type": "CNAME", "name": hostname},
+            )
+            r.raise_for_status()
+            existing = r.json().get("result", []) or []
+            if existing:
+                if existing[0].get("content") == target:
+                    return url  # already ours — idempotent
+                logger.warning(
+                    "friendly alias %s already points at %s (not this home's "
+                    "tunnel) — NOT overwriting. Pass a unique friendly_slug.",
+                    hostname, existing[0].get("content"),
+                )
+                return ""
+            r2 = await c.post(
+                f"{CF_BASE}/zones/{CF_ZONE_ID}/dns_records",
+                headers=headers, json=payload,
+            )
+            r2.raise_for_status()
+        logger.info("friendly alias ready: %s -> %s", hostname, target)
+        return url
+    except Exception as e:
+        logger.warning("friendly alias bind failed for %s (non-fatal): %s", hostname, e)
+        return ""
+
+
 async def _cf_upsert_dns_route(home_id: str, tunnel_id: str) -> str:
     """Per-home HTTP hostname CNAME → the tunnel (the relay-reachable URL)."""
     return await _cf_upsert_cname(_hub_public_hostname(home_id), tunnel_id)
@@ -461,6 +529,7 @@ class HubProvisionResult:
     tunnel_token: str
     reachable_url: str = ""
     ssh_hostname:  str = ""
+    friendly_url:  str = ""  # human-facing https://<slug>.ziggy-home.com (best-effort)
 
 
 async def provision_hub(
@@ -469,6 +538,7 @@ async def provision_hub(
     relay_url: str,
     existing_tunnel_id:    Optional[str] = None,
     existing_relay_secret: Optional[str] = None,
+    friendly_slug:         Optional[str] = None,
 ) -> HubProvisionResult:
     """Allocate cloud resources for a mini-PC hub. No SSH.
 
@@ -531,6 +601,11 @@ async def provision_hub(
         # hiccup must not roll back an otherwise-working home.
         await _provision_ssh_ingress(home_id, tunnel_id, ssh_host)
 
+    # Human-facing alias (best-effort, never fails the provision). Both paths
+    # above have set tunnel_id.
+    fslug = (friendly_slug or "").strip() or _friendly_slug(home_name)
+    friendly_url = await _cf_bind_friendly_alias(fslug, tunnel_id)
+
     return HubProvisionResult(
         home_id       = home_id,
         home_name     = home_name,
@@ -541,6 +616,7 @@ async def provision_hub(
         tunnel_token  = tunnel_token,
         reachable_url = _reachable_url(home_id),
         ssh_hostname  = ssh_host,
+        friendly_url  = friendly_url,
     )
 
 
