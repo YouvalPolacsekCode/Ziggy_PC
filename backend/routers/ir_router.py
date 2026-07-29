@@ -729,6 +729,25 @@ async def ir_send(body: IrSendBody):
     result = send_ir_command(body.device_id, body.command, repeats=body.repeats)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "Send failed"))
+    # Push the post-command state to connected apps. The listener path
+    # broadcasts on RX; the send path didn't, so Ziggy-initiated changes
+    # (incl. synthesized commands) were invisible until the next poll.
+    try:
+        from services.ir_manager import get_ir_device as _get_dev
+        from services.ir_manager import get_device_state_snapshot as _snap
+        from backend.ws_manager import manager as _ws_manager
+        device = _get_dev(body.device_id)
+        if device:
+            await _ws_manager.broadcast({
+                "type": "ir_command_detected",
+                "device_id": body.device_id,
+                "command": body.command,
+                "new_assumed_state": device.get("assumed_state"),
+                "source": "ziggy_command",
+                "state": _snap(device),
+            })
+    except Exception:
+        pass
     return result
 
 

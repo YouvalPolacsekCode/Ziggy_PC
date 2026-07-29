@@ -348,7 +348,12 @@ function AppRoutes() {
           })
         }
       }
-      addToast(i18nT('toast.physicalRemote', { cmd }), 'info', 3000)
+      // Only announce PHYSICAL presses — the same event type also carries
+      // Ziggy-initiated command results (source: ziggy_command), and
+      // toasting "remote used" for the user's own app tap is confusing.
+      if (last.source !== 'ziggy_command') {
+        addToast(i18nT('toast.physicalRemote', { cmd }), 'info', 3000)
+      }
     }
 
     // Unknown IR signal — re-broadcast as a window event so Devices.jsx can

@@ -1675,6 +1675,9 @@ async def execute_device_command(
                   request_id=req_id, entity_id=entity_id,
                   via="ir", ir_device=ir_id, ir_command=ir_cmd)
 
+        import asyncio as _asyncio
+        _loop = _asyncio.get_running_loop()
+
         def _ir_bg():
             from services.ir_manager import send_ir_command
             t0 = _time.perf_counter()
@@ -1687,6 +1690,28 @@ async def execute_device_command(
                           duration_ms=dur,
                           result="ok" if (res or {}).get("ok") else "error",
                           message=(res or {}).get("message"))
+                if (res or {}).get("ok"):
+                    # Mirror the RX path's broadcast so Ziggy-initiated IR
+                    # changes reach open apps immediately (see /api/ir/send).
+                    try:
+                        from services.ir_manager import (
+                            get_ir_device as _get_dev,
+                            get_device_state_snapshot as _snap,
+                        )
+                        from backend.ws_manager import manager as _ws_manager
+                        dev = _get_dev(ir_id)
+                        if dev:
+                            _asyncio.run_coroutine_threadsafe(
+                                _ws_manager.broadcast({
+                                    "type": "ir_command_detected",
+                                    "device_id": ir_id,
+                                    "command": ir_cmd,
+                                    "new_assumed_state": dev.get("assumed_state"),
+                                    "source": "ziggy_command",
+                                    "state": _snap(dev),
+                                }), _loop)
+                    except Exception:
+                        pass
             except Exception as e:
                 dur = round((_time.perf_counter() - t0) * 1000, 1)
                 _bus.emit("device", _BASIC, "device_command_failed",
