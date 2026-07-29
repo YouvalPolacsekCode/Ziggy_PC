@@ -47,6 +47,7 @@ const OtaReleases     = lazy(() => import('./pages/OtaReleases'))
 const AuditLog        = lazy(() => import('./pages/AuditLog'))
 const People          = lazy(() => import('./pages/People'))
 const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
+const WebOnboarding     = lazy(() => import('./pages/WebOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
 const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
 const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
@@ -170,39 +171,48 @@ function MobileOnboardingRedirector() {
 
 // Unauthenticated entry gate. Decides what a logged-out visitor sees.
 //
-//  - PWA / browser  → always the LoginPage (self-install + returning users).
-//  - Native app on a home that HAS an owner → LoginPage (normal sign-in; the
-//    MobileOnboardingRedirector inside AppRoutes then handles device pairing).
-//  - Native app on a home with NO owner yet (a fresh kit / freshly-imaged box)
-//    → the rich onboarding wizard (pair → claim → sensors → starter …), NOT
-//    the bare LoginPage "setup" door. That door creates the owner but drops
-//    the customer on an empty dashboard, skipping device naming + starter
-//    automations. A fresh home's first run must always land in the wizard.
+//  - Any home that HAS an owner (native OR web) → LoginPage (normal sign-in;
+//    on native the MobileOnboardingRedirector inside AppRoutes then handles
+//    device pairing).
+//  - A home with NO owner yet (a fresh kit / freshly-imaged box) → the rich
+//    onboarding wizard, NOT the bare LoginPage "setup" door. That door creates
+//    the owner but drops the customer on an empty dashboard, skipping device
+//    naming + starter automations. A fresh home's first run must always land in
+//    the wizard — native gets MobileOnboarding (QR pairing), web/PWA gets
+//    WebOnboarding (owner via /api/auth/setup, manual steps, no background GPS).
 //
 // "Has an owner" is read once from /api/auth/status (configured). We do NOT
-// re-fetch after mount, so the wizard stays mounted through CLAIM (which flips
-// the home to configured) without this gate yanking it away mid-flow.
+// re-fetch after mount, so the wizard stays mounted through owner-creation
+// (which flips the home to configured) without this gate yanking it away.
 function UnauthenticatedGate() {
   const native = isNative()
-  const [decision, setDecision] = useState(native ? 'loading' : 'login')
+  // Both native AND web resolve "does this home have an owner yet?" from
+  // /api/auth/status. A fresh (owner-less) home routes into the guided wizard;
+  // an already-configured home shows the normal LoginPage. `configured` is read
+  // ONCE — we never re-fetch after mount, so the wizard stays mounted through
+  // owner-creation (which flips the home to configured) without this gate
+  // yanking it away mid-flow.
+  const [decision, setDecision] = useState('loading')
   useEffect(() => {
-    if (!native) return
     let cancelled = false
     fetch('/api/auth/status')
       .then(r => r.json())
       .then(d => { if (!cancelled) setDecision(d?.configured ? 'login' : 'fresh') })
       .catch(() => { if (!cancelled) setDecision('login') })
     return () => { cancelled = true }
-  }, [native])
+  }, [])
 
   if (decision === 'loading') return null
   if (decision === 'fresh') {
+    // Native → the Capacitor pairing wizard (QR/scan, device token, presence).
+    // Web / PWA → the browser wizard (create owner via /api/auth/setup, manual
+    // steps, no background GPS). See pages/WebOnboarding.jsx.
     return (
-      <BrowserRouter>
-        <Suspense fallback={null}>
-          <MobileOnboarding startFresh />
-        </Suspense>
-      </BrowserRouter>
+      <Suspense fallback={null}>
+        {native
+          ? <BrowserRouter><MobileOnboarding startFresh /></BrowserRouter>
+          : <WebOnboarding />}
+      </Suspense>
     )
   }
   return <LoginPage />

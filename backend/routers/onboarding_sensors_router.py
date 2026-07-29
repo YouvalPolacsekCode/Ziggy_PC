@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.routers.mobile_router import get_current_device, _client_ip, require_lan
+from backend.routers.auth_deps import find_user_by_token, ROLE_ORDER
 from backend.middleware.rate_limit import claim_limiter, peer_key
 from core.debug_bus import bus as _dbus, BASIC
 from core.logger_module import log_error, log_info
@@ -37,6 +38,61 @@ from services.auth_hashing import hash_password_bcrypt
 
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
+
+
+# ── Onboarding principal (device token OR owner session token) ───────────────
+# The kit-out-of-box (native) flow authenticates every post-claim step with the
+# paired phone's DEVICE token. The web/PWA onboarding path has no device token —
+# it creates the owner via /api/auth/setup and then drives the SAME wizard steps
+# with the owner's SUPER_ADMIN SESSION token. This dependency accepts either and
+# normalises them to one shape so the step handlers are auth-agnostic.
+#
+# Security note: this does NOT weaken the ownership-grant gate. /api/onboarding/
+# claim and the claim-tier /api/mobile/pair are untouched and stay LAN-only. The
+# session-token branch here only lets an ALREADY-authenticated owner write their
+# own home's device names + starter automations — exactly what the rest of the
+# app already permits that owner to do.
+async def get_onboarding_principal(request: Request) -> dict:
+    """Resolve the caller as either a paired device or an owner session.
+
+    Returns a normalised principal:
+      { "kind": "device"|"user", "device_id": str|None, "user_id": str|None }
+
+    - kind="device": a valid mobile device token (native flow). device_id is the
+      edge device record id; user_id is set once the device has been claimed.
+    - kind="user": a valid session token whose role is >= super_admin (web flow).
+      device_id is None; user_id is the owner's username.
+    Raises 401 if neither resolves.
+    """
+    auth = request.headers.get("Authorization", "")
+    token = auth.removeprefix("Bearer ").strip()
+
+    if token:
+        # 1. Native flow — device token. Same lookup get_current_device uses.
+        device = mobile_app.find_device_by_token(token)
+        if device:
+            return {
+                "kind":      "device",
+                "device_id": device.get("device_id"),
+                "user_id":   device.get("user_id"),
+            }
+        # 2. Web flow — owner session token. Only the home owner (super_admin)
+        #    may drive onboarding; a plain 'user' session must not rename
+        #    devices or install starter automations through this path.
+        user = find_user_by_token(token)
+        if user and ROLE_ORDER.get(user.get("role", "user"), 0) >= ROLE_ORDER["super_admin"]:
+            request.state.user = user  # let the error handler read role/perms
+            return {
+                "kind":      "user",
+                "device_id": None,
+                "user_id":   user.get("username") or user.get("id"),
+            }
+
+    _dbus.emit("onboarding", BASIC, "onboarding_auth_failed",
+               path=request.url.path,
+               source_ip=_client_ip(request),
+               provided=bool(token))
+    raise HTTPException(status_code=401, detail="Not authenticated for onboarding.")
 
 
 # ── HA device matching ───────────────────────────────────────────────────────
@@ -89,11 +145,13 @@ def _ha_device_by_mac(devices: list[dict], mac: str) -> Optional[dict]:
 # ── Endpoint ────────────────────────────────────────────────────────────────
 
 @router.get("/sensors")
-async def get_onboarding_sensors(device: dict = Depends(get_current_device)) -> dict:
+async def get_onboarding_sensors(
+    principal: dict = Depends(get_onboarding_principal),
+) -> dict:
     """Return enriched manifest sensors for the wizard.
 
-    Auth: device-token (any paired mobile device can read its own home's
-    sensor list).
+    Auth: a paired device token (native) OR the owner's super_admin session
+    token (web/PWA onboarding). Either may read its own home's sensor list.
     """
     manifest_sensors = kit_manifest.get_sensors()
 
@@ -295,7 +353,7 @@ class SensorConfirmBody(BaseModel):
 @router.post("/sensors/confirm")
 async def confirm_sensors(
     body: SensorConfirmBody,
-    device: dict = Depends(get_current_device),
+    principal: dict = Depends(get_onboarding_principal),
 ) -> dict:
     """Persist user-confirmed sensor names + room assignments to HA.
 
@@ -317,15 +375,14 @@ async def confirm_sensors(
     indicates HA is unreachable, which would make every entry fail
     anyway.
     """
-    # Defense-in-depth (PROMPT_SECURITY_HARDENING_V2): device token is valid
-    # (get_current_device handled that) but additionally require that the
-    # device is bound to a user — i.e. has been through /api/onboarding/claim.
-    # A claim-pending device that somehow held a token without binding (race
-    # with bind_claim_pending_device, future refactor that splits the two
-    # state mutations) shouldn't be allowed to write HA structure under
-    # nobody's name. The upstream invariant is set by claim_owner; this
-    # is the safety net.
-    if not device.get("user_id"):
+    # Defense-in-depth (PROMPT_SECURITY_HARDENING_V2): the principal is bound to
+    # a user — for a device that means it has been through /api/onboarding/claim;
+    # for a web owner it is the super_admin session itself. A claim-pending
+    # device that somehow held a token without binding (race with
+    # bind_claim_pending_device) shouldn't be allowed to write HA structure under
+    # nobody's name. The upstream invariant is set by claim_owner / auth setup;
+    # this is the safety net.
+    if not principal.get("user_id"):
         raise HTTPException(status_code=409, detail="Device not claimed.")
 
     if not body.sensors:
@@ -396,10 +453,11 @@ async def confirm_sensors(
 
     log_info(
         f"[onboarding] sensors/confirm: {confirmed} ok, {len(failed)} failed "
-        f"(device={device.get('device_id')})"
+        f"(principal={principal.get('device_id') or principal.get('user_id')})"
     )
     _dbus.emit("onboarding", BASIC, "sensors_confirmed",
-               device_id=device.get("device_id"),
+               device_id=principal.get("device_id"),
+               user_id=principal.get("user_id"),
                confirmed=confirmed,
                failed=len(failed))
 
@@ -427,7 +485,7 @@ class HomeLocationBody(BaseModel):
 
 @router.post("/home-location")
 async def set_home_location(body: HomeLocationBody,
-                            device: dict = Depends(get_current_device)) -> dict:
+                            principal: dict = Depends(get_onboarding_principal)) -> dict:
     from services.ha_config import set_core_location
     res = await set_core_location(body.latitude, body.longitude, body.elevation)
     if not res.get("ok"):
@@ -439,7 +497,7 @@ async def set_home_location(body: HomeLocationBody,
 # ── /api/onboarding/starter-pack (Chunk 3.3) ────────────────────────────────
 
 @router.get("/starter-pack")
-async def get_starter_pack(device: dict = Depends(get_current_device)) -> dict:
+async def get_starter_pack(principal: dict = Depends(get_onboarding_principal)) -> dict:
     """Return starter automations whose slots can be filled against this kit.
 
     For each starter in services/starter_automations/v1.yaml, look at the
@@ -492,7 +550,7 @@ class CompleteBody(BaseModel):
 @router.post("/complete")
 async def complete_onboarding(
     body: CompleteBody,
-    device: dict = Depends(get_current_device),
+    principal: dict = Depends(get_onboarding_principal),
 ) -> dict:
     """Finalise the wizard: stamp first_boot.completed_at and fire a one-shot
     telemetry post with the summary.
@@ -541,7 +599,8 @@ async def complete_onboarding(
         telemetry_reason = "exception"
 
     _dbus.emit("onboarding", BASIC, "onboarding_complete",
-               device_id=device.get("device_id"),
+               device_id=principal.get("device_id"),
+               user_id=principal.get("user_id"),
                time_elapsed_seconds=extras["time_elapsed_seconds"],
                sensors_confirmed_count=extras["sensors_confirmed_count"],
                automations_accepted_count=extras["automations_accepted_count"],

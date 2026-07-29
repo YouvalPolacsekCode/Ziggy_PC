@@ -114,16 +114,21 @@ export const fireEvent    = (event, payload = {}) =>
 // claimOwner. They live here rather than lib/api.js because lib/api.js is
 // hardwired for the PWA session-token auth + redirects to LoginPage on 401.
 
-async function _deviceAuthHeaders() {
-  const token = await getDeviceToken()
-  if (!token) throw new Error('not paired')
+// Resolve the bearer for onboarding calls. The native flow passes nothing and
+// authenticates with the paired device token; the web/PWA flow (Spine B) passes
+// the owner's super_admin SESSION token minted by /api/auth/setup — the backend
+// get_onboarding_principal dependency accepts either. When an explicit token is
+// given we NEVER fall back to the (absent) device token.
+async function _onboardingAuthHeaders(authToken = null) {
+  const token = authToken || (await getDeviceToken())
+  if (!token) throw new Error('not authenticated for onboarding')
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
 }
 
 export async function claimOwner({ username, password }) {
   const res = await fetch('/api/onboarding/claim', {
     method: 'POST',
-    headers: await _deviceAuthHeaders(),
+    headers: await _onboardingAuthHeaders(),
     body: JSON.stringify({ username, password }),
   })
   if (!res.ok) {
@@ -135,27 +140,27 @@ export async function claimOwner({ username, password }) {
   return res.json()   // { ok, user_token, role, username, device_bound }
 }
 
-export async function getOnboardingSensors() {
+export async function getOnboardingSensors(authToken = null) {
   const res = await fetch('/api/onboarding/sensors', {
-    headers: { Authorization: (await _deviceAuthHeaders()).Authorization },
+    headers: { Authorization: (await _onboardingAuthHeaders(authToken)).Authorization },
   })
   if (!res.ok) throw new Error(`sensors fetch failed: ${res.status}`)
   return res.json()   // { sensors: [...], manifest_loaded, ha_reachable }
 }
 
-export async function confirmSensors(sensors) {
+export async function confirmSensors(sensors, authToken = null) {
   const res = await fetch('/api/onboarding/sensors/confirm', {
     method: 'POST',
-    headers: await _deviceAuthHeaders(),
+    headers: await _onboardingAuthHeaders(authToken),
     body: JSON.stringify({ sensors }),
   })
   if (!res.ok) throw new Error(`sensors/confirm failed: ${res.status}`)
   return res.json()   // { ok, confirmed, failed: [...] }
 }
 
-export async function getStarterPack() {
+export async function getStarterPack(authToken = null) {
   const res = await fetch('/api/onboarding/starter-pack', {
-    headers: { Authorization: (await _deviceAuthHeaders()).Authorization },
+    headers: { Authorization: (await _onboardingAuthHeaders(authToken)).Authorization },
   })
   if (!res.ok) throw new Error(`starter-pack fetch failed: ${res.status}`)
   return res.json()   // { starters: [...], ha_reachable }
@@ -163,11 +168,11 @@ export async function getStarterPack() {
 
 // Push the home's real coordinates into HA's core config so sun/sunrise-sunset/
 // weather work. Best-effort — never blocks onboarding if it fails.
-export async function setHomeLocation({ latitude, longitude, elevation }) {
+export async function setHomeLocation({ latitude, longitude, elevation }, authToken = null) {
   try {
     const res = await fetch('/api/onboarding/home-location', {
       method: 'POST',
-      headers: await _deviceAuthHeaders(),
+      headers: await _onboardingAuthHeaders(authToken),
       body: JSON.stringify({ latitude, longitude, elevation }),
     })
     return res.ok
@@ -191,10 +196,10 @@ export async function installAutomation(haPayload, userToken) {
   return res.json()
 }
 
-export async function completeOnboarding(summary) {
+export async function completeOnboarding(summary, authToken = null) {
   const res = await fetch('/api/onboarding/complete', {
     method: 'POST',
-    headers: await _deviceAuthHeaders(),
+    headers: await _onboardingAuthHeaders(authToken),
     body: JSON.stringify(summary),
   })
   if (!res.ok) throw new Error(`complete failed: ${res.status}`)
