@@ -735,14 +735,28 @@ async def _broadcast_tx_state(device_id: str, command: str) -> None:
         device = _get_dev(device_id)
         if not device:
             return
-        await _ws_manager.broadcast({
+        snap = _snap(device)
+        payload = {
             "type": "ir_command_detected",
             "device_id": device_id,
             "command": command,
             "new_assumed_state": device.get("assumed_state"),
             "source": "ziggy_command",
-            "state": _snap(device),
-        })
+            "state": snap,
+        }
+        # The AC card renders temp/mode/fan from the legacy ac_memory field,
+        # which the app only updates from an ac_state block (the listener
+        # includes one; TX must too or the card ignores the event).
+        vals = (snap or {}).get("values") or {}
+        if (snap or {}).get("template") == "ac":
+            payload["ac_state"] = {
+                "power": "on" if vals.get("power") else "off",
+                "mode": vals.get("mode"),
+                "temp": vals.get("temp"),
+                "fan": vals.get("fan"),
+                "brand": "ziggy_synth",
+            }
+        await _ws_manager.broadcast(payload)
         log_info(f"[IR] TX state broadcast: device={device_id} command={command}")
     except Exception as e:
         log_error(f"[IR] TX state broadcast FAILED: device={device_id} command={command}: {e}")
