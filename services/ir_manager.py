@@ -251,6 +251,9 @@ def update_ir_device(device_id: str, updates: dict) -> Optional[dict]:
         # Blaster vendor selector (broadlink | avatto | ...) — picked by the
         # blaster abstraction registry. Falls back to broadlink when missing.
         "blaster_vendor", "blaster_model",
+        # Walk-cracked protocol card pin + the wizard's validation-pass
+        # trial window (see _tx_card_for_device / ir_walk_session).
+        "protocol_card_id", "protocol_card_trial",
     }
     # normalise device_type → type (frontend uses device_type, storage uses type)
     if "device_type" in updates:
@@ -769,6 +772,17 @@ def _tx_card_for_device(device: dict):
     card's family. Never synthesize for an unknown protocol."""
     from services.ir_protocol import decode_protocol_b64
     from services.ir_protocol_cards import card_for_family
+
+    # Walk-cracked devices carry an explicit card pin. Trial mode allows
+    # synthesis with a not-yet-validated card ONLY during the wizard's
+    # validation pass (the user is standing at the AC to judge it).
+    pinned = device.get("protocol_card_id")
+    if pinned:
+        from services.ir_card_registry import tx_card_by_id
+        card = tx_card_by_id(pinned,
+                             allow_trial=bool(device.get("protocol_card_trial")))
+        if card:
+            return card
 
     for stored_b64 in (device.get("ir_codes") or {}).values():
         dec = decode_protocol_b64(stored_b64)

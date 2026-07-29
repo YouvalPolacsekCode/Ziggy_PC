@@ -584,6 +584,9 @@ app.include_router(onboarding_router)
 # cannot attach an Authorization header. See push_action_router.py.
 app.include_router(push_action_router)
 
+from backend.routers.ir_walk_router import router as ir_walk_router
+app.include_router(ir_walk_router)
+
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.
 # Mount AFTER all API routes so /api/* and /ws are never shadowed.
