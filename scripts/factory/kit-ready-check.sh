@@ -13,8 +13,10 @@
 #   4. HA reachable AND the minted token authenticates (GET /api/ = 200)
 #   5. MQTT auth enforced (creds succeed, anonymous fails)
 #   6. Dry-run backup exits 0 (seal is internally consistent)
+#   7. Blank home — delete all HA areas + clear device room assignments so the
+#      customer opens a clean slate (MUTATING; verifies zero areas remain)
 #
-# USAGE: scripts/factory/kit-ready-check.sh [--skip-mqtt] [--skip-backup]
+# USAGE: scripts/factory/kit-ready-check.sh [--skip-mqtt] [--skip-backup] [--skip-blank]
 #
 # ENV:
 #   ZIGGY_ETC_DIR  default /etc/ziggy
@@ -37,10 +39,12 @@ MQTT_PORT="${MQTT_PORT:-1883}"
 
 SKIP_MQTT=0
 SKIP_BACKUP=0
+SKIP_BLANK=0
 for a in "$@"; do
   case "$a" in
     --skip-mqtt) SKIP_MQTT=1 ;;
     --skip-backup) SKIP_BACKUP=1 ;;
+    --skip-blank) SKIP_BLANK=1 ;;
     -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $a" >&2; exit 2 ;;
   esac
@@ -154,6 +158,26 @@ else
     _pass "dry-run backup exited 0 (seal internally consistent)"
   else
     _fail "dry-run backup FAILED (see $BACKUP_LOG)"
+  fi
+fi
+
+# 7. blank home (no leftover rooms) -----------------------------------------
+# MUTATING step: deletes every HA area + clears device room assignments so the
+# customer opens a clean slate — never rooms left over from a setup/test pass
+# (memory: David's box shipped with 6 pre-made areas). Runs pre-owner via the
+# container's HA creds; verifies the home is blank afterwards or FAILS the gate.
+# Use --skip-blank for a non-mutating dry run.
+if [[ "$SKIP_BLANK" == "1" ]]; then
+  _skip "blank home (skipped by flag)"
+elif ! command -v docker >/dev/null; then
+  _fail "blank home NOT run — docker unavailable (required to reset rooms before ship)"
+else
+  BLANK_CMD="${BLANK_CMD:-docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T ziggy python -m services.rooms_admin}"
+  BLANK_LOG="$(mktemp "${TMPDIR:-/tmp}/kit-blank.XXXXXX.log")"
+  if ( cd "$ZIGGY_REPO_DIR" 2>/dev/null && eval "$BLANK_CMD" >"$BLANK_LOG" 2>&1 ); then
+    _pass "home blanked — no leftover rooms ($(tail -1 "$BLANK_LOG" 2>/dev/null))"
+  else
+    _fail "blank home FAILED — rooms may remain (see $BLANK_LOG)"
   fi
 fi
 

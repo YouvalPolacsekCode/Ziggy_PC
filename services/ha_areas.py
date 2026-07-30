@@ -195,6 +195,33 @@ async def delete_area(area_id: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def delete_all_areas() -> dict:
+    """Delete EVERY HA area. Used to blank a home (ship gate + in-app reset).
+
+    HA drops each area's entity assignments when the area is deleted, so the
+    device/entity registries are left area-less. Best-effort per area: a single
+    failure doesn't abort the rest. Returns {deleted, failed, total}.
+    """
+    try:
+        areas = await get_areas()
+    except Exception as e:
+        log_error(f"[HA Areas] delete_all_areas: list failed: {e}")
+        return {"deleted": 0, "failed": [], "total": 0, "error": str(e)}
+    deleted = 0
+    failed: list[dict] = []
+    for a in areas:
+        aid = a.get("id")
+        if not aid:
+            continue
+        res = await delete_area(aid)
+        if res.get("ok"):
+            deleted += 1
+        else:
+            failed.append({"id": aid, "error": res.get("error", "unknown")})
+    invalidate_registry_cache()
+    return {"deleted": deleted, "failed": failed, "total": len(areas)}
+
+
 def _norm_area(s: str | None) -> str:
     """Loose key so 'living_room', 'Living Room' and 'living room' all match."""
     return "".join(ch for ch in (s or "").strip().lower().replace("_", " ").split())

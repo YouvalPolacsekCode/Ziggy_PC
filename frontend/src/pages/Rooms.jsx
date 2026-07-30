@@ -18,7 +18,7 @@ import OccupancySensorForm from '../components/automations/OccupancySensorForm'
 import { useDeviceStore, applyRoomsOrder } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
-import { controlDevice, createRoom, deleteRoom, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
+import { controlDevice, createRoom, deleteRoom, resetAllRooms, renameRoom, assignEntityToArea, callHaService, getVirtualDevices, triggerVirtualDevice, patchVirtualDevice } from '../lib/api'
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
 import { findRoomMetric, averageRoomMetric, roomOccupancy, fusedOccupancyIdSet, inferBinarySensorClass } from '../lib/devices'
@@ -411,6 +411,8 @@ export function RoomsList() {
   const [newRoomPhoto, setNewRoomPhoto] = useState('living_room')
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [editPhotoRoom, setEditPhotoRoom] = useState(null)
   const [search, setSearch] = useState('')
   // Reorder mode: tap the [↕] in the header to enter; tap Done to commit, X
@@ -499,6 +501,22 @@ export function RoomsList() {
     }
   }
 
+  // Reset home: delete every room + clear all placements (devices stay paired).
+  // Backend enforces super_admin. Used to blank a home from a clean slate.
+  const handleResetAll = async () => {
+    setResetting(true)
+    try {
+      await resetAllRooms()
+      await fetchAll()
+      addToast(t('rooms.resetAllDone'), 'success')
+      setConfirmReset(false)
+    } catch (e) {
+      addToast(e.message || t('rooms.resetAllFailed'), 'error')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   const filteredRooms = orderedRooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
@@ -553,6 +571,16 @@ export function RoomsList() {
                 style={{ padding: '8px 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13 }}
               >
                 <ArrowUpDown size={13} /> {t('rooms.reorder')}
+              </button>
+            )}
+            {rooms.length > 0 && (
+              <button
+                onClick={() => setConfirmReset(true)}
+                aria-label={t('rooms.resetAllTitle')}
+                className="z-btn-secondary"
+                style={{ padding: '8px 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#fca5a5' }}
+              >
+                <Trash2 size={13} /> {t('rooms.resetAll')}
               </button>
             )}
             <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
@@ -717,6 +745,18 @@ export function RoomsList() {
         onClose={() => setConfirmDelete(null)}
         onConfirm={handleDeleteRoom}
       />
+
+      <Modal open={confirmReset} onClose={() => !resetting && setConfirmReset(false)} title={t('rooms.resetAllTitle')}>
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 16, lineHeight: 1.5 }}>
+          {t('rooms.resetAllLong')}
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setConfirmReset(false)} disabled={resetting} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
+          <button onClick={handleResetAll} disabled={resetting} style={{ flex: 1, background: `color-mix(in srgb, var(--accent) 10%, var(--surface))`, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: 10, padding: '10px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: resetting ? 'wait' : 'pointer' }}>
+            {resetting ? t('rooms.resetting') : t('rooms.resetAllConfirm')}
+          </button>
+        </div>
+      </Modal>
 
       <RoomEditModal
         open={!!editPhotoRoom}

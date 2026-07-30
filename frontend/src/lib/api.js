@@ -403,6 +403,7 @@ export const getAllRooms = () => get('/rooms/all')   // HA areas UNION device-re
 export const getRoomsWithDevices = () => get('/rooms/devices')
 export const createRoom = (name) => post('/rooms', { name })
 export const deleteRoom = (areaId) => del(`/rooms/${areaId}`)
+export const resetAllRooms = () => post('/rooms/reset')   // blank the home: delete every room + clear placements
 export const renameRoom = (areaId, name) => patch(`/rooms/${areaId}`, { name })
 
 // Tasks

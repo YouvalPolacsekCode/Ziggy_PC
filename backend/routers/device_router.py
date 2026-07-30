@@ -648,6 +648,28 @@ async def create_room(body: RoomCreate,
     return result
 
 
+@router.post("/api/rooms/reset")
+async def reset_rooms(_user: dict = Depends(require_role("super_admin"))):
+    """Blank the whole home: delete every HA area + clear every device's room
+    assignment. The "reset home" action — for wiping rooms left over from a
+    setup/test pass so the home is a clean slate. super_admin only (destructive,
+    affects all rooms). Does NOT delete devices, only their placement."""
+    _bus.emit("auth", _BASIC, "auth_promoted_route_called",
+              route="POST /api/rooms/reset",
+              user=_user.get("username"), auth_added=True)
+    from services.rooms_admin import reset_all_rooms
+    res = await reset_all_rooms()
+    _bus.emit("device", _BASIC, "home_rooms_reset",
+              user=_user.get("username"),
+              areas_deleted=res.get("areas_deleted"),
+              devices_cleared=res.get("devices_cleared"),
+              areas_failed=len(res.get("areas_failed") or []))
+    log_info(f"[API] Home rooms reset by {_user.get('username')}: "
+             f"{res.get('areas_deleted')} areas deleted, "
+             f"{res.get('devices_cleared')} devices cleared")
+    return {"ok": True, **res}
+
+
 @router.delete("/api/rooms/{area_id}")
 async def delete_room(area_id: str,
                       _user: dict = Depends(require_role("admin"))):

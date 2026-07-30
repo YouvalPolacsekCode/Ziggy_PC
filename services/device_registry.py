@@ -681,6 +681,30 @@ def _enforce_user_rooms(devices: list[dict]) -> list[dict]:
     return devices
 
 
+def clear_all_room_assignments() -> int:
+    """Blank every device's room + room_source (the registry side of a home
+    reset). Pairs with ha_areas.delete_all_areas() which clears the HA side.
+
+    IR / Ziggy-native rows are included — a full home reset means no rooms
+    anywhere. Returns the number of rows changed. Safe to call before init()
+    (no-op on an empty registry).
+    """
+    global _registry
+    changed = 0
+    with _lock:
+        for d in _registry:
+            if d.get("room") is not None or d.get("room_source") is not None:
+                d["room"] = None
+                d["room_source"] = None
+                changed += 1
+        if changed:
+            _save_persistent(_registry)
+            _rebuild_indexes()
+    if changed:
+        log_info(f"[DeviceRegistry] cleared room assignment on {changed} device(s) (home reset)")
+    return changed
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
