@@ -154,6 +154,16 @@ class BackupContext:
     ha_token: str
 
     coordinator_ieee: Optional[str] = None
+    # Matter + Thread state dirs (present only on hubs running the `matter`
+    # compose profile). matter_data_dir = python-matter-server /data (the fabric
+    # + every commissioned node's credentials — NON-recoverable if lost).
+    # otbr_data_dir = OpenThread Border Router /data (the Thread operational
+    # dataset / network key — restoring it keeps existing Thread devices joined).
+    # Optional/None on non-Matter hubs; the collector skips cleanly when unset,
+    # absent, or empty. Kept as Optional defaults so existing BackupContext(...)
+    # constructions (incl. tests) that don't set them stay valid.
+    matter_data_dir: Optional[Path] = None
+    otbr_data_dir: Optional[Path] = None
     ziggy_version: str = "0.0.0+local"
     ha_version: Optional[str] = None
     today: dt.date = field(default_factory=lambda: dt.date.today())
@@ -245,6 +255,16 @@ def run_daily_backup(ctx: BackupContext) -> dict:
             bundles[zigbee_bundle_name] = zigbee_bundle_bytes
         if recorder_bytes is not None:
             bundles["recorder.db.enc"] = recorder_bytes
+
+        # Matter + Thread state (optional `matter` profile). The matter-server
+        # fabric store is non-recoverable — losing it forces a factory-reset +
+        # re-commission of every Matter device — so it rides the same encrypted
+        # nightly bundle as Zigbee. Skips cleanly on non-Matter hubs.
+        matter_bytes = _collect_matter_thread(ctx)
+        if matter_bytes is not None:
+            bundles["matter-thread.tar.gz.enc"] = matter_bytes
+        else:
+            result["optional_skipped"].append("matter-backup")
 
         result["stage"] = "encrypt"
         encrypted = _encrypt_files(ctx, bundles)
@@ -506,6 +526,41 @@ def _detect_zigbee_stack(ctx: "BackupContext") -> str:
     if zha_marker.exists():
         return "zha"
     return "none"
+
+
+def _collect_matter_thread(ctx: "BackupContext") -> Optional[bytes]:
+    """tar.gz the Matter controller + Thread border-router state, or None.
+
+    Returns None (the caller records an ``optional_skipped`` marker) when the
+    hub isn't running the `matter` profile — i.e. neither state dir is
+    configured, present, or non-empty. Otherwise returns a gzipped tar with two
+    top-level trees:
+
+      matter-server/   python-matter-server /data — the Matter fabric + every
+                       commissioned node's credentials. NON-recoverable: lose it
+                       and every Matter device must be factory-reset + re-paired.
+      otbr/            OpenThread Border Router /data — the Thread operational
+                       dataset (network key/PAN/channel). Restoring it keeps
+                       existing Thread devices joined without re-commissioning.
+
+    Unlike the Zigbee bundle (an explicit file allowlist), these dirs hold small,
+    opaque, version-dependent state, so we archive each dir wholesale — there is
+    no stable per-file contract to allowlist against. Both trees are tiny.
+    """
+    dirs: list[tuple[str, Path]] = []
+    if ctx.matter_data_dir is not None and ctx.matter_data_dir.is_dir():
+        if any(ctx.matter_data_dir.iterdir()):
+            dirs.append(("matter-server", ctx.matter_data_dir))
+    if ctx.otbr_data_dir is not None and ctx.otbr_data_dir.is_dir():
+        if any(ctx.otbr_data_dir.iterdir()):
+            dirs.append(("otbr", ctx.otbr_data_dir))
+    if not dirs:
+        return None
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for arc_root, src in dirs:
+            tar.add(str(src), arcname=arc_root, recursive=True)
+    return buf.getvalue()
 
 
 def _trigger_and_read_zha_backup(ctx: "BackupContext") -> tuple[bytes, Path]:
@@ -1158,6 +1213,11 @@ def _build_context_from_settings(
         data_key=data_key,
         ha_config_dir=Path(backup_cfg.get("ha_config_dir", "docker/ha-config")),
         z2m_data_dir=Path(backup_cfg.get("z2m_data_dir", "docker/z2m-data")),
+        # Bind-mounted read-only into the ziggy container by docker-compose.prod
+        # (see the ziggy volumes there). Absent on non-Matter hubs → collector
+        # skips. Defaults resolve under /app (WORKDIR) like the other dirs.
+        matter_data_dir=Path(backup_cfg.get("matter_data_dir", "docker/matter-data")),
+        otbr_data_dir=Path(backup_cfg.get("otbr_data_dir", "docker/otbr-data")),
         user_files_dir=Path(backup_cfg.get("user_files_dir", "user_files")),
         config_dir=Path(backup_cfg.get("config_dir", "config")),
         storage=storage,

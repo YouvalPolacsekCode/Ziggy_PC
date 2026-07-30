@@ -89,17 +89,27 @@ async def stop_zwave_inclusion() -> dict:
 # ---------------------------------------------------------------------------
 
 async def commission_matter(code: str) -> dict:
-    """Commission a Matter device using its setup code or QR payload."""
+    """Commission a Matter device using its setup code or QR payload.
+
+    Drives HA's ``matter/commission`` WebSocket command (NOT a service call —
+    the matter integration exposes no ``commission_with_code`` service). HA hands
+    the commission off to the standalone matter-server, and — crucially —
+    automatically supplies the *preferred* Thread operational dataset (or Wi-Fi
+    credentials) to the device over the initial BLE handshake, so a fresh
+    Matter-over-Thread device (e.g. an IKEA bulb) joins our OTBR's Thread mesh.
+
+    Commissioning is slow: BLE handshake + network join can take 30–120 s, so we
+    override the helper's aggressive default WS timeout for this one call. The
+    request holds until HA reports the final result. (A future improvement is to
+    make this async + poll, so the UI needn't block on a single long request.)
+    """
     try:
-        res, = await _ws({
-            "type": "call_service",
-            "domain": "matter",
-            "service": "commission_with_code",
-            "service_data": {"code": code},
-        })
+        res, = await _ws({"type": "matter/commission", "code": code},
+                         timeout=150.0)
         if res.get("success"):
             return {"ok": True}
-        err = (res.get("error") or {}).get("message", "Matter integration not available or code invalid")
+        err = (res.get("error") or {}).get(
+            "message", "Matter integration not available or code invalid")
         return {"ok": False, "error": err}
     except Exception as e:
         log_error(f"[Pairing] commission_matter: {e}")
