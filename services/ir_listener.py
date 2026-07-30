@@ -566,7 +566,33 @@ def _find_ac_state_match(received_bytes: bytes, host: str) -> Optional[tuple[str
 
         decoded = decode_protocol_bytes(received_bytes)
         if decoded is None or decoded.ac_state is None:
-            return None
+            # Walk-cracked protocols have no hand-written decoder — try the
+            # validated user cards from the registry so a freshly taught AC
+            # gets the same live tracking as the built-in families.
+            try:
+                from services.ir_card_registry import try_decode_with_user_cards
+                from services.ir_protocol import AcState, parse_broadlink_raw
+                hit = try_decode_with_user_cards(parse_broadlink_raw(received_bytes))
+            except Exception:
+                hit = None
+            if hit is None:
+                return None
+            card, _payload, values = hit
+            ac_state = AcState(power=values.get("power"),
+                               mode=values.get("mode"),
+                               temp=values.get("temp"),
+                               fan=values.get("fan"),
+                               swing=values.get("swing"),
+                               brand=card["id"])
+            devices = [d for d in list_ir_devices(enabled_only=True)
+                       if d.get("protocol_card_id") == card["id"]
+                       and (d.get("blaster_host") or "").strip() == host]
+            if not devices:
+                devices = [d for d in list_ir_devices(enabled_only=True)
+                           if d.get("protocol_card_id") == card["id"]]
+            if len(devices) != 1:
+                return None
+            return devices[0]["id"], ac_state, "ac_state_card"
 
         # Find AC device(s) on this blaster_host
         ac_devices = [
@@ -648,6 +674,23 @@ async def _on_code_received(received_bytes: bytes, host: str = "") -> None:
         record_capture(host)
     except Exception:
         pass
+
+    # Walk-wizard session: while active it consumes EVERY capture (known or
+    # unknown protocol — cracking unknowns is the point) and the normal
+    # match/state pipeline is skipped so a walk never pollutes device state.
+    try:
+        from services.ir_walk_session import try_consume_capture
+        walk_event = try_consume_capture(received_bytes)
+    except Exception as e:
+        log_error(f"[IRListener] walk consume failed: {e}")
+        walk_event = None
+    if walk_event is not None:
+        try:
+            from backend.ws_manager import manager
+            await manager.broadcast(walk_event)
+        except Exception as e:
+            log_error(f"[IRListener] walk broadcast failed: {e}")
+        return
 
     match = _find_code_match(received_bytes)
 

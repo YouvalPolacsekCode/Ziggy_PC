@@ -890,6 +890,62 @@ def _decode_tadiran_ac_state(payload: bytes) -> Optional[AcState]:
                    brand="tadiran")
 
 
+# Canonical TX pulse timings, taken from the center of the real-capture
+# distributions (bit-1 marks 1773-1872µs / spaces 657-755µs; bit-0 marks
+# 525-624µs / spaces 1905-2003µs; leaders 8374-8500/4630-4729µs).
+_TADIRAN_TX_BIT1 = (1840, 700)
+_TADIRAN_TX_BIT0 = (600, 1950)
+_TADIRAN_TX_LEADER = (8470, 4680)
+_TADIRAN_TX_HALF_TRAILER = (1700, 33000)   # trailing mark + inter-half gap
+_TADIRAN_TX_END = (1700, 100000)           # trailing mark + closing silence
+
+
+def encode_tadiran_state(*, mode: str, temp: int, fan: str,
+                         swing: bool = False,
+                         power_toggle: bool = False) -> Optional[bytes]:
+    """Compose a Broadlink-wrapped Tadiran frame for a target state.
+
+    The inverse of _decode_tadiran_ac_state, built from the byte map the
+    2026-07-27 walk validated: fan|mode nibbles, temp*2, toggle marker,
+    swing byte, nibble-sum checksum; two identical 64-bit halves like the
+    real remote. A settings frame (power_toggle=False) means "running with
+    these settings" — it turns the unit on if it was off. The toggle frame
+    (power_toggle=True) flips power; use it only for OFF, guarded by
+    current belief.
+
+    Returns None for states outside the validated envelope — never guess
+    on TX; a wrong frame changes someone's real AC.
+    """
+    mode_nibble = next((k for k, v in _TADIRAN_MODE_MAP.items() if v == mode), None)
+    fan_nibble = next((k for k, v in _TADIRAN_FAN_MAP.items() if v == fan), None)
+    try:
+        temp_i = int(temp)
+    except (TypeError, ValueError):
+        return None
+    if mode_nibble is None or fan_nibble is None:
+        return None
+    if not (_TADIRAN_TEMP_MIN <= temp_i <= _TADIRAN_TEMP_MAX):
+        return None
+
+    payload = bytearray(8)
+    payload[0] = 0x01
+    payload[1] = (fan_nibble << 4) | mode_nibble
+    payload[2] = temp_i * 2
+    payload[5] = _TADIRAN_POWER_TOGGLE_MARKER if power_toggle else 0x30
+    payload[6] = 0xC0 if swing else 0x00
+    payload[7] = tadiran_checksum(payload)
+
+    bit_pulses: list[int] = []
+    for byte in payload:
+        for i in range(8):  # LSB first, mirroring _bits_to_bytes
+            bit_pulses.extend(_TADIRAN_TX_BIT1 if (byte >> i) & 1
+                              else _TADIRAN_TX_BIT0)
+    half = list(_TADIRAN_TX_LEADER) + bit_pulses
+    pulses = (half + list(_TADIRAN_TX_HALF_TRAILER)
+              + half + list(_TADIRAN_TX_END))
+    return encode_broadlink_raw(pulses)
+
+
 def _collect_tadiran_half(pulses: list[int], start: int,
                           max_ambiguous: int = 3) -> tuple[list[int], int]:
     """Collect one half's bits from pulse-pairs starting at `start`.

@@ -491,17 +491,21 @@ function hasFeature(entity, bit) {
   return ((entity.supported_features ?? 0) & bit) === bit
 }
 
+// Commands the hub composes from a cracked protocol (e.g. Tadiran AC) need
+// no learned code — the backend advertises them as synth_commands.
+function _irDeviceHasCommand(irDevice, cmd) {
+  if (!irDevice) return false
+  if ((irDevice.learned_commands || []).includes(cmd)) return true
+  return (irDevice.synth_commands || []).includes(cmd)
+}
+
 function irHasCommand(entity, cmd) {
   if (!entity._ir || !entity._irDevice) return false
-  const learned = new Set(entity._irDevice.learned_commands || [])
-  return learned.has(cmd)
+  return _irDeviceHasCommand(entity._irDevice, cmd)
 }
 
 function linkedIrHasCommand(entity, cmd) {
-  const ir = entity._linkedIr
-  if (!ir) return false
-  const learned = new Set(ir.learned_commands || [])
-  return learned.has(cmd)
+  return _irDeviceHasCommand(entity._linkedIr, cmd)
 }
 
 /**
@@ -1157,9 +1161,10 @@ function resolveIrCommandName(kind, command, params) {
 
 function pickLearnedIrCommand(irDevice, candidates) {
   if (!irDevice || !candidates) return null
-  const learned = new Set(irDevice.learned_commands || [])
   for (const c of candidates) {
-    if (learned.has(c)) return c
+    // learned OR hub-composable (synth_commands) — same rule as
+    // commandAvailable, or the send path rejects what the UI enabled.
+    if (_irDeviceHasCommand(irDevice, c)) return c
   }
   return null
 }

@@ -15,6 +15,7 @@ const RoomDetail      = lazy(() => import('./pages/Rooms').then(m => ({ default:
 const Devices         = lazy(() => import('./pages/Devices'))
 const DeviceDetail    = lazy(() => import('./pages/DeviceDetail'))
 const Remote          = lazy(() => import('./pages/Remote'))
+const IrWalkWizard    = lazy(() => import('./pages/IrWalkWizard'))
 const Actions         = lazy(() => import('./pages/Actions'))
 const Routines        = lazy(() => import('./pages/Routines'))
 const AIChat          = lazy(() => import('./pages/AIChat'))
@@ -358,13 +359,24 @@ function AppRoutes() {
           })
         }
       }
-      addToast(i18nT('toast.physicalRemote', { cmd }), 'info', 3000)
+      // Only announce PHYSICAL presses — the same event type also carries
+      // Ziggy-initiated command results (source: ziggy_command), and
+      // toasting "remote used" for the user's own app tap is confusing.
+      if (last.source !== 'ziggy_command') {
+        addToast(i18nT('toast.physicalRemote', { cmd }), 'info', 3000)
+      }
     }
 
     // Unknown IR signal — re-broadcast as a window event so Devices.jsx can
     // refresh the "Unassigned signals" badge without opening its own WS.
     if (last.type === 'ir_unknown_signal') {
       window.dispatchEvent(new CustomEvent('ziggy:ir_unknown_signal', { detail: last }))
+    }
+
+    // IR Walk Wizard capture — re-broadcast so IrWalkWizard.jsx can flash
+    // its "Heard it!" feedback without opening its own WS.
+    if (last.type === 'ir_walk_capture') {
+      window.dispatchEvent(new CustomEvent('ziggy:ir_walk_capture', { detail: last }))
     }
 
     // Automation / routine execution result
@@ -400,6 +412,7 @@ function AppRoutes() {
         <Route path="devices" element={<Devices />} />
         <Route path="devices/:entityId" element={<DeviceDetail />} />
         <Route path="remote/:irId" element={<Remote />} />
+        <Route path="ir-walk/:deviceId" element={<IrWalkWizard />} />
         <Route path="actions" element={<Actions />} />
         {/* Old /automations URL still works — redirects to the new umbrella page. */}
         <Route path="automations" element={<Navigate to="/actions" replace />} />

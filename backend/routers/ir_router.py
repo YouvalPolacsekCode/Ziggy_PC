@@ -333,14 +333,25 @@ async def ir_diagnostics_reset(host: Optional[str] = None):
 
 @router.get("/api/ir/devices")
 async def get_ir_devices(room: Optional[str] = None, device_type: Optional[str] = None):
-    return {"devices": list_ir_devices(room=room, device_type=device_type, enabled_only=False)}
+    from services.ir_manager import synthesizable_commands
+    devices = []
+    for d in list_ir_devices(room=room, device_type=device_type, enabled_only=False):
+        d = dict(d)
+        # Commands the backend can COMPOSE from a cracked protocol (no
+        # learned code needed) — the app enables these controls too.
+        d["synth_commands"] = synthesizable_commands(d)
+        devices.append(d)
+    return {"devices": devices}
 
 
 @router.get("/api/ir/devices/{device_id}")
 async def get_single_ir_device(device_id: str):
+    from services.ir_manager import synthesizable_commands
     device = get_ir_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="IR device not found")
+    device = dict(device)
+    device["synth_commands"] = synthesizable_commands(device)
     return device
 
 
@@ -617,6 +628,7 @@ async def ir_ac_temperature(device_id: str, body: IrAcTempBody):
     result = await send_ac_temperature(device_id, body.temperature, body.mode)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "Temperature send failed"))
+    await _broadcast_tx_state(device_id, f"temp_{body.temperature}")
     return result
 
 
@@ -708,6 +720,50 @@ async def ir_learn(body: IrLearnBody):
 # Send
 # ---------------------------------------------------------------------------
 
+
+
+async def _broadcast_tx_state(device_id: str, command: str) -> None:
+    """Push post-command state to connected apps. The RX/listener path
+    broadcasts on every physical press; every TX endpoint must do the same
+    or Ziggy-initiated changes stay invisible until the next poll. Loudly
+    logged — a silent failure here looks like 'the app ignored my tap'."""
+    from core.logger_module import log_error, log_info
+    try:
+        from services.ir_manager import get_ir_device as _get_dev
+        from services.ir_manager import get_device_state_snapshot as _snap
+        from backend.ws_manager import manager as _ws_manager
+        device = _get_dev(device_id)
+        if not device:
+            return
+        snap = _snap(device)
+        payload = {
+            "type": "ir_command_detected",
+            "device_id": device_id,
+            "command": command,
+            "new_assumed_state": device.get("assumed_state"),
+            "source": "ziggy_command",
+            "state": snap,
+        }
+        # The AC card renders temp/mode/fan from the legacy ac_memory field,
+        # which the app only updates from an ac_state block (the listener
+        # includes one; TX must too or the card ignores the event).
+        vals = (snap or {}).get("values") or {}
+        if (snap or {}).get("template") == "ac":
+            payload["ac_state"] = {
+                "power": "on" if vals.get("power") else "off",
+                "mode": vals.get("mode"),
+                "temp": vals.get("temp"),
+                "fan": vals.get("fan"),
+                "brand": "ziggy_synth",
+            }
+        await _ws_manager.broadcast(payload)
+        log_info(f"[IR] TX state broadcast: device={device_id} command={command}")
+    except Exception as e:
+        log_error(f"[IR] TX state broadcast FAILED: device={device_id} command={command}: {e}")
+
+
+
+
 @router.post("/api/ir/send")
 async def ir_send(body: IrSendBody):
     # The IR send path itself emits scope=ir VERBOSE events from ir_manager;
@@ -718,6 +774,7 @@ async def ir_send(body: IrSendBody):
     result = send_ir_command(body.device_id, body.command, repeats=body.repeats)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("message", "Send failed"))
+    await _broadcast_tx_state(body.device_id, body.command)
     return result
 
 

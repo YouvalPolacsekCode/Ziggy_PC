@@ -251,6 +251,9 @@ def update_ir_device(device_id: str, updates: dict) -> Optional[dict]:
         # Blaster vendor selector (broadlink | avatto | ...) — picked by the
         # blaster abstraction registry. Falls back to broadlink when missing.
         "blaster_vendor", "blaster_model",
+        # Walk-cracked protocol card pin + the wizard's validation-pass
+        # trial window (see _tx_card_for_device / ir_walk_session).
+        "protocol_card_id", "protocol_card_trial",
     }
     # normalise device_type → type (frontend uses device_type, storage uses type)
     if "device_type" in updates:
@@ -763,6 +766,116 @@ def resolve_ir_device(
 # Single command dispatch
 # ---------------------------------------------------------------------------
 
+def _tx_card_for_device(device: dict):
+    """The tx-validated protocol card this device demonstrably speaks, or
+    None. Evidence-based gate: at least one stored code must decode to the
+    card's family. Never synthesize for an unknown protocol."""
+    from services.ir_protocol import decode_protocol_b64
+    from services.ir_protocol_cards import card_for_family
+
+    # Walk-cracked devices carry an explicit card pin. Trial mode allows
+    # synthesis with a not-yet-validated card ONLY during the wizard's
+    # validation pass (the user is standing at the AC to judge it).
+    pinned = device.get("protocol_card_id")
+    if pinned:
+        from services.ir_card_registry import tx_card_by_id
+        card = tx_card_by_id(pinned,
+                             allow_trial=bool(device.get("protocol_card_trial")))
+        if card:
+            return card
+
+    for stored_b64 in (device.get("ir_codes") or {}).values():
+        dec = decode_protocol_b64(stored_b64)
+        if dec is None:
+            continue
+        family = "tadiran_ac" if dec.family == "tadiran_short" else dec.family
+        card = card_for_family(family, tx_only=True)
+        if card:
+            return card
+    return None
+
+
+def synthesizable_commands(device: dict) -> list[str]:
+    """Commands this device can receive WITHOUT a learned code, composed
+    from a cracked protocol card. Empty for devices that don't demonstrably
+    speak a tx-validated one. Used by the API layer so the app enables
+    these controls."""
+    card = _tx_card_for_device(device)
+    if not card:
+        return []
+    fields = card.get("fields") or {}
+    cmds = ["power", "power_on", "power_off"]
+    temp = fields.get("temp")
+    if temp:
+        cmds += ["temp_up", "temp_down"]
+        cmds += [f"temp_{t}" for t in range(temp.get("min", 16), temp.get("max", 30) + 1)]
+    if fields.get("mode", {}).get("map"):
+        cmds += [f"mode_{m}" for m in fields["mode"]["map"].values()]
+    if fields.get("fan", {}).get("map"):
+        cmds += [f"fan_{f}" for f in fields["fan"]["map"].values()]
+    if "swing" in fields:
+        cmds.append("swing")
+    return cmds
+
+
+def _synthesize_tadiran_command_b64(device: dict, logical_command: str):
+    """Compose a Broadlink code for `logical_command` from the device's
+    tx-validated protocol card, or None when not applicable. (Name kept
+    from the Tadiran-only original; now card-driven for every family.)
+
+    Target state = current believed state + the command's delta. On
+    toggle-marker protocols (Tadiran), power_off/power use the toggle
+    frame — correct only when belief matches reality, which the RX
+    listener keeps true — and power_on sends a plain settings frame
+    (belief-independent). On power-bit protocols the bit is set directly.
+    """
+    import base64 as _b64
+    from services.ir_protocol_cards import encode_pulses, encode_state
+
+    card = _tx_card_for_device(device)
+    if not card:
+        return None
+
+    values = ((device.get("state") or {}).get("values") or {})
+    mode = values.get("mode") or "cool"
+    fan = values.get("fan") or "auto"
+    swing = bool(values.get("swing", False))
+    try:
+        temp = int(values.get("temp") or 24)
+    except (TypeError, ValueError):
+        temp = 24
+
+    toggle = False
+    cmd = logical_command
+    if cmd in ("power_off", "power"):
+        toggle = True
+    elif cmd == "power_on":
+        pass                       # settings frame turns the unit on
+    elif cmd == "temp_up":
+        temp += 1
+    elif cmd == "temp_down":
+        temp -= 1
+    elif cmd.startswith("temp_") and cmd[5:].isdigit():
+        temp = int(cmd[5:])
+    elif cmd.startswith("mode_"):
+        mode = cmd[5:]
+    elif cmd.startswith("fan_") and cmd != "fan_cycle":
+        fan = cmd[4:]
+    elif cmd == "swing":
+        swing = not swing
+    else:
+        return None                # not a state command we can compose
+
+    tspec = (card.get("fields") or {}).get("temp") or {}
+    temp = max(tspec.get("min", 16), min(tspec.get("max", 30), temp))
+    power_value = "off" if cmd in ("power_off",) else "on"
+    payload = encode_state(card, mode=mode, temp=temp, fan=fan, swing=swing,
+                           power=power_value, power_toggle=toggle)
+    if payload is None:
+        return None
+    return _b64.b64encode(encode_pulses(card, payload)).decode()
+
+
 def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> dict:
     """
     Send one logical command and update assumed state.
@@ -803,6 +916,29 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
                             message=result.get("message"),
                             suggestion="Check blaster_host connectivity and raw IR code validity.")
         return result
+
+    # Path 1.5: synthesize the frame from the cracked protocol. For ACs that
+    # speak a fully reverse-engineered stateful protocol (Tadiran), commands
+    # never learned as buttons are COMPOSED: target state -> bytes ->
+    # checksum -> pulses. This is what turns ~40 listening presses into
+    # unlimited sending. Learned codes still win (path 1) — synthesis only
+    # fills the gaps.
+    if blaster_host and not raw_code_b64:
+        synth_b64 = _synthesize_tadiran_command_b64(device, logical_command)
+        if synth_b64:
+            result = _direct_send(blaster_host, synth_b64, repeats)
+            if result.get("ok"):
+                _after_command(device_id, device, logical_command)
+                _debug_bus.emit("ir", BASIC, "ir_command_sent",
+                                device_id=device_id, command=logical_command,
+                                path="synthesized", result="ok")
+            else:
+                _debug_bus.emit("ir", BASIC, "ir_command_failed",
+                                device_id=device_id, command=logical_command,
+                                path="synthesized", result="error",
+                                message=result.get("message"),
+                                suggestion="Check blaster_host connectivity.")
+            return result
 
     # Path 2: HA remote.send_command (original flow)
     command_map: dict = device.get("commands") or {}
