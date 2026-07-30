@@ -578,6 +578,47 @@ export const createUser       = (data)       => post('/auth/users', data)
 export const updateUser       = (username, data) => request('PATCH', `/auth/users/${encodeURIComponent(username)}`, data)
 export const deleteUser       = (username)   => del(`/auth/users/${encodeURIComponent(username)}`)
 
+// Self-service account deletion (Apple 5.1.1(v)). Any authenticated user; the
+// owner (super_admin) is rejected with 409 + a structured detail payload the
+// caller inspects to pivot to factory-reset. We bypass the generic post()
+// helper here because it drops non-string HTTPException detail dicts — we
+// need the { needs_factory_reset: true } flag intact.
+//
+// Return shape:
+//   { ok: true, deleted: <username>, already_gone?: bool }           // 200
+//   { ok: false, needs_factory_reset: true, message: <string> }      // 409 owner
+// Any other status → throws with { status, message }.
+export async function deleteMyAccount() {
+  const token = localStorage.getItem('ziggy_token')
+  const res = await fetch(`${BASE}/auth/me/delete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({}),
+  })
+  if (res.ok) return { ok: true, ...(await res.json()) }
+  const body = await res.json().catch(() => ({}))
+  const detail = body?.detail
+  if (res.status === 409 && detail && typeof detail === 'object'
+      && detail.needs_factory_reset === true) {
+    return { ok: false, needs_factory_reset: true, message: detail.message || '' }
+  }
+  const err = new Error(
+    (detail && typeof detail === 'string' && detail)
+    || (detail && detail.message)
+    || `Delete failed (${res.status})`)
+  err.status = res.status
+  throw err
+}
+
+// Wipe the whole hub back to factory state. super_admin only. Destructive:
+// requires { confirm: true }. Use as the owner-path replacement for delete
+// account (owner cannot self-delete without stranding the hub).
+export const factoryResetHub  = (reason = '') =>
+  post('/admin/factory-reset', { confirm: true, dry_run: false, reason })
+
 // Invite flow (super_admin for create/list/revoke; public for get/accept)
 export const createInvite     = (data)       => post('/auth/invites', data)
 export const listInvites      = ()           => get('/auth/invites')
