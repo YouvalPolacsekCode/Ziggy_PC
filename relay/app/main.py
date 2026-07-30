@@ -77,6 +77,9 @@ app.include_router(ota_router)
 # Telemetry router same pattern — absolute paths under /api/devices/* +
 # /api/admin/homes/*/telemetry, no router prefix, mounted before proxy.
 app.include_router(telemetry_router)
+
+from .routers.protocol_cards import router as protocol_cards_router
+app.include_router(protocol_cards_router)
 # LLM proxy — absolute path /api/devices/{id}/llm/v1/chat/completions, no prefix,
 # MUST mount before the catch-all proxy so it isn't forwarded to a hub.
 app.include_router(llm_router)

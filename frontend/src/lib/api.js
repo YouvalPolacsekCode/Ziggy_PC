@@ -914,6 +914,19 @@ export const clearIrUnassignedSignals = () => del('/ir/unassigned-signals')
 // IR device state + confidence (live)
 export const getIrDeviceState = (deviceId) => get(`/ir/devices/${deviceId}/state`)
 
+// ── IR Walk Wizard — guided remote-learning walk ─────────────────────────────
+// The wizard page (/ir-walk/:deviceId) drives a backend step machine: start a
+// session, record the user's observations per scripted button press, then
+// finish/validate. Live capture feedback arrives via the 'ir_walk_capture'
+// WS message (re-broadcast as the 'ziggy:ir_walk_capture' window event).
+export const irWalkStart    = (deviceId)            => post('/ir/walk/start', { device_id: deviceId })
+export const irWalkStatus   = (sessionId)           => get(`/ir/walk/${encodeURIComponent(sessionId)}`)
+export const irWalkObserve  = (sessionId, observed) => post(`/ir/walk/${encodeURIComponent(sessionId)}/observe`, { observed })
+export const irWalkNext     = (sessionId)           => post(`/ir/walk/${encodeURIComponent(sessionId)}/next`)
+export const irWalkFinish   = (sessionId)           => post(`/ir/walk/${encodeURIComponent(sessionId)}/finish`)
+export const irWalkValidate = (sessionId, obeyed)   => post(`/ir/walk/${encodeURIComponent(sessionId)}/validate`, { obeyed })
+export const irWalkAbort    = (sessionId)           => post(`/ir/walk/${encodeURIComponent(sessionId)}/abort`)
+
 // Quick Asks
 export const getQuickAsks = () => get('/quick-asks')
 export const createQuickAsk = (data) => post('/quick-asks', data)

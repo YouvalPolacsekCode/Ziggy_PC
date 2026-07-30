@@ -1901,6 +1901,21 @@ const DeviceCard = forwardRef(function DeviceCard({
           </p>
         )}
 
+        {/* IR Walk Wizard entry — only for IR ACs Ziggy hasn't learned yet
+            (no synthesized command set). Subtle text link under the card
+            controls; the wizard lives at /ir-walk/:deviceId. */}
+        {isIr && getKind(entity) === KIND.AC && irDevice &&
+          (irDevice.synth_commands || []).length === 0 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/ir-walk/${irDevice.id}`) }}
+            className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-accent hover:underline"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+          >
+            <Sparkles size={11} />
+            {t('devices.teachZiggyRemote')}
+          </button>
+        )}
+
         {/* Expanded control surface — animated height + fade so opening
             and closing doesn't snap the list around. Hidden / sensor /
             unavailable devices never reach this branch. */}

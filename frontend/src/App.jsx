@@ -15,6 +15,7 @@ const RoomDetail      = lazy(() => import('./pages/Rooms').then(m => ({ default:
 const Devices         = lazy(() => import('./pages/Devices'))
 const DeviceDetail    = lazy(() => import('./pages/DeviceDetail'))
 const Remote          = lazy(() => import('./pages/Remote'))
+const IrWalkWizard    = lazy(() => import('./pages/IrWalkWizard'))
 const Actions         = lazy(() => import('./pages/Actions'))
 const Routines        = lazy(() => import('./pages/Routines'))
 const AIChat          = lazy(() => import('./pages/AIChat'))
@@ -362,6 +363,12 @@ function AppRoutes() {
       window.dispatchEvent(new CustomEvent('ziggy:ir_unknown_signal', { detail: last }))
     }
 
+    // IR Walk Wizard capture — re-broadcast so IrWalkWizard.jsx can flash
+    // its "Heard it!" feedback without opening its own WS.
+    if (last.type === 'ir_walk_capture') {
+      window.dispatchEvent(new CustomEvent('ziggy:ir_walk_capture', { detail: last }))
+    }
+
     // Automation / routine execution result
     if (last.type === 'execution_result') {
       const { label, ok, steps_total, steps_failed, errors } = last
@@ -395,6 +402,7 @@ function AppRoutes() {
         <Route path="devices" element={<Devices />} />
         <Route path="devices/:entityId" element={<DeviceDetail />} />
         <Route path="remote/:irId" element={<Remote />} />
+        <Route path="ir-walk/:deviceId" element={<IrWalkWizard />} />
         <Route path="actions" element={<Actions />} />
         {/* Old /automations URL still works — redirects to the new umbrella page. */}
         <Route path="automations" element={<Navigate to="/actions" replace />} />

@@ -177,9 +177,25 @@ def push_cards_to_relay() -> bool:
     if not cards:
         return True
     try:
+        import json as _json
+
         import httpx
+
+        from core.relay_signing import sign as _sign
+        from core.settings_loader import load_settings
+        settings = load_settings()
+        home_id = ((settings.get("home") or {}).get("id")) or ""
+        secret = ((settings.get("relay") or {}).get("secret")) or ""
+        if not home_id or not secret:
+            log_info("[CardRegistry] relay push skipped (no home id/secret)")
+            return False
+        body = _json.dumps({"cards": cards}, sort_keys=True,
+                           separators=(",", ":")).encode("utf-8")
         r = httpx.post(f"{base}/api/protocol-cards",
-                       json={"cards": cards}, timeout=10)
+                       params={"home_id": home_id}, content=body,
+                       headers={"X-Ziggy-Signature": _sign(secret, body),
+                                "Content-Type": "application/json"},
+                       timeout=10)
         ok = r.status_code < 300
         log_info(f"[CardRegistry] relay push: {r.status_code}")
         return ok
