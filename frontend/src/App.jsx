@@ -68,7 +68,7 @@ import AcceptInvite from './pages/AcceptInvite'
 import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings, getPresenceZone, listPresenceZones, reportMyLanIp } from './lib/api'
 import { entityDisplayName, humanizeSlug } from './lib/utils'
 import { setLang as setI18nLang, t as i18nT } from './lib/i18n'
-import { isNative, registerForPush } from './lib/native'
+import { isNative, registerForPush, ensureBackgroundAllowed } from './lib/native'
 import { getDeviceToken, registerDevice } from './lib/mobileApi'
 import SubscriptionGateBanner from './components/SubscriptionGateBanner'
 
@@ -820,6 +820,9 @@ export default function App() {
           await ZP.requestPermissions({ motion: true })
         }
       } catch {}
+      // Keep the app exempt from OEM battery-killing so background geofences
+      // survive (the real-drive precool miss was Samsung killing the app).
+      try { await ensureBackgroundAllowed() } catch {}
       if (!alive) return
 
       // Geofence the home zone (radius floored at 100 m — the iOS region minimum)

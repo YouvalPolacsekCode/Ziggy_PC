@@ -153,6 +153,18 @@ def schedule_side_effects(decision: Decision) -> None:
 
     Must be called from inside an asyncio event loop — uses asyncio.create_task.
     """
+    # Fire any extra-zone (approach ring) transitions FIRST — independent of the
+    # home/not_home transition, and must fire even when the home state did NOT
+    # change (e.g. crossing into "Near Home" while still outside the 150m home
+    # ring). Without this, ping-derived approach crossings were computed by the
+    # engine but never fired (only the OS-geofence path fired zones), so
+    # Pre-cool missed on real drives whenever the OS home_near geofence failed
+    # to deliver (Android OEM app-kill). Now pings are a reliable second path.
+    try:
+        schedule_zone_side_effects(decision)
+    except Exception as exc:
+        log_error(f"[Presence] zone side effects from ping failed: {exc}")
+
     if not decision.fired_transition:
         return
     new_state = decision.new_confirmed

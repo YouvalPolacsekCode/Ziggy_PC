@@ -114,6 +114,32 @@ export async function registerForPush(onToken) {
   }
 }
 
+// Ask the OS to exempt Ziggy from battery optimization so its background
+// geofences survive OEM app-killing (the reason a real drive can miss the
+// approach ring). Standard one-tap system dialog. On Samsung/Xiaomi there's an
+// EXTRA "sleeping apps" layer the standard dialog can't reach — if the app is
+// still killable afterwards, deep-link the user into the OEM settings screen.
+// Idempotent + best-effort: silent no-op on web or if already exempted.
+export async function ensureBackgroundAllowed() {
+  const ZP = plugin('ZiggyPresence')
+  if (!ZP) return { ok: false }
+  try {
+    const before = await ZP.getAntiKillStatus?.().catch(() => null)
+    if (before?.batteryOptimized === false || before?.exempt === true) return { ok: true, already: true }
+    if (ZP.requestBatteryOptimizationExemption) await ZP.requestBatteryOptimizationExemption()
+    const after = await ZP.getAntiKillStatus?.().catch(() => null)
+    // Still killable (Samsung/Xiaomi deep-sleep) → open the OEM autostart screen.
+    const stillKillable = after && (after.batteryOptimized === true || after.exempt === false || after.canBeKilled === true)
+    if (stillKillable && ZP.openManufacturerAutostartSettings) {
+      try { await ZP.openManufacturerAutostartSettings() } catch {}
+    }
+    return { ok: true, status: after }
+  } catch (e) {
+    try { console.warn('[antikill] request failed', e) } catch {}
+    return { ok: false }
+  }
+}
+
 // Persistent storage (uses Capacitor Preferences on native, localStorage on web).
 export const storage = {
   async get(key) {
