@@ -597,6 +597,12 @@ def _handle_geofence_event(device: dict, person_id: str, data: dict) -> dict:
     if zone_id == "home_near":
         if transition == "enter":
             _fire_approaching_home_push(person_id)
+        # Fire approach automations (e.g. Pre-cool on Arrival) off the always-
+        # registered approach ring. Previously this branch only sent a push, so
+        # precool never fired from a real drive — the automation depended on a
+        # fragile custom-zone OS geofence. This makes the approach ring itself
+        # the trigger. (harmless on exit — no zone_left automations for it)
+        _fire_approach_automations(person_id, transition)
         log_info(
             f"[mobile_app] geofence {transition} zone=home_near "
             f"person={person_id} device={device['device_id']}"
@@ -657,6 +663,47 @@ def _handle_geofence_event(device: dict, person_id: str, data: dict) -> dict:
 # resetting on process restart is harmless (a single missed dedupe at most).
 _LAST_APPROACH_PUSH: dict[str, datetime] = {}
 _APPROACH_PUSH_COOLDOWN_S = 600  # 10 min — matches the engine's presence cooldown
+
+# The app registers the home-level "approach ring" under the FIXED geofence id
+# `home_near` (always OS-registered, unlike a synced custom zone). Approach
+# automations (e.g. Pre-cool on Arrival) trigger on the zone NAME, so we fan
+# out under this canonical name — the same name the auto-created approach zone
+# and the PrecoolWizard use.
+APPROACH_ZONE_NAME = "Near Home"
+
+
+def _fire_approach_automations(person_id: str, transition: str) -> None:
+    """Fire `zone_entered`/`zone_left` automations bound to the approach ring
+    (e.g. Pre-cool on Arrival) when the phone crosses the always-registered
+    `home_near` OS geofence.
+
+    This is the RELIABLE approach trigger: `home_near` is registered by the app
+    on every launch, so it fires even when a custom "Near Home" zone was never
+    synced to the OS as its own geofence. Mirrors the registered-zone fanout.
+    """
+    try:
+        person = presence_engine.find_person_by_id(person_id) or {"id": person_id, "name": ""}
+        from services.presence_engine import ZoneTransition
+        from services.presence_side_effects import schedule_zone_side_effects
+        from datetime import datetime, timezone
+        zt = ZoneTransition(
+            zone_id     = "home_near",
+            zone_name   = APPROACH_ZONE_NAME,
+            direction   = "entered" if transition == "enter" else "left",
+            ts          = datetime.now(timezone.utc),
+            person_id   = person_id,
+            person_name = person.get("name", ""),
+            reason      = f"ziggy_mobile_approach_{transition}",
+        )
+
+        class _Stub:
+            fired_transition = False
+            new_confirmed = "unknown"
+        stub = _Stub()
+        stub.zone_transitions = [zt]
+        schedule_zone_side_effects(stub)
+    except Exception as e:
+        log_error(f"[mobile_app] approach automation fanout failed: {e}")
 
 
 def _corroboration_evidence(device: dict, person_id: str) -> dict:

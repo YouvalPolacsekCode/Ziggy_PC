@@ -723,43 +723,11 @@ async def ir_learn(body: IrLearnBody):
 
 
 async def _broadcast_tx_state(device_id: str, command: str) -> None:
-    """Push post-command state to connected apps. The RX/listener path
-    broadcasts on every physical press; every TX endpoint must do the same
-    or Ziggy-initiated changes stay invisible until the next poll. Loudly
-    logged — a silent failure here looks like 'the app ignored my tap'."""
-    from core.logger_module import log_error, log_info
-    try:
-        from services.ir_manager import get_ir_device as _get_dev
-        from services.ir_manager import get_device_state_snapshot as _snap
-        from backend.ws_manager import manager as _ws_manager
-        device = _get_dev(device_id)
-        if not device:
-            return
-        snap = _snap(device)
-        payload = {
-            "type": "ir_command_detected",
-            "device_id": device_id,
-            "command": command,
-            "new_assumed_state": device.get("assumed_state"),
-            "source": "ziggy_command",
-            "state": snap,
-        }
-        # The AC card renders temp/mode/fan from the legacy ac_memory field,
-        # which the app only updates from an ac_state block (the listener
-        # includes one; TX must too or the card ignores the event).
-        vals = (snap or {}).get("values") or {}
-        if (snap or {}).get("template") == "ac":
-            payload["ac_state"] = {
-                "power": "on" if vals.get("power") else "off",
-                "mode": vals.get("mode"),
-                "temp": vals.get("temp"),
-                "fan": vals.get("fan"),
-                "brand": "ziggy_synth",
-            }
-        await _ws_manager.broadcast(payload)
-        log_info(f"[IR] TX state broadcast: device={device_id} command={command}")
-    except Exception as e:
-        log_error(f"[IR] TX state broadcast FAILED: device={device_id} command={command}: {e}")
+    """Thin wrapper — the implementation now lives in ir_manager so BOTH the
+    manual IR endpoints (here) and the automation executor broadcast
+    identically. Kept for the existing call sites in this router."""
+    from services.ir_manager import broadcast_tx_state
+    await broadcast_tx_state(device_id, command)
 
 
 

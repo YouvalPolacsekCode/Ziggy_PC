@@ -606,6 +606,50 @@ def get_device_state_snapshot(device: dict) -> dict:
     return snap
 
 
+async def broadcast_tx_state(device_id: str, command: str) -> None:
+    """Push post-command state to connected apps after a Ziggy-initiated send.
+
+    The RX/listener path broadcasts on every physical remote press; EVERY TX
+    path must do the same or Ziggy-initiated changes stay invisible on the card
+    until the next poll. This is the single source of truth called by both the
+    manual IR endpoints (ir_router) AND the automation executor
+    (local_automation_actions) — the latter was previously missing it, so
+    automation-driven AC changes never updated the card. Loudly logged — a
+    silent failure here looks like "the app ignored my command".
+    """
+    from core.logger_module import log_error, log_info
+    try:
+        from backend.ws_manager import manager as _ws_manager
+        device = get_ir_device(device_id)
+        if not device:
+            return
+        snap = get_device_state_snapshot(device)
+        payload = {
+            "type": "ir_command_detected",
+            "device_id": device_id,
+            "command": command,
+            "new_assumed_state": device.get("assumed_state"),
+            "source": "ziggy_command",
+            "state": snap,
+        }
+        # The AC card renders temp/mode/fan from the legacy ac_memory field,
+        # which the app only updates from an ac_state block (the listener
+        # includes one; TX must too or the card ignores the event).
+        vals = (snap or {}).get("values") or {}
+        if (snap or {}).get("template") == "ac":
+            payload["ac_state"] = {
+                "power": "on" if vals.get("power") else "off",
+                "mode": vals.get("mode"),
+                "temp": vals.get("temp"),
+                "fan": vals.get("fan"),
+                "brand": "ziggy_synth",
+            }
+        await _ws_manager.broadcast(payload)
+        log_info(f"[IR] TX state broadcast: device={device_id} command={command}")
+    except Exception as e:
+        log_error(f"[IR] TX state broadcast FAILED: device={device_id} command={command}: {e}")
+
+
 def _record_last_command(device_id: str, command: str) -> None:
     devices = _load()
     for d in devices:

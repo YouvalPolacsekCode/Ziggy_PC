@@ -80,6 +80,22 @@ async def send_to_user(user_id: str, *, title: str, body: str,
     ])
 
 
+async def send_to_all(*, title: str, body: str,
+                      data: Optional[dict] = None) -> list[dict]:
+    """Fan a push out to EVERY registered mobile device that has a token +
+    provider. Used by the shared web-push path so automation/presence/anomaly
+    notifications reach native phones too, not just browsers. Best-effort and
+    a fast no-op when no device has a token yet (e.g. before FCM is set up).
+    """
+    targets = [d for d in _all_devices()
+               if d.get("push_token") and d.get("push_provider")]
+    if not targets:
+        return []
+    return await asyncio.gather(*[
+        _send(d, title=title, body=body, data=data or {}) for d in targets
+    ])
+
+
 # ── Internals ────────────────────────────────────────────────────────────────
 
 def _all_devices() -> list[dict]:

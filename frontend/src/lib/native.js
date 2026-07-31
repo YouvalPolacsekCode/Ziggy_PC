@@ -82,6 +82,38 @@ export async function requestNotificationPermission() {
   return result
 }
 
+// Register for NATIVE push (FCM on Android, APNs on iOS) and hand the device
+// token back via onToken(token, provider). No-op on web / when the plugin is
+// absent or permission is denied. Android webviews can't do web-push, so this
+// is the only way phones receive server notifications. Listeners are attached
+// once per session to avoid stacking on re-invocation.
+let _pushListenersAdded = false
+export async function registerForPush(onToken) {
+  const Push = plugin('PushNotifications')
+  if (!Push) return false
+  const provider = platform() === 'ios' ? 'apns' : 'fcm'
+  try {
+    let recv = (await Push.checkPermissions())?.receive
+    if (recv !== 'granted') recv = (await Push.requestPermissions())?.receive
+    if (recv !== 'granted') return false
+    if (!_pushListenersAdded) {
+      _pushListenersAdded = true
+      Push.addListener('registration', (t) => {
+        const tok = t?.value || t?.token || ''
+        if (tok) { try { onToken?.(tok, provider) } catch {} }
+      })
+      Push.addListener('registrationError', (e) => {
+        try { console.warn('[push] registrationError', e) } catch {}
+      })
+    }
+    await Push.register()   // fires 'registration' with the token
+    return true
+  } catch (e) {
+    try { console.warn('[push] register failed', e) } catch {}
+    return false
+  }
+}
+
 // Persistent storage (uses Capacitor Preferences on native, localStorage on web).
 export const storage = {
   async get(key) {

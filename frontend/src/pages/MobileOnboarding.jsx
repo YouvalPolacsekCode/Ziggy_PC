@@ -565,19 +565,30 @@ async function registerInitialGeofences(Pres) {
   try {
     await Pres.addGeofence({ id: 'home', lat: homeLat, lon: homeLon, radius_m: 150 })
   } catch {}
-  // Near-Home — ~800 m outer ring drives "approaching home" automations.
+
+  // Fetch backend zones once. The home-level "Near Home" approach ring
+  // (auto-created when home is set) supplies the home_near radius; the rest
+  // sync as their own geofences.
+  let backendZones = []
+  try { backendZones = (await listPresenceZones()).zones || [] } catch {}
+  const nearZone = backendZones.find(z => (z?.name || '').toLowerCase() === 'near home')
+  const approachRadius = Math.max(nearZone?.radius_m || 2000, 100)
+
+  // Near-Home approach ring — drives "approaching home" + Pre-cool automations.
   try {
-    await Pres.addGeofence({ id: 'home_near', lat: homeLat, lon: homeLon, radius_m: 800 })
+    await Pres.addGeofence({ id: 'home_near', lat: homeLat, lon: homeLon, radius_m: approachRadius })
   } catch {}
 
   // 3) Sync extra backend zones (Work, Gym, …). iOS caps at 20 total; we've
-  // used 2 for home + home_near, so add up to 18 more.
+  // used 2 for home + home_near, so add up to 18 more. Skip "Near Home" — it is
+  // already registered as the home_near ring above; double-registering it as
+  // its own geofence would double-fire the approach automations.
   try {
-    const { zones = [] } = await listPresenceZones()
     let added = 0
-    for (const z of zones) {
+    for (const z of backendZones) {
       if (added >= 18) break
       if (!z?.id || z.id === 'home' || z.id === 'home_near') continue
+      if ((z?.name || '').toLowerCase() === 'near home') continue
       if (typeof z.lat !== 'number' || typeof z.lon !== 'number') continue
       try {
         await Pres.addGeofence({

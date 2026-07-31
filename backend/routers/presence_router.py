@@ -445,6 +445,16 @@ async def save_zone(body: ZonePatch, _=Depends(require_role("admin"))):
     }
     save_settings(settings)
     log_info(f"[Presence] Home zone saved: {settings['home_zone']}")
+    # Auto-create / recentre the home-level "approach ring" (Near Home) so
+    # head-start automations (Pre-cool on Arrival) always have a zone to fire
+    # on — no separate "add Near Home" step. Recentres to the new home,
+    # preserving any user-chosen radius. Best-effort: a zone failure must not
+    # block saving the home location.
+    try:
+        from services import zones_registry
+        zones_registry.ensure_approach_zone(body.lat, body.lon)
+    except Exception as e:
+        log_error(f"[Presence] approach-ring auto-create failed: {e}")
     return {"ok": True, **settings["home_zone"]}
 
 
