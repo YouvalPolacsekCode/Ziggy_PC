@@ -65,11 +65,11 @@ import { useCameraStore } from './stores/cameraStore'
 import { useFeaturesStore, useFeature } from './stores/featuresStore'
 import LoginPage from './pages/LoginPage'
 import AcceptInvite from './pages/AcceptInvite'
-import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings, getPresenceZone, reportMyLanIp } from './lib/api'
+import { getAuthStatus, getPushVapidKey, subscribePush, getMyPresencePerson, getGeneralSettings, getPresenceZone, listPresenceZones, reportMyLanIp } from './lib/api'
 import { entityDisplayName, humanizeSlug } from './lib/utils'
 import { setLang as setI18nLang, t as i18nT } from './lib/i18n'
-import { isNative } from './lib/native'
-import { getDeviceToken } from './lib/mobileApi'
+import { isNative, registerForPush } from './lib/native'
+import { getDeviceToken, registerDevice } from './lib/mobileApi'
 import SubscriptionGateBanner from './components/SubscriptionGateBanner'
 
 // ─── Ops route guard + breadcrumb layout ─────────────────────────────────────
@@ -836,12 +836,21 @@ export default function App() {
             notify_on_enter: true,
             notify_on_exit: true,
           })
+          // Approach-ring radius comes from the home-level "Near Home" zone
+          // (auto-created when home is set, editable from the Pre-cool
+          // automation). Fall back to the default if it hasn't synced yet.
+          let approachRadius = NEAR_HOME_RADIUS_M
+          try {
+            const { zones = [] } = await listPresenceZones()
+            const near = zones.find(zz => (zz?.name || '').toLowerCase() === 'near home')
+            if (near?.radius_m) approachRadius = Math.max(near.radius_m, 100)
+          } catch {}
           try {
             await ZP.addGeofence({
               id: NEAR_HOME_GEOFENCE_ID,
               lat: z.lat,
               lon: z.lon,
-              radius_m: NEAR_HOME_RADIUS_M,
+              radius_m: approachRadius,
               notify_on_enter: true,
               notify_on_exit: false,
             })
@@ -922,6 +931,27 @@ export default function App() {
       window.removeEventListener('ziggy:trackme-changed', onToggle)
       stop({ full: false })
     }
+  }, [authenticated])
+
+  // Native push (FCM on Android / APNs on iOS): register for a device token and
+  // send it to the hub so automation + presence notifications reach the phone.
+  // Android webviews can't do web-push, so this is the phone's ONLY server-push
+  // path. No-op on web (registerForPush returns false without the plugin).
+  useEffect(() => {
+    if (!isNative()) return
+    if (!authenticated) return
+    let alive = true
+    ;(async () => {
+      try {
+        await registerForPush(async (token, provider) => {
+          if (!alive || !token) return
+          try {
+            await registerDevice({ push_token: token, push_provider: provider })
+          } catch { /* re-registers next launch */ }
+        })
+      } catch { /* plugin/permission unavailable — silent */ }
+    })()
+    return () => { alive = false }
   }, [authenticated])
 
   // Register service worker and subscribe to web push after login

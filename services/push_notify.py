@@ -199,12 +199,22 @@ async def push_notify(
     exclude_user_id: str | None = None,
     actions: list[dict] | None = None,
 ) -> None:
-    """Async wrapper — offloads to thread pool to avoid blocking the event loop."""
+    """Async wrapper — offloads web-push to a thread pool to avoid blocking the
+    event loop, AND fans the same notification out to native mobile devices via
+    FCM/APNs so phones (which can't do web-push) get it too."""
     import asyncio
     await asyncio.get_event_loop().run_in_executor(
         None,
         lambda: push_notify_sync(title, body, url, category, exclude_user_id, actions),
     )
+    # Native mobile delivery. Safe no-op until push tokens + FCM creds exist
+    # (send_to_all returns [] with no registered token; _send_fcm returns
+    # fcm_not_configured). Never let a push failure break the caller.
+    try:
+        from services import mobile_push
+        await mobile_push.send_to_all(title=title, body=body, data={"url": url})
+    except Exception as e:
+        log_error(f"[push] mobile fan-out failed: {e}")
 
 
 def push_notify_fire_and_forget(

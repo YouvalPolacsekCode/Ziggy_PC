@@ -902,7 +902,10 @@ async def execute_ziggy_actions(
 
                 # ── IR blaster command ───────────────────────────────────────────
                 elif kind == "ir_command":
-                    from services.ir_manager import send_ir_command, send_ac_temperature, send_sequence
+                    from services.ir_manager import (
+                        send_ir_command, send_ac_temperature, send_sequence,
+                        broadcast_tx_state,
+                    )
                     device_id = step.get("ir_device_id", "")
                     command   = step.get("ir_command", "")
                     sequence  = step.get("ir_sequence") or ""
@@ -925,6 +928,20 @@ async def execute_ziggy_actions(
                         result = send_ir_command(device_id, command)
                     else:
                         result = {"ok": False, "message": "IR command step has no command or sequence selected."}
+
+                    # Broadcast post-command state so the device card updates in real
+                    # time — the manual IR endpoints already do this; the automation
+                    # path was missing it, so automation-driven AC changes stayed
+                    # invisible on the card until the next poll. (fleet-wide fix)
+                    if device_id and isinstance(result, dict) and result.get("ok"):
+                        _bcast_cmd = command or (
+                            f"temp_{int(step['ir_temperature'])}"
+                            if step.get("ir_temperature") is not None else "sequence"
+                        )
+                        try:
+                            await broadcast_tx_state(device_id, _bcast_cmd)
+                        except Exception:
+                            pass
 
                 # ── Ziggy virtual device capability ──────────────────────────────
                 elif kind == "ziggy_intent":

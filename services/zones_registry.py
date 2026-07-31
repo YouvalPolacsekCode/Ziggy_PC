@@ -124,6 +124,41 @@ def delete_zone(zone_id: str) -> bool:
         return True
 
 
+# ── approach ring (auto-managed with the home zone) ──────────────────────────
+# The "approach ring" is a single home-level zone that head-start automations
+# (Pre-cool on Arrival) trigger on. It is created/recentred AUTOMATICALLY when
+# the user sets their home — no separate "add Near Home" action. Its radius is
+# the one shared approach distance for the home (editable from the automation
+# or Location settings). The mobile app registers it as the `home_near` OS
+# geofence so it fires reliably on a real drive.
+APPROACH_ZONE_NAME = "Near Home"
+DEFAULT_APPROACH_RADIUS_M = 2000.0
+
+
+def get_approach_zone() -> Optional[dict]:
+    """The single home-level approach ring, or None if not created yet."""
+    return next(
+        (z for z in _load() if z.get("name", "").lower() == APPROACH_ZONE_NAME.lower()),
+        None,
+    )
+
+
+def ensure_approach_zone(lat: float, lon: float,
+                         default_radius_m: float = DEFAULT_APPROACH_RADIUS_M) -> dict:
+    """Idempotently create/recentre the home-level approach ring on the home.
+
+    Called whenever the home zone is set. If the ring already exists we only
+    RECENTRE it (keeping the user's chosen radius); otherwise we create it at
+    `default_radius_m`. Never prompts, never duplicates.
+    """
+    existing = get_approach_zone()
+    if existing:
+        return update_zone(existing["id"], lat=lat, lon=lon) or existing
+    zone = create_zone(APPROACH_ZONE_NAME, lat, lon, default_radius_m)
+    log_info(f"[Zones] Auto-created approach ring '{APPROACH_ZONE_NAME}' on home set")
+    return zone
+
+
 # ── geometry helper (also used by the presence engine in Phase 2) ────────────
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
