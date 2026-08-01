@@ -96,6 +96,78 @@ async def send_to_all(*, title: str, body: str,
     ])
 
 
+# ── Kill-proof location probes ───────────────────────────────────────────────
+# While a person is AWAY, the hub interrogates their phone with a data-only
+# high-priority FCM message every `probe_interval_s`. High-priority data
+# messages cold-start the app process even when the OS killed it (the same
+# mechanism WhatsApp calls ride on); the app's native ZiggyMessagingService
+# answers with a location fix + re-arms its geofences — no JS involved. When
+# the last known position is within `boost_km` of home, the probe also carries
+# boost=1, switching the phone to a continuous foreground location stream
+# ("courier mode") for the final approach so Pre-cool gets a precise crossing.
+
+_PROBE_INTERVAL_S = 300          # plain probe cadence while away
+_PROBE_BOOST_INTERVAL_S = 120    # faster cadence once within boost range
+_PROBE_BOOST_KM = 8.0
+_last_probe_at: dict[str, float] = {}   # device_id → monotonic seconds
+
+
+async def send_location_probe(device: dict, *, boost: bool = False) -> dict:
+    """One data-only FCM probe to one device. No notification payload — the
+    user sees nothing; the phone just wakes and reports."""
+    token = device.get("push_token")
+    if device.get("push_provider") != "fcm" or not token:
+        return {"ok": False, "error": "no_fcm_token"}
+    data = {"type": "ziggy_loc_probe"}
+    if boost:
+        data["boost"] = "1"
+    return await _send_fcm(token, title=None, body=None, data=data)
+
+
+async def probe_away_devices() -> None:
+    """Scheduler hook (runs each minute): FCM-probe every device whose bound
+    person is currently away. Rate-limited per device; boost cadence when the
+    person's last fix is near home. Silent no-op with no tokens / no FCM creds."""
+    import time as _time
+    try:
+        from services import presence_engine, zones_registry
+    except Exception:
+        return
+    devices = [d for d in _all_devices()
+               if d.get("push_provider") == "fcm" and d.get("push_token") and d.get("person_id")]
+    if not devices:
+        return
+    persons = {p.get("id"): p for p in presence_engine.list_persons()}
+    home = None
+    try:
+        home = presence_engine.get_home_zone()   # (lat, lon, radius) or None
+    except Exception:
+        pass
+    now = _time.monotonic()
+    for d in devices:
+        person = persons.get(d.get("person_id"))
+        if not person or person.get("state") == "home":
+            continue
+        # Near home (by last known fix) → boost cadence + courier-mode stream.
+        boost = False
+        try:
+            lat, lon = person.get("last_lat"), person.get("last_lon")
+            if home and lat is not None and lon is not None:
+                dist_m = zones_registry._haversine_m(float(lat), float(lon), home[0], home[1])
+                boost = dist_m <= _PROBE_BOOST_KM * 1000
+        except Exception:
+            pass
+        interval = _PROBE_BOOST_INTERVAL_S if boost else _PROBE_INTERVAL_S
+        if now - _last_probe_at.get(d["device_id"], 0.0) < interval:
+            continue
+        _last_probe_at[d["device_id"]] = now
+        try:
+            res = await send_location_probe(d, boost=boost)
+            log_info(f"[mobile_push] loc probe → {d['device_id']} boost={boost} ok={res.get('ok')}")
+        except Exception as e:
+            log_error(f"[mobile_push] loc probe failed for {d.get('device_id')}: {e}")
+
+
 # ── Internals ────────────────────────────────────────────────────────────────
 
 def _all_devices() -> list[dict]:
@@ -182,14 +254,18 @@ async def _send_fcm(token: str, *, title: str, body: str, data: dict) -> dict:
         project_id = cfg.get("project_id") or credentials.project_id
 
         url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
-        payload = {
-            "message": {
-                "token": token,
-                "notification": {"title": title, "body": body},
-                "data": {k: str(v) for k, v in data.items()},
-                "android": {"priority": "HIGH"},
-            },
+        message = {
+            "token": token,
+            "data": {k: str(v) for k, v in data.items()},
+            "android": {"priority": "HIGH"},
         }
+        # title=None → DATA-ONLY message: no notification payload, nothing shown
+        # to the user. High-priority data messages cold-start the app's native
+        # FCM service even when the OS killed the app — the kill-proof wake
+        # vector the location probes ride on.
+        if title is not None:
+            message["notification"] = {"title": title, "body": body}
+        payload = {"message": message}
         headers = {
             "Authorization": f"Bearer {credentials.token}",
             "Content-Type": "application/json; UTF-8",

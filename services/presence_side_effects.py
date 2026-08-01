@@ -84,6 +84,12 @@ async def _fire_automations(name: str, new_state: str) -> None:
         log_error(f"[Presence] Transition handler error: {exc}")
 
 
+# Last time a zone_entered automation actually FIRED per zone name (monotonic
+# seconds). Feeds the arrival fallback's dedup so a successful approach fire
+# suppresses the redundant at-the-door re-fire.
+_LAST_ZONE_ENTER_FIRE: dict = {}
+
+
 async def _fire_zone_automation(zt) -> None:
     """Fire `zone_entered` / `zone_left` automations for one zone transition."""
     trigger_type = "zone_entered" if zt.direction == "entered" else "zone_left"
@@ -107,6 +113,9 @@ async def _fire_zone_automation(zt) -> None:
                 f"[Presence] Firing automation '{auto.get('name', auto['id'])}' "
                 f"for {trigger_type} zone={zt.zone_name} person={zt.person_name}"
             )
+            if trigger_type == "zone_entered":
+                import time as _time
+                _LAST_ZONE_ENTER_FIRE[zt.zone_name.lower()] = _time.monotonic()
             try:
                 await execute_ziggy_actions(auto["id"])
             except Exception as exc:
@@ -174,6 +183,31 @@ def schedule_side_effects(decision: Decision) -> None:
         asyncio.create_task(_send_push(decision.person_name, new_state, decision.person_id))
         asyncio.create_task(_fire_automations(decision.person_name, new_state))
         asyncio.create_task(_broadcast_transition(decision.person_id, decision.person_name, new_state))
+        # ARRIVAL FALLBACK — defense-in-depth for approach automations
+        # (Pre-cool): if the user just arrived home and the approach ring
+        # didn't fire within the last 30 min (phone dark the whole drive —
+        # geofence dropped AND probes unanswered), fire it now. Late beats
+        # never: the AC starts as they walk in instead of not at all.
+        if new_state == "home":
+            import time as _time
+            try:
+                from services.zones_registry import APPROACH_ZONE_NAME
+            except Exception:
+                APPROACH_ZONE_NAME = "Near Home"
+            last = _LAST_ZONE_ENTER_FIRE.get(APPROACH_ZONE_NAME.lower(), 0.0)
+            if _time.monotonic() - last > 1800:
+                from services.presence_engine import ZoneTransition
+                from datetime import datetime, timezone
+                zt = ZoneTransition(
+                    zone_id     = "arrival_fallback",
+                    zone_name   = APPROACH_ZONE_NAME,
+                    direction   = "entered",
+                    ts          = datetime.now(timezone.utc),
+                    person_id   = decision.person_id,
+                    person_name = decision.person_name,
+                    reason      = "arrival_fallback",
+                )
+                asyncio.create_task(_fire_zone_automation(zt))
     except RuntimeError as exc:
         # Called from outside an asyncio loop — log and continue. The state
         # was already committed in persons.json so the next sweep / ping will
