@@ -387,6 +387,18 @@ async def run_scheduler() -> None:
         except Exception as exc:
             log_error(f"[Scheduler] LAN presence probe failed: {exc}")
 
+        # ── Every minute: FCM location probes for AWAY persons ────────────────
+        # Kill-proof approach detection: a data-only high-priority FCM wakes
+        # the phone's native service even when the OS killed the app; it
+        # replies with a location fix + re-arms its geofences. Rate-limited
+        # inside (5 min plain / 2 min + courier-mode boost when near home).
+        # Silent no-op without push tokens or FCM creds.
+        try:
+            from services.mobile_push import probe_away_devices
+            await probe_away_devices()
+        except Exception as exc:
+            log_error(f"[Scheduler] mobile location probe failed: {exc}")
+
         # ── Hourly: sweep stale sensors (ANOM-10) ─────────────────────────────
         if _tick % 60 == 0:
             try:

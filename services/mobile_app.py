@@ -467,6 +467,16 @@ def _handle_location(device: dict, data: dict) -> dict:
     person_id = device.get("person_id")
     source = data.get("source", "gps")
 
+    # Detailed location trace — logs EVERY report the phone sends (raw payload),
+    # so a drive test shows exactly what arrived, when, and the gaps where the
+    # app went silent (OEM kill). Distinct tag for easy grepping.
+    log_info(
+        f"[LocTrace] src={source} lat={data.get('lat')} lon={data.get('lon')} "
+        f"acc={data.get('accuracy_m')} transition={data.get('transition')} "
+        f"zone={data.get('zone_id')} activity={data.get('activity')} "
+        f"person={person_id} device={device.get('device_id')}"
+    )
+
     # Activity hints: persist on the device record. No presence side effect.
     if source == "activity":
         activity   = data.get("activity")

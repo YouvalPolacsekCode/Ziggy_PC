@@ -739,6 +739,26 @@ export default function App() {
     let token = null
     let lastPingAt = 0
 
+    // Arm the KILL-PROOF native delivery path: hand the plugin the full webhook
+    // URL + device token so its broadcast receiver / FCM probe service can POST
+    // geofence + location events straight to the hub when the OS has killed the
+    // app and no JS is running (the reason Pre-cool missed real drives).
+    ;(async () => {
+      try {
+        if (!ZP.configureDelivery) return
+        const [{ getWebhookId, getDeviceToken }, { rewriteHttpUrl }] = await Promise.all([
+          import('./lib/mobileApi'), import('./lib/nativeApiBase'),
+        ])
+        const [webhookId, devToken] = await Promise.all([getWebhookId(), getDeviceToken()])
+        if (webhookId && devToken) {
+          await ZP.configureDelivery({
+            url: rewriteHttpUrl(`/api/mobile/webhook/${webhookId}`),
+            token: devToken,
+          })
+        }
+      } catch { /* unpaired or old plugin — JS path still works */ }
+    })()
+
     const postPing = (lat, lon, accuracy, { force = false } = {}) => {
       if (!token) return
       if (typeof lat !== 'number' || typeof lon !== 'number') return
