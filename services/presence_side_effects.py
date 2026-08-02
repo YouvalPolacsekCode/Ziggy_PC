@@ -180,7 +180,22 @@ def schedule_side_effects(decision: Decision) -> None:
     if new_state not in ("home", "not_home"):
         return
     try:
-        asyncio.create_task(_send_push(decision.person_name, new_state, decision.person_id))
+        # Skip the "arrived home" push when the approach ring (Pre-cool) fired
+        # within the last 15 min — the user already got "the AC's cooling
+        # things down"; a second buzz three minutes later is noise, and the
+        # arrival itself is self-evident. Automations/broadcast still run.
+        _skip_arrival_push = False
+        if new_state == "home":
+            import time as _time
+            try:
+                from services.zones_registry import APPROACH_ZONE_NAME as _AZN
+            except Exception:
+                _AZN = "Near Home"
+            _skip_arrival_push = (
+                _time.monotonic() - _LAST_ZONE_ENTER_FIRE.get(_AZN.lower(), 0.0) < 900
+            )
+        if not _skip_arrival_push:
+            asyncio.create_task(_send_push(decision.person_name, new_state, decision.person_id))
         asyncio.create_task(_fire_automations(decision.person_name, new_state))
         asyncio.create_task(_broadcast_transition(decision.person_id, decision.person_name, new_state))
         # ARRIVAL FALLBACK — defense-in-depth for approach automations
