@@ -450,17 +450,24 @@ async def delete_smart_room_endpoint(room: str):
     )
     slug = resolve_room((room or "").lower().strip())
     removed: list[str] = []
+    failed: list[str] = []
     for part in ("day", "night", "off"):
         aid = f"ziggy_smart_room_{slug}_{part}"
         try:
+            # ha_delete_automation now VERIFIES the entity is actually gone (or
+            # never existed) — reload + entity-registry fallback + re-check. Only
+            # its verified result may be trusted; the old `ha_ok or z_ok` reported
+            # a phantom removal whenever the Ziggy-side file delete succeeded but
+            # the HA entity lingered, which is exactly how repeated "delete"
+            # attempts emptied automations.yaml while the rules stayed in the list.
             ha_ok = await asyncio.to_thread(ha_delete_automation, aid)
-            z_ok = ziggy_delete_automation(aid)
+            # Ziggy-side stores are cleaned regardless (idempotent, no HA effect).
+            ziggy_delete_automation(aid)
             delete_ziggy_actions(aid)
             delete_automation_meta(aid)
-            if ha_ok or z_ok:
-                removed.append(aid)
+            (removed if ha_ok else failed).append(aid)
         except Exception:
-            pass
+            failed.append(aid)
     # Clear the sleep flag (keep the KV key, just reset it) + drop voice phrases.
     try:
         set_local_state("modes", f"{slug}_sleep", False)
@@ -484,8 +491,10 @@ async def delete_smart_room_endpoint(room: str):
         except Exception:
             pass
     _bus.emit("automation", _BASIC, "smart_room_deleted", room=slug,
-              removed=len(removed), result="ok")
-    return {"ok": True, "room": slug, "removed": removed, "kept_presence_sensor": True}
+              removed=len(removed), failed=len(failed),
+              result="ok" if not failed else "partial")
+    return {"ok": not failed, "room": slug, "removed": removed,
+            "failed": failed, "kept_presence_sensor": True}
 
 
 @router.post("/api/blueprints/import")
@@ -1045,8 +1054,11 @@ async def delete_automation_endpoint(automation_id: str):
     _bus.emit("automation", _BASIC, "automation_deleted",
               automation_id=automation_id,
               ha_deleted=ha_ok, ziggy_deleted=ziggy_ok,
-              result="ok")
-    return {"ok": True}
+              result="ok" if ha_ok else "ha_entity_lingering")
+    # ha_ok is now a VERIFIED "entity is gone" (or never existed) — surface it
+    # honestly instead of a blanket ok:True, so the UI can't show a phantom
+    # success while the automation is still live in HA.
+    return {"ok": ha_ok}
 
 
 # ── Push action callback ─────────────────────────────────────────────────────
