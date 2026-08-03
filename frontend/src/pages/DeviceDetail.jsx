@@ -671,6 +671,25 @@ export default function DeviceDetail() {
     }
   }
 
+  // Optimistic show-as-tile toggle: flip the switch instantly, persist, then
+  // reconcile — reverting on failure. (The switch is a controlled Radix
+  // component, so without a local optimistic value it can't move until the
+  // store round-trips; combined with the earlier onChange→onCheckedChange fix,
+  // this makes it feel instant AND actually work.)
+  const [pendingTile, setPendingTile] = useState({})
+  const toggleTile = async (eid, checked) => {
+    setPendingTile(p => ({ ...p, [eid]: checked }))
+    try {
+      await setTilePref(eid, { is_tile: checked })
+      await useDeviceStore.getState().fetchAll({ force: true })
+      load({ background: true })
+    } catch (e) {
+      addToast(e?.userMessage || e?.message || t('deviceDetail.tilePrefFailed'), 'error')
+    } finally {
+      setPendingTile(p => { const n = { ...p }; delete n[eid]; return n })
+    }
+  }
+
   // Device classification override (which entity is MAIN, the card KIND).
   const applyClassification = async (opts) => {
     try {
@@ -1425,8 +1444,8 @@ export default function DeviceDetail() {
               {usefulSiblings.filter(s => !s.isPrimary).map(s => (
                 <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
                   <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
-                  <Toggle checked={!!s.is_tile}
-                    onChange={() => applyTilePref(s.entity_id, { is_tile: !s.is_tile })} />
+                  <Toggle checked={pendingTile[s.entity_id] ?? !!s.is_tile}
+                    onCheckedChange={(checked) => toggleTile(s.entity_id, checked)} />
                 </div>
               ))}
             </div>
