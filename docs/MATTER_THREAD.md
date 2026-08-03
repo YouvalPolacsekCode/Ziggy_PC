@@ -87,6 +87,7 @@ flash *is* the clean. No separate erase needed.
 | OTBR: "CreateIcmp6Socket … No such device" | agent's backbone iface defaults to nonexistent `eth0` | pass `--backbone-interface <real NIC>` (env `INFRA_IF_NAME` alone does NOT set it) |
 | Thread network lost after container recreate | otbr-agent persists to `/var/lib/thread`, not `/data` | mount the state dir at `/var/lib/thread` |
 | Ziggy Matter pair button fails "integration not available" | `matter` exposes **no** `commission_with_code` HA *service* | Ziggy calls the WS command `matter/commission` instead (`services/ha_pairing.py`) |
+| Every pair attempt "Discovery timed out" on a **fresh** device | HA's `matter/commission` defaults `network_only=True` → on-network (mDNS) discovery ONLY; a new BLE-only device is never found | Ziggy passes `network_only=False` (BLE path). **Device must be in pairing mode + within BLE range of the hub.** A `BLE scan error: Timeout` in matter-server logs = BLE works but no device is advertising (not in pairing mode / out of range). |
 | Thread device commissions but never appears | HA's *preferred* dataset ≠ the OTBR's live dataset | make the live dataset preferred (`thread/set_preferred_dataset`); the enable script keeps them TLV-matched |
 | matter-server can't do BLE | host has no `bluetoothd` | `apt install bluez` + `systemctl enable --now bluetooth`; mount `/run/dbus` into the container |
 

@@ -104,7 +104,17 @@ async def commission_matter(code: str) -> dict:
     make this async + poll, so the UI needn't block on a single long request.)
     """
     try:
-        res, = await _ws({"type": "matter/commission", "code": code},
+        # network_only=False is REQUIRED for pairing a fresh device. HA's
+        # matter/commission handler defaults network_only=True, which does
+        # on-network (mDNS) discovery ONLY — a brand-new bulb isn't on any
+        # network yet, so that path always times out ("Discovery timed out").
+        # A fresh Matter device is reachable only over BLE, so we must opt into
+        # the BLE path: matter-server scans BLE, does the PASE handshake, then
+        # pushes the Thread dataset / Wi-Fi creds so the device joins the
+        # network. (network_only=True is only correct for re-discovering a node
+        # already on the network — not our "add a new device" flow.)
+        res, = await _ws({"type": "matter/commission", "code": code,
+                          "network_only": False},
                          timeout=150.0)
         if res.get("success"):
             return {"ok": True}
