@@ -718,6 +718,7 @@ export default {
   'rooms.smartPresence.sources':'{n} מקורות',
   'rooms.smartPresence.zone':  'אזור',
   'rooms.smartPresence.create':'יצירת נוכחות חכמה',
+  'rooms.moreActions':      'עוד',
   'rooms.notFound':         'החדר לא נמצא',
   'rooms.viewLiveSecurity': 'צפייה בשידור חי באבטחה',
   'rooms.live':             'שידור חי ▶',

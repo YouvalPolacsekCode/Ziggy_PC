@@ -720,6 +720,7 @@ export default {
   'rooms.smartPresence.sources':'{n} sources',
   'rooms.smartPresence.zone':  'zone',
   'rooms.smartPresence.create':'Create Smart Presence',
+  'rooms.moreActions':      'More',
   'rooms.notFound':         'Room not found',
   'rooms.viewLiveSecurity': 'View live in Security',
   'rooms.live':             'LIVE ▶',
