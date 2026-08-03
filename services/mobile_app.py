@@ -636,6 +636,11 @@ def _handle_geofence_event(device: dict, person_id: str, data: dict) -> dict:
         return {"ok": True, "recorded": True, "ignored": "unknown_zone"}
 
     person = presence_engine.find_person_by_id(person_id) or {"id": person_id, "name": ""}
+    # Same synthetic-ENTER guard as home_near: an app-open at home re-announces
+    # every zone the phone is inside — don't fire zone automations for it.
+    if transition == "enter" and person.get("state") == "home":
+        log_info(f"[mobile_app] zone enter suppressed (already home) zone={zone_id}")
+        return {"ok": True, "zone_event": transition, "zone_id": zone_id, "suppressed": "already_home"}
     try:
         from services.presence_engine import ZoneTransition
         from services.presence_side_effects import schedule_zone_side_effects
@@ -693,6 +698,13 @@ def _fire_approach_automations(person_id: str, transition: str) -> None:
     """
     try:
         person = presence_engine.find_person_by_id(person_id) or {"id": person_id, "name": ""}
+        # ALREADY HOME → skip. Registering geofences fires a synthetic ENTER
+        # for any ring you're standing inside (Android INITIAL_TRIGGER_ENTER),
+        # so every app-open at home looked like an approach — 1 AM AC starts.
+        # A real approach always happens while the person is still not_home.
+        if transition == "enter" and person.get("state") == "home":
+            log_info(f"[mobile_app] approach enter suppressed — {person.get('name')} already home")
+            return
         from services.presence_engine import ZoneTransition
         from services.presence_side_effects import schedule_zone_side_effects
         from datetime import datetime, timezone
