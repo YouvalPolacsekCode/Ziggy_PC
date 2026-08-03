@@ -662,34 +662,82 @@ def _save_paired_automation(data: dict, base_auto_id: Optional[str] = None) -> d
         return {"ok": False, "error": str(e), "rolled_back": created}
 
 
+def _automation_entity_exists(entity_id: str) -> bool:
+    """True iff HA still reports this automation entity (state present)."""
+    try:
+        r = requests.get(f"{HA_URL()}/api/states/{entity_id}", headers=HEADERS(), timeout=10)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _reload_automations() -> None:
+    """Ask HA to reload the automation component so a just-deleted rule is
+    dropped from memory (config-API delete auto-reloads on well-behaved setups,
+    but not all — belt and braces)."""
+    try:
+        requests.post(f"{HA_URL()}/api/services/automation/reload",
+                      headers=HEADERS(), timeout=10)
+    except Exception as e:
+        log_error(f"[HA Automations] reload: {e}")
+
+
 def delete_automation(auto_id: str) -> bool:
-    # HA's config API is keyed by the automation's config `id`, which DIFFERS
-    # from the entity object-id whenever the alias isn't plain ASCII (a Hebrew
-    # alias slugs to a transliteration for the entity, but the config id is a
-    # uuid). The list/UI carries the entity object-id, so deleting by it 404s
-    # ("fail to delete"). Resolve the real config id from the entity's `id`
-    # attribute first, then fall back to the given id (covers ASCII-named ones
-    # where the two already match).
+    """Delete an automation and VERIFY it is actually gone.
+
+    History: this used to return True the instant HA's config API replied 2xx.
+    But on setups where the automation entity is registered (or restored from
+    .storage), the config-API delete removes the YAML entry while the live
+    ENTITY lingers — so the UI said "removed" yet the rule stayed in the list.
+    Users then retried, and each attempt silently stripped another entry until
+    automations.yaml was emptied (config gone, entities orphaned in memory).
+
+    Now: delete via the config API (by config-id AND object-id), reload, and if
+    the entity still exists, remove its entity-registry entry and reload again.
+    Return True ONLY once HA confirms the entity is gone — so a caller can never
+    report a phantom success. A no-op delete of an already-absent automation
+    returns True (nothing to remove == removed).
+
+    HA's config API is keyed by the config `id`, which differs from the entity
+    object-id when the alias isn't plain ASCII — so we resolve both and try each.
+    """
+    entity = _resolve_automation_entity(auto_id)
+
     candidates: list[str] = [auto_id]
     try:
-        st = requests.get(f"{HA_URL()}/api/states/automation.{auto_id}",
-                          headers=HEADERS(), timeout=10)
+        st = requests.get(f"{HA_URL()}/api/states/{entity}", headers=HEADERS(), timeout=10)
         if st.status_code == 200:
             cfg_id = (st.json().get("attributes") or {}).get("id")
-            if cfg_id and cfg_id != auto_id:
+            if cfg_id and cfg_id not in candidates:
                 candidates.insert(0, cfg_id)   # try the real config id first
     except Exception as e:
         log_error(f"[HA Automations] resolve config id for {auto_id}: {e}")
 
+    # 1) Remove the config entry (best-effort across both id forms).
     for cid in candidates:
         try:
-            resp = requests.delete(f"{HA_URL()}/api/config/automation/config/{cid}",
-                                   headers=HEADERS(), timeout=10)
-            if resp.status_code in (200, 204):
-                return True
+            requests.delete(f"{HA_URL()}/api/config/automation/config/{cid}",
+                            headers=HEADERS(), timeout=10)
         except Exception as e:
             log_error(f"[HA Automations] delete {cid}: {e}")
-    return False
+
+    # 2) Drop it from memory.
+    _reload_automations()
+
+    # 3) If the entity is still there, it's registry/restore-backed — remove it.
+    if _automation_entity_exists(entity):
+        try:
+            from services.ha_ws import ha_ws_command
+            ha_ws_command({"type": "config/entity_registry/remove", "entity_id": entity})
+        except Exception as e:
+            log_error(f"[HA Automations] registry remove {entity}: {e}")
+        _reload_automations()
+
+    # 4) Verified result — the ONLY thing a caller may trust.
+    gone = not _automation_entity_exists(entity)
+    if not gone:
+        log_error(f"[HA Automations] delete {auto_id}: entity {entity} still present after delete+reload+registry-remove")
+    return gone
 
 
 def _resolve_automation_entity(auto_id: str) -> str:

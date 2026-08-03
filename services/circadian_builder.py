@@ -310,16 +310,18 @@ def delete_bundle() -> dict:
     """Remove all 4 circadian HA automations. Safe to call when none exist."""
     from services.local_automation_actions import delete_automation_meta, delete_ziggy_actions
 
+    # Route through the shared, VERIFIED primitive (delete → reload → entity-
+    # registry fallback → confirm gone) instead of a raw config-API delete, which
+    # reports 2xx while leaving a registry/restore-backed entity behind — the
+    # phantom-success that let repeated deletes empty automations.yaml.
+    from services.ha_automations import delete_automation as ha_delete_automation
+
     deleted: list[str] = []
     missed: list[str] = []
     for phase_id, alias, *_ in PHASES:
         auto_id = _automation_id(phase_id)
         try:
-            resp = requests.delete(
-                f"{HA_URL()}/api/config/automation/config/{auto_id}",
-                headers=HEADERS(), timeout=10,
-            )
-            if resp.status_code in (200, 204):
+            if ha_delete_automation(auto_id):
                 deleted.append(auto_id)
             else:
                 missed.append(auto_id)
