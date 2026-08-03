@@ -22,30 +22,43 @@ const DEFAULT_OPTS = {
   night_start: '19:00', night_end: '06:30', off_delay_minutes: 5,
 }
 
-// Presence-source candidates for the chosen room: the room's raw
-// motion/presence/occupancy sensors + any existing merged sensor.
+// Presence-source candidates for the chosen room.
+//
+// A Smart Room is 1:1 with a Smart Presence: it's identified by the presence's
+// zone key ({room} for the main, {room}_N for a zone like an en-suite), so two
+// presences in one area (bedroom + its bathroom) yield two INDEPENDENT Smart
+// Rooms that never collide on the room id. Therefore, whenever the room has any
+// fused Smart Presence, those are the ONLY binding targets — raw motion/presence
+// sensors are the *ingredients* of a presence, not a binding. Binding a Smart
+// Room straight to a raw sensor was the bug that made a 2nd room overwrite the
+// 1st (both fell back to the bare room id). Raw sensors are offered ONLY when the
+// room has no Smart Presence yet, so the user isn't blocked (the step then nudges
+// creating one).
 function presenceCandidates(ctx, room, t) {
   if (!room) return []
-  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
-  const fusedIds = new Set((ctx.occupancySensors || []).map((s) => s.entity_id))
-  const out = []
-  for (const id of (area?.entities || [])) {
-    const e = ctx.entityMap[id]
-    if (e && e.domain === 'binary_sensor' && SR_OCC_TYPE[e.device_class] && !fusedIds.has(id)) {
-      out.push({ id, name: entityDisplayName(e) || id, kind: SR_OCC_TYPE[e.device_class] })
-    }
-  }
   const rn = (room.name || '').toLowerCase(), rid = String(room.id).toLowerCase()
+  const fused = []
   for (const s of (ctx.occupancySensors || [])) {
     const sr = String(s.room || '').toLowerCase()
     if (sr === rid || sr === rn || sr.replace(/_/g, ' ') === rn) {
-      // A room can hold several named smart sensors (main + zones like an
-      // en-suite) — show each by its own name so the user picks the right one.
-      out.push({ id: s.entity_id, name: s.name || t('automations.smartRoom.wiz.mergedSensor'),
-                 kind: 'merged', zoneKey: s.key || s.room })
+      fused.push({ id: s.entity_id, name: s.name || t('automations.smartRoom.wiz.mergedSensor'),
+                   kind: 'merged', zoneKey: s.key || s.room })
     }
   }
-  return out
+  if (fused.length) return fused
+
+  // No Smart Presence in this room yet — fall back to raw sensors so a quick
+  // single-sensor room still works; the presence step nudges creating one.
+  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
+  const fusedIds = new Set((ctx.occupancySensors || []).map((s) => s.entity_id))
+  const raw = []
+  for (const id of (area?.entities || [])) {
+    const e = ctx.entityMap[id]
+    if (e && e.domain === 'binary_sensor' && SR_OCC_TYPE[e.device_class] && !fusedIds.has(id)) {
+      raw.push({ id, name: entityDisplayName(e) || id, kind: SR_OCC_TYPE[e.device_class] })
+    }
+  }
+  return raw
 }
 
 // The rule-set key for this Smart Room instance: the chosen presence sensor's

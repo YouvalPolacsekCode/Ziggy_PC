@@ -1111,6 +1111,17 @@ export function RoomDetail() {
     [roomDevices],
   )
   const [showCombineSensors, setShowCombineSensors] = useState(false)
+  const [showPresences, setShowPresences] = useState(false)
+  // Smart Presences that belong to THIS room (its main presence + any zones,
+  // e.g. an en-suite). Each is a 1:1 candidate to drive its own Smart Room.
+  const roomPresences = useMemo(() => {
+    const rn = String(room?.name || '').toLowerCase()
+    const rid = String(roomId).toLowerCase()
+    return (occupancySensors || []).filter((s) => {
+      const sr = String(s.room || '').toLowerCase()
+      return sr === rid || sr === rn || sr.replace(/_/g, ' ') === rn
+    })
+  }, [occupancySensors, room, roomId])
 
   const handleToggle = async (entityId, on) => {
     if (!entityId) return
@@ -1292,6 +1303,28 @@ export function RoomDetail() {
                     <span style={{ flex: 1 }}>{t('rooms.combineSensors.title')}</span>
                   </button>
                 )}
+                {/* Smart Presence — always available: view this room's fused
+                    presence sensors (main + zones) and create a new one. This is
+                    the home for presence because it's room-scoped, and each
+                    presence can drive its own Smart Room. */}
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); setShowPresences(true) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '9px 12px', borderRadius: 8,
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: 13, width: 14, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">🧠</span>
+                  <span style={{ flex: 1 }}>{t('rooms.smartPresence.menu')}</span>
+                  {roomPresences.length > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-mute)', flexShrink: 0 }}>{roomPresences.length}</span>
+                  )}
+                </button>
                 <button
                   role="menuitem"
                   onClick={() => { setMenuOpen(false); setEditRoom(room) }}
@@ -1453,6 +1486,37 @@ export function RoomDetail() {
             {saving ? t('rooms.assigning') : t('rooms.assignToRoomBtn')}
           </button>
         </div>
+      </Modal>
+
+      {/* Smart Presence: see this room's fused presences + create a new one. */}
+      <Modal open={showPresences} onClose={() => setShowPresences(false)} title={t('rooms.smartPresence.menu')}>
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14, lineHeight: 1.5 }}>
+          {t('rooms.smartPresence.hint')}
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          {roomPresences.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center', padding: '12px 0' }}>
+              {t('rooms.smartPresence.none')}
+            </p>
+          ) : roomPresences.map((s) => {
+            const isZone = (s.key || s.room) !== s.room
+            return (
+              <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface-2)' }}>
+                <span aria-hidden="true" style={{ fontSize: 16, flexShrink: 0 }}>🧠</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }} dir="auto">{s.name || t('automations.smartRoom.wiz.mergedSensor')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+                    {t('rooms.smartPresence.sources', { n: (s.sensors || []).length })}{isZone ? ` · ${t('rooms.smartPresence.zone')}` : ''}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <button className="z-btn-primary" style={{ width: '100%' }}
+          onClick={() => { setShowPresences(false); setShowCombineSensors(true) }}>
+          {t('rooms.smartPresence.create')}
+        </button>
       </Modal>
 
       {/* Combine this room's sensors into one presence signal (gated to 2+). */}
