@@ -180,6 +180,18 @@ async def get_health():
     except Exception:
         pass
 
+    # Siblings the USER promoted to their own tile (is_tile). The Devices grid
+    # keeps these as standalone cards (getGroupedEntities), so if one is offline
+    # it DOES show under Review — the banner must count it standalone too, or the
+    # counts diverge the other way. Best-effort; empty on any failure.
+    _promoted_eids: set[str] = set()
+    try:
+        from services import entity_prefs as _ep
+        _promoted_eids = {k for k, v in (_ep.get_all() or {}).items()
+                          if isinstance(v, dict) and v.get("is_tile")}
+    except Exception:
+        pass
+
     offline_all:       list[dict] = []
     offline_with_deps: list[dict] = []
     battery_warnings:  list[dict] = []
@@ -195,29 +207,38 @@ async def get_health():
 
         # ── Offline detection ────────────────────────────────────────────────
         if state in ("unavailable", "unknown"):
-            # When this entity belongs to a multi-entity group, attribute
-            # the offline status to the group's primary so the count
-            # matches the one-card-per-device rendering. If the primary is
-            # itself online, we still surface the sibling so the user can
-            # see WHICH sub-sensor is down on the Info tab.
+            # Count a device offline ONLY when its group PRIMARY (the
+            # controllable the Devices card is keyed on) is offline. A
+            # config/diagnostic SIBLING that merely sits at 'unknown' — e.g. a
+            # Z2M `auto_close_when_water_shortage` switch that was never set —
+            # does NOT make the device offline, and the Devices grid collapses
+            # such siblings into the (online) primary. Counting them here made
+            # the banner claim more offline devices than Review could ever show
+            # ("N offline" → tap Review → fewer cards). Attribute + dedupe by
+            # primary, and record the PRIMARY so Review highlights the device,
+            # not a hidden sub-sensor.
             primary = primary_by_eid.get(eid, eid)
-            is_primary_row = primary == eid
-            if is_primary_row:
-                if primary in _offline_primaries_seen:
-                    continue   # already counted via a sibling that hit us first
-                _offline_primaries_seen.add(primary)
-            else:
-                # Sibling offline. Only count it ONCE per group, regardless
-                # of how many siblings are unavailable.
-                if primary in _offline_primaries_seen:
-                    continue
-                _offline_primaries_seen.add(primary)
+            promoted = eid in _promoted_eids
+            if primary != eid and not promoted:
+                p_state = (state_cache.get(primary) or {}).get("state")
+                if p_state not in ("unavailable", "unknown"):
+                    continue   # primary is online → the device is fine
+            # A promoted sibling stands on its own card, so it's counted under
+            # its OWN id; every other row is attributed to (and deduped by) the
+            # group primary.
+            key = eid if (primary == eid or promoted) else primary
+            if key in _offline_primaries_seen:
+                continue
+            _offline_primaries_seen.add(key)
 
-            auto_names = deps.get(eid, [])
+            k_entry = state_cache.get(key) or {}
+            k_attrs = k_entry.get("attributes", {}) or {}
+            k_name  = k_attrs.get("friendly_name") or key.split(".")[-1].replace("_", " ").title()
+            auto_names = deps.get(key) or deps.get(eid) or []
             record = {
-                "entity_id":       eid,
-                "name":            name,
-                "ha_state":        state,
+                "entity_id":       key,
+                "name":            k_name,
+                "ha_state":        k_entry.get("state") or state,
                 "automation_deps": auto_names,
             }
             offline_all.append(record)

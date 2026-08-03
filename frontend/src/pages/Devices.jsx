@@ -2128,8 +2128,13 @@ export default function Devices() {
       if (smartSensorIdSet.has(e.entity_id)) return false
       let matchDomain = true
       if (domain === 'active') matchDomain = isEntityOn(e)
-      else if (domain === 'offline') matchDomain = e.state === 'unavailable' || e.state === 'unknown'
-      else if (domain === 'connected') matchDomain = e.state !== 'unavailable' && e.state !== 'unknown'
+      // IR devices are fire-and-forget — they have NO connectivity state. Their
+      // `state` is just the assumed on/off (default 'unknown' before first use),
+      // so treating 'unknown' as offline made every untoggled IR remote show up
+      // in the "disconnected devices" review. Exclude IR from both connectivity
+      // filters entirely.
+      else if (domain === 'offline') matchDomain = !e._ir && (e.state === 'unavailable' || e.state === 'unknown')
+      else if (domain === 'connected') matchDomain = !e._ir && e.state !== 'unavailable' && e.state !== 'unknown'
       else if (domain === 'ir') matchDomain = e._ir === true || Boolean(e._linkedIr)
       else if (domain !== 'all') {
         // Check if it's a group ID (e.g. 'security', 'climate') or a direct domain name
