@@ -129,6 +129,14 @@ export default {
     if (v.notify) actions.push({ type: 'notify', title: 'Pre-cool on Arrival', message: t('automations.precool.notifyMsg') })
 
     const conditions = []
+    // Never pre-cool an AC that's already running — a redundant power_on is at
+    // best a duplicate push, at worst (toggle-protocol units) turns it OFF.
+    // is_not/on passes for both "off" and "unknown" so a stale state never
+    // blocks a legitimate pre-cool. (IR only — smart ACs report real state and
+    // climate.turn_on is idempotent.)
+    if (isIr(v.acId)) {
+      conditions.push({ type: 'ir_device_state', ir_device_id: v.acId.slice(3), operator: 'is_not', value: 'on' })
+    }
     if (v.onlyHot && v.hotEntity) conditions.push({ entity_id: v.hotEntity, operator: 'above', value: String(Number(v.hotThreshold) || DEFAULT_TEMP) })
 
     await createAutomation({
