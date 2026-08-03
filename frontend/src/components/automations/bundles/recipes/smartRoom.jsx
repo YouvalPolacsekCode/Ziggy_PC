@@ -156,8 +156,12 @@ function RoomPickField({ values, setValue, ctx, t }) {
 // the step's `hideNav` so the outer wizard footer hides while the inner form
 // owns navigation — no more two competing button rows.
 function presenceNeedsInnerForm(values, ctx) {
+  // Explicit "create a presence" intent wins even when a sensor is already
+  // selected. The designer round-trip auto-resolves occEntity to the room's
+  // first raw sensor, so the old `if (occEntity) return false` short-circuited
+  // the form open — the "+ create merged" button silently did nothing.
+  if (values._creatingSensor || values._needsSensor) return true
   if (values.occEntity) return false
-  if (values._needsSensor || values._creatingSensor) return true
   return presenceCandidates(ctx, values.room, (k) => k).length === 0
 }
 
@@ -176,7 +180,7 @@ function PresenceField({ values, setValue, ctx, t }) {
           {t('automations.smartRoom.needPresence', { room: room?.name || '' })}
         </p>
         <OccupancySensorForm initialRoom={room?.name || ''}
-          onCreated={(res) => { setValue('occEntity', res?.entity_id || null); setValue('_needsSensor', false); setValue('_creatingSensor', false) }}
+          onCreated={(res) => { setValue('occEntity', res?.entity_id || null); setValue('_justCreated', true); setValue('_needsSensor', false); setValue('_creatingSensor', false) }}
           onClose={() => {
             setValue('_creatingSensor', false)
             setValue('_needsSensor', false)
@@ -187,10 +191,13 @@ function PresenceField({ values, setValue, ctx, t }) {
       </div>
     )
   }
-  // A sensor was just created but the candidate list hasn't refetched yet —
-  // confirm it so the user isn't staring at an empty picker.
+  // A sensor was JUST CREATED but the candidate list hasn't refetched yet —
+  // confirm it so the user isn't staring at an empty picker. Gated on
+  // `_justCreated`: the designer also auto-resolves occEntity to a raw sensor
+  // that may not be in the candidate list, and without this gate that showed a
+  // false "presence sensor created and used" note (office bug) when nothing was.
   const chosenInList = candidates.some((c) => c.id === values.occEntity)
-  if (values.occEntity && !chosenInList) {
+  if (values._justCreated && values.occEntity && !chosenInList) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', borderRadius: 11,
