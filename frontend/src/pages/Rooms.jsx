@@ -923,6 +923,7 @@ function _fmtStripMetric(m) {
 }
 
 function SensorsStrip({ devices }) {
+  const navigate = useNavigate()
   const renderSensor = (entity) => {
     const domain = entity.domain
     const dcRaw = entity.ha_attributes?.device_class || entity.device_class
@@ -958,13 +959,27 @@ function SensorsStrip({ devices }) {
       .map(_fmtStripMetric)
       .filter(Boolean)
       .slice(0, 2)
-    return { icon, val: val + unit, name, metrics }
+    return { icon, val: val + unit, name, metrics, entityId: entity.entity_id }
   }
   const items = devices.map(renderSensor)
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-      {items.map(({ icon, val, name, metrics }, i) => (
-        <div key={i} style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
+      {items.map(({ icon, val, name, metrics, entityId }, i) => (
+        // Whole tile is the tap target → the entity's device page, matching how
+        // the light tiles / device cards open. IR-less sensors get no controls,
+        // so the readings themselves are the affordance.
+        <button
+          key={entityId || i}
+          type="button"
+          onClick={() => entityId && navigate(`/devices/${encodeURIComponent(entityId)}`)}
+          style={{
+            textAlign: 'start', font: 'inherit', cursor: entityId ? 'pointer' : 'default',
+            padding: '10px 12px', borderRadius: 12, background: 'var(--surface)',
+            border: '0.5px solid var(--line)', transition: 'background 0.12s',
+          }}
+          onMouseEnter={(e) => { if (entityId) e.currentTarget.style.background = 'var(--surface-2)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface)' }}
+        >
           <div style={{ color: 'var(--ink-faint)', marginBottom: 6 }}><RoomZIcon name={icon} size={13} /></div>
           <div className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{val}</div>
           {metrics.length > 0 && (
@@ -976,7 +991,7 @@ function SensorsStrip({ devices }) {
             </div>
           )}
           <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>{name}</div>
-        </div>
+        </button>
       ))}
     </div>
   )
