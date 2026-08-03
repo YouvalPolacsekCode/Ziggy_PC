@@ -21,8 +21,10 @@
 #   7  seal           _seal_step.sh: data_key + kit_manifest (+paired sensors) + relay seal-key
 #   8  register-hub   bind tunnel_url to the home (HMAC) → status active
 #   9  ziggy-up       docker compose up the ziggy backend
-#   10 kit-ready      kit-ready-check.sh gate
-#   11 first-backup   one REAL backup to B2 (the ship signal)
+#   10 matter-enable  (ENABLE_MATTER=1) flash 2nd dongle → ot-rcp + bring up the
+#                     OTBR/matter-server stack + wire HA (scripts/factory/ziggy-matter-enable.sh)
+#   11 kit-ready      kit-ready-check.sh gate
+#   12 first-backup   one REAL backup to B2 (the ship signal)
 #
 # USAGE
 #   sudo scripts/factory/ziggy-image-device.sh              # full run
@@ -105,6 +107,15 @@ ZIGBEE_ADAPTER="${ZIGBEE_ADAPTER:-ezsp}"     # ezsp = Sonoff-E + SLZB-07 (Silabs
 ZIGBEE_PAIR_SECONDS="${ZIGBEE_PAIR_SECONDS:-0}"
 # True when this hub uses a NETWORK coordinator (no local USB device).
 ZIGBEE_NET=0; [[ -n "$COORDINATOR_IP" ]] && ZIGBEE_NET=1
+# Matter + Thread. OFF by default: Matter is a "customer-adds-later" capability
+# (needs a SECOND, dedicated Silabs dongle flashed to ot-rcp — distinct from the
+# Zigbee coordinator). The compose file + enable script ALWAYS ship in the image,
+# so any hub can turn it on later via scripts/factory/ziggy-matter-enable.sh.
+# Set ENABLE_MATTER=1 at imaging time only for a kit that ships with a 2nd dongle;
+# the matter-enable step then flashes it + brings up the OTBR/matter-server stack.
+# MATTER_THREAD_DEVICE (by-id of the 2nd dongle) + MATTER_INFRA_IF pass through to
+# the enable script; if unset it auto-picks the non-Zigbee Silabs dongle / default NIC.
+ENABLE_MATTER="${ENABLE_MATTER:-0}"
 GIT_SHA="${GIT_SHA:-dev}"
 MQTT_USER="${MQTT_USER:-ziggy}"
 
@@ -120,7 +131,7 @@ else
 fi
 STATE_FILE="$STATE_DIR/imaging.state"
 
-STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up kit-ready first-backup)
+STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up matter-enable kit-ready first-backup)
 
 _log()  { printf '\033[36m[image]\033[0m %s\n' "$*" >&2; }
 _ok()   { printf '\033[32m[image ✓]\033[0m %s\n' "$*" >&2; }
@@ -762,6 +773,31 @@ step_first_backup() {
     || _die "first real backup failed"
 }
 
+# ── matter-enable (optional; ENABLE_MATTER=1) ────────────────────────────────
+# Turn a kit that ships with a SECOND dongle into a Matter + Thread controller.
+# Delegates to the dedicated, idempotent enable script (flash 2nd dongle →
+# ot-rcp, host prep incl. BlueZ --experimental, bring up otbr + matter-server,
+# wire HA). Skips cleanly when ENABLE_MATTER!=1 — the compose file + enable
+# script still shipped in the image, so the customer can enable it any time.
+step_matter_enable() {
+  if [[ "$ENABLE_MATTER" != "1" ]]; then
+    _log "matter-enable: ENABLE_MATTER!=1 — skipping (capability ships in the image; enable later via scripts/factory/ziggy-matter-enable.sh)"
+    return 0
+  fi
+  local script="$SCRIPT_DIR/ziggy-matter-enable.sh"
+  [[ -f "$script" ]] || _die "matter-enable: $script missing"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    _log "matter-enable: DRY-RUN — would run $script (flash 2nd dongle, otbr+matter-server, wire HA)"
+    return 0
+  fi
+  _log "matter-enable: running $script"
+  REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" \
+    MATTER_THREAD_DEVICE="${MATTER_THREAD_DEVICE:-}" MATTER_INFRA_IF="${MATTER_INFRA_IF:-}" \
+    bash "$script" \
+    && _ok "matter-enable: Matter + Thread enabled" \
+    || _die "matter-enable failed (see output above)"
+}
+
 # ── dispatch ────────────────────────────────────────────────────────────────
 # Case-based (portable to bash 3.2 — macOS bench — and bash 5 — Ubuntu hub).
 _run_step_fn() {
@@ -776,6 +812,7 @@ _run_step_fn() {
     seal)          step_seal ;;
     register-hub)  step_register_hub ;;
     ziggy-up)      step_ziggy_up ;;
+    matter-enable) step_matter_enable ;;
     kit-ready)     step_kit_ready ;;
     first-backup)  step_first_backup ;;
     *) _die "unknown step: $1" ;;

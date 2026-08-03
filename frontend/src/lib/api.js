@@ -525,7 +525,10 @@ export const renameHaDevice = (deviceId, name) => patch(`/ha/devices/${encodeURI
 // Multi-protocol pairing
 export const zwaveInclude = () => post('/ha/zwave/include')
 export const zwaveStop = () => post('/ha/zwave/stop')
+// Async fire-and-poll: commission returns immediately ({status:'started'|'running'});
+// poll matterStatus() until status becomes 'success' or 'failed'.
 export const matterCommission = (code) => post('/ha/matter/commission', { code })
+export const matterStatus = () => get('/ha/matter/status')
 
 // Switcher native pairing — drives HA's switcher_kis config flow through the
 // Ziggy UI step-by-step; HA does the LAN protocol work invisibly.

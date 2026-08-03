@@ -9,7 +9,7 @@ import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import {
   zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
-  zwaveInclude, zwaveStop, matterCommission, getConfigFlows,
+  zwaveInclude, zwaveStop, matterCommission, matterStatus, getConfigFlows,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
 import ConfigFlowRunner from './ConfigFlowRunner'
@@ -207,6 +207,10 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   const snapshotRef = useRef(new Set())
   const timerRef    = useRef(null)
   const pollRef     = useRef(null)
+  // Poller for the async Matter commission status endpoint (separate from the
+  // device-registry poller so a commission failure surfaces even before/without
+  // a device row appearing).
+  const matterPollRef = useRef(null)
   // Wall-clock anchor for the countdown — derived from this rather than a
   // decrementing counter so a duplicate interval, a backgrounded tab, or
   // any other tick drift can't make the visible timer race ahead of HA's
@@ -224,6 +228,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   const stopTimers = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
     if (pollRef.current)  { clearInterval(pollRef.current);  pollRef.current  = null }
+    if (matterPollRef.current) { clearInterval(matterPollRef.current); matterPollRef.current = null }
     inGraceRef.current = false
   }
 
@@ -361,10 +366,16 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
     if (!matterCode.trim()) return
     await snapshotDevices()
     setStep('pairing')
+    // Fire-and-poll: the backend starts commissioning in the background and
+    // returns immediately (status: 'started' or, if one's already underway,
+    // 'running'). We do NOT await the ~2-minute commission on a single request
+    // — that used to hit the fetch timeout, drop the user on an error screen,
+    // and invite a retry that aborts the in-flight BLE connection. The only
+    // early-out here is an actual "couldn't reach the hub" network error.
     try {
       const res = await matterCommission(matterCode.trim())
-      if (!res.ok) {
-        setErrorMsg(res.error || t('wizard.pairing.matterFailed'))
+      if (res && res.status && res.status !== 'started' && res.status !== 'running') {
+        setErrorMsg(res.message || res.error || t('wizard.pairing.matterFailed'))
         setStep('error')
         return
       }
@@ -373,13 +384,35 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
       setStep('error')
       return
     }
-    // Matter commissioning succeeded — poll for the device to appear
+    // Watch two things in parallel:
+    //  • device-registry poller → transitions to 'found' when the bulb appears
+    //  • status poller → surfaces a commission FAILURE (so the user isn't left
+    //    staring at "pairing…" for the full window on a bad code / device).
     startDevicePoller()
-    // Give it a 5-minute window then timeout
+    startMatterStatusPoller()
+    // Safety cap — commission_matter self-limits to ~150s; give a little margin.
     timerRef.current = setTimeout(() => {
       stopTimers()
       setStep('timeout')
-    }, 300_000)
+    }, 180_000)
+  }
+
+  // Poll the async Matter commission status. On 'failed' show the error; on
+  // 'success' we leave the transition to the device poller (the entities take a
+  // beat to appear after commissioning reports success). Never re-triggers a
+  // commission — that's the whole point of the single-flight backend.
+  const startMatterStatusPoller = () => {
+    if (matterPollRef.current) { clearInterval(matterPollRef.current); matterPollRef.current = null }
+    matterPollRef.current = setInterval(async () => {
+      try {
+        const s = await matterStatus()
+        if (s && s.status === 'failed') {
+          stopTimers()
+          setErrorMsg(s.message || t('wizard.pairing.matterFailed'))
+          setStep('error')
+        }
+      } catch { /* transient — keep polling */ }
+    }, 3000)
   }
 
   const startWifiScan = async (proto) => {
