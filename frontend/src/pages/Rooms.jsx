@@ -1150,13 +1150,6 @@ export function RoomDetail() {
 
   const entityMapRD = useMemo(() => Object.fromEntries(entities.map((e) => [e.entity_id, e])), [entities])
   const occupied = useMemo(() => roomOccupancy(room, entityMapRD, occupancySensors), [room, entityMapRD, occupancySensors])
-  // "Combine sensors" is only offered when the room has 2+ presence-type sensors
-  // to actually fuse — otherwise it'd just wrap one sensor and make a redundant
-  // entity (roomDevices already excludes any existing fused sensor).
-  const fusableCount = useMemo(
-    () => roomDevices.filter((d) => d.domain === 'binary_sensor' && FUSABLE_PRESENCE_DC.has(d.device_class)).length,
-    [roomDevices],
-  )
   const [showCombineSensors, setShowCombineSensors] = useState(false)
   const [showPresences, setShowPresences] = useState(false)
   // Smart Presences that belong to THIS room (its main presence + any zones,
@@ -1332,24 +1325,10 @@ export function RoomDetail() {
                     {avgOn && <Check size={14} style={{ color: 'var(--ok)', flexShrink: 0 }} />}
                   </button>
                 )}
-                {/* Combine sensors — only when the room has 2+ presence sensors. */}
-                {fusableCount >= 2 && (
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setShowCombineSensors(true) }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '9px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span style={{ fontSize: 13, width: 14, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">🧩</span>
-                    <span style={{ flex: 1 }}>{t('rooms.combineSensors.title')}</span>
-                  </button>
-                )}
+                {/* "Combine sensors" was removed: fusing sensors only ever served
+                    Smart Presence, so it lived here twice. Smart Presence (below)
+                    is now the single entry — it views existing presences AND
+                    creates a new one (which is the fuse/merge flow). */}
                 {/* Smart Presence — always available: view this room's fused
                     presence sensors (main + zones) and create a new one. This is
                     the home for presence because it's room-scoped, and each
