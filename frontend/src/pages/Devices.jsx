@@ -2611,11 +2611,38 @@ export default function Devices() {
           if (d.ir_device_id) return entities.find(e => e.entity_id === `ir.${d.ir_device_id}`)
           return null
         }
+        // Promoted sibling tiles (user set "show as its own tile" / is_tile) are
+        // kept in `filtered`, but the room grid assembles each room's items from
+        // ziggyRooms[].devices — the registry's PRIMARY-only device rows. A
+        // promoted sibling is never a primary row, so without this it lands in
+        // no bucket (room / No Room / Unassigned / IR) and vanishes from the
+        // default room view (it only showed under the by-type view, which reads
+        // `filtered` directly). Place each promoted sibling into the same room as
+        // its group's primary, or No Room when that primary is roomless.
+        const primaryToRoomId = {}
+        for (const room of ziggyRooms) {
+          for (const d of (room.devices || [])) {
+            if (d.entity_id) primaryToRoomId[d.entity_id] = room.id
+          }
+        }
+        const siblingsByRoom = {}
+        const noRoomSiblings = []
+        for (const sib of filtered) {
+          if (!sib._promotedTile) continue
+          const gid = groupByEntityId[sib.entity_id]
+          const primaryId = gid ? (groupById[gid] && groupById[gid].primary_entity_id) : null
+          const rid = primaryId != null ? primaryToRoomId[primaryId] : undefined
+          if (rid != null) (siblingsByRoom[rid] = siblingsByRoom[rid] || []).push(sib)
+          else noRoomSiblings.push(sib)
+        }
         const roomGroups = ziggyRooms.map(room => ({
           room,
-          items: (room.devices || [])
-            .map(resolveDevice)
-            .filter(e => e && entitySet.has(e.entity_id)),
+          items: [
+            ...(room.devices || [])
+              .map(resolveDevice)
+              .filter(e => e && entitySet.has(e.entity_id)),
+            ...(siblingsByRoom[room.id] || []),
+          ],
         })).filter(g => g.items.length > 0)
         // Use the same unassigned set as the filter chip so counts are consistent.
         // unassigned = getUnassigned() = non-IR entities in DEVICE_DOMAINS not in any HA area.
@@ -2635,6 +2662,7 @@ export default function Devices() {
         const noRoomItems = [
           ...noRoomEntities.filter(e => entitySet.has(e.entity_id)),
           ...irNoRoom,
+          ...noRoomSiblings,
         ]
 
         return (
