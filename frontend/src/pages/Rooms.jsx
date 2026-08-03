@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef, lazy, Suspense } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { motion, Reorder } from 'framer-motion'
-import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight, Pencil, ArrowUpDown, Check, GripVertical } from 'lucide-react'
+import { ArrowLeft, Plus, EyeOff, Eye, Trash2, Zap, Play, Pause, ChevronRight, Pencil, ArrowUpDown, Check, GripVertical, MoreHorizontal } from 'lucide-react'
 import { getMapRoomsSummary, getAutomations, triggerAutomation, getFeaturesSettings } from '../lib/api'
 
 const HomeMapCanvas = lazy(() =>
@@ -421,6 +421,18 @@ export function RoomsList() {
   // the user confirms — and the saved order isn't disturbed if they bail.
   const [reorderMode, setReorderMode] = useState(false)
   const [draftOrder, setDraftOrder] = useState([])
+  // Header overflow (⋮) menu: folds the low-frequency Reorder + Reset actions
+  // into one compact control so the header reads [search] … [⋮] [+ Add].
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const headerMenuRef = useRef(null)
+  useEffect(() => {
+    if (!headerMenuOpen) return
+    const onDown = (e) => { if (headerMenuRef.current && !headerMenuRef.current.contains(e.target)) setHeaderMenuOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') setHeaderMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [headerMenuOpen])
 
   useEffect(() => { fetchAll({ maxAge: 120_000 }) }, [])
 
@@ -558,30 +570,65 @@ export function RoomsList() {
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            {/* Labeled "Reorder" button — was previously an icon-only 38×38
-                square, which read as a generic chrome control on mobile and
-                users couldn't tell it was the sort affordance. Labeled
-                secondary button matches "+ Add room" in visual weight without
-                competing for primary CTA. */}
-            {rooms.length > 1 && (
-              <button
-                onClick={startReorder}
-                aria-label={t('rooms.reorderAria')}
-                className="z-btn-secondary"
-                style={{ padding: '8px 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13 }}
-              >
-                <ArrowUpDown size={13} /> {t('rooms.reorder')}
-              </button>
-            )}
+            {/* Reorder + Reset are low-frequency actions — folded into one
+                compact overflow (⋮) button so they stop competing with the
+                primary "Add room" CTA for header width. */}
             {rooms.length > 0 && (
-              <button
-                onClick={() => setConfirmReset(true)}
-                aria-label={t('rooms.resetAllTitle')}
-                className="z-btn-secondary"
-                style={{ padding: '8px 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#fca5a5' }}
-              >
-                <Trash2 size={13} /> {t('rooms.resetAll')}
-              </button>
+              <div ref={headerMenuRef} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setHeaderMenuOpen((o) => !o)}
+                  aria-label={t('rooms.moreActions')}
+                  aria-haspopup="menu"
+                  aria-expanded={headerMenuOpen}
+                  className="z-btn-secondary"
+                  style={{ padding: '8px 10px', borderRadius: 10, display: 'flex', alignItems: 'center' }}
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+                {headerMenuOpen && (
+                  <div
+                    role="menu"
+                    style={{
+                      position: 'absolute', top: 'calc(100% + 6px)', insetInlineEnd: 0,
+                      background: 'var(--surface)', border: '0.5px solid var(--line)',
+                      borderRadius: 12, boxShadow: 'var(--shadow-lg)',
+                      padding: 4, minWidth: 160, zIndex: 10,
+                      display: 'flex', flexDirection: 'column',
+                    }}
+                  >
+                    {rooms.length > 1 && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setHeaderMenuOpen(false); startReorder() }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8,
+                          background: 'transparent', border: 'none', cursor: 'pointer',
+                          fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <ArrowUpDown size={14} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+                        <span style={{ flex: 1 }}>{t('rooms.reorder')}</span>
+                      </button>
+                    )}
+                    <button
+                      role="menuitem"
+                      onClick={() => { setHeaderMenuOpen(false); setConfirmReset(true) }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8,
+                        background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit', fontSize: 13, color: 'var(--accent)', textAlign: 'start',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = `color-mix(in srgb, var(--accent) 8%, var(--surface))`}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <Trash2 size={14} style={{ flexShrink: 0 }} />
+                      <span style={{ flex: 1 }}>{t('rooms.resetAll')}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
               <Plus size={13} /> {t('rooms.add')}

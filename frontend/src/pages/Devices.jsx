@@ -45,6 +45,11 @@ const IR_TYPE_ICONS = {
 
 const IR_DEVICE_TYPES = ['tv', 'ac', 'fan', 'soundbar', 'receiver', 'projector', 'custom']
 
+// Master switch for the "N unknown IR signals" header pill. Hidden for now per
+// user request — the capture/assign detection and its modal are untouched, so
+// flipping this back to true restores the tag with no other changes.
+const SHOW_UNKNOWN_IR_TAG = false
+
 // Assumed-state chip + picker popover. Splits out of DeviceCard so the
 // popover can render with `position: fixed` (anchored via getBoundingClientRect
 // off the chip), escaping any ancestor with overflow constraints. The
@@ -2362,7 +2367,7 @@ export default function Devices() {
             <Plus size={13} /> {t('devices.pairDevice')}
           </button>
         </div>
-        {(hiddenCount > 0 || unassignedSignalCount > 0) && (
+        {(hiddenCount > 0) && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 10 }}>
             {hiddenCount > 0 && (
               <button onClick={toggleShowHidden} style={{
@@ -2376,7 +2381,9 @@ export default function Devices() {
                 {showHidden ? t('devices.showingHidden') : t('devices.showHidden')}
               </button>
             )}
-            {unassignedSignalCount > 0 && (
+            {/* Unknown-IR-signals tag hidden for now (user request). The detection
+                + modal still exist; flip SHOW_UNKNOWN_IR_TAG to bring the pill back. */}
+            {SHOW_UNKNOWN_IR_TAG && unassignedSignalCount > 0 && (
               <button
                 onClick={() => setShowUnassignedSignals(true)}
                 title={t('devices.unassignedSignalsTooltip')}
