@@ -104,15 +104,35 @@ async def commission_matter(code: str) -> dict:
     make this async + poll, so the UI needn't block on a single long request.)
     """
     try:
-        # network_only=False is REQUIRED for pairing a fresh device. HA's
-        # matter/commission handler defaults network_only=True, which does
-        # on-network (mDNS) discovery ONLY — a brand-new bulb isn't on any
-        # network yet, so that path always times out ("Discovery timed out").
-        # A fresh Matter device is reachable only over BLE, so we must opt into
-        # the BLE path: matter-server scans BLE, does the PASE handshake, then
-        # pushes the Thread dataset / Wi-Fi creds so the device joins the
-        # network. (network_only=True is only correct for re-discovering a node
-        # already on the network — not our "add a new device" flow.)
+        # STEP 1 — pre-load the preferred Thread operational dataset into
+        # matter-server. A Thread Matter device (e.g. an IKEA bulb) connects over
+        # BLE, attests, then needs the Thread network key to join. HA's
+        # matter/commission does NOT auto-attach it, so without this the device
+        # gets to "Required network information not provided / thread (no)" and
+        # fails even though BLE + attestation succeeded. We fetch HA's preferred
+        # dataset (kept TLV-synced to our OTBR) and push it via matter/set_thread.
+        # Non-fatal on failure (a Wi-Fi-only Matter device wouldn't need it).
+        try:
+            ds = await _ws({"type": "thread/list_datasets"}, timeout=10.0)
+            datasets = (ds[0].get("result") or {}).get("datasets", [])
+            pref = next((d for d in datasets if d.get("preferred")), None)
+            if pref:
+                tlv_res = await _ws(
+                    {"type": "thread/get_dataset_tlv", "dataset_id": pref["dataset_id"]},
+                    timeout=10.0)
+                tlv = (tlv_res[0].get("result") or {}).get("tlv")
+                if tlv:
+                    await _ws({"type": "matter/set_thread",
+                               "thread_operation_dataset": tlv}, timeout=15.0)
+        except Exception as e:
+            log_error(f"[Pairing] set_thread dataset (non-fatal): {e}")
+
+        # STEP 2 — commission. network_only=False is REQUIRED for a fresh device:
+        # HA's matter/commission defaults network_only=True (on-network/mDNS
+        # discovery ONLY), which a brand-new device — not on any network yet —
+        # can never answer ("Discovery timed out"). network_only=False takes the
+        # BLE path: BLE scan → PASE handshake → push the Thread dataset above →
+        # device joins Thread → operational.
         res, = await _ws({"type": "matter/commission", "code": code,
                           "network_only": False},
                          timeout=150.0)

@@ -108,11 +108,25 @@ fi
 _log "host prep: IPv6 forwarding + BlueZ + dirs"
 printf 'net.ipv6.conf.all.forwarding=1\nnet.ipv4.ip_forward=1\n' | sudo -n tee /etc/sysctl.d/99-ziggy-matter.conf >/dev/null
 sudo -n sysctl -q --system >/dev/null 2>&1 || true
-if ! systemctl is-active --quiet bluetooth 2>/dev/null; then
-  sudo -n apt-get install -y bluez >/dev/null 2>&1 || _warn "bluez install failed — BLE commissioning will not work"
-  sudo -n systemctl enable --now bluetooth >/dev/null 2>&1 || _warn "could not start bluetooth.service"
+sudo -n apt-get install -y bluez >/dev/null 2>&1 || _warn "bluez install failed — BLE commissioning will not work"
+# BlueZ MUST run with --experimental: Matter/CHIPoBLE commissioning uses BLE
+# GATT features BlueZ only exposes in experimental mode. Without it a device is
+# found over BLE but the connection fails (BluezEndpoint "Internal error" /
+# "Operation was cancelled"). Ubuntu's unit doesn't enable it by default.
+if ! ps -eo args | grep -q "[b]luetoothd .*--experimental"; then
+  sudo -n mkdir -p /etc/systemd/system/bluetooth.service.d
+  printf "[Service]\nExecStart=\nExecStart=/usr/libexec/bluetooth/bluetoothd --experimental\n" \
+    | sudo -n tee /etc/systemd/system/bluetooth.service.d/experimental.conf >/dev/null
+  sudo -n systemctl daemon-reload
 fi
-systemctl is-active --quiet bluetooth && _ok "bluetooth active" || _warn "bluetooth NOT active (needed for commissioning)"
+sudo -n systemctl enable --now bluetooth >/dev/null 2>&1 || _warn "could not start bluetooth.service"
+sudo -n systemctl restart bluetooth >/dev/null 2>&1; sleep 2
+sudo -n hciconfig hci0 up >/dev/null 2>&1 || true
+if ps -eo args | grep -q "[b]luetoothd .*--experimental" && systemctl is-active --quiet bluetooth; then
+  _ok "bluetooth active (experimental mode)"
+else
+  _warn "bluetooth NOT active/experimental (needed for BLE commissioning)"
+fi
 sudo -n mkdir -p "$REPO_DIR/docker/otbr-data" "$REPO_DIR/docker/matter-data"
 
 # ---------------------------------------------------------------------------
