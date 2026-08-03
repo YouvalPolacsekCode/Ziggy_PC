@@ -1338,7 +1338,7 @@ export function RoomDetail() {
                   onClick={() => { setMenuOpen(false); setShowPresences(true) }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '9px 12px', borderRadius: 8,
+                    padding: '9px 12px', borderRadius: 8, whiteSpace: 'nowrap',
                     background: 'transparent', border: 'none', cursor: 'pointer',
                     fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
                   }}
@@ -1346,7 +1346,7 @@ export function RoomDetail() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <span style={{ fontSize: 13, width: 14, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">🧠</span>
-                  <span style={{ flex: 1 }}>{t('rooms.smartPresence.menu')}</span>
+                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('rooms.smartPresence.menu')}</span>
                   {roomPresences.length > 0 && (
                     <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-mute)', flexShrink: 0 }}>{roomPresences.length}</span>
                   )}
