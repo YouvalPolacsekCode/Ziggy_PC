@@ -18,7 +18,7 @@ from services.ha_areas import (
     invalidate_registry_cache, _ws,
 )
 from services.home_automation import get_all_states, get_state
-from .auth_deps import require_role
+from .auth_deps import require_role, get_current_user
 
 router = APIRouter()
 
@@ -442,6 +442,43 @@ async def set_tile_pref(body: TilePrefBody, _user: dict = Depends(require_role("
     pref = entity_prefs.set_pref(body.entity_id, **kwargs)
     _invalidate_enrich_cache()
     return {"ok": True, "entity_id": body.entity_id, "pref": pref}
+
+
+class ClassifyBody(BaseModel):
+    signature: str                       # device signature (group's shared unique-id)
+    main_entity: Optional[str] = None    # promote this entity to the card's main control
+    card_kind: Optional[str] = None      # override the card type (irrigation, climate, …)
+    entity_roles: Optional[dict] = None  # {entity_id: role} per-entity role override
+    clear: bool = False                  # wipe this device's override entirely
+
+
+@router.get("/api/devices/classify/options")
+async def classify_options(_user: dict = Depends(get_current_user)):
+    """Valid card kinds + roles for the override UI."""
+    from services import device_overrides
+    return {"card_kinds": sorted(device_overrides.VALID_KINDS),
+            "roles": sorted(device_overrides.VALID_ROLES)}
+
+
+@router.post("/api/devices/classify")
+async def set_classification(body: ClassifyBody, _user: dict = Depends(require_role("admin"))):
+    """User override of a device's classification — which entity is MAIN, the
+    card KIND, and per-entity ROLES. Keyed by device signature so it follows the
+    device and applies to identical devices (the crowd-source path). Wins over
+    the profile catalog and the heuristic."""
+    from services import device_overrides
+    try:
+        pref = device_overrides.set_override(
+            body.signature,
+            main_entity=body.main_entity,
+            card_kind=body.card_kind,
+            entity_roles=body.entity_roles,
+            clear=body.clear,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _invalidate_enrich_cache()
+    return {"ok": True, "signature": body.signature, "override": pref}
 
 
 @router.get("/api/devices")

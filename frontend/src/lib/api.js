@@ -873,6 +873,12 @@ export const deleteIrDevice = (id) => del(`/ir/devices/${id}`)
 // set a custom icon. { is_tile?, hidden?, icon?, clear_icon? } — omit to leave.
 export const setTilePref = (entityId, opts = {}) =>
   post('/devices/tile', { entity_id: entityId, ...opts })
+// Device classification override — which entity is MAIN, the card KIND, and
+// per-entity ROLES. Keyed by device signature; wins over profile + heuristic.
+// { main_entity?, card_kind?, entity_roles?, clear? }
+export const setClassification = (signature, opts = {}) =>
+  post('/devices/classify', { signature, ...opts })
+export const getClassifyOptions = () => get('/devices/classify/options')
 export const irLearn = (deviceId, commandName) =>
   post('/ir/learn', { device_id: deviceId, command_name: commandName })
 export const irSend = (deviceId, command) =>

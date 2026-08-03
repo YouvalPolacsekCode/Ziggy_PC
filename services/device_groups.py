@@ -472,6 +472,39 @@ def _domain_priority(domain: str) -> int:
         return len(_CONTROLLABLE_DOMAIN_PRIORITY) + 1
 
 
+def _group_common_object_id(rows: list[dict]) -> str:
+    """The shared leading token-run of the group's entity object_ids.
+
+    For a Zigbee device every entity shares the IEEE/unique-id, e.g.
+    `0xb43a31fffe6aae5f` — the bare control entity's object_id IS exactly this,
+    while feature/config siblings append a descriptive suffix
+    (`..._auto_close_when_water_shortage`). Lets `_pick_primary` tell a
+    device's real control switch from a settings toggle.
+    """
+    oids = [(r.get("entity_id") or "").split(".", 1)[-1] for r in rows if r.get("entity_id")]
+    oids = [o for o in oids if o]
+    if not oids:
+        return ""
+    token_lists = [o.split("_") for o in oids]
+    common: list[str] = []
+    for i in range(min(len(t) for t in token_lists)):
+        tok = token_lists[0][i]
+        if all(t[i] == tok for t in token_lists):
+            common.append(tok)
+        else:
+            break
+    return "_".join(common)
+
+
+def _is_bare_control(row: dict, common_object_id: str) -> bool:
+    """True when `row`'s object_id is the group's bare unique-id (no suffix) —
+    i.e. it's the device itself, not a feature/config child entity."""
+    if not common_object_id:
+        return False
+    oid = (row.get("entity_id") or "").split(".", 1)[-1]
+    return oid == common_object_id
+
+
 def _pick_primary(rows: list[dict]) -> dict:
     """Return the row from `rows` that should drive the card.
 
@@ -511,10 +544,17 @@ def _pick_primary(rows: list[dict]) -> dict:
     if controllable:
         controllable.sort(key=lambda r: (_domain_priority(r["domain"]), r.get("entity_id") or ""))
         best = controllable[0]
+        # A bare `switch` may still lose to a purposeful binary — BUT only if it
+        # is a feature/config switch (suffixed: `_do_not_disturb`, `_effect`,
+        # `_auto_close`). The device's BARE control switch (object_id == the
+        # group's shared unique-id) IS the device — e.g. a water valve's on/off
+        # — and must win over a status readout like `binary_sensor.X_valve_work_state`.
         if (best.get("domain") or "") == "switch":
-            purposeful = _best_purposeful_binary()
-            if purposeful is not None:
-                return purposeful
+            common = _group_common_object_id(rows)
+            if not _is_bare_control(best, common):
+                purposeful = _best_purposeful_binary()
+                if purposeful is not None:
+                    return purposeful
         return best
 
     # 3. No controllable — a purposeful binary_sensor outranks sibling sensor.*.
@@ -534,15 +574,60 @@ def _pick_primary(rows: list[dict]) -> dict:
     return rows_sorted[0]
 
 
+# Sensor device_classes / name hints that are DIAGNOSTIC (device health / raw
+# internals) rather than a METRIC the user cares to read on the card.
+_DIAGNOSTIC_DEVICE_CLASSES = frozenset({
+    "battery", "signal_strength", "timestamp", "enum", "duration",
+})
+import re as _re2
+_DIAGNOSTIC_NAME_HINTS = _re2.compile(
+    r"(?:battery|linkquality|link_quality|_lqi|_rssi|signal|last_seen|last_changed|"
+    r"firmware|update|device_status|_status$|_start_time|_end_time|power_outage)"
+)
+
+
 def _classify_role(row: dict, is_primary: bool) -> str:
+    """Heuristic role for an entity (bottom layer; profile/override can beat it).
+
+    Roles: primary | control | metric | config | diagnostic.
+      - control     : a controllable that ISN'T the main (rare — usually config)
+      - config      : feature/setting toggles (non-primary switch, number, select, button)
+      - metric      : a reading the user wants (flow, volume, temperature, power…)
+      - diagnostic  : device internals (battery, signal, timestamps, status, update)
+    """
     if is_primary:
         return "primary"
     domain = (row.get("domain") or "").lower()
+    eid = (row.get("entity_id") or "").lower()
+
     if domain in _SENSOR_DOMAINS:
+        dc = (_device_class_of(row) or "").lower()
+        if dc in _DIAGNOSTIC_DEVICE_CLASSES or _DIAGNOSTIC_NAME_HINTS.search(eid):
+            return "diagnostic"
         return "metric"
+    if domain == "update":
+        return "diagnostic"
+    if domain in ("number", "select", "button", "switch"):
+        # Non-primary controllables on a device are almost always settings
+        # (adaptive sensitivity, auto-close, effect, do-not-disturb).
+        return "config"
     if domain in _DIAGNOSTIC_DOMAINS:
         return "diagnostic"
     return "secondary"
+
+
+# Card kind inferred from the primary entity's domain when neither a profile
+# nor a user override names one. Drives which bespoke card the frontend renders.
+_DOMAIN_TO_CARD_KIND = {
+    "light": "light", "switch": "switch", "climate": "climate",
+    "cover": "cover", "lock": "lock", "fan": "fan", "media_player": "media",
+    "vacuum": "vacuum", "humidifier": "humidifier", "water_heater": "climate",
+    "sensor": "sensor", "binary_sensor": "sensor",
+}
+
+
+def _heuristic_card_kind(primary: dict) -> str:
+    return _DOMAIN_TO_CARD_KIND.get((primary.get("domain") or "").lower(), "generic")
 
 
 def _device_class_of(row: dict) -> str | None:
@@ -565,14 +650,15 @@ def _state_of(row: dict):
     return row.get("ha_state")
 
 
-def _entity_summary(row: dict, is_primary: bool) -> dict:
-    """Compact per-entity dict shipped to the frontend inside the group."""
+def _entity_summary(row: dict, role: str) -> dict:
+    """Compact per-entity dict shipped to the frontend inside the group.
+    `role` is the fully-resolved role (heuristic → profile → user override)."""
     from services import entity_prefs
     pref = entity_prefs.get_pref(row.get("entity_id") or "")
     return {
         "entity_id":     row.get("entity_id"),
         "domain":        row.get("domain"),
-        "role":          _classify_role(row, is_primary),
+        "role":          role,
         "device_class":  _device_class_of(row),
         "unit":          _unit_of(row),
         "state":         _state_of(row),
@@ -671,7 +757,52 @@ def build_groups(enriched_devices: list[dict], registry: dict | None = None) -> 
     for key in bucket_order:
         rows = buckets[key]
         kind, key_value = key
-        primary = _pick_primary(rows)
+
+        # ── Classification: heuristic → profile → user override (last wins) ──
+        # `signature` is the physical device's stable id (shared object-id token
+        # / Zigbee IEEE), so a user's correction and any matched profile follow
+        # the device across regroupings AND apply to identical devices.
+        signature = _group_common_object_id(rows)
+        try:
+            from services import device_profiles as _dp, device_overrides as _dov
+            profile = _dp.match_profile(rows)
+            override = _dov.get(signature)
+        except Exception as _e:
+            profile, override = None, {}
+            log_error(f"[device_groups] classify layer failed: {_e}")
+
+        # Resolve MAIN: user override > profile main > heuristic _pick_primary.
+        heuristic_primary = _pick_primary(rows)
+        forced_main = (override or {}).get("main_entity")
+        if not forced_main and profile:
+            try:
+                forced_main = _dp.profile_main_entity(profile, rows)
+            except Exception:
+                forced_main = None
+        primary = heuristic_primary
+        if forced_main:
+            _m = next((r for r in rows if r.get("entity_id") == forced_main), None)
+            if _m is not None:
+                primary = _m
+
+        # Resolve card_kind: override > profile > heuristic-from-domain.
+        card_kind = (override or {}).get("card_kind") \
+            or (profile.get("card_kind") if profile else None) \
+            or _heuristic_card_kind(primary)
+        _override_roles = (override or {}).get("entity_roles") or {}
+
+        def _resolve_role(r: dict) -> str:
+            if r is primary:
+                return "primary"
+            eid = r.get("entity_id") or ""
+            if eid in _override_roles:
+                return _override_roles[eid]
+            if profile:
+                pr = _dp.profile_role_for(profile, eid)
+                if pr:
+                    return pr
+            return _classify_role(r, False)
+
         primary_eid = primary.get("entity_id")
         ha_device_id = key_value if kind == "ha" else None
         ir_device_id = key_value if kind == "ir" else None
@@ -715,25 +846,32 @@ def build_groups(enriched_devices: list[dict], registry: dict | None = None) -> 
             group_status = next((s for s in statuses if s), None)
 
         entities = [
-            _entity_summary(r, is_primary=(r is primary))
+            _entity_summary(r, _resolve_role(r))
             for r in rows
         ]
-        # Stable ordering: primary first, then metrics by device_class priority,
-        # then everything else alphabetically.
+        # Stable ordering: primary → control → metric → config → diagnostic.
         def _entity_sort_key(e: dict) -> tuple:
             role = e.get("role")
             if role == "primary":
                 return (0, "")
+            if role == "control":
+                return (1, e.get("entity_id") or "")
             if role == "metric":
-                return (1, str(_device_class_priority(e.get("device_class"))))
-            if role == "diagnostic":
+                return (2, str(_device_class_priority(e.get("device_class"))))
+            if role == "config":
                 return (3, e.get("entity_id") or "")
-            return (2, e.get("entity_id") or "")
+            if role == "diagnostic":
+                return (4, e.get("entity_id") or "")
+            return (3, e.get("entity_id") or "")
         entities.sort(key=_entity_sort_key)
 
         groups.append({
             "group_id":            group_id,
             "kind":                kind,
+            "card_kind":           card_kind,
+            "signature":           signature,
+            "classified_by":       ("override" if (override or {}).get("main_entity") or (override or {}).get("card_kind")
+                                     else "profile" if profile else "heuristic"),
             "name":                name,
             "room":                room,
             "status":              group_status,

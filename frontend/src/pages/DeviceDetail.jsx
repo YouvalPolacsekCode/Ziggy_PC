@@ -17,7 +17,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, selfHealRefresh, whoCanDo } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, setClassification, getClassifyOptions, selfHealRefresh, whoCanDo } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
@@ -662,8 +662,26 @@ export default function DeviceDetail() {
     try {
       await setTilePref(targetId, opts)
       await useDeviceStore.getState().fetchAll({ force: true })
+      // Reload THIS detail view too — the sibling toggles are controlled by
+      // the detail's own entity data (group/sibling_entities), so without this
+      // the <Toggle checked> snapped back to the stale value ("can't toggle").
+      load({ background: true })
     } catch (e) {
       addToast(e?.userMessage || e?.message || t('deviceDetail.tilePrefFailed'), 'error')
+    }
+  }
+
+  // Device classification override (which entity is MAIN, the card KIND).
+  const applyClassification = async (opts) => {
+    try {
+      const sig = group?.signature
+      if (!sig) { addToast(t('common.failed'), 'error'); return }
+      await setClassification(sig, opts)
+      await useDeviceStore.getState().fetchAll({ force: true })
+      load({ background: true })
+      addToast(t('common.saved') || 'Saved', 'success')
+    } catch (e) {
+      addToast(e?.userMessage || e?.message || t('common.failed'), 'error')
     }
   }
 
@@ -1358,6 +1376,48 @@ export default function DeviceDetail() {
             >{t('deviceDetail.tileIconDefault')}</button>
           </div>
         </div>
+        {group?.signature && allSiblings.length > 1 && (
+          <div style={{ marginTop: 4 }}>
+            {/* Which entity drives the card (Main control) */}
+            {(() => {
+              const CTRL = ['switch','light','climate','cover','lock','fan','media_player','valve','vacuum','humidifier','water_heater']
+              const mains = allSiblings.filter(s => CTRL.includes(s.domain) || s.entity_id === group.primary_entity_id)
+              if (mains.length < 2) return null
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.mainControlHint')}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {mains.map(s => {
+                      const isMain = s.entity_id === group.primary_entity_id
+                      return (
+                        <button key={s.entity_id} onClick={() => { if (!isMain) applyClassification({ main_entity: s.entity_id }) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, cursor: isMain ? 'default' : 'pointer', textAlign: 'start',
+                            background: isMain ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)',
+                            border: isMain ? '1.5px solid var(--accent)' : '0.5px solid var(--line)' }}>
+                          <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
+                          <span style={{ fontSize: 11, color: isMain ? 'var(--accent)' : 'var(--ink-ghost)' }}>{isMain ? `★ ${t('deviceDetail.mainBadge')}` : t('deviceDetail.setAsMain')}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
+            {/* Device type (card kind) */}
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.deviceTypeHint')}</p>
+              <select value={group.card_kind || 'generic'} onChange={e => applyClassification({ card_kind: e.target.value })}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 10, fontSize: 13, background: 'var(--surface-2)', color: 'var(--ink)', border: '0.5px solid var(--line)' }}>
+                {['irrigation','valve','light','switch','outlet','climate','cover','lock','fan','media','sensor','vacuum','humidifier','generic'].map(k => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>
+              {group.classified_by && group.classified_by !== 'heuristic' && (
+                <p style={{ fontSize: 10, color: 'var(--ink-ghost)', marginTop: 4 }}>{t('deviceDetail.classifiedBy', { by: group.classified_by })}</p>
+              )}
+            </div>
+          </div>
+        )}
         {usefulSiblings.filter(s => !s.isPrimary).length > 0 && (
           <div>
             <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.showAsTileHint')}</p>
