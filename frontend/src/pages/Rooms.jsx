@@ -1300,7 +1300,7 @@ export function RoomDetail() {
                   position: 'absolute', top: 'calc(100% + 6px)', insetInlineEnd: 0,
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
                   borderRadius: 12, boxShadow: 'var(--shadow-lg)',
-                  padding: 4, minWidth: 160, zIndex: 10,
+                  padding: 4, minWidth: 160, zIndex: 10, whiteSpace: 'nowrap',
                   display: 'flex', flexDirection: 'column',
                 }}
               >
@@ -1313,7 +1313,7 @@ export function RoomDetail() {
                     onClick={() => { setMenuOpen(false); setRoomShowAvgTemp(roomId, !avgOn) }}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '9px 12px', borderRadius: 8,
+                      padding: '9px 12px', borderRadius: 8, whiteSpace: 'nowrap',
                       background: 'transparent', border: 'none', cursor: 'pointer',
                       fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)', textAlign: 'start',
                     }}
@@ -1321,7 +1321,7 @@ export function RoomDetail() {
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
                     <span style={{ fontSize: 13, width: 14, textAlign: 'center', flexShrink: 0 }} aria-hidden="true">🌡️</span>
-                    <span style={{ flex: 1 }}>{t('rooms.avgTemp.title')}</span>
+                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('rooms.avgTemp.title')}</span>
                     {avgOn && <Check size={14} style={{ color: 'var(--ok)', flexShrink: 0 }} />}
                   </button>
                 )}
