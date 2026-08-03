@@ -2,11 +2,25 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronRight,
-  Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap, Home,
+  Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap, Home, QrCode,
 } from 'lucide-react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
+import { plugin, isNative } from '../lib/native'
+
+// Pull a Matter setup payload out of whatever the barcode scanner returns.
+// A Matter QR encodes an `MT:...` base-38 string (this is what commissioning
+// wants — HA's matter/commission accepts it exactly like the typed manual
+// code). If the raw value carries a prefix/URL we grab just the MT: token;
+// otherwise we assume it's a manual pairing code and pass it through.
+function extractMatterCode(raw) {
+  if (!raw) return ''
+  const s = String(raw).trim()
+  const mt = s.match(/MT:[A-Z0-9.$%*+\-./:]+/i)
+  if (mt) return mt[0].toUpperCase()
+  return s
+}
 import {
   zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, matterStatus, getConfigFlows,
@@ -362,8 +376,13 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
     startDevicePoller()
   }
 
-  const startMatter = async () => {
-    if (!matterCode.trim()) return
+  const startMatter = async (codeArg) => {
+    // codeArg lets the QR scanner start commissioning with the scanned payload
+    // without waiting on the async matterCode state update. Falls back to the
+    // typed field for the manual-entry path.
+    const code = (typeof codeArg === 'string' ? codeArg : matterCode).trim()
+    if (!code) return
+    setMatterCode(code)
     await snapshotDevices()
     setStep('pairing')
     // Fire-and-poll: the backend starts commissioning in the background and
@@ -373,7 +392,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
     // and invite a retry that aborts the in-flight BLE connection. The only
     // early-out here is an actual "couldn't reach the hub" network error.
     try {
-      const res = await matterCommission(matterCode.trim())
+      const res = await matterCommission(code)
       if (res && res.status && res.status !== 'started' && res.status !== 'running') {
         setErrorMsg(res.message || res.error || t('wizard.pairing.matterFailed'))
         setStep('error')
@@ -413,6 +432,29 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         }
       } catch { /* transient — keep polling */ }
     }, 3000)
+  }
+
+  // Scan a Matter QR with the device camera (same native scanner the mobile
+  // onboarding flow uses — already in the app, so this ships over OTA with no
+  // new APK). On a successful decode we start commissioning immediately with
+  // the scanned payload. On web/PWA there's no native scanner → the button is
+  // hidden and users type the code.
+  const scanMatterQr = async () => {
+    const Scanner = plugin('CapacitorBarcodeScanner') || plugin('BarcodeScanner')
+    if (!Scanner) { setErrorMsg(t('wizard.pairing.scannerUnavailable')); return }
+    try {
+      const res = (await (Scanner.scanBarcode?.({ hint: 17 /* ALL */ }) ?? Scanner.scan?.())) ?? {}
+      const raw = res.ScanResult
+                ?? res.barcodes?.[0]?.rawValue
+                ?? res.barcodes?.[0]?.displayValue
+                ?? res.content
+                ?? ''
+      const code = extractMatterCode(raw)
+      if (!code) { setErrorMsg(t('wizard.pairing.noCodeInQr')); return }
+      await startMatter(code)
+    } catch {
+      // Scanner dismissed / cancelled — stay on the idle step, no error noise.
+    }
   }
 
   const startWifiScan = async (proto) => {
@@ -580,15 +622,36 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
               </p>
             </div>
 
-            {/* Matter code input — shown in the idle step */}
+            {/* Matter: scan the QR on the device/box, OR type the setup code.
+                The scan button only shows in the native app (where the camera
+                scanner exists); web/PWA users type the code. */}
             {protocol === 'matter' && (
-              <Input
-                label={t('wizard.pairing.matterCodeLabel')}
-                value={matterCode}
-                onChange={(e) => setMatterCode(e.target.value)}
-                placeholder={t('wizard.pairing.matterCodePh')}
-                className="w-full"
-              />
+              <div className="w-full space-y-3">
+                {isNative() && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={scanMatterQr}
+                      disabled={starting}
+                      className="w-full flex items-center justify-center gap-2"
+                    >
+                      <QrCode size={16} /> {t('wizard.pairing.matterScanBtn')}
+                    </Button>
+                    <div className="flex items-center gap-3 text-xs text-ink-mute">
+                      <div className="h-px flex-1 bg-surface-3" />
+                      {t('wizard.pairing.matterOr')}
+                      <div className="h-px flex-1 bg-surface-3" />
+                    </div>
+                  </>
+                )}
+                <Input
+                  label={t('wizard.pairing.matterCodeLabel')}
+                  value={matterCode}
+                  onChange={(e) => setMatterCode(e.target.value)}
+                  placeholder={t('wizard.pairing.matterCodePh')}
+                  className="w-full"
+                />
+              </div>
             )}
 
             {/* Instructions for non-Matter protocols */}
