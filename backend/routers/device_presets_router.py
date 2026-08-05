@@ -95,6 +95,8 @@ async def make_default(entity_id: str, preset_id: str,
         preset = device_presets.set_default(eid, preset_id)
     except KeyError:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Preset not found."})
+    # Make the bulb boot into this preset on a physical power-cycle (no 1% flash).
+    await device_presets.sync_power_on_behavior(eid)
     return {"preset": preset}
 
 
