@@ -24,7 +24,7 @@ import asyncio
 import json
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import websockets
 import requests
@@ -60,6 +60,20 @@ ha_last_reconnect_wall: float = 0.0
 
 _BACKOFF_BASE = 2
 _BACKOFF_MAX = 60
+
+# Set by run_subscriber once its event loop exists; kick_reconnect() fires it to
+# cut a backoff sleep short after credentials change.
+_reconnect_kick: Optional[asyncio.Event] = None
+
+# Address the URL self-healer moved us to, if any — reported in the recovery
+# notification so a silent self-repair is still auditable by the owner.
+_last_healed_url: Optional[str] = None
+
+# Home Assistant's version, captured from the WebSocket greeting.
+# edge_health_router reads this via getattr to populate /health.ha_version —
+# it had been reading an attribute nothing ever assigned, so that field was
+# permanently null for every external prober.
+ha_version: Optional[str] = None
 
 
 def _parse_ha_ts(ts_str: str) -> float:
@@ -170,6 +184,15 @@ async def _restore_entity_state(entity_id: str) -> None:
                 log_info(f"[StateRestore] Restored {entity_id} → {payload} (via {source})")
             else:
                 log_error(f"[StateRestore] Failed to restore {entity_id}: {result.get('message')}")
+        # Self-heal: if this light woke into a default preset, make sure the bulb
+        # is set to boot into its last state next time — so future power-cycles
+        # skip the ~1% flash entirely (no more restore round-trip needed).
+        if source == "default_preset":
+            try:
+                from services.device_presets import sync_power_on_behavior
+                await sync_power_on_behavior(entity_id)
+            except Exception as e:
+                log_error(f"[StateRestore] power_on_behavior sync failed for {entity_id}: {e}")
     except Exception as e:
         log_error(f"[StateRestore] Error restoring {entity_id}: {e}")
 
@@ -339,14 +362,21 @@ async def _process_event(event: dict) -> None:
 
 async def _run_once() -> None:
     """One connection attempt: connect, auth, subscribe, refresh, process events."""
-    global ha_connected, ha_last_reconnect, ha_last_reconnect_wall
+    global ha_connected, ha_last_reconnect, ha_last_reconnect_wall, _last_healed_url, ha_version
     # Resolve creds at connect time so a credential rotation is picked up on
     # the next reconnect without a process restart.
     ws_url = ha_client.ws_url()
     ha_token = ha_client.token()
     async with websockets.connect(ws_url, ping_interval=30, ping_timeout=10) as ws:
-        # Auth handshake
-        await ws.recv()  # auth_required
+        # Auth handshake. The auth_required greeting carries ha_version — the
+        # only place we see it on this connection, so capture it for /health.
+        greeting = await ws.recv()
+        try:
+            _v = json.loads(greeting).get("ha_version")
+            if isinstance(_v, str) and _v:
+                ha_version = _v
+        except (ValueError, AttributeError):
+            pass
         await ws.send(json.dumps({"type": "auth", "access_token": ha_token}))
         auth_resp = json.loads(await ws.recv())
         if auth_resp.get("type") != "auth_ok":
@@ -365,6 +395,16 @@ async def _run_once() -> None:
         ha_last_reconnect_wall = _time_mod.time()
         _dbus.emit("ha", BASIC, "ha_subscriber_connected",
                    url=ws_url, result="ok")
+
+        # Close out any announced outage (and name the address if the URL
+        # self-healer moved us). No-op when nothing was ever announced.
+        try:
+            from services import ha_outage_alert
+            _announce(ha_outage_alert.note_ha_state(True, healed_url=_last_healed_url))
+        except Exception as exc:
+            log_error(f"[HASubscriber] recovery bookkeeping failed: {exc}")
+        finally:
+            _last_healed_url = None
 
         # Full state refresh before processing any buffered events
         loop = asyncio.get_event_loop()
@@ -398,9 +438,82 @@ async def _run_once() -> None:
                 log_error(f"[HASubscriber] Event processing error: {e}")
 
 
+async def kick_reconnect() -> None:
+    """Wake the reconnect loop now instead of waiting out its backoff.
+
+    Called by `ha_runtime.set_ha_credentials` after the URL or token changes.
+    NOTE: this function was referenced by ha_runtime but never defined — the
+    resulting AttributeError was swallowed by ha_runtime's broad except, so a
+    credential change quietly waited out the backoff (up to 60s) instead.
+    """
+    ev = _reconnect_kick
+    if ev is not None:
+        ev.set()
+
+
+async def _sleep_or_kick(seconds: float) -> None:
+    """Backoff sleep that a kick_reconnect() can cut short."""
+    ev = _reconnect_kick
+    if ev is None:
+        await asyncio.sleep(seconds)
+        return
+    try:
+        await asyncio.wait_for(ev.wait(), timeout=seconds)
+    except asyncio.TimeoutError:
+        pass
+    else:
+        ev.clear()
+
+
+def _announce(payload: Optional[dict]) -> None:
+    """Push an outage / recovery message if the state machine produced one."""
+    if not payload:
+        return
+    try:
+        from services.push_notify import push_notify_fire_and_forget
+        push_notify_fire_and_forget(
+            payload["title"], payload["body"], url="/", category="system",
+        )
+        log_info(f"[HASubscriber] outage notification sent: {payload['kind']}")
+    except Exception as e:
+        log_error(f"[HASubscriber] outage notification failed: {e}")
+
+
+async def _try_heal_url(attempt: int) -> None:
+    """After repeated failures, check whether Home Assistant simply moved.
+
+    See services/ha_url_resolver for the full rationale — in short, a hub whose
+    HA address is IP-pinned dies permanently when DHCP shifts, and nothing else
+    in the system ever questions the address.
+    """
+    global _last_healed_url
+    try:
+        from services import ha_url_resolver
+        if not ha_url_resolver.should_attempt_heal(attempt):
+            return
+        new_url = await ha_url_resolver.heal_url()
+        if new_url:
+            _last_healed_url = new_url
+    except Exception as e:
+        log_error(f"[HASubscriber] HA URL self-heal failed: {e}")
+
+
 async def run_subscriber() -> None:
     """Reconnect loop with exponential backoff. Runs indefinitely."""
-    global ha_connected
+    global ha_connected, _reconnect_kick
+    _reconnect_kick = asyncio.Event()
+
+    try:
+        from services import ha_url_resolver
+        if ha_url_resolver.is_ip_pinned(ha_client.url()):
+            log_error(
+                f"[HASubscriber] HA_URL is pinned to a literal IP ({ha_client.url()}). "
+                "This breaks permanently when the hub's DHCP lease moves. "
+                "Set HA_URL=http://host.docker.internal:8123 in the hub .env."
+            )
+    except Exception:
+        pass
+
     attempt = 0
     while True:
         ha_connected = False
@@ -416,7 +529,14 @@ async def run_subscriber() -> None:
                        error=str(e), retry_in_s=backoff, attempt=attempt,
                        result="error",
                        suggestion="Check HA is running and token is valid.")
-            await asyncio.sleep(backoff)
+            # Tell a human before this becomes a ten-hour silent outage.
+            try:
+                from services import ha_outage_alert
+                _announce(ha_outage_alert.note_ha_state(False))
+            except Exception as exc:
+                log_error(f"[HASubscriber] outage bookkeeping failed: {exc}")
+            await _try_heal_url(attempt)
+            await _sleep_or_kick(backoff)
         else:
             # Clean disconnect — reset backoff
             ha_connected = False

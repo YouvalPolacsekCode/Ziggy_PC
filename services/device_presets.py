@@ -214,6 +214,68 @@ def get_default(entity_id: str) -> Optional[dict]:
     return None
 
 
+async def sync_power_on_behavior(entity_id: str) -> None:
+    """Set the bulb's Zigbee `power_on_behavior` to 'previous' so a physical
+    power-cycle (wall switch) boots the bulb straight to its last state — the
+    default preset — instead of the firmware default.
+
+    Without this the bulb powers on at its hardware default (a ~1% flash) and
+    only jumps to the preset ~1s later when Ziggy's restore path re-applies it.
+    'previous' fixes it at the source (no flash, no round-trip dependency).
+
+    Called both when a default preset is SAVED (device_presets_router) and after
+    a preset bulb REGAINS POWER (ha_subscriber restore) — so bulbs that already
+    had a default self-heal on their next power-cycle. Best-effort + idempotent:
+    silently skips lights with no such setting, or whose select is unreachable
+    because the bulb is currently off.
+    """
+    from core.logger_module import log_error, log_info
+    if not str(entity_id).startswith("light."):
+        return
+    try:
+        import asyncio
+        import requests
+        from services.ha_areas import get_registry_snapshot
+        from services.home_automation import call_service
+        from services.ha_automations import HA_URL, HEADERS
+        snap = await get_registry_snapshot()
+        ents = snap.get("entities") or []
+        did = next((e.get("device_id") for e in ents
+                    if e.get("entity_id") == entity_id), None)
+        if not did:
+            return
+        # A sibling select on the SAME physical device naming power-on behavior
+        # (IKEA: '..._power_on_behavior'; others: '..._color_power_on_behavior').
+        sel = next((e.get("entity_id") for e in ents
+                    if e.get("device_id") == did
+                    and str(e.get("entity_id") or "").startswith("select.")
+                    and "power_on_behavior" in str(e.get("entity_id") or "")), None)
+        if not sel:
+            return
+        # Raw REST (not home_automation.get_state — that trims the `options`
+        # attribute we need to validate the target value).
+        def _get():
+            r = requests.get(f"{HA_URL()}/api/states/{sel}", headers=HEADERS(), timeout=8)
+            return r.json() if r.status_code == 200 else None
+        st = await asyncio.to_thread(_get)
+        if not st:
+            return
+        cur = st.get("state")
+        opts = (st.get("attributes") or {}).get("options") or []
+        # `unavailable` = bulb off / unreachable → can't set now (self-heals on
+        # the next power-on). `unknown` = reachable, value not yet reported → IS
+        # settable, so DON'T skip it. Already-'previous' → nothing to do.
+        if cur in ("unavailable", None) or cur == "previous":
+            return
+        if opts and "previous" not in opts:
+            return   # this bulb's select can't do 'previous'
+        await asyncio.to_thread(call_service, "select", "select_option",
+                                {"entity_id": sel, "option": "previous"})
+        log_info(f"[Presets] {sel} → previous (default-preset bulb {entity_id})")
+    except Exception as e:
+        log_error(f"[Presets] power_on_behavior sync failed for {entity_id}: {e}")
+
+
 def resolve_default_turn_on(entity_id: str, provided: Optional[dict]) -> dict:
     """Settings to merge into a light turn_on so it wakes in its default preset.
 
