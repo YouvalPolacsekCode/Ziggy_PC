@@ -948,6 +948,13 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
 
     if blaster_host and raw_code_b64:
         result = _direct_send(blaster_host, raw_code_b64, repeats)
+        if not result.get("ok"):
+            # Blaster unreachable — most often a DHCP IP drift. Re-resolve the
+            # current IP by the stored MAC (unicast /24 scan) and retry once, so
+            # IR keeps working across DHCP moves without a router reservation.
+            healed = _heal_blaster_and_retry(device, blaster_host, raw_code_b64, repeats)
+            if healed is not None:
+                result = healed
         if result.get("ok"):
             _after_command(device_id, device, logical_command)
             _debug_bus.emit("ir", BASIC, "ir_command_sent",
@@ -958,7 +965,7 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
                             device_id=device_id, command=logical_command,
                             path="direct", result="error",
                             message=result.get("message"),
-                            suggestion="Check blaster_host connectivity and raw IR code validity.")
+                            suggestion="Blaster unreachable even after MAC re-resolve — check it's powered/on-network.")
         return result
 
     # Path 1.5: synthesize the frame from the cracked protocol. For ACs that
@@ -1067,6 +1074,117 @@ def _direct_send(host: str, code_b64: str, repeats: int = 1) -> dict:
     except Exception as e:
         log_error(f"[IR] Direct send to {host} failed: {e}")
         return {"ok": False, "message": f"Direct IR send failed: {e}"}
+
+
+# ── Blaster IP self-heal (DHCP drift) ────────────────────────────────────────
+# A Broadlink blaster is addressed by a pinned IP (`blaster_host`), but DHCP can
+# move it — then every IR send times out ("upstream issues"). We ALSO store the
+# blaster's stable MAC at pairing time, so we can re-resolve the current IP by
+# scanning the LAN. The normal Broadlink discovery is a UDP BROADCAST, which the
+# bridged Ziggy container can't do — so we UNICAST `broadlink.hello(ip)` at each
+# address in the blaster's /24 (unicast routes fine from the bridge, which is why
+# a direct send to a known IP works) and match the MAC.
+import threading as _threading
+_rediscover_lock = _threading.Lock()
+_last_rediscover_ts = {"t": 0.0}
+
+
+def _mac_norm(m) -> str:
+    """Normalize a MAC (bytes or str, any separators) to lowercase hex, no seps."""
+    if isinstance(m, (bytes, bytearray)):
+        return bytes(m).hex()
+    return str(m or "").replace(":", "").replace("-", "").replace(".", "").lower()
+
+
+def _rediscover_blaster_ip(target_mac: str, seed_host: str,
+                           timeout: float = 0.4, workers: int = 48) -> Optional[str]:
+    """Return the current LAN IP of the blaster with `target_mac` by unicast-
+    probing every host in `seed_host`'s /24, or None. Works from the bridged
+    container (unicast, not broadcast)."""
+    target = _mac_norm(target_mac)
+    if not target:
+        return None
+    parts = (seed_host or "").split(".")
+    if len(parts) != 4:
+        return None
+    base = ".".join(parts[:3])
+    try:
+        import broadlink as _bl
+    except Exception as e:
+        log_error(f"[IR] rediscover: broadlink import failed: {e}")
+        return None
+    import concurrent.futures as _cf
+    found: dict = {"ip": None}
+
+    def _probe(i: int) -> None:
+        if found["ip"]:
+            return
+        ip = f"{base}.{i}"
+        try:
+            dev = _bl.hello(ip, timeout=timeout)
+            if dev is not None and _mac_norm(getattr(dev, "mac", b"")) == target:
+                found["ip"] = ip
+        except Exception:
+            pass
+
+    with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(_probe, range(1, 255)))
+    return found["ip"]
+
+
+def _apply_new_blaster_host(old_host: str, target_mac: str, new_host: str) -> int:
+    """Repoint every IR device on the old host/MAC — and the ir_blasters registry
+    row — at `new_host`. Returns how many IR devices changed."""
+    target = _mac_norm(target_mac)
+    devs = _load()
+    changed = 0
+    for d in devs:
+        if (d.get("blaster_host") == old_host) or (target and _mac_norm(d.get("blaster_mac")) == target):
+            if d.get("blaster_host") != new_host:
+                d["blaster_host"] = new_host
+                changed += 1
+    if changed:
+        _save(devs)
+    try:
+        import services.ir_blasters as _blm
+        rows = _blm._load() if hasattr(_blm, "_load") else None
+        if rows is not None:
+            dirty = False
+            for r in rows:
+                if _mac_norm(r.get("mac")) == target or r.get("ip") == old_host:
+                    if r.get("ip") != new_host:
+                        r["ip"] = new_host
+                        dirty = True
+            if dirty and hasattr(_blm, "_save"):
+                _blm._save(rows)
+    except Exception as e:
+        log_error(f"[IR] rediscover: blaster registry update failed: {e}")
+    return changed
+
+
+def _heal_blaster_and_retry(device: dict, old_host: str, code_b64: str,
+                            repeats: int) -> Optional[dict]:
+    """On a direct-send failure, re-resolve the blaster IP by MAC and retry ONCE.
+    Returns the retry result dict, or None if we couldn't/​shouldn't heal."""
+    mac = device.get("blaster_mac")
+    if not mac:
+        return None
+    # Cooldown: a genuinely-offline blaster shouldn't trigger a full /24 scan on
+    # every keypress. One scan per 30s across the process is plenty.
+    with _rediscover_lock:
+        import time as _t
+        # monotonic isn't allowed to be stamped elsewhere; time.time is fine here.
+        now = _t.time()
+        if now - _last_rediscover_ts["t"] < 30.0:
+            return None
+        _last_rediscover_ts["t"] = now
+    new_host = _rediscover_blaster_ip(mac, old_host)
+    if not new_host or new_host == old_host:
+        log_error(f"[IR] blaster {mac} not found on {old_host}'s subnet — offline?")
+        return None
+    n = _apply_new_blaster_host(old_host, mac, new_host)
+    log_info(f"[IR] blaster {mac} moved {old_host} → {new_host} (DHCP); repointed {n} device(s), retrying")
+    return _direct_send(new_host, code_b64, repeats)
 
 
 def _after_command(device_id: str, device: dict, logical_command: str,
