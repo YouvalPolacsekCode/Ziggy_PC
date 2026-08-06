@@ -80,6 +80,37 @@ async def _fire_automations(name: str, new_state: str) -> None:
                         await execute_ziggy_actions(auto["id"])
                     except Exception as exc:
                         log_error(f"[Presence] Automation {auto['id']} failed: {exc}")
+
+                # HA-backed "Leave Home" bundles (bundle:leave_home) live in HA +
+                # the ziggy-action store, NOT automations.json — and their
+                # compiled trigger is a sensor `state` trigger, so neither this
+                # presence path (which reads automations.json) nor the HA
+                # automation's dropped/placeholder actions ever ran the real
+                # turn-off. Run their stored actions here on the WORKING presence
+                # engine's all-away signal, which is what the user's "phone leaves
+                # home" choice actually meant.
+                try:
+                    from services.local_automation_actions import (
+                        _load as _la_load, get_automation_meta, get_all_saved_actions,
+                    )
+                    for aid in list(_la_load().keys()):
+                        meta = get_automation_meta(aid) or {}
+                        blob = f"{aid} {meta.get('name','')} {meta.get('description','')}".lower()
+                        looks_leave = ("leave" in blob) or ("everyone" in blob and "left" in blob) or ("everyone leaves" in blob)
+                        acts = get_all_saved_actions(aid)
+                        has_home_off = any(
+                            a.get("type") in ("turn_off_all_lights", "turn_off_everything")
+                            for a in acts
+                        )
+                        if not (looks_leave and has_home_off):
+                            continue
+                        log_info(f"[Presence] all-away → running Leave-Home actions for {aid}")
+                        try:
+                            await execute_ziggy_actions(aid)
+                        except Exception as exc:
+                            log_error(f"[Presence] Leave-Home {aid} failed: {exc}")
+                except Exception as exc:
+                    log_error(f"[Presence] HA-backed leave-home scan failed: {exc}")
     except Exception as exc:
         log_error(f"[Presence] Transition handler error: {exc}")
 
