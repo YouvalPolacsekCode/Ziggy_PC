@@ -706,8 +706,9 @@ def _adopt_ha_area_rooms(devices: list[dict],
     this never resurrects one.
     """
     if not entity_areas:
-        return devices
+        return devices  # transient HA-area fetch failure → change nothing
     n = 0
+    cleared = 0
     for d in devices:
         eid = d.get("entity_id")
         if not eid:
@@ -718,6 +719,15 @@ def _adopt_ha_area_rooms(devices: list[dict],
             continue  # explicit user choice wins
         area = entity_areas.get(eid)
         if not area:
+            # This device has NO HA area. If we'd adopted one before, the area is
+            # gone now (device removed from HA, or its area deleted) — drop the
+            # stale HA room so a removed/relocated device doesn't linger in it.
+            # (A merely-offline device stays REGISTERED, so it keeps its area →
+            # not cleared here.)
+            if d.get("room_source") == "ha":
+                d["room"] = None
+                d["room_source"] = None
+                cleared += 1
             continue
         if d.get("room") == area and d.get("room_source") == "ha":
             continue  # already adopted, no change
@@ -726,8 +736,8 @@ def _adopt_ha_area_rooms(devices: list[dict],
         if d.get("status") == UNCLAIMED:
             d["status"] = CONNECTED
         n += 1
-    if n:
-        log_info(f"[DeviceRegistry] adopted {n} HA-area room placement(s) (room_source=ha)")
+    if n or cleared:
+        log_info(f"[DeviceRegistry] HA-area rooms: adopted {n}, cleared {cleared} stale")
     return devices
 
 
