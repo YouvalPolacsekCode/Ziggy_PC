@@ -44,7 +44,7 @@ password). Clean 24.04.
 3. A **USB stick, 8 GB+** (contents erased) — reuse a previous install stick if still flashed.
 4. **HDMI monitor + USB keyboard** for the mini PC.
 5. **Ethernet cable** to the router — see the cable note below.
-6. **Tslil's email address** (his home's owner + backup-key name).
+6. Tslil's email — **confirmed: `tslilkeren7@gmail.com`** (his home's owner). Nothing to look up.
 7. (His Zigbee sensors are NOT needed here — he pairs them at his own home; see Part G.)
 
 > ### ⚠️ If you only have one Ethernet cable, your own home (Canary) goes offline during this
@@ -210,7 +210,7 @@ cd /opt/ziggy
 set -a; source ~/tslil-secrets.txt; set +a
 DONGLE='/dev/serial/by-id/usb-...-if00-port0'      # from Part F
 COORDINATOR_TYPE=smlight                            # or sonoff_e, from Part F
-TSLIL_EMAIL='tslil@example.com'                     # Tslil's real email
+TSLIL_EMAIL='tslilkeren7@gmail.com'               # Tslil's real email — confirmed
 PAIR_SECONDS=0                                      # decided: he pairs at his home
 ```
 **First a dry run** (changes nothing, proves inputs + Zigbee config are valid):
