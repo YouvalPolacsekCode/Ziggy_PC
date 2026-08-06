@@ -49,7 +49,9 @@
 #   ZIGBEE_TCP_PORT=6638  ZIGBEE_ADAPTER=ezsp
 #   ZIGBEE_PAIR_SECONDS=0 permit-join window during imaging (0 = capture IEEE only)
 #   ZIGGY_REPO_DIR=/opt/ziggy  ZIGGY_ETC_DIR=/etc/ziggy  ZIGGY_ENV_FILE=/opt/ziggy/.env
-#   GIT_SHA
+#   GIT_SHA                    default: short SHA of the repo being imaged
+#   FRIENDLY_SLUG              <slug>.hubs.ziggy-home.com (default: from HOME_NAME)
+#   ENABLE_MATTER=0            1 only for a kit shipping a SECOND (Thread) dongle
 #
 # EXIT: 0 kit ready; 1 a step failed (fatal); 2 bad args.
 # ═══════════════════════════════════════════════════════════════════════════
@@ -116,8 +118,15 @@ ZIGBEE_NET=0; [[ -n "$COORDINATOR_IP" ]] && ZIGBEE_NET=1
 # MATTER_THREAD_DEVICE (by-id of the 2nd dongle) + MATTER_INFRA_IF pass through to
 # the enable script; if unset it auto-picks the non-Zigbee Silabs dongle / default NIC.
 ENABLE_MATTER="${ENABLE_MATTER:-0}"
-GIT_SHA="${GIT_SHA:-dev}"
+# Release marker baked into the image (compose build-arg → container env
+# ZIGGY_GIT_SHA). The mobile app's OTA check compares it, so a hub left on the
+# literal "dev" never signals a new web bundle to the phone. Default to the SHA
+# actually checked out in the repo we are imaging from.
+GIT_SHA="${GIT_SHA:-$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" rev-parse --short HEAD 2>/dev/null || echo dev)}"
 MQTT_USER="${MQTT_USER:-ziggy}"
+# Human-facing hostname slug: <slug>.hubs.ziggy-home.com. Empty = the relay
+# derives one from HOME_NAME.
+FRIENDLY_SLUG="${FRIENDLY_SLUG:-}"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/ziggy-image.XXXXXX")"
@@ -214,6 +223,9 @@ step_identity() {
     _kv_set HOME_ID "$local_uuid"
     _kv_set RELAY_SECRET "dry-run-secret"
     _kv_set TUNNEL_URL "https://dry-run.example"
+    _kv_set TUNNEL_TOKEN "dry-run-token"
+    _kv_set REACHABLE_URL "https://dry-run.example"
+    _kv_set FRIENDLY_URL ""
     _ok "identity (dry-run): HOME_ID=$local_uuid (no relay call)"
     return 0
   fi
@@ -230,12 +242,23 @@ step_identity() {
   _kv_set FOUNDER_JWT "$jwt"
 
   # Provision hub (send our uuid as home_id — forward-compat; adopt what returns)
-  local prov_body prov_resp home_id relay_secret tunnel_url
-  prov_body="$(HN="$HOME_NAME" OE="$OWNER_EMAIL" HID="$local_uuid" python3 -c 'import json,os;print(json.dumps({"home_name":os.environ["HN"],"owner_email":(os.environ["OE"] or None),"home_id":os.environ["HID"]}))')"
+  local prov_body prov_resp home_id relay_secret tunnel_url tunnel_token reachable_url friendly_url
+  prov_body="$(HN="$HOME_NAME" OE="$OWNER_EMAIL" HID="$local_uuid" FS="$FRIENDLY_SLUG" python3 -c 'import json,os;b={"home_name":os.environ["HN"],"owner_email":(os.environ["OE"] or None),"home_id":os.environ["HID"]};
+fs=os.environ.get("FS") or ""
+if fs: b["friendly_slug"]=fs
+print(json.dumps(b))')"
   prov_resp="$(curl -fsS -X POST "$RELAY_URL/api/provision/hub" -H "Authorization: Bearer $jwt" -H 'Content-Type: application/json' -d "$prov_body")" || _die "provision/hub failed"
+  _pj() { printf '%s' "$prov_resp" | K="$1" python3 -c 'import json,os,sys;print(json.load(sys.stdin).get(os.environ["K"],""))'; }
   home_id="$(printf '%s' "$prov_resp" | python3 -c 'import json,sys;print(json.load(sys.stdin)["home_id"])')"
-  relay_secret="$(printf '%s' "$prov_resp" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("relay_secret",""))')"
-  tunnel_url="$(printf '%s' "$prov_resp" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tunnel_url",""))')"
+  relay_secret="$(_pj relay_secret)"
+  tunnel_url="$(_pj tunnel_url)"
+  # The connector token is the ONE value the relay never hands out again in a
+  # readable form, and installing cloudflared on the hub needs it. Persist it
+  # into the 0600 imaging state so remote access is a local lookup, not a
+  # re-provision round-trip.
+  tunnel_token="$(_pj tunnel_token)"
+  reachable_url="$(_pj reachable_url)"
+  friendly_url="$(_pj friendly_url)"
   [[ -n "$home_id" ]] || _die "provision/hub returned no home_id"
   if [[ "$home_id" != "$local_uuid" ]]; then
     _log "NOTE: relay assigned home_id=$home_id (differs from local uuid $local_uuid). Adopting relay id as canonical (see Stream 3 contract note)."
@@ -243,7 +266,10 @@ step_identity() {
   _kv_set HOME_ID "$home_id"
   _kv_set RELAY_SECRET "$relay_secret"
   _kv_set TUNNEL_URL "$tunnel_url"
-  _ok "identity: HOME_ID=$home_id  tunnel=$tunnel_url"
+  _kv_set TUNNEL_TOKEN "$tunnel_token"
+  _kv_set REACHABLE_URL "$reachable_url"
+  _kv_set FRIENDLY_URL "$friendly_url"
+  _ok "identity: HOME_ID=$home_id  tunnel=$tunnel_url  reachable=${reachable_url:-<none>}  friendly=${friendly_url:-<none>}"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
