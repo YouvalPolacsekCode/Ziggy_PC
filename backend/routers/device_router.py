@@ -1307,22 +1307,33 @@ def _strip_entity_from_yaml_device_map(entity_id: str) -> int:
 @router.delete("/api/registry/entity/{entity_id:path}")
 async def delete_registry_entity(entity_id: str,
                                  _user: dict = Depends(require_role("admin"))):
-    """Drop an entity from the Ziggy device registry.
+    """Remove an entity from Ziggy — and from Home Assistant if it's still there.
 
-    Intended use: the entity was deleted directly in Home Assistant, so
-    Ziggy is holding a ghost row that no longer has live state. The detail
-    page surfaces a "Remove from Ziggy" button that hits this endpoint to
-    clean up the stale entry. No HA roundtrip — registry is authoritative
-    for Ziggy-side membership.
-
-    Also strips the entity from settings.yaml's `device_map` so the next
-    Ziggy restart doesn't reseed it.
+    "Delete in Ziggy must delete in HA." If the entity STILL EXISTS in HA (a
+    real device the user is removing — including one that's merely offline, like
+    a replaced Zigbee bulb), this does a FULL HA removal: unpair the Zigbee
+    device / delete its config entry, so HA/Z2M can't re-discover it and make the
+    "deleted" device reappear. Only a TRUE GHOST (already gone from HA) gets the
+    lightweight registry-row + device_map cleanup below.
 
     Always returns ok=true; a missing entity is treated as success (idempotent).
     """
     _bus.emit("auth", _BASIC, "auth_promoted_route_called",
               route="DELETE /api/registry/entity/{entity_id:path}",
               user=_user.get("username"), auth_added=True)
+
+    # Still live in HA? → full removal (unpair), not just a Ziggy-side forget.
+    try:
+        import requests as _rq
+        from services.ha_automations import HA_URL as _HA_URL, HEADERS as _HDRS
+        _live = _rq.get(f"{_HA_URL()}/api/states/{entity_id}",
+                        headers=_HDRS(), timeout=8).status_code == 200
+    except Exception:
+        _live = False
+    if _live:
+        log_info(f"[API] Registry delete of LIVE {entity_id} → full HA removal (unpair/config-entry)")
+        return await delete_ha_entity(entity_id, delete_device=True, _user=_user)
+
     import services.device_registry as dr
     if not dr._initialized:
         dr.init()
