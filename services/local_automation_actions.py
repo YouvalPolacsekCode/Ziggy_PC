@@ -309,6 +309,7 @@ async def execute_ziggy_actions(
     automation_id: str,
     label: str = "",
     trigger_reason: str = "",
+    steps_override: list | None = None,
 ) -> list[dict]:
     """Run all stored steps for an automation/routine in sequence.
 
@@ -321,6 +322,10 @@ async def execute_ziggy_actions(
              store, then automation_id if neither is available.
     trigger_reason — why this run was kicked off (e.g. "manual", "scheduler-time",
              "presence:person_leaves"). Stored in history.
+    steps_override — when given, run EXACTLY these steps instead of the stored
+             set. Used by the HA-automation-fired bridge (ha_subscriber) to run
+             ONLY the Ziggy-native actions HA deferred (turn_off_all_lights, IR),
+             without re-running the call_service steps HA already executed.
     """
     import asyncio
     import time as _time
@@ -376,7 +381,7 @@ async def execute_ziggy_actions(
     # Start with a clean cancel slate — a flag left over from a previous run
     # (e.g. user tapped Cancel after the wait completed) must not abort this one.
     _cancel_flags.pop(automation_id, None)
-    steps = get_ziggy_actions(automation_id)
+    steps = steps_override if steps_override is not None else get_ziggy_actions(automation_id)
     _bus.emit("automation", BASIC, "automation_started",
               request_id=request_id, automation_id=automation_id,
               label=label, steps_count=len(steps))

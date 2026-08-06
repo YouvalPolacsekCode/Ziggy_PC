@@ -198,6 +198,29 @@ def _action_to_ha(a: dict) -> Optional[dict]:
     return None  # send_intent not translatable to HA
 
 
+# Action types that _action_to_ha compiles to a NOTIFY PLACEHOLDER rather than a
+# real effect — HA shows a persistent notification but never sends the IR / runs
+# the capability. These must be re-run by Ziggy when the HA automation fires.
+_HA_PLACEHOLDER_TYPES = {"ir_command", "ziggy_intent"}
+
+
+def ha_defers_action(a: dict) -> bool:
+    """True when the HA-compiled automation does NOT actually perform this action.
+
+    Single source of truth for the sensor-trigger bridge: an automation with a
+    state trigger is STORED and fired by HA, but its Ziggy-native actions are
+    either dropped (`_action_to_ha` → None, e.g. turn_off_all_lights) or compiled
+    to a harmless notify placeholder (ir_command / ziggy_intent). For those, HA
+    fires the trigger but nothing real happens — Ziggy must execute them itself.
+    `call_service` / `delay` / `notify` run natively in HA, so they are NOT
+    deferred (re-running them would double-fire, e.g. Pre-cool's climate call).
+    """
+    kind = a.get("type", "call_service")
+    if kind in _HA_PLACEHOLDER_TYPES:
+        return True
+    return _action_to_ha(a) is None
+
+
 # ── HA → Ziggy ────────────────────────────────────────────────────────────────
 
 def _ha_trigger_to_ziggy(ha_triggers: list) -> dict:
