@@ -13,7 +13,7 @@ account, the step says exactly where to click.
   claim it from your phone.
 - **Remote access is now push-button** (it wasn't for David) — see Part I.
 
-**Imaging branch:** `feat/beta-image-readiness`, now at **`78d36fa`**, content-identical to the
+**Imaging branch:** `feat/beta-image-readiness`, at its current head (`git ls-remote origin feat/beta-image-readiness`), content-identical to the
 fleet head `feat/unified-bundle-wizards`. `hub-bootstrap.sh` pins this branch; nothing to change.
 
 **Hardware:** HM35 mini PC, AMD Ryzen 5 3550H = **x86-64**, so `amd64` Ubuntu is correct.
@@ -174,7 +174,8 @@ sudo GH_TOKEN=PASTE_TOKEN bash ~/hub-bootstrap.sh
 Installs Docker, clones the code to `/opt/ziggy` on `feat/beta-image-readiness`. Ends with
 **"DONE. Ziggy is at /opt/ziggy"**.
 
-**Confirm it landed on the right code** (should print `78d36fa` or newer):
+**Confirm it landed on the right code** — this must match what `git ls-remote origin feat/beta-image-readiness`
+prints on your Mac:
 ```
 sudo git -C /opt/ziggy rev-parse --short HEAD
 ```
