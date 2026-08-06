@@ -13,7 +13,7 @@ account, the step says exactly where to click.
   claim it from your phone.
 - **Remote access is now push-button** (it wasn't for David) — see Part I.
 
-**Imaging branch:** `feat/beta-image-readiness`, now at **`733a11b`**, content-identical to the
+**Imaging branch:** `feat/beta-image-readiness`, now at **`78d36fa`**, content-identical to the
 fleet head `feat/unified-bundle-wizards`. `hub-bootstrap.sh` pins this branch; nothing to change.
 
 **Hardware:** HM35 mini PC, AMD Ryzen 5 3550H = **x86-64**, so `amd64` Ubuntu is correct.
@@ -174,7 +174,7 @@ sudo GH_TOKEN=PASTE_TOKEN bash ~/hub-bootstrap.sh
 Installs Docker, clones the code to `/opt/ziggy` on `feat/beta-image-readiness`. Ends with
 **"DONE. Ziggy is at /opt/ziggy"**.
 
-**Confirm it landed on the right code** (should print `f6c989e` or newer):
+**Confirm it landed on the right code** (should print `78d36fa` or newer):
 ```
 sudo git -C /opt/ziggy rev-parse --short HEAD
 ```
@@ -258,7 +258,7 @@ cd /opt/ziggy && sudo ./scripts/canary-validate.sh
 
 Then these four one-liners — each must match what's in brackets:
 ```
-# 1. the container is running the code we think it is  [prints f6c989e, not 'dev']
+# 1. the container is running the code we think it is  [prints the same SHA as above, NOT 'dev']
 docker exec ziggy-ziggy-1 printenv ZIGGY_GIT_SHA
 
 # 2. HA address is DHCP-immune                          [http://host.docker.internal:8123]
