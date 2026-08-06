@@ -192,6 +192,20 @@ async def get_health():
     except Exception:
         pass
 
+    # HA entities that are the Wi-Fi half of an IR+Wi-Fi MERGED device (a TV /
+    # AC with a linked IR remote). When such an entity goes 'unavailable' the
+    # device is merely OFF and still IR-controllable — the Devices grid hides it
+    # from the disconnected filter, so the banner must NOT count it either, or
+    # the two diverge (banner says N offline, Review shows fewer). Best-effort.
+    _ir_linked_eids: set[str] = set()
+    try:
+        from services.ir_manager import list_ir_devices as _list_ir
+        _ir_linked_eids = {(d.get("ha_entity_id") or "").strip()
+                           for d in _list_ir(enabled_only=False)
+                           if (d.get("ha_entity_id") or "").strip()}
+    except Exception:
+        pass
+
     offline_all:       list[dict] = []
     offline_with_deps: list[dict] = []
     battery_warnings:  list[dict] = []
@@ -200,6 +214,8 @@ async def get_health():
     for eid, entry in state_cache.items():
         if _entity_should_hide(eid):
             continue
+        if eid in _ir_linked_eids:
+            continue   # IR+Wi-Fi merged device that's just off → not "disconnected"
 
         state = entry.get("state", "")
         attrs = entry.get("attributes", {}) or {}

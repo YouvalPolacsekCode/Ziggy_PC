@@ -401,6 +401,13 @@ export function effectiveState(entity) {
   if (entity._ir) return entity.assumed_state || entity.state
   const s = entity.state
   if (entity._linkedIr && (s === 'unavailable' || s === 'unknown' || s == null || s === '')) {
+    // A Wi-Fi media_player (TV) drops off the network when it's powered OFF, so
+    // 'unavailable' means OFF — trust that over the linked IR's assumed_state,
+    // which is only updated when Ziggy itself sends an IR command and is often a
+    // stale 'on' (the TV was turned off by its own remote). Without this the
+    // merged TV card reads "On" while the TV is actually off. Other merged
+    // devices keep the IR-assumed fallback.
+    if ((entity.domain || entity.entity_id?.split('.')[0]) === 'media_player') return 'off'
     return entity._linkedIr.assumed_state || 'off'
   }
   return s
