@@ -1053,8 +1053,11 @@ export default function DeviceDetail() {
 
           {/* Per-kind control surface — passes relevant automations +
               suggestion to the kind-specific remote (used by AC for the
-              Schedule + AI cards). */}
-          {entity.state !== 'unavailable' && (() => {
+              Schedule + AI cards). Gate on facts.isAvailable (not the raw HA
+              state): a merged IR+Wi-Fi device is still controllable via IR when
+              its Wi-Fi side is 'unavailable' (TV off), so its remote must still
+              render instead of the page going blank. */}
+          {facts.isAvailable && (() => {
             // Pick automations that schedule this entity (time-triggered).
             // automations_using is the list of automations referencing this
             // entity; we filter to ones with a time trigger for the

@@ -2137,8 +2137,11 @@ export default function Devices() {
       // `state` is just the assumed on/off (default 'unknown' before first use),
       // so treating 'unknown' as offline made every untoggled IR remote show up
       // in the "disconnected devices" review. Exclude IR from both connectivity
-      // filters entirely.
-      else if (domain === 'offline') matchDomain = !e._ir && (e.state === 'unavailable' || e.state === 'unknown')
+      // filters entirely. Also exclude IR+Wi-Fi MERGED devices (`_linkedIr`): a
+      // TV whose Wi-Fi media_player goes 'unavailable' when powered OFF is not
+      // "disconnected" — it's off and still IR-controllable, so it must not land
+      // in the disconnected-devices filter.
+      else if (domain === 'offline') matchDomain = !e._ir && !e._linkedIr && (e.state === 'unavailable' || e.state === 'unknown')
       else if (domain === 'connected') matchDomain = !e._ir && e.state !== 'unavailable' && e.state !== 'unknown'
       else if (domain === 'ir') matchDomain = e._ir === true || Boolean(e._linkedIr)
       else if (domain !== 'all') {

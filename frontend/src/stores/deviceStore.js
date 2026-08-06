@@ -831,7 +831,10 @@ export const useDeviceStore = create((set, get) => ({
     get().entities.filter((e) => CONTROLLABLE_DOMAINS.has(e.domain)).length,
 
   getUnavailableCount: () =>
-    get().entities.filter((e) => !e._ir && e.state === 'unavailable').length,
+    // Exclude IR and IR+Wi-Fi merged devices: a merged TV whose Wi-Fi side is
+    // 'unavailable' is just OFF and still IR-controllable, not a device that
+    // needs attention.
+    get().entities.filter((e) => !e._ir && !e._linkedIr && e.state === 'unavailable').length,
 
   getPresenceSummary: () => {
     const { entities } = get()
