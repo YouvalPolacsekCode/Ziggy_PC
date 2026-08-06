@@ -654,10 +654,18 @@ def _grandfather_rooms(devices: list[dict]) -> list[dict]:
 
 
 def _enforce_user_rooms(devices: list[dict]) -> list[dict]:
-    """User-authority invariant: an HA-connected device's room is real only
-    when the user set it (room_source="user"). Any other room value on such a
-    row — from old name inference, an HA-area follow, a YAML re-seed, or a
-    stale ghost of a deleted room — is auto-junk and gets cleared.
+    """Room-authority invariant: keep a device's room only when it's backed by a
+    real source — either the user set it (room_source="user") OR it's the
+    device's authoritative HA area (room_source="ha", stamped by
+    _adopt_ha_area_rooms). Any OTHER room value — old NAME inference, a YAML
+    re-seed, or a stale ghost of a deleted room (whose HA area is gone, so it's
+    no longer "ha"-backed) — is auto-junk and gets cleared.
+
+    Why keep "ha": a device the operator placed in an HA area IS really in that
+    room; clearing it stranded real devices in "No Room" while HA-area views
+    still showed them roomed (the duplicate). A DELETED room can't resurrect —
+    delete_room removes the HA area, so its devices lose the "ha" backing on the
+    next reconcile and fall through to clearing here.
 
     IR / Ziggy-native rows (no entity_id) are user-managed through their own
     pairing flow and are left untouched.
@@ -669,15 +677,57 @@ def _enforce_user_rooms(devices: list[dict]) -> list[dict]:
             continue  # IR / native row — not auto-placed, leave alone
         if d.get("origin") == "ziggy_template":
             continue  # Ziggy smart sensor — room comes from the user's smart-room config
-        if d.get("room") and d.get("room_source") != "user":
+        if d.get("room") and d.get("room_source") not in ("user", "ha"):
             cleared_rooms.add(d.get("room"))
             d["room"] = None
             if d.get("status") == CONNECTED:
                 d["status"] = UNCLAIMED
             n += 1
     if n:
-        log_info(f"[DeviceRegistry] cleared {n} non-user room assignment(s) "
-                 f"(auto/ghost, never user-set): {sorted(cleared_rooms)}")
+        log_info(f"[DeviceRegistry] cleared {n} unbacked room assignment(s) "
+                 f"(name-inferred/ghost, no user or HA-area backing): {sorted(cleared_rooms)}")
+    return devices
+
+
+def _adopt_ha_area_rooms(devices: list[dict],
+                         entity_areas: dict[str, str] | None) -> list[dict]:
+    """Adopt each device's AUTHORITATIVE HA area as its Ziggy room, stamped
+    room_source="ha".
+
+    HA area = "the operator told HA so" (_infer_room priority 1) — it's real
+    placement, unlike the name-inference/ghost junk that _enforce_user_rooms
+    strips. `entity_areas` (entity_id → area_id) comes from HA's area registry,
+    which resolves DEVICE-level areas too — so a bulb whose *device* is in an
+    area but whose entity has no area override is still adopted (that gap is
+    exactly why these rows sat at room=None while the room view showed them).
+
+    Precedence: a user's explicit room (room_source="user") always wins. A
+    deleted room's area is gone from `entity_areas` (delete_room removed it), so
+    this never resurrects one.
+    """
+    if not entity_areas:
+        return devices
+    n = 0
+    for d in devices:
+        eid = d.get("entity_id")
+        if not eid:
+            continue  # IR / native row
+        if d.get("origin") == "ziggy_template":
+            continue  # smart sensor — user's smart-room config owns its room
+        if d.get("room_source") == "user":
+            continue  # explicit user choice wins
+        area = entity_areas.get(eid)
+        if not area:
+            continue
+        if d.get("room") == area and d.get("room_source") == "ha":
+            continue  # already adopted, no change
+        d["room"] = area
+        d["room_source"] = "ha"
+        if d.get("status") == UNCLAIMED:
+            d["status"] = CONNECTED
+        n += 1
+    if n:
+        log_info(f"[DeviceRegistry] adopted {n} HA-area room placement(s) (room_source=ha)")
     return devices
 
 
@@ -830,8 +880,10 @@ async def reconcile_with_ha() -> None:
                                       entity_areas=entity_areas)
             devices = _merge_ir_devices(devices)
             devices = _merge_ziggy_smart_sensors(devices)
-            # Room ownership invariant — clear any room that isn't user-set so
-            # deleted/auto rooms can't resurrect and devices can't auto-move.
+            # Room ownership: adopt authoritative HA-area placements (room_source
+            # =ha), then clear anything with NO backing (name-inferred/ghost) so
+            # deleted rooms can't resurrect and devices can't auto-move by name.
+            devices = _adopt_ha_area_rooms(devices, entity_areas)
             devices = _grandfather_rooms(devices)
             devices = _enforce_user_rooms(devices)
             # Purge config/diagnostic entities that may already be persisted as
@@ -880,7 +932,7 @@ def refresh() -> None:
         # Merge IR devices LAST so the merge can see all HA-bound rows.
         devices = _merge_ir_devices(devices)
         devices = _merge_ziggy_smart_sensors(devices)
-        devices = _enforce_user_rooms(devices)  # only user-set rooms survive
+        devices = _enforce_user_rooms(devices)  # user + HA-area rooms survive; ghosts cleared
         devices = [d for d in devices if not _is_hidden_category(d.get("entity_id"))]
         _save_persistent(devices)
         _registry = devices
