@@ -13,7 +13,7 @@ account, the step says exactly where to click.
   claim it from your phone.
 - **Remote access is now push-button** (it wasn't for David) — see Part I.
 
-**Imaging branch:** `feat/beta-image-readiness`, now at **`f6c989e`**, content-identical to the
+**Imaging branch:** `feat/beta-image-readiness`, now at **`733a11b`**, content-identical to the
 fleet head `feat/unified-bundle-wizards`. `hub-bootstrap.sh` pins this branch; nothing to change.
 
 **Hardware:** HM35 mini PC, AMD Ryzen 5 3550H = **x86-64**, so `amd64` Ubuntu is correct.
@@ -45,7 +45,7 @@ password). Clean 24.04.
 4. **HDMI monitor + USB keyboard** for the mini PC.
 5. **Ethernet cable** to the router — see the cable note below.
 6. **Tslil's email address** (his home's owner + backup-key name).
-7. His Zigbee sensors, **if** you want to pre-pair them here (Part G decision).
+7. (His Zigbee sensors are NOT needed here — he pairs them at his own home; see Part G.)
 
 > ### ⚠️ If you only have one Ethernet cable, your own home (Canary) goes offline during this
 > While the cable is on the new box: your remote control, chat/AI and daily backup pause; local
