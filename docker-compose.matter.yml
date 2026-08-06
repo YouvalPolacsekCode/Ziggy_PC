@@ -1,0 +1,123 @@
+# docker-compose.matter.yml — MATTER + THREAD overlay (profile: matter).
+#
+# Adds two standalone containers that together replicate the HAOS
+# "OpenThread Border Router" + "Matter Server" add-ons for our plain
+# HA-*Container* stack (we run ghcr.io/home-assistant/home-assistant directly,
+# so Supervisor add-ons are not available):
+#
+#   otbr           — OpenThread Border Router. Owns the Thread mesh, fed by an
+#                    SLZB-07 dongle that has been flashed from Zigbee EmberZNet
+#                    to ot-rcp firmware (see docs/MATTER_THREAD.md). Exposes a
+#                    REST API on :8081 and a web GUI on :80.
+#   matter-server  — python-matter-server. The Matter controller. Commissions
+#                    Matter-over-Thread devices (via the OTBR's Thread network)
+#                    AND Matter-over-Wi-Fi devices (via the mini-PC's Bluetooth),
+#                    both over an initial BLE handshake. WebSocket API on :5580.
+#
+# Use ON TOP of the base + prod compose (never alone), gated behind the `matter`
+# profile so a hub without Matter never starts these:
+#
+#   cd /opt/ziggy && COMPOSE_PROFILES=matter \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                    -f docker-compose.matter.yml up -d otbr matter-server
+#
+# Prerequisites (handled by the imaging `matter-enable` step, or manually per
+# docs/MATTER_THREAD.md):
+#   - The Thread dongle flashed to ot-rcp (universal-silabs-flasher).
+#   - MATTER_THREAD_DEVICE=<by-id path of the ot-rcp dongle> in /opt/ziggy/.env
+#     (MUST be a DIFFERENT dongle from ZIGBEE_COORDINATOR_DEVICE — one radio
+#     cannot be both a Zigbee coordinator and a Thread RCP).
+#   - MATTER_INFRA_IF=<host LAN NIC, e.g. eno1> in /opt/ziggy/.env.
+#   - Host: IPv6 forwarding on (/etc/sysctl.d/99-ziggy-matter.conf) and the
+#     BlueZ `bluetooth` service running (matter-server does BLE over host D-Bus).
+#
+# NOTE on host networking: both services use network_mode: host because Matter
+# operational traffic + device discovery ride on IPv6 + mDNS/DNS-SD on the LAN,
+# which a bridge network NATs away. Consequently we CANNOT set container-level
+# `sysctls:` here (Docker forbids namespaced sysctls with host net) — IPv6
+# forwarding is set on the HOST instead (see imaging step_matter_enable).
+
+services:
+  otbr:
+    image: openthread/otbr:${OTBR_VERSION:-latest}
+    container_name: ziggy-otbr
+    profiles: ["matter"]
+    restart: unless-stopped
+    network_mode: host
+    # OTBR creates a wpan/tun interface and manages Thread<->LAN border routing
+    # + its own ip6tables rules; that needs NET_ADMIN/NET_RAW + the tun device,
+    # but NOT full --privileged.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    # Force /run fresh on every (re)start. The image uses sysvinit and writes
+    # otbr-agent's pidfile + CLI socket under /run; those persist in the
+    # container's writable layer across `docker restart` / a host reboot, so its
+    # "already started; not starting" guard sees stale state and NEVER relaunches
+    # otbr-agent (container is Up but the border router is dead, REST empty,
+    # ot-ctl refused). A tmpfs /run is cleared on each start → clean relaunch,
+    # so the persisted Thread dataset in /var/lib/thread is restored to `leader`.
+    tmpfs:
+      - /run
+    devices:
+      - /dev/net/tun:/dev/net/tun
+      # The ot-rcp-flashed Thread dongle. Mapped to a stable in-container alias
+      # so the radio-url below never changes. Override the host side via
+      # MATTER_THREAD_DEVICE in /opt/ziggy/.env; the default is the canary's
+      # flashed dongle (serial 320033ad) purely so `docker compose config`
+      # resolves on the bench.
+      - ${MATTER_THREAD_DEVICE:-/dev/serial/by-id/usb-SMLIGHT_SMLIGHT_SLZB-07_320033ad7ea0ef119f9da6a361ce3355-if00-port0}:/dev/ttyRCP
+    volumes:
+      # Persistent Thread dataset (network key, PAN ID, channel). otbr-agent
+      # writes its settings backend to /var/lib/thread (the `0_<extaddr>.data`
+      # files) — NOT /data — so THAT is the path we persist. Under
+      # /opt/ziggy/docker/ so the ziggy container can bind-mount it read-only for
+      # the nightly backup (matched set with matter-data). Restoring it keeps
+      # existing Thread devices joined without re-commissioning.
+      - ./docker/otbr-data:/var/lib/thread
+    environment:
+      # The host LAN NIC OTBR bridges Thread onto (mDNS + IPv6). Wrong value =
+      # devices commission but HA never sees them.
+      - INFRA_IF_NAME=${MATTER_INFRA_IF:-eno1}
+      # Disable the image's ipset-based firewall service. On modern kernels
+      # (Ubuntu 24.04) the bundled ipset userspace (v6.34, proto 6-6) mismatches
+      # the kernel (proto 6-7) and the firewall init `die`s, which aborts the
+      # whole container before otbr-agent starts. The firewall only adds Thread
+      # border-router packet filtering we don't need for local HA Matter control.
+      - FIREWALL=0
+    # --backbone-interface MUST be passed explicitly: the entrypoint's
+    # INFRA_IF_NAME env does NOT set the otbr-agent's backbone (`-B`) interface;
+    # only this CLI arg does, and it otherwise defaults to a nonexistent `eth0`
+    # (=> "CreateIcmp6Socket ... No such device" and no Thread network).
+    command:
+      - "--radio-url"
+      - "spinel+hdlc+uart:///dev/ttyRCP?uart-baudrate=460800"
+      - "--backbone-interface"
+      - "${MATTER_INFRA_IF:-eno1}"
+
+  matter-server:
+    image: ghcr.io/home-assistant-libs/python-matter-server:${MATTER_SERVER_VERSION:-stable}
+    container_name: ziggy-matter-server
+    profiles: ["matter"]
+    restart: unless-stopped
+    network_mode: host
+    # Lets the CHIP/BlueZ stack touch the host Bluetooth adapter under AppArmor
+    # without full --privileged.
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      # Matter fabric + every commissioned device's credentials. THE critical
+      # backup item — lose this and every Matter device must be factory-reset
+      # and re-commissioned. Under /opt/ziggy/docker/ so the ziggy container can
+      # bind-mount it read-only for the nightly backup.
+      - ./docker/matter-data:/data
+      # Host BlueZ system bus for BLE commissioning.
+      - /run/dbus:/run/dbus:ro
+    command:
+      - "--storage-path"
+      - "/data"
+      - "--paa-root-cert-dir"
+      - "/data/credentials"
+      # Intel host adapter hci0 -> index 0.
+      - "--bluetooth-adapter"
+      - "0"

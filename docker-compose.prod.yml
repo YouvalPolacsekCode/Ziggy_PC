@@ -104,6 +104,14 @@ services:
       # restore would lose every Zigbee pairing. (Empty/created on Zigbee-off hubs
       # → still correctly detected as no-stack.)
       - ./docker/z2m-data:/app/docker/z2m-data:ro
+      # Matter + Thread state (read-only) so the in-container backup engine can
+      # include the matter-thread bundle. Present only on hubs running the
+      # `matter` profile (docker-compose.matter.yml creates these dirs); on a
+      # Matter-off hub they simply don't exist and the collector skips. Paths
+      # match backup_engine's matter_data_dir/otbr_data_dir defaults
+      # (docker/matter-data, docker/otbr-data → /app/docker/... under WORKDIR).
+      - ./docker/matter-data:/app/docker/matter-data:ro
+      - ./docker/otbr-data:/app/docker/otbr-data:ro
     depends_on:
       - mosquitto
       - homeassistant

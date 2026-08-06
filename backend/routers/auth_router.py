@@ -361,3 +361,38 @@ async def delete_user(username: str, current: dict = Depends(require_role("super
             raise HTTPException(status_code=404, detail="User not found.")
     log_info(f"[Auth] User deleted: '{username}'")
     return {"ok": True}
+
+
+# ── Self-service account deletion (App Store 5.1.1(v) compliance) ────────────
+# Apple requires every app that lets users create accounts to also let them
+# delete those accounts in-app. `delete_user` above is admin-scoped and
+# explicitly forbids self-delete; this endpoint is the self-service path.
+#
+# Ownership model: a Ziggy hub has one super_admin (the owner). Letting the
+# sole owner delete themselves would strand the hub. So the owner's self-delete
+# does NOT delete — it 409s with a redirect flag; the client shows a
+# "factory-reset your Ziggy instead" screen, which nukes the whole box and IS
+# the correct way for an owner to remove all their data.
+@router.post("/api/auth/me/delete")
+async def delete_own_account(current: dict = Depends(get_current_user)):
+    username = current["username"]
+    role = current.get("role", "user")
+    if ROLE_ORDER.get(role, 0) >= ROLE_ORDER["super_admin"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code":                "owner_must_factory_reset",
+                "message":             ("You are the owner of this Ziggy. Deleting your account "
+                                        "would leave the hub without an owner. Factory-reset "
+                                        "your Ziggy to remove all your data."),
+                "needs_factory_reset": True,
+            },
+        )
+    deleted = auth_db.delete_user(username)
+    if not deleted and not _find_user(username):
+        # Race: the user was removed between token lookup and delete. Treat as
+        # success from the client's perspective — the account no longer exists.
+        log_info(f"[Auth] Self-delete: user '{username}' was already gone.")
+        return {"ok": True, "deleted": username, "already_gone": True}
+    log_info(f"[Auth] User self-deleted: '{username}'")
+    return {"ok": True, "deleted": username}

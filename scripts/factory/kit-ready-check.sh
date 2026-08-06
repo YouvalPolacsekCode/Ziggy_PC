@@ -55,6 +55,9 @@ if [[ -f "$ZIGGY_REPO_DIR/.env" ]]; then
   # shellcheck disable=SC1091
   set -a; . "$ZIGGY_REPO_DIR/.env" 2>/dev/null || true; set +a
 fi
+# Keep what the hub is ACTUALLY configured with before we override it — that
+# value is what the ziggy container will use, and check 4b validates it.
+HA_URL_CONFIGURED="${HA_URL:-}"
 HA_URL="http://localhost:8123"   # host-run check: HA is network_mode:host, always on host localhost (NOT the container's host.docker.internal)
 
 RESULTS=()
@@ -117,6 +120,20 @@ else
           -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/" || echo 000)"
   if [[ "$code" == "200" ]]; then _pass "HA reachable and token authenticates ($HA_URL)"
   else _fail "HA token auth failed (GET $HA_URL/api/ → HTTP $code)"; fi
+fi
+
+# 4b. HA_URL is not pinned to a literal IP ----------------------------------
+# A literal LAN IP works right up until the hub's DHCP lease moves, then the
+# container talks to a dead address forever while HA sits healthy. That cost
+# the Canary a 9h50m outage on 2026-08-05. The container must use the
+# host-gateway name, which docker-compose.prod.yml already provides via
+# extra_hosts and ziggy-image-device.sh already writes.
+if [[ -z "$HA_URL_CONFIGURED" ]]; then
+  _fail "HA_URL not set in $ZIGGY_REPO_DIR/.env (container will have no HA address)"
+elif [[ "$HA_URL_CONFIGURED" =~ ^[a-z]+://[0-9]{1,3}(\.[0-9]{1,3}){3}(:|/|$) ]]; then
+  _fail "HA_URL is pinned to a literal IP ($HA_URL_CONFIGURED) — breaks on DHCP change; use http://host.docker.internal:8123"
+else
+  _pass "HA_URL uses a stable hostname ($HA_URL_CONFIGURED)"
 fi
 
 # 5. MQTT auth enforced -----------------------------------------------------

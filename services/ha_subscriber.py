@@ -197,6 +197,39 @@ async def _restore_entity_state(entity_id: str) -> None:
         log_error(f"[StateRestore] Error restoring {entity_id}: {e}")
 
 
+async def _run_deferred_automation_actions(entity_id: str, attrs: dict) -> None:
+    """Run the Ziggy-native actions HA deferred, for an automation that just fired.
+
+    The store is keyed by the automation's HA config id (attributes.id), which is
+    what the wizard saved actions under; fall back to the entity slug. Runs only
+    the actions `ha_defers_action` flags (turn_off_all_lights, IR, ziggy_intent) —
+    never the call_service/delay/notify steps HA already executed. The executor's
+    own `_running_automations` guard also de-dupes against the presence all-away
+    path, so a leave that trips both the geofence and the sensor fires once.
+    """
+    aid = attrs.get("id") or entity_id[len("automation."):]
+    try:
+        from services.local_automation_actions import (
+            get_all_saved_actions, execute_ziggy_actions,
+        )
+        from services.ha_automations import ha_defers_action
+    except Exception as e:
+        log_error(f"[HASubscriber] deferred-actions imports failed: {e}")
+        return
+
+    steps = get_all_saved_actions(aid) or []
+    deferred = [s for s in steps if ha_defers_action(s)]
+    if not deferred:
+        return  # fully HA-native automation — HA already ran everything real
+    log_info(
+        f"[HASubscriber] automation {aid} fired → running {len(deferred)} "
+        f"HA-deferred Ziggy action(s): {[s.get('type') for s in deferred]}"
+    )
+    await execute_ziggy_actions(
+        aid, trigger_reason="ha_automation_fired", steps_override=deferred,
+    )
+
+
 async def _process_event(event: dict) -> None:
     """Handle a single state_changed event from HA."""
     data = event.get("event", {}).get("data", {})
@@ -316,6 +349,24 @@ async def _process_event(event: dict) -> None:
                 _rp.on_sensor_event(entity_id, new_s)
         except Exception as e:
             log_error(f"[HASubscriber] room-presence hook {entity_id}: {e}")
+
+    # HA-automation-fired bridge — a stored Ziggy automation with a state/sensor
+    # trigger is fired by HA, but its Ziggy-native actions (turn_off_all_lights,
+    # IR) are dropped/placeholder'd by the compiler, so HA fires the trigger and
+    # nothing real happens (this is why "Leave Home / no sensor activity" never
+    # turned anything off). When such an automation fires — signalled by its
+    # `last_triggered` attribute advancing — run ONLY the actions HA deferred,
+    # itself. call_service/delay/notify already ran natively in HA, so they are
+    # excluded (re-running Pre-cool's climate call would double-fire).
+    if entity_id.startswith("automation."):
+        try:
+            old_a = old_state.get("attributes", {}) or {}
+            old_fired = old_a.get("last_triggered")
+            new_fired = attrs.get("last_triggered")
+            if new_fired and new_fired != old_fired:
+                await _run_deferred_automation_actions(entity_id, attrs)
+        except Exception as e:
+            log_error(f"[HASubscriber] automation-fired bridge {entity_id}: {e}")
 
     # TRACE-level: emit every HA state change (very noisy — only in trace mode)
     _dbus.emit("ha", TRACE, "ha_state_changed",

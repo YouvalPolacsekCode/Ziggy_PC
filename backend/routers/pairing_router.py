@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -149,11 +150,55 @@ async def zwave_stop(_user: dict = Depends(require_role("admin"))):
 
 
 # ---------------------------------------------------------------------------
-# Matter commissioning
+# Matter commissioning — async fire-and-poll.
+#
+# Commissioning takes 30-120s (BLE handshake + attestation + Thread join). A
+# SYNCHRONOUS request holds the HTTP connection well past the app's fetch/proxy
+# timeout — the user sees "request timed out", taps pair again, and each retry
+# ABORTS the in-flight BLE connection (le-connection-abort-by-local) so nothing
+# ever completes and the BLE adapter degrades. Instead: start commissioning in a
+# background task, return immediately, and let the client poll
+# GET /api/ha/matter/status. A single-flight guard rejects a second start while
+# one is running, so an impatient double-tap can't create the storm.
 # ---------------------------------------------------------------------------
 
 class MatterCommissionBody(BaseModel):
     code: str
+
+
+# Terminal + in-flight state for the (single) active Matter commission. Guarded
+# by a lock because the background task and the HTTP handlers touch it from
+# different threads/tasks. status ∈ idle|running|success|failed.
+_matter_lock = threading.Lock()
+_matter_state: dict = {"status": "idle", "message": "", "ok": None, "ts": 0.0}
+_matter_task: Optional["asyncio.Task"] = None
+# A commission can't outlive commission_matter's own 150s WS timeout by much;
+# treat a "running" older than this as stale so a wedged attempt can't lock the
+# user out of ever pairing again.
+_MATTER_STALE_S = 200.0
+
+
+async def _run_matter_commission(code: str) -> None:
+    """Background worker: run the (slow) commission, record the outcome, notify."""
+    ok = False
+    message = "Pairing failed."
+    try:
+        result = await commission_matter(code)
+        ok = bool(result.get("ok"))
+        message = "Device paired." if ok else (result.get("error") or "Pairing failed.")
+    except Exception as e:  # defensive — never leave state stuck on "running"
+        message = str(e)
+    with _matter_lock:
+        _matter_state.update(status="success" if ok else "failed",
+                             ok=ok, message=message, ts=time.time())
+        state = dict(_matter_state)
+    try:
+        from backend.ws_manager import manager
+        await manager.broadcast({"type": "matter_commission", **state})
+    except Exception:
+        pass
+    if ok:
+        _schedule_registry_refresh(delay_s=8)
 
 
 @router.post("/api/ha/matter/commission")
@@ -162,17 +207,34 @@ async def matter_commission(body: MatterCommissionBody,
     _dbus.emit("auth", BASIC, "auth_promoted_route_called",
                route="POST /api/ha/matter/commission",
                user=_user.get("username"), auth_added=True)
-    if not body.code.strip():
+    code = body.code.strip()
+    if not code:
         raise ZiggyError(
             code=ErrorCode.VALIDATION_ERROR,
             message="Please enter the Matter setup code.",
             log_message="matter_commission: empty setup code",
         )
-    result = await commission_matter(body.code.strip())
-    if not result.get("ok"):
-        raise pairing_failed("matter", upstream_detail=result.get("error"))
-    _schedule_registry_refresh(delay_s=10)
-    return result
+    global _matter_task
+    with _matter_lock:
+        running = (_matter_state["status"] == "running"
+                   and (time.time() - _matter_state["ts"]) < _MATTER_STALE_S)
+        if running:
+            # Already pairing — do NOT start a second overlapping commission.
+            return {"status": "running", "message": _matter_state.get("message", "")}
+        _matter_state.update(
+            status="running", ok=None,
+            message="Pairing… keep the device next to the hub (up to 2 minutes).",
+            ts=time.time())
+    _matter_task = asyncio.create_task(_run_matter_commission(code))
+    return {"status": "started"}
+
+
+@router.get("/api/ha/matter/status")
+async def matter_status(_user: dict = Depends(require_role("admin"))):
+    """Poll target for the async Matter pairing flow. Returns the current
+    {status, message, ok, ts} of the single active/last commission."""
+    with _matter_lock:
+        return dict(_matter_state)
 
 
 # ---------------------------------------------------------------------------

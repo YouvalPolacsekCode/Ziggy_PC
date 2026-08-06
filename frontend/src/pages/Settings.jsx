@@ -27,6 +27,7 @@ import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
+import { Modal } from '../components/ui/Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
 import {
@@ -34,6 +35,7 @@ import {
   getGeneralSettings, patchGeneralSettings,
   getAuthStatus, changePassword,
   getUsers, updateUser, deleteUser,
+  deleteMyAccount, factoryResetHub,
   createInvite, listInvites, revokeInvite,
   getPresenceZone, savePresenceZone, getPresenceDebug,
   pingMePresence, getMyPresencePerson, setMyPresenceLanHost,
@@ -1032,6 +1034,164 @@ function UsersAndAccessSection({ currentUsername }) {
 
 // ─── Account form (used inside AccountPage) ───────────────────────────────────
 
+// Delete-account + factory-reset modal. Ships behind the "Delete my account"
+// button below. Apple Guideline 5.1.1(v) requires an in-app account deletion
+// path; Ziggy's ownership model means the sole super_admin owner cannot just
+// delete themselves without stranding the hub, so the modal transitions to a
+// factory-reset flow for owners.
+//
+// Stages:
+//   'confirm' — plain "are you sure" for any user
+//   'owner'   — server 409'd with needs_factory_reset; explain + link to factory
+//   'factory' — type-to-confirm factory reset (destructive on the whole hub)
+//   'done'    — success screen; we log out shortly after
+function DeleteAccountModal({ open, onClose, logout }) {
+  const t = useT()
+  const [stage, setStage] = useState('confirm')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [factoryWord, setFactoryWord] = useState('')
+
+  useEffect(() => {
+    if (open) { setStage('confirm'); setBusy(false); setErr(''); setFactoryWord('') }
+  }, [open])
+
+  const doDelete = async () => {
+    setBusy(true); setErr('')
+    try {
+      const res = await deleteMyAccount()
+      if (res.needs_factory_reset) {
+        setStage('owner')
+        setBusy(false)
+        return
+      }
+      setStage('done')
+      // Give the user a beat to see the confirmation, then sign them out.
+      setTimeout(() => { logout() }, 1400)
+    } catch (e) {
+      setErr(t('settings.deleteAccountFailed'))
+      setBusy(false)
+    }
+  }
+
+  const doFactoryReset = async () => {
+    setBusy(true); setErr('')
+    try {
+      await factoryResetHub('User requested account deletion — owner path')
+      setStage('done')
+      setTimeout(() => { logout() }, 1400)
+    } catch (e) {
+      setErr(t('settings.factoryResetFailed'))
+      setBusy(false)
+    }
+  }
+
+  const danger = { background: 'var(--danger, #dc2626)', color: '#fff' }
+  const dangerBtn = {
+    width: '100%', padding: '12px 16px', borderRadius: 10, border: 'none',
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    ...danger,
+  }
+  const secondaryBtn = {
+    width: '100%', padding: '12px 16px', borderRadius: 10,
+    border: '0.5px solid var(--line)', background: 'transparent',
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 500, cursor: 'pointer',
+    color: 'var(--ink)',
+  }
+
+  const title = ({
+    'confirm': t('settings.deleteAccountConfirmTitle'),
+    'owner':   t('settings.deleteAccountOwnerTitle'),
+    'factory': t('settings.factoryResetTitle'),
+    'done':    '',
+  })[stage]
+
+  return (
+    <Modal open={open} onClose={busy ? undefined : onClose} title={title} maxWidth={440}>
+      {stage === 'confirm' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-dim)', margin: 0, lineHeight: 1.55 }}>
+            {t('settings.deleteAccountConfirmBody')}
+          </p>
+          {err && <p style={{ fontSize: 13, color: 'var(--danger, #dc2626)', margin: 0 }}>{err}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={doDelete} disabled={busy} style={dangerBtn}>
+              {busy ? t('settings.deleting') : t('settings.deleteAccountBtn')}
+            </button>
+            <button onClick={onClose} disabled={busy} style={secondaryBtn}>
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === 'owner' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-dim)', margin: 0, lineHeight: 1.55 }}>
+            {t('settings.deleteAccountOwnerBody')}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={() => setStage('factory')} style={dangerBtn}>
+              {t('settings.goToFactoryReset')}
+            </button>
+            <button onClick={onClose} style={secondaryBtn}>
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === 'factory' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-dim)', margin: 0, lineHeight: 1.55 }}>
+            {t('settings.factoryResetBody')}
+          </p>
+          <div>
+            <p style={{ fontSize: 13, color: 'var(--ink-dim)', margin: '0 0 6px 0' }}>
+              {t('settings.factoryResetTypePrompt')}
+            </p>
+            <Input
+              placeholder={t('settings.factoryResetTypeWord')}
+              value={factoryWord}
+              onChange={e => setFactoryWord(e.target.value)}
+              autoFocus
+            />
+          </div>
+          {err && <p style={{ fontSize: 13, color: 'var(--danger, #dc2626)', margin: 0 }}>{err}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              onClick={doFactoryReset}
+              disabled={busy || factoryWord.trim() !== t('settings.factoryResetTypeWord')}
+              style={{ ...dangerBtn, opacity: (busy || factoryWord.trim() !== t('settings.factoryResetTypeWord')) ? 0.5 : 1 }}
+            >
+              {busy ? t('settings.wiping') : t('settings.factoryResetBtn')}
+            </button>
+            <button onClick={onClose} disabled={busy} style={secondaryBtn}>
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === 'done' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '8px 0' }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 999,
+            background: 'var(--ok, #16a34a)', color: '#fff',
+            display: 'grid', placeItems: 'center',
+          }}>
+            <Check size={26} />
+          </div>
+          <p style={{ fontSize: 15, color: 'var(--ink)', margin: 0, textAlign: 'center' }}>
+            {t('common.signOut')}…
+          </p>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+
 function AccountForms({ username, role, logout }) {
   const t = useT()
   const { addToast } = useUIStore()
@@ -1039,6 +1199,7 @@ function AccountForms({ username, role, logout }) {
   const [pwForm, setPwForm] = useState({ username: username || '', password: '', confirm: '' })
   const [pwError, setPwError] = useState('')
   const [savingPw, setSavingPw] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   useEffect(() => {
     setPwForm(f => ({ ...f, username: username || '' }))
@@ -1108,7 +1269,24 @@ function AccountForms({ username, role, logout }) {
             <span style={{ fontSize: 13, fontWeight: 500 }}>{t('common.signOut')}</span>
           </button>
         </div>
+
+        {/* Delete account (Apple 5.1.1(v)). Owner is redirected to factory reset. */}
+        <div style={{ borderTop: '0.5px solid var(--line)' }}>
+          <button
+            onClick={() => setDeleteOpen(true)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--danger, #dc2626)' }}
+          >
+            <Trash2 size={16} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{t('settings.deleteAccount')}</span>
+          </button>
+        </div>
       </div>
+
+      <DeleteAccountModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        logout={logout}
+      />
     </Card>
   )
 }

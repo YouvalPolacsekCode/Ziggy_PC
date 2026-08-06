@@ -89,17 +89,57 @@ async def stop_zwave_inclusion() -> dict:
 # ---------------------------------------------------------------------------
 
 async def commission_matter(code: str) -> dict:
-    """Commission a Matter device using its setup code or QR payload."""
+    """Commission a Matter device using its setup code or QR payload.
+
+    Drives HA's ``matter/commission`` WebSocket command (NOT a service call —
+    the matter integration exposes no ``commission_with_code`` service). HA hands
+    the commission off to the standalone matter-server, and — crucially —
+    automatically supplies the *preferred* Thread operational dataset (or Wi-Fi
+    credentials) to the device over the initial BLE handshake, so a fresh
+    Matter-over-Thread device (e.g. an IKEA bulb) joins our OTBR's Thread mesh.
+
+    Commissioning is slow: BLE handshake + network join can take 30–120 s, so we
+    override the helper's aggressive default WS timeout for this one call. The
+    request holds until HA reports the final result. (A future improvement is to
+    make this async + poll, so the UI needn't block on a single long request.)
+    """
     try:
-        res, = await _ws({
-            "type": "call_service",
-            "domain": "matter",
-            "service": "commission_with_code",
-            "service_data": {"code": code},
-        })
+        # STEP 1 — pre-load the preferred Thread operational dataset into
+        # matter-server. A Thread Matter device (e.g. an IKEA bulb) connects over
+        # BLE, attests, then needs the Thread network key to join. HA's
+        # matter/commission does NOT auto-attach it, so without this the device
+        # gets to "Required network information not provided / thread (no)" and
+        # fails even though BLE + attestation succeeded. We fetch HA's preferred
+        # dataset (kept TLV-synced to our OTBR) and push it via matter/set_thread.
+        # Non-fatal on failure (a Wi-Fi-only Matter device wouldn't need it).
+        try:
+            ds = await _ws({"type": "thread/list_datasets"}, timeout=10.0)
+            datasets = (ds[0].get("result") or {}).get("datasets", [])
+            pref = next((d for d in datasets if d.get("preferred")), None)
+            if pref:
+                tlv_res = await _ws(
+                    {"type": "thread/get_dataset_tlv", "dataset_id": pref["dataset_id"]},
+                    timeout=10.0)
+                tlv = (tlv_res[0].get("result") or {}).get("tlv")
+                if tlv:
+                    await _ws({"type": "matter/set_thread",
+                               "thread_operation_dataset": tlv}, timeout=15.0)
+        except Exception as e:
+            log_error(f"[Pairing] set_thread dataset (non-fatal): {e}")
+
+        # STEP 2 — commission. network_only=False is REQUIRED for a fresh device:
+        # HA's matter/commission defaults network_only=True (on-network/mDNS
+        # discovery ONLY), which a brand-new device — not on any network yet —
+        # can never answer ("Discovery timed out"). network_only=False takes the
+        # BLE path: BLE scan → PASE handshake → push the Thread dataset above →
+        # device joins Thread → operational.
+        res, = await _ws({"type": "matter/commission", "code": code,
+                          "network_only": False},
+                         timeout=150.0)
         if res.get("success"):
             return {"ok": True}
-        err = (res.get("error") or {}).get("message", "Matter integration not available or code invalid")
+        err = (res.get("error") or {}).get(
+            "message", "Matter integration not available or code invalid")
         return {"ok": False, "error": err}
     except Exception as e:
         log_error(f"[Pairing] commission_matter: {e}")
