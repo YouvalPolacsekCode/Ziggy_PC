@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -13,6 +15,81 @@ from ..database import get_db
 router = APIRouter(prefix="/homes")
 
 ROLE_ADMIN = require_role("relay_admin")
+
+# Hubs post telemetry every 5 minutes. Three missed posts is a real outage;
+# one is a hiccup. Mirrors TELEMETRY_FRESHNESS_WINDOW_S on the hub side
+# (backend/routers/edge_health_router.py) so both ends agree on "stale".
+TELEMETRY_STALE_S = 15 * 60
+
+
+def _parse_ts(ts: Optional[str]) -> Optional[float]:
+    """Lenient ISO-8601 → epoch seconds. None on anything unparseable."""
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        s = ts.replace("Z", "+00:00") if ts.endswith("Z") else ts
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def evaluate_home_health(
+    payload: Optional[dict],
+    ts_epoch: Optional[float],
+    *,
+    now: Optional[float] = None,
+) -> dict:
+    """Derive a home's health from its most recent pushed telemetry row.
+
+    WHY NOT FETCH THE HUB DIRECTLY: the previous implementation called
+    `{tunnel_url}/api/health` from the relay. Most homes register a raw
+    `*.cfargotunnel.com` URL, which is only routable from inside Cloudflare's
+    network — so from Fly the request timed out and the endpoint returned
+    `{"ok": false, "reason": ""}` for every home, healthy or not. A check that
+    is always false is worse than no check: it cannot be alerted on.
+
+    Telemetry, by contrast, is pushed hub → relay every 5 minutes and works.
+    It also separates the two failures that need different remedies:
+      - hub not reporting at all      → the box or its uplink is down
+      - hub reporting, no ha_version  → the box is fine, Home Assistant is not
+        (the Canary signature of 2026-08-05)
+    """
+    now = time.time() if now is None else now
+
+    if not isinstance(payload, dict) or ts_epoch is None:
+        return {
+            "ok": False,
+            "hub_reachable": False,
+            "ha_reachable": False,
+            "ha_version": None,
+            "last_seen_s": None,
+            "reason": "Hub has not reported any telemetry.",
+        }
+
+    last_seen_s = max(0.0, now - ts_epoch)
+    hub_reachable = last_seen_s <= TELEMETRY_STALE_S
+    ha_version = payload.get("ha_version")
+    ha_reachable = bool(ha_version)
+
+    if not hub_reachable:
+        reason = f"Hub has not reported for {int(last_seen_s // 60)} minutes."
+    elif not ha_reachable:
+        reason = "Hub is online but Home Assistant is unreachable from it."
+    else:
+        reason = ""
+
+    return {
+        "ok": hub_reachable and ha_reachable,
+        "hub_reachable": hub_reachable,
+        "ha_reachable": ha_reachable,
+        "ha_version": ha_version,
+        "sensor_count": payload.get("sensor_count"),
+        "last_seen_s": int(last_seen_s),
+        "reason": reason,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -267,15 +344,23 @@ async def home_health(home_id: str, request: Request):
         if not rows:
             raise HTTPException(404, "Home not found.")
         h = dict(rows[0])
-    if not h["tunnel_url"]:
-        return {"ok": False, "reason": "No tunnel URL registered."}
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            r = await client.get(
-                f"{h['tunnel_url']}/api/health",
-                headers={"X-Relay-Secret": h["relay_secret"]},
-            )
-            return {"ok": r.is_success, "status": h["status"], "hub_status": r.json() if r.is_success else None}
-    except Exception as e:
-        return {"ok": False, "reason": str(e), "status": h["status"]}
+    # Verdict comes from the telemetry the hub PUSHES, not from a fetch we
+    # initiate — see evaluate_home_health for why the old direct-fetch check
+    # reported every home in the fleet as unhealthy.
+    payload, ts_epoch = None, None
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT ts, payload FROM telemetry_raw WHERE home_id=? ORDER BY id DESC LIMIT 1",
+            (home_id,),
+        )
+    if rows:
+        row = dict(rows[0])
+        try:
+            payload = json.loads(row["payload"])
+        except (TypeError, ValueError):
+            payload = None
+        ts_epoch = _parse_ts(row.get("ts"))
+
+    verdict = evaluate_home_health(payload, ts_epoch)
+    verdict["status"] = h["status"]
+    return verdict
