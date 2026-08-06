@@ -198,12 +198,11 @@ Copy the **whole** `usb-...-if00-port0` line — that's your `DONGLE` value. The
 
 ## PART G — Image the hub: Zigbee ON, Matter OFF (~10–15 min)
 
-**Decide first: pre-pair his sensors now, or let him pair at his home?**
-- **`ZIGBEE_PAIR_SECONDS=0`** (David's choice) — capture the coordinator only; Tslil pairs his own
-  devices later from the app. Use this if his sensors aren't here.
-- **`ZIGBEE_PAIR_SECONDS=300`** — imaging holds the network open 5 minutes; you put each sensor
-  into pairing mode and they join + get folded into the sealed kit manifest. Use this if you have
-  his kit on the bench (the "kits ship pre-paired" model).
+**Decided: `ZIGBEE_PAIR_SECONDS=0`** — imaging captures and seals his coordinator IEEE only, and
+Tslil pairs his own sensors at his home from the app. Same as David's box.
+
+*(For a future bench-paired kit, `ZIGBEE_PAIR_SECONDS=300` holds the network open 5 minutes so
+each sensor joins and gets folded into the sealed kit manifest.)*
 
 On the mini PC — paste your real values into the placeholders:
 ```
@@ -212,7 +211,7 @@ set -a; source ~/tslil-secrets.txt; set +a
 DONGLE='/dev/serial/by-id/usb-...-if00-port0'      # from Part F
 COORDINATOR_TYPE=smlight                            # or sonoff_e, from Part F
 TSLIL_EMAIL='tslil@example.com'                     # Tslil's real email
-PAIR_SECONDS=0                                      # or 300 — see the decision above
+PAIR_SECONDS=0                                      # decided: he pairs at his home
 ```
 **First a dry run** (changes nothing, proves inputs + Zigbee config are valid):
 ```
