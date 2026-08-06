@@ -396,22 +396,27 @@ def turn_off_all_lights() -> Dict[str, Any]:
 
 
 def turn_off_everything() -> Dict[str, Any]:
-    """Turn off every light and media_player configured in device_map.
+    """Turn off every light + media_player HA reports as ON (from LIVE HA state).
 
-    Groups by domain so we issue at most one call per domain — lights and
-    media players in parallel HA-side, instead of N sequential round-trips.
+    Was device_map-based, but device_map is empty now that rooms are HA-area /
+    device-registry driven — so it turned off 0 devices ("everything off" with
+    nothing actually off). Enumerate live HA entities instead, like
+    turn_off_all_lights, so 'turn off everything' works regardless of device_map.
     """
-    light_ids: List[str] = []
-    media_ids: List[str] = []
-    for room_devices in _device_map().values():
-        for dtype, entity_id in room_devices.items():
-            if not entity_id:
-                continue
-            dtype_l = dtype.lower()
-            if "light" in dtype_l:
-                light_ids.append(entity_id)
-            elif dtype_l in ("tv", "media_player"):
-                media_ids.append(entity_id)
+    try:
+        all_states = get_all_states()
+    except Exception:
+        all_states = []
+    light_ids = [
+        s["entity_id"] for s in all_states
+        if s.get("entity_id", "").startswith("light.")
+        and s.get("state") not in ("off", "unavailable", "unknown")
+    ]
+    media_ids = [
+        s["entity_id"] for s in all_states
+        if s.get("entity_id", "").startswith("media_player.")
+        and s.get("state") not in ("off", "idle", "standby", "unavailable", "unknown")
+    ]
 
     turned_off = 0
     errors: List[str] = []
