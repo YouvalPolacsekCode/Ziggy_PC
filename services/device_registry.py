@@ -813,6 +813,124 @@ def init() -> None:
     log_info(f"[DeviceRegistry] Phase 1 initialized with {len(_registry)} devices (HA reconcile pending)")
 
 
+def _select_area_heal_targets(registry_rows: list[dict],
+                              existing_area_ids: set[str],
+                              entity_areas: dict[str, str],
+                              ent_by: dict[str, dict],
+                              occupancy_ids: set[str]) -> list[str]:
+    """Pure target-selection for the HA-area convergence heal (unit-testable).
+
+    Returns the entity_ids whose registry room should be mirrored onto their HA
+    area. See `_heal_ha_areas_from_user_rooms` for the full safety rationale.
+    Kept side-effect-free so tests/test_room_area_convergence.py can pin the
+    exact skip rules that keep this from resurrecting deleted rooms or touching
+    Ziggy's own virtual sensors.
+    """
+    def _is_real_physical(eid: str) -> bool:
+        e = ent_by.get(eid)
+        if not e or not e.get("device_id"):
+            return False  # not a real HA device (template/helper) — leave alone
+        if (e.get("platform") or "") == "template":
+            return False  # Ziggy fused template sensor
+        if eid in occupancy_ids:
+            return False  # Ziggy occupancy/presence sensor
+        return True
+
+    targets: list[str] = []
+    for d in registry_rows:
+        eid = d.get("entity_id")
+        if not eid or d.get("origin") == "ziggy_template":
+            continue
+        if d.get("room_source") != "user":
+            continue
+        room = d.get("room")
+        if not room or room not in existing_area_ids:
+            continue  # Ziggy-only room (no HA area) — never resurrects a deleted one
+        if entity_areas.get(eid) == room:
+            continue  # already aligned
+        if not _is_real_physical(eid):
+            continue  # Ziggy virtual sensor / helper — not HA-area managed
+        targets.append(eid)
+    return targets
+
+
+async def _heal_ha_areas_from_user_rooms(existing_area_ids: set[str],
+                                         entity_areas: dict[str, str]) -> None:
+    """Push USER-assigned registry rooms onto HA areas so the two room sources
+    (registry `room` vs HA area) can never diverge.
+
+    This is the permanent guard against the "office-lamp" bug class: the user
+    assigns a device to a room in Ziggy (registry `room` set, `room_source=user`),
+    but nothing writes the HA area — so every HA-area-based read (get_areas,
+    /api/rooms, home_context) silently drops that device. Here we mirror the
+    user's choice onto HA on every reconcile, self-healing any drift.
+
+    SAFE BY CONSTRUCTION — cannot resurrect a deleted room:
+      - Only writes when the registry room is an area that ALREADY EXISTS in HA
+        (`existing_area_ids`). Aligning a device to an existing area never
+        re-creates one — deleting a room removes its HA area, so its ex-members
+        no longer resolve to an existing area and are left alone (then cleared by
+        `_enforce_user_rooms`, keeping delete final).
+      - Only `room_source == "user"` rows (never "ha" — those came FROM HA, and
+        never None).
+      - Only REAL PHYSICAL HA devices — an entity with a `device_id` and a
+        non-`template` platform, and NOT one of Ziggy's own fused/presence
+        sensors (`origin == "ziggy_template"`, the occupancy registry, or a
+        `template` helper). Ziggy's virtual sensors are accessed through the
+        occupancy registry, never HA-area membership, so writing an area onto
+        them is both pointless and a surprise — we leave them alone.
+      - Writes at the ENTITY level (precise: never moves a device's sibling
+        entities), and only when the current HA area actually differs.
+    """
+    # Build the "real physical device" predicate from HA's registry snapshot +
+    # Ziggy's occupancy registry. On any fetch failure, heal nothing (safe).
+    try:
+        from services.ha_areas import get_registry_snapshot
+        snap = await get_registry_snapshot()
+        ent_by = {e.get("entity_id"): e for e in (snap.get("entities") or [])}
+    except Exception as e:
+        log_error(f"[DeviceRegistry] convergence: snapshot fetch failed, skipping heal: {e}")
+        return
+    occupancy_ids: set[str] = set()
+    try:
+        from services.template_sensors import list_occupancy_sensors
+        occupancy_ids = {r["entity_id"] for r in list_occupancy_sensors() if r.get("entity_id")}
+    except Exception:
+        pass
+
+    with _lock:
+        targets = _select_area_heal_targets(
+            list(_registry), existing_area_ids, entity_areas, ent_by, occupancy_ids,
+        )
+
+    if not targets:
+        return
+
+    from services.ha_areas import _ws, invalidate_registry_cache
+    # room lookup again under no lock — read the freshest registry room per eid
+    room_by_eid = {d.get("entity_id"): d.get("room") for d in _registry if d.get("entity_id")}
+    healed = 0
+    for eid in targets:
+        room = room_by_eid.get(eid)
+        if not room or room not in existing_area_ids:
+            continue
+        try:
+            res, = await _ws({
+                "type": "config/entity_registry/update",
+                "entity_id": eid, "area_id": room,
+            })
+            if res.get("success"):
+                healed += 1
+                log_info(f"[DeviceRegistry] convergence: set HA area '{room}' on {eid} (from user room)")
+            else:
+                log_error(f"[DeviceRegistry] convergence: HA area write failed for {eid}: {res.get('error')}")
+        except Exception as e:
+            log_error(f"[DeviceRegistry] convergence: HA area write exception for {eid}: {e}")
+    if healed:
+        invalidate_registry_cache()
+        log_info(f"[DeviceRegistry] convergence: healed {healed} device→HA-area assignment(s)")
+
+
 async def reconcile_with_ha() -> None:
     """Phase 2: live HA REST reconciliation — runs as a background task.
 
@@ -839,9 +957,12 @@ async def reconcile_with_ha() -> None:
     # behind a WebSocket call so it has to be awaited up here, before we drop
     # into the sync `_do` worker.
     entity_areas: dict[str, str] = {}
+    existing_area_ids: set[str] = set()
     try:
         from services.ha_areas import get_areas
         for area in await get_areas():
+            if area.get("id"):
+                existing_area_ids.add(area["id"])
             # Key by the HA area_id (the canonical room id used everywhere else
             # in Ziggy), NOT a slug derived from the area NAME. Deriving from the
             # name silently broke any room whose name doesn't slugify to its
@@ -911,6 +1032,15 @@ async def reconcile_with_ha() -> None:
         return
     if count:
         log_info(f"[DeviceRegistry] Phase 2 reconciled: {count} devices")
+
+    # Convergence self-heal: push user-assigned rooms to HA areas so the two
+    # sources of room truth (registry room vs HA area) can never diverge and
+    # silently drop a device from HA-area-based reads (the office-lamp class of
+    # bug). SAFE by construction — see _heal_ha_areas_from_user_rooms.
+    try:
+        await _heal_ha_areas_from_user_rooms(existing_area_ids, entity_areas)
+    except Exception as e:
+        log_error(f"[DeviceRegistry] HA-area convergence heal failed: {e}")
     # Critical-plug auto-tag pass runs after reconcile so newly-paired plugs
     # (fridge, router, …) get caught immediately rather than waiting for the
     # next 60s tick. Idempotent — does nothing on the steady state.

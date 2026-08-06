@@ -7,7 +7,7 @@
 // wizards), plus the shared pick helpers and the automation→recipe router.
 
 import { describe, expect, it } from 'vitest'
-import { pickedIds, pickFrom } from '../engine/context'
+import { pickedIds, pickFrom, roomEntityIdsOf } from '../engine/context'
 import { RECIPES, recipeForAutomation } from '../recipes'
 
 // ── Fake home context ────────────────────────────────────────────────────────
@@ -38,6 +38,19 @@ const ctx = {
   rooms: [{ id: 'living', name: 'Living Room', entities: ['sensor.temp_living', 'climate.ac_living', 'light.living'] }],
   ziggyRooms: [], occupancySensors: [], automations: [],
   NO_ROOM: '__none__',
+  // Mirrors engine/context.js: registry room (ziggyRooms[].devices) first, HA
+  // area (rooms[].entities) as fallback.
+  roomEntityIds: (room) => {
+    if (!room) return []
+    const zr = (ctx.ziggyRooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
+    if (zr) {
+      const ids = []
+      for (const d of (zr.devices || [])) { const id = d.entity_id || d.main_entity_id; if (id) ids.push(id) }
+      if (ids.length) return ids
+    }
+    const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
+    return (area?.entities || [])
+  },
   roomOf: (eid) => ROOMS[eid] || '__none__',
   nameWithRoom: (e) => e.entity_id,
   asItem: (e) => ({ id: e.entity_id, label: e.entity_id, _entity: e }),
@@ -48,6 +61,26 @@ const ctx = {
 }
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
+describe('roomEntityIdsOf (registry-room membership, office-lamp guard)', () => {
+  const room = { id: 'office', name: 'Office' }
+  // Registry room (ziggyRooms) has BOTH office lights; the HA-area copy (rooms)
+  // only has one — the lamp lives in the office only in Ziggy (no HA area).
+  const ziggyRooms = [{ id: 'office', name: 'Office', devices: [
+    { entity_id: 'light.ceiling' }, { entity_id: 'light.lamp' },
+  ] }]
+  const rooms = [{ id: 'office', name: 'Office', entities: ['light.ceiling'] }]
+
+  it('returns ALL registry members, including the HA-area-less lamp', () => {
+    expect(roomEntityIdsOf(ziggyRooms, rooms, room)).toEqual(['light.ceiling', 'light.lamp'])
+  })
+  it('falls back to HA-area entities when the room is not a registry room', () => {
+    expect(roomEntityIdsOf([], rooms, room)).toEqual(['light.ceiling'])
+  })
+  it('is empty for an unknown room', () => {
+    expect(roomEntityIdsOf(ziggyRooms, rooms, { id: 'garage', name: 'Garage' })).toEqual([])
+  })
+})
+
 describe('pick helpers', () => {
   it('pickedIds resolves all-mode to every item', () => {
     const items = [{ id: 'a' }, { id: 'b' }]

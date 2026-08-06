@@ -18,9 +18,14 @@ const IR_CLIMATE_TYPES = new Set(['ac', 'air_conditioner', 'split', 'heater'])
 const SWITCH_CONFIG_DENY = /_(do_not_disturb|child_lock|permit_join|led|led_disabled|led_disabled_night|indicator|ai_[a-z_]+|sensitivity|interference|selfidentification|power_outage_memory|power_on_behavior|auto_update|update|calibration|identify)$|_ai_|permit_join/i
 const isRealSwitch = (e) => !(e.entity_category === 'config' || e.entity_category === 'diagnostic') && !SWITCH_CONFIG_DENY.test(e.entity_id || '')
 
-const roomOfValues = (ctx, v) => (ctx.rooms || []).find((r) => String(r.id) === String(v.roomId) || r.name === v.roomId) || null
+// Registry rooms (user truth) first, HA areas as fallback — so a room the user
+// manages only in Ziggy still resolves and its members aren't dropped.
+const roomOfValues = (ctx, v) =>
+  (ctx.ziggyRooms || []).find((r) => String(r.id) === String(v.roomId) || r.name === v.roomId)
+  || (ctx.rooms || []).find((r) => String(r.id) === String(v.roomId) || r.name === v.roomId)
+  || null
 
-const tempSensorsOf = (ctx, room) => (room?.entities || [])
+const tempSensorsOf = (ctx, room) => ctx.roomEntityIds(room)
   .map((id) => ctx.entityMap[id])
   .filter((e) => e && e.domain === 'sensor' && (e.device_class === 'temperature' || /temp/i.test(e.entity_id || '')))
 
@@ -77,7 +82,7 @@ function EdgeField({ dir, values, setValue, ctx, t }) {
 
   const devices = useMemo(() => {
     const out = []
-    for (const id of (room?.entities || [])) {
+    for (const id of ctx.roomEntityIds(room)) {
       const e = ctx.entityMap[id]
       if (!e) continue
       const name = entityDisplayName(e) || e.entity_id
@@ -208,7 +213,7 @@ export default {
       validate: (v, c) => !!roomOfValues(c, v),
       fields: [
         { key: 'roomId', type: 'pickOne', collapseSingle: false,
-          items: (c) => (c.rooms || []).map((r) => ({ id: String(r.id), label: r.name })),
+          items: (c) => (c.ziggyRooms || []).map((r) => ({ id: String(r.id), label: r.name })),
           afterSet: () => ({ cooling: null, heating: null, showHeating: false }),
           emptyKey: 'automations.smartClimate.noRooms',
           locked: (v) => !!v._installed,

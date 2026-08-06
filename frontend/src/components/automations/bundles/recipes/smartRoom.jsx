@@ -34,6 +34,9 @@ const DEFAULT_OPTS = {
 // 1st (both fell back to the bare room id). Raw sensors are offered ONLY when the
 // room has no Smart Presence yet, so the user isn't blocked (the step then nudges
 // creating one).
+// Room members come from ctx.roomEntityIds (the Ziggy REGISTRY room — user
+// truth), never HA-area membership, so a light/sensor the user placed in the
+// room only in Ziggy (no HA area) is still offered. See context.js.
 function presenceCandidates(ctx, room, t) {
   if (!room) return []
   const rn = (room.name || '').toLowerCase(), rid = String(room.id).toLowerCase()
@@ -49,10 +52,9 @@ function presenceCandidates(ctx, room, t) {
 
   // No Smart Presence in this room yet — fall back to raw sensors so a quick
   // single-sensor room still works; the presence step nudges creating one.
-  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
   const fusedIds = new Set((ctx.occupancySensors || []).map((s) => s.entity_id))
   const raw = []
-  for (const id of (area?.entities || [])) {
+  for (const id of ctx.roomEntityIds(room)) {
     const e = ctx.entityMap[id]
     if (e && e.domain === 'binary_sensor' && SR_OCC_TYPE[e.device_class] && !fusedIds.has(id)) {
       raw.push({ id, name: entityDisplayName(e) || id, kind: SR_OCC_TYPE[e.device_class] })
@@ -69,11 +71,12 @@ function zoneSlugOf(ctx, values) {
   return (rec && (rec.key || rec.room)) || String(values.room?.id || '')
 }
 
-// The room's lights, for the per-instance light picker.
+// The room's lights, for the per-instance light picker. Sourced from the Ziggy
+// registry room (via roomEntityIds), so a light the user placed in the room only
+// in Ziggy (no HA area) is offered — the office-lamp fix.
 function roomLights(ctx, room) {
   if (!room) return []
-  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
-  return (area?.entities || [])
+  return ctx.roomEntityIds(room)
     .map((id) => ctx.entityMap[id])
     .filter((e) => e && e.domain === 'light')
     .map((e) => ({ id: e.entity_id, name: entityDisplayName(e) || e.entity_id }))
@@ -85,9 +88,8 @@ function roomLights(ctx, room) {
 // "open" would read as "occupied", so we never list it as a pick).
 function unfusedDoorSensors(ctx, room) {
   if (!room) return []
-  const area = (ctx.rooms || []).find((r) => String(r.id) === String(room.id) || r.name === room.name)
   const fusedSources = new Set((ctx.occupancySensors || []).flatMap((s) => s.sensors || []))
-  return (area?.entities || []).filter((id) => {
+  return ctx.roomEntityIds(room).filter((id) => {
     const e = ctx.entityMap[id]
     return e && e.domain === 'binary_sensor'
       && (e.device_class === 'door' || e.device_class === 'opening')
@@ -115,7 +117,10 @@ function RoomPickField({ values, setValue, ctx, t }) {
     setValue('_resolving', false)
     setResolving(false)
   }
-  const rooms = ctx.rooms || []
+  // Registry rooms (what the user manages on the Rooms page) — a superset of HA
+  // areas that also includes any Ziggy-only room, so nothing the user created is
+  // unpickable here.
+  const rooms = ctx.ziggyRooms || []
   if (rooms.length === 0) {
     return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.noRooms')}</p>
   }
