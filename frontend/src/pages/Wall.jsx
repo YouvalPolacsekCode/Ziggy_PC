@@ -19,7 +19,7 @@ import { useWallStore } from '../stores/wallStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useWsConnected, useWsMessages } from '../hooks/useWebSocket'
 import { useT } from '../lib/i18n'
-import { getTabletId } from '../lib/hubTablet'
+import { getTabletId, getTabletToken, setTabletToken } from '../lib/hubTablet'
 import { getWallPolicy, wallTabletHeartbeat, wallWentIdle, getWeather, setWallMode } from '../lib/api'
 import { useCapabilityGuard } from '../wall/useWallControl'
 import { deviceFacts } from '../lib/devices'
@@ -38,6 +38,7 @@ export default function Wall() {
   // Held in state, not a memo: pairing sets it mid-session and the page must
   // start persisting layouts immediately, without a reload.
   const [tabletId, setTabletId] = useState(() => getTabletId())
+  const [tabletToken, setTabletTokenState] = useState(() => getTabletToken())
 
   const layout      = useWallStore((s) => s.layout)
   const editing     = useWallStore((s) => s.editing)
@@ -82,9 +83,12 @@ export default function Wall() {
   // point commands are served. Cleared on unmount so navigating away from
   // /wall in the same browser goes back to normal app permissions.
   useEffect(() => {
-    setWallMode(true, tabletId)
+    // Only a PAIRED tablet has a credential. An unpaired visitor keeps their
+    // own session and their own permissions — they are a person in a browser,
+    // not a wall panel (see wall_policy.unrestricted_policy).
+    setWallMode(!!tabletToken, tabletToken)
     return () => setWallMode(false)
-  }, [tabletId])
+  }, [tabletToken])
 
   // ── boot ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -229,6 +233,7 @@ export default function Wall() {
         onClose={() => setPairOpen(false)}
         onPaired={(res) => {
           setTabletId(res.tablet_id)
+          setTabletTokenState(res.tablet_token || null)
           setPairOpen(false)
           // A freshly-paired tablet gets its own layout + policy rows.
           fetchLayout()

@@ -415,21 +415,66 @@ existing, well-built `services/dashboard_tablets` functions — that service is
 unmodified. `weather_router` is unregistered too, so the weather module falls
 back to a Home Assistant `weather.*` entity.
 
-### 14.2 Capability enforcement is real, via middleware
+### 14.2 Capability enforcement — two gates, bound to the credential
 
-§7 said "enforced server-side" but only specified a policy service. Client-side
-gating alone is theatre — a wall tablet can be pointed at the API directly. Added
-`backend/middleware/wall_capability.py`: it maps path + method (and, for device
-commands, the target entity's domain) to a capability and refuses with 403.
+The first cut of this was **wrong in two ways**, both caught by a security
+review and then reproduced against a running hub. Recorded in full because the
+mistakes are the instructive part.
 
-It is **inert unless the request carries `X-Ziggy-Wall-Tablet`**, which only the
-`/wall` page sends (`setWallMode()` in `lib/api.js`, set on mount, cleared on
-unmount). Every other client returns from the first line of the middleware.
+**Mistake 1 — identity from a header.** Enforcement keyed on an
+`X-Ziggy-Wall-Tablet` header that the client asserted about itself. A tablet
+escaped every restriction by omitting one line: unlock-the-door went 403 → 200.
+A restriction that the restricted party opts into is not a restriction. §7 had
+originally specified a "tablet-scoped token representing a tablet principal";
+the deviation from that *was* the vulnerability.
 
-Verified live: a phone unlocking the door → 200; the same call from a paired
-tablet → 403 `denied`; after enabling locks behind a PIN → 403 `pin_required`;
-after a correct PIN → 200; cameras still 403 (elevation is per-capability); after
-the idle ping → 403 again.
+**Mistake 2 — gating URLs on a natural-language product.** The capability map
+was an allowlist-by-omission over the HTTP surface, and it missed the most
+important door: `POST /api/intent` "unlock the front door" returned 200 on a
+tablet whose locks were denied. The PIN gate was defeated by typing into the
+assistant card the wall itself displays.
+
+**The fix.** Identity now comes from the credential: pairing issues a tablet
+token (`zwt_…`, stored as a SHA-256 hash), the wall authenticates as itself, and
+`auth_deps.find_user_by_token` resolves it to a principal with `role: "user"` —
+appended last, so no existing session resolves differently, and a tablet fails
+`require_role("admin")` before any capability is consulted. Dropping the
+credential now yields 401, not freedom.
+
+Enforcement sits at **two** points on one policy:
+
+- `backend/middleware/wall_capability.py` — HTTP layer, for direct device and
+  admin calls. Inert unless the bearer token is a tablet credential.
+- `core.action_parser.handle_intent` — the single point every command path
+  (chat, voice, `/api/intent`, `/api/intent/direct`) converges on, reached via a
+  `ContextVar` the middleware publishes. Inert when no tablet is in context, and
+  placed *before* the multi-intent fan-out so a bundle cannot smuggle a locked
+  action through beside a permitted one.
+
+Two smaller hardenings: every signal may only **raise** the required capability,
+never lower it (a declared `domain: "light"` beside a `lock.` entity still reads
+as `locks`, and entity ids are collected recursively so a lock cannot hide
+behind a lamp in a list); and generic dispatcher intents like `control_device`
+contribute nothing from their *name*, because "device" once matched the
+`devices` capability, which outranks `locks` and therefore masked the lock
+sitting in its own params.
+
+Verified live, after the fix:
+
+| | result |
+|---|---|
+| Credential omitted entirely | `401` — unauthenticated, not unrestricted |
+| Tablet, natural-language unlock | refused: "This tablet isn't allowed to do that." |
+| Tablet, `domain: light` targeting a lock | `403` |
+| Tablet, camera snapshot | `403` |
+| Tablet, admin route | `403` (role gate, before capabilities) |
+| Locks behind a PIN, before entry | "This tablet needs its PIN for that." |
+| After correct PIN | passes the gate, reaches the handler |
+| After going idle | gated again |
+| Phone / browser, same commands | unchanged |
+| Tablet, permitted capability | works |
+
+Each of these has a regression test in `TestConfirmedBypassesStayClosed`.
 
 ### 14.3 An unpaired `/wall` session is unrestricted
 

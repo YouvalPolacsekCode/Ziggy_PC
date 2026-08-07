@@ -459,6 +459,10 @@ class TestCapabilityMiddleware:
         assert cap_for_control({"entity_id": "lock.front_door"}) == "locks"
         assert cap_for_control({"entity_id": "climate.living"}) == "climate"
         assert cap_for_control({"entity_id": "media_player.tv"}) == "media"
+        # Every signal can only RAISE the requirement, never lower it — so an
+        # unrecognised entity beside a declared lock domain still reads as a
+        # lock, and a declared light domain beside a lock entity still reads as
+        # a lock (see test_a_declared_domain_cannot_downgrade_the_check).
         assert cap_for_control({"domain": "lock", "entity_id": "x.y"}) == "locks"
         # Unknown / malformed falls back to the least powerful bucket.
         assert cap_for_control({}) == "lights"
@@ -484,6 +488,152 @@ class TestCapabilityMiddleware:
         assert asyncio.run(policy.check("tab_wall", "locks")) == (False, "pin_required")
         # ...while the lamp next to it still works.
         assert asyncio.run(policy.check("tab_wall", "lights")) == (True, "ok")
+
+
+# ---------------------------------------------------------------------------
+# Attack regressions
+# ---------------------------------------------------------------------------
+
+class TestConfirmedBypassesStayClosed:
+    """Each of these reproduces a hole that was real in the first cut of this
+    feature and confirmed against a running hub. They exist so the holes cannot
+    quietly reopen."""
+
+    def test_identity_comes_from_the_credential_not_a_header(self, tmp_policy):
+        """THE original flaw. Enforcement keyed on an `X-Ziggy-Wall-Tablet`
+        header, so a tablet escaped every restriction by omitting one line:
+        unlock-the-door went 403 -> 200. Identity must come from how you
+        authenticated, so dropping it leaves you unauthenticated, not free."""
+        from backend.middleware import wall_capability as mw
+        import inspect
+        src = inspect.getsource(mw.WallCapabilityMiddleware)
+        assert "resolve_token" in src, "identity must be resolved from the credential"
+        assert "headers.get(HEADER)" not in src, "identity must not come from a header"
+
+    def test_a_tablet_token_resolves_and_a_random_one_does_not(self, tmp_policy):
+        token = policy.issue_token("tab_1")
+        assert token.startswith("zwt_")
+        assert policy.resolve_token(token) == "tab_1"
+        assert policy.resolve_token("zwt_not_a_real_token") is None
+        assert policy.resolve_token(None) is None
+        assert policy.resolve_token("some-users-session-token") is None
+
+    def test_the_token_is_stored_hashed(self, tmp_policy):
+        token = policy.issue_token("tab_1")
+        on_disk = (tmp_policy / "wall_tablet_policy.json").read_text()
+        assert token not in on_disk
+
+    def test_a_tablet_principal_is_never_admin(self, tmp_policy):
+        """Defence in depth: even before any capability is consulted, a wall
+        panel must not satisfy require_role('admin')."""
+        from backend.routers.auth_deps import find_user_by_token, ROLE_ORDER
+        token = policy.issue_token("tab_1")
+        principal = find_user_by_token(token)
+        assert principal["is_wall_tablet"] is True
+        assert ROLE_ORDER[principal["role"]] < ROLE_ORDER["admin"]
+
+    def test_existing_sessions_are_unaffected_by_the_new_lookup(self, tmp_policy):
+        """The tablet lookup is appended last, so a token that is not a tablet
+        credential resolves exactly as it did before."""
+        from backend.routers.auth_deps import find_user_by_token
+        assert find_user_by_token("") is None
+        assert find_user_by_token("definitely-not-a-session") is None
+
+    def test_natural_language_cannot_bypass_the_policy(self, tmp_policy):
+        """The second confirmed hole, and the worse one in practice: Ziggy is a
+        natural-language product, and POST /api/intent "unlock the front door"
+        returned 200 on a tablet whose locks were denied — straight through the
+        assistant card sitting on the wall."""
+        async def main():
+            tok = policy.current_tablet.set("tab_wall")
+            try:
+                # THE exact payload Ziggy's parser produces for "unlock the
+                # front door". Verified against the live parser: the intent is
+                # the generic `control_device` and the lock is identified ONLY
+                # by params.domain. An earlier mapping guessed from the intent
+                # NAME and so let this straight through.
+                assert await policy.check_intent(
+                    "control_device",
+                    {"domain": "lock", "action": "unlock", "room": "front door"},
+                ) == (False, "denied")
+
+                # Also refused when the lock is named as an entity instead.
+                assert await policy.check_intent(
+                    "control_device", {"entity_id": "lock.front_door"}) == (False, "denied")
+                assert await policy.check_intent("unlock_door", {}) == (False, "denied")
+
+                # ...while the lamp beside it still works, by either shape.
+                assert await policy.check_intent(
+                    "toggle_light", {"room": "kitchen", "turn_on": True}) == (True, "ok")
+                assert await policy.check_intent(
+                    "control_device", {"domain": "light", "room": "kitchen"}) == (True, "ok")
+            finally:
+                policy.current_tablet.reset(tok)
+        asyncio.run(main())
+
+    def test_every_real_intent_that_can_reach_a_lock_is_gated(self, tmp_policy):
+        """Guards against the mapping drifting away from the real vocabulary:
+        walk the actual handler registry and assert nothing lock- or
+        camera-shaped is left unclassified."""
+        from core.action_parser import _ALL_HANDLERS
+        for name in _ALL_HANDLERS:
+            low = name.lower()
+            if "lock" in low and "block" not in low:
+                assert policy.capability_for_intent(name, {}) == "locks", name
+            if "camera" in low:
+                assert policy.capability_for_intent(name, {}) == "cameras", name
+
+    def test_domain_alone_is_enough_to_classify(self, tmp_policy):
+        for domain, cap in [("lock", "locks"), ("camera", "cameras"),
+                            ("climate", "climate"), ("media_player", "media"),
+                            ("light", "lights")]:
+            assert policy.capability_for_intent("control_device", {"domain": domain}) == cap
+
+    def test_a_lock_cannot_hide_behind_a_lamp_in_a_multi_entity_command(self, tmp_policy):
+        """Reading only the first entity let `["light.a", "lock.front_door"]`
+        be classified as a light."""
+        async def main():
+            tok = policy.current_tablet.set("tab_wall")
+            try:
+                assert await policy.check_intent(
+                    "turn_off", {"entity_id": ["light.a", "lock.front_door"]}
+                ) == (False, "denied")
+            finally:
+                policy.current_tablet.reset(tok)
+        asyncio.run(main())
+
+    def test_a_declared_domain_cannot_downgrade_the_check(self):
+        """`domain` is attacker-controlled. Claiming "light" while targeting a
+        lock must not weaken the classification."""
+        from backend.middleware.wall_capability import _capability_for_control
+        assert _capability_for_control(
+            {"domain": "light", "service": "turn_off",
+             "data": {"entity_id": "lock.front_door"}}) == "locks"
+        assert _capability_for_control(
+            {"domain": "homeassistant", "service": "turn_off",
+             "data": {"entity_id": "lock.front_door"}}) == "locks"
+        # Nested and list forms are both found.
+        assert _capability_for_control(
+            {"data": {"entity_id": ["light.a", "camera.hall"]}}) == "cameras"
+
+    def test_the_intent_gate_is_inert_without_a_tablet_in_context(self, tmp_policy):
+        """Phones, browsers, background threads and hub-local voice must be
+        entirely unaffected."""
+        async def main():
+            assert policy.current_tablet.get() is None
+            assert await policy.check_intent("unlock_door", {"entity_id": "lock.x"}) == (True, "ok")
+        asyncio.run(main())
+
+    def test_the_dispatcher_gate_is_wired_in(self):
+        """The check has to sit in handle_intent itself — that is the one point
+        every path (chat, voice, /api/intent, /api/intent/direct) converges on."""
+        import inspect
+        from core import action_parser
+        src = inspect.getsource(action_parser.handle_intent)
+        assert "_wall_tablet_may" in src
+        # ...and before the multi-intent fan-out, so a bundle cannot smuggle a
+        # locked action through beside a permitted one.
+        assert src.index("_wall_tablet_may") < src.index("__multi__")
 
 
 def test_wall_routes_are_registered():

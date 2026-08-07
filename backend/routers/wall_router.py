@@ -142,13 +142,21 @@ async def claim_wall_pair_code(body: ClaimBody, request: Request,
     # unauthenticated path (should one ever exist) is still bounded.
     client_key = _actor(user) or (request.client.host if request.client else "unknown")
     try:
-        return await tablets.claim_pairing_code(
+        res = await tablets.claim_pairing_code(
             body.code, body.display_name, body.room, _actor(user), client_key,
         )
     except PermissionError as e:
         raise HTTPException(status_code=429, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # The tablet's own credential, returned exactly once. From here the wall
+    # authenticates as itself rather than riding the session of whoever paired
+    # it — which is what makes its capability policy binding instead of
+    # advisory. Storing only a hash means a leaked policy file cannot be
+    # replayed as a login.
+    res["tablet_token"] = policy.issue_token(res["tablet_id"])
+    return res
 
 
 @router.patch("/api/wall/tablets/{tablet_id}")

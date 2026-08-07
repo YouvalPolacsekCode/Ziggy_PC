@@ -62,11 +62,52 @@ for _mod in [
     _ALL_HANDLERS.update(_mod.HANDLERS)
 
 
+async def _wall_tablet_may(intent: str | None, params: dict | None) -> dict | None:
+    """Capability gate for wall tablets. Returns a refusal, or None to proceed.
+
+    ADDITIVE AND INERT for every other caller: with no wall tablet in the
+    request context — phones, browsers, background threads, the relay, voice on
+    the hub itself — this returns None before doing any work.
+
+    It lives here because this is the one place every command converges. A wall
+    panel hangs where children and visitors can reach it, and Ziggy's primary
+    interface is natural language: gating lock-shaped URLs while leaving
+    "unlock the front door" open to the assistant would be no gate at all.
+    """
+    try:
+        from services import wall_policy
+        if wall_policy.current_tablet.get() is None:
+            return None
+        allowed, reason = await wall_policy.check_intent(intent, params)
+        if allowed:
+            return None
+        return {
+            "ok": False,
+            "message": ("This tablet needs its PIN for that."
+                        if reason == "pin_required"
+                        else "This tablet isn’t allowed to do that."),
+            "denied_by": "wall_policy",
+            "reason": reason,
+        }
+    except Exception:
+        # A fault in the gate must not take the assistant down for everyone.
+        # Failing open is correct here only because the HTTP-layer middleware
+        # is a second, independent gate on the same policy.
+        return None
+
+
 async def handle_intent(intent_result: dict, **kwargs) -> dict:
     intent = intent_result.get("intent")
     source = intent_result.get("source") or kwargs.get("source", "unknown")
     request_id = intent_result.get("request_id") or kwargs.get("request_id")
     dry_run = intent_result.get("dry_run", False)
+
+    # Wall-tablet capability check. Runs before dispatch — and before the
+    # multi-intent fan-out below, so a bundle cannot smuggle a locked action
+    # through alongside a permitted one.
+    _denied = await _wall_tablet_may(intent, intent_result.get("params") or {})
+    if _denied is not None:
+        return _denied
 
     # Multi-intent envelope — dispatch each sub-intent sequentially and combine
     if intent == "__multi__":

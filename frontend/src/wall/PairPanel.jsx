@@ -7,7 +7,7 @@
 
 import { memo, useCallback, useState } from 'react'
 import { claimWallPairCode } from '../lib/api'
-import { setTabletId } from '../lib/hubTablet'
+import { setTabletId, setTabletToken } from '../lib/hubTablet'
 import { useT } from '../lib/i18n'
 
 export const PairBanner = memo(function PairBanner({ onOpen, onDismiss }) {
@@ -43,6 +43,8 @@ export const PairDialog = memo(function PairDialog({ open, onClose, onPaired }) 
     try {
       const res = await claimWallPairCode(code.trim(), name.trim(), room.trim() || null)
       setTabletId(res.tablet_id)
+      // Returned exactly once — from here the wall authenticates as itself.
+      setTabletToken(res.tablet_token || null)
       onPaired?.(res)
     } catch (err) {
       setError(err?.userMessage || 'Pairing failed. Generate a fresh code and try again.')

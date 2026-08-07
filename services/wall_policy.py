@@ -22,6 +22,7 @@ someone typed a PIN yesterday.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hashlib
 import hmac
 import json
@@ -31,6 +32,15 @@ from pathlib import Path
 from typing import Optional
 
 from core.logger_module import log_error
+
+# The wall tablet whose credential authenticated the request currently being
+# served, or None. Set by the capability middleware, read by the action
+# dispatcher so natural-language commands are gated by the same policy as
+# button taps. A ContextVar (not a global) so concurrent requests on the same
+# event loop can never see each other's identity.
+current_tablet: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "ziggy_wall_tablet", default=None,
+)
 
 _FILE = Path(__file__).parent.parent / "user_files" / "wall_tablet_policy.json"
 _LOCK = asyncio.Lock()
@@ -120,6 +130,43 @@ def _verify_pin(pin: str, stored: str) -> bool:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Tablet credentials
+# ---------------------------------------------------------------------------
+# A wall tablet authenticates AS a tablet, with its own token. This is the
+# whole security model: restrictions keyed on a self-declared header are
+# worthless, because anyone wanting more privilege simply omits the header.
+# Binding identity to the credential means dropping it leaves you with no
+# access at all rather than more.
+
+def issue_token(tablet_id: str) -> str:
+    """Mint a tablet credential. Returned in plaintext ONCE, stored hashed."""
+    token = "zwt_" + secrets.token_urlsafe(32)
+    data = _load()
+    rec = data.get(tablet_id) or {}
+    rec["token_hash"] = hashlib.sha256(token.encode()).hexdigest()
+    data[tablet_id] = rec
+    _save(data)
+    return token
+
+
+def resolve_token(token: Optional[str]) -> Optional[str]:
+    """tablet_id for a presented credential, or None.
+
+    SHA-256 rather than PBKDF2: unlike a 4-digit PIN this is 256 bits of
+    entropy, so there is nothing to brute-force and the check sits on the hot
+    path of every request. Compared in constant time regardless.
+    """
+    if not token or not token.startswith("zwt_"):
+        return None
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    for tablet_id, rec in _load().items():
+        stored = (rec or {}).get("token_hash")
+        if stored and hmac.compare_digest(stored, digest):
+            return tablet_id
+    return None
+
 
 def default_policy() -> dict:
     return {
@@ -271,6 +318,150 @@ async def delete_policy(tablet_id: str) -> bool:
         del data[tablet_id]
         await asyncio.to_thread(_save, data)
         return True
+
+
+# ---------------------------------------------------------------------------
+# Intent-level enforcement
+# ---------------------------------------------------------------------------
+# Gating HTTP paths is an allowlist-by-omission over a large API surface, and
+# it missed the most important door of all: Ziggy is a natural-language product,
+# so "unlock the front door" typed into the assistant reached the lock without
+# ever touching a lock-shaped URL. Every path — chat, voice, /api/intent,
+# /api/intent/direct — funnels through core.action_parser.handle_intent, so
+# that is where the check belongs.
+
+# Home Assistant domain → capability. The single most important table here:
+# Ziggy's generic `control_device` intent carries its target domain in params,
+# which is how "unlock the front door" reaches a lock without any lock-shaped
+# intent name existing.
+_DOMAIN_CAPABILITY = {
+    "lock":         "locks",
+    "camera":       "cameras",
+    "climate":      "climate",
+    "water_heater": "climate",
+    "media_player": "media",
+    "light":        "lights",
+    "switch":       "lights",
+    "fan":          "lights",
+    "cover":        "lights",
+}
+
+# Ziggy's actual intent vocabulary (core.action_parser._ALL_HANDLERS), mapped
+# explicitly. Guessing from name fragments missed `control_device` entirely —
+# the one that matters most.
+_INTENT_CAPABILITY = {
+    "toggle_light": "lights", "toggle_all_lights_in_room": "lights",
+    "turn_off_all_lights": "lights", "set_light_brightness": "lights",
+    "adjust_light_brightness": "lights", "set_light_color": "lights",
+    "control_ac": "climate", "set_ac_temperature": "climate",
+    "ir_set_ac_temperature": "climate",
+    "control_tv": "media", "set_tv_source": "media",
+    "media_cast_camera_live": "cameras", "visual_cast_camera": "cameras",
+    "create_automation": "automations", "update_automation": "automations",
+    "delete_automation": "automations", "toggle_automation": "automations",
+    "assign_automation_to_room": "automations",
+    "apply_automation_bundle": "automations", "design_automation_set": "automations",
+    "accept_suggestion": "automations",
+}
+
+# Fallback for names not in the table above, so a newly added intent inherits a
+# sensible gate rather than silently becoming unrestricted.
+_INTENT_FRAGMENTS: tuple[tuple[str, str], ...] = (
+    ("unlock", "locks"), ("lock", "locks"), ("door", "locks"),
+    ("camera", "cameras"),
+    ("light", "lights"), ("lamp", "lights"), ("brightness", "lights"),
+    ("climate", "climate"), ("temperature", "climate"),
+    ("heater", "climate"), ("boiler", "climate"), ("_ac", "climate"),
+    ("media", "media"), ("tv", "media"), ("music", "media"), ("volume", "media"),
+    ("scene", "scenes"), ("routine", "scenes"), ("mode", "scenes"),
+    ("automation", "automations"),
+    ("pair", "devices"),
+    ("setting", "settings"), ("system", "settings"),
+    ("task", "lists"), ("shopping", "lists"),
+)
+
+# Dispatcher intents whose NAME says nothing about what they touch — they are
+# classified purely by their params. Without this, `control_device` matched the
+# "device" fragment and was classified as hardware management, which outranks
+# `locks` and therefore MASKED the lock domain sitting in its params. The name
+# is always a weaker signal than an explicit target.
+_GENERIC_INTENTS = frozenset({
+    "control_device", "list_active_devices", "get_device_state",
+})
+
+_STRENGTH = ("settings", "devices", "locks", "cameras", "automations",
+             "climate", "media", "scenes", "lists", "lights")
+
+
+def _strongest(caps) -> Optional[str]:
+    for c in _STRENGTH:
+        if c in caps:
+            return c
+    return None
+
+
+def capability_for_intent(intent: Optional[str], params: Optional[dict] = None) -> Optional[str]:
+    """Capability a parsed intent falls under, or None when it gates nothing.
+
+    Every signal can only RAISE the requirement, never lower it, so no single
+    field decides on its own. The target wins over the intent's name: "turn off
+    the front door" parses as a generic device command, and it is the lock that
+    makes it dangerous.
+    """
+    caps = set()
+    params = params or {}
+
+    # 1. The declared domain. This is the one that closes the natural-language
+    #    hole: `control_device` + params.domain == "lock".
+    dom = params.get("domain")
+    if isinstance(dom, str) and dom in _DOMAIN_CAPABILITY:
+        caps.add(_DOMAIN_CAPABILITY[dom])
+
+    # 2. Any entity id reachable in the params, at any depth or in a list.
+    def walk(node, depth=0):
+        if depth > 5:
+            return
+        if isinstance(node, str):
+            if "." in node and " " not in node:
+                d = node.split(".", 1)[0]
+                if d in _DOMAIN_CAPABILITY:
+                    caps.add(_DOMAIN_CAPABILITY[d])
+        elif isinstance(node, list):
+            for v in node[:64]:
+                walk(v, depth + 1)
+        elif isinstance(node, dict):
+            for k, v in list(node.items())[:64]:
+                if k in ("entity_id", "entity", "entities", "device", "devices",
+                         "target", "targets", "data"):
+                    walk(v, depth + 1)
+
+    walk(params)
+
+    # 3. The intent's own name — skipped for generic dispatchers, whose name
+    #    describes the mechanism rather than the target.
+    name = (intent or "").lower()
+    if name not in _GENERIC_INTENTS:
+        if name in _INTENT_CAPABILITY:
+            caps.add(_INTENT_CAPABILITY[name])
+        else:
+            for frag, cap in _INTENT_FRAGMENTS:
+                if frag in name:
+                    caps.add(cap)
+                    break
+
+    return _strongest(caps)
+
+
+async def check_intent(intent: Optional[str], params: Optional[dict] = None) -> tuple[bool, str]:
+    """Allow/deny a parsed intent for whichever tablet is in context.
+
+    Returns (True, "ok") when no wall tablet is in context at all — every
+    phone, browser and background job takes that path and is unaffected.
+    """
+    tablet_id = current_tablet.get()
+    if not tablet_id:
+        return True, "ok"
+    return await check(tablet_id, capability_for_intent(intent, params))
 
 
 async def check(tablet_id: str, capability: Optional[str]) -> tuple[bool, str]:

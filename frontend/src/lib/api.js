@@ -148,26 +148,32 @@ function _normalizeNetworkError(err) {
 const _etagCache = new Map() // url → { etag, body }
 
 
-// ── Wall-tablet identity header ─────────────────────────────────────────────
-// Set by the /wall page while it is mounted, cleared on unmount. Kept as a
-// module-level flag rather than read from localStorage directly, because a
-// device that was once paired as a tablet would otherwise keep sending the
-// header from the normal app and get capability-restricted there too.
+// ── Wall-tablet credential ──────────────────────────────────────────────────
+// While the /wall page is mounted on a PAIRED tablet, requests authenticate as
+// the tablet rather than as the signed-in person. That is what makes the
+// tablet's capability policy binding: the restriction attaches to the
+// credential, so dropping it leaves the caller unauthenticated instead of
+// unrestricted. (An earlier version asserted identity with a header, which any
+// client could simply omit to escape every restriction.)
+//
+// A module-level flag rather than a localStorage read, so a device that was
+// paired as a tablet does not keep authenticating as one from the normal app.
 let _wallMode = false
-let _wallTabletId = null
+let _wallToken = null
 
-export function setWallMode(on, tabletId = null) {
+export function setWallMode(on, tabletToken = null) {
   _wallMode = !!on
-  _wallTabletId = on ? tabletId : null
+  _wallToken = on ? tabletToken : null
 }
 
-function _wallTabletHeader() {
-  if (!_wallMode || !_wallTabletId) return null
-  return { 'X-Ziggy-Wall-Tablet': _wallTabletId }
+/** The credential to authenticate this request with. */
+function _authToken() {
+  if (_wallMode && _wallToken) return _wallToken
+  return getToken()
 }
 
 async function request(method, path, body, { timeoutMs } = {}) {
-  const token = getToken()
+  const token = _authToken()
   const reqId = logger.newRequestId()
   const opts = {
     method,
@@ -178,12 +184,6 @@ async function request(method, path, body, { timeoutMs } = {}) {
       // the middleware reuses this id for every event in the chain.
       'X-Request-Id': reqId,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      // Wall-tablet identity. Sent ONLY while the /wall page is mounted (it
-      // sets the flag) so the hub can enforce that tablet's capability policy
-      // server-side. Every other surface — the app, the PWA, the native shell,
-      // the old /hub — never sets the flag, so this key is absent and the
-      // enforcement middleware passes their requests straight through.
-      ...(_wallTabletHeader() || {}),
     },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
