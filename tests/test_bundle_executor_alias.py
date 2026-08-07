@@ -55,3 +55,44 @@ def test_aliasless_artifact_keeps_dedupe_path(monkeypatch):
     assert result["ok"] is True
     assert len(calls) == 1
     assert calls[0]["auto_id"] is None   # create path → dedupe applies
+
+
+def test_native_body_reaches_save_automation(monkeypatch):
+    """A recipe artifact carrying an HA-native body must have it forwarded.
+
+    The Smart Room Off rule needs a self-healing HA body (periodic re-check +
+    vacancy condition) that Ziggy's trigger translator can't express. If the
+    executor drops `ha_native_body`, save_automation silently falls back to the
+    plain edge trigger and the rule goes back to being blind to a vacancy that
+    started before it existed.
+    """
+    native = {
+        "triggers": [{"platform": "state", "entity_id": "binary_sensor.x", "to": "off", "for": "00:05:00"},
+                     {"platform": "time_pattern", "minutes": "/1"}],
+        "conditions": [{"condition": "state", "entity_id": "binary_sensor.x",
+                        "state": "off", "for": "00:05:00"}],
+    }
+    _, calls = _run(monkeypatch, {
+        "name": "אור נכבה במשרד",
+        "alias": "Ziggy Smart Room Office Off",
+        "source": "custom",
+        "trigger": {"type": "state", "entity_id": "binary_sensor.x", "state": "off", "for_minutes": 5},
+        "actions": [{"type": "call_service", "entity_id": "light.a", "service": "light.turn_off"}],
+        "ha_native_body": native,
+    })
+    assert calls[0]["data"]["ha_native_body"] == native
+    # …and the Ziggy shape is still carried alongside it, for the installed editor.
+    assert calls[0]["data"]["trigger"]["for_minutes"] == 5
+    assert calls[0]["data"]["actions"][0]["entity_id"] == "light.a"
+
+
+def test_artifact_without_native_body_stays_clean(monkeypatch):
+    """No empty ha_native_body key on ordinary artifacts — save_automation's
+    needs_ha() treats any present-and-truthy body as 'HA must run this'."""
+    _, calls = _run(monkeypatch, {
+        "name": "Plain rule",
+        "source": "custom",
+        "trigger": {"type": "time", "time": "07:00"},
+        "actions": [],
+    })
+    assert "ha_native_body" not in calls[0]["data"]

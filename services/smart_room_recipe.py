@@ -107,6 +107,76 @@ def _turn_off_actions(lights: list[str]) -> list[dict]:
             for eid in lights]
 
 
+def _hhmmss(minutes: int) -> str:
+    h, m = divmod(max(0, int(minutes)), 60)
+    return f"{h:02d}:{m:02d}:00"
+
+
+def _leftover_lights_template(occ: str, lights: list[str]) -> str:
+    """True when the room holds a light that was ALREADY on when it emptied.
+
+    This is what makes the periodic re-check safe. "Leftover" is defined as
+    `light.last_changed < occupancy.last_changed` — the light was on before the
+    current vacancy began. A light switched on DURING the vacancy (you turned
+    the office lamp on from the app while nobody's in there) has a later
+    last_changed, so it is deliberate and never touched — same as today's
+    edge-only rule. Once the leftovers are off the template goes false, so the
+    re-check stops calling anything and the rule is a pure edge rule again.
+
+    expand() is used rather than `states.<domain>.<object_id>` because Zigbee
+    entity ids like binary_sensor.0x54ef4410015be53c_presence begin with a digit
+    and are not addressable as Jinja attributes. It also returns [] for an
+    entity that doesn't exist, which the count guard turns into a quiet false
+    instead of a template error every minute.
+    """
+    ents = ", ".join(f"'{e}'" for e in lights)
+    return (
+        "{% set vacant = expand('" + occ + "') %}"
+        "{{ vacant | count > 0 and (expand(" + ents + ")"
+        " | selectattr('state','eq','on')"
+        " | selectattr('last_changed','lt', vacant[0].last_changed)"
+        " | list | count > 0) }}"
+    )
+
+
+def _off_rule_native_body(occ: str, lights: list[str], off_delay_minutes: int) -> dict:
+    """HA body for the Off rule that can act on a vacancy it didn't witness.
+
+    An HA state trigger fires only on a *transition into* the target state, so
+    `to: 'off' for: N` is blind to a room that was already empty when the rule
+    was written. That is not a corner case — it is the normal outcome of setting
+    a Smart Room up in a room you're not standing in, and it is also what any HA
+    restart or rule rewrite produces (the apply path deletes then re-creates the
+    rules, so an occupancy edge landing in that window is simply lost).
+    Confirmed live on the Canary 2026-08-06: rules created 23:46:58 into a room
+    vacant since 23:18:00 never fired; the light burned until it was killed by
+    hand, while the identical rule fired correctly 18 minutes later off a real
+    edge.
+
+    Fix: keep the edge trigger for the fast path, add a cheap periodic re-check,
+    and move the vacancy window into a CONDITION so it governs both. The
+    leftover-lights guard keeps the re-check from fighting manual control.
+
+    Trigger and condition deliberately use the SAME window. HA's state condition
+    tests `utcnow() - for > last_changed`, so an edge firing at exactly the
+    deadline is normally accepted; if it ever isn't (a backwards clock step
+    between the state change and the timer), the re-check repairs it on the next
+    tick. Worst case is one minute late, never stuck on — which is the whole
+    point of the re-check, so no epsilon fudge is warranted here.
+    """
+    window = _hhmmss(off_delay_minutes)
+    return {
+        "triggers": [
+            {"platform": "state", "entity_id": occ, "to": "off", "for": window},
+            {"platform": "time_pattern", "minutes": "/1"},
+        ],
+        "conditions": [
+            {"condition": "state", "entity_id": occ, "state": "off", "for": window},
+            {"condition": "template", "value_template": _leftover_lights_template(occ, lights)},
+        ],
+    }
+
+
 def _light_color_caps() -> dict:
     """entity_id → supported_color_modes, from live HA state. Empty on error."""
     try:
@@ -294,6 +364,12 @@ def build_smart_room_bundle(
             "trigger": {"type": "state", "entity_id": occ, "state": "off",
                         "for_minutes": int(opt["off_delay_minutes"])},
             "actions": _turn_off_actions(lights),
+            # Additive: the Ziggy-shaped `trigger` and the per-light `actions`
+            # above stay authoritative for the installed Smart Room card, which
+            # reconstructs the delay from trigger.for_minutes and the light list
+            # from the actions (deriveInstalledOpts in smartRoom.jsx). The native
+            # body only overrides what HA actually executes.
+            "ha_native_body": _off_rule_native_body(occ, lights, int(opt["off_delay_minutes"])),
             "mode": "single",
         },
     ]

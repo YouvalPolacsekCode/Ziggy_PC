@@ -185,3 +185,73 @@ def test_main_sensor_keeps_legacy_aliases_and_voice(monkeypatch):
     assert b["zone"] == "bedroom"
     assert all(a2["alias"].startswith("Ziggy Smart Room Bedroom ") for a2 in b["artifacts"]["automations"])
     assert len(b["artifacts"]["voice_intents"]) == 2
+
+
+# ── Off rule: self-healing, so a vacancy that started before the rule existed
+# still clears the room ───────────────────────────────────────────────────────
+#
+# Live failure (Canary, 2026-08-06 23:47): the office Smart Room was saved while
+# the room had already been empty for 29 minutes. The Off rule is a pure EDGE
+# trigger (`to: 'off' for: N`) and HA only fires those on a *transition into*
+# off — a vacancy that began before the rule was written is invisible to it. The
+# light stayed on until the user killed it by hand. Same hole after any HA
+# restart, or any occupancy edge lost while the rules are being rewritten (the
+# apply path deletes then re-creates them).
+
+def _off_auto(monkeypatch, **kw):
+    monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
+    r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="en", **kw)
+    assert r["ok"]
+    return r["bundle"]["artifacts"]["automations"][2]
+
+
+def test_off_rule_carries_self_healing_native_body(monkeypatch):
+    off = _off_auto(monkeypatch)
+    native = off.get("ha_native_body")
+    assert native, "Off rule must carry an HA-native body — the plain edge trigger cannot self-heal"
+
+    # Two triggers: the fast edge path, plus a periodic re-check that can notice a
+    # vacancy which began before this rule existed.
+    plats = [t.get("platform") for t in native["triggers"]]
+    assert plats == ["state", "time_pattern"]
+    assert native["triggers"][0] == {"platform": "state", "entity_id": OCC,
+                                     "to": "off", "for": "00:05:00"}
+    assert native["triggers"][1]["minutes"] == "/1"
+
+    # The vacancy window moves into a CONDITION, so it holds for both triggers.
+    assert {"condition": "state", "entity_id": OCC,
+            "state": "off", "for": "00:05:00"} in native["conditions"]
+
+
+def test_off_rule_only_clears_lights_that_predate_the_vacancy(monkeypatch):
+    """The periodic re-check must not fight the user: a light switched on DURING
+    a vacancy is deliberate and stays on. Only a light that was already on when
+    the room emptied is a leftover to clear."""
+    off = _off_auto(monkeypatch)
+    tmpl = next(c["value_template"] for c in off["ha_native_body"]["conditions"]
+                if c.get("condition") == "template")
+    assert OCC in tmpl
+    assert "light.bedroom" in tmpl
+    assert "last_changed" in tmpl
+    # Compares each controlled light's last_changed against the occupancy
+    # sensor's — the definition of "was already on when the room emptied".
+    assert "'lt'" in tmpl or '"lt"' in tmpl
+
+
+def test_off_rule_keeps_ziggy_shape_for_the_installed_editor(monkeypatch):
+    """The native body is additive. The Ziggy-shaped trigger and the per-light
+    turn_off actions must survive untouched — the installed Smart Room card
+    reconstructs its delay from trigger.for_minutes and its light list from the
+    actions (deriveInstalledOpts in smartRoom.jsx)."""
+    off = _off_auto(monkeypatch)
+    assert off["trigger"] == {"type": "state", "entity_id": OCC, "state": "off", "for_minutes": 5}
+    assert [a["entity_id"] for a in off["actions"]] == ["light.bedroom"]
+    assert off["actions"][0]["service"] == "light.turn_off"
+
+
+def test_off_delay_is_reflected_in_both_trigger_and_condition(monkeypatch):
+    off = _off_auto(monkeypatch, options={"off_delay_minutes": 2})
+    native = off["ha_native_body"]
+    assert off["trigger"]["for_minutes"] == 2
+    assert native["triggers"][0]["for"] == "00:02:00"
+    assert any(c.get("for") == "00:02:00" for c in native["conditions"])

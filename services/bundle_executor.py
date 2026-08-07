@@ -136,6 +136,13 @@ def execute_bundle(bundle: dict) -> dict:
                     "mode":        auto.get("mode", "single"),
                     "bundle_id":   bundle_id,
                 }
+                # Escape hatch for recipe rules whose real HA body can't be
+                # expressed by Ziggy's trigger/condition translator (Smart Room's
+                # self-healing Off rule: two triggers + a template guard). Only
+                # set when present — needs_ha() reads any truthy body as "HA must
+                # run this", so an empty key would reroute plain rules.
+                if isinstance(auto.get("ha_native_body"), dict) and auto["ha_native_body"]:
+                    data["ha_native_body"] = auto["ha_native_body"]
                 if auto.get("alias"):
                     # A stable recipe alias (Smart Room, Circadian…) means THIS
                     # bundle OWNS that automation id — re-apply must overwrite
