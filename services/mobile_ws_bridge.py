@@ -38,6 +38,12 @@ _MOBILE_RELEVANT_TYPES = frozenset({
     "execution_result",       # automation / routine completion
     "ir_command_detected",    # physical remote was used; mobile may show toast
     "ziggy_response",         # response to natural-language intents
+    # Hub-owned household lists + agenda. The UI for these ships on the wall
+    # tablet first, but the events are forwarded to phones from day one so the
+    # moment a phone screen exists it is already live-synced — no hub release
+    # needed to turn it on.
+    "list_changed",
+    "agenda_changed",
 })
 
 

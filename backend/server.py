@@ -369,6 +369,13 @@ async def _rotate_relay_secret(relay_url: str, current_secret: str, home_id: str
 
 
 app.add_middleware(RelayAuthMiddleware)
+# Wall-tablet capability enforcement. ADDITIVE AND INERT for every existing
+# client: it returns immediately unless the request carries the
+# X-Ziggy-Wall-Tablet header, which only the /wall page sends. Present so a
+# wall panel's permissions are enforced where commands are actually served,
+# rather than only hidden in its UI.
+from backend.middleware.wall_capability import WallCapabilityMiddleware
+app.add_middleware(WallCapabilityMiddleware)
 # RequestLoggerMiddleware is added LAST so it wraps every other middleware
 # and sees the real client-visible request/response, including auth rejections.
 # Starlette runs middleware bottom-up, so the outer-most call wraps the rest.
@@ -586,6 +593,13 @@ app.include_router(push_action_router)
 
 from backend.routers.ir_walk_router import router as ir_walk_router
 app.include_router(ir_walk_router)
+
+# Wall dashboard (/wall) — layout, tablet pairing, capability policy, and the
+# hub-owned household lists + agenda. Additive: nothing above this line
+# changes, and no existing route is re-registered or shadowed. Every route
+# declares its own auth dependency, so it is registered without global _auth.
+from backend.routers.wall_router import router as wall_router
+app.include_router(wall_router)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.

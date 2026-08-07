@@ -51,6 +51,10 @@ const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const WebOnboarding     = lazy(() => import('./pages/WebOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
 const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
+// Wall dashboard (tablet). Lazy so none of it — grid engine, modules, CSS —
+// ships in the bundle a phone or browser downloads.
+const Wall              = lazy(() => import('./pages/Wall'))
+const WallTablets       = lazy(() => import('./pages/WallTablets'))
 const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
 // Public client-facing marketing site. Lazy so none of it ships in the
 // authenticated app's initial bundle — only the /welcome branch in App() loads it.
@@ -121,6 +125,12 @@ function OpsPageWrapper({ title }) {
 // Captured at module load time — before any renders.
 // 'reload' = F5/Ctrl+R (stay on current URL), 'navigate' = cold start (redirect to /).
 const _navType = performance?.getEntriesByType?.('navigation')?.[0]?.type ?? 'navigate'
+
+// A wall tablet is mounted in kiosk mode and cold-boots straight to /wall, so
+// the cold-start "send them home" rewrite below must not hijack it — every
+// single boot is a fresh navigation, which would otherwise land the wall panel
+// on the phone dashboard forever. Same exemption /presence/ already has.
+const _isWallPath = () => window.location.pathname.startsWith('/wall')
 let _appMounted = false
 // Tracks the previous render's authenticated value so we can detect the
 // false→true edge (i.e. the user just logged in) and force the URL back
@@ -440,6 +450,8 @@ function AppRoutes() {
         <Route path="people"                 element={<Navigate to="/settings/people" replace />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
+        {/* Wall dashboard tablet management (additive) */}
+        <Route path="settings/tablets"       element={<WallTablets />} />
         <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
         <Route path="anomalies" element={<Navigate to="/alerts" replace />} />
@@ -455,6 +467,10 @@ function AppRoutes() {
           <Route path="settings/music" element={<MediaSettings />} />
         )}
       </Route>
+
+      {/* ── Wall dashboard — tablet-only, no AppShell. Additive surface: nothing
+             else in this file changes and no existing route is affected. ── */}
+      <Route path="wall" element={<Wall />} />
 
       {/* ── Mobile (Ziggy Home native app) onboarding — no AppShell, only reachable inside Capacitor ── */}
       <Route path="mobile-onboarding" element={<MobileOnboarding />} />
@@ -1084,7 +1100,8 @@ export default function App() {
   _wasAuthenticated = true
   if (_justLoggedIn &&
       window.location.pathname !== '/' &&
-      !window.location.pathname.startsWith('/presence/')) {
+      !window.location.pathname.startsWith('/presence/') &&
+      !_isWallPath()) {
     window.history.replaceState(null, '', '/')
   }
 
@@ -1096,7 +1113,8 @@ export default function App() {
     if (
       _navType !== 'reload' &&
       window.location.pathname !== '/' &&
-      !window.location.pathname.startsWith('/presence/')
+      !window.location.pathname.startsWith('/presence/') &&
+      !_isWallPath()
     ) {
       window.history.replaceState(null, '', '/')
     }

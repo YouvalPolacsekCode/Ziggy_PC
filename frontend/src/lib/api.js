@@ -148,6 +148,24 @@ function _normalizeNetworkError(err) {
 const _etagCache = new Map() // url → { etag, body }
 
 
+// ── Wall-tablet identity header ─────────────────────────────────────────────
+// Set by the /wall page while it is mounted, cleared on unmount. Kept as a
+// module-level flag rather than read from localStorage directly, because a
+// device that was once paired as a tablet would otherwise keep sending the
+// header from the normal app and get capability-restricted there too.
+let _wallMode = false
+let _wallTabletId = null
+
+export function setWallMode(on, tabletId = null) {
+  _wallMode = !!on
+  _wallTabletId = on ? tabletId : null
+}
+
+function _wallTabletHeader() {
+  if (!_wallMode || !_wallTabletId) return null
+  return { 'X-Ziggy-Wall-Tablet': _wallTabletId }
+}
+
 async function request(method, path, body, { timeoutMs } = {}) {
   const token = getToken()
   const reqId = logger.newRequestId()
@@ -160,6 +178,12 @@ async function request(method, path, body, { timeoutMs } = {}) {
       // the middleware reuses this id for every event in the chain.
       'X-Request-Id': reqId,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // Wall-tablet identity. Sent ONLY while the /wall page is mounted (it
+      // sets the flag) so the hub can enforce that tablet's capability policy
+      // server-side. Every other surface — the app, the PWA, the native shell,
+      // the old /hub — never sets the flag, so this key is absent and the
+      // enforcement middleware passes their requests straight through.
+      ...(_wallTabletHeader() || {}),
     },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
@@ -1097,3 +1121,67 @@ export const getPermissionAudit = (params = {}) => {
 export const bootstrapPermissions = () => post('/permissions/bootstrap', {})
 export const getPrincipalGrants = (ref) =>
   get(`/permissions/principals/${encodeURIComponent(ref)}/grants`)
+
+// ── Wall dashboard ─────────────────────────────────────────────────────────
+// Additive surface for the tablet wall dashboard at /wall. Deliberately
+// separate from the older /api/dashboard/* endpoints that back /hub — nothing
+// here reads or writes hub layouts, so the existing hub is unaffected.
+
+// Layout. `tablet_id` may be null: an unpaired tablet still renders, it just
+// gets the shipped default and cannot persist changes.
+export const getWallLayout = (tabletId) =>
+  get(`/wall/layout${tabletId ? `?tablet_id=${encodeURIComponent(tabletId)}` : ''}`)
+export const putWallLayout = (tabletId, layout) =>
+  put('/wall/layout', { tablet_id: tabletId, layout })
+
+// Capability policy. The tablet reads its own; an admin writes any.
+export const getWallPolicy = (tabletId) =>
+  get(`/wall/policy${tabletId ? `?tablet_id=${encodeURIComponent(tabletId)}` : ''}`)
+export const putWallPolicy = (tabletId, policy) =>
+  put('/wall/policy', { tablet_id: tabletId, policy })
+export const setWallPin = (tabletId, pin) =>
+  post('/wall/policy/pin', { tablet_id: tabletId, pin })
+export const verifyWallPin = (tabletId, capability, pin) =>
+  post('/wall/pin/verify', { tablet_id: tabletId, capability, pin })
+
+// Tablet pairing. These hit /api/wall/tablets/* rather than the older
+// /api/dashboard/tablets/* — that router exists in the tree but is never
+// registered in server.py, so those paths 404. The wall router wraps the same
+// underlying services/dashboard_tablets logic, left unmodified.
+export const listWallTablets   = () => get('/wall/tablets')
+export const mintWallPairCode  = (hint = '') => post('/wall/tablets/pair-code', { display_name_hint: hint })
+export const claimWallPairCode = (code, displayName, room = null) =>
+  post('/wall/tablets/claim', { code, display_name: displayName, room })
+export const patchWallTablet   = (tabletId, body) =>
+  patch(`/wall/tablets/${encodeURIComponent(tabletId)}`, body)
+export const removeWallTablet  = (tabletId) => del(`/wall/tablets/${encodeURIComponent(tabletId)}`)
+export const wallTabletHeartbeat = (tabletId) =>
+  post(`/wall/tablets/${encodeURIComponent(tabletId)}/heartbeat`, {})
+export const wallWentIdle = (tabletId) => post('/wall/idle', { tablet_id: tabletId })
+
+// Endpoints that already existed on the backend but had no client helper.
+// Adding the helper is additive — no existing caller is affected.
+export const getWeather     = () => get('/weather')
+export const getAlerts      = () => get('/alerts')
+export const getMode        = () => get('/mode')
+export const getModeOptions = () => get('/mode/options')
+export const setMode        = (mode) => post('/mode', { mode })
+
+// Lists (shopping and friends).
+export const getLists = () => get('/lists')
+export const createList = (name) => post('/lists', { name })
+export const deleteList = (listId) => del(`/lists/${encodeURIComponent(listId)}`)
+export const addListItem = (listId, text) =>
+  post(`/lists/${encodeURIComponent(listId)}/items`, { text })
+export const updateListItem = (listId, itemId, body) =>
+  patch(`/lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}`, body)
+export const deleteListItem = (listId, itemId) =>
+  del(`/lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}`)
+export const clearListDone = (listId) =>
+  post(`/lists/${encodeURIComponent(listId)}/clear-done`, {})
+
+// Agenda (today at home).
+export const getAgenda = (days = 1) => get(`/agenda?days=${days}`)
+export const createAgendaEvent = (data) => post('/agenda', data)
+export const updateAgendaEvent = (id, data) => patch(`/agenda/${encodeURIComponent(id)}`, data)
+export const deleteAgendaEvent = (id) => del(`/agenda/${encodeURIComponent(id)}`)

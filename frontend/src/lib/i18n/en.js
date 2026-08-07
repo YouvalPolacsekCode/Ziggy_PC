@@ -4671,4 +4671,136 @@ export default {
   'domain.group.water': 'Water',
   'domain.group.sensors': 'Sensors',
   'domain.group.other': 'Other',
+
+  // ── Wall dashboard (tablet) ─────────────────────────────────────────
+  'wall.tab.home':          'Home',
+  'wall.tab.autos':         'Automations',
+  'wall.devices':           'Devices',
+  'wall.rooms':             'Rooms',
+  'wall.pinned':            'PINNED',
+  'wall.edit':              'Edit',
+  'wall.editDone':          'Done',
+  'wall.addModule':         'Add a card',
+  'wall.hidden':            'Hidden',
+  'wall.reconnecting':      'Reconnecting…',
+  'wall.offline':           'Not connected to the hub',
+  'wall.stale':             'Showing last known state',
+  'wall.notPaired':         'This tablet isn’t paired — changes won’t be saved.',
+  'wall.pairTablet':        'Pair tablet',
+  'wall.emptyBoard':        'No cards yet. Tap Edit to add some.',
+  'wall.greet.morning':     'Good morning',
+  'wall.greet.afternoon':   'Good afternoon',
+  'wall.greet.evening':     'Good evening',
+  'wall.greet.night':       'Good night',
+  'wall.greetSuffix':       'the home is awake',
+
+  // Rooms rail
+  'wall.rail.allOff':       'all off',
+  'wall.rail.oneLight':     '1 light on',
+  'wall.rail.nLights':      '{n} lights on',
+  'wall.rail.nOffline':     '{n} offline',
+  'wall.rail.nActive':      '{n} active',
+  'wall.rail.locked':       'locked',
+  'wall.rail.unlocked':     'unlocked',
+  'wall.rail.noRooms':      'No rooms yet',
+  'wall.rail.noDevices':    'No devices in this room',
+  'wall.rail.collapse':     'Collapse rooms',
+  'wall.rail.expand':       'Show rooms',
+
+  // Device state
+  'wall.dev.on':            'on',
+  'wall.dev.off':           'off',
+  'wall.dev.offline':       'offline',
+  'wall.dev.cool':          'cool',
+  'wall.dev.heat':          'heat',
+  'wall.dev.active':        'active',
+  'wall.dev.playing':       'playing',
+  'wall.dev.open':          'open',
+  'wall.dev.closed':        'closed',
+  'wall.lock.locked':       'Locked',
+  'wall.lock.lock':         'Lock',
+  'wall.lock.unlockQ':      'Unlock?',
+
+  // Modules
+  'wall.mod.ziggy':         'Ziggy',
+  'wall.mod.ziggyDesc':     'Ask Ziggy to do something',
+  'wall.mod.agenda':        'Today at home',
+  'wall.mod.agendaDesc':    'Reminders and what’s happening today',
+  'wall.mod.shopping':      'Shopping list',
+  'wall.mod.shoppingDesc':  'A shared list everyone can add to',
+  'wall.mod.scenes':        'Scenes',
+  'wall.mod.scenesDesc':    'One-tap tiles for your on-demand actions',
+  'wall.mod.pinned':        'Pinned devices',
+  'wall.mod.pinnedDesc':    'The controls you reach for most',
+  'wall.mod.room':          'Single room',
+  'wall.mod.roomDesc':      'One room’s devices as a card',
+  'wall.mod.cameras':       'Camera',
+  'wall.mod.camerasDesc':   'A live camera tile',
+  'wall.mod.weather':       'Weather',
+  'wall.mod.weatherDesc':   'Right now and today’s range',
+  'wall.mod.tasks':         'Tasks',
+  'wall.mod.tasksDesc':     'Your household task list',
+  'wall.mod.alerts':        'Alerts',
+  'wall.mod.alertsDesc':    'Anything Ziggy thinks you should see',
+  'wall.mod.media':         'Media',
+  'wall.mod.mediaDesc':     'What’s playing, with transport controls',
+  'wall.mod.modes':         'Modes',
+  'wall.mod.modesDesc':     'Switch the home’s mode',
+  'wall.mod.clock':         'Clock',
+  'wall.mod.clockDesc':     'Time and date, large',
+
+  // Ziggy module
+  'wall.ziggy.title':       'Hey Ziggy',
+  'wall.ziggy.hint':        'Tap and type — Hebrew or English',
+  'wall.ziggy.placeholder': 'Ask Ziggy…',
+  'wall.ziggy.thinking':    'Ziggy is thinking…',
+  'wall.ziggy.micBlocked':  'Voice needs a secure connection on this tablet',
+
+  // Lists
+  'wall.shop.add':          '+ Add item…',
+  'wall.shop.empty':        'Nothing on the list',
+  'wall.shop.clearDone':    'Clear done',
+  'wall.agenda.add':        '+ Add reminder…',
+  'wall.agenda.empty':      'Nothing planned',
+  'wall.agenda.tomorrow':   'Tmrw',
+
+  // Scenes / actions
+  'wall.scenes.empty':      'No on-demand actions yet',
+  'wall.scenes.pick':       'Choose which actions to show',
+  'wall.scenes.running':    'Running…',
+
+  // Automations tab
+  'wall.autos.when':        'WHEN',
+  'wall.autos.then':        'THEN',
+  'wall.autos.count':       '{on}/{total} on',
+  'wall.autos.empty':       'No automations yet',
+
+  // Devices modal
+  'wall.devices.title':     'Devices',
+  'wall.devices.count':     '{n} devices',
+  'wall.devices.pair':      '+ Pair device',
+  'wall.devices.pin':       'Pin to the wall',
+
+  // PIN gate
+  'wall.pin.title':         'Enter PIN',
+  'wall.pin.subtitle':      'This control is protected on the wall tablet.',
+  'wall.pin.wrong':         'Wrong PIN',
+  'wall.pin.notSet':        'No PIN is set for this tablet yet.',
+  'wall.pin.denied':        'This tablet isn’t allowed to do that.',
+
+  // Idle
+  'wall.idle.tapToWake':    'TAP TO WAKE',
+  'wall.idle.allQuiet':     'All quiet',
+  'wall.idle.nRoomsLit':    '{n} rooms lit',
+
+  // Edit mode
+  'wall.editHint':          'Drag to move, pull the corner to resize.',
+  'wall.editRemove':        'Remove card',
+  'wall.editConfigure':     'Card settings',
+
+  // Errors
+  'wall.err.command':       'That didn’t go through',
+  'wall.err.offline':       'That device is offline',
+  'wall.err.save':          'Couldn’t save the layout',
+  'wall.err.load':          'Couldn’t load this tablet’s layout',
 }

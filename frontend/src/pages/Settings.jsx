@@ -1542,6 +1542,9 @@ export default function Settings() {
         )}
         <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
         <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
+        {isSuperAdmin && (
+          <HubCard icon={MapPin}    title="Wall tablets"  subtitle="Pair wall dashboards and set what each one may control"  to="/settings/tablets" />
+        )}
         {musicEnabled && (
           <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />
         )}

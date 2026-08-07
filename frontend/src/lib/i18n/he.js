@@ -4514,4 +4514,136 @@ export default {
   'domain.group.water': 'מים',
   'domain.group.sensors': 'חיישנים',
   'domain.group.other': 'אחר',
+
+  // ── לוח הקיר (טאבלט) ────────────────────────────────────────────────
+  'wall.tab.home':          'בית',
+  'wall.tab.autos':         'פעולות',
+  'wall.devices':           'מכשירים',
+  'wall.rooms':             'חדרים',
+  'wall.pinned':            'מועדפים',
+  'wall.edit':              'עריכה',
+  'wall.editDone':          'סיום',
+  'wall.addModule':         'הוספת כרטיס',
+  'wall.hidden':            'מוסתרים',
+  'wall.reconnecting':      'מתחבר מחדש…',
+  'wall.offline':           'אין חיבור לזיגי',
+  'wall.stale':             'מוצג המצב האחרון שידוע',
+  'wall.notPaired':         'הטאבלט לא מצומד — שינויים לא יישמרו.',
+  'wall.pairTablet':        'צימוד טאבלט',
+  'wall.emptyBoard':        'אין עדיין כרטיסים. הקישו על עריכה כדי להוסיף.',
+  'wall.greet.morning':     'בוקר טוב',
+  'wall.greet.afternoon':   'צהריים טובים',
+  'wall.greet.evening':     'ערב טוב',
+  'wall.greet.night':       'לילה טוב',
+  'wall.greetSuffix':       'הבית ער',
+
+  // סרגל החדרים
+  'wall.rail.allOff':       'הכול כבוי',
+  'wall.rail.oneLight':     'אור אחד דולק',
+  'wall.rail.nLights':      '{n} אורות דולקים',
+  'wall.rail.nOffline':     '{n} לא מקוונים',
+  'wall.rail.nActive':      '{n} פעילים',
+  'wall.rail.locked':       'נעול',
+  'wall.rail.unlocked':     'פתוח',
+  'wall.rail.noRooms':      'אין עדיין חדרים',
+  'wall.rail.noDevices':    'אין מכשירים בחדר הזה',
+  'wall.rail.collapse':     'כיווץ החדרים',
+  'wall.rail.expand':       'הצגת החדרים',
+
+  // מצב מכשיר
+  'wall.dev.on':            'דולק',
+  'wall.dev.off':           'כבוי',
+  'wall.dev.offline':       'לא מקוון',
+  'wall.dev.cool':          'קירור',
+  'wall.dev.heat':          'חימום',
+  'wall.dev.active':        'פעיל',
+  'wall.dev.playing':       'מנגן',
+  'wall.dev.open':          'פתוח',
+  'wall.dev.closed':        'סגור',
+  'wall.lock.locked':       'נעולה',
+  'wall.lock.lock':         'נעילה',
+  'wall.lock.unlockQ':      'לפתוח?',
+
+  // כרטיסים
+  'wall.mod.ziggy':         'זיגי',
+  'wall.mod.ziggyDesc':     'בקשו מזיגי לעשות משהו',
+  'wall.mod.agenda':        'היום בבית',
+  'wall.mod.agendaDesc':    'תזכורות ומה קורה היום',
+  'wall.mod.shopping':      'רשימת קניות',
+  'wall.mod.shoppingDesc':  'רשימה משותפת שכולם יכולים להוסיף אליה',
+  'wall.mod.scenes':        'מצבים',
+  'wall.mod.scenesDesc':    'כפתורים מהירים לפעולות לפי דרישה',
+  'wall.mod.pinned':        'מכשירים מועדפים',
+  'wall.mod.pinnedDesc':    'הכפתורים שאתם הכי צריכים',
+  'wall.mod.room':          'חדר בודד',
+  'wall.mod.roomDesc':      'המכשירים של חדר אחד ככרטיס',
+  'wall.mod.cameras':       'מצלמה',
+  'wall.mod.camerasDesc':   'תצוגה חיה ממצלמה',
+  'wall.mod.weather':       'מזג אוויר',
+  'wall.mod.weatherDesc':   'עכשיו והטווח של היום',
+  'wall.mod.tasks':         'משימות',
+  'wall.mod.tasksDesc':     'רשימת המשימות של הבית',
+  'wall.mod.alerts':        'התראות',
+  'wall.mod.alertsDesc':    'כל מה שזיגי חושבת שכדאי שתראו',
+  'wall.mod.media':         'מדיה',
+  'wall.mod.mediaDesc':     'מה מתנגן, עם כפתורי הפעלה',
+  'wall.mod.modes':         'מצבי בית',
+  'wall.mod.modesDesc':     'החלפת המצב של הבית',
+  'wall.mod.clock':         'שעון',
+  'wall.mod.clockDesc':     'שעה ותאריך, בגדול',
+
+  // כרטיס זיגי
+  'wall.ziggy.title':       'היי זיגי',
+  'wall.ziggy.hint':        'הקישו וכתבו — עברית או אנגלית',
+  'wall.ziggy.placeholder': 'מה לעשות?',
+  'wall.ziggy.thinking':    'זיגי חושבת…',
+  'wall.ziggy.micBlocked':  'דיבור דורש חיבור מאובטח בטאבלט הזה',
+
+  // רשימות
+  'wall.shop.add':          '+ הוסיפו פריט…',
+  'wall.shop.empty':        'אין כלום ברשימה',
+  'wall.shop.clearDone':    'ניקוי מה שסומן',
+  'wall.agenda.add':        '+ הוסיפו תזכורת…',
+  'wall.agenda.empty':      'אין מה שמתוכנן',
+  'wall.agenda.tomorrow':   'מחר',
+
+  // מצבים
+  'wall.scenes.empty':      'אין עדיין פעולות לפי דרישה',
+  'wall.scenes.pick':       'בחרו אילו פעולות להציג',
+  'wall.scenes.running':    'מפעילה…',
+
+  // פעולות אוטומטיות
+  'wall.autos.when':        'מתי',
+  'wall.autos.then':        'ואז',
+  'wall.autos.count':       '{on} מתוך {total} פעילות',
+  'wall.autos.empty':       'אין עדיין פעולות',
+
+  // חלון המכשירים
+  'wall.devices.title':     'מכשירים',
+  'wall.devices.count':     '{n} מכשירים',
+  'wall.devices.pair':      '+ צימוד מכשיר',
+  'wall.devices.pin':       'הצמדה ללוח',
+
+  // קוד גישה
+  'wall.pin.title':         'הזינו קוד',
+  'wall.pin.subtitle':      'הפעולה הזאת מוגנת בטאבלט הקיר.',
+  'wall.pin.wrong':         'קוד שגוי',
+  'wall.pin.notSet':        'עוד לא הוגדר קוד לטאבלט הזה.',
+  'wall.pin.denied':        'לטאבלט הזה אין הרשאה לפעולה הזאת.',
+
+  // מצב המתנה
+  'wall.idle.tapToWake':    'הקישו כדי לחזור',
+  'wall.idle.allQuiet':     'הכול שקט',
+  'wall.idle.nRoomsLit':    '{n} חדרים מוארים',
+
+  // מצב עריכה
+  'wall.editHint':          'גררו כדי להזיז, משכו בפינה כדי לשנות גודל.',
+  'wall.editRemove':        'הסרת כרטיס',
+  'wall.editConfigure':     'הגדרות כרטיס',
+
+  // שגיאות
+  'wall.err.command':       'הפעולה לא עברה',
+  'wall.err.offline':       'המכשיר לא מקוון',
+  'wall.err.save':          'לא הצלחתי לשמור את הסידור',
+  'wall.err.load':          'לא הצלחתי לטעון את הסידור של הטאבלט',
 }
