@@ -35,7 +35,7 @@ from backend.middleware.rate_limit import (
 )
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 from core.logger_module import log_info
-from services import auth_db, mobile_app
+from services import auth_db, mobile_app, presence_engine
 from services.mobile_ws_manager import mobile_ws
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
@@ -368,6 +368,25 @@ async def webhook(
                    url_webhook_id=webhook_id,
                    source_ip=_client_ip(request))
         raise HTTPException(status_code=403, detail="Webhook id mismatch.")
+
+    # The phone just told us where it is on the network. `lan_host` is a pinned
+    # IP, so a DHCP lease change kills LAN presence silently and the engine
+    # starts manufacturing departures for someone who never left (Canary,
+    # 2026-08-07). This is the one signal that survives that: heal the pin to
+    # the address the device is actually reachable at.
+    #
+    # _peer_ip, NOT _client_ip: X-Forwarded-For is attacker-controllable, and
+    # presence must never be repointable by a header. The direct peer also
+    # self-excludes relay/tunnel traffic, which lands as the docker gateway and
+    # is filtered by heal_lan_host's container-network rule.
+    person_id = device.get("person_id")
+    if person_id:
+        try:
+            await asyncio.to_thread(
+                presence_engine.heal_lan_host, person_id, _peer_ip(request))
+        except Exception as exc:      # never fail an ingest over a presence hint
+            log_info(f"[Presence] lan_host heal skipped: {exc}")
+
     return mobile_app.handle_webhook(device, payload)
 
 

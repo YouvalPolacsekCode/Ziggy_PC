@@ -969,6 +969,148 @@ def _evaluate_zones_for_position(
     return fired
 
 
+# A pinned lan_host that hasn't answered for this long is treated as dead, so a
+# live home-LAN address from the phone itself may replace it. Matches
+# lan_presence's `lan_offline_grace_minutes` default: past that window the
+# prober has already given up on the pin, so there is nothing left to protect.
+_LAN_PIN_STALE_MINUTES = 10
+
+# Only the three RFC-1918 ranges count as "the home LAN". Deliberately NOT
+# `ip.is_private`, which also accepts loopback (a request through a
+# Cloudflare/Fly tunnel peers at 127.0.0.1), the docker bridge gateway
+# (host-local traffic), CGNAT 100.64/10 (T-Mobile/Verizon cellular) and
+# link-local. Healing on any of those would pin presence to an address that
+# says nothing about where the phone physically is. Mirrors the same rule in
+# backend.routers.presence_router.
+_HOME_LAN_CIDRS = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+
+# …and RFC-1918 alone is not enough here. Ziggy runs as a BRIDGE container, so
+# everything host-local — a request through the Cloudflare tunnel, the relay, or
+# a curl on the hub itself — arrives as the docker gateway (172.18.0.1), which
+# IS inside 172.16/12. Healing onto it would pin presence to an address that is
+# reachable forever, i.e. the user would look permanently home and leave
+# detection would never fire again. So the container's own docker networks are
+# subtracted from "the home LAN". Read from the kernel when available (exact,
+# self-configuring); the literal list is the fallback for non-Linux test hosts
+# and covers Docker's default bridge pool while leaving 172.16.0.0/16 usable as
+# a real LAN. See [[reference_ziggy_container_networking]].
+_DOCKER_POOL_FALLBACK = tuple(f"172.{n}.0.0/16" for n in range(17, 32))
+_container_nets_cache: Optional[tuple] = None
+
+
+def _container_local_nets() -> tuple:
+    """Networks directly connected to THIS container — never the home LAN."""
+    global _container_nets_cache
+    if _container_nets_cache is not None:
+        return _container_nets_cache
+    import ipaddress
+    nets: list = []
+    try:
+        with open("/proc/net/route") as fh:
+            for line in fh.read().splitlines()[1:]:
+                f = line.split()
+                if len(f) < 8:
+                    continue
+                dest, mask = int(f[1], 16), int(f[7], 16)
+                if dest == 0 or mask == 0:      # default route — not a subnet
+                    continue
+                net = ipaddress.ip_network(
+                    (str(ipaddress.IPv4Address(dest.to_bytes(4, "little"))),
+                     str(ipaddress.IPv4Address(mask.to_bytes(4, "little")))),
+                    strict=False)
+                nets.append(net)
+    except Exception:
+        pass
+    if not nets:
+        nets = [ipaddress.ip_network(c) for c in _DOCKER_POOL_FALLBACK]
+    _container_nets_cache = tuple(nets)
+    return _container_nets_cache
+
+
+def _is_home_lan_ip(ip: Optional[str]) -> bool:
+    if not ip:
+        return False
+    try:
+        import ipaddress
+        addr = ipaddress.ip_address(str(ip).strip())
+    except Exception:
+        return False
+    if not any(addr in ipaddress.ip_network(c) for c in _HOME_LAN_CIDRS):
+        return False
+    return not any(addr in net for net in _container_local_nets())
+
+
+def heal_lan_host(person_id: str, client_ip: Optional[str],
+                  now: Optional[datetime] = None) -> Optional[str]:
+    """Re-pin a person's `lan_host` to the address their phone is talking from.
+
+    `lan_host` is a hard-pinned IP, so a DHCP lease change silently kills LAN
+    presence forever: the prober keeps hitting an address nobody holds,
+    `lan_last_seen` freezes, `effective_state` drops to its GPS-only branch and
+    decays home → unknown, and `sweep_expiry` manufactures a departure
+    (`ping_expired`) for someone sitting on the sofa. Confirmed live on the
+    Canary 2026-08-07 — a false "arrived home" push every ~30 minutes.
+
+    The phone reveals its current address every time it reaches Ziggy over the
+    LAN, and a home-LAN source IP is stronger evidence than a pin nothing
+    answers. So: heal only when the pin has gone quiet, only from a genuine
+    RFC-1918 address, and never over a pin that still works (that would let a
+    VPN or second interface yank presence away from a source that demonstrably
+    functions — it's recorded as a suggestion instead).
+
+    Returns the newly-applied host, or None when nothing changed.
+    """
+    if not person_id or not _is_home_lan_ip(client_ip):
+        return None
+    client_ip = str(client_ip).strip()
+    ts = now or _now()
+
+    with _lock:
+        persons = _load()
+        for p in persons:
+            if p.get("id") != person_id:
+                continue
+
+            current = (p.get("lan_host") or "").strip()
+
+            # No pin configured — unchanged behaviour: offer it to Settings,
+            # never switch LAN probing on by ourselves.
+            if not current:
+                if p.get("lan_host_suggested") != client_ip:
+                    p["lan_host_suggested"] = client_ip
+                    _save(persons)
+                return None
+
+            if current == client_ip:
+                return None
+
+            last_seen = _parse_iso(p.get("lan_last_seen"))
+            pin_dead = (last_seen is None
+                        or (ts - last_seen) > timedelta(minutes=_LAN_PIN_STALE_MINUTES))
+            if not pin_dead:
+                # The pin still answers; record the alternative, change nothing.
+                if p.get("lan_host_suggested") != client_ip:
+                    p["lan_host_suggested"] = client_ip
+                    _save(persons)
+                return None
+
+            p["lan_host"] = client_ip
+            p["lan_host_suggested"] = None
+            p["lan_host_healed_at"] = ts.isoformat()
+            # Mark it seen NOW. The phone is provably reachable — it just
+            # spoke to us. Without this, effective_state stays on its
+            # GPS-only branch until the next probe sweep and can fire one
+            # more bogus departure in the gap.
+            p["lan_last_seen"] = ts.isoformat()
+            _save(persons)
+            log_info(
+                f"[Presence] lan_host self-heal for {p.get('name')}: "
+                f"{current} → {client_ip} (old pin silent since {last_seen})"
+            )
+            return client_ip
+    return None
+
+
 def list_lan_hosts() -> list[dict]:
     """Return [{id, name, lan_host}] for every person that has a LAN host set."""
     return [

@@ -193,6 +193,52 @@ def _norm_mac(mac) -> str:
     return str(mac).replace(":", "").replace("-", "").replace(" ", "").lower()
 
 
+_SWEEP_TIMEOUT_S = 0.6
+_SWEEP_WORKERS   = 64
+
+
+def _unicast_sweep(host: str, timeout: float = _SWEEP_TIMEOUT_S) -> list:
+    """Find Broadlinks by unicast `hello()` across the stale host's own /24.
+
+    `broadlink.discover()` is a UDP BROADCAST, and Ziggy runs as a bridge
+    container: broadcasts never make it onto the LAN, so the MAC-anchored
+    self-heal below could never fire — every IR send failed with "No Broadlink
+    answered LAN broadcast" while the device answered unicast normally (Canary,
+    2026-08-07, RM4 moved off 10.100.102.6). Unicast is routed by the host, so
+    it works from the container. See [[reference_ziggy_container_networking]].
+
+    Scoped to the last-known /24: a DHCP lease change moves the last octet, not
+    the subnet. ~254 probes at 0.6 s across 64 workers is a few seconds, and the
+    caller's 20 s rediscovery cooldown keeps it off the hot path.
+    """
+    import ipaddress
+    from concurrent.futures import ThreadPoolExecutor
+    import broadlink
+
+    try:
+        base = ipaddress.ip_network(f"{str(host).strip()}/24", strict=False)
+    except Exception:
+        log_error(f"[IR] unicast sweep skipped — {host!r} is not an IPv4 address")
+        return []
+
+    # .hosts() already excludes the network and broadcast addresses.
+    targets = [str(ip) for ip in base.hosts()]
+
+    def probe(ip):
+        try:
+            return broadlink.hello(ip, timeout=timeout)
+        except Exception:
+            return None
+
+    found = []
+    with ThreadPoolExecutor(max_workers=_SWEEP_WORKERS) as pool:
+        for dev in pool.map(probe, targets):
+            if dev is not None:
+                found.append(dev)
+    log_info(f"[IR] unicast sweep of {base} found {len(found)} Broadlink(s)")
+    return found
+
+
 def _hello_with_rediscovery(host: str, timeout: int = 3):
     """`broadlink.hello(host)` with automatic LAN-rediscovery on failure.
 
@@ -246,10 +292,17 @@ def _hello_with_rediscovery(host: str, timeout: int = 3):
         try:
             found = broadlink.discover(timeout=3)
         except Exception as disc_err:
-            log_error(f"[IR] LAN rediscovery failed: {disc_err}")
-            raise e
+            log_info(f"[IR] broadcast discovery failed ({disc_err}); trying unicast sweep")
+            found = []
         if not found:
-            log_error("[IR] No Broadlink answered LAN broadcast — device powered off or off-network?")
+            # Expected on every bridge-networked hub — the broadcast never left
+            # the container. Unicast is routed, so sweep the last-known /24.
+            found = _unicast_sweep(host)
+        if not found:
+            log_error(
+                f"[IR] No Broadlink answered broadcast OR a unicast sweep of "
+                f"{host}/24 — device powered off, off-network, or on another subnet?"
+            )
             raise e
 
         # MAC-anchored disambiguation: prefer the device whose MAC matches
@@ -318,11 +371,18 @@ def _persist_blaster_host_change(old_host: str, new_host: str) -> int:
     devices = _ir_load()
     changed = 0
     for d in devices:
-        if (d.get("blaster_host") or "").strip() == old_host:
-            d["blaster_host"] = new_host
-            changed += 1
+        if (d.get("blaster_host") or "").strip() != old_host:
+            continue
+        d["blaster_host"] = new_host
+        changed += 1
+        # Normalise the synthesized `direct_<ip>` handle on records we just
+        # repointed — matching only `direct_{old_host}` left a record stranded
+        # on a THIRD address when the entity id had drifted in an earlier move
+        # (seen live: blaster_host=…102.6 with blaster_entity_id=direct_…102.27).
+        # A real HA entity id (`remote.living_room`) has no direct_ prefix and
+        # is never touched.
         beid = (d.get("blaster_entity_id") or "")
-        if beid == f"direct_{old_host}":
+        if beid.startswith("direct_"):
             d["blaster_entity_id"] = f"direct_{new_host}"
     if changed:
         _ir_save(devices)

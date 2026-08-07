@@ -594,28 +594,19 @@ def _remember_lan_host_suggestion(person_id: str, client_ip: str) -> None:
     the person hasn't set an explicit `lan_host` yet. It never enables probing on
     its own — it just gives the Settings screen something concrete to offer
     ("Use 10.100.x.y?"). Cheap: a no-op unless the suggestion actually changed.
+
+    Since 2026-08-07 this also HEALS a pinned `lan_host` that has gone dead:
+    if the pin stopped answering (DHCP moved the phone) the live address wins,
+    because a pin nothing responds to is worse than useless — it decays presence
+    into fabricated departures. A pin that still works is never overridden.
+    See services.presence_engine.heal_lan_host for the full rule.
     """
     if not client_ip or not _is_private_ip(client_ip):
         return
     try:
-        persons = _load()
-        changed = False
-        for p in persons:
-            if p.get("id") != person_id:
-                continue
-            # Don't override an explicit choice, and don't rewrite an identical
-            # suggestion (keeps persons.json writes idempotent under ping load).
-            if (p.get("lan_host") or "").strip():
-                return
-            if p.get("lan_host_suggested") == client_ip:
-                return
-            p["lan_host_suggested"] = client_ip
-            changed = True
-            break
-        if changed:
-            _save(persons)
+        presence_engine.heal_lan_host(person_id, client_ip)
     except Exception as exc:
-        log_error(f"[Presence] lan_host suggestion write failed: {exc}")
+        log_error(f"[Presence] lan_host suggestion/heal write failed: {exc}")
 
 
 def _client_ts_from_body(ts_val: Optional[float]) -> Optional[datetime]:
