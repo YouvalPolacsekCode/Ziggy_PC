@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from backend.routers.auth_deps import get_current_user, require_role
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings, save_settings
-from services import presence_engine
+from services import lan_presence, presence_engine
 from services.presence_engine import Decision
 
 router = APIRouter()
@@ -289,6 +289,16 @@ async def report_my_lan_ip(body: LanHostAutoBody, user=Depends(get_current_user)
             continue
         manual = (p.get("lan_host_auto") is False) and bool((p.get("lan_host") or "").strip())
         if manual:
+            # "Never overwrite a manual entry" is right until the manual entry
+            # is dead: an address typed once and moved by DHCP months later was
+            # honoured forever here while these very reports were discarded, and
+            # presence fabricated a departure every ~30 min. lan_presence probes
+            # both and only supersedes when the pin is unreachable AND the phone
+            # answers at the reported address. Nothing changes if the pin is alive.
+            superseded = await asyncio.to_thread(
+                lan_presence.adopt_reported_lan_ip, person["id"], ip)
+            if superseded:
+                return {"ok": True, "lan_host": superseded, "managed": "manual_superseded"}
             new_host = p.get("lan_host")
             result = "manual_kept"
             break
@@ -298,15 +308,22 @@ async def report_my_lan_ip(body: LanHostAutoBody, user=Depends(get_current_user)
                 p["lan_host"] = None
                 result = "cleared"
             p["lan_host_auto"] = True
-        else:
-            if p.get("lan_host") != ip:
-                result = "updated"
-            else:
-                result = "confirmed"
-            p["lan_host"] = ip
-            p["lan_host_auto"] = True
-            p["lan_host_suggested"] = None
+        elif (p.get("lan_host") or "").strip() == ip:
             new_host = ip
+            result = "confirmed"          # already pinned here — don't re-probe
+        else:
+            # VERIFY before trusting. This branch used to write `ip` straight in,
+            # which meant a phone on ANY other network — a cafe, a friend's flat,
+            # a hotspot — repointed the pin at an address this hub cannot reach
+            # and blinded LAN presence until the user came home and reported
+            # again. Caught end-to-end against the live hub: reporting
+            # 192.168.77.77 was accepted. The probe is the proof of "same LAN".
+            adopted = await asyncio.to_thread(
+                lan_presence.adopt_reported_lan_ip, person["id"], ip)
+            if not adopted:
+                return {"ok": True, "lan_host": p.get("lan_host"),
+                        "managed": "ignored_unreachable"}
+            return {"ok": True, "lan_host": adopted, "managed": "updated"}
         break
     if result in ("updated", "cleared"):
         await _save_async(persons)

@@ -210,6 +210,67 @@ def _tcp_reachable(host: str, ports: list[int], timeout_s: float) -> bool:
     return False
 
 
+def adopt_reported_lan_ip(person_id: str, reported_ip) -> Optional[str]:
+    """Adopt the LAN address a phone reports about ITSELF, after proving it.
+
+    This is what makes LAN presence work for a customer who never typed
+    anything. `lan_host` used to be a hand-entered IP, so in practice it was
+    either unset — leaving presence permanently on the 30-minute GPS-only decay,
+    which fabricates a departure every time the phone dozes — or set once and
+    silently dead at the next DHCP lease.
+
+    The phone knows its own address. It reports it in the location webhook and
+    the hub PINGS it before trusting it. That probe is the whole security model:
+    an address this hub can reach is, by definition, on this home's LAN, so a
+    coffee-shop 192.168.x is rejected without any SSID permission or router
+    access. A DHCP change repairs itself on the next check-in.
+
+    Returns the adopted address, or None when nothing changed.
+    """
+    if not person_id:
+        return None
+    # Cheap rejections first — never spend a probe on an address that could not
+    # be a home-LAN address anyway (cellular CGNAT, the docker gateway the
+    # tunnel arrives on, loopback, public, junk).
+    if not presence_engine._is_home_lan_ip(reported_ip):
+        return None
+    reported_ip = str(reported_ip).strip()
+
+    person = presence_engine.find_person_by_id(person_id)
+    if not person:
+        return None
+    if (person.get("lan_host") or "").strip() == reported_ip:
+        return None      # already pinned there — don't probe on every check-in
+
+    if not _probe_host(reported_ip):
+        log_info(f"[Presence] reported lan_ip {reported_ip} is not reachable from "
+                 f"this hub — ignoring (phone is on someone else's network)")
+        return None
+
+    # A hand-entered pin (lan_host_auto is False) is the user's explicit choice
+    # and normally wins. But "never overwrite a manual entry" is what stranded
+    # this home: an address typed once, moved by DHCP months later, honoured
+    # forever while the app's correct self-reports were discarded on every
+    # check-in and presence invented a departure every ~30 minutes.
+    #
+    # Break the tie on evidence, not preference: only supersede when the hub
+    # CANNOT reach the manual pin and CAN reach the reported address. If the
+    # manual pin still answers it wins; if neither answers we have learned
+    # nothing and the user's setting stands.
+    current = (person.get("lan_host") or "").strip()
+    is_manual = person.get("lan_host_auto") is False and bool(current)
+    if is_manual:
+        if _probe_host(current):
+            return None                     # manual pin alive — respect it
+        log_info(f"[Presence] manual lan_host {current} is unreachable while the "
+                 f"phone answers at {reported_ip} — superseding the stale manual pin")
+
+    adopted = presence_engine.heal_lan_host(person_id, reported_ip, authoritative=True)
+    if adopted and is_manual:
+        presence_engine.mark_lan_host_manual_superseded(person_id)
+    return adopted
+
+
 def _probe_host(host: str) -> bool:
     """Best-effort reachability check. Returns True if any method succeeded.
 

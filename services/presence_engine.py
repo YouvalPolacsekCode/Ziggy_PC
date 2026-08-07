@@ -1041,7 +1041,8 @@ def _is_home_lan_ip(ip: Optional[str]) -> bool:
 
 
 def heal_lan_host(person_id: str, client_ip: Optional[str],
-                  now: Optional[datetime] = None) -> Optional[str]:
+                  now: Optional[datetime] = None,
+                  authoritative: bool = False) -> Optional[str]:
     """Re-pin a person's `lan_host` to the address their phone is talking from.
 
     `lan_host` is a hard-pinned IP, so a DHCP lease change silently kills LAN
@@ -1058,6 +1059,14 @@ def heal_lan_host(person_id: str, client_ip: Optional[str],
     VPN or second interface yank presence away from a source that demonstrably
     functions — it's recorded as a suggestion instead).
 
+    `authoritative=True` means the address is the DEVICE'S OWN verified report
+    (services.lan_presence.adopt_reported_lan_ip: the phone told us its address
+    and the hub proved it by probing it). That outranks everything, including a
+    pin that still answers — DHCP can hand the old address to a DIFFERENT device,
+    and then the stale pin keeps replying and the person looks home forever. It
+    also configures a person who never had a pin at all, which is what makes LAN
+    presence work for a customer who never typed anything.
+
     Returns the newly-applied host, or None when nothing changed.
     """
     if not person_id or not _is_home_lan_ip(client_ip):
@@ -1073,13 +1082,16 @@ def heal_lan_host(person_id: str, client_ip: Optional[str],
 
             current = (p.get("lan_host") or "").strip()
 
-            # No pin configured — unchanged behaviour: offer it to Settings,
-            # never switch LAN probing on by ourselves.
+            # No pin configured. An inferred address is only ever OFFERED (the
+            # Settings screen shows "Use 10.100.x.y?"); a verified self-report
+            # switches LAN presence on, because leaving it off is what strands
+            # every customer on the 30-minute GPS decay.
             if not current:
-                if p.get("lan_host_suggested") != client_ip:
-                    p["lan_host_suggested"] = client_ip
-                    _save(persons)
-                return None
+                if not authoritative:
+                    if p.get("lan_host_suggested") != client_ip:
+                        p["lan_host_suggested"] = client_ip
+                        _save(persons)
+                    return None
 
             if current == client_ip:
                 return None
@@ -1087,7 +1099,7 @@ def heal_lan_host(person_id: str, client_ip: Optional[str],
             last_seen = _parse_iso(p.get("lan_last_seen"))
             pin_dead = (last_seen is None
                         or (ts - last_seen) > timedelta(minutes=_LAN_PIN_STALE_MINUTES))
-            if not pin_dead:
+            if not pin_dead and not authoritative:
                 # The pin still answers; record the alternative, change nothing.
                 if p.get("lan_host_suggested") != client_ip:
                     p["lan_host_suggested"] = client_ip
@@ -1103,12 +1115,33 @@ def heal_lan_host(person_id: str, client_ip: Optional[str],
             # more bogus departure in the gap.
             p["lan_last_seen"] = ts.isoformat()
             _save(persons)
+            why = ("device self-report, probe-verified" if authoritative
+                   else f"old pin silent since {last_seen}")
             log_info(
                 f"[Presence] lan_host self-heal for {p.get('name')}: "
-                f"{current} → {client_ip} (old pin silent since {last_seen})"
+                f"{current or '(unset)'} → {client_ip} ({why})"
             )
             return client_ip
     return None
+
+
+def mark_lan_host_manual_superseded(person_id: str, now: Optional[datetime] = None) -> None:
+    """Record that a dead hand-entered pin was replaced by a verified live one.
+
+    Hands the person back to zero-config (`lan_host_auto = True`) so the NEXT
+    DHCP move repairs itself without anyone typing an address, and stamps when
+    it happened so the override is auditable rather than silent.
+    """
+    ts = now or _now()
+    with _lock:
+        persons = _load()
+        for p in persons:
+            if p.get("id") != person_id:
+                continue
+            p["lan_host_auto"] = True
+            p["lan_host_manual_superseded_at"] = ts.isoformat()
+            _save(persons)
+            return
 
 
 def list_lan_hosts() -> list[dict]:

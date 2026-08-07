@@ -35,7 +35,7 @@ from backend.middleware.rate_limit import (
 )
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
 from core.logger_module import log_info
-from services import auth_db, mobile_app, presence_engine
+from services import auth_db, lan_presence, mobile_app, presence_engine
 from services.mobile_ws_manager import mobile_ws
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
@@ -386,6 +386,21 @@ async def webhook(
                 presence_engine.heal_lan_host, person_id, _peer_ip(request))
         except Exception as exc:      # never fail an ingest over a presence hint
             log_info(f"[Presence] lan_host heal skipped: {exc}")
+
+        # …and the stronger signal: the phone reporting its OWN LAN address.
+        # The peer IP above only works when the app reaches us over the LAN,
+        # which it usually does NOT (it goes through the tunnel, arriving as the
+        # docker gateway). A self-report works either way — and the hub proves it
+        # by probing before trusting it, so a coffee-shop 192.168.x is rejected.
+        # This is what configures LAN presence for a customer who never typed an
+        # IP, instead of stranding them on the 30-minute GPS-only decay.
+        reported = (payload.get("data") or {}).get("lan_ip")
+        if reported:
+            try:
+                await asyncio.to_thread(
+                    lan_presence.adopt_reported_lan_ip, person_id, reported)
+            except Exception as exc:
+                log_info(f"[Presence] reported lan_ip ignored: {exc}")
 
     return mobile_app.handle_webhook(device, payload)
 
