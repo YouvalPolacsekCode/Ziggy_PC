@@ -75,7 +75,7 @@ export function useBundleCtx({ automations = [], hostActions = {} } = {}) {
     const asItem = (e) => ({ id: e.entity_id, label: nameWithRoom(e), _entity: e })
     return {
       t, lang, entities, ziggyRooms, rooms, occupancySensors,
-      entityMap, roomOf, nameWithRoom, asItem, automations, hostActions,
+      entityMap, roomOf, roomEntityIds, nameWithRoom, asItem, automations, hostActions,
       NO_ROOM,
     }
   }, [t, lang, entities, ziggyRooms, rooms, occupancySensors, entityMap, roomMap, automations, hostActions])
