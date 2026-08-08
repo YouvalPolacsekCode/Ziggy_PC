@@ -405,15 +405,21 @@
 }
 .zw-tool.is-danger { background: var(--accent); color: var(--on-accent); }
 
-/* Corner handle for resize. Big enough for a fingertip (44px target) while
-   drawing small, via a transparent padded hit area. */
-/* Resize handle.
-   It used to hang 6px OUTSIDE the card, which made it unreliable to grab:
-   .zw-mod cards are positioned siblings, so whichever card comes later in DOM
-   order painted on top of the protruding handle — the corner was covered by
-   the neighbour perhaps half the time, which is exactly the "works sometimes"
-   symptom. It now sits fully inside its own card, and is drawn as a solid tab
-   rather than a hairline corner so there is something real to aim at. */
+/* Resize handle — a quiet accent corner, with a fingertip-sized hit area.
+ *
+ * The look is the original hairline bracket: on a wall dashboard the edit
+ * affordances should stay out of the way, and a filled tab in every card
+ * corner shouted far too loudly.
+ *
+ * What changed is only reliability, none of which is visible:
+ *   - it sits fully INSIDE its card. It used to hang 6px outside, and since
+ *     .zw-mod cards are positioned siblings, whichever card came later in DOM
+ *     order painted over the protruding corner — covering the handle perhaps
+ *     half the time. That was the "works sometimes" symptom.
+ *   - the button is 46px even though the mark is 16px, so the target is a
+ *     finger, not a hairline.
+ *   - touch-action:none, so the browser never claims the gesture for a scroll.
+ */
 .zw-resize {
   position: absolute;
   inset-block-end: 0;
@@ -428,19 +434,15 @@
 .zw-resize::after {
   content: '';
   position: absolute;
-  inset-block-end: 4px; inset-inline-end: 4px;
-  width: 26px; height: 26px;
-  background: var(--accent);
-  border-end-end-radius: 15px;
-  border-start-start-radius: 4px;
-  box-shadow: var(--shadow-md);
-  /* two white notches so it reads as a grabber, not a coloured blob */
-  background-image:
-    linear-gradient(135deg, transparent 46%, var(--on-accent) 46%, var(--on-accent) 56%, transparent 56%),
-    linear-gradient(135deg, transparent 64%, var(--on-accent) 64%, var(--on-accent) 74%, transparent 74%);
-  opacity: .95;
+  inset-block-end: 9px; inset-inline-end: 9px;
+  width: 16px; height: 16px;
+  border-inline-end: 2.5px solid var(--accent);
+  border-block-end: 2.5px solid var(--accent);
+  border-end-end-radius: 5px;
+  transition: transform .12s ease, opacity .12s ease;
+  opacity: .85;
 }
-.zw-resize:active::after { transform: scale(1.12); }
+.zw-resize:active::after { transform: scale(1.25); opacity: 1; }
 
 /* While editing, the card under the finger floats above its neighbours so its
    handles are never covered. */
