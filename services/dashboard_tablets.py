@@ -195,7 +195,7 @@ async def adopt_device(display_name: str, room: Optional[str], claiming_user: st
     room_slug = (room or "").strip()[:64] or None
     tablet_id = "tab_" + uuid.uuid4().hex[:16]
 
-    data = await asyncio.to_thread(_load)
+    data = await asyncio.to_thread(_load_all)
     data["tablets"][tablet_id] = {
         "id":            tablet_id,
         "display_name":  name,
@@ -205,7 +205,7 @@ async def adopt_device(display_name: str, room: Optional[str], claiming_user: st
         "last_seen":     _now(),
         "adopted":       True,
     }
-    await asyncio.to_thread(_save, data)
+    await asyncio.to_thread(_save_all, data)
     return {"tablet_id": tablet_id, "display_name": name, "room": room_slug}
 
 

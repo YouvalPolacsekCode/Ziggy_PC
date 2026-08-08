@@ -133,6 +133,45 @@ class TestWallLayouts:
         with pytest.raises(ValueError):
             asyncio.run(layouts.save_layout("tab_1", doc))
 
+    def test_adopt_then_save_and_reload(self, tmp_layouts, tmp_path, monkeypatch):
+        """The whole reason a layout persists at all.
+
+        Regression: adopt_device() called `_load`/`_save`, which do not exist
+        in that module (it uses `_load_all`/`_save_all`). Adoption 500'd, so a
+        wall-mode tablet never received a tablet_id — and with no tablet_id
+        every layout PUT was rejected, the client rolled back, and the board
+        "jumped back" on save and lost everything on restart. Nothing caught
+        it because adopt_device had no test.
+        """
+        from services import dashboard_tablets as tablets
+        monkeypatch.setattr(tablets, "_FILE", tmp_path / "dashboard_tablets.json")
+
+        rec = asyncio.run(tablets.adopt_device("Kitchen wall", None, "owner@example.com"))
+        assert rec["tablet_id"].startswith("tab_")
+        assert asyncio.run(tablets.get_tablet(rec["tablet_id"]))["adopted"] is True
+
+        doc = layouts.default_layout()
+        doc["modules"] = [{"id": "c", "type": "clock", "x": 2, "y": 1, "w": 5, "h": 3, "config": {}}]
+        asyncio.run(layouts.save_layout(rec["tablet_id"], doc))
+
+        # Re-read exactly as a fresh app launch would.
+        back = asyncio.run(layouts.get_layout(rec["tablet_id"]))
+        assert [(m["type"], m["x"], m["y"], m["w"], m["h"]) for m in back["modules"]] \
+            == [("clock", 2, 1, 5, 3)]
+
+    def test_adopt_does_not_disturb_code_pairing(self, tmp_path, monkeypatch):
+        """Adoption is additive — the code flow still works for setting a panel
+        up from another device."""
+        from services import dashboard_tablets as tablets
+        monkeypatch.setattr(tablets, "_FILE", tmp_path / "dashboard_tablets.json")
+        tablets._pending.clear(); tablets._attempts.clear()
+
+        asyncio.run(tablets.adopt_device("Adopted", None, "owner"))
+        code = tablets.create_pairing_code("owner")["code"]
+        paired = asyncio.run(tablets.claim_pairing_code(code, "Coded", None, "owner", "k"))
+        assert paired["tablet_id"].startswith("tab_")
+        assert len(asyncio.run(tablets.list_tablets())) == 2
+
     def test_delete_layout(self, tmp_layouts):
         asyncio.run(layouts.save_layout("tab_1", layouts.default_layout()))
         assert asyncio.run(layouts.delete_layout("tab_1")) is True
