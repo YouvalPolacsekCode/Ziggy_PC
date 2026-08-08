@@ -516,6 +516,37 @@ class TestCapabilityMiddleware:
         from backend.middleware.wall_capability import WallCapabilityMiddleware
         assert any(m.cls is WallCapabilityMiddleware for m in server.app.user_middleware)
 
+    def test_a_wall_panel_is_never_a_presence_source(self, tmp_policy):
+        """A tablet bolted to a wall never leaves, so it must not be tracked as
+        a person.
+
+        Real consequence, seen on the live hub: the tablet went through mobile
+        onboarding once and created a SECOND presence person linked to the same
+        account and pinned to the same LAN host as the phone. Both flipped
+        together, so every arrival and departure fired twice.
+        """
+        assert policy.DEFAULT_CAPABILITIES["presence"] is False
+        assert asyncio.run(policy.check("tab_wall", "presence")) == (False, "denied")
+
+    def test_presence_cannot_be_granted_to_a_tablet(self, tmp_policy):
+        """Not an admin-tunable knob. There is no correct configuration in
+        which a wall panel reports presence, so setting it True is ignored."""
+        asyncio.run(policy.set_policy("tab_wall", {
+            "capabilities": {**policy.DEFAULT_CAPABILITIES, "presence": True},
+        }))
+        pol = asyncio.run(policy.get_policy("tab_wall"))
+        assert pol["capabilities"]["presence"] is False
+        assert asyncio.run(policy.check("tab_wall", "presence")) == (False, "denied")
+
+    def test_presence_write_paths_are_gated(self):
+        from backend.middleware.wall_capability import _capability_for
+        assert _capability_for("/api/presence/persons", "POST") == "presence"
+        assert _capability_for("/api/presence/me/lan-host", "PATCH") == "presence"
+        assert _capability_for("/api/presence/me/lan-host/auto", "POST") == "presence"
+        assert _capability_for("/api/mobile/register", "POST") == "presence"
+        # Reading presence is fine — the wall may SHOW who is home.
+        assert _capability_for("/api/presence/persons", "GET") is None
+
     def test_a_locked_down_tablet_is_refused_a_door(self, tmp_policy):
         # locks denied by default
         assert asyncio.run(policy.check("tab_wall", "locks")) == (False, "denied")

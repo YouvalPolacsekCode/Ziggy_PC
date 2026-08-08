@@ -40,6 +40,15 @@ function useOptions(kind) {
   }, [kind])
 
   return useMemo(() => {
+    if (kind === 'entities') {
+      // Only things a person can actually operate — offering 94 entities
+      // including "Presence Sensor Target distance" would be a worse list
+      // than no list.
+      const CONTROLLABLE = new Set(['light', 'switch', 'media_player', 'climate', 'fan', 'lock', 'cover', 'water_heater'])
+      return entities
+        .filter((e) => CONTROLLABLE.has(e.domain || e.entity_id.split('.')[0]))
+        .map((e) => ({ value: e.entity_id, label: e.display_name || e.friendly_name || e.entity_id }))
+    }
     if (kind === 'room') {
       return (ziggyRooms || []).map((r) => ({ value: r.id, label: r.name }))
     }
@@ -135,7 +144,7 @@ const FieldFor = memo(function FieldFor({ name, spec, value, onChange }) {
   if (spec.kind === 'number') {
     return <NumberField label={label} value={value} onChange={onChange} min={spec.min} max={spec.max} />
   }
-  if (spec.kind === 'actionIds') {
+  if (spec.kind === 'actionIds' || spec.kind === 'entities') {
     return <MultiField label={label} options={options} value={value} onChange={onChange} />
   }
   // room / list / camera / mediaPlayer all pick one of a list; `auto` means

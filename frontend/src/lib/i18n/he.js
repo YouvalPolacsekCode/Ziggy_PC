@@ -4651,6 +4651,7 @@ export default {
   'wall.cfg.room_id':       'איזה חדר',
   'wall.cfg.list_id':       'איזו רשימה',
   'wall.cfg.entity_id':     'איזה מכשיר',
+  'wall.cfg.entity_ids':    'אילו מכשירים',
   'wall.cfg.ids':           'אילו פעולות',
   'wall.cfg.limit':         'כמה להציג',
   'wall.cfg.days':          'כמה ימים',

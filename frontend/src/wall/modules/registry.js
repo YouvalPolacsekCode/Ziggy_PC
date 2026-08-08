@@ -57,7 +57,12 @@ export const MANIFESTS = {
   pinned: {
     type: 'pinned', expandable: true, titleKey: 'wall.mod.pinned', descKey: 'wall.mod.pinnedDesc',
     minW: 2, minH: 1, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12,
-    capability: null, multiple: false, configSchema: {},
+    // `multiple` so a board can carry several strips (kitchen things here,
+    // living-room things there). Its entity list lives in the LAYOUT, which is
+    // per-tablet — the dashboard's quick controls are per-USER and therefore
+    // shared with the phone, which is not what a wall wants.
+    capability: null, multiple: true,
+    configSchema: { entity_ids: { kind: 'entities', default: [] } },
   },
   room: {
     type: 'room', expandable: true, titleKey: 'wall.mod.room', descKey: 'wall.mod.roomDesc',

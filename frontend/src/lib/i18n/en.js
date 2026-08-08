@@ -4808,6 +4808,7 @@ export default {
   'wall.cfg.room_id':       'Which room',
   'wall.cfg.list_id':       'Which list',
   'wall.cfg.entity_id':     'Which device',
+  'wall.cfg.entity_ids':    'Which devices',
   'wall.cfg.ids':           'Which actions',
   'wall.cfg.limit':         'How many to show',
   'wall.cfg.days':          'How many days',

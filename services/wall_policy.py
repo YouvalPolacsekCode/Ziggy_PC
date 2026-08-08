@@ -50,6 +50,13 @@ _LOCK = asyncio.Lock()
 CAPABILITIES = (
     "lights", "climate", "media", "scenes", "lists",
     "cameras", "locks", "automations", "devices", "settings",
+    # A wall panel is FURNITURE, not a person: it is bolted to a wall and never
+    # leaves. Anything it contributes to presence is noise — and worse than
+    # noise in practice, since a second person pinned to the same LAN host made
+    # every arrival and departure fire twice. Denied by default and not offered
+    # as something an admin can switch on, because there is no version of this
+    # that is correct.
+    "presence",
 )
 
 # What an unconfigured tablet gets. Chosen so a wall panel is immediately
@@ -58,6 +65,7 @@ CAPABILITIES = (
 DEFAULT_CAPABILITIES = {
     "lights": True, "climate": True, "media": True, "scenes": True, "lists": True,
     "cameras": False, "locks": False, "automations": True, "devices": False, "settings": False,
+    "presence": False,
 }
 DEFAULT_PIN_REQUIRED = ["locks", "cameras", "devices", "settings"]
 
@@ -224,6 +232,9 @@ async def set_policy(tablet_id: str, policy: dict) -> dict:
         rec["capabilities"] = {
             k: bool(caps_in.get(k, DEFAULT_CAPABILITIES[k])) for k in CAPABILITIES
         }
+        # Not negotiable — see the CAPABILITIES note. A wall panel that reports
+        # presence corrupts every automation that asks "is anyone home?".
+        rec["capabilities"]["presence"] = False
         req_in = (policy or {}).get("pin_required")
         if req_in is not None:
             rec["pin_required"] = [c for c in req_in if c in CAPABILITIES]

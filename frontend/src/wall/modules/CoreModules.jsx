@@ -154,7 +154,7 @@ export const ScenesModule = memo(function ScenesModule({ mod, ctx }) {
 // Reuses `deviceStore.pinnedShortcuts` — the very same pins the phone app
 // uses, so pinning on a phone shows up on the wall.
 
-export const PinnedModule = memo(function PinnedModule({ ctx }) {
+export const PinnedModule = memo(function PinnedModule({ mod, ctx }) {
   const t = useT()
   const entities = useDeviceStore((s) => s.entities)
   const quick    = useDeviceStore((s) => s.quickControlIds)
@@ -163,13 +163,18 @@ export const PinnedModule = memo(function PinnedModule({ ctx }) {
   // read the language once and translate inline, same dictionary either way.
   const lang     = useLangStore((s) => s.lang)
 
-  // `quickControlIds` — the dashboard's quick device controls — is the ONLY
-  // store field that holds entity ids. `pinnedShortcuts` looks like it should
-  // belong here but never contains devices: it is strictly
-  // {type:'routine'|'ask', id}. An earlier version read it as entity ids,
-  // found none, and silently fell through to this list — so the card looked
-  // right while showing something other than what it claimed.
-  const ids = useMemo(() => (quick || []).slice(0, 12), [quick])
+  // This card's OWN list, stored in the tablet's layout, so a wall can pin
+  // different things than the phone. `quickControlIds` lives in per-USER
+  // prefs and is therefore shared with every other surface that user opens —
+  // fine as a starting point, wrong as the only option.
+  //
+  // (`pinnedShortcuts` is not a candidate at all: it holds
+  // {type:'routine'|'ask', id}, never devices.)
+  const chosen = mod?.config?.entity_ids
+  const ids = useMemo(
+    () => (Array.isArray(chosen) && chosen.length ? chosen : (quick || [])).slice(0, 24),
+    [chosen, quick],
+  )
 
   const facts = useMemo(() => {
     const map = new Map(entities.map((e) => [e.entity_id, e]))

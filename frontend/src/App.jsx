@@ -668,6 +668,11 @@ export default function App() {
   useEffect(() => {
     if (!isNative()) return
     if (!authenticated) return
+    // A wall panel is FURNITURE, not a person. It never leaves, so anything it
+    // contributes to presence is noise at best: going through onboarding once
+    // created a second presence person on the same LAN host as the phone, so
+    // every arrival and departure fired twice. It also has no use for push.
+    if (_wallModeDevice) return
 
     const Geo = window?.Capacitor?.Plugins?.Geolocation
     if (!Geo) return
@@ -742,6 +747,11 @@ export default function App() {
   useEffect(() => {
     if (!isNative()) return
     if (!authenticated) return
+    // A wall panel is FURNITURE, not a person. It never leaves, so anything it
+    // contributes to presence is noise at best: going through onboarding once
+    // created a second presence person on the same LAN host as the phone, so
+    // every arrival and departure fired twice. It also has no use for push.
+    if (_wallModeDevice) return
     const ZP = window?.Capacitor?.Plugins?.ZiggyPresence
     if (!ZP) return
 
@@ -991,6 +1001,11 @@ export default function App() {
   useEffect(() => {
     if (!isNative()) return
     if (!authenticated) return
+    // A wall panel is FURNITURE, not a person. It never leaves, so anything it
+    // contributes to presence is noise at best: going through onboarding once
+    // created a second presence person on the same LAN host as the phone, so
+    // every arrival and departure fired twice. It also has no use for push.
+    if (_wallModeDevice) return
     let alive = true
     ;(async () => {
       try {

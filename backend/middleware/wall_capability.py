@@ -62,6 +62,12 @@ _RULES: list[tuple[re.Pattern, tuple[str, ...], str]] = [
     # Lists and agenda.
     (re.compile(r"^/api/(lists|agenda)"),               ("POST", "PATCH", "DELETE"), "lists"),
 
+    # Presence. A wall panel must never create a person, claim a LAN host, or
+    # register as a trackable device — see wall_policy.CAPABILITIES.
+    (re.compile(r"^/api/presence/persons"),             ("POST", "PATCH", "DELETE"), "presence"),
+    (re.compile(r"^/api/presence/me/"),                 ("POST", "PATCH"),          "presence"),
+    (re.compile(r"^/api/mobile/(register|pair|webhook)"), ("POST",),                "presence"),
+
     # Hub settings and anything administrative.
     (re.compile(r"^/api/settings"),                     ("POST", "PATCH", "PUT", "DELETE"), "settings"),
     (re.compile(r"^/api/admin"),                        ("POST", "PATCH", "PUT", "DELETE"), "settings"),
