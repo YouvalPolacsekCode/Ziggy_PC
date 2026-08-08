@@ -14,6 +14,7 @@ import { useDeviceActions } from '../useWallControl'
 import {
   sendChat, getRoutines, runRoutine, getTasks, updateTask,
   getWeather, getAlerts, getMode, getModeOptions, setMode,
+  getQuickAsks, runDirectIntent,
 } from '../../lib/api'
 
 // ─── Ziggy ──────────────────────────────────────────────────────────────────
@@ -77,32 +78,44 @@ export const ZiggyModule = memo(function ZiggyModule({ ctx }) {
 export const ScenesModule = memo(function ScenesModule({ mod, ctx }) {
   const t = useT()
   const [routines, setRoutines] = useState([])
+  const [asks, setAsks] = useState([])
   const [running, setRunning] = useState(null)
   const picked = mod.config?.ids
 
   useEffect(() => {
     let dead = false
-    getRoutines()
-      .then((r) => { if (!dead) setRoutines(r?.routines || r || []) })
-      .catch(() => {})
+    getRoutines().then((r) => { if (!dead) setRoutines(r?.routines || r || []) }).catch(() => {})
+    // Quick-asks are one-tap actions too, and most homes have them long before
+    // they have on-demand routines. Without this the card sat empty on a real
+    // home that had plenty of one-tap actions — just not of the type it asked for.
+    getQuickAsks().then((r) => { if (!dead) setAsks(Array.isArray(r) ? r : (r?.quick_asks || [])) }).catch(() => {})
     return () => { dead = true }
   }, [])
 
   const tiles = useMemo(() => {
-    const all = Array.isArray(routines) ? routines : []
+    const rs = (Array.isArray(routines) ? routines : []).map((r) => ({
+      key: `r:${r.id}`, name: r.name, sub: r.description || r.summary || '',
+      run: () => runRoutine(r.id),
+    }))
+    const qs = (Array.isArray(asks) ? asks : []).map((a) => ({
+      key: `a:${a.id}`, name: `${a.icon ? a.icon + ' ' : ''}${a.label}`, sub: '',
+      run: () => runDirectIntent(a.intent, a.params || {}),
+    }))
+    const all = [...rs, ...qs]
     if (Array.isArray(picked) && picked.length) {
-      const byId = new Map(all.map((r) => [String(r.id), r]))
-      return picked.map((id) => byId.get(String(id))).filter(Boolean)
+      const byKey = new Map(all.map((x) => [x.key, x]))
+      const chosen = picked.map((k) => byKey.get(String(k))).filter(Boolean)
+      if (chosen.length) return chosen
     }
     return all.slice(0, 6)
-  }, [routines, picked])
+  }, [routines, asks, picked])
 
-  const run = useCallback(async (r) => {
-    setRunning(r.id)
+  const run = useCallback(async (tile) => {
+    setRunning(tile.key)
     await ctx.guard('scenes', async () => {
       try {
-        await runRoutine(r.id)
-        ctx.toast?.(`✓ ${r.name}`)
+        await tile.run()
+        ctx.toast?.(`✓ ${tile.name}`)
       } catch (e) {
         ctx.toast?.(e?.userMessage || t('wall.err.command'), 'err')
       }
@@ -118,15 +131,15 @@ export const ScenesModule = memo(function ScenesModule({ mod, ctx }) {
           ? <div className="zw-empty">{t('wall.scenes.empty')}</div>
           : (
             <div className="zw-scenes">
-              {tiles.map((r, i) => (
+              {tiles.map((tile, i) => (
                 <button
-                  key={r.id}
+                  key={tile.key}
                   className={`zw-scene${i === 0 ? ' is-dark' : ''}`}
-                  onClick={() => run(r)}
+                  onClick={() => run(tile)}
                 >
-                  <div className="zw-scene-name">{r.name}</div>
+                  <div className="zw-scene-name">{tile.name}</div>
                   <div className="zw-scene-sub">
-                    {running === r.id ? t('wall.scenes.running') : (r.description || r.summary || '')}
+                    {running === tile.key ? t('wall.scenes.running') : tile.sub}
                   </div>
                 </button>
               ))}
@@ -144,21 +157,19 @@ export const ScenesModule = memo(function ScenesModule({ mod, ctx }) {
 export const PinnedModule = memo(function PinnedModule({ ctx }) {
   const t = useT()
   const entities = useDeviceStore((s) => s.entities)
-  const pinned   = useDeviceStore((s) => s.pinnedShortcuts)
   const quick    = useDeviceStore((s) => s.quickControlIds)
   const actions  = useDeviceActions({ toast: ctx.toast, guard: ctx.guard })
   // Chips render in a .map, so the hook form isn't available per item —
   // read the language once and translate inline, same dictionary either way.
   const lang     = useLangStore((s) => s.lang)
 
-  const ids = useMemo(() => {
-    const fromPins = (pinned || [])
-      .map((p) => (typeof p === 'string' ? p : p?.id))
-      .filter(Boolean)
-    // Fall back to the dashboard's quick controls so a home that never pinned
-    // anything still gets a useful strip instead of an empty card.
-    return (fromPins.length ? fromPins : (quick || [])).slice(0, 12)
-  }, [pinned, quick])
+  // `quickControlIds` — the dashboard's quick device controls — is the ONLY
+  // store field that holds entity ids. `pinnedShortcuts` looks like it should
+  // belong here but never contains devices: it is strictly
+  // {type:'routine'|'ask', id}. An earlier version read it as entity ids,
+  // found none, and silently fell through to this list — so the card looked
+  // right while showing something other than what it claimed.
+  const ids = useMemo(() => (quick || []).slice(0, 12), [quick])
 
   const facts = useMemo(() => {
     const map = new Map(entities.map((e) => [e.entity_id, e]))
@@ -170,7 +181,7 @@ export const PinnedModule = memo(function PinnedModule({ ctx }) {
       <div className="zw-card-head"><span className="zw-eyebrow">{t('wall.pinned')}</span></div>
       <div className="zw-card">
         <div className="zw-card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 9, padding: 12, alignContent: 'flex-start' }}>
-          {facts.length === 0 && <div className="zw-empty">{t('wall.mod.pinnedDesc')}</div>}
+          {facts.length === 0 && <div className="zw-empty">{t('wall.pinnedEmpty')}</div>}
           {facts.map((f) => (
             <button
               key={f.id}

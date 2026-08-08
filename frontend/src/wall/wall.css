@@ -771,3 +771,69 @@
   .zw-mod, .zw-drop-ghost, .zw-rail { transition: none; }
   .zw-orb, .zw-idle-orb, .zw-idle-inner, .zw-conn-dot { animation: none; }
 }
+
+/* ── Card-relative sizing (container queries) ────────────────────────────────
+   Everything above sizes type with `clamp(..vw..)`, which scales with the
+   SCREEN. That is wrong for a board whose cards the user resizes freely: a
+   2-column card and a 12-column card rendered identical text, so shrinking a
+   card just clipped it instead of making it a glance-sized tile.
+
+   `container-type: size` turns each placed module into a query container, so
+   its contents respond to the CARD's own dimensions. Browsers without
+   container-query support (older Android WebViews) simply keep the default
+   sizes — the layout still works, it just doesn't adapt. */
+
+.zw-mod {
+  container-type: size;
+  container-name: zwcard;
+}
+
+/* Compact — the user has deliberately shrunk this to a glance tile.
+   Secondary text goes; the primary fact stays legible. */
+@container zwcard (max-width: 240px) {
+  .zw-card-head { padding-bottom: 4px; }
+  .zw-eyebrow   { font-size: 8.5px; letter-spacing: .12em; }
+  .zw-scenes    { grid-template-columns: 1fr; gap: 6px; padding: 8px; }
+  .zw-scene     { padding: 8px 10px; }
+  .zw-scene-sub { display: none; }
+  .zw-chip      { padding: 5px 10px; gap: 5px; }
+  .zw-chip-state{ display: none; }
+  .zw-card-body { padding: 8px !important; gap: 6px !important; }
+  .zw-ziggy     { padding: 9px 11px; gap: 9px; }
+  .zw-ziggy-hint{ display: none; }
+}
+
+/* Short — not enough vertical room for a two-line row. */
+@container zwcard (max-height: 110px) {
+  .zw-card-head  { display: none; }
+  .zw-scene-sub  { display: none; }
+  .zw-ziggy-hint { display: none; }
+}
+
+/* Roomy — the card was grown on purpose, so let it breathe and read from
+   further away. A wall panel is looked at from across a kitchen. */
+@container zwcard (min-width: 460px) {
+  .zw-scene-name  { font-size: 16px; }
+  .zw-scene-sub   { font-size: 12px; }
+  .zw-chip-label  { font-size: 15px; }
+  .zw-chip-state  { font-size: 12px; }
+  .zw-dev-label   { font-size: 15px; }
+  .zw-ziggy-title { font-size: 18px; }
+  .zw-ziggy-hint  { font-size: 14px; }
+  .zw-scenes      { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+
+@container zwcard (min-width: 700px) {
+  .zw-scene-name  { font-size: 18px; }
+  .zw-chip-label  { font-size: 16px; }
+  .zw-ziggy-title { font-size: 21px; }
+}
+
+/* The assistant orb tracks its card, not the window, so it stays proportionate
+   whether the card is a strip across the top or a large panel. */
+@container zwcard (min-height: 200px) {
+  .zw-orb { width: clamp(44px, 22cqh, 96px); height: clamp(44px, 22cqh, 96px); }
+}
+@container zwcard (max-height: 120px) {
+  .zw-orb { width: 30px; height: 30px; }
+}

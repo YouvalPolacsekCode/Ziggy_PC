@@ -4678,6 +4678,7 @@ export default {
   'wall.devices':           'Devices',
   'wall.rooms':             'Rooms',
   'wall.pinned':            'PINNED',
+  'wall.pinnedEmpty':       'No quick controls yet — pin devices from the app',
   'wall.edit':              'Edit',
   'wall.editDone':          'Done',
   'wall.addModule':         'Add a card',

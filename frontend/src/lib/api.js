@@ -1161,6 +1161,8 @@ export const wallWentIdle = (tabletId) => post('/wall/idle', { tablet_id: tablet
 
 // Endpoints that already existed on the backend but had no client helper.
 // Adding the helper is additive — no existing caller is affected.
+export const runDirectIntent = (intent, params = {}, source = 'wall') =>
+  post('/direct-intent', { intent, params, source })
 export const getWeather     = () => get('/weather')
 export const getAlerts      = () => get('/alerts')
 export const getMode        = () => get('/mode')

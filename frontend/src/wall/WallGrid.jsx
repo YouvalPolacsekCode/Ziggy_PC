@@ -130,23 +130,85 @@ export default function WallGrid({ ctx }) {
 
   // ── drag ──────────────────────────────────────────────────────────────────
 
+  // How long a finger must rest on a card before it becomes a drag, and how far
+  // it may stray in that time. Below this, the touch is a scroll.
+  const LONG_PRESS_MS = 260
+  const MOVE_TOLERANCE = 10
+  const pressTimer = useRef(null)
+
+  const cancelPress = useCallback(() => {
+    clearTimeout(pressTimer.current)
+    pressTimer.current = null
+  }, [])
+
+  /**
+   * Long-press to pick a card up; a plain drag scrolls the board.
+   *
+   * The first version started dragging on pointerdown and set
+   * `touch-action: none` on the whole board, which made the board impossible
+   * to SCROLL in edit mode — so any card below the fold was unreachable, and
+   * you could not edit the thing you were trying to edit. Deferring the drag
+   * until the finger has rested is the standard phone-home-screen gesture and
+   * leaves normal scrolling intact.
+   */
   const onDragStart = useCallback((e, mod) => {
     if (!boardW) return
     // Ignore secondary buttons and multi-touch — a second finger during a drag
     // should not hijack the gesture.
     if (e.button != null && e.button !== 0) return
-    const r = rectFor(mod, cols, boardW, rowHRef.current)
-    gesture.current = {
-      id: mod.id,
-      startX: e.clientX, startY: e.clientY,
-      originLeft: r.left, originTop: r.top,
-      lastCellX: mod.x, lastCellY: mod.y,
+
+    const startX = e.clientX
+    const startY = e.clientY
+    const pointerId = e.pointerId
+    const target = e.currentTarget
+
+    // A mouse is precise and has no scroll ambiguity, so it picks up at once.
+    const immediate = e.pointerType === 'mouse'
+
+    const begin = () => {
+      const r = rectFor(mod, cols, boardW, rowHRef.current)
+      gesture.current = {
+        id: mod.id,
+        startX, startY,
+        originLeft: r.left, originTop: r.top,
+        lastCellX: mod.x, lastCellY: mod.y,
+      }
+      setActiveId(mod.id)
+      setMode('drag')
+      setGhost({ left: r.left, top: r.top })
+      try { target.setPointerCapture?.(pointerId) } catch { /* element may be gone */ }
+      // A short buzz confirms the card is now "in hand" — without it, a
+      // long-press feels like nothing happened.
+      try { navigator.vibrate?.(12) } catch { /* unsupported */ }
     }
-    setActiveId(mod.id)
-    setMode('drag')
-    setGhost({ left: r.left, top: r.top })
-    e.currentTarget.setPointerCapture?.(e.pointerId)
-  }, [cols, boardW])
+
+    if (immediate) { begin(); return }
+
+    // Abort the pending pick-up if the finger travels: that is a scroll.
+    const watch = (ev) => {
+      if (Math.abs(ev.clientX - startX) > MOVE_TOLERANCE ||
+          Math.abs(ev.clientY - startY) > MOVE_TOLERANCE) {
+        cancelPress()
+        window.removeEventListener('pointermove', watch)
+      }
+    }
+    window.addEventListener('pointermove', watch, { passive: true })
+    const stop = () => {
+      cancelPress()
+      window.removeEventListener('pointermove', watch)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    window.addEventListener('pointerup', stop, { passive: true })
+    window.addEventListener('pointercancel', stop, { passive: true })
+
+    pressTimer.current = setTimeout(() => {
+      window.removeEventListener('pointermove', watch)
+      begin()
+    }, LONG_PRESS_MS)
+  }, [cols, boardW, cancelPress])
+
+  useEffect(() => () => cancelPress(), [cancelPress])
 
   const onResizeStart = useCallback((e, mod) => {
     if (!boardW) return
@@ -200,6 +262,7 @@ export default function WallGrid({ ctx }) {
     }
 
     const onEnd = () => {
+      cancelPress()
       gesture.current = null
       setGhost(null)
       setActiveId(null)
@@ -231,7 +294,10 @@ export default function WallGrid({ ctx }) {
       <div
         className="zw-board"
         ref={boardRef}
-        style={{ height: boardH, touchAction: editing ? 'none' : 'auto' }}
+        // `touch-action` is only suppressed while a card is actually in hand.
+        // Setting it for all of edit mode stopped the board scrolling, which
+        // made any card below the fold impossible to reach.
+        style={{ height: boardH, touchAction: mode ? 'none' : 'auto' }}
       >
         {boardW > 0 && modules.map((mod) => {
           const rect = rectFor(mod, cols, boardW, rowH)

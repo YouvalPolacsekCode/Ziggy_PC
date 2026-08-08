@@ -601,6 +601,16 @@ app.include_router(ir_walk_router)
 from backend.routers.wall_router import router as wall_router
 app.include_router(wall_router)
 
+# Home mode + weather. Both routers have existed in the tree for a long time
+# but were never registered, so /api/mode and /api/weather returned 404 —
+# the same oversight that left dashboard_router dead. Registering them is
+# purely additive (it adds routes that did not resolve before; nothing that
+# worked can change), and every route declares its own auth dependency.
+from backend.routers.mode_router import router as mode_router
+from backend.routers.weather_router import router as weather_router
+app.include_router(mode_router)
+app.include_router(weather_router)
+
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.
 # Mount AFTER all API routes so /api/* and /ws are never shadowed.

@@ -77,6 +77,23 @@ export default function Wall() {
 
   const guard = useCapabilityGuard(policy, showToast)
 
+  // ── installable as its own app ───────────────────────────────────────────
+  // "Add to home screen" installs whatever manifest the CURRENT document
+  // points at. With only the app-wide manifest linked, installing from /wall
+  // produced a shortcut to the phone app instead — which is what happened on
+  // the first tablet. Swapping the link while this page is mounted gives the
+  // wall its own install: distinct `id`, start_url /wall, fullscreen, so a
+  // kiosk panel opens with no browser chrome at all.
+  useEffect(() => {
+    const link = document.querySelector('link[rel="manifest"]')
+    if (!link) return
+    const previous = link.getAttribute('href')
+    link.setAttribute('href', '/wall.webmanifest')
+    // Landscape/portrait is the panel's business, but the theme colour should
+    // match the wall rather than the app.
+    return () => { if (previous) link.setAttribute('href', previous) }
+  }, [])
+
   // ── wall identity ────────────────────────────────────────────────────────
   // Tell the API layer to stamp this tablet's id on every request while the
   // wall is on screen, so the hub can enforce its capability policy at the

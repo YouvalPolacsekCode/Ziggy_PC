@@ -4521,6 +4521,7 @@ export default {
   'wall.devices':           'מכשירים',
   'wall.rooms':             'חדרים',
   'wall.pinned':            'מועדפים',
+  'wall.pinnedEmpty':       'אין עדיין כפתורים מהירים — הצמידו מכשירים מהאפליקציה',
   'wall.edit':              'עריכה',
   'wall.editDone':          'סיום',
   'wall.addModule':         'הוספת כרטיס',
