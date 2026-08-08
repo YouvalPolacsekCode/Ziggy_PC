@@ -4640,6 +4640,7 @@ export default {
   // מצב עריכה
   'wall.editHint':          'גררו כדי להזיז, משכו בפינה כדי לשנות גודל.',
   'wall.editMove':          'הזזת כרטיס',
+  'wall.exitConfirm':       'להפסיק להשתמש במכשיר הזה כלוח קיר?',
   'wall.expand':            'פתיחה בגדול',
   'wall.cfg.nothing':       'אין הגדרות לכרטיס הזה.',
   'wall.cfg.none':          'אין עדיין מה לבחור',

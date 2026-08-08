@@ -17,9 +17,10 @@ import {
   Sun, Moon, User, Lock, LogOut, RefreshCw,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
-  Smartphone, Bell, ChevronLeft, Volume2,
+  Smartphone, Bell, ChevronLeft, Volume2, Monitor,
 } from 'lucide-react'
 import { PairWithPhone } from '../components/PairWithPhone'
+import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { MobileDevicesList } from '../components/MobileDevicesList'
 import BlastersSection from '../components/settings/BlastersSection'
 import VoiceSection from '../components/settings/VoiceSection'
@@ -1501,6 +1502,45 @@ export function PresenceDebugPage() {
 // Settings hub (default export, mounted at /settings)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// "Use this device as a wall dashboard" — device-local, so the tablet in the
+// kitchen can be a wall while the same person's phone stays a phone. Turning
+// it on makes THIS device boot straight into /wall, which is what lets one
+// store build serve both surfaces instead of shipping a second app.
+function WallModeCard() {
+  const [on, setOn] = useState(() => isWallMode())
+  const navigate = useNavigate()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
+                  background: 'var(--surface)', border: '0.5px solid var(--line)',
+                  borderRadius: 13 }}>
+      <Monitor size={15} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Use as wall dashboard</div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>
+          This device opens straight into the wall view. Long-press the Ziggy mark
+          on the wall to come back.
+        </div>
+      </div>
+      <button
+        type="button" role="switch" aria-checked={on}
+        onClick={() => {
+          const next = !on
+          setWallModeFlag(next); setOn(next)
+          if (next) navigate('/wall')
+        }}
+        style={{ width: 42, height: 26, borderRadius: 999, border: 'none', flexShrink: 0,
+                 background: on ? 'var(--ok)' : 'var(--line-2)', position: 'relative',
+                 cursor: 'pointer', transition: 'background .2s ease' }}
+      >
+        <span style={{ position: 'absolute', top: 3, insetInlineStart: on ? 19 : 3,
+                       width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                       transition: 'inset-inline-start .2s ease',
+                       boxShadow: '0 1px 3px rgba(0,0,0,.25)' }} />
+      </button>
+    </div>
+  )
+}
+
 export default function Settings() {
   const t = useT()
   const role = useAuthStore(s => s.role)
@@ -1545,6 +1585,7 @@ export default function Settings() {
         {isSuperAdmin && (
           <HubCard icon={MapPin}    title="Wall tablets"  subtitle="Pair wall dashboards and set what each one may control"  to="/settings/tablets" />
         )}
+        <WallModeCard />
         {musicEnabled && (
           <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />
         )}

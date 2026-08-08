@@ -131,6 +131,12 @@ const _navType = performance?.getEntriesByType?.('navigation')?.[0]?.type ?? 'na
 // single boot is a fresh navigation, which would otherwise land the wall panel
 // on the phone dashboard forever. Same exemption /presence/ already has.
 const _isWallPath = () => window.location.pathname.startsWith('/wall')
+
+// A device set to "wall dashboard" boots into /wall instead of the phone
+// dashboard. Read once at module load, before BrowserRouter mounts, so a
+// kiosk tablet never flashes the app on its way to the wall.
+import { isWallMode as _isWallModeFn } from './lib/wallMode'
+const _wallModeDevice = (() => { try { return _isWallModeFn() } catch { return false } })()
 let _appMounted = false
 // Tracks the previous render's authenticated value so we can detect the
 // false→true edge (i.e. the user just logged in) and force the URL back
@@ -1117,6 +1123,13 @@ export default function App() {
       !_isWallPath()
     ) {
       window.history.replaceState(null, '', '/')
+    }
+    // Wall-mode devices land on the wall rather than the phone dashboard.
+    // Done here, before the router mounts, so there is no visible flash of
+    // the app first — which on a wall panel would look like a glitch every
+    // time the screen wakes.
+    if (_wallModeDevice && window.location.pathname === '/') {
+      window.history.replaceState(null, '', '/wall')
     }
   }
 

@@ -4797,6 +4797,7 @@ export default {
   // Edit mode
   'wall.editHint':          'Drag to move, pull the corner to resize.',
   'wall.editMove':          'Move card',
+  'wall.exitConfirm':       'Stop using this device as a wall dashboard?',
   'wall.expand':            'Open larger',
   'wall.cfg.nothing':       'This card has no settings.',
   'wall.cfg.none':          'Nothing to choose from yet',

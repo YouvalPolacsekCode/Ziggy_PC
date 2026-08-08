@@ -8,15 +8,53 @@ import { useUIStore } from '../stores/uiStore'
 import { useWallStore } from '../stores/wallStore'
 import { availableManifests } from './modules/registry'
 import { verifyWallPin } from '../lib/api'
+import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { useNow } from './modules/CoreModules'
 
-const ZiggyMark = ({ size = 26 }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} className="zw-mark" aria-hidden="true">
-    <g stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" fill="none">
-      <path d="M12 3v18" /><path d="M4.2 7.5l15.6 9" /><path d="M19.8 7.5l-15.6 9" />
-    </g>
-  </svg>
-)
+/**
+ * The Ziggy mark, and the way out of wall mode.
+ *
+ * A wall panel deliberately has no visible "exit" — a button that drops a
+ * kitchen display back to a phone app is a button a child will press. But a
+ * device that CANNOT be recovered without clearing its storage is worse. So
+ * the escape is a deliberate 2-second press on the logo: obvious once you know,
+ * invisible if you don't.
+ */
+const ZiggyMark = ({ size = 26 }) => {
+  const t = useT()
+  const timer = useRef(null)
+  const [armed, setArmed] = useState(false)
+
+  const start = () => {
+    if (!isWallMode()) return
+    timer.current = setTimeout(() => {
+      setArmed(false)
+      if (window.confirm(t('wall.exitConfirm'))) {
+        setWallModeFlag(false)
+        window.location.assign('/')
+      }
+    }, 2000)
+    setArmed(true)
+  }
+  const stop = () => { clearTimeout(timer.current); setArmed(false) }
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  return (
+    <svg
+      viewBox="0 0 24 24" width={size} height={size}
+      className="zw-mark"
+      style={{ opacity: armed ? 0.45 : 1, transition: 'opacity .4s ease', cursor: 'default' }}
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+    >
+      <g stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" fill="none">
+        <path d="M12 3v18" /><path d="M4.2 7.5l15.6 9" /><path d="M19.8 7.5l-15.6 9" />
+      </g>
+    </svg>
+  )
+}
 
 // ─── Header ─────────────────────────────────────────────────────────────────
 
