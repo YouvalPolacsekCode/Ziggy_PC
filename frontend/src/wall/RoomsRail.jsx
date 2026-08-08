@@ -234,7 +234,19 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
 
 export default function RoomsRail({ open, onClose, guard, toast }) {
   const t = useT()
-  const ziggyRooms = useDeviceStore((s) => s.ziggyRooms)
+  // GROUPED view, the same one the app's Rooms page uses. Reading raw
+  // `ziggyRooms` listed every entity a room owns — an Office with two lamps
+  // showed eighteen rows including "Presence Sensor Target distance" and
+  // "Atmospheric pressure". Grouping collapses a physical device's sibling
+  // entities into the one thing a person actually thinks they own.
+  const rawRooms   = useDeviceStore((s) => s.ziggyRooms)
+  const groups     = useDeviceStore((s) => s.deviceGroups)
+  const groupByEid = useDeviceStore((s) => s.groupByEntityId)
+  const groupById  = useDeviceStore((s) => s.groupById)
+  const ziggyRooms = useMemo(
+    () => useDeviceStore.getState().getGroupedZiggyRooms(),
+    [rawRooms, groups, groupByEid, groupById],
+  )
   const entities   = useDeviceStore((s) => s.entities)
   const roomsOrder = useDeviceStore((s) => s.roomsOrder)
 

@@ -202,7 +202,15 @@ export const PinnedModule = memo(function PinnedModule({ ctx }) {
 
 export const RoomModule = memo(function RoomModule({ mod, ctx }) {
   const t = useT()
-  const ziggyRooms = useDeviceStore((s) => s.ziggyRooms)
+  // Same grouped view as the rail and the app's Rooms page — see RoomsRail.
+  const rawRooms   = useDeviceStore((s) => s.ziggyRooms)
+  const groups     = useDeviceStore((s) => s.deviceGroups)
+  const groupByEid = useDeviceStore((s) => s.groupByEntityId)
+  const groupById  = useDeviceStore((s) => s.groupById)
+  const ziggyRooms = useMemo(
+    () => useDeviceStore.getState().getGroupedZiggyRooms(),
+    [rawRooms, groups, groupByEid, groupById],
+  )
   const entities   = useDeviceStore((s) => s.entities)
   const actions    = useDeviceActions({ toast: ctx.toast, guard: ctx.guard })
   const lang       = useLangStore((s) => s.lang)
