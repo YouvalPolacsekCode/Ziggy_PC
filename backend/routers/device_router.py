@@ -276,15 +276,14 @@ async def _sync_device_to_registry_room(device_id: str, area_id: str | None) -> 
         log_info(f"[API] _sync_device_to_registry_room WS failed: {e}")
         return
 
-    # Resolve area_id → normalized room key (same logic as _norm_room_key)
+    # Resolve area_id → the room key Ziggy stores (see _area_to_room_key: use
+    # HA's transliterated area_id, never a re-slug of the display name).
     room_key: str | None = None
     if area_id:
         areas = {a["area_id"]: a for a in (areas_res.get("result") or [])}
         area = areas.get(area_id)
         if area:
-            name = area["name"]
-            slug = re.sub(r"[''`]", "", name.lower())
-            room_key = re.sub(r"[^a-z0-9]+", "_", slug).strip("_")
+            room_key = _area_to_room_key(area)
 
     # Find all entities that belong to this HA device
     entity_ids = {
@@ -300,7 +299,7 @@ async def _sync_device_to_registry_room(device_id: str, area_id: str | None) -> 
         updated = 0
         for d in dr._registry:
             if d.get("entity_id") in entity_ids:
-                d["room"] = room_key
+                d["room"] = room_key or None   # "" would read as a user-set "no room"
                 d["room_source"] = "user"  # user-driven assignment — authoritative
                 if room_key:
                     if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
@@ -343,9 +342,7 @@ async def _sync_entity_to_registry_room(entity_id: str, area_id: str | None) -> 
             areas = {a["area_id"]: a for a in (areas_res.get("result") or [])}
             area = areas.get(area_id)
             if area:
-                name = area["name"]
-                slug = re.sub(r"[''`]", "", name.lower())
-                room_key = re.sub(r"[^a-z0-9]+", "_", slug).strip("_")
+                room_key = _area_to_room_key(area)
         except Exception as e:
             log_info(f"[API] _sync_entity_to_registry_room WS failed: {e}")
             return
@@ -354,7 +351,7 @@ async def _sync_entity_to_registry_room(entity_id: str, area_id: str | None) -> 
         found = False
         for d in dr._registry:
             if d.get("entity_id") == entity_id:
-                d["room"] = room_key
+                d["room"] = room_key or None   # "" would read as a user-set "no room"
                 d["room_source"] = "user"  # user-driven assignment — authoritative
                 if room_key:
                     if d.get("status") in (dr.UNCLAIMED, dr.UNCONFIGURED):
@@ -779,6 +776,31 @@ async def rename_room(area_id: str, body: RoomCreate,
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     return result
+
+
+def _area_to_room_key(area: dict) -> str | None:
+    """HA area → the room key Ziggy stores on a device. None means "no room".
+
+    Use HA's OWN area_id. Home Assistant already transliterates non-Latin names
+    into a safe ASCII slug ("סלון" → "slvn", "חדר שינה" → "khdr_shynh"), and
+    that id is exactly what /api/rooms/devices groups on.
+
+    Deriving the key by re-slugifying the DISPLAY NAME is what this replaces:
+    `re.sub(r"[^a-z0-9]+", "_", name)` keeps only ASCII, so every Hebrew name
+    collapses to "". Written alongside room_source="user" that empty string is
+    poison — it reads as a deliberate "no room" (so the device vanishes from
+    every room view) AND permanently blocks HA-area adoption, which skips any
+    row stamped "user". Hebrew is this product's primary language; that path
+    stranded every device a Hebrew-speaking customer assigned.
+
+    Falls back to slugifying the name only when an area somehow has no id, and
+    returns None rather than "" so a failed derivation can never masquerade as
+    an explicit user choice.
+    """
+    aid = str(area.get("area_id") or area.get("id") or "").strip()
+    if aid:
+        return aid
+    return _norm_room_key(str(area.get("name") or "")) or None
 
 
 def _norm_room_key(name: str) -> str:
@@ -1246,7 +1268,7 @@ async def patch_registry_entity_room(entity_id: str, body: ZiggyRoomPatch):
         found = False
         for d in dr._registry:
             if d.get("entity_id") == entity_id:
-                d["room"] = new_room
+                d["room"] = new_room or None
                 # Explicit user action → mark the room user-owned so the
                 # registry's user-authority invariant never auto-clears or
                 # auto-moves it. Set on unassign (None) too — a deliberate
