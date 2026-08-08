@@ -903,6 +903,14 @@
   height: min(820px, 88vh);
   display: flex;
   flex-direction: column;
+  /* A real raised panel. Without a surface of its own the expanded card sat
+     directly on the darkened board — and since --surface in dark mode is
+     nearly black, the whole overlay read as an empty black rectangle. */
+  background: var(--bg-2);
+  border: 0.5px solid var(--line);
+  border-radius: 24px;
+  padding: 16px 18px 18px;
+  box-shadow: var(--shadow-lg);
   animation: zwPop .16s cubic-bezier(.2,.8,.2,1);
 }
 @keyframes zwPop { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
