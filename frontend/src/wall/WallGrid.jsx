@@ -45,6 +45,15 @@ const ModuleHost = memo(function ModuleHost({
     >
       {editing && (
         <div className="zw-mod-tools">
+          {/* Explicit grip. Long-pressing the card body works too, but a
+              deliberate handle is discoverable and — because it carries
+              `touch-action: none` — always wins the gesture against the
+              board's scrolling. */}
+          <button
+            className="zw-tool zw-grip"
+            aria-label={t('wall.editMove')}
+            onPointerDown={(e) => { e.stopPropagation(); onDragStart(e, mod, true) }}
+          >⠿</button>
           <button
             className="zw-tool is-danger"
             aria-label={t('wall.editRemove')}
@@ -141,6 +150,11 @@ export default function WallGrid({ ctx }) {
     pressTimer.current = null
   }, [])
 
+  // Kept module-stable so add/removeEventListener see the same reference.
+  const blockScrollRef = useRef(null)
+  if (!blockScrollRef.current) blockScrollRef.current = (ev) => { ev.preventDefault() }
+  const _blockScroll = blockScrollRef.current
+
   /**
    * Long-press to pick a card up; a plain drag scrolls the board.
    *
@@ -151,7 +165,7 @@ export default function WallGrid({ ctx }) {
    * until the finger has rested is the standard phone-home-screen gesture and
    * leaves normal scrolling intact.
    */
-  const onDragStart = useCallback((e, mod) => {
+  const onDragStart = useCallback((e, mod, viaHandle = false) => {
     if (!boardW) return
     // Ignore secondary buttons and multi-touch — a second finger during a drag
     // should not hijack the gesture.
@@ -162,8 +176,11 @@ export default function WallGrid({ ctx }) {
     const pointerId = e.pointerId
     const target = e.currentTarget
 
-    // A mouse is precise and has no scroll ambiguity, so it picks up at once.
-    const immediate = e.pointerType === 'mouse'
+    // A mouse is precise and has no scroll ambiguity; the grip handle is an
+    // unambiguous, deliberate target. Both pick the card up at once. Only a
+    // finger on the card BODY has to wait, because that same gesture is also
+    // how you scroll the board.
+    const immediate = viaHandle || e.pointerType === 'mouse'
 
     const begin = () => {
       const r = rectFor(mod, cols, boardW, rowHRef.current)
@@ -177,6 +194,14 @@ export default function WallGrid({ ctx }) {
       setMode('drag')
       setGhost({ left: r.left, top: r.top })
       try { target.setPointerCapture?.(pointerId) } catch { /* element may be gone */ }
+      // Suppress native scrolling for the rest of the gesture. `touch-action`
+      // is evaluated by the browser at touch-START, so flipping it once the
+      // long-press fires is too late — the browser has already decided this
+      // touch is a scroll, and would either pan the board under the card or
+      // fire pointercancel and kill the drag outright. A non-passive
+      // touchmove that preventDefaults is the only thing that actually stops
+      // it mid-gesture.
+      window.addEventListener('touchmove', _blockScroll, { passive: false })
       // A short buzz confirms the card is now "in hand" — without it, a
       // long-press feels like nothing happened.
       try { navigator.vibrate?.(12) } catch { /* unsupported */ }
@@ -224,7 +249,8 @@ export default function WallGrid({ ctx }) {
     setActiveId(mod.id)
     setMode('resize')
     e.currentTarget.setPointerCapture?.(e.pointerId)
-  }, [cols, boardW])
+    window.addEventListener('touchmove', _blockScroll, { passive: false })
+  }, [cols, boardW, _blockScroll])
 
   useEffect(() => {
     if (!mode) return
@@ -263,6 +289,7 @@ export default function WallGrid({ ctx }) {
 
     const onEnd = () => {
       cancelPress()
+      window.removeEventListener('touchmove', _blockScroll)
       gesture.current = null
       setGhost(null)
       setActiveId(null)

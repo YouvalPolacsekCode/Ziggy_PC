@@ -837,3 +837,19 @@
 @container zwcard (max-height: 120px) {
   .zw-orb { width: 30px; height: 30px; }
 }
+
+/* Drag grip. `touch-action: none` is essential and scoped to this button only:
+   it guarantees the handle wins the gesture against the board's scrolling,
+   without making the board itself unscrollable (which is what broke edit mode
+   the first time). Sized to a comfortable finger target. */
+.zw-grip {
+  cursor: grab;
+  touch-action: none;
+  font-size: 13px;
+  letter-spacing: -1px;
+}
+.zw-grip:active { cursor: grabbing; }
+
+/* While a card is in hand, nothing else should react to the finger. */
+.zw-page.is-editing .zw-mod.is-dragging,
+.zw-page.is-editing .zw-mod.is-resizing { touch-action: none; }

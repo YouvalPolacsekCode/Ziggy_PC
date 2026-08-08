@@ -4639,6 +4639,7 @@ export default {
 
   // מצב עריכה
   'wall.editHint':          'גררו כדי להזיז, משכו בפינה כדי לשנות גודל.',
+  'wall.editMove':          'הזזת כרטיס',
   'wall.editRemove':        'הסרת כרטיס',
   'wall.editConfigure':     'הגדרות כרטיס',
 

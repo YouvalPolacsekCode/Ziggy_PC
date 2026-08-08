@@ -4796,6 +4796,7 @@ export default {
 
   // Edit mode
   'wall.editHint':          'Drag to move, pull the corner to resize.',
+  'wall.editMove':          'Move card',
   'wall.editRemove':        'Remove card',
   'wall.editConfigure':     'Card settings',
 
