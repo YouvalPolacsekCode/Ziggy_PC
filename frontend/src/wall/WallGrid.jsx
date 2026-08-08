@@ -61,15 +61,6 @@ const ModuleHost = memo(function ModuleHost({
       )}
       {editing && (
         <div className="zw-mod-tools">
-          {/* Explicit grip. Long-pressing the card body works too, but a
-              deliberate handle is discoverable and — because it carries
-              `touch-action: none` — always wins the gesture against the
-              board's scrolling. */}
-          <button
-            className="zw-tool zw-grip"
-            aria-label={t('wall.editMove')}
-            onPointerDown={(e) => { e.stopPropagation(); onDragStart(e, mod, true) }}
-          >⠿</button>
           {hasSettings && (
             <button
               className="zw-tool"
@@ -170,7 +161,9 @@ export default function WallGrid({ ctx }) {
 
   // How long a finger must rest on a card before it becomes a drag, and how far
   // it may stray in that time. Below this, the touch is a scroll.
-  const LONG_PRESS_MS = 260
+  // Slightly longer than a tap, short enough not to feel like waiting. This
+  // is now the only way to pick a card up, so it has to be forgiving.
+  const LONG_PRESS_MS = 320
   const MOVE_TOLERANCE = 10
   const pressTimer = useRef(null)
 

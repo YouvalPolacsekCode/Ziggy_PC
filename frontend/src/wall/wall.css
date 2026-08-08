@@ -861,17 +861,10 @@
   .zw-orb { width: 30px; height: 30px; }
 }
 
-/* Drag grip. `touch-action: none` is essential and scoped to this button only:
-   it guarantees the handle wins the gesture against the board's scrolling,
-   without making the board itself unscrollable (which is what broke edit mode
-   the first time). Sized to a comfortable finger target. */
-.zw-grip {
-  cursor: grab;
-  touch-action: none;
-  font-size: 13px;
-  letter-spacing: -1px;
-}
-.zw-grip:active { cursor: grabbing; }
+/* Picking a card up is a hold on the card itself — no grip button. The card
+   lifts slightly while held so the gesture is acknowledged before it moves. */
+.zw-page.is-editing .zw-mod { cursor: grab; }
+.zw-page.is-editing .zw-mod.is-dragging { cursor: grabbing; }
 
 /* While a card is in hand, nothing else should react to the finger. */
 .zw-page.is-editing .zw-mod.is-dragging,
