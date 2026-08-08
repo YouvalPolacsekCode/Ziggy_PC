@@ -139,6 +139,22 @@ export default {
     if (v.notify) actions.push({ type: 'notify', title: 'Pre-cool on Arrival', message: t('automations.precool.notifyMsg') })
 
     const conditions = []
+    // Only pre-cool someone who hasn't arrived yet. The whole feature is a HEAD
+    // START; once you're inside, it has nothing to give — it just fires the AC
+    // and pushes "Pre-cool on Arrival" at someone standing in the room.
+    //
+    // This is not hypothetical (Canary, 2026-08-08): poor GPS on the drive home
+    // — one fix rejected at 500 m accuracy — delayed the Near Home crossing
+    // until 17:10:11, nine minutes after presence had confirmed the user home
+    // at ~17:01. Pre-cool then ran in full. Nothing caught it, because the only
+    // guards were "is the AC already on" (it wasn't — Leave Home had switched it
+    // off) and the optional hot-day check.
+    //
+    // `all_away` is the existing presence primitive and reads exactly right
+    // here: pre-cool an EMPTY house you are driving towards. It also means a
+    // house someone else is already in won't be pre-cooled — correct, since the
+    // person there can set the AC themselves.
+    conditions.push({ type: 'presence', value: 'all_away' })
     // Never pre-cool an AC that's already running — a redundant power_on is at
     // best a duplicate push, at worst (toggle-protocol units) turns it OFF.
     // is_not/on passes for both "off" and "unknown" so a stale state never
