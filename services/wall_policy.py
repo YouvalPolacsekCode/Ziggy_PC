@@ -275,14 +275,23 @@ def _rate_ok(tablet_id: str) -> bool:
     return True
 
 
-async def verify_pin(tablet_id: str, capability: str, pin: str) -> dict:
+async def verify_pin(tablet_id: str, capability: str, pin: str,
+                     client_key: Optional[str] = None) -> dict:
     """Check a PIN and, on success, elevate that one capability for a while.
 
     Returns { ok, ttl_s } or raises PermissionError when rate-limited.
+
+    `client_key` identifies WHO is asking, and is counted separately from the
+    tablet. Counting only per-tablet meant anyone who could reach the endpoint
+    could exhaust a legitimate panel's budget and lock the household out of its
+    own door control for the window — a denial of service against a physical
+    control, costing five requests.
     """
     if not tablet_id:
         raise ValueError("tablet_id is required.")
     if not _rate_ok(tablet_id):
+        raise PermissionError("Too many attempts. Wait a couple of minutes.")
+    if client_key and client_key != tablet_id and not _rate_ok(f"caller:{client_key}"):
         raise PermissionError("Too many attempts. Wait a couple of minutes.")
 
     data = await asyncio.to_thread(_load)
@@ -294,9 +303,11 @@ async def verify_pin(tablet_id: str, capability: str, pin: str) -> dict:
     if not _verify_pin(pin or "", stored):
         return {"ok": False, "reason": "wrong"}
 
-    # Correct PIN clears the attempt counter so a fat-fingered family member
+    # Correct PIN clears the attempt counters so a fat-fingered family member
     # isn't locked out right after succeeding.
     _pin_attempts.pop(tablet_id, None)
+    if client_key:
+        _pin_attempts.pop(f"caller:{client_key}", None)
     _elevations.setdefault(tablet_id, {})[capability] = _now() + ELEVATION_TTL_S
     return {"ok": True, "ttl_s": ELEVATION_TTL_S}
 

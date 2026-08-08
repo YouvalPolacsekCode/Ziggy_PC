@@ -547,6 +547,47 @@ class TestCapabilityMiddleware:
         # Reading presence is fine — the wall may SHOW who is home.
         assert _capability_for("/api/presence/persons", "GET") is None
 
+    def test_pin_attempts_are_counted_per_caller_too(self, tmp_policy):
+        """Counting only per-TABLET let anyone lock a household out of its own
+        door control: five requests naming the kitchen panel's id exhausted its
+        budget, and the people standing at it could not get in for the window.
+
+        The caller is now counted separately, so one principal burning its own
+        allowance cannot spend another's.
+        """
+        asyncio.run(policy.set_pin("tab_kitchen", "1234"))
+
+        # An outsider hammers the kitchen tablet's id...
+        for _ in range(policy._PIN_ATTEMPT_MAX):
+            asyncio.run(policy.verify_pin("tab_kitchen", "locks", "0000",
+                                          client_key="tab_hallway"))
+        with pytest.raises(PermissionError):
+            asyncio.run(policy.verify_pin("tab_kitchen", "locks", "0000",
+                                          client_key="tab_hallway"))
+
+        # ...and the outsider's own budget is what ran out, not just a shared one.
+        assert len(policy._pin_attempts.get("caller:tab_hallway", [])) >= policy._PIN_ATTEMPT_MAX
+
+    def test_a_correct_pin_clears_both_counters(self, tmp_policy):
+        asyncio.run(policy.set_pin("tab_1", "1234"))
+        for _ in range(policy._PIN_ATTEMPT_MAX - 1):
+            asyncio.run(policy.verify_pin("tab_1", "locks", "0000", client_key="tab_1"))
+        assert asyncio.run(policy.verify_pin("tab_1", "locks", "1234", client_key="tab_1"))["ok"]
+        assert policy._pin_attempts.get("tab_1") in (None, [])
+
+    def test_ownership_check_exists_on_both_body_id_endpoints(self):
+        """Both endpoints took `tablet_id` from the request BODY and checked
+        only that somebody was signed in — a textbook IDOR. Guard against the
+        check being dropped again."""
+        import inspect
+        from backend.routers import wall_router
+        for fn in (wall_router.put_wall_layout, wall_router.verify_wall_pin):
+            assert "_require_own_tablet" in inspect.getsource(fn), fn.__name__
+        # ...and the guard itself accepts only the owning tablet or an admin.
+        src = inspect.getsource(wall_router._require_own_tablet)
+        assert "_caller_tablet(request) == tablet_id" in src
+        assert "ROLE_ORDER" in src and "403" in src
+
     def test_a_locked_down_tablet_is_refused_a_door(self, tmp_policy):
         # locks denied by default
         assert asyncio.run(policy.check("tab_wall", "locks")) == (False, "denied")
