@@ -15,8 +15,18 @@ const NEAR_HOME_NAME = 'Near Home'
 const DEFAULT_TEMP = 24     // Israeli AC default
 const DEFAULT_RADIUS_KM = 2
 
+// Real air conditioners only. This used to be
+// `domain === 'climate' || entity_id.startsWith('ir.')`, and that second clause
+// matched EVERY IR device — so the picker offered the soundbar, the TV and the
+// projector as things to switch on when you drive home. Worse than a messy
+// list: autoDefaults() takes items[0], so a soundbar sorting first became what
+// Pre-cool actually powered on.
+// The clause was never needed. deviceStore's IR_TYPE_TO_DOMAIN maps an IR `ac`
+// to domain 'climate', so IR ACs already satisfy the first clause; the explicit
+// `_irDevice.type === 'ac'` is belt-and-braces in case that mapping ever moves.
+const isAc = (e) => e.domain === 'climate' || (e._ir && e._irDevice?.type === 'ac')
 const acItems = (ctx) => ctx.entities
-  .filter((e) => e.domain === 'climate' || String(e.entity_id).startsWith('ir.'))
+  .filter(isAc)
   .map((e) => ({ ...ctx.asItem(e), icon: '❄️' }))
 const tempEnts = (ctx) => ctx.entities.filter((e) => e.domain === 'sensor' && e.device_class === 'temperature')
 const isIr = (acId) => String(acId || '').startsWith('ir.')

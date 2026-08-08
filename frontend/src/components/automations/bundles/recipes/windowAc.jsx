@@ -10,8 +10,14 @@ import { pickedIds, pickFrom } from '../engine/context'
 const WINDOW_AC_ID = 'ziggy_window_ac_off'
 const RESUME_TIMEOUT_S = 6 * 60 * 60   // give up waiting for "all closed" after 6h
 
+// Real air conditioners only — same bug as precool.jsx had: the old
+// `|| entity_id.startsWith('ir.')` clause matched every IR device, offering the
+// soundbar and TV as the AC to switch off when a window opens. IR ACs are
+// already covered by domain 'climate' (deviceStore IR_TYPE_TO_DOMAIN);
+// `_irDevice.type === 'ac'` guards against that mapping moving.
+const isAc = (e) => e.domain === 'climate' || (e._ir && e._irDevice?.type === 'ac')
 const acItems = (ctx) => ctx.entities
-  .filter((e) => e.domain === 'climate' || String(e.entity_id).startsWith('ir.'))
+  .filter(isAc)
   .map((e) => ({ ...ctx.asItem(e), icon: '❄️' }))
 const winItems = (ctx) => ctx.entities
   .filter((e) => e.domain === 'binary_sensor' && ['window', 'door', 'opening', 'garage_door'].includes(e.device_class))

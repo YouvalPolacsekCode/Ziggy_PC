@@ -383,3 +383,67 @@ describe('recipe contract', () => {
     expect(typeof r.remove).toBe('function')
   })
 })
+
+// ── AC pickers must offer ACs, not every IR device ───────────────────────────
+//
+// Reported live: "Pre-cool on Arrival shows my soundbar as an option to turn on
+// when getting close to home." Both AC pickers filtered
+// `domain === 'climate' || entity_id.startsWith('ir.')`, and that second clause
+// matches EVERY IR device — soundbar, TV, receiver, projector.
+//
+// It also mattered more than a messy list: autoDefaults() takes items[0], so a
+// soundbar sorting first became the thing Pre-cool powered on when you drove
+// home. The clause was never needed — deviceStore's IR_TYPE_TO_DOMAIN already
+// maps an IR `ac` to domain 'climate', so IR ACs are covered by the first
+// clause; only non-ACs were being added.
+
+// Entity-shaped IR devices exactly as deviceStore.irToEntity builds them.
+const irEntity = (id, type, domain) => ({
+  entity_id: `ir.${id}`, domain, display_name: id, friendly_name: id,
+  _ir: true, _irDevice: { id, name: id, type },
+})
+
+const IR_CTX = {
+  ...ctx,
+  entities: [
+    ...ENTITIES,
+    irEntity('ir_ac', 'ac', 'climate'),
+    irEntity('ir_soundbar', 'soundbar', 'media_player'),
+    irEntity('ir_tv', 'tv', 'media_player'),
+    irEntity('ir_projector', 'projector', 'media_player'),
+    irEntity('ir_custom', 'custom', 'switch'),
+  ],
+}
+
+const acPickerItems = (recipeId, c) => {
+  // `steps` is an array on some recipes and a (values, ctx) function on others.
+  const raw = RECIPES[recipeId].steps
+  const steps = typeof raw === 'function' ? raw({}, c) : raw
+  for (const s of steps) {
+    for (const f of (s.fields || [])) {
+      if (f.key === 'acId') return f.items(c).map((i) => i.id)
+    }
+  }
+  throw new Error(`no acId picker found in ${recipeId}`)
+}
+
+describe.each(['precool', 'window_ac'])('%s AC picker', (recipeId) => {
+  it('offers real ACs, including IR ones', () => {
+    const ids = acPickerItems(recipeId, IR_CTX)
+    expect(ids).toContain('climate.ac_living')
+    expect(ids).toContain('ir.ir_ac')
+  })
+
+  it('never offers a soundbar, TV, projector or generic IR blob as an AC', () => {
+    const ids = acPickerItems(recipeId, IR_CTX)
+    expect(ids).not.toContain('ir.ir_soundbar')
+    expect(ids).not.toContain('ir.ir_tv')
+    expect(ids).not.toContain('ir.ir_projector')
+    expect(ids).not.toContain('ir.ir_custom')
+  })
+
+  it('never DEFAULTS to a non-AC — autoDefaults takes items[0]', () => {
+    const ids = acPickerItems(recipeId, IR_CTX)
+    expect(ids.every((id) => id === 'climate.ac_living' || id === 'ir.ir_ac')).toBe(true)
+  })
+})
