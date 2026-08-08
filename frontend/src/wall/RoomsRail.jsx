@@ -35,15 +35,37 @@ const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
   const isLock    = facts.domain === 'lock'
   const isLight   = facts.domain === 'light'
   const isClimate = facts.domain === 'climate'
+  // Read-only rows. A `sensor` carries a measurement; a `binary_sensor` carries
+  // a condition. Neither is a thing you switch, and neither is ever "off".
+  const isMeasurement = facts.domain === 'sensor'
+  const isBinary      = facts.domain === 'binary_sensor'
   const offline   = !facts.isAvailable && !facts.hasIr
   const isPending = !!pending[facts.id]
 
-  // State line. Deliberately reuses the app's own stateLabel so the wall and
-  // the phone never describe the same device differently.
+  // State line. Reuses the app's own stateLabel wherever it can, so the wall
+  // and the phone never describe the same device differently.
   let stateText = facts.stateLabel
   let stateTone = ''
   if (offline)            { stateText = t('wall.dev.offline'); stateTone = 'is-err' }
   else if (isLock)        { stateTone = facts.state === 'locked' ? 'is-on' : 'is-err' }
+  else if (isMeasurement) {
+    // A thermometer is never "off" — it has a reading. Saying otherwise was
+    // both wrong and alarming: "Office Temp · off" reads like a dead sensor
+    // when the room is a perfectly normal 25.6°.
+    const unit = facts.entity?.unit_of_measurement
+    const raw  = facts.state
+    const num  = Number(raw)
+    const val  = Number.isFinite(num)
+      // One decimal is all a wall can be read at; 25.59 °C is false precision.
+      ? (Math.abs(num) >= 100 ? Math.round(num) : Math.round(num * 10) / 10)
+      : raw
+    stateText = unit ? `${val} ${unit}` : String(val)
+  }
+  else if (isBinary) {
+    // Occupied / Clear / Open — deviceFacts already knows the right word per
+    // device class, and it is never "on"/"off" to a person.
+    stateTone = facts.isOn ? 'is-on' : ''
+  }
   else if (facts.isOn) {
     stateTone = 'is-on'
     if (isLight && facts.brightness != null)  stateText = `${t('wall.dev.on')} · ${facts.brightness}%`
