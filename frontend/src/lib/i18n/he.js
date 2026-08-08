@@ -4641,6 +4641,8 @@ export default {
   'wall.editHint':          'גררו כדי להזיז, משכו בפינה כדי לשנות גודל.',
   'wall.editMove':          'הזזת כרטיס',
   'wall.exitConfirm':       'להפסיק להשתמש במכשיר הזה כלוח קיר?',
+  'mobileOnboard.wallInstead':    'להשתמש בזה כלוח קיר',
+  'mobileOnboard.wallInsteadSub': 'בלי צימוד — לטאבלט שמותקן על הקיר',
   'wall.expand':            'פתיחה בגדול',
   'wall.cfg.nothing':       'אין הגדרות לכרטיס הזה.',
   'wall.cfg.none':          'אין עדיין מה לבחור',

@@ -1150,6 +1150,11 @@ export const verifyWallPin = (tabletId, capability, pin) =>
 // underlying services/dashboard_tablets logic, left unmodified.
 export const listWallTablets   = () => get('/wall/tablets')
 export const mintWallPairCode  = (hint = '') => post('/wall/tablets/pair-code', { display_name_hint: hint })
+// Make THIS device a wall tablet with no pairing code — the session is the
+// authorisation. See the endpoint's docstring for why the code flow is still
+// kept for setting a panel up from somewhere else.
+export const adoptThisWallTablet = (displayName, room = null) =>
+  post('/wall/tablets/adopt', { display_name: displayName, room })
 export const claimWallPairCode = (code, displayName, room = null) =>
   post('/wall/tablets/claim', { code, display_name: displayName, room })
 export const patchWallTablet   = (tabletId, body) =>

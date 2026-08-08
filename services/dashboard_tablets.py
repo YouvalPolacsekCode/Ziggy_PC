@@ -181,6 +181,34 @@ async def claim_pairing_code(
     return {"tablet_id": tablet_id, "display_name": name, "room": room_slug}
 
 
+async def adopt_device(display_name: str, room: Optional[str], claiming_user: str) -> dict:
+    """Register a tablet WITHOUT a pairing code.
+
+    Used when the owner is already signed in on the device itself and has
+    chosen to make it a wall panel — the session is the authorisation, so a
+    code fetched from a second device would prove nothing extra.
+
+    Deliberately additive: the code-based `claim_pairing_code` above is
+    untouched and still the path for setting a tablet up from elsewhere.
+    """
+    name = (display_name or "Wall tablet").strip()[:80]
+    room_slug = (room or "").strip()[:64] or None
+    tablet_id = "tab_" + uuid.uuid4().hex[:16]
+
+    data = await asyncio.to_thread(_load)
+    data["tablets"][tablet_id] = {
+        "id":            tablet_id,
+        "display_name":  name,
+        "room":          room_slug,
+        "registered_by": claiming_user,
+        "registered_at": _now(),
+        "last_seen":     _now(),
+        "adopted":       True,
+    }
+    await asyncio.to_thread(_save, data)
+    return {"tablet_id": tablet_id, "display_name": name, "room": room_slug}
+
+
 async def touch_tablet(tablet_id: str) -> None:
     """Update last_seen. Silently no-ops if tablet is unknown."""
     if not tablet_id:

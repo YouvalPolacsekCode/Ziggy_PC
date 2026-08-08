@@ -159,6 +159,32 @@ async def claim_wall_pair_code(body: ClaimBody, request: Request,
     return res
 
 
+class AdoptBody(BaseModel):
+    display_name: Optional[str] = None
+    room: Optional[str] = None
+
+
+@router.post("/api/wall/tablets/adopt")
+async def adopt_this_device(body: AdoptBody, user: dict = Depends(get_current_user)):
+    """Turn the CALLING device into a wall tablet, with no pairing code.
+
+    The code flow exists so an admin can authorise a tablet from somewhere else
+    — useful when handing a panel to someone to set up. It is pure friction
+    when the owner is already signed in ON the tablet and has just chosen "use
+    this as a wall dashboard": they would be fetching a code from a second
+    device to prove something they have already proved by logging in.
+
+    Authorisation is the session itself. Note this can only ever REDUCE what
+    the caller can do: the tablet identity it returns carries the restricted
+    default policy (no locks, cameras, devices or settings), which is strictly
+    narrower than the user session that created it.
+    """
+    name = (body.display_name or "Wall tablet").strip()[:80]
+    rec = await tablets.adopt_device(name, body.room, _actor(user))
+    rec["tablet_token"] = policy.issue_token(rec["tablet_id"])
+    return rec
+
+
 @router.patch("/api/wall/tablets/{tablet_id}")
 async def patch_wall_tablet(tablet_id: str, body: TabletPatchBody,
                             user: dict = Depends(require_role("admin"))):

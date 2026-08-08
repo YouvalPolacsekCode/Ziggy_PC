@@ -19,8 +19,9 @@ import { useWallStore } from '../stores/wallStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useWsConnected, useWsMessages } from '../hooks/useWebSocket'
 import { useT } from '../lib/i18n'
-import { getTabletId, getTabletToken, setTabletToken } from '../lib/hubTablet'
-import { getWallPolicy, wallTabletHeartbeat, wallWentIdle, getWeather, setWallMode } from '../lib/api'
+import { getTabletId, setTabletId as persistTabletId, getTabletToken, setTabletToken } from '../lib/hubTablet'
+import { isWallMode } from '../lib/wallMode'
+import { getWallPolicy, wallTabletHeartbeat, wallWentIdle, getWeather, setWallMode, adoptThisWallTablet } from '../lib/api'
 import { useCapabilityGuard } from '../wall/useWallControl'
 import { deviceFacts } from '../lib/devices'
 import RoomsRail from '../wall/RoomsRail'
@@ -106,6 +107,30 @@ export default function Wall() {
     setWallMode(!!tabletToken, tabletToken)
     return () => setWallMode(false)
   }, [tabletToken])
+
+  // ── adopt this device, once ──────────────────────────────────────────────
+  // Choosing "use this as a wall dashboard" already says everything a pairing
+  // code would, and the user is signed in ON this device. Asking them to fetch
+  // a six-digit code from a second device to prove it again is pure friction —
+  // especially right after they have just paired the device itself. So a
+  // wall-mode device provisions its own tablet identity silently.
+  //
+  // The code flow still exists for setting a panel up from somewhere else.
+  const adoptingRef = useRef(false)
+  useEffect(() => {
+    if (tabletToken || !isWallMode() || adoptingRef.current) return
+    adoptingRef.current = true
+    adoptThisWallTablet(document.title || 'Wall tablet')
+      .then((res) => {
+        if (!res?.tablet_id) return
+        persistTabletId(res.tablet_id)
+        setTabletToken(res.tablet_token || null)
+        setTabletId(res.tablet_id)
+        setTabletTokenState(res.tablet_token || null)
+        fetchLayout()
+      })
+      .catch(() => { adoptingRef.current = false })
+  }, [tabletToken, fetchLayout])
 
   // ── boot ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -219,7 +244,7 @@ export default function Wall() {
         policy={policy}
       />
 
-      {!tabletId && !pairHidden && (
+      {!tabletId && !pairHidden && !isWallMode() && (
         <PairBanner onOpen={() => setPairOpen(true)} onDismiss={() => setPairHidden(true)} />
       )}
 

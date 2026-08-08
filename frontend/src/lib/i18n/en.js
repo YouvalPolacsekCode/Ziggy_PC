@@ -4798,6 +4798,8 @@ export default {
   'wall.editHint':          'Drag to move, pull the corner to resize.',
   'wall.editMove':          'Move card',
   'wall.exitConfirm':       'Stop using this device as a wall dashboard?',
+  'mobileOnboard.wallInstead':    'Use this as a wall dashboard',
+  'mobileOnboard.wallInsteadSub': 'Skip pairing — for a tablet mounted on the wall',
   'wall.expand':            'Open larger',
   'wall.cfg.nothing':       'This card has no settings.',
   'wall.cfg.none':          'Nothing to choose from yet',

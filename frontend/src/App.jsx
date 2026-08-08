@@ -164,6 +164,12 @@ function MobileOnboardingRedirector() {
   const lastPathRef = useRef(location.pathname)
   useEffect(() => {
     if (!isNative()) return
+    // A wall panel never needs a mobile DEVICE identity. That pairing exists so
+    // a phone can receive push and report background presence — neither of
+    // which a screen bolted to a wall does. Forcing it through onboarding just
+    // put a "pair your device" wall in front of the dashboard, needing a code
+    // from another device to get past.
+    if (_isWallModeFn() || location.pathname.startsWith('/wall')) return
     if (location.pathname === '/mobile-onboarding') {
       lastPathRef.current = location.pathname
       return
