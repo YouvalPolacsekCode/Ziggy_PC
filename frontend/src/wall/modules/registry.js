@@ -22,6 +22,9 @@
  * @property {number}  defaultW,defaultH  size when added from the picker
  * @property {number}  maxW,maxH    largest the user may drag it
  * @property {?string} capability   gates visibility + actions; null = always allowed
+ * @property {boolean} expandable   tapping the card opens it full-size over the
+ *                                  board. For cards whose tile shows only the
+ *                                  first few rows of something longer.
  * @property {boolean} multiple     may appear more than once on a board
  * @property {Object}  configSchema per-instance config the config sheet renders
  */
@@ -34,36 +37,36 @@ export const MANIFESTS = {
     capability: null, multiple: false, configSchema: {},
   },
   agenda: {
-    type: 'agenda', titleKey: 'wall.mod.agenda', descKey: 'wall.mod.agendaDesc',
+    type: 'agenda', expandable: true, titleKey: 'wall.mod.agenda', descKey: 'wall.mod.agendaDesc',
     minW: 2, minH: 2, defaultW: 4, defaultH: 5, maxW: 12, maxH: 16,
     capability: 'lists', multiple: false,
     configSchema: { days: { kind: 'number', default: 1, min: 1, max: 7 } },
   },
   shopping: {
-    type: 'shopping', titleKey: 'wall.mod.shopping', descKey: 'wall.mod.shoppingDesc',
+    type: 'shopping', expandable: true, titleKey: 'wall.mod.shopping', descKey: 'wall.mod.shoppingDesc',
     minW: 2, minH: 2, defaultW: 4, defaultH: 5, maxW: 12, maxH: 16,
     capability: 'lists', multiple: true,
     configSchema: { list_id: { kind: 'list', default: 'default' } },
   },
   scenes: {
-    type: 'scenes', titleKey: 'wall.mod.scenes', descKey: 'wall.mod.scenesDesc',
+    type: 'scenes', expandable: true, titleKey: 'wall.mod.scenes', descKey: 'wall.mod.scenesDesc',
     minW: 2, minH: 1, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12,
     capability: 'scenes', multiple: true,
     configSchema: { ids: { kind: 'actionIds', default: [] } },
   },
   pinned: {
-    type: 'pinned', titleKey: 'wall.mod.pinned', descKey: 'wall.mod.pinnedDesc',
+    type: 'pinned', expandable: true, titleKey: 'wall.mod.pinned', descKey: 'wall.mod.pinnedDesc',
     minW: 2, minH: 1, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12,
     capability: null, multiple: false, configSchema: {},
   },
   room: {
-    type: 'room', titleKey: 'wall.mod.room', descKey: 'wall.mod.roomDesc',
+    type: 'room', expandable: true, titleKey: 'wall.mod.room', descKey: 'wall.mod.roomDesc',
     minW: 2, minH: 2, defaultW: 3, defaultH: 4, maxW: 12, maxH: 16,
     capability: null, multiple: true,
     configSchema: { room_id: { kind: 'room', default: null } },
   },
   cameras: {
-    type: 'cameras', titleKey: 'wall.mod.cameras', descKey: 'wall.mod.camerasDesc',
+    type: 'cameras', expandable: true, titleKey: 'wall.mod.cameras', descKey: 'wall.mod.camerasDesc',
     minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 12, maxH: 12,
     capability: 'cameras', multiple: true,
     configSchema: { entity_id: { kind: 'camera', default: null } },
@@ -74,19 +77,19 @@ export const MANIFESTS = {
     capability: null, multiple: false, configSchema: {},
   },
   tasks: {
-    type: 'tasks', titleKey: 'wall.mod.tasks', descKey: 'wall.mod.tasksDesc',
+    type: 'tasks', expandable: true, titleKey: 'wall.mod.tasks', descKey: 'wall.mod.tasksDesc',
     minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 12, maxH: 16,
     capability: 'lists', multiple: false,
     configSchema: { limit: { kind: 'number', default: 6, min: 3, max: 20 } },
   },
   alerts: {
-    type: 'alerts', titleKey: 'wall.mod.alerts', descKey: 'wall.mod.alertsDesc',
+    type: 'alerts', expandable: true, titleKey: 'wall.mod.alerts', descKey: 'wall.mod.alertsDesc',
     minW: 2, minH: 1, defaultW: 4, defaultH: 4, maxW: 12, maxH: 16,
     capability: null, multiple: false,
     configSchema: { limit: { kind: 'number', default: 5, min: 3, max: 20 } },
   },
   media: {
-    type: 'media', titleKey: 'wall.mod.media', descKey: 'wall.mod.mediaDesc',
+    type: 'media', expandable: true, titleKey: 'wall.mod.media', descKey: 'wall.mod.mediaDesc',
     minW: 2, minH: 1, defaultW: 4, defaultH: 3, maxW: 12, maxH: 10,
     capability: 'media', multiple: true,
     configSchema: { entity_id: { kind: 'mediaPlayer', default: null } },

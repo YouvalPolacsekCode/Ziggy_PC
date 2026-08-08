@@ -4640,6 +4640,17 @@ export default {
   // מצב עריכה
   'wall.editHint':          'גררו כדי להזיז, משכו בפינה כדי לשנות גודל.',
   'wall.editMove':          'הזזת כרטיס',
+  'wall.expand':            'פתיחה בגדול',
+  'wall.cfg.nothing':       'אין הגדרות לכרטיס הזה.',
+  'wall.cfg.none':          'אין עדיין מה לבחור',
+  'wall.cfg.auto':          'אוטומטי',
+  'wall.cfg.multiHint':     'אפשר לבחור כמה שרוצים. בלי בחירה יוצגו הראשונות.',
+  'wall.cfg.room_id':       'איזה חדר',
+  'wall.cfg.list_id':       'איזו רשימה',
+  'wall.cfg.entity_id':     'איזה מכשיר',
+  'wall.cfg.ids':           'אילו פעולות',
+  'wall.cfg.limit':         'כמה להציג',
+  'wall.cfg.days':          'כמה ימים',
   'wall.editRemove':        'הסרת כרטיס',
   'wall.editConfigure':     'הגדרות כרטיס',
 

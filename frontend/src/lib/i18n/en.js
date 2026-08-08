@@ -4797,6 +4797,17 @@ export default {
   // Edit mode
   'wall.editHint':          'Drag to move, pull the corner to resize.',
   'wall.editMove':          'Move card',
+  'wall.expand':            'Open larger',
+  'wall.cfg.nothing':       'This card has no settings.',
+  'wall.cfg.none':          'Nothing to choose from yet',
+  'wall.cfg.auto':          'Automatic',
+  'wall.cfg.multiHint':     'Pick as many as you like. None selected shows the first few.',
+  'wall.cfg.room_id':       'Which room',
+  'wall.cfg.list_id':       'Which list',
+  'wall.cfg.entity_id':     'Which device',
+  'wall.cfg.ids':           'Which actions',
+  'wall.cfg.limit':         'How many to show',
+  'wall.cfg.days':          'How many days',
   'wall.editRemove':        'Remove card',
   'wall.editConfigure':     'Card settings',
 

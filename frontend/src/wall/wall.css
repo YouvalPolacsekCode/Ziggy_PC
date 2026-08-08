@@ -407,25 +407,46 @@
 
 /* Corner handle for resize. Big enough for a fingertip (44px target) while
    drawing small, via a transparent padded hit area. */
+/* Resize handle.
+   It used to hang 6px OUTSIDE the card, which made it unreliable to grab:
+   .zw-mod cards are positioned siblings, so whichever card comes later in DOM
+   order painted on top of the protruding handle — the corner was covered by
+   the neighbour perhaps half the time, which is exactly the "works sometimes"
+   symptom. It now sits fully inside its own card, and is drawn as a solid tab
+   rather than a hairline corner so there is something real to aim at. */
 .zw-resize {
   position: absolute;
-  inset-block-end: -6px;
-  inset-inline-end: -6px;
-  width: 44px; height: 44px;
-  z-index: 6;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  width: 46px; height: 46px;
+  z-index: 8;
   cursor: nwse-resize;
   background: none; border: none;
   touch-action: none;
+  padding: 0;
 }
 .zw-resize::after {
   content: '';
   position: absolute;
-  inset-block-end: 12px; inset-inline-end: 12px;
-  width: 14px; height: 14px;
-  border-inline-end: 2.5px solid var(--accent);
-  border-block-end: 2.5px solid var(--accent);
-  border-end-end-radius: 4px;
+  inset-block-end: 4px; inset-inline-end: 4px;
+  width: 26px; height: 26px;
+  background: var(--accent);
+  border-end-end-radius: 15px;
+  border-start-start-radius: 4px;
+  box-shadow: var(--shadow-md);
+  /* two white notches so it reads as a grabber, not a coloured blob */
+  background-image:
+    linear-gradient(135deg, transparent 46%, var(--on-accent) 46%, var(--on-accent) 56%, transparent 56%),
+    linear-gradient(135deg, transparent 64%, var(--on-accent) 64%, var(--on-accent) 74%, transparent 74%);
+  opacity: .95;
 }
+.zw-resize:active::after { transform: scale(1.12); }
+
+/* While editing, the card under the finger floats above its neighbours so its
+   handles are never covered. */
+.zw-page.is-editing .zw-mod:has(.zw-resize:active),
+.zw-page.is-editing .zw-mod.is-dragging,
+.zw-page.is-editing .zw-mod.is-resizing { z-index: 20; }
 
 .zw-drop-ghost {
   position: absolute;
@@ -853,3 +874,63 @@
 /* While a card is in hand, nothing else should react to the finger. */
 .zw-page.is-editing .zw-mod.is-dragging,
 .zw-page.is-editing .zw-mod.is-resizing { touch-action: none; }
+
+/* ── Tap to expand ──────────────────────────────────────────────────────────
+   A transparent hit layer BEHIND the card's own controls. Tapping empty space
+   on a card opens it full-size; tapping a checkbox, switch or input still does
+   what it says. A card you can operate must not become a card you can only
+   open. */
+.zw-expand-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: zoom-in;
+  border-radius: 18px;
+}
+.zw-mod > .zw-card,
+.zw-mod > .zw-ziggy,
+.zw-mod > * { position: relative; z-index: 1; }
+.zw-mod > .zw-expand-hit { z-index: 0; }
+/* The card's interactive bits must sit above the hit layer to keep working. */
+.zw-card button, .zw-card input, .zw-card a, .zw-scene, .zw-chip { position: relative; z-index: 2; }
+
+.zw-expand {
+  position: relative;
+  width: min(1100px, 94vw);
+  height: min(820px, 88vh);
+  display: flex;
+  flex-direction: column;
+  animation: zwPop .16s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes zwPop { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+
+.zw-mod-expanded {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition: none;
+}
+.zw-mod-expanded .zw-card { border-radius: 22px; }
+
+.zw-expand-close {
+  position: absolute;
+  inset-block-start: -14px;
+  inset-inline-end: -14px;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: var(--shadow-lg);
+}
+
+@media (prefers-reduced-motion: reduce) { .zw-expand { animation: none } }

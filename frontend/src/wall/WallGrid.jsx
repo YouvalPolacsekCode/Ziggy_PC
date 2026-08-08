@@ -22,11 +22,12 @@ import {
 import { getManifest } from './modules/registry'
 import { MODULE_COMPONENTS } from './modules/components'
 import { useT } from '../lib/i18n'
+import { ModuleConfigSheet, ModuleExpanded } from './ModuleSheet'
 
 // ─── one placed module ──────────────────────────────────────────────────────
 
 const ModuleHost = memo(function ModuleHost({
-  mod, rect, editing, dragging, resizing, override, ctx, onDragStart, onResizeStart,
+  mod, rect, editing, dragging, resizing, override, ctx, onDragStart, onResizeStart, onConfigure, onExpand,
 }) {
   const t = useT()
   const manifest = getManifest(mod.type)
@@ -36,6 +37,9 @@ const ModuleHost = memo(function ModuleHost({
     ? { left: override.left, top: override.top, width: rect.width, height: rect.height }
     : { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
 
+  const hasSettings = Object.keys(manifest?.configSchema || {}).length > 0
+  const canExpand   = !editing && manifest?.expandable
+
   return (
     <div
       className={`zw-mod${dragging ? ' is-dragging' : ''}${resizing ? ' is-resizing' : ''}`}
@@ -43,6 +47,18 @@ const ModuleHost = memo(function ModuleHost({
       data-module-id={mod.id}
       onPointerDown={editing ? (e) => onDragStart(e, mod) : undefined}
     >
+      {/* Tap-to-expand sits UNDER the card's own controls, so tapping a
+          checkbox still ticks it and only tapping empty space opens the
+          overlay. A card you can control must not become a card you can only
+          open. */}
+      {canExpand && (
+        <button
+          className="zw-expand-hit"
+          aria-label={t('wall.expand')}
+          onClick={() => onExpand(mod)}
+          tabIndex={-1}
+        />
+      )}
       {editing && (
         <div className="zw-mod-tools">
           {/* Explicit grip. Long-pressing the card body works too, but a
@@ -54,6 +70,14 @@ const ModuleHost = memo(function ModuleHost({
             aria-label={t('wall.editMove')}
             onPointerDown={(e) => { e.stopPropagation(); onDragStart(e, mod, true) }}
           >⠿</button>
+          {hasSettings && (
+            <button
+              className="zw-tool"
+              aria-label={t('wall.editConfigure')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onConfigure(mod.id) }}
+            >⚙</button>
+          )}
           <button
             className="zw-tool is-danger"
             aria-label={t('wall.editRemove')}
@@ -120,6 +144,11 @@ export default function WallGrid({ ctx }) {
   // gesture and would otherwise close over a stale value if the board resized
   // mid-drag (rotating the tablet, or the on-screen keyboard opening).
   const rowHRef = useRef(ROW_H)
+
+  const [configId, setConfigId] = useState(null)
+  const [expanded, setExpanded] = useState(null)
+  // Leaving edit mode must not strand an open settings sheet.
+  useEffect(() => { if (!editing) setConfigId(null) }, [editing])
 
   // ── measure ───────────────────────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -341,6 +370,8 @@ export default function WallGrid({ ctx }) {
               ctx={ctx}
               onDragStart={onDragStart}
               onResizeStart={onResizeStart}
+              onConfigure={setConfigId}
+              onExpand={setExpanded}
             />
           )
         })}
@@ -358,6 +389,9 @@ export default function WallGrid({ ctx }) {
           <div className="zw-empty" style={{ paddingTop: 60 }}>{t('wall.emptyBoard')}</div>
         )}
       </div>
+
+      {configId && <ModuleConfigSheet modId={configId} onClose={() => setConfigId(null)} />}
+      {expanded && <ModuleExpanded mod={expanded} ctx={ctx} onClose={() => setExpanded(null)} />}
     </div>
   )
 }
