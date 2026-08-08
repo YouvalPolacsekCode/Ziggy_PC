@@ -892,9 +892,14 @@
   cursor: zoom-in;
   border-radius: 18px;
 }
+/* Lift the card's CONTENT above the expand hit-layer — named explicitly.
+   A blanket `.zw-mod > *` also hit the absolutely-positioned edit chrome and
+   overrode its `position: absolute`, so the resize handle stopped being pinned
+   to the card's corner and flowed to the bottom of the column instead: the
+   bracket rendered UNDER the card rather than on it. */
 .zw-mod > .zw-card,
 .zw-mod > .zw-ziggy,
-.zw-mod > * { position: relative; z-index: 1; }
+.zw-mod > .zw-card-head { position: relative; z-index: 1; }
 .zw-mod > .zw-expand-hit { z-index: 0; }
 /* The card's interactive bits must sit above the hit layer to keep working. */
 .zw-card button, .zw-card input, .zw-card a, .zw-scene, .zw-chip { position: relative; z-index: 2; }
