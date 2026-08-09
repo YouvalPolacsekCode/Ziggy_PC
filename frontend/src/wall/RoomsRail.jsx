@@ -262,7 +262,7 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
 
 // ─── the rail ───────────────────────────────────────────────────────────────
 
-export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice }) {
+export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice, footer }) {
   const t = useT()
   // GROUPED view, the same one the app's Rooms page uses. Reading raw
   // `ziggyRooms` listed every entity a room owns — an Office with two lamps
@@ -343,6 +343,8 @@ export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice })
                 />
               ))}
         </div>
+        {/* Fixed furniture pinned to the bottom of the rail — see ZiggyBar. */}
+        {footer}
       </aside>
     </>
   )

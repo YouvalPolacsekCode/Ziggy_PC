@@ -16,7 +16,7 @@
 import { create } from 'zustand'
 import { insert, place, remove, resize, reflow, refit, isValid, DEFAULT_COLS } from '../lib/wallGrid'
 import { getWallLayout, putWallLayout } from '../lib/api'
-import { getManifest } from '../wall/modules/registry'
+import { getManifest, isFixedType } from '../wall/modules/registry'
 import { getTabletId } from '../lib/hubTablet'
 
 export const LAYOUT_VERSION = 2
@@ -27,11 +27,10 @@ export function defaultLayout(cols = DEFAULT_COLS) {
   // Fills all 12 columns: a fresh tablet should look arranged, not like
   // someone abandoned it half-configured with a blank right-hand third.
   const modules = [
-    { id: 'w_ziggy',    type: 'ziggy',    x: 0, y: 0, w: 12, h: 2, config: {} },
-    { id: 'w_agenda',   type: 'agenda',   x: 0, y: 2, w: 4,  h: 5, config: {} },
-    { id: 'w_shopping', type: 'shopping', x: 4, y: 2, w: 4,  h: 5, config: {} },
-    { id: 'w_scenes',   type: 'scenes',   x: 8, y: 2, w: 4,  h: 3, config: {} },
-    { id: 'w_pinned',   type: 'pinned',   x: 8, y: 5, w: 4,  h: 3, config: {} },
+    { id: 'w_agenda',   type: 'agenda',   x: 0, y: 0, w: 4,  h: 5, config: {} },
+    { id: 'w_shopping', type: 'shopping', x: 4, y: 0, w: 4,  h: 5, config: {} },
+    { id: 'w_scenes',   type: 'scenes',   x: 8, y: 0, w: 4,  h: 3, config: {} },
+    { id: 'w_pinned',   type: 'pinned',   x: 8, y: 3, w: 4,  h: 2, config: {} },
   ]
   return {
     version: LAYOUT_VERSION,
@@ -52,7 +51,11 @@ export function sanitizeLayout(doc, cols = DEFAULT_COLS) {
   const raw = Array.isArray(doc.modules) ? doc.modules : []
   const seen = new Set()
   const modules = raw
-    .filter((m) => m && typeof m.type === 'string' && getManifest(m.type))
+    // `isFixedType` drops Talk to Ziggy: it is furniture the page draws at a
+    // fixed spot now, not a card. Dropping it HERE rather than at render is
+    // what lets the reflow below close the two rows it used to occupy —
+    // otherwise every layout saved before the move keeps a hole at the top.
+    .filter((m) => m && typeof m.type === 'string' && getManifest(m.type) && !isFixedType(m.type))
     .map((m, i) => {
       let id = String(m.id || `w_${m.type}_${i}`).slice(0, 64)
       // Duplicate ids would make drag target the wrong instance.

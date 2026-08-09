@@ -4598,7 +4598,13 @@ export default {
   'wall.ziggy.hint':        'הקישו וכתבו — עברית או אנגלית',
   'wall.ziggy.placeholder': 'מה לעשות?',
   'wall.ziggy.thinking':    'זיגי חושבת…',
-  'wall.ziggy.micBlocked':  'דיבור דורש חיבור מאובטח בטאבלט הזה',
+  'wall.ziggy.micBlocked':  'הקישו כדי לכתוב',
+  'wall.ziggy.micWhy':      'דיבור דורש חיבור מאובטח (https). הקיר הזה על http רגיל, ולכן המיקרופון לא זמין. כתיבה עובדת.',
+  'wall.ziggy.hold':        'החזיקו כדי לדבר',
+  'wall.ziggy.listening':   'מקשיבה…',
+  'wall.ziggy.type':        'כתיבה במקום',
+  'wall.ziggy.send':        'שליחה',
+  'wall.ziggy.micDenied':   'זיגי צריכה הרשאה למיקרופון',
 
   // רשימות
   'wall.shop.add':          '+ הוסיפו פריט…',

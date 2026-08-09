@@ -4755,7 +4755,13 @@ export default {
   'wall.ziggy.hint':        'Tap and type — Hebrew or English',
   'wall.ziggy.placeholder': 'Ask Ziggy…',
   'wall.ziggy.thinking':    'Ziggy is thinking…',
-  'wall.ziggy.micBlocked':  'Voice needs a secure connection on this tablet',
+  'wall.ziggy.micBlocked':  'Tap to type',
+  'wall.ziggy.micWhy':      'Voice needs a secure (https) connection — this wall is on plain http, so the microphone is unavailable. Typing works.',
+  'wall.ziggy.hold':        'Hold to talk',
+  'wall.ziggy.listening':   'Listening…',
+  'wall.ziggy.type':        'Type instead',
+  'wall.ziggy.send':        'Send',
+  'wall.ziggy.micDenied':   'Ziggy needs microphone permission',
 
   // Lists
   'wall.shop.add':          '+ Add item…',

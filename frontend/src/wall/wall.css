@@ -576,6 +576,94 @@
 }
 .zw-ziggy-input::placeholder { color: currentColor; opacity: .45; }
 
+/* ── Talk to Ziggy: fixed furniture ─────────────────────────────────────────
+   Wide panels get it at the foot of the rooms rail; narrow ones as a bar along
+   the bottom (the rail is a drawer there — see the 820px breakpoint). Fixed
+   height either way: this is the one control that must be in the same place
+   every time, so it must not grow when a reply is long. */
+
+.zw-ziggybar {
+  flex: none;
+  margin-top: 10px;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.zw-ziggybar-talk {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border: none;
+  border-radius: 18px;
+  padding: clamp(10px, 1.4vh, 15px) clamp(12px, 1.4vw, 18px);
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, box-shadow .18s ease;
+}
+.zw-ziggybar-talk:active { transform: scale(.985); }
+.zw-ziggybar.is-listening .zw-ziggybar-talk {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 26px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+/* The orb carries the state, so keep it small enough that the bar's height
+   never changes between resting, listening and thinking. */
+.zw-ziggybar .zw-orb { width: 34px; height: 34px; }
+.zw-ziggybar-text { display: flex; flex-direction: column; min-width: 0; }
+/* One line, always. A three-sentence answer must not push the bar taller and
+   shove the rooms list up the panel. */
+.zw-ziggybar-title,
+.zw-ziggybar-hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zw-ziggybar-title { font-weight: 700; font-size: clamp(13px, 1.15vw, 15.5px); }
+.zw-ziggybar-hint  { font-size: clamp(10.5px, 0.9vw, 12px); opacity: .62; margin-top: 2px; }
+.zw-ziggybar-kbd {
+  flex: none;
+  width: clamp(46px, 4.4vw, 58px);
+  border: 0.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  border-radius: 18px;
+  font-size: 19px;
+  cursor: pointer;
+}
+.zw-ziggybar-kbd:active { background: var(--surface-2, var(--ground)); }
+
+/* Narrow: out of the drawer, along the bottom of the page. `position: sticky`
+   inside the board would scroll away with it; fixed keeps it put. */
+@media (max-width: 820px) {
+  .zw-ziggybar {
+    position: fixed;
+    inset-inline: 12px;
+    inset-block-end: calc(10px + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    margin-top: 0;
+  }
+  /* Reserve the bar's height so the last row of cards isn't parked under it. */
+  .zw-board { padding-bottom: 84px; }
+}
+
+/* The typing sheet: small, and only as tall as it needs to be. */
+.zw-ziggy-sheet {
+  width: min(560px, 92vw);
+  height: auto;
+  gap: 12px;
+  padding: 20px;
+}
+.zw-ziggy-sheet .zw-ziggy-input {
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 14px;
+  padding: 13px 15px;
+  color: var(--ink);
+}
+
 /* ── Connection chip ────────────────────────────────────────────────────── */
 
 .zw-conn {
@@ -946,7 +1034,17 @@
 /* ── Device page over the wall ──────────────────────────────────────────────
    Hosts the app's real DeviceDetail page. It lays itself out as a centred
    600px column, so all this needs to do is give it a scrollable box. */
-.zw-devicepage { padding: 0; overflow: hidden; }
+.zw-devicepage {
+  padding: 0;
+  overflow: hidden;
+  /* The embedded page lays itself out as a 600px column, so a 1100px sheet
+     framed it in dead space. Hug the column instead. */
+  width: min(680px, 94vw);
+  /* Height is content-driven — see DevicePageModal. `height: auto` lets a
+     one-line sensor page produce a short sheet instead of a tall empty one. */
+  height: auto;
+  max-height: 88vh;
+}
 /* The shared close button hangs off the card's corner. That reads well on the
    other expand sheets, which don't clip — this one must, to keep the scrolling
    page inside its rounded corners, so bring the button inside instead. */
@@ -954,6 +1052,12 @@
   inset-block-start: 10px;
   inset-inline-end: 10px;
 }
+/* Hug the content rather than stretching to the sheet: `flex: 1` would put the
+   empty space back that `height: auto` just removed. */
+.zw-devicepage .zw-devicepage-scroll { flex: 0 1 auto; }
+/* Clips the scaled page to the height it actually occupies on screen. */
+.zw-devicepage-fit { overflow: hidden; }
+.zw-devicepage-inner { transform-origin: top center; }
 .zw-devicepage-scroll {
   flex: 1;
   min-height: 0;

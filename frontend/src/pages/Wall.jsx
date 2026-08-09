@@ -30,6 +30,8 @@ import { WallHeader, ConnectionChip, WallToast, IdleScreen, PinGate, ModulePicke
 import { AutomationsView, DevicesModal } from '../wall/WallViews'
 import { PairBanner, PairDialog } from '../wall/PairPanel'
 import { DevicePageModal } from '../wall/DevicePageModal'
+import ZiggyBar from '../wall/ZiggyBar'
+import { useMediaQuery } from '../wall/useMediaQuery'
 import '../wall/wall.css'
 
 const HEARTBEAT_MS = 60_000
@@ -65,6 +67,10 @@ export default function Wall() {
   const [pairOpen, setPairOpen]   = useState(false)
   const [pairHidden, setPairHidden] = useState(false)
   const [deviceOpen, setDeviceOpen] = useState(null)   // entity_id
+  // Mirrors the 821px breakpoint in wall.css where the rail stops being a
+  // permanent column and becomes a drawer. Read here because it decides which
+  // of two places the Ziggy bar mounts in, and CSS can't move a DOM node.
+  const wideRail = useMediaQuery('(min-width: 821px)')
 
   const toastTimer = useRef(null)
   const idleTimer  = useRef(null)
@@ -260,9 +266,16 @@ export default function Wall() {
               guard={guard}
               toast={showToast}
               onOpenDevice={setDeviceOpen}
+              // Wide: Ziggy sits under the rooms, in the rail's own column.
+              footer={wideRail ? <ZiggyBar ctx={ctx} /> : null}
             />
           )}
           <WallGrid ctx={ctx} />
+          {/* Narrow: the rail is a slide-out drawer, and furniture hidden in a
+              drawer isn't furniture. It becomes a bar along the bottom.
+              Mounted in exactly one place per breakpoint — never both, so
+              there is only ever one recorder listening. */}
+          {!wideRail && <ZiggyBar ctx={ctx} />}
         </div>
       ) : (
         <AutomationsView ctx={ctx} />
