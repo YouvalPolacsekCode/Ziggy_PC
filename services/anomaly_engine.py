@@ -1203,6 +1203,190 @@ async def sweep_stale_sensors(
         _push_anomaly(active, room_id, _ANOM10_RULE, AnomalyResult(message=msg, confidence=0.80))
 
 
+# ── ANOM-12: occupancy sensor latched in one state while still alive ─────────
+#
+# ANOM-10 above catches a sensor that has gone SILENT — dead battery, fell off
+# the network — at 24 h. This catches the opposite and nastier failure: a sensor
+# that is alive and reporting, whose occupancy channel has wedged.
+#
+# Observed on the Canary 2026-08-09: an Aqara office presence sensor latched
+# `on`, both channels freezing in the same second, while its humidity,
+# illuminance and battery kept updating normally. Restart, re-interview and
+# reconfigure all failed; it took pulling the battery. Meanwhile the room's three
+# Smart Room rules were enabled and correct and could not fire — Day/Night needed
+# an off→on edge that would never come, Off needed a vacancy that never arrived.
+# The user discovered it because the lights stopped behaving.
+#
+# Why this is not a flat threshold: a BEDROOM presence sensor legitimately holds
+# `on` for 8+ hours a night — the Smart Room sleeping guard is built on exactly
+# that. A flat rule would fire every morning, and an alert you learn to ignore is
+# worse than no alert. So a hold must clear BOTH bars: an absolute floor, and a
+# large multiple of what is normal for that specific sensor, learned from its own
+# history. The office (normal max ~26 min) screams at 10 h; the bedroom (normal
+# max ~9 h) stays quiet overnight but still reports a genuine 30 h wedge.
+_ANOM12_RULE = AnomalyRule(
+    rule_id="ANOM-12",
+    scope="entity",
+    severity="warning",
+    cooldown_s=21600,          # 6 h between repeats, same as ANOM-10
+    fn=lambda _: None,
+)
+
+# Only sensors whose whole job is to change with human movement.
+_STUCK_OCCUPANCY_CLASSES = frozenset({"occupancy", "presence", "motion"})
+
+_ANOM12_FLOOR_HOURS   = 8      # never alert below this, however unusual
+_ANOM12_NORM_MULTIPLE = 2.5    # …and it must be this many times its own normal max
+
+
+def _iso_ago(seconds: float) -> str:
+    """UTC ISO timestamp `seconds` in the past (used by the sweep + its tests)."""
+    from datetime import datetime, timedelta, timezone as _tz
+    return (datetime.now(_tz.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+async def _typical_max_hold_s(entity_id: str, state: str = "on") -> float | None:
+    """Longest this sensor normally holds `state`, from its own history.
+
+    Deliberately per-state. Measuring the longest hold of EITHER state buries the
+    signal: an office sensor's `off` stretches run ~6 h overnight while its `on`
+    stretches max out around 26 minutes, so a combined figure would only flag a
+    stuck-ON at ~16 h instead of ~1 h. Comparing like with like — how long does
+    this sensor normally stay ON — is what makes the rule tight enough to be
+    useful, while a stuck-OFF is still judged against its own generous norm.
+
+    Returns None when history is unavailable or too thin to judge — and the
+    caller then stays silent. Accusing a sensor we have never observed of being
+    stuck is exactly the kind of confident-but-baseless alert this rule exists to
+    avoid.
+
+    Only ever called for entities that already passed the absolute floor, which
+    is normally none of them, so the history query cost is effectively zero.
+
+    The lookback windows are deliberately short and tried longest-first. A 7-day
+    query returns ZERO rows on a stock hub — measured on the Canary 2026-08-09,
+    where 72 h gave 169 points, 120 h gave 39, and 168 h gave none — because the
+    recorder purges around the 4-day mark and asking past it yields nothing
+    rather than "everything I have". Had this asked for 7 days it would have
+    silently returned None forever and the whole rule would never have fired:
+    a no-op that looks exactly like a healthy system.
+    """
+    from datetime import datetime, timedelta, timezone as _tz
+    import urllib.parse
+    import aiohttp
+    from core.settings_loader import load_settings
+
+    ha = (load_settings() or {}).get("home_assistant", {}) or {}
+    url, token = ha.get("url"), ha.get("token")
+    if not url or not token:
+        return None
+
+    for hours in (72, 24):
+        try:
+            start = (datetime.now(_tz.utc) - timedelta(hours=hours)).isoformat()
+            q = (f"{url}/api/history/period/{urllib.parse.quote(start)}"
+                 f"?filter_entity_id={entity_id}&minimal_response&significant_changes_only")
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(q, headers={"Authorization": f"Bearer {token}"},
+                                    timeout=aiohttp.ClientTimeout(total=20)) as r:
+                    data = await r.json()
+            series = data[0] if isinstance(data, list) and data and isinstance(data[0], list) else []
+            if len(series) < 4:          # too few transitions here — try a shorter window
+                continue
+            pts = []
+            for p in series:
+                ts = p.get("last_changed") or p.get("last_updated")
+                if ts:
+                    pts.append((datetime.fromisoformat(ts.replace("Z", "+00:00")),
+                                str(p.get("state", ""))))
+            # Duration of each run, credited to the state that was held.
+            holds = [(b[0] - a[0]).total_seconds() for a, b in zip(pts, pts[1:])
+                     if a[1] == state and (b[0] - a[0]).total_seconds() > 0]
+            if len(holds) >= 2:          # need a couple of runs to call it "normal"
+                return max(holds)
+        except Exception as exc:
+            log_error(f"[Anomaly] ANOM-12 history lookup failed for {entity_id} "
+                      f"({hours}h window): {exc}")
+    return None
+
+
+async def sweep_stuck_occupancy(cache: dict | None = None, active: dict | None = None) -> None:
+    """Flag occupancy sensors latched in one state far beyond their own norm.
+
+    Called periodically from ziggy_scheduler alongside sweep_stale_sensors.
+    """
+    if cache is None or active is None:
+        try:
+            from services.ha_subscriber import state_cache as _sc, active_anomalies as _aa
+            cache, active = _sc, _aa
+        except ImportError:
+            return
+    if not cache:
+        return
+    cfg = _cfg()
+    if not cfg.get("enabled", True):
+        return
+
+    floor_s   = float(cfg.get("anom12_stuck_hours", _ANOM12_FLOOR_HOURS)) * 3600
+    multiple  = float(cfg.get("anom12_norm_multiple", _ANOM12_NORM_MULTIPLE))
+    now       = time.time()
+    try:
+        area_map = await _get_area_map()
+    except Exception:
+        area_map = {}
+
+    from datetime import datetime, timezone as _tz
+
+    for eid, entry in list(cache.items()):
+        if not eid.startswith("binary_sensor."):
+            continue
+        attrs = entry.get("attributes") or {}
+        if attrs.get("device_class", "") not in _STUCK_OCCUPANCY_CLASSES:
+            continue
+
+        room_id = next(
+            (aid for aid, a in area_map.items() if eid in a.get("entities", [])), eid)
+
+        state = entry.get("state", "")
+        # Offline is a different failure with its own rules — never double-report.
+        if state in ("unavailable", "unknown", ""):
+            _clear_anomaly(active, room_id, "ANOM-12")
+            continue
+
+        lc = entry.get("last_changed", "")
+        if not lc:
+            continue
+        try:
+            held_s = now - datetime.fromisoformat(
+                lc.replace("Z", "+00:00")).astimezone(_tz.utc).timestamp()
+        except Exception:
+            continue
+
+        if held_s < floor_s:
+            _clear_anomaly(active, room_id, "ANOM-12")
+            continue
+        if _is_snoozed(room_id, "ANOM-12") or not _cooldown_ok(room_id, "ANOM-12", 21600):
+            continue
+
+        normal_max = await _typical_max_hold_s(eid, state)
+        if normal_max is None or held_s < normal_max * multiple:
+            # Either we cannot judge, or this is simply a long day for a sensor
+            # that has long days. Both mean: say nothing.
+            continue
+
+        label = attrs.get("friendly_name") or eid.split(".")[-1].replace("_", " ").title()
+        hours = int(held_s / 3600)
+        usual = int(normal_max / 60)
+        msg = (
+            f"{label} has read \"{state}\" for {hours} hours — it usually changes "
+            f"at least every {usual} minutes. The sensor is probably stuck, which "
+            f"stops anything in that room from responding. Try removing and "
+            f"refitting its battery."
+        )
+        _push_anomaly(active, room_id, _ANOM12_RULE,
+                      AnomalyResult(message=msg, confidence=0.85))
+
+
 # ── Module init ───────────────────────────────────────────────────────────────
 _db_init()
 _load_snooze_from_db()
