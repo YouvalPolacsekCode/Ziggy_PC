@@ -266,16 +266,17 @@ export default function Wall() {
               guard={guard}
               toast={showToast}
               onOpenDevice={setDeviceOpen}
-              // Wide: Ziggy sits under the rooms, in the rail's own column.
-              footer={wideRail ? <ZiggyBar ctx={ctx} /> : null}
+              // Wide: mic + field under the rooms, in the rail's own column.
+              footer={wideRail ? <ZiggyBar ctx={ctx} variant="inline" /> : null}
             />
           )}
           <WallGrid ctx={ctx} />
           {/* Narrow: the rail is a slide-out drawer, and furniture hidden in a
-              drawer isn't furniture. It becomes a bar along the bottom.
+              drawer isn't furniture. Portrait has no spare column either, so it
+              becomes a floating mic that grows a field when tapped.
               Mounted in exactly one place per breakpoint — never both, so
               there is only ever one recorder listening. */}
-          {!wideRail && <ZiggyBar ctx={ctx} />}
+          {!wideRail && <ZiggyBar ctx={ctx} variant="floating" />}
         </div>
       ) : (
         <AutomationsView ctx={ctx} />
