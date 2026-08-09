@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, createContext, useContext } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Zap, ChevronRight, ChevronDown, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen, Trash2 } from 'lucide-react'
@@ -25,6 +25,29 @@ import { useT, useTranslatedName } from '../lib/i18n'
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Set when this page is embedded (the wall overlay); null on the real route.
+const ExitCtx = createContext(null)
+
+/**
+ * A <Link> that knows whether it is inside a route or inside an overlay.
+ *
+ * On the /devices/:id route it is an ordinary Link. Embedded in the wall it
+ * hands the destination to the host instead: the wall has no URL for these
+ * pages, and a real navigation would drop the user off the dashboard — on a
+ * wall panel with no browser chrome, with no way back.
+ */
+function PageLink({ to, children, ...rest }) {
+  const onExit = useContext(ExitCtx)
+  if (!onExit) return <Link to={to} {...rest}>{children}</Link>
+  return (
+    <a
+      href={to}
+      onClick={(e) => { e.preventDefault(); onExit(to) }}
+      {...rest}
+    >{children}</a>
+  )
+}
 
 function BatteryBar({ level, unit = '%' }) {
   if (level == null) return null
@@ -405,8 +428,8 @@ function WhoCanUse({ entityId }) {
             borderRadius: 999, padding: '4px 11px' }}>{n}</span>
         ))}
       </div>
-      <Link to="/settings/people" style={{ display: 'inline-block', marginTop: 11, fontSize: 12,
-        fontWeight: 550, color: 'var(--accent)', textDecoration: 'none' }}>Manage access →</Link>
+      <PageLink to="/settings/people" style={{ display: 'inline-block', marginTop: 11, fontSize: 12,
+        fontWeight: 550, color: 'var(--accent)', textDecoration: 'none' }}>Manage access →</PageLink>
     </Card>
   )
 }
@@ -456,10 +479,31 @@ function ScrollDownHint({ label }) {
   )
 }
 
-export default function DeviceDetail() {
+/**
+ * The device page.
+ *
+ * Normally a route: it reads its entity from the URL and navigates away when
+ * you leave. It is ALSO embedded by the wall dashboard as an overlay, which
+ * has no URL of its own — so both inputs are overridable by prop.
+ *
+ * Nesting a second Router was the obvious way to embed it and is not allowed:
+ * React Router v6 throws on a <Router> inside a <Router>. Two optional props
+ * are cheaper than a fork of 1,500 lines, and keep one implementation of the
+ * device page for both surfaces.
+ *
+ * @param {string}   [entityId]  overrides the :entityId route param
+ * @param {Function} [onExit]    called instead of navigating away
+ */
+function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   const t = useT()
-  const { entityId } = useParams()
-  const navigate = useNavigate()
+  const { entityId: entityIdParam } = useParams()
+  const entityId = entityIdProp ?? entityIdParam
+  const _navigate = useNavigate()
+  // Embedded: hand the intended destination to the host and let it decide.
+  // The wall re-targets a sibling device into the same overlay and treats
+  // anything else as "close" — navigating the real router would yank the user
+  // off the wall entirely.
+  const navigate = onExit ? ((to) => onExit(to)) : _navigate
   // Subscribe ONLY to the entity for this page, not the whole entities
   // array. Before, a media_player ticking media_position (or any unrelated
   // light flicker) re-rendered this page — and re-rendering this page for
@@ -1243,7 +1287,7 @@ export default function DeviceDetail() {
           </p>
           <div className="space-y-1.5">
             {usefulSiblings.map(sib => (
-              <Link
+              <PageLink
                 key={sib.entity_id}
                 to={`/devices/${encodeURIComponent(sib.entity_id)}`}
                 className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
@@ -1269,7 +1313,7 @@ export default function DeviceDetail() {
                   </div>
                 </div>
                 <ChevronRight size={14} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
-              </Link>
+              </PageLink>
             ))}
           </div>
         </Card>
@@ -1283,7 +1327,7 @@ export default function DeviceDetail() {
           </p>
           <div className="space-y-1.5">
             {automations_using.map(auto => (
-              <Link
+              <PageLink
                 key={auto.id}
                 to="/actions"
                 className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
@@ -1298,7 +1342,7 @@ export default function DeviceDetail() {
                   </Badge>
                   <ChevronRight size={14} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
                 </div>
-              </Link>
+              </PageLink>
             ))}
           </div>
         </Card>
@@ -1506,5 +1550,15 @@ export default function DeviceDetail() {
         onConfirm={handleDelete}
       />
     </div>
+  )
+}
+
+// Publishes the embed escape-hatch to the links buried deep in the tree, so
+// they don't have to be threaded through every intermediate component.
+export default function DeviceDetail(props = {}) {
+  return (
+    <ExitCtx.Provider value={props.onExit || null}>
+      <DeviceDetailBody {...props} />
+    </ExitCtx.Provider>
   )
 }

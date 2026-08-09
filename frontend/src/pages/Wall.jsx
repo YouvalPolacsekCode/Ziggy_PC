@@ -287,7 +287,7 @@ export default function Wall() {
           showToast('✓ ' + t('wall.pairTablet'))
         }}
       />
-      <DevicePageModal entityId={deviceOpen} onClose={() => setDeviceOpen(null)} />
+      <DevicePageModal entityId={deviceOpen} onClose={() => setDeviceOpen(null)} onOpenDevice={setDeviceOpen} />
       <PinGate tabletId={tabletId} />
       <ConnectionChip connected={connected} />
       <WallToast toast={toast} />

@@ -947,6 +947,13 @@
    Hosts the app's real DeviceDetail page. It lays itself out as a centred
    600px column, so all this needs to do is give it a scrollable box. */
 .zw-devicepage { padding: 0; overflow: hidden; }
+/* The shared close button hangs off the card's corner. That reads well on the
+   other expand sheets, which don't clip — this one must, to keep the scrolling
+   page inside its rounded corners, so bring the button inside instead. */
+.zw-devicepage .zw-expand-close {
+  inset-block-start: 10px;
+  inset-inline-end: 10px;
+}
 .zw-devicepage-scroll {
   flex: 1;
   min-height: 0;
