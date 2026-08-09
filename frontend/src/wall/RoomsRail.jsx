@@ -251,7 +251,8 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
           {devices.length === 0
             ? <div className="zw-empty">{t('wall.rail.noDevices')}</div>
             : devices.map((e) => (
-                <DeviceRow key={e.entity_id} entity={e} actions={actions} pending={pending} />
+                <DeviceRow key={e.entity_id} entity={e} actions={actions} pending={pending}
+                           onOpenDevice={onOpenDevice} />
               ))}
         </div>
       )}
