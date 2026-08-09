@@ -555,30 +555,58 @@ def _frontend_dist_path() -> _PathLib:
 def _bundle_version() -> str:
     """The OTA version identifier the phone compares against.
 
-    Normally the deploy SHA (set by the image build). But when the hub is
-    runtime-patched (a new frontend/dist docker-cp'd in WITHOUT an image
-    rebuild, so ZIGGY_GIT_SHA is still 'dev'), fall back to a content-derived
-    id: Vite content-hashes every asset filename, so hashing the sorted asset
-    list changes iff the build changed. This lets a new UI reach the phone via
-    OTA without a full image rebuild. Backward compatible: once a real rebuild
-    sets ZIGGY_GIT_SHA, that wins and behaviour is unchanged.
+    Derived from the CONTENT of frontend/dist, not from ZIGGY_GIT_SHA.
+
+    This used to prefer the image's git SHA and only fall back to content when
+    the SHA was 'dev'. That silently broke the whole channel: a hub gets its
+    frontend patched at runtime (a fresh dist copied into a running container)
+    far more often than it gets a full image rebuild, so the SHA kept naming a
+    build whose files had already been replaced underneath it. /version went on
+    reporting the old id, every phone concluded it was already up to date, and
+    the new UI never shipped — while the zip served under that id was the new
+    build all along. The identity has to describe the bundle, because that is
+    what the phone is deciding whether to download; the SHA describes the image
+    it arrived in, which is a different question.
+
+    Vite content-hashes every asset filename, so the sorted asset list changes
+    if and only if the build changed. The SHA is kept as a readable prefix when
+    the image declares one, so a version string still points at a commit.
 
     Both /version and /bundles/{sha}.zip MUST use this (the download endpoint
     404s any sha != current), so they always agree.
     """
     sha = _os.getenv("ZIGGY_GIT_SHA", "dev")
-    if sha and sha != "dev":
-        return sha
     try:
         assets = _frontend_dist_path() / "assets"
         if assets.is_dir():
             names = sorted(p.name for p in assets.iterdir() if p.is_file())
             if names:
                 import hashlib as _hl
-                return "b-" + _hl.sha1("|".join(names).encode()).hexdigest()[:12]
+                digest = _hl.sha1("|".join(names).encode()).hexdigest()[:12]
+                return f"{sha}-{digest}" if sha and sha != "dev" else f"b-{digest}"
     except Exception:
         pass
+    # No dist to describe — fall back to whatever the image claims.
     return sha
+
+
+# Things that live in the web root but must never be sent to a phone.
+#
+# Both of these actually happened. An installer APK was parked in dist/ so a
+# tablet could download it over the LAN, and every phone's OTA bundle silently
+# grew by ~29 MB — the zip is built from the whole tree. And tarring dist/ from
+# a Mac leaves AppleDouble "._name" siblings behind on extraction, which are
+# macOS metadata no browser will ever ask for.
+#
+# The bundle should carry the web build and nothing else, so filter rather than
+# rely on the web root staying tidy.
+_BUNDLE_SKIP_SUFFIXES = (".apk", ".aab", ".ipa", ".zip", ".dmg", ".exe")
+
+
+def _skip_from_bundle(fname: str) -> bool:
+    if fname.startswith("._") or fname == ".DS_Store":
+        return True
+    return fname.lower().endswith(_BUNDLE_SKIP_SUFFIXES)
 
 
 def _build_bundle_zip(sha: str, dist_dir: _PathLib, out_path: _PathLib) -> None:
@@ -597,6 +625,8 @@ def _build_bundle_zip(sha: str, dist_dir: _PathLib, out_path: _PathLib) -> None:
     with _zipfile.ZipFile(tmp_path, "w", compression=_zipfile.ZIP_DEFLATED) as zf:
         for root, _dirs, files in _os.walk(dist_dir):
             for fname in files:
+                if _skip_from_bundle(fname):
+                    continue
                 abs_path = _PathLib(root) / fname
                 # capacitor-updater expects index.html at the zip root.
                 rel = abs_path.relative_to(dist_dir)
