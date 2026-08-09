@@ -409,6 +409,20 @@ async def run_scheduler() -> None:
             except Exception as exc:
                 log_error(f"[Scheduler] Stale sensor sweep failed: {exc}")
 
+        # ── Hourly: occupancy sensors latched while still alive (ANOM-12) ────
+        # Separate from the sweep above: that one catches a sensor gone SILENT
+        # at 24 h (dead battery), this catches one still reporting happily whose
+        # occupancy channel has wedged — which freezes every rule in the room
+        # while looking perfectly healthy.
+        if _tick % 60 == 0:
+            try:
+                from services.anomaly_engine import sweep_stuck_occupancy
+                from services.ha_subscriber import state_cache, active_anomalies
+                await sweep_stuck_occupancy(state_cache, active_anomalies)
+                log_info("[Scheduler] Stuck-occupancy sweep complete")
+            except Exception as exc:
+                log_error(f"[Scheduler] Stuck-occupancy sweep failed: {exc}")
+
         # ── Hourly: poll OTA manifest from relay (Prompt 2 §B) ───────────────
         # Gated by relay config presence. A hub with no relay.url / secret /
         # home.id silently skips — that's the legitimate "local-only dev hub"
