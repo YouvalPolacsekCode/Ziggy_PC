@@ -29,6 +29,7 @@ import WallGrid from '../wall/WallGrid'
 import { WallHeader, ConnectionChip, WallToast, IdleScreen, PinGate, ModulePicker } from '../wall/WallChrome'
 import { AutomationsView, DevicesModal } from '../wall/WallViews'
 import { PairBanner, PairDialog } from '../wall/PairPanel'
+import { DevicePageModal } from '../wall/DevicePageModal'
 import '../wall/wall.css'
 
 const HEARTBEAT_MS = 60_000
@@ -63,6 +64,7 @@ export default function Wall() {
   const [toast, setToast]         = useState(null)
   const [pairOpen, setPairOpen]   = useState(false)
   const [pairHidden, setPairHidden] = useState(false)
+  const [deviceOpen, setDeviceOpen] = useState(null)   // entity_id
 
   const toastTimer = useRef(null)
   const idleTimer  = useRef(null)
@@ -226,6 +228,7 @@ export default function Wall() {
     policy,
     tabletId,
     removeModule: useWallStore.getState().removeModule,
+    openDevice: setDeviceOpen,
   }), [showToast, guard, policy, tabletId])
 
   const railCollapsed = layout?.rail?.collapsed
@@ -256,6 +259,7 @@ export default function Wall() {
               onClose={() => setRailOpen(false)}
               guard={guard}
               toast={showToast}
+              onOpenDevice={setDeviceOpen}
             />
           )}
           <WallGrid ctx={ctx} />
@@ -283,6 +287,7 @@ export default function Wall() {
           showToast('✓ ' + t('wall.pairTablet'))
         }}
       />
+      <DevicePageModal entityId={deviceOpen} onClose={() => setDeviceOpen(null)} />
       <PinGate tabletId={tabletId} />
       <ConnectionChip connected={connected} />
       <WallToast toast={toast} />

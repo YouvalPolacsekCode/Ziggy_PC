@@ -5,7 +5,7 @@
 // of its own. If the phone app shows a light as on, so does the wall, because
 // both are reading the same `deviceStore` fed by the same WebSocket.
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { deviceFacts } from '../../lib/devices'
 import { useT, useTranslatedName, useLangStore } from '../../lib/i18n'
@@ -150,6 +150,36 @@ export const ScenesModule = memo(function ScenesModule({ mod, ctx }) {
   )
 })
 
+/**
+ * Tap to act, hold to inspect.
+ *
+ * A pinned chip's whole point is a one-tap toggle, so opening the device page
+ * must not steal that tap. A hold is the same gesture people already use for
+ * "tell me more" on a phone, and it keeps the fast path fast.
+ */
+function useHoldToOpen(onHold, ms = 450) {
+  const timer = useRef(null)
+  const held = useRef(false)
+  const clear = useCallback(() => { clearTimeout(timer.current); timer.current = null }, [])
+  useEffect(() => () => clearTimeout(timer.current), [])
+  return {
+    heldRef: held,
+    handlers: {
+      onPointerDown: () => {
+        held.current = false
+        timer.current = setTimeout(() => {
+          held.current = true
+          try { navigator.vibrate?.(12) } catch { /* unsupported */ }
+          onHold()
+        }, ms)
+      },
+      onPointerUp: clear,
+      onPointerLeave: clear,
+      onPointerCancel: clear,
+    },
+  }
+}
+
 // ─── Pinned devices ─────────────────────────────────────────────────────────
 // Reuses `deviceStore.pinnedShortcuts` — the very same pins the phone app
 // uses, so pinning on a phone shows up on the wall.
@@ -188,18 +218,25 @@ export const PinnedModule = memo(function PinnedModule({ mod, ctx }) {
         <div className="zw-card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 9, padding: 12, alignContent: 'flex-start' }}>
           {facts.length === 0 && <div className="zw-empty">{t('wall.pinnedEmpty')}</div>}
           {facts.map((f) => (
-            <button
-              key={f.id}
-              className={`zw-chip${f.isOn ? ' is-on' : ''}`}
-              onClick={() => actions.toggle(f)}
-            >
-              <span className="zw-chip-label">{translateNamePhrase(f.name, lang)}</span>
-              <span className="zw-chip-state">{f.stateLabel}</span>
-            </button>
+            <PinnedChip key={f.id} facts={f} lang={lang} actions={actions} ctx={ctx} />
           ))}
         </div>
       </div>
     </>
+  )
+})
+
+const PinnedChip = memo(function PinnedChip({ facts, lang, actions, ctx }) {
+  const { heldRef, handlers } = useHoldToOpen(() => ctx.openDevice?.(facts.id))
+  return (
+    <button
+      className={`zw-chip${facts.isOn ? ' is-on' : ''}`}
+      {...handlers}
+      onClick={() => { if (!heldRef.current) actions.toggle(facts) }}
+    >
+      <span className="zw-chip-label">{translateNamePhrase(facts.name, lang)}</span>
+      <span className="zw-chip-state">{facts.stateLabel}</span>
+    </button>
   )
 })
 
@@ -239,10 +276,7 @@ export const RoomModule = memo(function RoomModule({ mod, ctx }) {
         <div className="zw-card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 9, padding: 12, alignContent: 'flex-start' }}>
           {facts.length === 0 && <div className="zw-empty">{t('wall.rail.noDevices')}</div>}
           {facts.map((f) => (
-            <button key={f.id} className={`zw-chip${f.isOn ? ' is-on' : ''}`} onClick={() => actions.toggle(f)}>
-              <span className="zw-chip-label">{translateNamePhrase(f.name, lang)}</span>
-              <span className="zw-chip-state">{f.stateLabel}</span>
-            </button>
+            <PinnedChip key={f.id} facts={f} lang={lang} actions={actions} ctx={ctx} />
           ))}
         </div>
       </div>

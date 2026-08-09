@@ -19,7 +19,7 @@ const CONTROLLABLE = new Set(['light', 'switch', 'media_player', 'climate', 'fan
 
 // ─── one device row ─────────────────────────────────────────────────────────
 
-const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
+const DeviceRow = memo(function DeviceRow({ entity, actions, pending, onOpenDevice }) {
   const t = useT()
   const facts = useMemo(() => deviceFacts(entity), [entity])
   // Same name translation the app's DeviceCard uses, so "Ceiling Light" reads
@@ -83,12 +83,19 @@ const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
   return (
     <div className={`zw-dev${offline ? ' is-offline' : ''}${isPending ? ' is-pending' : ''}`}>
       <div className="zw-dev-row">
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* The name and state open the full device page; the switch beside
+            them stays a switch. Tapping a row to inspect and tapping a control
+            to act are different intentions and must not share a target. */}
+        <button
+          className="zw-dev-open"
+          onClick={(e) => { e.stopPropagation(); onOpenDevice?.(facts.id) }}
+          aria-label={deviceName}
+        >
           <div className="zw-dev-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {deviceName}
           </div>
           <div className={`zw-dev-state ${stateTone}`}>{stateText}</div>
-        </div>
+        </button>
 
         {!isLock && !offline && facts.domain !== 'binary_sensor' && facts.domain !== 'sensor' && (
           <button
@@ -162,7 +169,7 @@ const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
 
 // ─── one room ───────────────────────────────────────────────────────────────
 
-const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, actions, pending }) {
+const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, actions, pending, onOpenDevice }) {
   const t = useT()
   // Same name-translation path the Rooms page uses, so "Living Room" reads as
   // "סלון" on the wall exactly as it does on a phone.
@@ -254,7 +261,7 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
 
 // ─── the rail ───────────────────────────────────────────────────────────────
 
-export default function RoomsRail({ open, onClose, guard, toast }) {
+export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice }) {
   const t = useT()
   // GROUPED view, the same one the app's Rooms page uses. Reading raw
   // `ziggyRooms` listed every entity a room owns — an Office with two lamps
@@ -331,6 +338,7 @@ export default function RoomsRail({ open, onClose, guard, toast }) {
                   })}
                   actions={actions}
                   pending={actions.pending}
+                  onOpenDevice={onOpenDevice}
                 />
               ))}
         </div>

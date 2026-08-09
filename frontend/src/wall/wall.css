@@ -942,3 +942,36 @@
 }
 
 @media (prefers-reduced-motion: reduce) { .zw-expand { animation: none } }
+
+/* ── Device page over the wall ──────────────────────────────────────────────
+   Hosts the app's real DeviceDetail page. It lays itself out as a centred
+   600px column, so all this needs to do is give it a scrollable box. */
+.zw-devicepage { padding: 0; overflow: hidden; }
+.zw-devicepage-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 24px;
+  background: var(--bg);
+  /* The embedded page is app-shaped: allow text selection inside it even
+     though the wall as a whole suppresses it. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The name/state half of a rail row opens the device page; the control beside
+   it does not. Styled as plain text so the row still reads as a row. */
+.zw-dev-open {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.zw-dev-open:active { opacity: .6; }
