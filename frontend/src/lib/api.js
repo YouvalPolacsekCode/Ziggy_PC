@@ -728,6 +728,10 @@ export const relayRegister    = (token, data) => _publicPost(`${relayUrl()}/api/
 // whether a home is healthy (which is how a 19 h outage stayed invisible).
 export const relayFleetHealth        = ()                => relayRequest('GET', '/api/admin/fleet/health')
 
+// The hub knows its own relay URL. Asking it removes the "type the relay URL
+// into every browser you use" step that kept the whole fleet view hidden.
+export const getOpsRelayConfig       = ()                => get('/ops/relay')
+
 // Safe, idempotent repair verbs, proxied to the hub (backend/routers/ops_router.py).
 export const relayOpsStatus          = (id)              => relayRequest('GET',  `/api/proxy/${id}/api/ops/status`)
 export const relayOpsReconcile       = (id)              => relayRequest('POST', `/api/proxy/${id}/api/ops/reconcile`, {})

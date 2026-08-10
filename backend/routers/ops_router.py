@@ -78,6 +78,37 @@ async def ops_status(_: dict = Depends(require_role("super_admin"))):
     return {"status": "ok", "data": out}
 
 
+@router.get("/relay")
+async def ops_relay_config(_: dict = Depends(require_role("super_admin"))):
+    """Where this hub's relay lives.
+
+    The ops console used to require the operator to TYPE the relay URL into
+    every browser they opened, because nothing ever populated it: `relayUrl()`
+    reads `window.__RELAY_URL__` (never set by anything) or a localStorage key
+    written only by that form. Until someone did, `isRelayConfigured()` was
+    false and the console silently hid every fleet feature — so a working
+    system looked like an empty, broken page.
+
+    The hub has always known its own relay URL. Handing it to the UI removes
+    the step entirely; all the operator supplies is who they are.
+    """
+    import os
+    from core.settings_loader import load_settings
+
+    settings = load_settings() or {}
+    relay = settings.get("relay") or {}
+    relay_url = os.getenv("RELAY_URL") or relay.get("url") or ""
+    home = settings.get("home") or {}
+    return {
+        "status": "ok",
+        "data": {
+            "relay_url": relay_url.rstrip("/"),
+            "home_id": os.getenv("HOME_ID") or home.get("id") or "",
+            "configured": bool(relay_url),
+        },
+    }
+
+
 @router.post("/reconcile")
 async def ops_reconcile(_: dict = Depends(require_role("super_admin"))):
     """Re-read HA and refresh every device status. THE fix for false 'lost'.

@@ -1081,11 +1081,13 @@ export default function CloudAdmin() {
       {/* Fleet health — the operator's first question ("is anything broken?")
           answered before the home list, from the relay's rule engine rather
           than a second opinion computed in the browser. */}
-      {isRelayConfigured() && (
-        <div style={{ marginBottom: 20 }}>
-          <FleetHealthPanel />
-        </div>
-      )}
+      {/* Rendered unconditionally on purpose: the panel discovers the relay URL
+          from the hub and offers sign-in itself. Gating it on isRelayConfigured()
+          would reproduce the bug it exists to fix — a working fleet rendering as
+          a blank page because nobody had typed a URL into this browser. */}
+      <div style={{ marginBottom: 20 }}>
+        <FleetHealthPanel />
+      </div>
 
       {/* Connect relay panel — shown above homes when not yet connected */}
       {!isRelayConfigured() && (

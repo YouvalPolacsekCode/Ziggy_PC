@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, HelpCircle, RefreshCw, Stethoscope, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, HelpCircle, LogIn, RefreshCw, Stethoscope, Wrench, XCircle } from 'lucide-react'
 import { Card } from '../ui/Card'
-import { relayFleetHealth, relayOpsReconcile, relayOpsRecoverHa } from '../../lib/api'
+import {
+  relayFleetHealth, relayOpsReconcile, relayOpsRecoverHa,
+  getOpsRelayConfig, isRelayConfigured, setRelayUrl, setRelayToken, relayLogin,
+} from '../../lib/api'
 
 /**
  * Fleet health, straight from the relay's rule engine.
@@ -139,17 +142,101 @@ function Loader2Spin() {
   return <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
 }
 
+/**
+ * Sign-in, shown INSTEAD of hiding the panel.
+ *
+ * The old behaviour was to render nothing at all when the browser had no relay
+ * credentials, which made a fully working fleet look like an empty page and
+ * read as "built but broken". A panel that says what it needs is the whole
+ * difference.
+ */
+function RelaySignIn({ relayUrl, onSignedIn }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (e) => {
+    e?.preventDefault?.()
+    setBusy(true); setError('')
+    try {
+      const res = await relayLogin({ email, password })
+      if (!res?.token) throw new Error(res?.detail || 'Sign-in failed.')
+      setRelayToken(res.token)
+      onSignedIn()
+    } catch (err) {
+      setError(err?.message || 'Sign-in failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ padding: '4px 14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)', lineHeight: 1.5, margin: 0 }}>
+        Sign in to {relayUrl || 'the relay'} to see every home. This browser will
+        remember you.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          value={email} onChange={e => setEmail(e.target.value)}
+          placeholder="Founder email" type="email" autoComplete="username" dir="auto"
+          className="z-input" style={{ flex: '1 1 180px', height: 32, padding: '0 10px', fontSize: 12 }}
+        />
+        <input
+          value={password} onChange={e => setPassword(e.target.value)}
+          placeholder="Password" type="password" autoComplete="current-password" dir="auto"
+          className="z-input" style={{ flex: '1 1 140px', height: 32, padding: '0 10px', fontSize: 12 }}
+        />
+        <button
+          type="submit" disabled={busy || !email || !password} className="z-btn-primary"
+          style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12,
+                   display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          {busy ? <Loader2Spin /> : <LogIn size={12} />} Sign in
+        </button>
+      </div>
+      {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
+    </form>
+  )
+}
+
 export default function FleetHealthPanel() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [needsAuth, setNeedsAuth] = useState(false)
+  const [relayUrl, setRelayUrlState] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      setData(await relayFleetHealth())
+      // The hub knows its relay; adopt it so nobody has to type a URL. This
+      // also unblocks the rest of the ops console, whose relay features are all
+      // gated on the same localStorage key.
+      if (!isRelayConfigured()) {
+        const cfg = await getOpsRelayConfig().catch(() => null)
+        const url = cfg?.data?.relay_url
+        if (url) { setRelayUrl(url); setRelayUrlState(url) }
+      }
+      if (!isRelayConfigured()) {
+        setError('This hub has no relay configured, so there is no fleet to show.')
+        return
+      }
+      const report = await relayFleetHealth()
+      setData(report)
+      setNeedsAuth(false)
     } catch (e) {
-      setError(e?.message || 'Could not reach the relay.')
+      // 401/403 means "we know where the relay is, you just aren't signed in" —
+      // an invitation, not an error.
+      const status = e?.status
+      const code = e?.code || ''
+      if (status === 401 || status === 403 ||
+          code === 'NOT_AUTHENTICATED' || code === 'INSUFFICIENT_PERMISSIONS') {
+        setNeedsAuth(true)
+      } else {
+        setError(e?.userMessage || e?.message || 'Could not reach the relay.')
+      }
     } finally {
       setLoading(false)
     }
@@ -158,10 +245,10 @@ export default function FleetHealthPanel() {
   useEffect(() => {
     load()
     // Hubs report every 5 min; refreshing every 60 s keeps the view close to
-    // live without hammering the relay.
-    const id = setInterval(load, 60_000)
+    // live without hammering the relay. Paused while we're asking for a login.
+    const id = setInterval(() => { if (!needsAuth) load() }, 60_000)
     return () => clearInterval(id)
-  }, [load])
+  }, [load, needsAuth])
 
   const summary = data?.summary
   const worst = summary?.level || 'unknown'
@@ -193,12 +280,13 @@ export default function FleetHealthPanel() {
         </button>
       </div>
 
-      {loading && !data && (
+      {loading && !data && !needsAuth && (
         <div style={{ padding: '0 14px 14px', fontSize: 12, color: 'var(--text-dim)' }}>
           Checking every home…
         </div>
       )}
-      {error && (
+      {needsAuth && <RelaySignIn relayUrl={relayUrl} onSignedIn={load} />}
+      {error && !needsAuth && (
         <div style={{ padding: '0 14px 14px', fontSize: 12, color: '#ef4444' }}>{error}</div>
       )}
       {data?.homes?.map(h => (
