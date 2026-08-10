@@ -10,8 +10,9 @@ that requires a git commit every time a new customer is onboarded.
 import json as _json
 import time as _time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
+from ..audit import log_event
 from ..auth import require_role
 from ..database import get_db
 from .. import fleet_health
@@ -96,6 +97,92 @@ async def fleet_health_report(request: Request):
         "summary": fleet_health.summarize(verdicts),
         "homes": verdicts,
     }
+
+
+# Tables that carry a home_id. SQLite only honours `ON DELETE CASCADE` when
+# `PRAGMA foreign_keys=ON`, which is OFF by default and not set here — and
+# telemetry_raw / telemetry_daily / audit_log have no foreign key at all. So the
+# cascade is done explicitly; otherwise "removing" a home leaves its telemetry
+# behind to be re-counted forever.
+_HOME_CHILD_TABLES = (
+    "telemetry_raw", "telemetry_daily", "home_cohorts",
+    "home_backup_keys", "founder_slots", "invites",
+)
+
+# A home that reported this recently is a LIVE home, whatever its label says.
+# Removal refuses on that basis unless explicitly forced, because the cost of
+# wrongly deleting a customer's home is not symmetric with the cost of asking.
+RECENT_TELEMETRY_GUARD_S = 24 * 3600
+
+
+@router.delete("/homes/{home_id}")
+async def delete_home_record(home_id: str, request: Request, force: bool = False):
+    """Hard-delete a home record and everything hanging off it.
+
+    Distinct from `DELETE /api/provision/home/{id}` (deprovision), which tears
+    down Cloudflare resources and sets `status='deprovisioning'` but LEAVES THE
+    ROW — which is why dead smoke-test homes have lingered in the fleet list for
+    months, diluting the signal the list exists to give.
+
+    Refuses to delete a home that has reported telemetry in the last 24 h unless
+    forced. The whole point of the fleet view is to notice live homes; deleting
+    one by accident would be the worst possible failure of this endpoint.
+    """
+    require_role("relay_admin")(request)
+
+    async with get_db() as db:
+        rows = await db.execute_fetchall("SELECT * FROM homes WHERE id=?", (home_id,))
+        if not rows:
+            raise HTTPException(404, "Home not found.")
+        home = dict(rows[0])
+
+        seen = await db.execute_fetchall(
+            "SELECT MAX(ts) AS last_ts FROM telemetry_raw WHERE home_id=?", (home_id,)
+        )
+    last_ts = dict(seen[0]).get("last_ts") if seen else None
+
+    if last_ts and not force:
+        import time as _t
+        from ..fleet_health import _iso_to_epoch
+        epoch = _iso_to_epoch(last_ts)
+        if epoch and (_t.time() - epoch) < RECENT_TELEMETRY_GUARD_S:
+            raise HTTPException(
+                409,
+                f"'{home.get('name')}' reported telemetry at {last_ts} — it looks "
+                f"alive. Pass ?force=true if you really mean to delete it.",
+            )
+
+    # Snapshot the row into the audit trail before it stops existing.
+    await log_event(
+        "fleet_home_deleted", home_id=home_id, ok=True,
+        detail=_json.dumps({
+            "name": home.get("name"), "owner_email": home.get("owner_email"),
+            "status": home.get("status"), "tunnel_url": home.get("tunnel_url"),
+            "cf_tunnel_id": home.get("cf_tunnel_id"), "created_at": home.get("created_at"),
+            "last_telemetry_ts": last_ts, "forced": bool(force),
+        }, separators=(",", ":")),
+    )
+
+    deleted: dict[str, int] = {}
+    async with get_db() as db:
+        for table in _HOME_CHILD_TABLES:
+            try:
+                cur = await db.execute(f"DELETE FROM {table} WHERE home_id=?", (home_id,))
+                deleted[table] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+            except Exception:
+                # A table that doesn't exist on this deployment must not block
+                # the removal of the home itself.
+                deleted[table] = 0
+        # Users are detached rather than deleted — an account may be a person,
+        # and people outlive their hardware.
+        try:
+            await db.execute("UPDATE users SET home_id=NULL WHERE home_id=?", (home_id,))
+        except Exception:
+            pass
+        await db.execute("DELETE FROM homes WHERE id=?", (home_id,))
+        await db.commit()
+
+    return {"ok": True, "deleted": {"home": home.get("name"), "children": deleted}}
 
 
 @router.get("/repairs")
