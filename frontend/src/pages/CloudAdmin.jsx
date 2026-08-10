@@ -5,6 +5,7 @@ import {
   Activity, Package, Database, Smartphone, LifeBuoy, Terminal,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
+import FleetHealthPanel from '../components/admin/FleetHealthPanel'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
 import { computeHealth, HEALTH_COLORS } from '../lib/fleetHealth'
@@ -1074,6 +1075,15 @@ export default function CloudAdmin() {
             style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
             {t('cloud.disconnectBtn')}
           </button>
+        </div>
+      )}
+
+      {/* Fleet health — the operator's first question ("is anything broken?")
+          answered before the home list, from the relay's rule engine rather
+          than a second opinion computed in the browser. */}
+      {isRelayConfigured() && (
+        <div style={{ marginBottom: 20 }}>
+          <FleetHealthPanel />
         </div>
       )}
 

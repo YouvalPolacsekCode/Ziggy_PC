@@ -176,6 +176,56 @@ write_task_heartbeat() {
 }
 write_task_heartbeat
 
+# --- Deploy state: host git truth, for telemetry ----------------------------
+# The container is NOT a git checkout (/app has no .git), so it cannot answer
+# "what code am I running and did someone hand-edit it?" — the repo lives here
+# on the host. We write the answer into the bind-mounted user_files dir where
+# services/deploy_state.py picks it up and telemetry ships it to the relay.
+#
+# This exists because a customer hub was found 105 modified files off its tag,
+# reporting version "0.0.0+local", with the updater never installed — and
+# nothing anywhere surfaced that. A dirty tree doesn't merely skip the update
+# channel, it forces the auto-stash path below, so drift is an operational
+# fault worth alerting on, not a cosmetic detail.
+DEPLOY_STATE="$USER_FILES/deploy_state.json"
+
+write_deploy_state() {
+  $DRY_RUN && return 0
+  local describe sha branch dirty_list dirty_count is_dirty tag updater
+  describe="$(git describe --tags --always 2>/dev/null || echo '')"
+  sha="$(git rev-parse --short HEAD 2>/dev/null || echo '')"
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  tag="$(git describe --tags --exact-match 2>/dev/null || echo '')"
+  dirty_list="$(git status --porcelain --untracked-files=no 2>/dev/null || true)"
+  if [ -n "$dirty_list" ]; then
+    is_dirty=true
+    dirty_count="$(printf '%s\n' "$dirty_list" | grep -c . || echo 0)"
+  else
+    is_dirty=false
+    dirty_count=0
+  fi
+  updater=false
+  if command -v systemctl >/dev/null 2>&1 \
+     && systemctl list-unit-files "${UNIT_NAME}.timer" >/dev/null 2>&1 \
+     && systemctl is-enabled "${UNIT_NAME}.timer" >/dev/null 2>&1; then
+    updater=true
+  fi
+  {
+    printf '{'
+    printf '"written_at":"%s",'       "$TS"
+    printf '"git_describe":"%s",'     "$describe"
+    printf '"git_sha":"%s",'          "$sha"
+    printf '"branch":"%s",'           "$branch"
+    printf '"release_tag":"%s",'      "$tag"
+    printf '"cohort":"%s",'           "$COHORT"
+    printf '"dirty":%s,'              "$is_dirty"
+    printf '"dirty_files":%s,'        "${dirty_count:-0}"
+    printf '"updater_installed":%s'   "$updater"
+    printf '}\n'
+  } > "$DEPLOY_STATE" 2>/dev/null || true
+}
+write_deploy_state
+
 # --- Cohort validation ------------------------------------------------------
 if [ "$COHORT" != "canary" ] && [ "$COHORT" != "production" ]; then
   log "ABORT: unknown ZIGGY_COHORT='$COHORT' (expected 'canary' or 'production')"
@@ -440,6 +490,8 @@ if verify_sha "$GIT_SHA"; then
     echo "verified:  True"
   } >> "$DEPLOY_LOG"
   rotate_deploy_log
+  # Re-stamp: HEAD moved, and the auto-stash above may have cleaned the tree.
+  write_deploy_state
   heartbeat "deployed $GIT_SHA"
   log "Deploy complete: $CONTAINER_SHA -> $GIT_SHA"
   exit 0

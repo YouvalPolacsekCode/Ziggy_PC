@@ -721,6 +721,18 @@ export const relayRegister    = (token, data) => _publicPost(`${relayUrl()}/api/
 
 // Telemetry (Prompt 2 §C). Latest raw rows for a home + daily aggregates.
 // Backing endpoints: relay/app/routers/telemetry.py.
+// ── Fleet health (relay/app/fleet_health.py) ────────────────────────────────
+// One call returns every home's verdict — level, issues, and which safe repair
+// verbs might help. Server-side on purpose: the ops console, the CLI and the
+// autonomous remediator must all read the SAME rules, or they'll disagree about
+// whether a home is healthy (which is how a 19 h outage stayed invisible).
+export const relayFleetHealth        = ()                => relayRequest('GET', '/api/admin/fleet/health')
+
+// Safe, idempotent repair verbs, proxied to the hub (backend/routers/ops_router.py).
+export const relayOpsStatus          = (id)              => relayRequest('GET',  `/api/proxy/${id}/api/ops/status`)
+export const relayOpsReconcile       = (id)              => relayRequest('POST', `/api/proxy/${id}/api/ops/reconcile`, {})
+export const relayOpsRecoverHa       = (id)              => relayRequest('POST', `/api/proxy/${id}/api/ops/recover-ha`, {})
+
 export const relayHomeTelemetry      = (id, limit = 50)  => relayRequest('GET', `/api/admin/homes/${id}/telemetry?limit=${limit}`)
 export const relayHomeTelemetryDays  = (id, limit = 90)  => relayRequest('GET', `/api/admin/homes/${id}/telemetry/days?limit=${limit}`)
 

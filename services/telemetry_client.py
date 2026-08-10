@@ -483,7 +483,86 @@ def _build_payload(settings: dict, *, timeout_s: float) -> dict:
     if lat is not None:
         payload["last_automation_trigger"] = lat
         payload["last_automation_trigger_at"] = lat
+
+    # ── Health + drift — the fleet-awareness fields ──────────────────────
+    health = _collect_health()
+    if health is not None:
+        payload["health"] = health
+    payload["deploy"] = _collect_deploy()
     return payload
+
+
+def _collect_health() -> Optional[dict]:
+    """The hub's own view of its health, for the fleet layer.
+
+    Until this existed, telemetry carried cpu/mem/disk/uptime and nothing about
+    whether the home actually WORKED — so a degraded hub was indistinguishable
+    from a healthy one in the cloud. A customer home spent 19 h with every
+    device falsely marked "removed" and the fleet had no way to see it.
+
+    Two independent views are reported, because the incident proved they can
+    disagree:
+      - `ha.*` / `devices.*`  — what Home Assistant says (via ha_health)
+      - `registry.*`          — what Ziggy's own device registry believes
+
+    The registry view is the one that drives the user's "needs attention"
+    banner, and it was the one nobody could see.
+    """
+    out: dict[str, Any] = {}
+    try:
+        from services import ha_health
+        cached = ha_health.get_last_health()
+        if cached:
+            out["level"] = cached.get("level")
+            out["primary"] = cached.get("primary")
+            out["ha_reachable"] = bool((cached.get("ha") or {}).get("reachable"))
+            out["devices"] = cached.get("devices") or {}
+            zig = cached.get("zigbee") or {}
+            out["coordinator_state"] = zig.get("coordinator_state")
+            rec = cached.get("recovery") or {}
+            out["recovery_in_progress"] = bool(rec.get("in_progress"))
+            ma = rec.get("manual_action") or None
+            out["manual_action"] = (ma or {}).get("code") if isinstance(ma, dict) else None
+    except Exception:
+        pass
+
+    try:
+        out["registry"] = _collect_registry_counts()
+    except Exception:
+        pass
+
+    return out or None
+
+
+def _collect_registry_counts() -> dict:
+    """Status histogram of Ziggy's device registry (in-memory, no HA call).
+
+    `lost` is the field that matters: it is what the app renders as
+    "Removed from hub", next to a delete button that really unpairs the device.
+    A home where lost == total is almost certainly mis-reconciled rather than
+    genuinely empty — the fleet rules key off exactly that.
+    """
+    from services import device_registry
+    rows = device_registry.get_all() or []
+    counts: dict[str, int] = {}
+    for r in rows:
+        key = str(r.get("status") or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return {
+        "total": len(rows),
+        "lost": counts.get(device_registry.LOST, 0),
+        "connected": counts.get(device_registry.CONNECTED, 0),
+        "by_status": counts,
+    }
+
+
+def _collect_deploy() -> dict:
+    """Which build is running, and has it drifted off the release channel."""
+    try:
+        from services.deploy_state import collect_deploy_state
+        return collect_deploy_state()
+    except Exception:
+        return {"known": False, "drifted": False, "drift_reason": ""}
 
 
 def _build_url(relay_url: str, home_id: str) -> str:
