@@ -96,3 +96,36 @@ async def fleet_health_report(request: Request):
         "summary": fleet_health.summarize(verdicts),
         "homes": verdicts,
     }
+
+
+@router.get("/repairs")
+async def fleet_repairs(request: Request, limit: int = 50):
+    """What the auto-remediator has actually done.
+
+    Automated repair is only trustworthy if it is auditable: an operator must be
+    able to ask "what did the robot touch, and did it work?" and get an answer
+    that isn't a shrug. Every attempt — success or failure — is an audit_log row.
+    """
+    require_role("relay_admin")(request)
+    limit = max(1, min(int(limit), 500))
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            """SELECT a.ts, a.home_id, a.ok, a.detail, h.name
+               FROM audit_log a LEFT JOIN homes h ON h.id = a.home_id
+               WHERE a.event = 'fleet_auto_repair'
+               ORDER BY a.id DESC LIMIT ?""",
+            (limit,),
+        )
+    return {"repairs": [dict(r) for r in rows]}
+
+
+@router.post("/sweep")
+async def fleet_sweep_now(request: Request):
+    """Run a remediation sweep immediately instead of waiting for the timer.
+
+    Exists so an operator (or an agent following up on an alert) never has to
+    sit through the interval to confirm a fix landed.
+    """
+    require_role("relay_admin")(request)
+    from ..remediator import sweep_once
+    return await sweep_once()
