@@ -261,6 +261,63 @@ get_last_verified_sha() {
   ' "$DEPLOY_LOG"
 }
 
+# --- Protected live state ---------------------------------------------------
+# docker/ha-config IS Home Assistant's /config directory (bind-mounted straight
+# into the HA container), and automations.yaml / scripts.yaml inside it are
+# TRACKED FILES. That means the customer's real automations live inside the
+# versioned tree: the auto-stash below would sweep them away and the checkout
+# would replace them with whatever the release tag happens to contain.
+#
+# Found on a customer hub carrying 99 lines of his own automations as "local
+# changes". Left alone, the first OTA update this box ever received would have
+# silently deleted every automation in the house.
+#
+# So these paths are backed up before we touch the tree and restored after the
+# checkout. Backups are kept (never overwritten) — recovering a customer's
+# automations must never depend on us having been careful once.
+PROTECTED_PATHS=(
+  "docker/ha-config/automations.yaml"
+  "docker/ha-config/scripts.yaml"
+  "docker/ha-config/scenes.yaml"
+  "docker/ha-config/configuration.yaml"
+)
+PROTECTED_BACKUP_DIR="$USER_FILES/ha-config-backups/$TS"
+
+backup_protected() {
+  $DRY_RUN && return 0
+  local any=false p
+  for p in "${PROTECTED_PATHS[@]}"; do
+    [ -f "$REPO_DIR/$p" ] || continue
+    mkdir -p "$PROTECTED_BACKUP_DIR/$(dirname "$p")"
+    cp -p "$REPO_DIR/$p" "$PROTECTED_BACKUP_DIR/$p" 2>/dev/null && any=true
+  done
+  $any && log "Backed up live HA config to $PROTECTED_BACKUP_DIR"
+  return 0
+}
+
+restore_protected() {
+  $DRY_RUN && return 0
+  [ -d "$PROTECTED_BACKUP_DIR" ] || return 0
+  local p restored=false
+  for p in "${PROTECTED_PATHS[@]}"; do
+    [ -f "$PROTECTED_BACKUP_DIR/$p" ] || continue
+    if ! cmp -s "$PROTECTED_BACKUP_DIR/$p" "$REPO_DIR/$p" 2>/dev/null; then
+      cp -p "$PROTECTED_BACKUP_DIR/$p" "$REPO_DIR/$p" 2>/dev/null && restored=true
+    fi
+  done
+  $restored && log "Restored the home's own HA config over the release copy"
+  return 0
+}
+
+backup_protected
+
+# Restore on ANY exit — success, abort, or signal. The dangerous window is
+# between the auto-stash (which reverts the customer's automations to the
+# release copy) and the post-checkout restore: an abort in between — a failed
+# fetch, a dead network, a SIGTERM from systemd — would leave the house running
+# someone else's automations. A trap closes that window by construction.
+trap 'restore_protected' EXIT
+
 # --- Dirty-tree auto-stash (never freeze the loop on a stray edit) ----------
 # The mini PC should never have local edits, but if it does we stash them with
 # a timestamp and keep polling rather than aborting every cycle forever.
@@ -300,7 +357,12 @@ if [ "$COHORT" = "production" ]; then
     heartbeat "idle no-release-tag git=$GIT_SHA"
     exit 0
   fi
-  REMOTE_SHA="$(git rev-parse "refs/tags/$TARGET_TAG" 2>/dev/null | tr -d '[:space:]')"
+  # ^{commit} PEELS the annotated tag to the commit it points at. Without it,
+  # rev-parse returns the TAG OBJECT's sha, which can never equal `git rev-parse
+  # HEAD` — so the steady-state comparison below was permanently false and every
+  # production hub would rebuild itself (with --no-cache) every 2 minutes,
+  # forever. Never caught because no home had ever run the production cohort.
+  REMOTE_SHA="$(git rev-parse "refs/tags/$TARGET_TAG^{commit}" 2>/dev/null | tr -d '[:space:]')"
   TARGET_DESC="tag $TARGET_TAG"
 else
   REMOTE_SHA="$(git rev-parse origin/main 2>/dev/null | tr -d '[:space:]')"
@@ -465,6 +527,9 @@ if [ "$GIT_SHA" != "$REMOTE_SHA" ]; then
     fi
   fi
   GIT_SHA="$(git rev-parse HEAD | tr -d '[:space:]')"
+  # The tree just moved. Put the home's own automations back before anything
+  # restarts and Home Assistant reloads /config from disk.
+  restore_protected
 fi
 
 # --- Build + restart --------------------------------------------------------
@@ -529,6 +594,10 @@ if ! git -c advice.detachedHead=false checkout "$LAST_GOOD_SHA" >>"$RB_VERBOSE" 
   log "ROLLBACK FAILED: git checkout $LAST_GOOD_SHA did not succeed. See $RB_VERBOSE"
   exit 1
 fi
+
+# A rollback moves the tree too — the customer's automations must survive going
+# backwards just as they survive going forwards.
+restore_protected
 
 if ! build_ziggy "$LAST_GOOD_SHA" "$RB_VERBOSE"; then
   heartbeat "rollback-build-failed last=$LAST_GOOD_SHA"
