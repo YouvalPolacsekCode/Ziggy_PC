@@ -163,7 +163,12 @@ function RelaySignIn({ relayUrl, onSignedIn }) {
       const res = await relayLogin({ email, password })
       if (!res?.token) throw new Error(res?.detail || 'Sign-in failed.')
       setRelayToken(res.token)
+      // Reload rather than just refreshing this panel: every other relay
+      // feature on the page (home list, OTA, backups, support sessions) read
+      // the token at their own mount, so without this the operator signs in
+      // and the rest of the console still looks empty.
       onSignedIn()
+      window.location.reload()
     } catch (err) {
       setError(err?.message || 'Sign-in failed.')
     } finally {

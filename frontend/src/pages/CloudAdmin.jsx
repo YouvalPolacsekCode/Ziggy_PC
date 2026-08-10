@@ -973,6 +973,7 @@ export default function CloudAdmin() {
   const [home,        setHome]        = useState(null)
   const [relayHomes,  setRelayHomes]  = useState([])
   const [relayOnline, setRelayOnline] = useState(false)
+  const [relayNeedsAuth, setRelayNeedsAuth] = useState(false)
   const [loading,     setLoading]     = useState(true)
   const [relayInput,  setRelayInput]  = useState({ url: getRelayUrl(), email: '', password: '' })
   const [relayConnecting, setRelayConnecting] = useState(false)
@@ -996,8 +997,19 @@ export default function CloudAdmin() {
     } catch { }
 
     if (isRelayConfigured()) {
-      try { setRelayHomes(await relayListHomes()); setRelayOnline(true) }
-      catch { setRelayOnline(false) }
+      try {
+        setRelayHomes(await relayListHomes())
+        setRelayOnline(true); setRelayNeedsAuth(false)
+      } catch (e) {
+        // "I got a 401" and "the relay is down" are different facts and need
+        // different actions. Reporting both as "Relay offline" sent the
+        // operator hunting a dead server when all that was missing was a
+        // sign-in — the relay was up and answering the whole time.
+        const unauthorized = e?.status === 401 || e?.status === 403
+          || e?.code === 'NOT_AUTHENTICATED' || e?.code === 'INSUFFICIENT_PERMISSIONS'
+        setRelayOnline(false)
+        setRelayNeedsAuth(unauthorized)
+      }
     }
     setLoading(false)
   }, [])
@@ -1069,7 +1081,9 @@ export default function CloudAdmin() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 14px', background: 'var(--bg-2)', borderRadius: 10, border: '0.5px solid var(--line)' }}>
           {relayOnline
             ? <><CheckCircle size={12} style={{ color: 'var(--ok)' }} /><span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
-            : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
+            : relayNeedsAuth
+              ? <><Shield size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>Not signed in to the relay</span></>
+              : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
           <button onClick={() => { localStorage.removeItem('ziggy_relay_url'); localStorage.removeItem('ziggy_relay_token'); window.location.reload() }}
             style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
