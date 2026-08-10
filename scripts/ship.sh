@@ -106,7 +106,12 @@ if [ -n "$PREV_TAG" ]; then
   COUNT="$(git rev-list "$PREV_TAG..HEAD" --count)"
   echo
   echo "Commits since $PREV_TAG: $COUNT"
-  git log --oneline "$PREV_TAG..HEAD" | head -20
+  # -n 20 rather than `| head -20`: head closes the pipe after 20 lines, git
+  # dies of SIGPIPE, and `set -o pipefail` + `set -e` then killed this script
+  # BEFORE it tagged anything — silently, with exit 0 to a caller that piped
+  # our output. Every release with >20 commits since the last tag quietly did
+  # nothing. Found while shipping a 181-commit release.
+  git log --oneline -n 20 "$PREV_TAG..HEAD"
   if [ "$COUNT" -gt 20 ]; then
     echo "...and $((COUNT - 20)) more."
   fi
