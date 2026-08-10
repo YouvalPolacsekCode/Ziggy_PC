@@ -196,7 +196,11 @@ write_deploy_state() {
   sha="$(git rev-parse --short HEAD 2>/dev/null || echo '')"
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   tag="$(git describe --tags --exact-match 2>/dev/null || echo '')"
-  dirty_list="$(git status --porcelain --untracked-files=no 2>/dev/null || true)"
+  # Exclude the protected HA config: those files are the HOME'S OWN live state
+  # and are permanently different from whatever the release tag ships. Counting
+  # them as "local changes" would mark every healthy hub in the fleet as drifted
+  # forever, which is how a real drift alert becomes wallpaper.
+  dirty_list="$(git status --porcelain --untracked-files=no -- . ':(exclude)docker/ha-config' 2>/dev/null || true)"
   if [ -n "$dirty_list" ]; then
     is_dirty=true
     dirty_count="$(printf '%s\n' "$dirty_list" | grep -c . || echo 0)"
