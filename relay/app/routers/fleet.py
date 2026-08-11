@@ -86,6 +86,8 @@ async def fleet_health_report(request: Request):
         v["tunnel_url"] = home.get("tunnel_url")
         v["subscription_state"] = home.get("subscription_state")
         v["status"] = home.get("status")
+        v["owner_email"] = home.get("owner_email")
+        v["vitals"] = fleet_health.vitals(payload)
         verdicts.append(v)
 
     # Worst first, so the thing needing attention is row one.
@@ -95,8 +97,45 @@ async def fleet_health_report(request: Request):
     return {
         "generated_at": now,
         "summary": fleet_health.summarize(verdicts),
+        "versions": fleet_health.version_rollup(verdicts),
         "homes": verdicts,
     }
+
+
+# Audit events worth showing a human. `telemetry_posted` and
+# `ota_manifest_served` fire every few minutes per home and would bury
+# everything else — 357 of the last 400 rows were telemetry alone.
+_ACTIVITY_EVENTS = (
+    "home_version_changed",
+    "fleet_auto_repair",
+    "fleet_home_deleted",
+    "register_hub",
+    "home_provisioned",
+    "support_session_opened",
+    "backup_restored",
+)
+
+
+@router.get("/activity")
+async def fleet_activity(request: Request, limit: int = 40):
+    """What has actually happened across the fleet, newest first.
+
+    Answers the operator's second question — after "is anything broken", the
+    next one is always "what changed?". Deploys, automatic repairs, new homes,
+    removals: the events that explain today's state.
+    """
+    require_role("relay_admin")(request)
+    limit = max(1, min(int(limit), 200))
+    placeholders = ",".join("?" for _ in _ACTIVITY_EVENTS)
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            f"""SELECT a.ts, a.event, a.home_id, a.ok, a.detail, h.name
+                FROM audit_log a LEFT JOIN homes h ON h.id = a.home_id
+                WHERE a.event IN ({placeholders})
+                ORDER BY a.id DESC LIMIT ?""",
+            (*_ACTIVITY_EVENTS, limit),
+        )
+    return {"activity": [dict(r) for r in rows]}
 
 
 # Tables that carry a home_id. SQLite only honours `ON DELETE CASCADE` when

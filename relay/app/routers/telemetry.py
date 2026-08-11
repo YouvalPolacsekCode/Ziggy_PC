@@ -129,12 +129,44 @@ async def post_telemetry(device_id: str, request: Request):
         raise HTTPException(403, "Home access is currently restricted.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Detect a version change before the new row lands. A hub deploys locally,
+    # so nothing in the cloud ever recorded "this home changed release" — which
+    # left the fleet with no answer to "what changed?" after an incident. The
+    # comparison is one indexed read against the row we are about to replace.
+    previous_tag = None
+    try:
+        async with get_db() as db:
+            prev = await db.execute_fetchall(
+                "SELECT payload FROM telemetry_raw WHERE home_id=? ORDER BY id DESC LIMIT 1",
+                (home_id,),
+            )
+        if prev:
+            prev_payload = _json.loads(dict(prev[0])["payload"])
+            previous_tag = ((prev_payload.get("deploy") or {}).get("release_tag")
+                            or (prev_payload.get("deploy") or {}).get("git_describe"))
+    except Exception:
+        previous_tag = None
+
     async with get_db() as db:
         await db.execute(
             "INSERT INTO telemetry_raw (home_id, ts, payload) VALUES (?,?,?)",
             (home_id, now_iso, _json.dumps(payload, separators=(",", ":"))),
         )
         await db.commit()
+
+    try:
+        deploy = payload.get("deploy") or {}
+        current_tag = deploy.get("release_tag") or deploy.get("git_describe")
+        # Only report a real transition — not the first sighting of a hub, which
+        # would otherwise log a "change" for every home the day this shipped.
+        if current_tag and previous_tag and current_tag != previous_tag:
+            await log_event(
+                "home_version_changed", home_id=home_id, source_ip=src_ip, ok=True,
+                detail=f"{previous_tag} → {current_tag}",
+            )
+    except Exception:
+        pass
 
     await log_event(
         "telemetry_posted", home_id=home_id, source_ip=src_ip, ok=True,

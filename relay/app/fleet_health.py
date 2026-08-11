@@ -287,6 +287,60 @@ def _evaluate_payload(p: dict) -> list[dict]:
     return issues
 
 
+def vitals(payload: Optional[dict]) -> dict:
+    """The numbers an operator glances at, pulled from one telemetry payload.
+
+    Kept separate from `evaluate` on purpose: evaluate decides whether to worry,
+    this just reports. A console that only ever showed alerts would leave you
+    unable to see a disk climbing toward full BEFORE it became an incident.
+    """
+    p = payload if isinstance(payload, dict) else {}
+    health = p.get("health") if isinstance(p.get("health"), dict) else {}
+    devices = health.get("devices") if isinstance(health.get("devices"), dict) else {}
+    registry = health.get("registry") if isinstance(health.get("registry"), dict) else {}
+    deploy = p.get("deploy") if isinstance(p.get("deploy"), dict) else {}
+
+    return {
+        "devices_total":   devices.get("total"),
+        "devices_offline": devices.get("offline"),
+        "devices_lost":    registry.get("lost"),
+        "disk_pct":        _num(p.get("disk_pct_used")),
+        "mem_pct":         _num(p.get("mem_pct")),
+        "cpu_pct":         _num(p.get("cpu_pct")),
+        "uptime_s":        _num(p.get("system_uptime_s")),
+        "ha_version":      p.get("ha_version"),
+        "ziggy_version":   p.get("ziggy_version"),
+        "release_tag":     deploy.get("release_tag") or deploy.get("git_describe"),
+        "cohort":          deploy.get("cohort"),
+        "drifted":         bool(deploy.get("drifted")),
+    }
+
+
+def version_rollup(verdicts: list[dict]) -> dict:
+    """Is the fleet all on one release?
+
+    Release drift is the failure that hides: a home silently left behind gets no
+    fixes and nothing complains. Convergence deserves to be visible on the front
+    page rather than inferred by reading a column.
+    """
+    counts: dict[str, int] = {}
+    for v in verdicts:
+        if v.get("suspended"):
+            continue
+        tag = (v.get("vitals") or {}).get("release_tag")
+        key = tag or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+
+    known = {k: c for k, c in counts.items() if k != "unknown"}
+    return {
+        "counts": counts,
+        "distinct": len(known),
+        # One release across every reporting home, and nothing unaccounted for.
+        "converged": len(known) <= 1 and "unknown" not in counts and bool(known),
+        "majority": max(known, key=known.get) if known else None,
+    }
+
+
 def _worst_level(issues: list[dict]) -> str:
     if not issues:
         return LEVEL_OK
