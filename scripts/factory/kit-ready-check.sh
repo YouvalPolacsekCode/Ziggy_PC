@@ -15,8 +15,13 @@
 #   6. Dry-run backup exits 0 (seal is internally consistent)
 #   7. Blank home — delete all HA areas + clear device room assignments so the
 #      customer opens a clean slate (MUTATING; verifies zero areas remain)
+#   8. Cloudflare connector running AND enabled at boot — a home that ships
+#      unreachable cannot be supported or fixed
+#   9. Enrolled on the OTA update channel with a valid cohort — a home that
+#      cannot receive fixes is a liability (see the 2026-08-10 fleet rescue)
 #
-# USAGE: scripts/factory/kit-ready-check.sh [--skip-mqtt] [--skip-backup] [--skip-blank]
+# USAGE: scripts/factory/kit-ready-check.sh
+#          [--skip-mqtt] [--skip-backup] [--skip-blank] [--skip-tunnel]
 #
 # ENV:
 #   ZIGGY_ETC_DIR  default /etc/ziggy
@@ -40,11 +45,13 @@ MQTT_PORT="${MQTT_PORT:-1883}"
 SKIP_MQTT=0
 SKIP_BACKUP=0
 SKIP_BLANK=0
+SKIP_TUNNEL=0
 for a in "$@"; do
   case "$a" in
     --skip-mqtt) SKIP_MQTT=1 ;;
     --skip-backup) SKIP_BACKUP=1 ;;
     --skip-blank) SKIP_BLANK=1 ;;
+    --skip-tunnel) SKIP_TUNNEL=1 ;;
     -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $a" >&2; exit 2 ;;
   esac
@@ -195,6 +202,50 @@ else
     _pass "home blanked — no leftover rooms ($(tail -1 "$BLANK_LOG" 2>/dev/null))"
   else
     _fail "blank home FAILED — rooms may remain (see $BLANK_LOG)"
+  fi
+fi
+
+# 8. remote access ----------------------------------------------------------
+# A home nobody can reach is a home nobody can support or fix. The relay
+# provisions the tunnel at imaging; the connector is what makes it real. This
+# used to be a manual post-imaging step, so "imaged" and "reachable" could and
+# did diverge silently.
+if [[ "$SKIP_TUNNEL" == "1" ]]; then
+  _skip "Cloudflare connector (skipped by flag)"
+elif ! command -v systemctl >/dev/null 2>&1; then
+  _skip "Cloudflare connector (no systemd on this host)"
+else
+  if systemctl is-active --quiet ziggy-tunnel.service 2>/dev/null; then
+    if systemctl is-enabled --quiet ziggy-tunnel.service 2>/dev/null; then
+      _pass "Cloudflare connector running and enabled at boot"
+    else
+      _fail "Cloudflare connector running but NOT enabled at boot — the home loses remote access on its next power cut"
+    fi
+  else
+    _fail "Cloudflare connector NOT running — this home would ship unreachable (scripts/linux/ziggy-tunnel.sh)"
+  fi
+fi
+
+# 9. update channel ---------------------------------------------------------
+# A home that cannot receive fixes is a liability. On 2026-08-10 all three
+# homes in the fleet had shipped off the channel and had to be enrolled by
+# hand; one had drifted so far it could no longer be updated at all.
+if ! command -v systemctl >/dev/null 2>&1; then
+  _skip "update channel (no systemd on this host)"
+else
+  cohort="$(sed -n 's/^ZIGGY_COHORT=//p' "$ZIGGY_ETC_DIR/ziggy.env" 2>/dev/null | tail -1)"
+  if ! systemctl is-enabled --quiet ziggy-update.timer 2>/dev/null; then
+    _fail "ziggy-update.timer NOT enabled — this home could never receive a fix"
+  elif [[ -z "$cohort" ]]; then
+    _fail "no ZIGGY_COHORT in $ZIGGY_ETC_DIR/ziggy.env — the updater has no target"
+  elif [[ "$cohort" != "production" && "$cohort" != "canary" ]]; then
+    _fail "unknown ZIGGY_COHORT='$cohort' (expected production, or canary for a bench unit)"
+  elif [[ "$cohort" == "canary" ]]; then
+    # Not a failure — but a customer home on canary follows origin/main, which
+    # is untagged code. Say so loudly rather than discovering it in the field.
+    _pass "update channel enrolled (cohort=canary — correct ONLY for a bench/founder unit)"
+  else
+    _pass "update channel enrolled (cohort=production, ziggy-update.timer enabled)"
   fi
 fi
 

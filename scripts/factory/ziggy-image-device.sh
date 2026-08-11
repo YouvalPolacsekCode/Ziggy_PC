@@ -21,12 +21,18 @@
 #   7  seal           _seal_step.sh: data_key + kit_manifest (+paired sensors) + relay seal-key
 #   8  register-hub   bind tunnel_url to the home (HMAC) → status active
 #   9  ziggy-up       docker compose up the ziggy backend
-#   10 matter-enable  (ENABLE_MATTER=1) flash 2nd dongle → ot-rcp + bring up the
+#   10 tunnel         install + run cloudflared with the per-home connector token
+#                     the relay minted at identity, so the home is remotely
+#                     reachable without a human ever touching Cloudflare
+#   11 matter-enable  (ENABLE_MATTER=1) flash 2nd dongle → ot-rcp + bring up the
 #                     OTBR/matter-server stack + wire HA (scripts/factory/ziggy-matter-enable.sh)
-#   11 update-channel enroll on the OTA release channel (/etc/ziggy/ziggy.env
+#   12 update-channel enroll on the OTA release channel (/etc/ziggy/ziggy.env
 #                     cohort + systemd units) so the hub can receive fixes
-#   12 kit-ready      kit-ready-check.sh gate
-#   13 first-backup   one REAL backup to B2 (the ship signal)
+#   13 network-pin    pin the DHCP lease as a static address + advertise mDNS,
+#                     with a boot guard that falls back to DHCP if the network
+#                     moved (scripts/linux/ziggy-network-pin.sh)
+#   14 kit-ready      kit-ready-check.sh gate
+#   15 first-backup   one REAL backup to B2 (the ship signal)
 #
 # USAGE
 #   sudo scripts/factory/ziggy-image-device.sh              # full run
@@ -142,7 +148,7 @@ else
 fi
 STATE_FILE="$STATE_DIR/imaging.state"
 
-STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up matter-enable update-channel kit-ready first-backup)
+STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up tunnel matter-enable update-channel network-pin kit-ready first-backup)
 
 _log()  { printf '\033[36m[image]\033[0m %s\n' "$*" >&2; }
 _ok()   { printf '\033[32m[image ✓]\033[0m %s\n' "$*" >&2; }
@@ -774,6 +780,48 @@ step_ziggy_up() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# STEP 8a: tunnel — bring up the per-home Cloudflare Tunnel connector
+# ───────────────────────────────────────────────────────────────────────────
+# The relay already did the entire Cloudflare side at `identity`: created the
+# tunnel, PUT the ingress (catch-all → http://localhost:8001), minted this
+# home's connector token and bound the public hostname. Nothing on the hub ever
+# consumed that token, so every home's tunnel was started by hand after imaging
+# — an undocumented manual step standing between "imaged" and "the owner can
+# actually use their home". This step closes that gap.
+#
+# Runs AFTER ziggy-up so the backend is already listening on 8001 and the
+# end-to-end verification through the public hostname is meaningful.
+# ═══════════════════════════════════════════════════════════════════════════
+step_tunnel() {
+  local token url script
+  script="$REPO_DIR/scripts/linux/ziggy-tunnel.sh"
+  [[ -f "$script" ]] || _die "tunnel: $script missing"
+
+  token="$(_kv_get TUNNEL_TOKEN)"
+  url="$(_kv_get REACHABLE_URL)"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    ZIGGY_ETC_DIR="$ETC_DIR" bash "$script" --dry-run --token "${token:-dry-run-token-that-is-long-enough-to-pass-validation}" \
+      ${url:+--verify-url "$url"} >/dev/null 2>&1 \
+      && _ok "tunnel (dry-run): connector install plan validated" \
+      || _log "tunnel (dry-run): script reported an issue (expected without a real token)"
+    return 0
+  fi
+
+  if [[ -z "$token" ]]; then
+    # Non-fatal on purpose: a home with no tunnel is reachable on the LAN and
+    # can be given one later. Failing imaging here would strand a hub that is
+    # otherwise complete.
+    _log "tunnel: no TUNNEL_TOKEN from the relay — skipping (run scripts/linux/ziggy-tunnel.sh --token … later)"
+    return 0
+  fi
+
+  ZIGGY_ETC_DIR="$ETC_DIR" bash "$script" --token "$token" ${url:+--verify-url "$url"} \
+    && _ok "tunnel: connector running and enabled at boot" \
+    || _die "tunnel: could not bring up the Cloudflare connector"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # STEP 8b: update-channel — put the hub on the release channel
 # ═══════════════════════════════════════════════════════════════════════════
 # Imaging used to leave this out entirely, so every hub shipped OFF the update
@@ -819,12 +867,76 @@ step_update_channel() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# STEP 8c: network-pin — stop the hub's address moving, and stop it mattering
+# ───────────────────────────────────────────────────────────────────────────
+# A DHCP reservation lives on the customer's router and cannot be scripted
+# portably, so we get the same outcome from the hub: pin the lease the router
+# already gave us as a static address, and advertise mDNS so anything that
+# needs the hub can find it by name regardless.
+#
+# Address drift has cost this fleet real outages (an IP-pinned HA_URL took the
+# Canary down for 9h50m; a stale lan_host produced false "arrived home" pushes;
+# a drifting Broadlink turned IR into 502s), which is why this is an imaging
+# step and not a runbook paragraph.
+#
+# Deliberately NON-FATAL: a home whose address may drift is still a working
+# home, and ziggy-network-guard.service will keep it online either way. Failing
+# the whole imaging run over this would be a worse trade.
+#
+# Runs after update-channel so that, in the worst case where applying the pin
+# briefly bounces the link, the hub is already enrolled on the release channel
+# and can be fixed remotely.
+# ═══════════════════════════════════════════════════════════════════════════
+step_network_pin() {
+  local script slug
+  script="$REPO_DIR/scripts/linux/ziggy-network-pin.sh"
+  [[ -f "$script" ]] || _die "network-pin: $script missing"
+
+  # mDNS name: prefer the friendly slug the relay minted, else the home name.
+  slug="$(_kv_get FRIENDLY_SLUG)"
+  [[ -z "$slug" ]] && slug="$FRIENDLY_SLUG"
+  if [[ -z "$slug" ]]; then
+    slug="$(printf '%s' "$HOME_NAME" | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-40)"
+  fi
+  [[ -z "$slug" ]] && slug="ziggy"
+  local mdns_name="ziggy-${slug#ziggy-}"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    ZIGGY_ETC_DIR="$ETC_DIR" bash "$script" --dry-run --mdns-name "$mdns_name" >/dev/null 2>&1 \
+      && _ok "network-pin (dry-run): plan validated (mdns=$mdns_name.local)" \
+      || _log "network-pin (dry-run): no usable network detected here (expected off-hub)"
+    return 0
+  fi
+
+  # Run the pin as a transient systemd unit when possible, so that a briefly
+  # bounced link during `netplan apply` cannot kill it along with the operator's
+  # SSH session. --wait --pipe keeps the output and the exit code.
+  local rc=0
+  if command -v systemd-run >/dev/null 2>&1; then
+    systemd-run --wait --pipe --collect --quiet \
+      --unit=ziggy-imaging-netpin \
+      --setenv=ZIGGY_ETC_DIR="$ETC_DIR" \
+      /bin/bash "$script" --mdns-name "$mdns_name" || rc=$?
+  else
+    ZIGGY_ETC_DIR="$ETC_DIR" bash "$script" --mdns-name "$mdns_name" || rc=$?
+  fi
+
+  if [[ "$rc" == "0" ]]; then
+    _ok "network-pin: address pinned, mDNS $mdns_name.local, boot guard armed"
+  else
+    _log "network-pin: could not pin the address (rc=$rc) — the hub stays on DHCP. Not fatal; mDNS and the boot guard still apply. Re-run later: sudo $script"
+  fi
+  return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # STEP 9: kit-ready — the ship gate
 # ═══════════════════════════════════════════════════════════════════════════
 step_kit_ready() {
   if [[ "$DRY_RUN" == "1" ]]; then
     ZIGGY_ETC_DIR="$ETC_DIR" ZIGGY_REPO_DIR="$REPO_DIR" \
-      bash "$SCRIPT_DIR/kit-ready-check.sh" --skip-mqtt --skip-backup >/dev/null 2>&1 \
+      bash "$SCRIPT_DIR/kit-ready-check.sh" --skip-mqtt --skip-backup --skip-tunnel >/dev/null 2>&1 \
       && _ok "kit-ready (dry-run): structural checks passed" \
       || _log "kit-ready (dry-run): some checks FAIL (expected without live HA/relay)"
     return 0
@@ -885,8 +997,10 @@ _run_step_fn() {
     seal)          step_seal ;;
     register-hub)  step_register_hub ;;
     ziggy-up)      step_ziggy_up ;;
+    tunnel)        step_tunnel ;;
     matter-enable) step_matter_enable ;;
     update-channel) step_update_channel ;;
+    network-pin)   step_network_pin ;;
     kit-ready)     step_kit_ready ;;
     first-backup)  step_first_backup ;;
     *) _die "unknown step: $1" ;;

@@ -1,0 +1,27 @@
+[Unit]
+# Boot-time validation of the pinned LAN address.
+#
+# The pin (scripts/linux/ziggy-network-pin.sh) is only correct while the network
+# it was made on still exists. Two things legitimately invalidate it: the
+# customer replaced their router (new subnet), or our address was handed to
+# another device while the hub was powered off. Either way this unit falls the
+# hub back to DHCP so it boots reachable instead of stranded — a home we cannot
+# reach is a home we cannot fix.
+Description=Ziggy network pin guard (revert to DHCP if the pinned address no longer works)
+Documentation=https://github.com/YouvalPolacsekCode/Ziggy_PC
+After=network-online.target
+Wants=network-online.target
+# Run before the stack so Ziggy and HA start on a network that actually works.
+Before=ziggy.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/opt/ziggy/scripts/linux/ziggy-network-pin.sh --check
+# Never block boot on this: a guard that hangs is worse than a wrong address.
+TimeoutStartSec=120
+# A failed guard must not cascade into a failed boot.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target
