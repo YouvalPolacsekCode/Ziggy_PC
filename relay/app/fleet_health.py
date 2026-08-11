@@ -316,20 +316,48 @@ def vitals(payload: Optional[dict]) -> dict:
     }
 
 
+import re
+
+# `git describe` on a commit past a tag returns "<tag>-<n>-g<sha>". The canary
+# cohort follows origin/main BY DESIGN, so it sits a commit or two past the
+# newest tag almost all the time.
+_DESCRIBE_SUFFIX = re.compile(r"-(\d+)-g[0-9a-f]{7,}$")
+
+
+def base_release(tag: Optional[str]) -> tuple[Optional[str], int]:
+    """('release-2026.08.11-5', 1) from 'release-2026.08.11-5-1-gc97d6cd'."""
+    if not tag:
+        return None, 0
+    m = _DESCRIBE_SUFFIX.search(tag)
+    if not m:
+        return tag, 0
+    return tag[:m.start()], int(m.group(1))
+
+
 def version_rollup(verdicts: list[dict]) -> dict:
     """Is the fleet all on one release?
 
     Release drift is the failure that hides: a home silently left behind gets no
     fixes and nothing complains. Convergence deserves to be visible on the front
     page rather than inferred by reading a column.
+
+    Compared on the BASE tag, not the raw `git describe` string. The canary hub
+    tracks origin/main and is therefore a commit or two ahead of the newest tag
+    nearly always — comparing raw strings reported the fleet as "split across 2
+    versions" permanently, in warning colour, for a hub doing exactly what its
+    cohort tells it to. An alert that is always on is one nobody reads.
     """
     counts: dict[str, int] = {}
+    ahead: dict[str, int] = {}
     for v in verdicts:
         if v.get("suspended"):
             continue
-        tag = (v.get("vitals") or {}).get("release_tag")
-        key = tag or "unknown"
+        raw = (v.get("vitals") or {}).get("release_tag")
+        base, n = base_release(raw)
+        key = base or "unknown"
         counts[key] = counts.get(key, 0) + 1
+        if n:
+            ahead[v.get("name") or v.get("home_id") or "?"] = n
 
     known = {k: c for k, c in counts.items() if k != "unknown"}
     return {
@@ -338,6 +366,9 @@ def version_rollup(verdicts: list[dict]) -> dict:
         # One release across every reporting home, and nothing unaccounted for.
         "converged": len(known) <= 1 and "unknown" not in counts and bool(known),
         "majority": max(known, key=known.get) if known else None,
+        # Homes deliberately running past the tag (canary), so the UI can show
+        # the lead as information rather than as a fault.
+        "ahead": ahead,
     }
 
 

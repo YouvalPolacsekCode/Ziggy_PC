@@ -218,6 +218,56 @@ class TestOldHubsAreNotAssumedHealthy:
         assert any(i["code"] == "no_health_telemetry" for i in v["issues"])
 
 
+class TestVersionConvergence:
+    """The canary hub follows main and is therefore ahead of the newest tag
+    nearly all the time. Reporting that as a fleet split put a permanent warning
+    on the front page for a hub doing exactly what it was told."""
+
+    def _home(self, name, tag):
+        return {"name": name, "vitals": {"release_tag": tag}}
+
+    def test_canary_running_past_the_tag_is_still_converged(self):
+        roll = fh.version_rollup([
+            self._home("Canary Home", "release-2026.08.11-5-1-gc97d6cd"),
+            self._home("David's Home", "release-2026.08.11-5"),
+            self._home("Tslil's Home", "release-2026.08.11-5"),
+        ])
+        assert roll["converged"] is True
+        assert roll["majority"] == "release-2026.08.11-5"
+        assert roll["ahead"] == {"Canary Home": 1}
+
+    def test_a_genuine_split_is_still_reported(self):
+        roll = fh.version_rollup([
+            self._home("A", "release-2026.08.11-5"),
+            self._home("B", "release-2026.07.23"),
+        ])
+        assert roll["converged"] is False
+        assert roll["distinct"] == 2
+
+    def test_a_home_with_no_version_blocks_convergence(self):
+        """Unknown is not the same as fine."""
+        roll = fh.version_rollup([
+            self._home("A", "release-2026.08.11-5"),
+            self._home("B", None),
+        ])
+        assert roll["converged"] is False
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("release-2026.08.11-5-1-gc97d6cd", ("release-2026.08.11-5", 1)),
+        ("release-2026.08.11-5-12-gabc1234", ("release-2026.08.11-5", 12)),
+        ("release-2026.08.11-5", ("release-2026.08.11-5", 0)),
+        ("release-2026.07.23", ("release-2026.07.23", 0)),
+        (None, (None, 0)),
+    ])
+    def test_base_release_parsing(self, raw, expected):
+        assert fh.base_release(raw) == expected
+
+    def test_a_dated_tag_is_not_mistaken_for_a_describe_suffix(self):
+        """release-2026.08.11-5 ends in '-5'; that is part of the tag, not a
+        commit count, and must survive parsing intact."""
+        assert fh.base_release("release-2026.08.11-5")[0] == "release-2026.08.11-5"
+
+
 class TestSeverityAndRollup:
     def test_worst_issue_sets_the_level_but_all_are_reported(self):
         p = _payload(disk_pct_used=88.0)

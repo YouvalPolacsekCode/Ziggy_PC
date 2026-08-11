@@ -107,11 +107,20 @@ function Convergence({ versions, total }) {
   const entries = Object.entries(versions.counts || {})
   if (!entries.length) return null
 
+  const ahead = Object.entries(versions.ahead || {})
+
   if (versions.converged) {
     return (
       <div style={{ fontSize: 12, color: 'var(--ink-mute)', display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
         <span>All {total} on</span>
         <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--ink)' }}>{versions.majority}</span>
+        {/* Canary is meant to run ahead. Say so plainly instead of leaving a
+            number that looks like a discrepancy. */}
+        {ahead.length > 0 && (
+          <span style={{ color: 'var(--ink-faint)' }}>
+            · {ahead.map(([name, n]) => `${name} +${n}`).join(', ')} ahead, as intended
+          </span>
+        )}
       </div>
     )
   }
@@ -146,10 +155,14 @@ function Vitals({ v }) {
   // The release belongs in this same row, not pushed to the far edge: an
   // auto-margin orphaned it onto its own line and left a ragged gap.
   if (v.release_tag) {
-    // "release release-2026.08.11-4" stutters. The label already says release,
-    // so the value doesn't need to repeat it.
-    const short = String(v.release_tag).replace(/^release-/, '')
-    cells.push(['release', `${short}${v.cohort ? ` · ${v.cohort}` : ''}`])
+    // "release release-2026.08.11-4" stutters — the label already says release.
+    // And a raw describe string ("…-5-1-gc97d6cd") buries the version in a
+    // commit hash; "…-5 +1" says the same thing and stays readable.
+    const raw = String(v.release_tag)
+    const m = raw.match(/-(\d+)-g[0-9a-f]{7,}$/)
+    const short = (m ? raw.slice(0, m.index) : raw).replace(/^release-/, '')
+    const lead = m ? ` +${m[1]}` : ''
+    cells.push(['release', `${short}${lead}${v.cohort ? ` · ${v.cohort}` : ''}`])
   }
 
   return (
