@@ -87,7 +87,31 @@ curl -s -H "Authorization: Bearer $JWT" https://ziggy-relay.fly.dev/api/proxy/<H
 
 ## 3. Deploy a code fix (hotfix) to a live hub
 
-**Model:** each hub is a git checkout at `/opt/ziggy` tracking a branch
+> ## ⛔ OBSOLETE AND FORBIDDEN — DO NOT FOLLOW THIS SECTION
+>
+> Everything below describes hand-pushing code onto a hub. **That practice is
+> now banned** (see the Release rules at the top of `CLAUDE.md`). On 2026-08-10
+> it left one customer hub 105 uncommitted files off its tag — which *blocks*
+> the updater, so that home could no longer receive fixes at all — and a second
+> hub running a commit that existed nowhere in the repository. Both had to be
+> rescued by hand.
+>
+> It is also factually wrong now: hubs do **not** track
+> `feat/beta-image-readiness`, and `main` is not "stale by design" — `main` is
+> exactly what ships.
+>
+> **The only way code reaches a home:**
+> ```bash
+> ./scripts/ship.sh -m "…"      # cuts a release-* tag on main
+> ```
+> Each hub's `ziggy-update.timer` pulls it within ~2 minutes. Verify with
+> `./scripts/fleet-health.py` (allow ~5 min — hubs deploy on a 2 min timer but
+> report on a 5 min one).
+>
+> Kept only so the old commands are recognisable if you find them in a shell
+> history or an older runbook.
+
+**Model (obsolete):** each hub is a git checkout at `/opt/ziggy` tracking a branch
 (beta hubs → `feat/beta-image-readiness`; NOT `main`, which is stale by design).
 The ziggy container is **built on the box** (`docker compose up -d --build ziggy`),
 so a fix reaches the hub by: land on the tracked branch → pull on the box →
