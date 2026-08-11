@@ -484,6 +484,17 @@ def _build_payload(settings: dict, *, timeout_s: float) -> dict:
         payload["last_automation_trigger"] = lat
         payload["last_automation_trigger_at"] = lat
 
+    # ── Push delivery (24 h counts) ──────────────────────────────────────
+    # The ops console has had a row for this since it was built, permanently
+    # reading "waiting for edge agent v1.5+" because the hub never sent it.
+    # Push is how a home reports a door opening or a problem; a silently broken
+    # delivery path is indistinguishable from a quiet house.
+    try:
+        from services.push_stats import summary as _push_summary
+        payload.update(_push_summary())
+    except Exception:
+        pass
+
     # ── Health + drift — the fleet-awareness fields ──────────────────────
     health = _collect_health()
     if health is not None:

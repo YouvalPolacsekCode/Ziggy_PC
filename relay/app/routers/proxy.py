@@ -88,6 +88,12 @@ async def _authorize_home(user: dict, home_id: str) -> dict:
         home = dict(rows[0])
 
     hub_base = (home.get("public_hostname") or "").strip() or home["tunnel_url"]
+    # The column normally holds a full https:// URL, but a bare hostname is an
+    # easy thing to store by hand and would make every proxied request fail with
+    # an unhelpful "unsupported protocol". Normalising here fixes it for all
+    # callers rather than trusting whoever wrote the row.
+    if hub_base and not str(hub_base).startswith(("http://", "https://")):
+        hub_base = f"https://{str(hub_base).lstrip('/')}"
     is_founder_support = user.get("role") == "relay_admin"
 
     if not hub_base:

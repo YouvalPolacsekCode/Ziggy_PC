@@ -9,8 +9,10 @@ that requires a git commit every time a new customer is onboarded.
 
 import json as _json
 import time as _time
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from ..audit import log_event
 from ..auth import require_role
@@ -222,6 +224,49 @@ async def delete_home_record(home_id: str, request: Request, force: bool = False
         await db.commit()
 
     return {"ok": True, "deleted": {"home": home.get("name"), "children": deleted}}
+
+
+class HostnameBody(BaseModel):
+    public_hostname: Optional[str] = None
+
+
+@router.put("/homes/{home_id}/hostname")
+async def set_home_hostname(home_id: str, body: HostnameBody, request: Request):
+    """Set the address the relay uses to reach a hub.
+
+    The relay talks to a hub over `public_hostname`, falling back to
+    `tunnel_url`. Homes provisioned before the per-home DNS work only have a raw
+    `*.cfargotunnel.com` tunnel_url, which is routable from inside Cloudflare's
+    network but NOT from Fly — so every proxied call to them times out. The
+    Canary hub was in exactly that state: reachable by the whole world at
+    app.ziggy-home.com, unreachable by its own control plane, which meant
+    automatic repair worked for customers but not for the founder's own home.
+
+    Pass null to clear it and fall back to tunnel_url.
+    """
+    require_role("relay_admin")(request)
+
+    value = (body.public_hostname or "").strip() or None
+    if value:
+        if not value.startswith(("http://", "https://")):
+            value = f"https://{value.lstrip('/')}"
+        value = value.rstrip("/")
+
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT name, public_hostname FROM homes WHERE id=?", (home_id,))
+        if not rows:
+            raise HTTPException(404, "Home not found.")
+        before = dict(rows[0]).get("public_hostname")
+        await db.execute(
+            "UPDATE homes SET public_hostname=? WHERE id=?", (value, home_id))
+        await db.commit()
+
+    await log_event(
+        "home_hostname_set", home_id=home_id, ok=True,
+        detail=f"{before or '(none)'} → {value or '(none)'}",
+    )
+    return {"ok": True, "home_id": home_id, "public_hostname": value}
 
 
 @router.get("/repairs")

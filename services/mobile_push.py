@@ -188,10 +188,21 @@ async def _send(device: dict, *, title: str, body: str, data: dict) -> dict:
         return {"ok": False, "error": "no_push_token", "device_id": device.get("device_id")}
 
     if provider == "apns":
-        return await _send_apns(token, title=title, body=body, data=data)
-    if provider == "fcm":
-        return await _send_fcm(token, title=title, body=body, data=data)
-    return {"ok": False, "error": f"unknown_provider:{provider}"}
+        result = await _send_apns(token, title=title, body=body, data=data)
+    elif provider == "fcm":
+        result = await _send_fcm(token, title=title, body=body, data=data)
+    else:
+        return {"ok": False, "error": f"unknown_provider:{provider}"}
+
+    # Single chokepoint for every native push, so delivery can finally be
+    # answered in the fleet view. Counts only — no titles, no bodies, no tokens.
+    try:
+        from services.push_stats import record as _record_push
+        _record_push(provider, bool(result.get("ok")))
+    except Exception:
+        pass
+
+    return result
 
 
 async def _send_apns(token: str, *, title: str, body: str, data: dict) -> dict:

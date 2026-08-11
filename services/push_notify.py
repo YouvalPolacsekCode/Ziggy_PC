@@ -177,6 +177,11 @@ def push_notify_sync(
                     pass  # preference check failure → send anyway
 
             ok = _send_one(sub, data, private_pem)
+            try:
+                from services.push_stats import record as _record_push
+                _record_push("web", ok)
+            except Exception:
+                pass
             if ok:
                 still_valid.append(sub)
                 sent += 1

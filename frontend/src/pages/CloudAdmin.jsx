@@ -147,16 +147,19 @@ function TelemetryTab({ homeId, onPayload }) {
   const containersDown = containers.filter(c => c?.state && c.state !== 'running').length
   const uptimeHours = p.uptime_s != null ? Math.floor(p.uptime_s / 3600) : null
 
-  // Push delivery (Prompt 10 chunk 3 — option 1 piggyback). Edge agent is
-  // expected to add these counters to the telemetry payload; until it
-  // ships them, render the section with a "no data yet" stub so the
-  // operator can see the feature exists and is waiting on the edge.
+  // Push delivery over the last 24 h, from services/push_stats.py. Push is how
+  // a home reports a door opening or a problem, so a broken delivery path is
+  // otherwise indistinguishable from a quiet house. A hub older than the
+  // counters reports nothing here, which is a different statement from zero.
   const apnsSuccess = p.apns_success_24h
   const apnsFailure = p.apns_failure_24h
   const fcmSuccess  = p.fcm_success_24h
   const fcmFailure  = p.fcm_failure_24h
+  const webSuccess  = p.web_success_24h
+  const webFailure  = p.web_failure_24h
   const hasApns = apnsSuccess != null || apnsFailure != null
   const hasFcm  = fcmSuccess  != null || fcmFailure  != null
+  const hasWeb  = webSuccess  != null || webFailure  != null
 
   return (
     <div style={{ padding: '12px 20px 16px' }}>
@@ -180,6 +183,12 @@ function TelemetryTab({ homeId, onPayload }) {
         label={t('cloudAdmin.telemetryPushFcm')}
         value={hasFcm
           ? t('cloudAdmin.telemetryPushDelivery', { success: fcmSuccess ?? 0, failure: fcmFailure ?? 0 })
+          : t('cloudAdmin.telemetryPushStub')}
+      />
+      <StatRow
+        label={t('cloudAdmin.telemetryPushWeb')}
+        value={hasWeb
+          ? t('cloudAdmin.telemetryPushDelivery', { success: webSuccess ?? 0, failure: webFailure ?? 0 })
           : t('cloudAdmin.telemetryPushStub')}
       />
       <button
