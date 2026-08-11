@@ -53,6 +53,65 @@ def _registry_snapshot() -> dict[str, Any]:
     }
 
 
+# Background services that must be running in a shipped hub, and what breaks if
+# they are not. Keyed by the thread name each is started with in
+# backend/server.py.
+#
+# This list exists because four of these were found NOT running in production:
+# they were started only from core/ziggy_main.py, which the container never
+# executes. The failure was invisible — the features simply never happened, and
+# no surface anywhere said so. Now it is one call to check.
+_EXPECTED_SERVICES = {
+    "Reminder":     "task due-date reminders never fire",
+    "SensorAlerts": "door/motion alerts never notify (skipped when disabled in settings)",
+    "PatternEngine": "pattern learning never runs, so Suggestions stay empty",
+    "Circadian":    "the smart light ramp never moves",
+    "SmartClimate": "per-room thermostat control stops",
+}
+
+
+def _running_services() -> dict[str, Any]:
+    """Which background threads are alive in THIS process.
+
+    Note for anyone verifying by hand: `docker exec … python3 -c` starts a NEW
+    interpreter with one thread and proves nothing. It has to be asked of the
+    running server, which is what this endpoint does.
+    """
+    import threading
+
+    from core.settings_loader import load_settings
+    settings = load_settings() or {}
+
+    # Services the operator can legitimately switch off. "Off because you said
+    # so" must never look like "broken", or the check becomes noise and stops
+    # being read — the same trap as an always-on drift alert.
+    gates = {
+        "SensorAlerts":  bool((settings.get("sensor_alerts") or {}).get("enabled", True)),
+        "PatternEngine": bool((settings.get("pattern_learning") or {}).get("enabled", True)),
+    }
+
+    alive = {t.name for t in threading.enumerate() if t.is_alive()}
+    services = {}
+    for name, consequence in _EXPECTED_SERVICES.items():
+        enabled = gates.get(name, True)
+        running = name in alive
+        services[name] = {
+            "running": running,
+            "enabled_in_settings": enabled,
+            "state": ("running" if running else
+                      "disabled_in_settings" if not enabled else "NOT RUNNING"),
+            "if_missing": consequence,
+        }
+    return {
+        "services": services,
+        "all_threads": sorted(alive),
+        # Only services that SHOULD be running and are not. This is the list
+        # that means something is wrong.
+        "missing": [n for n, v in services.items()
+                    if not v["running"] and v["enabled_in_settings"]],
+    }
+
+
 @router.get("/status")
 async def ops_status(_: dict = Depends(require_role("super_admin"))):
     """Everything an operator needs about this hub in one call.
@@ -69,6 +128,7 @@ async def ops_status(_: dict = Depends(require_role("super_admin"))):
         "registry": _registry_snapshot(),
         "deploy": collect_deploy_state(),
         "health": ha_health.get_last_health(),
+        "background": _running_services(),
     }
     try:
         from services.telemetry_client import LAST_POST_AT_UTC
