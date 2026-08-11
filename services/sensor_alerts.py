@@ -2,6 +2,25 @@
 """
 Polls sensor states and sends Ziggy app push notifications when configured
 sensors change to their trigger state (e.g. door opened, motion detected).
+
+STATUS: deliberately OFF fleet-wide (decision 2026-08-11). Not broken.
+
+It is correctly wired into backend/server.py and starts whenever
+`sensor_alerts.enabled` is true, but every home ships with it false and that is
+intentional:
+
+  * No UI anywhere in the app configures it — the sensors list is reachable only
+    by editing settings.yaml on the hub or calling the admin endpoint, and
+    customers never see either.
+  * The automation builder already expresses the same thing ("when this sensor
+    changes, notify me") with a UI the customer can reach, event-driven through
+    Home Assistant rather than a 20-second poll.
+  * Two notification paths means two places to debug "why didn't I get an alert".
+
+So `/api/ops/status` reports it as `disabled_in_settings`, NOT as missing — a
+service switched off on purpose must never read as a fault. Do not enable it
+fleet-wide to "fix" that. If a specific alert is wanted, either build it as an
+automation or turn this on for that one home deliberately.
 """
 
 from __future__ import annotations
