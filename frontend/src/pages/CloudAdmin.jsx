@@ -311,13 +311,41 @@ function BackupTab({ homeId }) {
   if (state.status === 'error') return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
   const d = state.data || {}
   const restoreEvents = Array.isArray(d.restore_events) ? d.restore_events : []
-  if (!d.last_backup_at && !d.last_unsealed_at && restoreEvents.length === 0) {
+  // The relay reports a backup RUN: {ts, outcome, stage, files, uploaded_bytes,
+  // error_reason, dry_run}. This tab was reading last_backup_at /
+  // last_unsealed_at — field names the endpoint has never returned — so a home
+  // backing itself up nightly to B2 rendered as "No backup status reported".
+  // `ts` is the authoritative timestamp; the old names are kept as fallbacks in
+  // case an older relay is ever on the other end.
+  const lastBackupAt = d.ts || d.last_backup_at || null
+  const outcome = d.outcome || (d.error_reason ? 'failed' : null)
+  const failed = outcome && outcome !== 'success'
+  const sizeMb = typeof d.uploaded_bytes === 'number'
+    ? (d.uploaded_bytes / 1_048_576).toFixed(1) + ' MB'
+    : null
+  const fileCount = Array.isArray(d.files) ? d.files.length : null
+
+  if (!lastBackupAt && !d.last_unsealed_at && restoreEvents.length === 0) {
     return <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.backupNoStatus')}</p>
   }
 
   return (
     <div style={{ padding: '12px 20px 16px' }}>
-      <StatRow label={t('cloudAdmin.backupLastBackup')} value={d.last_backup_at ? timeAgoLabel(t, d.last_backup_at) : null} />
+      <StatRow label={t('cloudAdmin.backupLastBackup')} value={lastBackupAt ? timeAgoLabel(t, lastBackupAt) : null} />
+      {outcome && (
+        <StatRow
+          label="Outcome"
+          value={
+            <span style={{ color: failed ? '#ef4444' : 'var(--ok)', fontWeight: 600 }}>
+              {failed ? `${outcome}${d.error_reason ? ` — ${d.error_reason}` : ''}` : 'success'}
+              {d.dry_run ? ' (dry run)' : ''}
+            </span>
+          }
+        />
+      )}
+      {fileCount != null && (
+        <StatRow label="Archives" value={`${fileCount} file${fileCount === 1 ? '' : 's'}${sizeMb ? ` · ${sizeMb}` : ''}`} />
+      )}
       <StatRow
         label={t('cloudAdmin.backupKeyState')}
         value={d.last_unsealed_at
