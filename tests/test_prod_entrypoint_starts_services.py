@@ -60,6 +60,54 @@ class TestProductionEntrypointStartsTheRealServices:
         assert "pattern_learning" in src
 
 
+class TestServicesAreCheckableAtRuntime:
+    """Knowing a service is wired is not the same as knowing it is running.
+
+    The four dead services were invisible for months precisely because no
+    surface reported them. /api/ops/status now answers it in one call.
+    """
+
+    def test_every_revived_service_is_reported(self):
+        from backend.routers.ops_router import _EXPECTED_SERVICES
+        for name in ("Reminder", "SensorAlerts", "PatternEngine"):
+            assert name in _EXPECTED_SERVICES
+
+    def test_a_running_thread_is_reported_running(self):
+        import threading
+        from backend.routers.ops_router import _running_services
+
+        stop = threading.Event()
+        t = threading.Thread(target=stop.wait, name="PatternEngine", daemon=True)
+        t.start()
+        try:
+            svc = _running_services()["services"]["PatternEngine"]
+            assert svc["running"] is True and svc["state"] == "running"
+        finally:
+            stop.set(); t.join(timeout=2)
+
+    def test_disabled_by_settings_is_not_reported_as_broken(self, monkeypatch):
+        """'Off because you configured it off' must never read as a fault, or
+        the check becomes noise and stops being read."""
+        import backend.routers.ops_router as ops
+        monkeypatch.setattr(
+            "core.settings_loader.load_settings",
+            lambda: {"sensor_alerts": {"enabled": False}, "pattern_learning": {"enabled": True}},
+        )
+        out = ops._running_services()
+        assert out["services"]["SensorAlerts"]["state"] == "disabled_in_settings"
+        assert "SensorAlerts" not in out["missing"]
+
+    def test_enabled_but_absent_is_reported_missing(self, monkeypatch):
+        import backend.routers.ops_router as ops
+        monkeypatch.setattr(
+            "core.settings_loader.load_settings",
+            lambda: {"sensor_alerts": {"enabled": True}},
+        )
+        out = ops._running_services()
+        assert "SensorAlerts" in out["missing"]
+        assert out["services"]["SensorAlerts"]["state"] == "NOT RUNNING"
+
+
 class TestNoSilentlyUnshippedService:
     """A tripwire for the NEXT one.
 
