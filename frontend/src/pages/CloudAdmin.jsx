@@ -5,7 +5,7 @@ import {
   Activity, Package, Database, Smartphone, LifeBuoy, Terminal,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
-import FleetHealthPanel from '../components/admin/FleetHealthPanel'
+import FleetConsole from '../components/admin/FleetConsole'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
 import { computeHealth, HEALTH_COLORS } from '../lib/fleetHealth'
@@ -1123,12 +1123,13 @@ export default function CloudAdmin() {
       {/* Fleet health — the operator's first question ("is anything broken?")
           answered before the home list, from the relay's rule engine rather
           than a second opinion computed in the browser. */}
-      {/* Rendered unconditionally on purpose: the panel discovers the relay URL
-          from the hub and offers sign-in itself. Gating it on isRelayConfigured()
-          would reproduce the bug it exists to fix — a working fleet rendering as
-          a blank page because nobody had typed a URL into this browser. */}
-      <div style={{ marginBottom: 20 }}>
-        <FleetHealthPanel />
+      {/* Rendered unconditionally on purpose: the console discovers the relay
+          URL from the hub and offers sign-in itself. Gating it on
+          isRelayConfigured() would reproduce the bug it exists to fix — a
+          working fleet rendering as a blank page because nobody had typed a URL
+          into this browser. */}
+      <div style={{ marginBottom: 34 }}>
+        <FleetConsole />
       </div>
 
       {/* Connect relay panel — shown above homes when not yet connected */}

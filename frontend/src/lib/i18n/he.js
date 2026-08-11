@@ -2975,7 +2975,7 @@ export default {
   'cloud.connect':                    'התחברות',
   'cloud.connecting':                 'מתחבר…',
   'cloud.relayUrlPh':                 'https://ziggy-relay.fly.dev',
-  'cloud.homesHeader':                'בתים ({n})',
+  'cloud.homesHeader':                'ניהול בתים ({n})',
   'cloud.thisHome':                   'הבית הזה',
   'cloud.haOnline':                   'HA מחובר',
   'cloud.haOffline':                  'HA מנותק',

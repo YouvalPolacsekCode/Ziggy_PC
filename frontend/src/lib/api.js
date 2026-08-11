@@ -727,6 +727,7 @@ export const relayRegister    = (token, data) => _publicPost(`${relayUrl()}/api/
 // autonomous remediator must all read the SAME rules, or they'll disagree about
 // whether a home is healthy (which is how a 19 h outage stayed invisible).
 export const relayFleetHealth        = ()                => relayRequest('GET', '/api/admin/fleet/health')
+export const relayFleetActivity      = (limit = 40)      => relayRequest('GET', `/api/admin/fleet/activity?limit=${limit}`)
 
 // The hub knows its own relay URL. Asking it removes the "type the relay URL
 // into every browser you use" step that kept the whole fleet view hidden.
