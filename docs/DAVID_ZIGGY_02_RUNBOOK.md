@@ -1,5 +1,20 @@
 # Ziggy_02 for David — Exact Runbook (2026-07-27)
 
+> ## ⚠️ SUPERSEDED — use [RUNBOOK_NEW_HOME.md](RUNBOOK_NEW_HOME.md)
+>
+> This is a historical record of one specific build. **Do not follow it for a new
+> home.** It has drifted from the code in ways that will bite you:
+>
+> * the bootstrap no longer pins a feature branch — it resolves the newest
+>   `release-*` tag;
+> * imaging has 16 steps, not 11 — the missing ones install the Cloudflare
+>   connector, pin the LAN address and enrol the hub on the update channel;
+> * it walks you through scp-ing a secrets file onto the hub, which
+>   `scripts/new-home.sh` no longer does (secrets never touch the hub's disk).
+>
+> Kept for the account of what happened during that build.
+
+
 Build a **real second home** ("David's Home") from zero on the new mini PC, using the
 real beta imaging process. Follow it top to bottom. Every step is exact. When a value
 must come from an account, the step says exactly where to click.

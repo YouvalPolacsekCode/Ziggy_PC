@@ -541,6 +541,42 @@ class TestNewHomeOrchestrator:
         assert not re.search(r"GH_TOKEN=\$\{?GH_TOKEN_VALUE\}? ", text)
         assert not re.search(r"ssh .*GH_TOKEN=", text)
 
+    def test_rejects_an_invalid_coordinator_type(self, fakebin, tmp_path):
+        """coordinator_type is sealed into kit_manifest.yaml. The seal step
+        rejects a bad value too, but that is eight steps into a run."""
+        env = self._base_env(fakebin, tmp_path, self.FULL_SECRETS)
+        r = _run(NEW_HOME, "--host", "ziggy@10.0.0.5", "--name", "X",
+                 "--owner", "o@e.com", "--coordinator-type", "sonof", "--dry-run", env=env)
+        assert r.returncode != 0
+        assert "smlight" in r.stderr and "sonoff_e" in r.stderr
+
+    @pytest.mark.parametrize("ctype", ["smlight", "sonoff_e"])
+    def test_accepts_the_two_real_coordinator_types(self, fakebin, tmp_path, ctype):
+        env = self._base_env(fakebin, tmp_path, self.FULL_SECRETS)
+        r = _run(NEW_HOME, "--host", "ziggy@10.0.0.5", "--name", "X",
+                 "--owner", "o@e.com", "--coordinator-type", ctype, "--dry-run", env=env)
+        assert r.returncode == 0, r.stderr
+
+    def test_passes_coordinator_through_to_imaging(self):
+        """Left unset, imaging defaults to smlight AND to a hardcoded Sonoff
+        by-id path — so a mismatched kit seals a manifest describing hardware
+        it does not have."""
+        text = NEW_HOME.read_text()
+        assert "COORDINATOR_TYPE=%s" in text
+        assert "ZIGBEE_COORDINATOR_DEVICE=%s" in text
+
+    def test_runs_under_bash_3_2(self, fakebin, tmp_path):
+        """macOS still ships bash 3.2 and this script runs on the operator's
+        Mac — mapfile/declare -A/${x,,} would fail only in the field."""
+        env = self._base_env(fakebin, tmp_path, self.FULL_SECRETS)
+        r = subprocess.run(
+            ["/bin/bash", str(NEW_HOME), "--host", "ziggy@10.0.0.5", "--name", "X",
+             "--owner", "o@e.com", "--dry-run"],
+            capture_output=True, text=True, env=env, cwd=str(REPO), timeout=120,
+        )
+        assert r.returncode == 0, r.stderr
+        assert "mapfile" not in r.stderr and "syntax error" not in r.stderr
+
     def test_secrets_go_to_tmpfs_and_are_shredded(self):
         text = NEW_HOME.read_text()
         assert "/dev/shm/" in text, "imaging secrets must live in RAM, not on the SSD"

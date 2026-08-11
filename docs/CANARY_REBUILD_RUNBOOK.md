@@ -1,5 +1,20 @@
 # Canary Home Rebuild — Exact Runbook
 
+> ## ⚠️ SUPERSEDED — use [RUNBOOK_NEW_HOME.md](RUNBOOK_NEW_HOME.md)
+>
+> This is a historical record of one specific build. **Do not follow it for a new
+> home.** It has drifted from the code in ways that will bite you:
+>
+> * the bootstrap no longer pins a feature branch — it resolves the newest
+>   `release-*` tag;
+> * imaging has 16 steps, not 11 — the missing ones install the Cloudflare
+>   connector, pin the LAN address and enrol the hub on the update channel;
+> * it walks you through scp-ing a secrets file onto the hub, which
+>   `scripts/new-home.sh` no longer does (secrets never touch the hub's disk).
+>
+> Kept for the account of what happened during that build.
+
+
 This rebuilds your own home ("Canary Home") from zero on a spare mini PC using
 the real beta imaging process. Follow it top to bottom. Every step is exact.
 When a value must come from one of your accounts, the step tells you exactly
@@ -109,11 +124,11 @@ So you're not hunting for values later, put them in one protected file:
 ```
 mkdir -p ~/.ziggy && chmod 700 ~/.ziggy
 cat > ~/.ziggy/canary-secrets.txt <<'EOF'
-RELAY_ADMIN_EMAIL=silentyouval@gmail.com
-RELAY_ADMIN_PASSWORD=SIgXtK2Je313mNezUndKOm81
-MASTER_KEY_B64=V3riiYWIULa0ZiYhtgoFNa8pBCoDsIeb4lbG/whGsT0=
-B2_KEY_ID=0035de6f62004000000000002
-B2_APP_KEY=K003ss3mZhckpJmObYgArd6wT02kphE
+RELAY_ADMIN_EMAIL=PASTE_RELAY_ADMIN_EMAIL
+RELAY_ADMIN_PASSWORD=PASTE_RELAY_ADMIN_PASSWORD
+MASTER_KEY_B64=PASTE_FOUNDER_MASTER_KEY
+B2_KEY_ID=PASTE_B2_KEY_ID
+B2_APP_KEY=PASTE_B2_APP_KEY
 B2_ENDPOINT=s3.eu-central-003.backblazeb2.com
 EOF
 chmod 600 ~/.ziggy/canary-secrets.txt

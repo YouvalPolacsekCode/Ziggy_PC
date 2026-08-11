@@ -41,6 +41,8 @@
 #   --pair-seconds <n>     hold permit-join open this long to pair kit devices
 #   --matter               enable Matter/Thread (kit must ship a 2nd dongle)
 #   --coordinator-ip <ip>  network SLZB-07 instead of USB
+#   --coordinator-type     smlight | sonoff_e — sealed into the kit manifest
+#   --coordinator-device   /dev/serial/by-id/… (auto-detected if omitted)
 #   --secrets <path>       secrets file (default: newest ~/.ziggy/*secrets*.txt)
 #   --keep-sudo            leave passwordless sudo in place after the run
 #   --resume               resume imaging where it stopped
@@ -59,6 +61,10 @@ ENABLE_ZIGBEE=0
 PAIR_SECONDS=0
 ENABLE_MATTER=0
 COORDINATOR_IP=""
+# Empty = infer from the dongle we find on the hub. Whatever ends up here is
+# SEALED INTO THE KIT MANIFEST, so getting it wrong is not cosmetic.
+COORDINATOR_TYPE=""
+COORDINATOR_DEVICE=""
 KEEP_SUDO=0
 RESUME=0
 DRY_RUN=0
@@ -77,6 +83,8 @@ while [[ $# -gt 0 ]]; do
     --pair-seconds)   PAIR_SECONDS="${2:?}"; shift 2 ;;
     --matter)         ENABLE_MATTER=1; shift ;;
     --coordinator-ip) COORDINATOR_IP="${2:?}"; shift 2 ;;
+    --coordinator-type)   COORDINATOR_TYPE="${2:?}"; shift 2 ;;
+    --coordinator-device) COORDINATOR_DEVICE="${2:?}"; shift 2 ;;
     --keep-sudo)      KEEP_SUDO=1; shift ;;
     --resume)         RESUME=1; shift ;;
     --dry-run)        DRY_RUN=1; shift ;;
@@ -95,6 +103,12 @@ _die()  { printf '\n\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 [[ "$HOST" == *@* ]] || HOST="ziggy@$HOST"
 [[ -n "$HOME_NAME" ]] || _die "--name is required"
 [[ -n "$OWNER_EMAIL" || "$DRY_RUN" == "1" ]] || _die "--owner is required"
+
+# Validate here, on the Mac. The seal step rejects a bad value too, but that is
+# eight steps and several minutes into a run that then has to be resumed.
+if [[ -n "$COORDINATOR_TYPE" && "$COORDINATOR_TYPE" != "smlight" && "$COORDINATOR_TYPE" != "sonoff_e" ]]; then
+  _die "--coordinator-type must be 'smlight' or 'sonoff_e' (got '$COORDINATOR_TYPE')"
+fi
 
 SSH_OPTS=(-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new)
 _ssh()  { ssh "${SSH_OPTS[@]}" -o BatchMode=yes "$HOST" "$@"; }
@@ -222,6 +236,49 @@ if [[ "$ON_HUB_REF" != "$TARGET_TAG" ]]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 3b. COORDINATOR — identify the Zigbee dongle before anything is sealed
+# ───────────────────────────────────────────────────────────────────────────
+# COORDINATOR_TYPE is written into /etc/ziggy/kit_manifest.yaml at the seal
+# step, and the manifest is what the kit IS. Left unset, imaging silently
+# defaults to `smlight` and to a hardcoded *Sonoff* by-id device path — so a
+# mismatched kit would seal a manifest that describes hardware it does not have,
+# and a USB SLZB-07 would be pointed at a device node that does not exist.
+# Detect it instead of defaulting to it.
+# ═══════════════════════════════════════════════════════════════════════════
+if [[ "$ENABLE_ZIGBEE" == "1" && -z "$COORDINATOR_IP" ]]; then
+  _say "Coordinator"
+  if [[ -z "$COORDINATOR_DEVICE" ]]; then
+    # No mapfile: macOS still ships bash 3.2 and this runs on the operator's Mac.
+    _devs=()
+    while IFS= read -r _line; do
+      [[ -n "$_line" ]] && _devs+=("$_line")
+    done < <(_ssh 'ls -1 /dev/serial/by-id/ 2>/dev/null' 2>/dev/null | tr -d '\r')
+    if [[ ${#_devs[@]} -eq 0 ]]; then
+      _die "Zigbee requested but no USB serial device found on the hub. Is the coordinator plugged in? (check: ssh $HOST 'ls -l /dev/serial/by-id/')"
+    fi
+    # Prefer a recognisable coordinator over any other serial gadget present.
+    for d in "${_devs[@]}"; do
+      case "$d" in
+        *SLZB-07*|*SMLIGHT*) COORDINATOR_DEVICE="/dev/serial/by-id/$d"; [[ -z "$COORDINATOR_TYPE" ]] && COORDINATOR_TYPE="smlight"; break ;;
+        *Sonoff_Zigbee*|*Itead*) COORDINATOR_DEVICE="/dev/serial/by-id/$d"; [[ -z "$COORDINATOR_TYPE" ]] && COORDINATOR_TYPE="sonoff_e"; break ;;
+      esac
+    done
+    if [[ -z "$COORDINATOR_DEVICE" ]]; then
+      _warn "found serial devices but none recognisable as a Zigbee coordinator:"
+      for d in "${_devs[@]}"; do _log "  $d"; done
+      _die "pass --coordinator-device /dev/serial/by-id/<one of the above> and --coordinator-type smlight|sonoff_e"
+    fi
+  fi
+  [[ -n "$COORDINATOR_TYPE" ]] || COORDINATOR_TYPE="smlight"
+  _ok "coordinator: $COORDINATOR_TYPE"
+  _log "device: $COORDINATOR_DEVICE"
+elif [[ -n "$COORDINATOR_IP" ]]; then
+  # Network SLZB-07: no local device node, z2m talks tcp://.
+  [[ -n "$COORDINATOR_TYPE" ]] || COORDINATOR_TYPE="smlight"
+  _log "network coordinator at $COORDINATOR_IP (type $COORDINATOR_TYPE)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 4. IMAGE — secrets into RAM, imaging as a detached systemd unit
 # ═══════════════════════════════════════════════════════════════════════════
 _say "Image"
@@ -234,7 +291,9 @@ IMAGING_ENV="$(
   printf 'ENABLE_ZIGBEE=%s\n' "$ENABLE_ZIGBEE"
   printf 'ZIGBEE_PAIR_SECONDS=%s\n' "$PAIR_SECONDS"
   printf 'ENABLE_MATTER=%s\n' "$ENABLE_MATTER"
-  [[ -n "$COORDINATOR_IP" ]] && printf 'COORDINATOR_IP=%s\n' "$COORDINATOR_IP"
+  [[ -n "$COORDINATOR_IP" ]]     && printf 'COORDINATOR_IP=%s\n' "$COORDINATOR_IP"
+  [[ -n "$COORDINATOR_TYPE" ]]   && printf 'COORDINATOR_TYPE=%s\n' "$COORDINATOR_TYPE"
+  [[ -n "$COORDINATOR_DEVICE" ]] && printf 'ZIGBEE_COORDINATOR_DEVICE=%s\n' "$COORDINATOR_DEVICE"
 )"
 
 if ! printf '%s\n' "$IMAGING_ENV" \
