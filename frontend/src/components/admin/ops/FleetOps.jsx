@@ -454,7 +454,7 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
 
 // ── console ────────────────────────────────────────────────────────────────
 
-export default function FleetOps() {
+export default function FleetOps({ onExit }) {
   const [report, setReport] = useState(null)
   const [activity, setActivity] = useState(null)
   const [error, setError] = useState('')
@@ -625,9 +625,18 @@ export default function FleetOps() {
     <div className="zg-ops" style={{ border: '1px solid var(--color-divider)' }}>
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '11px 20px', borderBottom: '1px solid var(--color-divider)' }}>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 16, letterSpacing: '.14em', whiteSpace: 'nowrap' }}>
+        <button
+          onClick={onExit} disabled={!onExit}
+          title={onExit ? 'Back to the admin console' : undefined}
+          style={{
+            fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 16,
+            letterSpacing: '.14em', whiteSpace: 'nowrap', background: 'none',
+            border: 'none', padding: 0, color: 'inherit',
+            cursor: onExit ? 'pointer' : 'default',
+          }}
+        >
           ZIGGY <span style={{ color: 'var(--color-accent)' }}>OPS</span>
-        </div>
+        </button>
         <div style={{ display: 'flex', gap: 4 }}>
           {[['fleet', 'Fleet'], ['events', 'Events']].map(([k, label]) => {
             const on = k === 'events' ? view === 'events' : view !== 'events'

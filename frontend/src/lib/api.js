@@ -732,6 +732,9 @@ export const relayFleetActivity      = (limit = 40)      => relayRequest('GET', 
 // The hub knows its own relay URL. Asking it removes the "type the relay URL
 // into every browser you use" step that kept the whole fleet view hidden.
 export const getOpsRelayConfig       = ()                => get('/ops/relay')
+// Answers 'may I use the ops console?'. Enforcement lives server-side on every
+// ops endpoint; this only decides whether to render or redirect.
+export const getOpsWhoami            = ()                => get('/ops/whoami')
 
 // Safe, idempotent repair verbs, proxied to the hub (backend/routers/ops_router.py).
 export const relayOpsStatus          = (id)              => relayRequest('GET',  `/api/proxy/${id}/api/ops/status`)

@@ -40,7 +40,7 @@ const Suggestions     = lazy(() => import('./pages/Suggestions'))
 const Anomalies       = lazy(() => import('./pages/Anomalies'))
 const Cameras         = lazy(() => import('./pages/Cameras'))
 const AdminConsole    = lazy(() => import('./pages/AdminConsole'))
-const CloudAdmin      = lazy(() => import('./pages/CloudAdmin'))
+const OpsConsole      = lazy(() => import('./pages/OpsConsole'))
 const DebugPage       = lazy(() => import('./pages/DebugPage'))
 const HAUpdate        = lazy(() => import('./pages/HAUpdate'))
 const FeatureFlags    = lazy(() => import('./pages/FeatureFlags'))
@@ -494,9 +494,10 @@ function AppRoutes() {
         <Route element={<OpsPageWrapper title="Debug Console" />}>
           <Route path="debug" element={<DebugPage />} />
         </Route>
-        <Route element={<OpsPageWrapper title="Cloud Administration" />}>
-          <Route path="cloud" element={<CloudAdmin />} />
-        </Route>
+        {/* Full-bleed on purpose: the console brings its own header, and the
+            OpsPageWrapper breadcrumb made two stacked headers. The ZIGGY OPS
+            wordmark is the way back. */}
+        <Route path="cloud" element={<OpsConsole />} />
         <Route element={<OpsPageWrapper title="HA Update Checker" />}>
           <Route path="ha-update" element={<HAUpdate />} />
         </Route>

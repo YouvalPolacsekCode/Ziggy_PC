@@ -28,15 +28,56 @@ lifecycle_router's explicit-intent flow and a human.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from backend.routers.auth_deps import require_role
 from core.logger_module import log_error, log_info
 
 router = APIRouter(prefix="/api/ops")
+
+
+# ── Who may use the ops console ────────────────────────────────────────────
+# `super_admin` is NOT restrictive enough here: every customer is super_admin of
+# their OWN hub, so David and Tslil would each reach this console on their own
+# box. The fleet data itself is behind a separate relay login, but the surface
+# should not be there at all for them.
+#
+# So the ops endpoints require a founder identity — an explicit allow-list —
+# or a request arriving through the relay as relay_admin, which is how the
+# fleet console and the autonomous remediator reach a hub.
+_DEFAULT_FOUNDERS = ("silentyouval@gmail.com",)
+
+
+def _founder_emails() -> set[str]:
+    raw = os.getenv("ZIGGY_FOUNDER_EMAILS", "")
+    listed = [e.strip().lower() for e in raw.split(",") if e.strip()]
+    return set(listed or [e.lower() for e in _DEFAULT_FOUNDERS])
+
+
+def _identities(user: dict) -> set[str]:
+    """Every string that could name this user, lowercased."""
+    out = set()
+    for key in ("email", "username", "user", "name", "id"):
+        v = user.get(key)
+        if isinstance(v, str) and v.strip():
+            out.add(v.strip().lower())
+    return out
+
+
+async def require_founder(user: dict = Depends(require_role("super_admin"))) -> dict:
+    """super_admin AND a founder identity — or the relay acting as relay_admin."""
+    if str(user.get("role", "")).lower() == "relay_admin":
+        return user
+    if _identities(user) & _founder_emails():
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="The ops console is limited to Ziggy staff.",
+    )
 
 
 def _registry_snapshot() -> dict[str, Any]:
@@ -112,8 +153,24 @@ def _running_services() -> dict[str, Any]:
     }
 
 
+@router.get("/whoami")
+async def ops_whoami(user: dict = Depends(require_role("super_admin"))):
+    """May the caller use the ops console?
+
+    Deliberately NOT founder-gated: the router needs an answer for people who
+    are not founders, so it can send them away cleanly instead of rendering a
+    console that 403s on every call. Returns a boolean and nothing else — it
+    must not become a way to enumerate who the founders are.
+    """
+    is_founder = (
+        str(user.get("role", "")).lower() == "relay_admin"
+        or bool(_identities(user) & _founder_emails())
+    )
+    return {"status": "ok", "data": {"founder": is_founder}}
+
+
 @router.get("/status")
-async def ops_status(_: dict = Depends(require_role("super_admin"))):
+async def ops_status(_: dict = Depends(require_founder)):
     """Everything an operator needs about this hub in one call.
 
     Deliberately merges the two views that disagreed during the incident:
@@ -139,7 +196,7 @@ async def ops_status(_: dict = Depends(require_role("super_admin"))):
 
 
 @router.get("/relay")
-async def ops_relay_config(_: dict = Depends(require_role("super_admin"))):
+async def ops_relay_config(_: dict = Depends(require_founder)):
     """Where this hub's relay lives.
 
     The ops console used to require the operator to TYPE the relay URL into
@@ -170,7 +227,7 @@ async def ops_relay_config(_: dict = Depends(require_role("super_admin"))):
 
 
 @router.post("/reconcile")
-async def ops_reconcile(_: dict = Depends(require_role("super_admin"))):
+async def ops_reconcile(_: dict = Depends(require_founder)):
     """Re-read HA and refresh every device status. THE fix for false 'lost'.
 
     Idempotent: on a healthy home it changes nothing. Returns before/after so
@@ -199,7 +256,7 @@ async def ops_reconcile(_: dict = Depends(require_role("super_admin"))):
 
 
 @router.post("/recover-ha")
-async def ops_recover_ha(_: dict = Depends(require_role("super_admin"))):
+async def ops_recover_ha(_: dict = Depends(require_founder)):
     """Nudge the HA / Zigbee-coordinator auto-recovery state machine.
 
     compute_system_health owns recovery (cooldown-gated inside ha_health), so
