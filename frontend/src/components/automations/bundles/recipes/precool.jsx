@@ -15,8 +15,18 @@ const NEAR_HOME_NAME = 'Near Home'
 const DEFAULT_TEMP = 24     // Israeli AC default
 const DEFAULT_RADIUS_KM = 2
 
+// Real air conditioners only. This used to be
+// `domain === 'climate' || entity_id.startsWith('ir.')`, and that second clause
+// matched EVERY IR device — so the picker offered the soundbar, the TV and the
+// projector as things to switch on when you drive home. Worse than a messy
+// list: autoDefaults() takes items[0], so a soundbar sorting first became what
+// Pre-cool actually powered on.
+// The clause was never needed. deviceStore's IR_TYPE_TO_DOMAIN maps an IR `ac`
+// to domain 'climate', so IR ACs already satisfy the first clause; the explicit
+// `_irDevice.type === 'ac'` is belt-and-braces in case that mapping ever moves.
+const isAc = (e) => e.domain === 'climate' || (e._ir && e._irDevice?.type === 'ac')
 const acItems = (ctx) => ctx.entities
-  .filter((e) => e.domain === 'climate' || String(e.entity_id).startsWith('ir.'))
+  .filter(isAc)
   .map((e) => ({ ...ctx.asItem(e), icon: '❄️' }))
 const tempEnts = (ctx) => ctx.entities.filter((e) => e.domain === 'sensor' && e.device_class === 'temperature')
 const isIr = (acId) => String(acId || '').startsWith('ir.')
@@ -129,6 +139,22 @@ export default {
     if (v.notify) actions.push({ type: 'notify', title: 'Pre-cool on Arrival', message: t('automations.precool.notifyMsg') })
 
     const conditions = []
+    // Only pre-cool someone who hasn't arrived yet. The whole feature is a HEAD
+    // START; once you're inside, it has nothing to give — it just fires the AC
+    // and pushes "Pre-cool on Arrival" at someone standing in the room.
+    //
+    // This is not hypothetical (Canary, 2026-08-08): poor GPS on the drive home
+    // — one fix rejected at 500 m accuracy — delayed the Near Home crossing
+    // until 17:10:11, nine minutes after presence had confirmed the user home
+    // at ~17:01. Pre-cool then ran in full. Nothing caught it, because the only
+    // guards were "is the AC already on" (it wasn't — Leave Home had switched it
+    // off) and the optional hot-day check.
+    //
+    // `all_away` is the existing presence primitive and reads exactly right
+    // here: pre-cool an EMPTY house you are driving towards. It also means a
+    // house someone else is already in won't be pre-cooled — correct, since the
+    // person there can set the AC themselves.
+    conditions.push({ type: 'presence', value: 'all_away' })
     // Never pre-cool an AC that's already running — a redundant power_on is at
     // best a duplicate push, at worst (toggle-protocol units) turns it OFF.
     // is_not/on passes for both "off" and "unknown" so a stale state never

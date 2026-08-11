@@ -39,6 +39,28 @@ def find_user_by_token(token: str) -> dict | None:
         stored = user.get("session_token", "")
         if stored and hmac.compare_digest(token, stored):
             return user
+
+    # Wall-tablet credential. Appended LAST so it is only consulted after every
+    # existing lookup has failed — no human session resolves differently than
+    # it did before. A wall panel authenticates as itself rather than borrowing
+    # a person's session, which is what lets its capability policy actually
+    # bind: dropping the credential leaves it unauthenticated, not unrestricted.
+    #
+    # Role 'user', never admin: even before the capability policy is consulted,
+    # a tablet cannot reach anything gated by require_role('admin').
+    try:
+        from services import wall_policy as _wall_policy
+        tablet_id = _wall_policy.resolve_token(token)
+        if tablet_id:
+            return {
+                "username": f"tablet:{tablet_id}",
+                "name": "Wall tablet",
+                "role": "user",
+                "wall_tablet_id": tablet_id,
+                "is_wall_tablet": True,
+            }
+    except Exception:
+        pass
     return None
 
 

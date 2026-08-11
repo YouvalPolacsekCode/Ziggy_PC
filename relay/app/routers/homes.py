@@ -339,7 +339,7 @@ async def home_health(home_id: str, request: Request):
         raise HTTPException(403, "Access denied.")
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT tunnel_url, relay_secret, status FROM homes WHERE id=?", (home_id,)
+            "SELECT name, tunnel_url, relay_secret, status FROM homes WHERE id=?", (home_id,)
         )
         if not rows:
             raise HTTPException(404, "Home not found.")
@@ -363,4 +363,24 @@ async def home_health(home_id: str, request: Request):
 
     verdict = evaluate_home_health(payload, ts_epoch)
     verdict["status"] = h["status"]
+    # Richer rule-engine verdict alongside the legacy flags. Same rules the
+    # fleet view and the autonomous remediator use, so an operator drilling
+    # into one home never sees a different story than the fleet list told them.
+    try:
+        from .. import fleet_health
+        raw_ts = None
+        async with get_db() as db:
+            trows = await db.execute_fetchall(
+                "SELECT ts FROM telemetry_raw WHERE home_id=? ORDER BY id DESC LIMIT 1",
+                (home_id,),
+            )
+        if trows:
+            raw_ts = dict(trows[0]).get("ts")
+        verdict["health"] = fleet_health.evaluate(
+            {"id": home_id, "name": h.get("name"), "status": h["status"]},
+            payload, raw_ts, now=time.time(),
+        )
+    except Exception:
+        # Never let the new engine break the legacy contract.
+        pass
     return verdict

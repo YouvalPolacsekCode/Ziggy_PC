@@ -371,7 +371,7 @@ def compute_system_health(
             "body_key":  f"health.manual.{_recovery.manual_action_code}.body",
         }
 
-    return {
+    result = {
         "level":   level,
         "primary": primary,
         "ha": {
@@ -404,6 +404,40 @@ def compute_system_health(
             "set_size":        len(_ack.offline_set),
         },
     }
+    _remember_health(result, now)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Last-computed cache — read by telemetry (fleet awareness)
+# ---------------------------------------------------------------------------
+# The scheduler recomputes health every 2 min (_health_watchdog_tick). The
+# telemetry poster runs every 5 min and must NOT recompute: compute_system_health
+# has side effects (schedules auto-recovery, mutates ack state), so calling it
+# from a second caller would double-fire recovery attempts. Instead we stash the
+# last result here and telemetry reads it. Stale-but-honest beats side-effecting.
+_last_health: dict | None = None
+_last_health_at: float = 0.0
+
+
+def _remember_health(result: dict, now: float) -> None:
+    global _last_health, _last_health_at
+    _last_health = result
+    _last_health_at = now
+
+
+def get_last_health(*, max_age_s: float = 900.0) -> dict | None:
+    """Most recent compute_system_health() result, or None if never/too old.
+
+    max_age_s guards against reporting a health snapshot from before a long
+    stall as if it were current — the fleet would rather see "unknown" than a
+    confident lie. 15 min = ~7 missed watchdog ticks.
+    """
+    if _last_health is None:
+        return None
+    if (time.time() - _last_health_at) > max_age_s:
+        return None
+    return _last_health
 
 
 def _classify(

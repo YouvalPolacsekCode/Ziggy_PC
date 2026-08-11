@@ -51,6 +51,10 @@ const MobileOnboarding  = lazy(() => import('./pages/MobileOnboarding'))
 const WebOnboarding     = lazy(() => import('./pages/WebOnboarding'))
 const MobileDiagnostics = lazy(() => import('./pages/MobileDiagnostics'))
 const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
+// Wall dashboard (tablet). Lazy so none of it — grid engine, modules, CSS —
+// ships in the bundle a phone or browser downloads.
+const Wall              = lazy(() => import('./pages/Wall'))
+const WallTablets       = lazy(() => import('./pages/WallTablets'))
 const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
 // Public client-facing marketing site. Lazy so none of it ships in the
 // authenticated app's initial bundle — only the /welcome branch in App() loads it.
@@ -121,6 +125,18 @@ function OpsPageWrapper({ title }) {
 // Captured at module load time — before any renders.
 // 'reload' = F5/Ctrl+R (stay on current URL), 'navigate' = cold start (redirect to /).
 const _navType = performance?.getEntriesByType?.('navigation')?.[0]?.type ?? 'navigate'
+
+// A wall tablet is mounted in kiosk mode and cold-boots straight to /wall, so
+// the cold-start "send them home" rewrite below must not hijack it — every
+// single boot is a fresh navigation, which would otherwise land the wall panel
+// on the phone dashboard forever. Same exemption /presence/ already has.
+const _isWallPath = () => window.location.pathname.startsWith('/wall')
+
+// A device set to "wall dashboard" boots into /wall instead of the phone
+// dashboard. Read once at module load, before BrowserRouter mounts, so a
+// kiosk tablet never flashes the app on its way to the wall.
+import { isWallMode as _isWallModeFn } from './lib/wallMode'
+const _wallModeDevice = (() => { try { return _isWallModeFn() } catch { return false } })()
 let _appMounted = false
 // Tracks the previous render's authenticated value so we can detect the
 // false→true edge (i.e. the user just logged in) and force the URL back
@@ -148,6 +164,12 @@ function MobileOnboardingRedirector() {
   const lastPathRef = useRef(location.pathname)
   useEffect(() => {
     if (!isNative()) return
+    // A wall panel never needs a mobile DEVICE identity. That pairing exists so
+    // a phone can receive push and report background presence — neither of
+    // which a screen bolted to a wall does. Forcing it through onboarding just
+    // put a "pair your device" wall in front of the dashboard, needing a code
+    // from another device to get past.
+    if (_isWallModeFn() || location.pathname.startsWith('/wall')) return
     if (location.pathname === '/mobile-onboarding') {
       lastPathRef.current = location.pathname
       return
@@ -440,6 +462,8 @@ function AppRoutes() {
         <Route path="people"                 element={<Navigate to="/settings/people" replace />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
+        {/* Wall dashboard tablet management (additive) */}
+        <Route path="settings/tablets"       element={<WallTablets />} />
         <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
         <Route path="anomalies" element={<Navigate to="/alerts" replace />} />
@@ -455,6 +479,10 @@ function AppRoutes() {
           <Route path="settings/music" element={<MediaSettings />} />
         )}
       </Route>
+
+      {/* ── Wall dashboard — tablet-only, no AppShell. Additive surface: nothing
+             else in this file changes and no existing route is affected. ── */}
+      <Route path="wall" element={<Wall />} />
 
       {/* ── Mobile (Ziggy Home native app) onboarding — no AppShell, only reachable inside Capacitor ── */}
       <Route path="mobile-onboarding" element={<MobileOnboarding />} />
@@ -640,6 +668,11 @@ export default function App() {
   useEffect(() => {
     if (!isNative()) return
     if (!authenticated) return
+    // A wall panel is FURNITURE, not a person. It never leaves, so anything it
+    // contributes to presence is noise at best: going through onboarding once
+    // created a second presence person on the same LAN host as the phone, so
+    // every arrival and departure fired twice. It also has no use for push.
+    if (_wallModeDevice) return
 
     const Geo = window?.Capacitor?.Plugins?.Geolocation
     if (!Geo) return
@@ -714,6 +747,11 @@ export default function App() {
   useEffect(() => {
     if (!isNative()) return
     if (!authenticated) return
+    // A wall panel is FURNITURE, not a person. It never leaves, so anything it
+    // contributes to presence is noise at best: going through onboarding once
+    // created a second presence person on the same LAN host as the phone, so
+    // every arrival and departure fired twice. It also has no use for push.
+    if (_wallModeDevice) return
     const ZP = window?.Capacitor?.Plugins?.ZiggyPresence
     if (!ZP) return
 
@@ -963,6 +1001,11 @@ export default function App() {
   useEffect(() => {
     if (!isNative()) return
     if (!authenticated) return
+    // A wall panel is FURNITURE, not a person. It never leaves, so anything it
+    // contributes to presence is noise at best: going through onboarding once
+    // created a second presence person on the same LAN host as the phone, so
+    // every arrival and departure fired twice. It also has no use for push.
+    if (_wallModeDevice) return
     let alive = true
     ;(async () => {
       try {
@@ -1084,7 +1127,8 @@ export default function App() {
   _wasAuthenticated = true
   if (_justLoggedIn &&
       window.location.pathname !== '/' &&
-      !window.location.pathname.startsWith('/presence/')) {
+      !window.location.pathname.startsWith('/presence/') &&
+      !_isWallPath()) {
     window.history.replaceState(null, '', '/')
   }
 
@@ -1096,9 +1140,17 @@ export default function App() {
     if (
       _navType !== 'reload' &&
       window.location.pathname !== '/' &&
-      !window.location.pathname.startsWith('/presence/')
+      !window.location.pathname.startsWith('/presence/') &&
+      !_isWallPath()
     ) {
       window.history.replaceState(null, '', '/')
+    }
+    // Wall-mode devices land on the wall rather than the phone dashboard.
+    // Done here, before the router mounts, so there is no visible flash of
+    // the app first — which on a wall panel would look like a glitch every
+    // time the screen wakes.
+    if (_wallModeDevice && window.location.pathname === '/') {
+      window.history.replaceState(null, '', '/wall')
     }
   }
 

@@ -1,0 +1,1129 @@
+/* Wall dashboard — tablet surface at /wall.
+ *
+ * ADDITIVE: every selector is namespaced under .zw-* and this file is only
+ * imported by pages/Wall.jsx. It cannot reach the app or the existing /hub.
+ *
+ * Everything is expressed in the app's existing design tokens (--bg, --ink,
+ * --accent, --line, --surface, --inverse …) so light and dark both work and
+ * a future palette change cascades here for free. No literal hex values
+ * except where a colour is genuinely non-semantic (the idle screen's true
+ * black, which exists to save OLED pixels rather than to match a palette).
+ *
+ * Layout model:
+ *   .zw-page      full-viewport flex column, never scrolls
+ *   .zw-header    fixed height, shrink-proof
+ *   .zw-body      flex row: rail + board, both independently scrollable
+ *   .zw-board     the absolutely-positioned module grid
+ *
+ * RTL: uses logical properties (inline-start/end, margin-inline) throughout,
+ * so `dir="rtl"` mirrors the whole board with no separate rules.
+ */
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+
+.zw-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Heebo', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  /* A wall tablet is touched constantly and never needs text selection or
+     the iOS/Android long-press callout. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* Everything dims a touch while the socket is down, so a stale board is
+   visibly stale from across the room without being unreadable. */
+.zw-page.is-stale .zw-body { filter: saturate(0.45) opacity(0.72); transition: filter .4s ease; }
+
+.zw-eyebrow {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: clamp(9px, 0.85vw, 11px);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.zw-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 1.4vw, 18px);
+  padding: clamp(10px, 1.6vh, 18px) clamp(14px, 2vw, 30px) clamp(6px, 1vh, 12px);
+  min-height: 0;
+}
+
+.zw-mark { color: var(--accent); flex: none; }
+
+.zw-ident { min-width: 0; flex: 0 1 auto; }
+.zw-date  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zw-greet {
+  font-size: clamp(15px, 1.7vw, 22px);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.zw-tabs { display: flex; gap: 6px; margin-inline-start: clamp(4px, 1vw, 14px); flex: none; }
+
+.zw-tab {
+  border: none;
+  border-radius: 999px;
+  padding: clamp(7px, 1vh, 10px) clamp(13px, 1.6vw, 22px);
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(12px, 1.1vw, 15px);
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  transition: background .18s ease, color .18s ease;
+}
+.zw-tab[aria-selected="true"] { background: var(--inverse); color: var(--on-inverse); }
+
+.zw-clock-wrap { margin-inline-start: auto; text-align: end; flex: none; }
+.zw-clock {
+  font-size: clamp(24px, 3vw, 38px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+}
+.zw-weather { font-size: clamp(10px, 0.95vw, 12.5px); color: var(--ink-faint); margin-top: 2px; white-space: nowrap; }
+
+.zw-actions { display: flex; gap: clamp(5px, 0.7vw, 9px); align-items: center; flex: none; }
+
+.zw-btn {
+  border: none;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(11px, 1vw, 13.5px);
+  padding: clamp(7px, 1vh, 10px) clamp(11px, 1.3vw, 17px);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: background .18s ease, color .18s ease, transform .1s ease;
+}
+.zw-btn:active { transform: scale(0.96); }
+.zw-btn.is-on { background: var(--accent); color: var(--on-accent); }
+.zw-btn-icon {
+  width: clamp(34px, 3.4vw, 40px);
+  height: clamp(34px, 3.4vw, 40px);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(13px, 1.2vw, 16px);
+}
+.zw-btn-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600; }
+
+/* ── Body: rail + board ─────────────────────────────────────────────────── */
+
+.zw-body {
+  flex: 1;
+  display: flex;
+  gap: clamp(10px, 1.3vw, 18px);
+  padding: clamp(4px, 0.8vh, 10px) clamp(14px, 2vw, 30px) clamp(10px, 1.4vh, 18px);
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ── Rooms rail (fixed furniture) ───────────────────────────────────────── */
+
+.zw-rail {
+  flex: none;
+  width: clamp(230px, 22vw, 310px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.zw-rail.is-collapsed { width: 0; overflow: hidden; }
+
+.zw-rail-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 4px clamp(5px, 0.9vh, 10px);
+  flex: none;
+}
+
+.zw-rail-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.zw-rail-list::-webkit-scrollbar { width: 0; height: 0; }
+
+.zw-room {
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  flex: none;
+}
+
+.zw-room-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: clamp(9px, 1.3vh, 14px) clamp(12px, 1.1vw, 16px);
+  cursor: pointer;
+  width: 100%;
+  background: none; border: none; font: inherit; color: inherit;
+  text-align: start;
+}
+.zw-room-name { font-weight: 700; font-size: clamp(13px, 1.15vw, 15.5px); color: var(--ink); }
+.zw-room-status { font-size: clamp(10.5px, 0.9vw, 12px); margin-top: 1px; color: var(--ink-faint); }
+.zw-room-status.is-active { color: var(--ok); }
+
+.zw-chev {
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1;
+  flex: none;
+  width: 16px;
+  text-align: center;
+  transition: transform .22s ease;
+}
+.zw-chev.is-open { transform: rotate(180deg); }
+
+.zw-room-body { border-top: 0.5px solid var(--line); }
+
+/* ── Device rows ────────────────────────────────────────────────────────── */
+
+.zw-dev {
+  padding: clamp(7px, 1vh, 11px) clamp(12px, 1.1vw, 16px);
+  border-bottom: 0.5px solid var(--line);
+}
+.zw-dev:last-child { border-bottom: none; }
+.zw-dev.is-offline { opacity: 0.55; }
+
+.zw-dev-row { display: flex; align-items: center; gap: 10px; }
+.zw-dev-label { font-weight: 500; font-size: clamp(12.5px, 1.05vw, 14px); color: var(--ink); }
+.zw-dev-state {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: clamp(9.5px, 0.82vw, 11px);
+  color: var(--ink-faint);
+  margin-top: 1px;
+}
+.zw-dev-state.is-on   { color: var(--ok); }
+.zw-dev-state.is-warn { color: var(--warn); }
+.zw-dev-state.is-err  { color: var(--err); }
+
+/* Optimistic writes get a subtle pulse until the hub confirms, so a slow
+   Zigbee round-trip reads as "working" rather than "ignored my tap". */
+.zw-dev.is-pending .zw-dev-state { animation: zwPending 1s ease-in-out infinite; }
+@keyframes zwPending { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+
+/* ── Switch ─────────────────────────────────────────────────────────────── */
+
+.zw-switch {
+  --sw-w: 42px; --sw-h: 26px; --sw-knob: 20px;
+  width: var(--sw-w); height: var(--sw-h);
+  border-radius: 999px;
+  background: var(--line-2);
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: background .2s ease;
+}
+.zw-switch.is-sm { --sw-w: 38px; --sw-h: 23px; --sw-knob: 17px; }
+.zw-switch.is-on { background: var(--ok); }
+.zw-switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 3px;
+  width: var(--sw-knob); height: var(--sw-knob);
+  border-radius: 50%;
+  background: #fff;
+  transform: translateY(-50%);
+  transition: inset-inline-start .2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+.zw-switch.is-on::after { inset-inline-start: calc(var(--sw-w) - var(--sw-knob) - 3px); }
+.zw-switch:disabled { opacity: .45; cursor: default; }
+
+/* ── Inline controls ────────────────────────────────────────────────────── */
+
+.zw-dim {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--accent);
+  height: 22px;
+  cursor: pointer;
+}
+
+.zw-step {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 0.5px solid var(--line);
+  color: var(--ink);
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 15px;
+  cursor: pointer; flex: none;
+  font-family: inherit;
+}
+.zw-step:active { background: var(--surface-3); }
+.zw-temp {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 13.5px; font-weight: 600;
+  min-width: 34px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.zw-pill {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(11px, 0.95vw, 12.5px);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.zw-pill.is-locked { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.zw-pill.is-danger { background: var(--accent); color: var(--on-accent); }
+
+/* ── Board ──────────────────────────────────────────────────────────────── */
+
+.zw-board-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.zw-board-wrap::-webkit-scrollbar { width: 0; height: 0; }
+
+.zw-board { position: relative; width: 100%; }
+
+.zw-mod {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  /* Position transitions make reflow legible — cards visibly slide out of the
+     way rather than teleporting, which is what sells the "it pushed things
+     aside" mental model. Suppressed on the card being dragged. */
+  transition: left .22s cubic-bezier(.2,.8,.2,1), top .22s cubic-bezier(.2,.8,.2,1),
+              width .22s cubic-bezier(.2,.8,.2,1), height .22s cubic-bezier(.2,.8,.2,1);
+}
+.zw-mod.is-dragging {
+  transition: none;
+  z-index: 30;
+  transform: scale(1.03);
+  filter: drop-shadow(0 18px 34px rgba(0,0,0,.24));
+}
+.zw-mod.is-resizing { transition: none; z-index: 30; }
+
+.zw-card {
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.zw-card-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 4px 7px;
+  flex: none;
+}
+.zw-card-body { flex: 1; overflow-y: auto; min-height: 0; scrollbar-width: none; }
+.zw-card-body::-webkit-scrollbar { width: 0; }
+.zw-card-foot { flex: none; border-top: 0.5px solid var(--line); padding: 8px 14px; }
+
+.zw-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: clamp(12px, 1vw, 14px);
+  color: var(--ink);
+  box-sizing: border-box;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.zw-input::placeholder { color: var(--ink-ghost); }
+
+.zw-empty {
+  padding: 18px 16px;
+  color: var(--ink-ghost);
+  font-size: clamp(11.5px, 1vw, 13px);
+  text-align: center;
+}
+
+/* ── Edit chrome ────────────────────────────────────────────────────────── */
+
+.zw-page.is-editing .zw-mod .zw-card { outline: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 3px; }
+.zw-page.is-editing .zw-card-body { pointer-events: none; }
+
+.zw-mod-tools {
+  position: absolute;
+  top: -10px;
+  inset-inline-end: 4px;
+  display: flex; gap: 5px;
+  z-index: 5;
+}
+.zw-tool {
+  width: 27px; height: 27px;
+  border-radius: 50%;
+  border: none;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  display: grid; place-items: center;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+.zw-tool.is-danger { background: var(--accent); color: var(--on-accent); }
+
+/* Resize handle — a quiet accent corner, with a fingertip-sized hit area.
+ *
+ * The look is the original hairline bracket: on a wall dashboard the edit
+ * affordances should stay out of the way, and a filled tab in every card
+ * corner shouted far too loudly.
+ *
+ * What changed is only reliability, none of which is visible:
+ *   - it sits fully INSIDE its card. It used to hang 6px outside, and since
+ *     .zw-mod cards are positioned siblings, whichever card came later in DOM
+ *     order painted over the protruding corner — covering the handle perhaps
+ *     half the time. That was the "works sometimes" symptom.
+ *   - the button is 46px even though the mark is 16px, so the target is a
+ *     finger, not a hairline.
+ *   - touch-action:none, so the browser never claims the gesture for a scroll.
+ */
+.zw-resize {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  width: 46px; height: 46px;
+  z-index: 8;
+  cursor: nwse-resize;
+  background: none; border: none;
+  touch-action: none;
+  padding: 0;
+}
+.zw-resize::after {
+  content: '';
+  position: absolute;
+  inset-block-end: 9px; inset-inline-end: 9px;
+  width: 16px; height: 16px;
+  border-inline-end: 2.5px solid var(--accent);
+  border-block-end: 2.5px solid var(--accent);
+  border-end-end-radius: 5px;
+  transition: transform .12s ease, opacity .12s ease;
+  opacity: .85;
+}
+.zw-resize:active::after { transform: scale(1.25); opacity: 1; }
+
+/* While editing, the card under the finger floats above its neighbours so its
+   handles are never covered. */
+.zw-page.is-editing .zw-mod:has(.zw-resize:active),
+.zw-page.is-editing .zw-mod.is-dragging,
+.zw-page.is-editing .zw-mod.is-resizing { z-index: 20; }
+
+.zw-drop-ghost {
+  position: absolute;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 50%, transparent);
+  z-index: 1;
+  pointer-events: none;
+  transition: left .16s ease, top .16s ease, width .16s ease, height .16s ease;
+}
+
+.zw-fab {
+  position: fixed;
+  inset-block-end: clamp(18px, 3vh, 30px);
+  inset-inline-end: clamp(18px, 3vw, 30px);
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 28px; font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 45;
+  box-shadow: var(--shadow-fab);
+}
+
+/* ── Pinned strip ───────────────────────────────────────────────────────── */
+
+.zw-strip {
+  flex: none;
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 clamp(14px, 2vw, 30px) clamp(10px, 1.6vh, 18px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.zw-strip::-webkit-scrollbar { height: 0; }
+
+.zw-chip {
+  display: flex; align-items: center; gap: 8px;
+  border: 0.5px solid var(--line);
+  border-radius: 999px;
+  padding: clamp(6px, 1vh, 10px) clamp(12px, 1.4vw, 18px);
+  flex: none;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  transition: background .18s ease, color .18s ease;
+}
+.zw-chip.is-on { background: var(--inverse); color: var(--on-inverse); border-color: transparent; }
+.zw-chip-label { font-weight: 700; font-size: clamp(11.5px, 1vw, 13.5px); white-space: nowrap; }
+.zw-chip-state {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: clamp(9.5px, 0.85vw, 11px);
+  white-space: nowrap;
+  opacity: .75;
+}
+/* In light mode an "on" chip is near-black against white — unmistakable from
+   across a room. In dark mode --inverse only LIFTS off the background, which
+   is a much quieter signal, so on-ness gets carried by the accent instead of
+   by luminance alone. Without this, a dark wall reads as "everything looks
+   about the same". */
+.zw-chip.is-on .zw-chip-state { color: var(--accent); opacity: 1; }
+[data-palette="dark"] .zw-chip.is-on {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+/* ── Scene tiles ────────────────────────────────────────────────────────── */
+
+.zw-scenes { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 9px; padding: 12px; }
+.zw-scene {
+  border: 0.5px solid var(--line);
+  border-radius: 16px;
+  padding: clamp(10px, 1.4vh, 15px) clamp(11px, 1.2vw, 16px);
+  cursor: pointer;
+  background: var(--surface-2);
+  color: var(--ink);
+  text-align: start;
+  font: inherit;
+  transition: transform .1s ease, background .18s ease;
+}
+.zw-scene:active { transform: scale(0.97); }
+.zw-scene.is-dark { background: var(--inverse); color: var(--on-inverse); border-color: transparent; }
+.zw-scene-name { font-weight: 700; font-size: clamp(12.5px, 1.1vw, 14.5px); }
+.zw-scene-sub  { font-size: clamp(9.5px, 0.85vw, 11px); opacity: .68; margin-top: 2px; }
+
+/* ── Assistant module ───────────────────────────────────────────────────── */
+
+.zw-ziggy {
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border-radius: 18px;
+  padding: clamp(11px, 1.6vh, 17px) clamp(13px, 1.5vw, 20px);
+  display: flex; align-items: center; gap: 13px;
+  flex: 1;
+  min-height: 0;
+  cursor: text;
+}
+/* Sized off the viewport's SHORT axis so the orb grows on a tall portrait
+   panel (where the hero card is stretched to fill and a small orb would leave
+   it looking empty) without ballooning on a wide landscape one. */
+.zw-orb {
+  width:  clamp(34px, 5.5vmin, 76px);
+  height: clamp(34px, 5.5vmin, 76px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, var(--surface), var(--accent));
+  flex: none;
+  animation: zwOrb 4s ease-in-out infinite;
+}
+.zw-orb.is-busy { animation-duration: 1.1s; }
+@keyframes zwOrb {
+  0%,100% { box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 42%, transparent); }
+  50%     { box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 85%, transparent); }
+}
+.zw-ziggy-title { font-weight: 700; font-size: clamp(13px, 1.2vw, 16px); }
+.zw-ziggy-hint  { font-size: clamp(10.5px, 0.95vw, 12.5px); opacity: .62; margin-top: 2px; }
+.zw-ziggy-input {
+  width: 100%;
+  background: transparent; border: none; outline: none;
+  color: inherit; font: inherit;
+  font-size: clamp(13px, 1.2vw, 16px);
+  font-weight: 600;
+  -webkit-user-select: text; user-select: text;
+}
+.zw-ziggy-input::placeholder { color: currentColor; opacity: .45; }
+
+/* ── Talk to Ziggy: fixed furniture ─────────────────────────────────────────
+   Two shapes — see ZiggyBar. `inline` sits at the foot of the rooms rail on a
+   wide panel; `floating` is a round mic in the corner in portrait, where a
+   full-width bar would cost a strip of an already-tall board. */
+
+/* Shared mic. Sized off the viewport's short axis so it grows on a big panel
+   without ballooning on a small one, and never below a comfortable target. */
+.zw-mic {
+  flex: none;
+  width:  clamp(48px, 7vmin, 66px);
+  height: clamp(48px, 7vmin, 66px);
+  border-radius: 50%;
+  border: none;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 20px;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, box-shadow .2s ease;
+}
+.zw-mic:active { transform: scale(.94); }
+.zw-mic.is-listening {
+  box-shadow: 0 0 0 3px var(--accent), 0 0 30px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.zw-mic .zw-orb { width: 58%; height: 58%; animation-duration: 4s; }
+.zw-mic.is-listening .zw-orb,
+.zw-mic.is-thinking  .zw-orb { animation-duration: 1.1s; }
+.zw-mic.is-muted { background: var(--surface); color: var(--ink-2); border: 0.5px solid var(--line); }
+
+/* The field. A real input, not a sheet: typing is one tap, not a modal over
+   the dashboard. */
+.zw-ziggybar-input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 16px;
+  padding: 0 6px 0 14px;
+}
+[dir="rtl"] .zw-ziggybar-input { padding: 0 14px 0 6px; }
+.zw-ziggybar-input .zw-ziggy-input {
+  color: var(--ink);
+  padding: clamp(11px, 1.5vh, 15px) 0;
+  -webkit-user-select: text; user-select: text;
+}
+.zw-ziggybar-send {
+  flex: none;
+  width: 34px; height: 34px;
+  border: none; border-radius: 50%;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 16px; cursor: pointer;
+}
+.icon-flip-rtl, [dir="rtl"] .zw-ziggybar-send { transform: scaleX(-1); }
+
+/* ── inline (wide): foot of the rooms rail ─────────────────────────────── */
+
+.zw-ziggybar { flex: none; margin-top: 10px; }
+.zw-ziggybar-row { display: flex; align-items: center; gap: 9px; }
+/* Reserved even when empty so an answer never changes the bar's height and
+   shoves the rooms list up the panel. */
+.zw-ziggybar-status {
+  min-height: 1.2em;
+  margin: 0 2px 6px;
+  font-size: clamp(10.5px, 0.9vw, 12px);
+  color: var(--ink-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.zw-ziggybar.is-listening .zw-ziggybar-status { color: var(--accent); }
+
+/* ── floating (portrait): a mic in the corner ──────────────────────────── */
+
+.zw-ziggyfloat {
+  position: fixed;
+  inset-inline-end: 16px;
+  inset-block-end: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  /* Leaves the board clickable everywhere the control isn't. */
+  pointer-events: none;
+}
+.zw-ziggyfloat > * { pointer-events: auto; }
+.zw-ziggyfloat-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Only the open state needs a surface; the bare mic carries its own. */
+  border-radius: 999px;
+}
+/* Floating over the board, it has to read as a control at a glance and from a
+   step away — the muted (no-microphone) styling is too quiet for that out
+   here, and a shadow is what separates it from the card it sits over. */
+.zw-ziggyfloat .zw-mic {
+  box-shadow: var(--shadow-lg);
+}
+.zw-ziggyfloat .zw-mic.is-muted {
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border: none;
+}
+.zw-ziggyfloat.is-open .zw-ziggyfloat-pill {
+  background: var(--bg-2);
+  border: 0.5px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  padding: 7px;
+  width: min(520px, calc(100vw - 32px));
+}
+.zw-ziggyfloat-status {
+  max-width: min(520px, calc(100vw - 32px));
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border-radius: 14px;
+  padding: 8px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Connection chip ────────────────────────────────────────────────────── */
+
+.zw-conn {
+  position: fixed;
+  inset-block-start: 10px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  background: var(--warn);
+  color: #fff;
+  border-radius: 999px;
+  padding: 7px 18px;
+  font-size: 12.5px; font-weight: 700;
+  z-index: 80;
+  box-shadow: var(--shadow-md);
+}
+[dir="rtl"] .zw-conn { transform: translateX(50%); }
+.zw-conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: zwPending 1.2s ease-in-out infinite; }
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+
+.zw-toast {
+  position: fixed;
+  inset-block-end: 26px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border-radius: 999px;
+  padding: 12px 26px;
+  font-weight: 700;
+  font-size: clamp(12px, 1.1vw, 14.5px);
+  z-index: 90;
+  box-shadow: var(--shadow-lg);
+  max-width: 80vw;
+  text-align: center;
+}
+[dir="rtl"] .zw-toast { transform: translateX(50%); }
+.zw-toast.is-err { background: var(--err); color: #fff; }
+
+/* ── Modal ──────────────────────────────────────────────────────────────── */
+
+.zw-scrim {
+  position: fixed; inset: 0;
+  background: var(--backdrop);
+  z-index: 60;
+  display: grid; place-items: center;
+  padding: 20px;
+}
+.zw-modal {
+  width: min(680px, 94vw);
+  max-height: 86vh;
+  background: var(--bg-2);
+  border: 0.5px solid var(--line);
+  border-radius: 24px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.zw-modal-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 0.5px solid var(--line);
+  flex: none;
+}
+.zw-modal-title { font-weight: 800; font-size: clamp(15px, 1.5vw, 19px); }
+.zw-modal-body { flex: 1; overflow-y: auto; padding: 6px 20px 18px; }
+
+/* ── PIN pad ────────────────────────────────────────────────────────────── */
+
+.zw-pin { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 26px 20px 30px; }
+.zw-pin-dots { display: flex; gap: 12px; margin: 6px 0 10px; }
+.zw-pin-dot { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--line-2); }
+.zw-pin-dot.is-filled { background: var(--accent); border-color: var(--accent); }
+.zw-pin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.zw-pin-key {
+  width: 74px; height: 62px;
+  border-radius: 16px;
+  border: 0.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 22px; font-weight: 600;
+  cursor: pointer;
+}
+.zw-pin-key:active { background: var(--surface-3); }
+.zw-pin-key.is-blank { visibility: hidden; }
+
+/* ── Idle / always-on-display ───────────────────────────────────────────── */
+
+.zw-idle {
+  position: fixed; inset: 0;
+  /* True black, not a token: on an OLED wall tablet this is the difference
+     between lit pixels and off pixels for 8 hours a night. */
+  background: #000;
+  color: #e8e4dc;
+  z-index: 100;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  cursor: pointer;
+}
+/* Burn-in protection: the whole stack drifts slowly around the panel so no
+   pixel holds the same bright glyph for months. */
+.zw-idle-inner {
+  display: flex; flex-direction: column; align-items: center;
+  animation: zwDrift 900s linear infinite;
+  will-change: transform;
+}
+@keyframes zwDrift {
+  0%   { transform: translate(-14px, -10px); }
+  25%  { transform: translate(14px,  -6px); }
+  50%  { transform: translate(10px,  12px); }
+  75%  { transform: translate(-10px,  8px); }
+  100% { transform: translate(-14px, -10px); }
+}
+.zw-idle-date { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: .2em; color: #55524d; }
+.zw-idle-clock {
+  font-size: clamp(80px, 17vw, 190px);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.zw-idle-status { font-size: clamp(13px, 1.5vw, 18px); color: #6b6862; margin-top: 16px; }
+.zw-idle-orb {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f2ead9, #c96442);
+  margin-top: 26px;
+  animation: zwOrb 3.5s ease-in-out infinite;
+}
+.zw-idle-tag { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10px; color: #3a3833; margin-top: 30px; letter-spacing: .2em; }
+
+/* ── Automations view ───────────────────────────────────────────────────── */
+
+.zw-autos {
+  flex: 1; overflow-y: auto; min-height: 0;
+  padding: clamp(6px, 1vh, 12px) clamp(14px, 2vw, 30px) clamp(16px, 2vh, 26px);
+  scrollbar-width: none;
+}
+.zw-autos::-webkit-scrollbar { width: 0; }
+.zw-autos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; align-items: start; }
+.zw-auto {
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 18px;
+  padding: clamp(12px, 1.6vh, 18px) clamp(13px, 1.4vw, 20px);
+}
+.zw-auto.is-off { opacity: .58; }
+.zw-auto-name { flex: 1; font-weight: 800; font-size: clamp(14px, 1.3vw, 16.5px); min-width: 0; }
+.zw-auto-line { display: flex; gap: 9px; align-items: baseline; }
+.zw-auto-key {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .14em;
+  color: var(--ink-ghost); width: 38px; flex: none;
+  text-transform: uppercase;
+}
+.zw-auto-val { font-size: clamp(11.5px, 1.05vw, 13.5px); color: var(--ink-2); }
+
+/* ── Responsive: narrow tablets and portrait ────────────────────────────── */
+
+/* Below this the rail eats too much of the board, so it becomes an overlay
+   drawer the user opens from the header instead of a permanent column. */
+@media (max-width: 820px) {
+  .zw-rail {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: min(320px, 84vw);
+    z-index: 55;
+    background: var(--bg);
+    border-inline-end: 0.5px solid var(--line);
+    padding: 16px 14px;
+    transform: translateX(-102%);
+    transition: transform .26s cubic-bezier(.2,.8,.2,1);
+    box-shadow: var(--shadow-lg);
+  }
+  [dir="rtl"] .zw-rail { transform: translateX(102%); }
+  .zw-rail.is-open { transform: translateX(0); }
+  [dir="rtl"] .zw-rail.is-open { transform: translateX(0); }
+  .zw-rail.is-collapsed { width: min(320px, 84vw); }
+  .zw-rail-scrim { position: fixed; inset: 0; background: var(--backdrop); z-index: 54; }
+  /* Keep the floating mic from sitting on top of the last card's corner. It's
+     only a button, so this is a fraction of what the old bottom bar reserved. */
+  .zw-board { padding-bottom: 76px; }
+}
+@media (min-width: 821px) {
+  .zw-rail-scrim, .zw-rail-toggle { display: none; }
+}
+
+/* Short landscape (e.g. 1280×720 wall panels): claw back vertical padding so
+   the board keeps its rows. */
+@media (max-height: 620px) {
+  .zw-header { padding-block: 8px 4px; }
+  .zw-greet  { font-size: 15px; }
+  .zw-clock  { font-size: 24px; }
+  .zw-body   { padding-block: 4px 8px; }
+}
+
+/* Very small (7" portrait, 600px): drop the greeting and weather so the
+   clock and tabs still fit on one line. */
+@media (max-width: 620px) {
+  .zw-ident, .zw-weather { display: none; }
+  .zw-header { gap: 8px; padding-inline: 12px; }
+  .zw-body   { padding-inline: 12px; }
+  .zw-strip  { padding-inline: 12px; }
+}
+
+/* Coarse pointers get bigger switches — a 26px switch is fine with a mouse
+   and frustrating with a thumb. */
+@media (pointer: coarse) {
+  .zw-switch { --sw-w: 48px; --sw-h: 30px; --sw-knob: 24px; }
+  .zw-switch.is-sm { --sw-w: 44px; --sw-h: 27px; --sw-knob: 21px; }
+  .zw-step { width: 36px; height: 36px; }
+  .zw-dim  { height: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zw-mod, .zw-drop-ghost, .zw-rail { transition: none; }
+  .zw-orb, .zw-idle-orb, .zw-idle-inner, .zw-conn-dot { animation: none; }
+}
+
+/* ── Card-relative sizing (container queries) ────────────────────────────────
+   Everything above sizes type with `clamp(..vw..)`, which scales with the
+   SCREEN. That is wrong for a board whose cards the user resizes freely: a
+   2-column card and a 12-column card rendered identical text, so shrinking a
+   card just clipped it instead of making it a glance-sized tile.
+
+   `container-type: size` turns each placed module into a query container, so
+   its contents respond to the CARD's own dimensions. Browsers without
+   container-query support (older Android WebViews) simply keep the default
+   sizes — the layout still works, it just doesn't adapt. */
+
+.zw-mod {
+  container-type: size;
+  container-name: zwcard;
+}
+
+/* Compact — the user has deliberately shrunk this to a glance tile.
+   Secondary text goes; the primary fact stays legible. */
+@container zwcard (max-width: 240px) {
+  .zw-card-head { padding-bottom: 4px; }
+  .zw-eyebrow   { font-size: 8.5px; letter-spacing: .12em; }
+  .zw-scenes    { grid-template-columns: 1fr; gap: 6px; padding: 8px; }
+  .zw-scene     { padding: 8px 10px; }
+  .zw-scene-sub { display: none; }
+  .zw-chip      { padding: 5px 10px; gap: 5px; }
+  .zw-chip-state{ display: none; }
+  .zw-card-body { padding: 8px !important; gap: 6px !important; }
+  .zw-ziggy     { padding: 9px 11px; gap: 9px; }
+  .zw-ziggy-hint{ display: none; }
+}
+
+/* Short — not enough vertical room for a two-line row. */
+@container zwcard (max-height: 110px) {
+  .zw-card-head  { display: none; }
+  .zw-scene-sub  { display: none; }
+  .zw-ziggy-hint { display: none; }
+}
+
+/* Roomy — the card was grown on purpose, so let it breathe and read from
+   further away. A wall panel is looked at from across a kitchen. */
+@container zwcard (min-width: 460px) {
+  .zw-scene-name  { font-size: 16px; }
+  .zw-scene-sub   { font-size: 12px; }
+  .zw-chip-label  { font-size: 15px; }
+  .zw-chip-state  { font-size: 12px; }
+  .zw-dev-label   { font-size: 15px; }
+  .zw-ziggy-title { font-size: 18px; }
+  .zw-ziggy-hint  { font-size: 14px; }
+  .zw-scenes      { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+
+@container zwcard (min-width: 700px) {
+  .zw-scene-name  { font-size: 18px; }
+  .zw-chip-label  { font-size: 16px; }
+  .zw-ziggy-title { font-size: 21px; }
+}
+
+/* The assistant orb tracks its card, not the window, so it stays proportionate
+   whether the card is a strip across the top or a large panel. */
+@container zwcard (min-height: 200px) {
+  .zw-orb { width: clamp(44px, 22cqh, 96px); height: clamp(44px, 22cqh, 96px); }
+}
+@container zwcard (max-height: 120px) {
+  .zw-orb { width: 30px; height: 30px; }
+}
+
+/* Picking a card up is a hold on the card itself — no grip button. The card
+   lifts slightly while held so the gesture is acknowledged before it moves. */
+.zw-page.is-editing .zw-mod { cursor: grab; }
+.zw-page.is-editing .zw-mod.is-dragging { cursor: grabbing; }
+
+/* While a card is in hand, nothing else should react to the finger. */
+.zw-page.is-editing .zw-mod.is-dragging,
+.zw-page.is-editing .zw-mod.is-resizing { touch-action: none; }
+
+/* ── Tap to expand ──────────────────────────────────────────────────────────
+   A transparent hit layer BEHIND the card's own controls. Tapping empty space
+   on a card opens it full-size; tapping a checkbox, switch or input still does
+   what it says. A card you can operate must not become a card you can only
+   open. */
+.zw-expand-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: zoom-in;
+  border-radius: 18px;
+}
+/* Lift the card's CONTENT above the expand hit-layer — named explicitly.
+   A blanket `.zw-mod > *` also hit the absolutely-positioned edit chrome and
+   overrode its `position: absolute`, so the resize handle stopped being pinned
+   to the card's corner and flowed to the bottom of the column instead: the
+   bracket rendered UNDER the card rather than on it. */
+.zw-mod > .zw-card,
+.zw-mod > .zw-ziggy,
+.zw-mod > .zw-card-head { position: relative; z-index: 1; }
+.zw-mod > .zw-expand-hit { z-index: 0; }
+/* The card's interactive bits must sit above the hit layer to keep working. */
+.zw-card button, .zw-card input, .zw-card a, .zw-scene, .zw-chip { position: relative; z-index: 2; }
+
+.zw-expand {
+  position: relative;
+  width: min(1100px, 94vw);
+  height: min(820px, 88vh);
+  display: flex;
+  flex-direction: column;
+  /* A real raised panel. Without a surface of its own the expanded card sat
+     directly on the darkened board — and since --surface in dark mode is
+     nearly black, the whole overlay read as an empty black rectangle. */
+  background: var(--bg-2);
+  border: 0.5px solid var(--line);
+  border-radius: 24px;
+  padding: 16px 18px 18px;
+  box-shadow: var(--shadow-lg);
+  animation: zwPop .16s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes zwPop { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+
+.zw-mod-expanded {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition: none;
+}
+.zw-mod-expanded .zw-card { border-radius: 22px; }
+
+.zw-expand-close {
+  position: absolute;
+  inset-block-start: -14px;
+  inset-inline-end: -14px;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: var(--shadow-lg);
+}
+
+@media (prefers-reduced-motion: reduce) { .zw-expand { animation: none } }
+
+/* ── Device page over the wall ──────────────────────────────────────────────
+   Hosts the app's real DeviceDetail page. It lays itself out as a centred
+   600px column, so all this needs to do is give it a scrollable box. */
+.zw-devicepage {
+  padding: 0;
+  overflow: hidden;
+  /* The embedded page lays itself out as a 600px column, so a 1100px sheet
+     framed it in dead space. Hug the column instead. */
+  width: min(680px, 94vw);
+  /* Height is content-driven — see DevicePageModal. `height: auto` lets a
+     one-line sensor page produce a short sheet instead of a tall empty one. */
+  height: auto;
+  max-height: 88vh;
+}
+/* The shared close button hangs off the card's corner. That reads well on the
+   other expand sheets, which don't clip — this one must, to keep the scrolling
+   page inside its rounded corners, so bring the button inside instead. */
+.zw-devicepage .zw-expand-close {
+  inset-block-start: 10px;
+  inset-inline-end: 10px;
+}
+/* Hug the content rather than stretching to the sheet: `flex: 1` would put the
+   empty space back that `height: auto` just removed. */
+.zw-devicepage .zw-devicepage-scroll { flex: 0 1 auto; }
+/* Clips the scaled page to the height it actually occupies on screen. */
+.zw-devicepage-fit { overflow: hidden; }
+.zw-devicepage-inner { transform-origin: top center; }
+.zw-devicepage-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 24px;
+  background: var(--bg);
+  /* The embedded page is app-shaped: allow text selection inside it even
+     though the wall as a whole suppresses it. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The name/state half of a rail row opens the device page; the control beside
+   it does not. Styled as plain text so the row still reads as a row. */
+.zw-dev-open {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.zw-dev-open:active { opacity: .6; }

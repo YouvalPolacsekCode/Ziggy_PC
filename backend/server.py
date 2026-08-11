@@ -43,6 +43,7 @@ from backend.routers.camera_router import router as camera_router
 from backend.routers.push_router import router as push_router
 from backend.routers.debug_router import router as debug_router
 from backend.routers.self_heal_router import router as self_heal_router
+from backend.routers.ops_router import router as ops_router
 from backend.routers.update_router import router as update_router
 from backend.routers.deploy_router import router as deploy_router
 from backend.routers.ui_prefs_router import router as ui_prefs_router
@@ -369,6 +370,13 @@ async def _rotate_relay_secret(relay_url: str, current_secret: str, home_id: str
 
 
 app.add_middleware(RelayAuthMiddleware)
+# Wall-tablet capability enforcement. ADDITIVE AND INERT for every existing
+# client: it returns immediately unless the request carries the
+# X-Ziggy-Wall-Tablet header, which only the /wall page sends. Present so a
+# wall panel's permissions are enforced where commands are actually served,
+# rather than only hidden in its UI.
+from backend.middleware.wall_capability import WallCapabilityMiddleware
+app.add_middleware(WallCapabilityMiddleware)
 # RequestLoggerMiddleware is added LAST so it wraps every other middleware
 # and sees the real client-visible request/response, including auth rejections.
 # Starlette runs middleware bottom-up, so the outer-most call wraps the rest.
@@ -550,6 +558,9 @@ app.include_router(camera_router,        dependencies=_auth)
 app.include_router(push_router,          dependencies=_auth)
 app.include_router(debug_router,         dependencies=_auth)
 app.include_router(self_heal_router,     dependencies=_auth)
+# Fleet-ops read + safe remediation. Reached by operators through the relay
+# proxy so repairing a home doesn't require an SSH session from one laptop.
+app.include_router(ops_router,           dependencies=_auth)
 app.include_router(update_router,        dependencies=_auth)
 app.include_router(deploy_router,        dependencies=_auth)
 app.include_router(ui_prefs_router,      dependencies=_auth)
@@ -586,6 +597,23 @@ app.include_router(push_action_router)
 
 from backend.routers.ir_walk_router import router as ir_walk_router
 app.include_router(ir_walk_router)
+
+# Wall dashboard (/wall) — layout, tablet pairing, capability policy, and the
+# hub-owned household lists + agenda. Additive: nothing above this line
+# changes, and no existing route is re-registered or shadowed. Every route
+# declares its own auth dependency, so it is registered without global _auth.
+from backend.routers.wall_router import router as wall_router
+app.include_router(wall_router)
+
+# Home mode + weather. Both routers have existed in the tree for a long time
+# but were never registered, so /api/mode and /api/weather returned 404 —
+# the same oversight that left dashboard_router dead. Registering them is
+# purely additive (it adds routes that did not resolve before; nothing that
+# worked can change), and every route declares its own auth dependency.
+from backend.routers.mode_router import router as mode_router
+from backend.routers.weather_router import router as weather_router
+app.include_router(mode_router)
+app.include_router(weather_router)
 
 # ---------------------------------------------------------------------------
 # Static frontend — cloud/production mode only.

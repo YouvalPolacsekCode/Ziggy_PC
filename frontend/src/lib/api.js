@@ -148,8 +148,32 @@ function _normalizeNetworkError(err) {
 const _etagCache = new Map() // url → { etag, body }
 
 
+// ── Wall-tablet credential ──────────────────────────────────────────────────
+// While the /wall page is mounted on a PAIRED tablet, requests authenticate as
+// the tablet rather than as the signed-in person. That is what makes the
+// tablet's capability policy binding: the restriction attaches to the
+// credential, so dropping it leaves the caller unauthenticated instead of
+// unrestricted. (An earlier version asserted identity with a header, which any
+// client could simply omit to escape every restriction.)
+//
+// A module-level flag rather than a localStorage read, so a device that was
+// paired as a tablet does not keep authenticating as one from the normal app.
+let _wallMode = false
+let _wallToken = null
+
+export function setWallMode(on, tabletToken = null) {
+  _wallMode = !!on
+  _wallToken = on ? tabletToken : null
+}
+
+/** The credential to authenticate this request with. */
+function _authToken() {
+  if (_wallMode && _wallToken) return _wallToken
+  return getToken()
+}
+
 async function request(method, path, body, { timeoutMs } = {}) {
-  const token = getToken()
+  const token = _authToken()
   const reqId = logger.newRequestId()
   const opts = {
     method,
@@ -697,6 +721,22 @@ export const relayRegister    = (token, data) => _publicPost(`${relayUrl()}/api/
 
 // Telemetry (Prompt 2 §C). Latest raw rows for a home + daily aggregates.
 // Backing endpoints: relay/app/routers/telemetry.py.
+// ── Fleet health (relay/app/fleet_health.py) ────────────────────────────────
+// One call returns every home's verdict — level, issues, and which safe repair
+// verbs might help. Server-side on purpose: the ops console, the CLI and the
+// autonomous remediator must all read the SAME rules, or they'll disagree about
+// whether a home is healthy (which is how a 19 h outage stayed invisible).
+export const relayFleetHealth        = ()                => relayRequest('GET', '/api/admin/fleet/health')
+
+// The hub knows its own relay URL. Asking it removes the "type the relay URL
+// into every browser you use" step that kept the whole fleet view hidden.
+export const getOpsRelayConfig       = ()                => get('/ops/relay')
+
+// Safe, idempotent repair verbs, proxied to the hub (backend/routers/ops_router.py).
+export const relayOpsStatus          = (id)              => relayRequest('GET',  `/api/proxy/${id}/api/ops/status`)
+export const relayOpsReconcile       = (id)              => relayRequest('POST', `/api/proxy/${id}/api/ops/reconcile`, {})
+export const relayOpsRecoverHa       = (id)              => relayRequest('POST', `/api/proxy/${id}/api/ops/recover-ha`, {})
+
 export const relayHomeTelemetry      = (id, limit = 50)  => relayRequest('GET', `/api/admin/homes/${id}/telemetry?limit=${limit}`)
 export const relayHomeTelemetryDays  = (id, limit = 90)  => relayRequest('GET', `/api/admin/homes/${id}/telemetry/days?limit=${limit}`)
 
@@ -1097,3 +1137,74 @@ export const getPermissionAudit = (params = {}) => {
 export const bootstrapPermissions = () => post('/permissions/bootstrap', {})
 export const getPrincipalGrants = (ref) =>
   get(`/permissions/principals/${encodeURIComponent(ref)}/grants`)
+
+// ── Wall dashboard ─────────────────────────────────────────────────────────
+// Additive surface for the tablet wall dashboard at /wall. Deliberately
+// separate from the older /api/dashboard/* endpoints that back /hub — nothing
+// here reads or writes hub layouts, so the existing hub is unaffected.
+
+// Layout. `tablet_id` may be null: an unpaired tablet still renders, it just
+// gets the shipped default and cannot persist changes.
+export const getWallLayout = (tabletId) =>
+  get(`/wall/layout${tabletId ? `?tablet_id=${encodeURIComponent(tabletId)}` : ''}`)
+export const putWallLayout = (tabletId, layout) =>
+  put('/wall/layout', { tablet_id: tabletId, layout })
+
+// Capability policy. The tablet reads its own; an admin writes any.
+export const getWallPolicy = (tabletId) =>
+  get(`/wall/policy${tabletId ? `?tablet_id=${encodeURIComponent(tabletId)}` : ''}`)
+export const putWallPolicy = (tabletId, policy) =>
+  put('/wall/policy', { tablet_id: tabletId, policy })
+export const setWallPin = (tabletId, pin) =>
+  post('/wall/policy/pin', { tablet_id: tabletId, pin })
+export const verifyWallPin = (tabletId, capability, pin) =>
+  post('/wall/pin/verify', { tablet_id: tabletId, capability, pin })
+
+// Tablet pairing. These hit /api/wall/tablets/* rather than the older
+// /api/dashboard/tablets/* — that router exists in the tree but is never
+// registered in server.py, so those paths 404. The wall router wraps the same
+// underlying services/dashboard_tablets logic, left unmodified.
+export const listWallTablets   = () => get('/wall/tablets')
+export const mintWallPairCode  = (hint = '') => post('/wall/tablets/pair-code', { display_name_hint: hint })
+// Make THIS device a wall tablet with no pairing code — the session is the
+// authorisation. See the endpoint's docstring for why the code flow is still
+// kept for setting a panel up from somewhere else.
+export const adoptThisWallTablet = (displayName, room = null) =>
+  post('/wall/tablets/adopt', { display_name: displayName, room })
+export const claimWallPairCode = (code, displayName, room = null) =>
+  post('/wall/tablets/claim', { code, display_name: displayName, room })
+export const patchWallTablet   = (tabletId, body) =>
+  patch(`/wall/tablets/${encodeURIComponent(tabletId)}`, body)
+export const removeWallTablet  = (tabletId) => del(`/wall/tablets/${encodeURIComponent(tabletId)}`)
+export const wallTabletHeartbeat = (tabletId) =>
+  post(`/wall/tablets/${encodeURIComponent(tabletId)}/heartbeat`, {})
+export const wallWentIdle = (tabletId) => post('/wall/idle', { tablet_id: tabletId })
+
+// Endpoints that already existed on the backend but had no client helper.
+// Adding the helper is additive — no existing caller is affected.
+export const runDirectIntent = (intent, params = {}, source = 'wall') =>
+  post('/direct-intent', { intent, params, source })
+export const getWeather     = () => get('/weather')
+export const getAlerts      = () => get('/alerts')
+export const getMode        = () => get('/mode')
+export const getModeOptions = () => get('/mode/options')
+export const setMode        = (mode) => post('/mode', { mode })
+
+// Lists (shopping and friends).
+export const getLists = () => get('/lists')
+export const createList = (name) => post('/lists', { name })
+export const deleteList = (listId) => del(`/lists/${encodeURIComponent(listId)}`)
+export const addListItem = (listId, text) =>
+  post(`/lists/${encodeURIComponent(listId)}/items`, { text })
+export const updateListItem = (listId, itemId, body) =>
+  patch(`/lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}`, body)
+export const deleteListItem = (listId, itemId) =>
+  del(`/lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}`)
+export const clearListDone = (listId) =>
+  post(`/lists/${encodeURIComponent(listId)}/clear-done`, {})
+
+// Agenda (today at home).
+export const getAgenda = (days = 1) => get(`/agenda?days=${days}`)
+export const createAgendaEvent = (data) => post('/agenda', data)
+export const updateAgendaEvent = (id, data) => patch(`/agenda/${encodeURIComponent(id)}`, data)
+export const deleteAgendaEvent = (id) => del(`/agenda/${encodeURIComponent(id)}`)

@@ -280,6 +280,23 @@ async def _health_watchdog_tick() -> None:
         log_error(f"[Health] watchdog tick compute failed: {exc}")
 
 
+async def _device_registry_reconcile_tick() -> None:
+    """Re-reconcile the device registry against live HA.
+
+    refresh() is synchronous and does a blocking HA REST call, so it runs
+    off-thread. No-op when a dedicated reconciliation thread already owns the
+    job (the core/ziggy_main.py entry point) — see device_registry
+    .reconcile_loop_running().
+    """
+    try:
+        from services import device_registry
+        if device_registry.reconcile_loop_running():
+            return
+        await asyncio.to_thread(device_registry.refresh)
+    except Exception as exc:
+        log_error(f"[Scheduler] registry refresh failed: {exc}")
+
+
 async def _fire_presence_automation(trigger_type: str, name: str) -> None:
     """Fire all enabled automations matching the given presence trigger_type and person."""
     try:
@@ -469,6 +486,21 @@ async def run_scheduler() -> None:
                 await _health_watchdog_tick()
             except Exception as exc:
                 log_error(f"[Scheduler] Health watchdog tick failed: {exc}")
+
+        # ── Every 2 minutes: device-registry reconcile ───────────────────────
+        # device_registry.start_reconciliation_loop() lives in core/ziggy_main.py,
+        # which NEVER RUNS in the shipped container (CMD is
+        # `uvicorn backend.server:app`). backend/server.py only fires a ONE-SHOT
+        # reconcile at startup, so a single unlucky snapshot — HA up but its
+        # MQTT entities not yet registered, i.e. every reboot — could pin the
+        # whole registry to "lost" permanently. That is exactly what happened to
+        # a customer home on 2026-08-09 and went unnoticed for 19 h.
+        # This tick is the self-heal: it re-reads HA and clears stale statuses.
+        if _tick % 2 == 0:
+            try:
+                await _device_registry_reconcile_tick()
+            except Exception as exc:
+                log_error(f"[Scheduler] Device registry reconcile tick failed: {exc}")
 
         # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
         # Time-of-day gated, off unless backup.enabled=true in settings.

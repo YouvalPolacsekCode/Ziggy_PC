@@ -7,10 +7,15 @@ list from the relay instead of maintaining a static scripts/fleet.yml
 that requires a git commit every time a new customer is onboarded.
 """
 
-from fastapi import APIRouter, Request
+import json as _json
+import time as _time
 
+from fastapi import APIRouter, HTTPException, Request
+
+from ..audit import log_event
 from ..auth import require_role
 from ..database import get_db
+from .. import fleet_health
 
 router = APIRouter(prefix="/admin/fleet")
 
@@ -26,3 +31,188 @@ async def list_fleet_homes(request: Request):
                ORDER BY created_at ASC"""
         )
     return {"homes": [dict(r) for r in rows]}
+
+
+@router.get("/health")
+async def fleet_health_report(request: Request):
+    """Every home's health in ONE call — the fleet's actual status page.
+
+    `/admin/fleet/homes` reports `status`, which is the *provisioning
+    lifecycle* column: a home reads "active" whether it is perfectly healthy,
+    silently degraded, or unplugged. That gap is why a customer home spent 19 h
+    with every device falsely marked "Removed from hub" while the fleet view
+    showed nothing wrong.
+
+    Health is derived from PUSHED telemetry (hub → relay, every 5 min). The
+    relay never fetches the hub: most homes register raw `*.cfargotunnel.com`
+    URLs that aren't routable from Fly, which is exactly how the old direct
+    check came to return "unhealthy" for every home and got ignored.
+
+    Silence is evaluated as its own signal — a hub that is off, crashed, or
+    cut off from the internet says nothing at all, so absence of telemetry is
+    the only evidence there will ever be.
+    """
+    require_role("relay_admin")(request)
+    now = _time.time()
+
+    async with get_db() as db:
+        homes = await db.execute_fetchall(
+            """SELECT id, name, type, tunnel_url, status, subscription_state
+               FROM homes ORDER BY created_at ASC"""
+        )
+        # Latest telemetry row per home in one pass — no N+1 over the fleet.
+        latest = await db.execute_fetchall(
+            """SELECT t.home_id, t.ts, t.payload
+               FROM telemetry_raw t
+               JOIN (SELECT home_id, MAX(id) AS mid
+                     FROM telemetry_raw GROUP BY home_id) m
+                 ON t.id = m.mid"""
+        )
+
+    by_home: dict[str, tuple[str, dict | None]] = {}
+    for r in latest:
+        row = dict(r)
+        try:
+            payload = _json.loads(row["payload"])
+        except (TypeError, ValueError):
+            payload = None
+        by_home[row["home_id"]] = (row.get("ts"), payload if isinstance(payload, dict) else None)
+
+    verdicts = []
+    for h in homes:
+        home = dict(h)
+        ts, payload = by_home.get(home["id"], (None, None))
+        v = fleet_health.evaluate(home, payload, ts, now=now)
+        v["tunnel_url"] = home.get("tunnel_url")
+        v["subscription_state"] = home.get("subscription_state")
+        v["status"] = home.get("status")
+        verdicts.append(v)
+
+    # Worst first, so the thing needing attention is row one.
+    rank = {"down": 0, "degraded": 1, "unknown": 2, "ok": 3}
+    verdicts.sort(key=lambda v: (rank.get(v["level"], 9), v.get("name") or ""))
+
+    return {
+        "generated_at": now,
+        "summary": fleet_health.summarize(verdicts),
+        "homes": verdicts,
+    }
+
+
+# Tables that carry a home_id. SQLite only honours `ON DELETE CASCADE` when
+# `PRAGMA foreign_keys=ON`, which is OFF by default and not set here — and
+# telemetry_raw / telemetry_daily / audit_log have no foreign key at all. So the
+# cascade is done explicitly; otherwise "removing" a home leaves its telemetry
+# behind to be re-counted forever.
+_HOME_CHILD_TABLES = (
+    "telemetry_raw", "telemetry_daily", "home_cohorts",
+    "home_backup_keys", "founder_slots", "invites",
+)
+
+# A home that reported this recently is a LIVE home, whatever its label says.
+# Removal refuses on that basis unless explicitly forced, because the cost of
+# wrongly deleting a customer's home is not symmetric with the cost of asking.
+RECENT_TELEMETRY_GUARD_S = 24 * 3600
+
+
+@router.delete("/homes/{home_id}")
+async def delete_home_record(home_id: str, request: Request, force: bool = False):
+    """Hard-delete a home record and everything hanging off it.
+
+    Distinct from `DELETE /api/provision/home/{id}` (deprovision), which tears
+    down Cloudflare resources and sets `status='deprovisioning'` but LEAVES THE
+    ROW — which is why dead smoke-test homes have lingered in the fleet list for
+    months, diluting the signal the list exists to give.
+
+    Refuses to delete a home that has reported telemetry in the last 24 h unless
+    forced. The whole point of the fleet view is to notice live homes; deleting
+    one by accident would be the worst possible failure of this endpoint.
+    """
+    require_role("relay_admin")(request)
+
+    async with get_db() as db:
+        rows = await db.execute_fetchall("SELECT * FROM homes WHERE id=?", (home_id,))
+        if not rows:
+            raise HTTPException(404, "Home not found.")
+        home = dict(rows[0])
+
+        seen = await db.execute_fetchall(
+            "SELECT MAX(ts) AS last_ts FROM telemetry_raw WHERE home_id=?", (home_id,)
+        )
+    last_ts = dict(seen[0]).get("last_ts") if seen else None
+
+    if last_ts and not force:
+        import time as _t
+        from ..fleet_health import _iso_to_epoch
+        epoch = _iso_to_epoch(last_ts)
+        if epoch and (_t.time() - epoch) < RECENT_TELEMETRY_GUARD_S:
+            raise HTTPException(
+                409,
+                f"'{home.get('name')}' reported telemetry at {last_ts} — it looks "
+                f"alive. Pass ?force=true if you really mean to delete it.",
+            )
+
+    # Snapshot the row into the audit trail before it stops existing.
+    await log_event(
+        "fleet_home_deleted", home_id=home_id, ok=True,
+        detail=_json.dumps({
+            "name": home.get("name"), "owner_email": home.get("owner_email"),
+            "status": home.get("status"), "tunnel_url": home.get("tunnel_url"),
+            "cf_tunnel_id": home.get("cf_tunnel_id"), "created_at": home.get("created_at"),
+            "last_telemetry_ts": last_ts, "forced": bool(force),
+        }, separators=(",", ":")),
+    )
+
+    deleted: dict[str, int] = {}
+    async with get_db() as db:
+        for table in _HOME_CHILD_TABLES:
+            try:
+                cur = await db.execute(f"DELETE FROM {table} WHERE home_id=?", (home_id,))
+                deleted[table] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+            except Exception:
+                # A table that doesn't exist on this deployment must not block
+                # the removal of the home itself.
+                deleted[table] = 0
+        # Users are detached rather than deleted — an account may be a person,
+        # and people outlive their hardware.
+        try:
+            await db.execute("UPDATE users SET home_id=NULL WHERE home_id=?", (home_id,))
+        except Exception:
+            pass
+        await db.execute("DELETE FROM homes WHERE id=?", (home_id,))
+        await db.commit()
+
+    return {"ok": True, "deleted": {"home": home.get("name"), "children": deleted}}
+
+
+@router.get("/repairs")
+async def fleet_repairs(request: Request, limit: int = 50):
+    """What the auto-remediator has actually done.
+
+    Automated repair is only trustworthy if it is auditable: an operator must be
+    able to ask "what did the robot touch, and did it work?" and get an answer
+    that isn't a shrug. Every attempt — success or failure — is an audit_log row.
+    """
+    require_role("relay_admin")(request)
+    limit = max(1, min(int(limit), 500))
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            """SELECT a.ts, a.home_id, a.ok, a.detail, h.name
+               FROM audit_log a LEFT JOIN homes h ON h.id = a.home_id
+               WHERE a.event = 'fleet_auto_repair'
+               ORDER BY a.id DESC LIMIT ?""",
+            (limit,),
+        )
+    return {"repairs": [dict(r) for r in rows]}
+
+
+@router.post("/sweep")
+async def fleet_sweep_now(request: Request):
+    """Run a remediation sweep immediately instead of waiting for the timer.
+
+    Exists so an operator (or an agent following up on an alert) never has to
+    sit through the interval to confirm a fix landed.
+    """
+    require_role("relay_admin")(request)
+    from ..remediator import sweep_once
+    return await sweep_once()

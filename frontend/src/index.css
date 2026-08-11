@@ -611,3 +611,22 @@ html, body, #root {
   @keyframes zPulse  { 0%,100% { opacity: 0.4 } 50% { opacity: 1 } }
   .z-pulse { animation: zPulse 2.4s ease-in-out infinite; }
 }
+
+/* ── Wall dashboard tokens ───────────────────────────────────────────────────
+   ADDITIVE. Appended after every existing rule; nothing above this line is
+   modified, and no existing selector referenced these names before the wall
+   dashboard was built (verified: zero matches repo-wide).
+
+   The imported design uses a near-black (#26221e) as a *raised* surface for
+   active chips, the assistant module, and scene tiles. Read semantically that
+   is "inverse of the page", so in light mode it resolves to ink-on-bg and in
+   dark mode it must LIFT rather than stay dark — otherwise those elements
+   disappear into a near-black background. One token pair expresses that. */
+:root {
+  --inverse:    var(--ink);
+  --on-inverse: var(--bg);
+}
+[data-palette="dark"] {
+  --inverse:    var(--surface-3);
+  --on-inverse: var(--ink);
+}

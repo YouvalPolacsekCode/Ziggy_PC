@@ -22,4 +22,25 @@ export function setTabletId(id) {
 
 export function clearTabletId() {
   setTabletId(null)
+  setTabletToken(null)
+}
+
+// ── Tablet credential ───────────────────────────────────────────────────────
+// Issued once at pairing. The wall authenticates AS this tablet rather than
+// borrowing the session of whoever paired it, so the hub can bind the tablet's
+// capability policy to the credential. Identity asserted by a header instead
+// would be worthless — anyone wanting more privilege would simply omit it.
+
+const TOKEN_KEY = 'ziggy_wall_tablet_token'
+
+export function getTabletToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || null }
+  catch { return null }
+}
+
+export function setTabletToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else       localStorage.removeItem(TOKEN_KEY)
+  } catch {}
 }

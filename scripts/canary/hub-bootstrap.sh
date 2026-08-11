@@ -10,8 +10,22 @@ set -euo pipefail
 
 REPO_OWNER="YouvalPolacsekCode"
 REPO_NAME="Ziggy_PC"
-BRANCH="feat/beta-image-readiness"
 REPO_DIR="/opt/ziggy"
+
+# What code does a NEW home get?
+#
+# This used to pin a long-lived feature branch (feat/beta-image-readiness).
+# Branches drift: by 2026-08-10 it sat far behind the released fleet, so a hub
+# imaged that day would have been born with every bug the fleet had already
+# fixed — no reconcile self-heal (its first power cut would falsely mark every
+# device "removed"), no health telemetry (invisible to the fleet), and an
+# updater that would delete its owner's automations on the first update it ever
+# received.
+#
+# A new home should start where the fleet already is: the newest release tag,
+# the same thing every existing hub is pulling. Override for a deliberate test:
+#   ZIGGY_IMAGE_REF=feat/some-branch  sudo -E bash hub-bootstrap.sh
+ZIGGY_IMAGE_REF="${ZIGGY_IMAGE_REF:-}"
 
 [ "$(id -u)" = "0" ] || { echo "ERROR: run with sudo:  sudo GH_TOKEN=... bash hub-bootstrap.sh"; exit 1; }
 : "${GH_TOKEN:?ERROR: set GH_TOKEN=<your github token>. Example: sudo GH_TOKEN=github_pat_xxx bash hub-bootstrap.sh}"
@@ -29,15 +43,28 @@ systemctl enable --now docker
 # let the login user run docker without sudo (takes effect next login)
 if [ -n "${SUDO_USER:-}" ]; then usermod -aG docker "$SUDO_USER" || true; fi
 
-echo "== 3/4 clone/refresh the Ziggy repo at $REPO_DIR ($BRANCH) =="
+echo "== 3/4 clone/refresh the Ziggy repo at $REPO_DIR =="
+AUTH_URL="https://${GH_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git"
 if [ -d "$REPO_DIR/.git" ]; then
-  git -C "$REPO_DIR" remote set-url origin "https://${GH_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git"
-  git -C "$REPO_DIR" fetch origin "$BRANCH"
-  git -C "$REPO_DIR" checkout "$BRANCH"
-  git -C "$REPO_DIR" reset --hard "origin/$BRANCH"
+  git -C "$REPO_DIR" remote set-url origin "$AUTH_URL"
 else
-  git clone --branch "$BRANCH" "https://${GH_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git" "$REPO_DIR"
+  git clone --no-checkout "$AUTH_URL" "$REPO_DIR"
 fi
+git -C "$REPO_DIR" fetch --prune --tags origin
+
+# Resolve the target ref: explicit override, else the newest release tag, else
+# main. Newest by creatordate — the same ordering ziggy-update.sh uses to pick a
+# production hub's target, so imaging and OTA can never disagree about "latest".
+TARGET_REF="$ZIGGY_IMAGE_REF"
+if [ -z "$TARGET_REF" ]; then
+  TARGET_REF="$(git -C "$REPO_DIR" for-each-ref --sort=-creatordate \
+                  --format='%(refname:short)' --count=1 'refs/tags/release-*' || true)"
+fi
+[ -n "$TARGET_REF" ] || TARGET_REF="origin/main"
+
+echo "   imaging at: $TARGET_REF"
+git -C "$REPO_DIR" -c advice.detachedHead=false checkout --force "$TARGET_REF"
+
 # Strip the token back out of the stored remote so it isn't left on disk.
 git -C "$REPO_DIR" remote set-url origin "https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 
@@ -45,5 +72,9 @@ echo "== 4/4 mark factory scripts executable =="
 chmod +x "$REPO_DIR"/scripts/factory/*.sh "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/scripts/linux/*.sh 2>/dev/null || true
 
 echo
-echo "DONE. Ziggy is at $REPO_DIR on $BRANCH."
+echo "DONE. Ziggy is at $REPO_DIR on $TARGET_REF ($(git -C "$REPO_DIR" describe --tags --always))."
+echo
+echo "NEXT: this hub is NOT yet on the update channel. To keep it current:"
+echo "  printf 'ZIGGY_COHORT=production\\nZIGGY_REPO_DIR=%s\\n' \"$REPO_DIR\" | sudo tee /etc/ziggy/ziggy.env"
+echo "  sudo $REPO_DIR/scripts/linux/install-systemd-units.sh"
 echo "NEXT: run the imaging command (runbook Part F)."

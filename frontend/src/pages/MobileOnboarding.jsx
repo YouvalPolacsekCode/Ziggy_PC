@@ -34,6 +34,7 @@ import {
 } from '../lib/mobileApi'
 import { getPresencePersons, getPresenceZone, listPresenceZones } from '../lib/api'
 import { parsePairPayload, applyPairingTarget, finalizeHome } from '../lib/pairingCapture'
+import { setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
 // Platform-agnostic wizard steps + styles are shared with the web/PWA flow.
@@ -156,6 +157,33 @@ export default function MobileOnboarding({ startFresh = false }) {
           {step === STEP.DONE     && t('mobileOnboard.subtitleDone')}
         </p>
       </header>
+
+      {/* A wall tablet has no business here. Device pairing exists so a PHONE
+          can receive push and report background presence; a screen bolted to a
+          wall does neither, and making it pair meant fetching a code from
+          another device just to see the dashboard. This is the way past. */}
+      {step === STEP.PAIR && (
+        <button
+          onClick={() => { setWallModeFlag(true); window.location.assign('/wall') }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+            padding: '13px 15px', marginBottom: 18, cursor: 'pointer',
+            background: 'var(--surface)', border: '0.5px solid var(--line)',
+            borderRadius: 13, color: 'var(--ink)', textAlign: 'start',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🖥️</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>
+              {t('mobileOnboard.wallInstead')}
+            </span>
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>
+              {t('mobileOnboard.wallInsteadSub')}
+            </span>
+          </span>
+          <span style={{ color: 'var(--ink-faint)', fontSize: 18 }}>›</span>
+        </button>
+      )}
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {step === STEP.PAIR     && <PairStep    onDone={(firstPair) => { setPaired(true); afterPair(firstPair) }} />}
