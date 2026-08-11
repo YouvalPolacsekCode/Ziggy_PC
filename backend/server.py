@@ -159,6 +159,78 @@ async def _startup():
     except Exception as _e:
         log_info(f"[SmartClimate] scheduler start failed: {_e}")
 
+    # ── Services that only core/ziggy_main.py used to start ──────────────────
+    # ziggy_main.py is NOT the production entrypoint — the container runs
+    # `uvicorn backend.server:app` — so everything in its thread list has never
+    # run in a shipped home. That is how a customer hub spent 19 h with every
+    # device falsely marked "removed": the device-registry self-heal lived
+    # there too.
+    #
+    # An audit of the rest of that list found three more user-facing features
+    # that have never executed in production. Each is started below, with the
+    # SAME settings gate and notify wiring ziggy_main used, so dev and prod
+    # finally agree. Started as daemon threads because each is a blocking loop
+    # with its own sleep — the pattern already proven above for Circadian and
+    # Smart Climate.
+
+    # One-time IR blaster registry backfill (ir_blasters.json from existing
+    # ir_devices.json). Idempotent and cheap; a no-op after the first boot.
+    # Only ziggy_main ran it, so on real hubs this migration has never executed.
+    try:
+        from services.ir_blasters import ensure_initialized as _init_blasters
+        _init_blasters()
+    except Exception as _e:
+        log_info(f"[IRBlasters] registry init failed: {_e} — continuing without it")
+
+    # Task due-date reminders. Without this, a task's reminder time passes and
+    # nothing ever fires.
+    try:
+        import threading as _threading
+        from services.task_manager import start_reminder_thread as _start_reminders
+        _threading.Thread(target=_start_reminders, name="Reminder", daemon=True).start()
+    except Exception as _e:
+        log_info(f"[Reminder] scheduler start failed: {_e}")
+
+    # Door/motion sensor alerts → push notification. Self-disables when
+    # sensor_alerts.enabled is false or no sensors are configured.
+    try:
+        if (_settings.get("sensor_alerts") or {}).get("enabled", True):
+            import threading as _threading
+            from services.sensor_alerts import start_sensor_alerts as _start_sensor_alerts
+            from services.push_notify import push_notify_sync as _push_sync
+
+            def _sensor_notify(msg: str) -> None:
+                _push_sync("Sensor Alert", msg, "/", "sensor_alert")
+
+            _threading.Thread(
+                target=lambda: _start_sensor_alerts(_sensor_notify),
+                name="SensorAlerts", daemon=True,
+            ).start()
+    except Exception as _e:
+        log_info(f"[SensorAlerts] start failed: {_e}")
+
+    # Pattern learning → daily analysis → suggestions. Without it, the
+    # Suggestions surface can only ever be empty.
+    try:
+        _pl = _settings.get("pattern_learning") or {}
+        if _pl.get("enabled", True):
+            import threading as _threading
+            from services.suggestion_engine import start_pattern_scheduler as _start_patterns
+            from services.push_notify import push_notify_sync as _push_sync
+            from core.shared_flags import shutdown_event as _shutdown_event
+
+            def _suggestion_notify(title: str, body: str, url: str = "/suggestions") -> None:
+                _push_sync(title, body, url, "suggestion")
+
+            _threading.Thread(
+                target=lambda: _start_patterns(
+                    notify_fn=_suggestion_notify, shutdown=_shutdown_event,
+                ),
+                name="PatternEngine", daemon=True,
+            ).start()
+    except Exception as _e:
+        log_info(f"[PatternEngine] scheduler start failed: {_e}")
+
     # Door-aware room presence engine — backs Smart Presence sensors that
     # include a door among their sources (bathroom latch semantics). Idles
     # with no MQTT connection until at least one room is enrolled. Event-driven
