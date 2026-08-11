@@ -576,6 +576,132 @@
 }
 .zw-ziggy-input::placeholder { color: currentColor; opacity: .45; }
 
+/* ── Talk to Ziggy: fixed furniture ─────────────────────────────────────────
+   Two shapes — see ZiggyBar. `inline` sits at the foot of the rooms rail on a
+   wide panel; `floating` is a round mic in the corner in portrait, where a
+   full-width bar would cost a strip of an already-tall board. */
+
+/* Shared mic. Sized off the viewport's short axis so it grows on a big panel
+   without ballooning on a small one, and never below a comfortable target. */
+.zw-mic {
+  flex: none;
+  width:  clamp(48px, 7vmin, 66px);
+  height: clamp(48px, 7vmin, 66px);
+  border-radius: 50%;
+  border: none;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 20px;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, box-shadow .2s ease;
+}
+.zw-mic:active { transform: scale(.94); }
+.zw-mic.is-listening {
+  box-shadow: 0 0 0 3px var(--accent), 0 0 30px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.zw-mic .zw-orb { width: 58%; height: 58%; animation-duration: 4s; }
+.zw-mic.is-listening .zw-orb,
+.zw-mic.is-thinking  .zw-orb { animation-duration: 1.1s; }
+.zw-mic.is-muted { background: var(--surface); color: var(--ink-2); border: 0.5px solid var(--line); }
+
+/* The field. A real input, not a sheet: typing is one tap, not a modal over
+   the dashboard. */
+.zw-ziggybar-input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: 16px;
+  padding: 0 6px 0 14px;
+}
+[dir="rtl"] .zw-ziggybar-input { padding: 0 14px 0 6px; }
+.zw-ziggybar-input .zw-ziggy-input {
+  color: var(--ink);
+  padding: clamp(11px, 1.5vh, 15px) 0;
+  -webkit-user-select: text; user-select: text;
+}
+.zw-ziggybar-send {
+  flex: none;
+  width: 34px; height: 34px;
+  border: none; border-radius: 50%;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 16px; cursor: pointer;
+}
+.icon-flip-rtl, [dir="rtl"] .zw-ziggybar-send { transform: scaleX(-1); }
+
+/* ── inline (wide): foot of the rooms rail ─────────────────────────────── */
+
+.zw-ziggybar { flex: none; margin-top: 10px; }
+.zw-ziggybar-row { display: flex; align-items: center; gap: 9px; }
+/* Reserved even when empty so an answer never changes the bar's height and
+   shoves the rooms list up the panel. */
+.zw-ziggybar-status {
+  min-height: 1.2em;
+  margin: 0 2px 6px;
+  font-size: clamp(10.5px, 0.9vw, 12px);
+  color: var(--ink-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.zw-ziggybar.is-listening .zw-ziggybar-status { color: var(--accent); }
+
+/* ── floating (portrait): a mic in the corner ──────────────────────────── */
+
+.zw-ziggyfloat {
+  position: fixed;
+  inset-inline-end: 16px;
+  inset-block-end: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  /* Leaves the board clickable everywhere the control isn't. */
+  pointer-events: none;
+}
+.zw-ziggyfloat > * { pointer-events: auto; }
+.zw-ziggyfloat-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Only the open state needs a surface; the bare mic carries its own. */
+  border-radius: 999px;
+}
+/* Floating over the board, it has to read as a control at a glance and from a
+   step away — the muted (no-microphone) styling is too quiet for that out
+   here, and a shadow is what separates it from the card it sits over. */
+.zw-ziggyfloat .zw-mic {
+  box-shadow: var(--shadow-lg);
+}
+.zw-ziggyfloat .zw-mic.is-muted {
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border: none;
+}
+.zw-ziggyfloat.is-open .zw-ziggyfloat-pill {
+  background: var(--bg-2);
+  border: 0.5px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  padding: 7px;
+  width: min(520px, calc(100vw - 32px));
+}
+.zw-ziggyfloat-status {
+  max-width: min(520px, calc(100vw - 32px));
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border-radius: 14px;
+  padding: 8px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* ── Connection chip ────────────────────────────────────────────────────── */
 
 .zw-conn {
@@ -758,6 +884,9 @@
   [dir="rtl"] .zw-rail.is-open { transform: translateX(0); }
   .zw-rail.is-collapsed { width: min(320px, 84vw); }
   .zw-rail-scrim { position: fixed; inset: 0; background: var(--backdrop); z-index: 54; }
+  /* Keep the floating mic from sitting on top of the last card's corner. It's
+     only a button, so this is a fraction of what the old bottom bar reserved. */
+  .zw-board { padding-bottom: 76px; }
 }
 @media (min-width: 821px) {
   .zw-rail-scrim, .zw-rail-toggle { display: none; }
@@ -942,3 +1071,59 @@
 }
 
 @media (prefers-reduced-motion: reduce) { .zw-expand { animation: none } }
+
+/* ── Device page over the wall ──────────────────────────────────────────────
+   Hosts the app's real DeviceDetail page. It lays itself out as a centred
+   600px column, so all this needs to do is give it a scrollable box. */
+.zw-devicepage {
+  padding: 0;
+  overflow: hidden;
+  /* The embedded page lays itself out as a 600px column, so a 1100px sheet
+     framed it in dead space. Hug the column instead. */
+  width: min(680px, 94vw);
+  /* Height is content-driven — see DevicePageModal. `height: auto` lets a
+     one-line sensor page produce a short sheet instead of a tall empty one. */
+  height: auto;
+  max-height: 88vh;
+}
+/* The shared close button hangs off the card's corner. That reads well on the
+   other expand sheets, which don't clip — this one must, to keep the scrolling
+   page inside its rounded corners, so bring the button inside instead. */
+.zw-devicepage .zw-expand-close {
+  inset-block-start: 10px;
+  inset-inline-end: 10px;
+}
+/* Hug the content rather than stretching to the sheet: `flex: 1` would put the
+   empty space back that `height: auto` just removed. */
+.zw-devicepage .zw-devicepage-scroll { flex: 0 1 auto; }
+/* Clips the scaled page to the height it actually occupies on screen. */
+.zw-devicepage-fit { overflow: hidden; }
+.zw-devicepage-inner { transform-origin: top center; }
+.zw-devicepage-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 24px;
+  background: var(--bg);
+  /* The embedded page is app-shaped: allow text selection inside it even
+     though the wall as a whole suppresses it. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The name/state half of a rail row opens the device page; the control beside
+   it does not. Styled as plain text so the row still reads as a row. */
+.zw-dev-open {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.zw-dev-open:active { opacity: .6; }

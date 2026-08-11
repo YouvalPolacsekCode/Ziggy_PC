@@ -390,11 +390,85 @@ _NON_DEVICE_DOMAINS = frozenset({
 _GHOST_AUTOPRUNE_SECONDS = 7 * 24 * 3600
 
 
+# ── Mass-loss veto ────────────────────────────────────────────────────────
+# A reconcile pass compares the registry against ONE HA snapshot. If that
+# snapshot is taken while HA is up but its MQTT/Zigbee2MQTT entities have not
+# re-registered yet — the normal shape of the first ~60 s after a reboot — then
+# every Z2M-backed device looks "deleted from HA" and gets stamped LOST. The
+# UI then tells the user their devices were "Removed from hub" and offers a
+# delete button that really unpairs them.
+#
+# That is what happened to a live customer home on 2026-08-09: an unclean power
+# cut, Ziggy reconciled 42 s before Z2M finished registering, and all 23 devices
+# sat falsely "lost" until a human noticed.
+#
+# The tell is the SHAPE of the loss. Real deletions are incremental — a user
+# removes one device in HA. An integration that hasn't loaded yet takes every
+# device it owns at once. So: if a pass would newly lose a large share of
+# previously-healthy devices, distrust the snapshot and keep the old statuses.
+#
+# The veto is time-boxed. If the devices really are gone, the same mass loss
+# keeps being observed and we accept it after the grace window — otherwise a
+# genuine "I factory-reset HA" could never converge.
+_MASS_LOSS_MIN_DEVICES = 3        # below this, "all of them" isn't a signal
+_MASS_LOSS_SHARE       = 0.5      # >= half of the healthy rows vanishing at once
+_MASS_LOSS_GRACE_S     = 900.0    # 15 min of agreement before we believe it
+
+_mass_loss_first_seen_at: float | None = None
+
+
+def _mass_loss_veto(devices: list[dict], live_ids: set[str], now: float) -> tuple[bool, int, int]:
+    """(veto?, missing_count, tracked_count) for this snapshot.
+
+    Only HA-backed rows that were healthy last pass count — IR-only rows have
+    no entity_id, and rows already LOST are not a NEW loss.
+    """
+    global _mass_loss_first_seen_at
+    tracked = [
+        d for d in devices
+        if d.get("entity_id") and not d.get("ir_device_id")
+        and d.get("status") not in (LOST, UNCONFIGURED)
+    ]
+    missing = [d for d in tracked if d["entity_id"] not in live_ids]
+    n_missing, n_tracked = len(missing), len(tracked)
+
+    looks_like_mass_loss = (
+        n_tracked >= _MASS_LOSS_MIN_DEVICES
+        and n_missing >= _MASS_LOSS_MIN_DEVICES
+        and (n_missing / n_tracked) >= _MASS_LOSS_SHARE
+    )
+    if not looks_like_mass_loss:
+        _mass_loss_first_seen_at = None
+        return False, n_missing, n_tracked
+
+    if _mass_loss_first_seen_at is None:
+        _mass_loss_first_seen_at = now
+    if (now - _mass_loss_first_seen_at) > _MASS_LOSS_GRACE_S:
+        # Persisted across the whole grace window — this is real, let it through.
+        log_info(
+            f"[DeviceRegistry] Mass loss of {n_missing}/{n_tracked} devices persisted "
+            f"> {_MASS_LOSS_GRACE_S:.0f}s — accepting it as real."
+        )
+        return False, n_missing, n_tracked
+    return True, n_missing, n_tracked
+
+
 def _reconcile(devices: list[dict], live_ids: set[str]) -> list[dict]:
     if not live_ids:
         return devices
     import time as _t
     now = _t.time()
+    veto, n_missing, n_tracked = _mass_loss_veto(devices, live_ids, now)
+    if veto:
+        # Keep every existing status untouched and try again next pass. HA is
+        # almost certainly mid-startup; in ~60 s the entities come back and the
+        # normal path marks them CONNECTED.
+        log_error(
+            f"[DeviceRegistry] Ignoring reconcile snapshot: {n_missing}/{n_tracked} "
+            f"healthy devices missing from HA at once (looks like HA/MQTT still "
+            f"starting, not real deletions). Statuses left unchanged."
+        )
+        return devices
     keep = []
     for d in devices:
         eid = d.get("entity_id")
@@ -1384,7 +1458,21 @@ async def sync_rooms_to_ha() -> None:
             log_info(f"[DeviceRegistry] sync_rooms_to_ha: migrated room keys: {created}")
 
 
+# Set once a dedicated reconciliation thread is running (the core/ziggy_main.py
+# entry point). The container runs `uvicorn backend.server:app` directly, so
+# ziggy_main never executes there and this stays False — which is exactly why
+# the scheduler owns a reconcile tick of its own. The flag keeps the two from
+# both running when a process DOES go through ziggy_main.
+_reconcile_loop_running = False
+
+
+def reconcile_loop_running() -> bool:
+    return _reconcile_loop_running
+
+
 def start_reconciliation_loop(interval_s: int = 60) -> threading.Thread:
+    global _reconcile_loop_running
+
     def _loop():
         while True:
             time.sleep(interval_s)
@@ -1395,4 +1483,5 @@ def start_reconciliation_loop(interval_s: int = 60) -> threading.Thread:
 
     t = threading.Thread(target=_loop, name="DeviceRegistryReconcile", daemon=True)
     t.start()
+    _reconcile_loop_running = True
     return t

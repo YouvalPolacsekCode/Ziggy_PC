@@ -31,8 +31,13 @@
 
 /** @type {Record<string, Manifest>} */
 export const MANIFESTS = {
+  // FURNITURE, not a card. Talk-to-Ziggy is now rendered by the page itself
+  // (see ZiggyBar) at a fixed spot, so it must never appear on the movable
+  // board or in the add-a-card picker. The manifest stays so that layouts
+  // saved before the move still resolve — they are filtered out on render
+  // rather than deleted, which keeps the change reversible.
   ziggy: {
-    type: 'ziggy', titleKey: 'wall.mod.ziggy', descKey: 'wall.mod.ziggyDesc',
+    type: 'ziggy', fixed: true, titleKey: 'wall.mod.ziggy', descKey: 'wall.mod.ziggyDesc',
     minW: 2, minH: 1, defaultW: 8, defaultH: 2, maxW: 12, maxH: 8,
     capability: null, multiple: false, configSchema: {},
   },
@@ -123,7 +128,12 @@ export const MODULE_ORDER = [
 ]
 
 export function allManifests() {
-  return MODULE_ORDER.map((t) => MANIFESTS[t]).filter(Boolean)
+  return MODULE_ORDER.map((t) => MANIFESTS[t]).filter((m) => m && !m.fixed)
+}
+
+/** Types the page renders itself; the board must skip them. */
+export function isFixedType(type) {
+  return !!MANIFESTS[type]?.fixed
 }
 
 /**

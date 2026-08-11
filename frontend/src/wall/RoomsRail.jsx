@@ -19,7 +19,7 @@ const CONTROLLABLE = new Set(['light', 'switch', 'media_player', 'climate', 'fan
 
 // ─── one device row ─────────────────────────────────────────────────────────
 
-const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
+const DeviceRow = memo(function DeviceRow({ entity, actions, pending, onOpenDevice }) {
   const t = useT()
   const facts = useMemo(() => deviceFacts(entity), [entity])
   // Same name translation the app's DeviceCard uses, so "Ceiling Light" reads
@@ -35,15 +35,37 @@ const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
   const isLock    = facts.domain === 'lock'
   const isLight   = facts.domain === 'light'
   const isClimate = facts.domain === 'climate'
+  // Read-only rows. A `sensor` carries a measurement; a `binary_sensor` carries
+  // a condition. Neither is a thing you switch, and neither is ever "off".
+  const isMeasurement = facts.domain === 'sensor'
+  const isBinary      = facts.domain === 'binary_sensor'
   const offline   = !facts.isAvailable && !facts.hasIr
   const isPending = !!pending[facts.id]
 
-  // State line. Deliberately reuses the app's own stateLabel so the wall and
-  // the phone never describe the same device differently.
+  // State line. Reuses the app's own stateLabel wherever it can, so the wall
+  // and the phone never describe the same device differently.
   let stateText = facts.stateLabel
   let stateTone = ''
   if (offline)            { stateText = t('wall.dev.offline'); stateTone = 'is-err' }
   else if (isLock)        { stateTone = facts.state === 'locked' ? 'is-on' : 'is-err' }
+  else if (isMeasurement) {
+    // A thermometer is never "off" — it has a reading. Saying otherwise was
+    // both wrong and alarming: "Office Temp · off" reads like a dead sensor
+    // when the room is a perfectly normal 25.6°.
+    const unit = facts.entity?.unit_of_measurement
+    const raw  = facts.state
+    const num  = Number(raw)
+    const val  = Number.isFinite(num)
+      // One decimal is all a wall can be read at; 25.59 °C is false precision.
+      ? (Math.abs(num) >= 100 ? Math.round(num) : Math.round(num * 10) / 10)
+      : raw
+    stateText = unit ? `${val} ${unit}` : String(val)
+  }
+  else if (isBinary) {
+    // Occupied / Clear / Open — deviceFacts already knows the right word per
+    // device class, and it is never "on"/"off" to a person.
+    stateTone = facts.isOn ? 'is-on' : ''
+  }
   else if (facts.isOn) {
     stateTone = 'is-on'
     if (isLight && facts.brightness != null)  stateText = `${t('wall.dev.on')} · ${facts.brightness}%`
@@ -61,12 +83,19 @@ const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
   return (
     <div className={`zw-dev${offline ? ' is-offline' : ''}${isPending ? ' is-pending' : ''}`}>
       <div className="zw-dev-row">
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* The name and state open the full device page; the switch beside
+            them stays a switch. Tapping a row to inspect and tapping a control
+            to act are different intentions and must not share a target. */}
+        <button
+          className="zw-dev-open"
+          onClick={(e) => { e.stopPropagation(); onOpenDevice?.(facts.id) }}
+          aria-label={deviceName}
+        >
           <div className="zw-dev-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {deviceName}
           </div>
           <div className={`zw-dev-state ${stateTone}`}>{stateText}</div>
-        </div>
+        </button>
 
         {!isLock && !offline && facts.domain !== 'binary_sensor' && facts.domain !== 'sensor' && (
           <button
@@ -140,7 +169,7 @@ const DeviceRow = memo(function DeviceRow({ entity, actions, pending }) {
 
 // ─── one room ───────────────────────────────────────────────────────────────
 
-const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, actions, pending }) {
+const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, actions, pending, onOpenDevice }) {
   const t = useT()
   // Same name-translation path the Rooms page uses, so "Living Room" reads as
   // "סלון" on the wall exactly as it does on a phone.
@@ -222,7 +251,8 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
           {devices.length === 0
             ? <div className="zw-empty">{t('wall.rail.noDevices')}</div>
             : devices.map((e) => (
-                <DeviceRow key={e.entity_id} entity={e} actions={actions} pending={pending} />
+                <DeviceRow key={e.entity_id} entity={e} actions={actions} pending={pending}
+                           onOpenDevice={onOpenDevice} />
               ))}
         </div>
       )}
@@ -232,7 +262,7 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
 
 // ─── the rail ───────────────────────────────────────────────────────────────
 
-export default function RoomsRail({ open, onClose, guard, toast }) {
+export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice, footer }) {
   const t = useT()
   // GROUPED view, the same one the app's Rooms page uses. Reading raw
   // `ziggyRooms` listed every entity a room owns — an Office with two lamps
@@ -309,9 +339,12 @@ export default function RoomsRail({ open, onClose, guard, toast }) {
                   })}
                   actions={actions}
                   pending={actions.pending}
+                  onOpenDevice={onOpenDevice}
                 />
               ))}
         </div>
+        {/* Fixed furniture pinned to the bottom of the rail — see ZiggyBar. */}
+        {footer}
       </aside>
     </>
   )

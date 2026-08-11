@@ -51,7 +51,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.routers.auth_deps import get_current_user, require_role
+from backend.routers.auth_deps import get_current_user, require_role, ROLE_ORDER
 from backend.ws_manager import manager
 from services import dashboard_tablets as tablets
 from services import wall_layouts as layouts
@@ -74,6 +74,34 @@ def _actor(user: dict) -> str:
     return str(user.get("username") or user.get("name") or "")
 
 
+def _caller_tablet(request: Request) -> Optional[str]:
+    """The tablet whose credential made this request, if any."""
+    auth = request.headers.get("Authorization") or ""
+    if not auth.startswith("Bearer "):
+        return None
+    return policy.resolve_token(auth[7:].strip())
+
+
+def _require_own_tablet(request: Request, user: dict, tablet_id: str) -> None:
+    """A caller may only act on ITS OWN tablet — unless it is an admin.
+
+    Both of these endpoints took `tablet_id` from the request body and checked
+    only that somebody was signed in. That is an IDOR: any authenticated
+    principal, including a deliberately locked-down hallway panel, could name
+    another tablet's id and act on it.
+
+    For the PIN that is a denial of service against a physical control — five
+    requests exhaust the kitchen panel's attempt budget and nobody can unlock
+    the door from it for two minutes. For the layout it is one tablet
+    scrambling another's board.
+    """
+    if _caller_tablet(request) == tablet_id:
+        return
+    if ROLE_ORDER.get(user.get("role", "user"), 0) >= ROLE_ORDER["admin"]:
+        return
+    raise HTTPException(status_code=403, detail="That isn’t this tablet.")
+
+
 # ---------------------------------------------------------------------------
 # Layout
 # ---------------------------------------------------------------------------
@@ -89,9 +117,11 @@ async def get_wall_layout(tablet_id: Optional[str] = None, user: dict = Depends(
 
 
 @router.put("/api/wall/layout")
-async def put_wall_layout(body: LayoutBody, user: dict = Depends(get_current_user)):
+async def put_wall_layout(body: LayoutBody, request: Request,
+                          user: dict = Depends(get_current_user)):
     if not body.tablet_id:
         raise HTTPException(status_code=400, detail="This tablet isn’t paired yet, so its layout can’t be saved.")
+    _require_own_tablet(request, user, body.tablet_id)
     try:
         saved = await layouts.save_layout(body.tablet_id, body.layout)
     except ValueError as e:
@@ -262,9 +292,17 @@ async def set_wall_pin(body: PinBody, user: dict = Depends(require_role("admin")
 
 
 @router.post("/api/wall/pin/verify")
-async def verify_wall_pin(body: VerifyPinBody, user: dict = Depends(get_current_user)):
+async def verify_wall_pin(body: VerifyPinBody, request: Request,
+                          user: dict = Depends(get_current_user)):
+    _require_own_tablet(request, user, body.tablet_id)
+    # Rate-limit on the CALLER too, not just the tablet. Keyed on the tablet
+    # alone, anyone could burn a legitimate panel's attempt budget and lock the
+    # household out of its own door control.
+    client_key = _caller_tablet(request) or _actor(user) or (
+        request.client.host if request.client else "unknown")
     try:
-        return await policy.verify_pin(body.tablet_id, body.capability, body.pin)
+        return await policy.verify_pin(body.tablet_id, body.capability, body.pin,
+                                       client_key=client_key)
     except PermissionError as e:
         raise HTTPException(status_code=429, detail=str(e))
     except ValueError as e:

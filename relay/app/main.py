@@ -40,14 +40,21 @@ async def lifespan(app: FastAPI):
     # shutdown is best-effort — the loop awaits sleep(86400) most of its
     # life, so a cancel during sleep is the common case and tidy.
     retention_task = asyncio.create_task(run_retention_loop())
+    # Fleet watchdog + auto-repair. The relay is the only always-on component,
+    # so this is where "notice a broken home and fix the fixable" belongs —
+    # detection that depends on someone's laptop being open is how a customer
+    # home stayed broken for 19 hours. Disable with ZIGGY_AUTO_REMEDIATE=0.
+    from .remediator import run_remediator_loop
+    remediator_task = asyncio.create_task(run_remediator_loop())
     try:
         yield
     finally:
-        retention_task.cancel()
-        try:
-            await retention_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        for task in (retention_task, remediator_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         await _proxy_client.aclose()
         await _openai_client.aclose()
 

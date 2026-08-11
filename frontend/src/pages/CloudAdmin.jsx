@@ -5,6 +5,7 @@ import {
   Activity, Package, Database, Smartphone, LifeBuoy, Terminal,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
+import FleetHealthPanel from '../components/admin/FleetHealthPanel'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
 import { computeHealth, HEALTH_COLORS } from '../lib/fleetHealth'
@@ -310,13 +311,41 @@ function BackupTab({ homeId }) {
   if (state.status === 'error') return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
   const d = state.data || {}
   const restoreEvents = Array.isArray(d.restore_events) ? d.restore_events : []
-  if (!d.last_backup_at && !d.last_unsealed_at && restoreEvents.length === 0) {
+  // The relay reports a backup RUN: {ts, outcome, stage, files, uploaded_bytes,
+  // error_reason, dry_run}. This tab was reading last_backup_at /
+  // last_unsealed_at — field names the endpoint has never returned — so a home
+  // backing itself up nightly to B2 rendered as "No backup status reported".
+  // `ts` is the authoritative timestamp; the old names are kept as fallbacks in
+  // case an older relay is ever on the other end.
+  const lastBackupAt = d.ts || d.last_backup_at || null
+  const outcome = d.outcome || (d.error_reason ? 'failed' : null)
+  const failed = outcome && outcome !== 'success'
+  const sizeMb = typeof d.uploaded_bytes === 'number'
+    ? (d.uploaded_bytes / 1_048_576).toFixed(1) + ' MB'
+    : null
+  const fileCount = Array.isArray(d.files) ? d.files.length : null
+
+  if (!lastBackupAt && !d.last_unsealed_at && restoreEvents.length === 0) {
     return <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.backupNoStatus')}</p>
   }
 
   return (
     <div style={{ padding: '12px 20px 16px' }}>
-      <StatRow label={t('cloudAdmin.backupLastBackup')} value={d.last_backup_at ? timeAgoLabel(t, d.last_backup_at) : null} />
+      <StatRow label={t('cloudAdmin.backupLastBackup')} value={lastBackupAt ? timeAgoLabel(t, lastBackupAt) : null} />
+      {outcome && (
+        <StatRow
+          label="Outcome"
+          value={
+            <span style={{ color: failed ? '#ef4444' : 'var(--ok)', fontWeight: 600 }}>
+              {failed ? `${outcome}${d.error_reason ? ` — ${d.error_reason}` : ''}` : 'success'}
+              {d.dry_run ? ' (dry run)' : ''}
+            </span>
+          }
+        />
+      )}
+      {fileCount != null && (
+        <StatRow label="Archives" value={`${fileCount} file${fileCount === 1 ? '' : 's'}${sizeMb ? ` · ${sizeMb}` : ''}`} />
+      )}
       <StatRow
         label={t('cloudAdmin.backupKeyState')}
         value={d.last_unsealed_at
@@ -972,6 +1001,7 @@ export default function CloudAdmin() {
   const [home,        setHome]        = useState(null)
   const [relayHomes,  setRelayHomes]  = useState([])
   const [relayOnline, setRelayOnline] = useState(false)
+  const [relayNeedsAuth, setRelayNeedsAuth] = useState(false)
   const [loading,     setLoading]     = useState(true)
   const [relayInput,  setRelayInput]  = useState({ url: getRelayUrl(), email: '', password: '' })
   const [relayConnecting, setRelayConnecting] = useState(false)
@@ -995,8 +1025,19 @@ export default function CloudAdmin() {
     } catch { }
 
     if (isRelayConfigured()) {
-      try { setRelayHomes(await relayListHomes()); setRelayOnline(true) }
-      catch { setRelayOnline(false) }
+      try {
+        setRelayHomes(await relayListHomes())
+        setRelayOnline(true); setRelayNeedsAuth(false)
+      } catch (e) {
+        // "I got a 401" and "the relay is down" are different facts and need
+        // different actions. Reporting both as "Relay offline" sent the
+        // operator hunting a dead server when all that was missing was a
+        // sign-in — the relay was up and answering the whole time.
+        const unauthorized = e?.status === 401 || e?.status === 403
+          || e?.code === 'NOT_AUTHENTICATED' || e?.code === 'INSUFFICIENT_PERMISSIONS'
+        setRelayOnline(false)
+        setRelayNeedsAuth(unauthorized)
+      }
     }
     setLoading(false)
   }, [])
@@ -1068,7 +1109,9 @@ export default function CloudAdmin() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 14px', background: 'var(--bg-2)', borderRadius: 10, border: '0.5px solid var(--line)' }}>
           {relayOnline
             ? <><CheckCircle size={12} style={{ color: 'var(--ok)' }} /><span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
-            : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
+            : relayNeedsAuth
+              ? <><Shield size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>Not signed in to the relay</span></>
+              : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
           <button onClick={() => { localStorage.removeItem('ziggy_relay_url'); localStorage.removeItem('ziggy_relay_token'); window.location.reload() }}
             style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
@@ -1076,6 +1119,17 @@ export default function CloudAdmin() {
           </button>
         </div>
       )}
+
+      {/* Fleet health — the operator's first question ("is anything broken?")
+          answered before the home list, from the relay's rule engine rather
+          than a second opinion computed in the browser. */}
+      {/* Rendered unconditionally on purpose: the panel discovers the relay URL
+          from the hub and offers sign-in itself. Gating it on isRelayConfigured()
+          would reproduce the bug it exists to fix — a working fleet rendering as
+          a blank page because nobody had typed a URL into this browser. */}
+      <div style={{ marginBottom: 20 }}>
+        <FleetHealthPanel />
+      </div>
 
       {/* Connect relay panel — shown above homes when not yet connected */}
       {!isRelayConfigured() && (
