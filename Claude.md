@@ -2,6 +2,47 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Release rules (READ FIRST — non-negotiable)
+
+**Code reaches a customer home exactly one way: `./scripts/ship.sh` cuts a
+`release-*` tag on `main`, and each hub's `ziggy-update.timer` pulls it.**
+Never SSH a file onto a hub. Never `docker compose build` on someone's box to
+"just test something". Never hand-edit `/opt/ziggy`.
+
+This is not tidiness. On 2026-08-10 hand-pushing had left one customer hub 105
+uncommitted files off its tag — which *blocks* the updater, so that home could no
+longer receive fixes at all — and a second hub running a commit that existed
+nowhere in the repository. Both had to be rescued by hand.
+
+- **Before changing hub behaviour**, know what the fleet runs:
+  `./scripts/fleet-health.py` (add `--json` to parse). Every home reports its
+  release tag, cohort and a `drifted` flag.
+- **After merging to `main`**, ship it: `./scripts/ship.sh -m "…"`. A change on
+  `main` that is not in a tag reaches nobody.
+- **Verify the fleet converged** before calling it done — hubs deploy on a 2 min
+  timer but report on a 5 min one, so allow ~5 min before believing the view.
+- **Cohorts:** customer homes are `production` (newest `release-*` tag). Only
+  Youval's Canary is `canary` (follows `origin/main`). Do not change a cohort to
+  make a deploy go faster.
+- **New homes** are imaged at the newest `release-*` tag, resolved at imaging
+  time (`scripts/canary/hub-bootstrap.sh`), and enrolled on the update channel by
+  the `update-channel` imaging step. Never pin an imaging version by hand — a
+  hardcoded ref is exactly how imaging silently fell months behind the fleet.
+- **Feature branches drift.** After shipping, merge `main` back into any
+  long-lived branch (`feat/beta-image-readiness` especially — it feeds imaging).
+- **`core/ziggy_main.py` is NOT the production entrypoint.** The container runs
+  `uvicorn backend.server:app`. Anything started only in `ziggy_main` never runs
+  in a real home; four features were found dead this way. If you add a
+  background service, start it in `backend/server.py` (or as a
+  `services/ziggy_scheduler.py` tick) — `tests/test_prod_entrypoint_starts_services.py`
+  enforces this.
+- **`docker/ha-config/` is the customer's live Home Assistant `/config`**, and
+  `automations.yaml` is a tracked file. Never let a checkout clobber it; the
+  updater backs it up and restores it around every tree move.
+
+If you believe a rule must be broken for a specific task, say so and get
+agreement first. Do not quietly bypass it.
+
 ## Working agreement (READ FIRST — non-negotiable)
 
 **Do the whole job, not the cheap partial version.** When a tool, feature, or task has more capability available, use it FULLY unless the user explicitly narrowed the scope. Do not ship the fast/token-cheap subset, stop, and present it as "done" — that has cost real features being silently missed and is treated as laziness. If you are deliberately skipping part of a capability, that skip MUST be surfaced explicitly ("I excluded X because Y — say the word to include it"), never left implicit.
