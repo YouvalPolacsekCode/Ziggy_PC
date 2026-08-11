@@ -23,8 +23,10 @@
 #   9  ziggy-up       docker compose up the ziggy backend
 #   10 matter-enable  (ENABLE_MATTER=1) flash 2nd dongle → ot-rcp + bring up the
 #                     OTBR/matter-server stack + wire HA (scripts/factory/ziggy-matter-enable.sh)
-#   11 kit-ready      kit-ready-check.sh gate
-#   12 first-backup   one REAL backup to B2 (the ship signal)
+#   11 update-channel enroll on the OTA release channel (/etc/ziggy/ziggy.env
+#                     cohort + systemd units) so the hub can receive fixes
+#   12 kit-ready      kit-ready-check.sh gate
+#   13 first-backup   one REAL backup to B2 (the ship signal)
 #
 # USAGE
 #   sudo scripts/factory/ziggy-image-device.sh              # full run
@@ -140,7 +142,7 @@ else
 fi
 STATE_FILE="$STATE_DIR/imaging.state"
 
-STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up matter-enable kit-ready first-backup)
+STEPS=(preflight identity mqtt-creds env stack-up ha-seed zigbee-pair seal register-hub ziggy-up matter-enable update-channel kit-ready first-backup)
 
 _log()  { printf '\033[36m[image]\033[0m %s\n' "$*" >&2; }
 _ok()   { printf '\033[32m[image ✓]\033[0m %s\n' "$*" >&2; }
@@ -772,6 +774,51 @@ step_ziggy_up() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# STEP 8b: update-channel — put the hub on the release channel
+# ═══════════════════════════════════════════════════════════════════════════
+# Imaging used to leave this out entirely, so every hub shipped OFF the update
+# channel and stayed on whatever code it was imaged with until a human SSHed in
+# and enrolled it by hand. All three homes in the fleet had to be enrolled that
+# way on 2026-08-10 — one of them had drifted 105 uncommitted files off its tag
+# and could no longer be updated at all.
+#
+# A home that cannot receive fixes is a liability, so enrollment is part of
+# imaging, not an afterthought in a runbook.
+#
+# Cohort is `production`: follow the newest release-* tag. (`canary` follows
+# origin/main and belongs only on Youval's own hub.) Override with
+# ZIGGY_COHORT=canary for a bench unit meant to lead the fleet.
+step_update_channel() {
+  local cohort="${ZIGGY_COHORT:-production}"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    _log "update-channel (dry-run): would write $ETC_DIR/ziggy.env (cohort=$cohort) and install systemd units"
+    return 0
+  fi
+
+  install -d -m 0755 "$ETC_DIR"
+  {
+    printf 'ZIGGY_COHORT=%s\n' "$cohort"
+    printf 'ZIGGY_REPO_DIR=%s\n' "$REPO_DIR"
+    printf 'ZIGGY_API_URL=http://127.0.0.1:8001\n'
+    printf 'ZIGGY_CONTAINER=ziggy-ziggy-1\n'
+  } > "$ETC_DIR/ziggy.env"
+  chmod 0600 "$ETC_DIR/ziggy.env"
+
+  bash "$REPO_DIR/scripts/linux/install-systemd-units.sh" >/dev/null 2>&1 \
+    || _die "update-channel: install-systemd-units.sh failed"
+
+  systemctl is-enabled ziggy-update.timer >/dev/null 2>&1 \
+    || _die "update-channel: ziggy-update.timer is not enabled"
+
+  # Stamp deploy_state.json now so the hub's very first telemetry post already
+  # carries its version and cohort — a hub should never be 'unknown' to the
+  # fleet, not even for its first five minutes.
+  bash "$REPO_DIR/scripts/linux/ziggy-update.sh" --dry-run >/dev/null 2>&1 || true
+
+  _ok "update-channel: cohort=$cohort, ziggy-update.timer enabled"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # STEP 9: kit-ready — the ship gate
 # ═══════════════════════════════════════════════════════════════════════════
 step_kit_ready() {
@@ -839,6 +886,7 @@ _run_step_fn() {
     register-hub)  step_register_hub ;;
     ziggy-up)      step_ziggy_up ;;
     matter-enable) step_matter_enable ;;
+    update-channel) step_update_channel ;;
     kit-ready)     step_kit_ready ;;
     first-backup)  step_first_backup ;;
     *) _die "unknown step: $1" ;;

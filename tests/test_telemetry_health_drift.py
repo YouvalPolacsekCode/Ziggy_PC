@@ -127,6 +127,36 @@ class TestDriftDetection:
         assert state["drifted"] is True
         assert "updater" in state["drift_reason"]
 
+    def test_canary_cohort_between_tags_is_not_drift(self, tmp_path, monkeypatch):
+        """Canary tracks origin/main by design, so it sits between release tags
+        and has no exact tag. Flagging that would leave the canary hub
+        permanently 'drifted' — an alert that is always on gets ignored."""
+        _write_host_state(tmp_path, monkeypatch, {
+            "git_describe": "release-2026.08.11-3-gabc1234",
+            "git_sha": "abc1234", "branch": "HEAD", "release_tag": "",
+            "cohort": "canary", "dirty": False, "dirty_files": 0,
+            "updater_installed": True,
+        })
+        state = deploy_state.collect_deploy_state()
+        assert state["drifted"] is False, state["drift_reason"]
+
+    def test_canary_with_a_dirty_tree_is_still_drift(self, tmp_path, monkeypatch):
+        """The tag exemption must not become a blanket exemption."""
+        _write_host_state(tmp_path, monkeypatch, {
+            "git_sha": "abc1234", "cohort": "canary",
+            "dirty": True, "dirty_files": 12, "updater_installed": True,
+        })
+        assert deploy_state.collect_deploy_state()["drifted"] is True
+
+    def test_production_without_a_tag_is_still_drift(self, tmp_path, monkeypatch):
+        _write_host_state(tmp_path, monkeypatch, {
+            "git_sha": "abc1234", "cohort": "production",
+            "dirty": False, "updater_installed": True,
+        })
+        state = deploy_state.collect_deploy_state()
+        assert state["drifted"] is True
+        assert "release tag" in state["drift_reason"]
+
     def test_no_cohort_is_drift(self, tmp_path, monkeypatch):
         _write_host_state(tmp_path, monkeypatch, {
             "release_tag": "release-2026.08.10", "git_sha": "abc1234",
