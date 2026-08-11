@@ -46,10 +46,12 @@ SYSTEMD_DIR="/etc/systemd/system"
 UNITS=(ziggy.service \
        ziggy-update.service ziggy-update.timer ziggy-disk-guard.service ziggy-disk-guard.timer \
        ziggy-lifecycle.service ziggy-lifecycle.path \
-       ziggy-wifi-onboard.service)
+       ziggy-wifi-onboard.service ziggy-network-guard.service)
 # Directly-enabled services (WantedBy=multi-user.target). ziggy.service brings
 # the compose stack up on boot; enabling it is what makes a fresh image run.
-SERVICES=(ziggy.service ziggy-wifi-onboard.service)
+# ziggy-network-guard runs before it and reverts a stale address pin to DHCP,
+# so the stack always comes up on a network that actually works.
+SERVICES=(ziggy.service ziggy-wifi-onboard.service ziggy-network-guard.service)
 TIMERS=(ziggy-update.timer ziggy-disk-guard.timer)
 # .path units are enabled like timers (they drive their .service on a trigger).
 PATHS=(ziggy-lifecycle.path)
