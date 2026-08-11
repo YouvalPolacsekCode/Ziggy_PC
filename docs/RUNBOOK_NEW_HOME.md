@@ -182,16 +182,21 @@ Second (Thread) dongle only if this kit ships Matter.
 
 # PART 4 — Dry run (~1 min)
 
-From `~/ziggy_pc` on your Mac:
+From `~/ziggy_pc` on your Mac. **Replace all three `<…>` placeholders** — the
+address from Part 2 step 6, and the new home's name and owner:
 
 ```bash
 ./scripts/new-home.sh \
-  --host ziggy@192.168.1.50 \
-  --name "Tslil's Home" \
-  --owner tslil@example.com \
+  --host ziggy@<HUB-IP> \
+  --name "<CUSTOMER>'s Home" \
+  --owner <CUSTOMER-EMAIL> \
   --zigbee --pair-seconds 180 \
   --dry-run
 ```
+
+> Use the **new** customer's name and email. Every home needs its own identity —
+> reusing an existing home's details provisions a second, confusingly-named home
+> in the fleet and mails the wrong person.
 
 This changes nothing. It validates your secrets file, your `gh` login, and
 reachability, and prints **which release the home will land on**. Fix anything it
@@ -205,9 +210,9 @@ Same command, without `--dry-run`:
 
 ```bash
 ./scripts/new-home.sh \
-  --host ziggy@192.168.1.50 \
-  --name "Tslil's Home" \
-  --owner tslil@example.com \
+  --host ziggy@<HUB-IP> \
+  --name "<CUSTOMER>'s Home" \
+  --owner <CUSTOMER-EMAIL> \
   --zigbee --pair-seconds 180
 ```
 
