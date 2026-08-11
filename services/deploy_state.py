@@ -142,11 +142,21 @@ def _classify_drift(state: dict, *, host_state_present: bool) -> tuple[bool, str
     if not state.get("updater_installed"):
         return True, "auto-updater not installed — hub cannot receive releases"
 
+    cohort = (state.get("cohort") or "").strip().lower()
+    if not cohort:
+        return True, "no update cohort assigned"
+
+    # The canary cohort tracks origin/main by design, so it sits between tags
+    # and `git describe --exact-match` finds nothing. Demanding a release tag
+    # here would mark the canary hub permanently drifted — and an alert that is
+    # always on is one nobody reads. For canary, "clean and on a cohort" IS
+    # correct; the checks above (dirty tree, unstamped build, updater present)
+    # still apply.
+    if cohort == "canary":
+        return False, ""
+
     if not state.get("release_tag"):
         return True, "not pinned to a release tag"
-
-    if not state.get("cohort"):
-        return True, "no update cohort assigned"
 
     describe = state.get("git_describe") or ""
     tag = state.get("release_tag") or ""
