@@ -69,17 +69,29 @@ fi
 TODAY="$(date -u +%Y.%m.%d)"
 BASE_TAG="release-$TODAY"
 
-# If today's base tag already exists, append -2, -3, ... up to -9.
+# If today's base tag already exists, append -2, -3, … until one is free.
+#
+# This used to stop at -9. On a heavy day the tenth release found every
+# candidate taken, fell through with TAG still set to the base, and died at
+# `git tag` with "tag already exists" — AFTER every sanity check had passed and
+# the release plan had been printed, so it read like a fluke rather than a cap.
+# Ten releases in a day is a normal incident day, not an abuse of the tool.
 TAG="$BASE_TAG"
 git fetch --quiet --tags origin
 if git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
-  for i in 2 3 4 5 6 7 8 9; do
+  TAG=""
+  for i in $(seq 2 99); do
     CANDIDATE="$BASE_TAG-$i"
     if ! git rev-parse --quiet --verify "refs/tags/$CANDIDATE" >/dev/null; then
       TAG="$CANDIDATE"
       break
     fi
   done
+  if [ -z "$TAG" ]; then
+    echo "ERROR: $BASE_TAG through $BASE_TAG-99 all exist." >&2
+    echo "That is 99 releases today — something is looping. Investigate before shipping." >&2
+    exit 1
+  fi
 fi
 
 # --- Build annotation -----------------------------------------------------
