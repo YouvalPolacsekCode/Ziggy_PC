@@ -77,8 +77,23 @@ def _iso_to_epoch(ts: Optional[str]) -> Optional[float]:
         return None
 
 
+# Issues that are worth showing but are not a fault to fix — context an operator
+# reads, not a task. Naming them keeps the UI from offering a repair for
+# "the host rebooted", or implying a human must act on "this hub is too old to
+# report health".
+_CONTEXT_ONLY = frozenset({
+    "recently_rebooted", "no_health_telemetry", "never_reported",
+})
+
+
 def _issue(code: str, level: str, message: str, **detail: Any) -> dict:
     out = {"code": code, "level": level, "message": message}
+    # Each issue carries its own remedy so every surface — console, CLI,
+    # remediator — agrees on what can be fixed automatically. Deriving it
+    # separately in a UI is how three surfaces start disagreeing.
+    remedy = _REMEDY.get(code)
+    out["remedy"] = remedy
+    out["kind"] = "repair" if remedy else ("context" if code in _CONTEXT_ONLY else "human")
     if detail:
         out["detail"] = detail
     return out

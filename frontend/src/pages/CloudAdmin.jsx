@@ -5,7 +5,7 @@ import {
   Activity, Package, Database, Smartphone, LifeBuoy, Terminal,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
-import FleetConsole from '../components/admin/FleetConsole'
+import FleetOps from '../components/admin/ops/FleetOps'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
 import { computeHealth, HEALTH_COLORS } from '../lib/fleetHealth'
@@ -1138,7 +1138,7 @@ export default function CloudAdmin() {
           working fleet rendering as a blank page because nobody had typed a URL
           into this browser. */}
       <div style={{ marginBottom: 34 }}>
-        <FleetConsole />
+        <FleetOps />
       </div>
 
       {/* Connect relay panel — shown above homes when not yet connected */}

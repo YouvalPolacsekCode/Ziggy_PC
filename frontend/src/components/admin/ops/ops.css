@@ -1,0 +1,193 @@
+/* Ziggy Ops console — the "Industry" design system, scoped.
+ *
+ * Ported from the Claude Design project (Ziggy Fleet Console). Every selector is
+ * nested under .zg-ops on purpose: the source stylesheet restyles body, h1–h6,
+ * .btn, .input and .card globally, and this console lives INSIDE the Ziggy app,
+ * which has its own warm palette and type. Scoping keeps the two from fighting.
+ *
+ * The system's character: wireframe objects. Square corners, hairline borders,
+ * transparent fills, registration marks at the corners of framed blocks, a
+ * condensed face for headings and a utility sans for body.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
+
+.zg-ops {
+  --color-bg: #f2f2f3;
+  --color-surface: #e9e9ea;
+  --color-text: #1d1f20;
+  --color-accent: #5980a6;
+  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+
+  --color-neutral-100: #f5f5f8;
+  --color-neutral-200: #e7e7ea;
+  --color-neutral-300: #d4d4d7;
+  --color-neutral-400: #b7b7ba;
+  --color-neutral-500: #98989b;
+  --color-neutral-600: #7a7a7d;
+  --color-neutral-700: #5d5d60;
+  --color-neutral-800: #424244;
+  --color-neutral-900: #2b2b2d;
+
+  --color-accent-100: #eef6ff;
+  --color-accent-200: #d6ebff;
+  --color-accent-300: #b5d9fd;
+  --color-accent-400: #94bce3;
+  --color-accent-500: #749dc4;
+  --color-accent-600: #597ea3;
+  --color-accent-700: #416180;
+  --color-accent-800: #2c455d;
+  --color-accent-900: #1d2d3d;
+
+  /* State roles. Only these three carry colour; everything else is neutral. */
+  --down: #b0453a;
+  --down-100: #f8e7e4;
+  --down-800: #7c2e26;
+  --warn: #a97b23;
+  --warn-100: #f6edd8;
+  --warn-800: #75541a;
+
+  --font-heading: "Barlow Condensed", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+
+  --space-1: 3.4px; --space-2: 6.8px; --space-3: 10.2px;
+  --space-4: 13.6px; --space-6: 20.4px; --space-8: 27.2px;
+  --radius-md: 4px; --radius-lg: 7px;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2b2b2d 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
+
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* The console follows the surrounding app's theme rather than its own toggle —
+ * one switch for the whole product, not a second one hidden in ops. */
+[data-palette="dark"] .zg-ops {
+  --color-bg: #17191c;
+  --color-surface: #1f2225;
+  --color-text: #e6e7e9;
+  --color-divider: color-mix(in srgb, #e6e7e9 16%, transparent);
+  --color-neutral-100: #232527; --color-neutral-200: #2c2e31;
+  --color-neutral-300: #3a3c3f; --color-neutral-400: #57595c;
+  --color-neutral-500: #828487; --color-neutral-600: #9fa1a4;
+  --color-neutral-700: #c0c1c4; --color-neutral-800: #dcdde0;
+  --color-neutral-900: #eff0f2;
+  --color-accent: #7ba1c4;
+  --color-accent-100: #1c2733; --color-accent-200: #233546;
+  --color-accent-300: #2e485f; --color-accent-400: #41637f;
+  --color-accent-500: #5d83a6; --color-accent-600: #7ba1c4;
+  --color-accent-700: #a3c2de; --color-accent-800: #cadff2;
+  --color-accent-900: #e7f2fc;
+  --down: #cf6a5c; --down-100: #3a231f; --down-800: #f0b3a9;
+  --warn: #c99b45; --warn-100: #332a18; --warn-800: #e8cf9a;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+  --shadow-md: 0 3px 10px rgba(0,0,0,.5);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,.6);
+}
+
+.zg-ops *, .zg-ops *::before, .zg-ops *::after { box-sizing: border-box; }
+
+.zg-ops h1, .zg-ops h2, .zg-ops h3, .zg-ops h4, .zg-ops h5, .zg-ops h6 {
+  font-family: var(--font-heading); font-weight: 600;
+  line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 var(--space-2);
+  color: var(--color-text);
+}
+.zg-ops h3 { font-size: 25px; }
+.zg-ops h4 { font-size: 20px; }
+.zg-ops p { margin: 0 0 var(--space-3); }
+.zg-ops a { color: var(--color-accent); text-underline-offset: 3px; }
+.zg-ops .text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.zg-ops :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* — blueprint frame: the system's signature. Registration marks sit OUTSIDE
+     the box, so framed blocks need room around them. — */
+.zg-ops .blueprint { position: relative; border: 1px solid var(--color-divider); border-radius: 0; }
+.zg-ops .blueprint > .corner {
+  position: absolute; width: 11px; height: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.zg-ops .blueprint > .corner::before,
+.zg-ops .blueprint > .corner::after { content: ""; position: absolute; background: currentColor; }
+.zg-ops .blueprint > .corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
+.zg-ops .blueprint > .corner::after  { top: 5px; left: 0; width: 100%; height: 1px; }
+.zg-ops .blueprint > .corner.tl { top: -6px; left: -6px; }
+.zg-ops .blueprint > .corner.tr { top: -6px; right: -6px; }
+.zg-ops .blueprint > .corner.bl { bottom: -6px; left: -6px; }
+.zg-ops .blueprint > .corner.br { bottom: -6px; right: -6px; }
+
+/* — buttons — */
+.zg-ops .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; text-decoration: none;
+  font-family: var(--font-heading); font-weight: 600;
+  font-size: 14px; line-height: 1.2; color: var(--color-text);
+  background: transparent; border: 1px solid var(--color-divider);
+  padding: var(--space-2) calc(var(--space-3) * 1.2); border-radius: 0;
+}
+.zg-ops .btn:disabled { opacity: .45; cursor: not-allowed; }
+.zg-ops .btn-primary { background: var(--color-accent); color: var(--color-bg); border-color: var(--color-accent); }
+.zg-ops .btn-primary:hover:not(:disabled) { background: var(--color-accent-600); }
+.zg-ops .btn-secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.zg-ops .btn-ghost { color: var(--color-accent); border-color: transparent; padding-inline: var(--space-1); }
+.zg-ops .btn-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.zg-ops .btn-block { width: 100%; margin-top: var(--space-2); }
+
+/* — forms — */
+.zg-ops .field > label {
+  display: block; font-size: 12px; margin-bottom: 5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+.zg-ops .input {
+  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit; font-size: 14px;
+  color: var(--color-text); caret-color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider); border-radius: 0;
+}
+.zg-ops .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.zg-ops .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+.zg-ops .radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.zg-ops .radio input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.zg-ops .radio .dot {
+  width: 16px; height: 16px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--color-divider);
+}
+.zg-ops .radio input:checked + .dot {
+  border-color: var(--color-accent); background: var(--color-accent);
+  box-shadow: inset 0 0 0 4px var(--color-bg);
+}
+
+/* — tags — */
+.zg-ops .tag {
+  display: inline-flex; align-items: center; font-size: 11px;
+  letter-spacing: .02em; padding: 3px 10px; border-radius: 0;
+}
+.zg-ops .tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
+
+/* — dialog — */
+.zg-ops-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  padding: 13.6px; background: color-mix(in srgb, #2b2b2d 50%, transparent);
+}
+.zg-ops-dialog {
+  width: min(440px, 100%); display: flex; flex-direction: column; gap: 10.2px;
+  padding: 13.6px; border-radius: 0;
+  background: var(--color-bg); border: 1px solid var(--color-divider);
+  box-shadow: var(--shadow-lg);
+}
+.zg-ops-dialog .dialog-title { font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
+.zg-ops-dialog .dialog-body { font-size: 14px; opacity: .85; }
+.zg-ops-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 6.8px; margin-top: 6.8px; }
+
+/* — rows — */
+.zg-ops .zg-row:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+
+@keyframes zg-pulse { 0%,100% { opacity: .4 } 50% { opacity: .85 } }
+.zg-ops .zg-skel { background: var(--color-neutral-200); animation: zg-pulse 1.3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .zg-ops .zg-skel { animation: none; }
+}

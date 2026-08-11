@@ -59,7 +59,7 @@ async def fleet_health_report(request: Request):
 
     async with get_db() as db:
         homes = await db.execute_fetchall(
-            """SELECT id, name, type, tunnel_url, status, subscription_state
+            """SELECT id, name, type, tunnel_url, status, subscription_state, owner_email
                FROM homes ORDER BY created_at ASC"""
         )
         # Latest telemetry row per home in one pass — no N+1 over the fleet.
@@ -107,12 +107,17 @@ async def fleet_health_report(request: Request):
 # Audit events worth showing a human. `telemetry_posted` and
 # `ota_manifest_served` fire every few minutes per home and would bury
 # everything else — 357 of the last 400 rows were telemetry alone.
+# NOTE: `register_hub` is deliberately absent. A hub re-registers on every
+# container restart, so three deploys in an evening bury everything else under
+# "registered with the relay" — the same burying that keeps telemetry_posted
+# out. A genuinely new home is visible as `home_provisioned`, and as an
+# "unknown — never reported" row in the fleet list until it phones in.
 _ACTIVITY_EVENTS = (
     "home_version_changed",
     "fleet_auto_repair",
     "fleet_home_deleted",
-    "register_hub",
     "home_provisioned",
+    "home_hostname_set",
     "support_session_opened",
     "backup_restored",
 )
