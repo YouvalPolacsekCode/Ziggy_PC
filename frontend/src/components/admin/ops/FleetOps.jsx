@@ -253,9 +253,9 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
     let cancelled = false
     const id = home.home_id
     const set = (patch) => { if (!cancelled) setDetail(d => ({ ...d, ...patch })) }
-    relayGetHome(id).then(h => set({ users: h?.users || [] })).catch(() => set({ users: [] }))
-    relayHomeMobileDevices(id).then(r => set({ phones: r?.devices || r?.rows || [] })).catch(() => set({ phones: [] }))
-    relayHomeBackupStatus(id).then(b => set({ backup: b })).catch(() => set({ backup: {} }))
+    relayGetHome(id).then(h => set({ users: h?.users || [] })).catch(() => set({ users: 'error' }))
+    relayHomeMobileDevices(id).then(r => set({ phones: r?.devices || r?.rows || [] })).catch(() => set({ phones: 'error' }))
+    relayHomeBackupStatus(id).then(b => set({ backup: b })).catch(() => set({ backup: 'error' }))
     // 24 h of 5-minute samples. Trimmed to the most recent 24 for the bars so
     // each column is roughly an hour.
     relayHomeTelemetry(id, 288).then(r => set({ cpu: r?.rows || [] })).catch(() => set({ cpu: [] }))
@@ -280,6 +280,9 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
     return out.slice(-buckets)
   }, [detail.cpu])
 
+  const barPeak = bars ? Math.max(0, ...bars.filter(b => typeof b === 'number')) : 0
+  const barScale = Math.max(10, Math.ceil(barPeak * 1.25))
+
   const tagStyle = home.level === 'down' ? { background: 'var(--down)', color: 'var(--color-bg)' }
     : home.level === 'degraded' ? { background: 'var(--warn-100)', color: 'var(--warn-800)', border: '1px solid var(--warn)' }
     : home.level === 'unknown' ? { border: '1px dashed var(--color-neutral-500)', color: 'var(--color-neutral-700)' }
@@ -296,9 +299,10 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
 
   const backup = detail.backup
   const backupText = backup == null ? 'Loading…'
+    : backup === 'error' ? "Couldn't load backup status."
     : backup.ts ? `Last backup ${clock(backup.ts)} · ${(backup.files || []).length} archives${backup.outcome && backup.outcome !== 'success' ? ` · ${backup.outcome}` : ''}`
     : 'No backup reported'
-  const backupOk = backup?.outcome ? backup.outcome === 'success' : true
+  const backupOk = backup === 'error' ? false : (backup?.outcome ? backup.outcome === 'success' : true)
 
   return (
     <div style={{ padding: mobile ? '14px 16px 28px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -368,7 +372,7 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
             {(bars || Array.from({ length: 24 })).map((val, i) => (
               <span key={i} style={{
                 width: 7,
-                height: val == null ? 1 : Math.max(2, Math.round((val / 100) * 44)),
+                height: val == null ? 1 : Math.max(3, Math.round((val / barScale) * 44)),
                 background: val == null ? 'var(--color-neutral-300)' : 'var(--color-accent-400)',
               }} />
             ))}
@@ -376,14 +380,14 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
           <div style={{ fontSize: 11 }} className="text-muted">
             {bars == null ? 'Loading telemetry…'
               : bars.every(b => b == null) ? 'No samples — missing bars are missing data, drawn as absence.'
-              : 'Averaged from 5-minute telemetry samples.'}
+              : `Averaged from 5-minute telemetry samples · peak ${barPeak.toFixed(0)}%`}
           </div>
         </Section>
 
         <Section title="Backups">
           <div style={{ fontSize: 13, color: backupOk ? 'inherit' : 'var(--warn-800)' }}>{backupText}</div>
           <div style={{ fontSize: 11 }} className="text-muted">
-            {backup?.uploaded_bytes ? `${(backup.uploaded_bytes / 1048576).toFixed(1)} MB uploaded. ` : ''}
+            {backup !== 'error' && backup?.uploaded_bytes ? `${(backup.uploaded_bytes / 1048576).toFixed(1)} MB uploaded. ` : ''}
             Nightly, encrypted, to Backblaze.
           </div>
         </Section>
@@ -411,8 +415,15 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
 
         <Section title="Paired phones">
           {detail.phones == null && <div style={{ fontSize: 12 }} className="text-muted">Loading…</div>}
-          {detail.phones?.length === 0 && <div style={{ fontSize: 12 }} className="text-muted">No phones paired.</div>}
-          {(detail.phones || []).map((p, i) => (
+          {detail.phones === 'error' && (
+            <div style={{ fontSize: 12, color: 'var(--warn-800)' }}>
+              Couldn't reach the hub for this list.
+            </div>
+          )}
+          {Array.isArray(detail.phones) && detail.phones.length === 0 && (
+            <div style={{ fontSize: 12 }} className="text-muted">No phones paired.</div>
+          )}
+          {(Array.isArray(detail.phones) ? detail.phones : []).map((p, i) => (
             <div key={i} style={{ display: 'flex', fontSize: 13, gap: 8 }}>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {p.device_name || p.name || p.device_id || 'device'}
@@ -428,8 +439,29 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={onInvite}>+ Invite</button>
           </div>
           {detail.users == null && <div style={{ fontSize: 12 }} className="text-muted">Loading…</div>}
-          {detail.users?.length === 0 && <div style={{ fontSize: 12 }} className="text-muted">No users yet.</div>}
-          {(detail.users || []).map((u, i) => (
+          {detail.users === 'error' && (
+            <div style={{ fontSize: 12, color: 'var(--warn-800)' }}>Couldn't load users.</div>
+          )}
+          {Array.isArray(detail.users) && detail.users.length === 0 && (
+            <>
+              {home.owner_email ? (
+                <>
+                  <div style={{ display: 'flex', fontSize: 13, gap: 8, alignItems: 'center' }}>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {home.owner_email}
+                    </span>
+                    <span className="tag tag-neutral" style={{ fontSize: 10 }}>owner</span>
+                  </div>
+                  <div style={{ fontSize: 11 }} className="text-muted">
+                    On record as the owner, but no relay account has been linked to this home yet.
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12 }} className="text-muted">No users yet.</div>
+              )}
+            </>
+          )}
+          {(Array.isArray(detail.users) ? detail.users : []).map((u, i) => (
             <div key={i} style={{ display: 'flex', fontSize: 13, gap: 8, alignItems: 'center' }}>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
               <span className="tag tag-neutral" style={{ fontSize: 10 }}>{u.role}</span>

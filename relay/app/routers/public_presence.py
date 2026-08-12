@@ -96,7 +96,7 @@ async def _resolve_home() -> dict:
     """
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT id, tunnel_url, relay_secret, status, subscription_state "
+            "SELECT id, tunnel_url, public_hostname, relay_secret, status, subscription_state "
             "FROM homes"
         )
     candidates = [
@@ -123,7 +123,8 @@ async def _forward(
     request: Request,
     body: bytes | None = None,
 ) -> Response:
-    target = f"{home['tunnel_url']}/{path.lstrip('/')}"
+    from ..fleet_health import hub_base_url
+    target = f"{hub_base_url(home)}/{path.lstrip('/')}"
     if request.query_params:
         target += f"?{request.url.query}"
 

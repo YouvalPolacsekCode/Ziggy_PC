@@ -45,7 +45,7 @@ async def list_home_mobile_devices(home_id: str, request: Request):
 
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT tunnel_url, relay_secret FROM homes WHERE id=?",
+            "SELECT tunnel_url, public_hostname, relay_secret FROM homes WHERE id=?",
             (home_id,),
         )
     if not rows:
@@ -55,10 +55,12 @@ async def list_home_mobile_devices(home_id: str, request: Request):
         )
         raise HTTPException(404, "Home not found.")
     home = dict(rows[0])
-    if not home["tunnel_url"]:
+    from ..fleet_health import hub_base_url
+    _base = hub_base_url(home)
+    if not _base:
         raise HTTPException(503, "Home hub not yet connected.")
 
-    target = f"{home['tunnel_url']}/api/mobile/devices"
+    target = f"{_base}/api/mobile/devices"
     headers = {
         # Backend's relay_auth middleware validates X-Relay-Secret against
         # the home's stored secret before trusting the X-Relay-Role header.

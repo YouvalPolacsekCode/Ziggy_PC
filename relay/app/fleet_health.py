@@ -64,6 +64,24 @@ REGISTRY_MASS_LOST_SHARE = 0.9
 REGISTRY_MASS_LOST_MIN   = 3
 
 
+def hub_base_url(home: dict) -> str:
+    """Where to reach a hub over HTTP. One resolver, used everywhere.
+
+    `public_hostname` wins over `tunnel_url` because many homes only ever
+    registered a raw `*.cfargotunnel.com` address, which is routable from inside
+    Cloudflare but NOT from Fly — every call to those times out after 30 s.
+    Three separate call sites each rebuilt this URL by hand and only one of them
+    was fixed, so the fleet console could reach a hub while the paired-phones
+    lookup on the very same page could not.
+    """
+    base = (home.get("public_hostname") or "").strip() or (home.get("tunnel_url") or "").strip()
+    if not base:
+        return ""
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base.lstrip('/')}"
+    return base.rstrip("/")
+
+
 def _iso_to_epoch(ts: Optional[str]) -> Optional[float]:
     if not ts:
         return None
