@@ -344,7 +344,18 @@ fi
 if $DRY_RUN; then
   log "[dry-run] would: git fetch --prune --tags origin"
 else
-  if ! git fetch --prune --tags origin >>"$UPDATE_LOG" 2>&1; then
+  # --force matters: without it, `git fetch --tags` REFUSES to update a tag that
+  # already exists locally with a different value ("would clobber existing tag")
+  # and exits non-zero — which this treats as fatal. So a release tag moved on
+  # the server permanently wedges every hub that had already fetched the old
+  # one: it aborts here, every 2 minutes, and can never see any NEWER tag
+  # either. That happened on 2026-08-11 to a customer hub after a published tag
+  # was amended and force-pushed.
+  #
+  # Moving a published tag is still forbidden (see Claude.md). This makes the
+  # update channel survive it anyway, because a hub that cannot fetch cannot be
+  # sent the fix for not being able to fetch.
+  if ! git fetch --prune --tags --force origin >>"$UPDATE_LOG" 2>&1; then
     heartbeat "abort-fetch-failed"
     log "ABORT: git fetch failed"
     exit 1

@@ -28,6 +28,13 @@ nowhere in the repository. Both had to be rescued by hand.
   time (`scripts/canary/hub-bootstrap.sh`), and enrolled on the update channel by
   the `update-channel` imaging step. Never pin an imaging version by hand — a
   hardcoded ref is exactly how imaging silently fell months behind the fleet.
+- **NEVER move or delete a published release tag.** Amending a commit and
+  force-pushing its tag wedged a customer hub's update channel for good: once a
+  hub has fetched a tag, `git fetch --tags` refuses to clobber it, exits
+  non-zero, and the updater aborts before it can see any newer tag — every two
+  minutes, forever. If a release is wrong, cut a NEW tag. (The updater now
+  fetches with `--force` so it survives this, but hubs running older builds do
+  not, and a hub that cannot fetch cannot be sent the fix.)
 - **Feature branches drift.** After shipping, merge `main` back into any
   long-lived branch (`feat/beta-image-readiness` especially — it feeds imaging).
 - **`core/ziggy_main.py` is NOT the production entrypoint.** The container runs
