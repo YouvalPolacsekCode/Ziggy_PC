@@ -163,3 +163,69 @@ class TestJournal:
         import importlib
         mod = importlib.reload(presence_journal)
         assert mod.path().parent.name == "user_files"
+
+
+# ── PWA-only homes: nothing to probe ────────────────────────────────────────
+#
+# David's and Tslil's homes run the PWA, not the native app — so no FCM token,
+# no push_provider, and `probe_devices` has nothing to send. Two of the three
+# homes in the fleet are in this shape, so "wait for the phone to answer" must
+# degrade to a plain timeout rather than a state that never resolves.
+
+class TestHomeWithNoPushCapableDevice:
+
+    def _silent_at_home(self, **extra):
+        p = {
+            "id": "p1", "name": "PwaOnly", "state": "home", "history": [],
+            "last_seen":   (NOW - timedelta(hours=2)).isoformat(),
+            "last_gps_at": (NOW - timedelta(hours=2)).isoformat(),
+            "last_lat": 32.5193634, "last_lon": 34.9391036,
+            "lan_last_seen": (NOW - timedelta(hours=2)).isoformat(),
+        }
+        p.update(extra)
+        return p
+
+    def _sweep(self, monkeypatch, people, now=NOW):
+        monkeypatch.setattr(pe, "_load", lambda: people)
+        monkeypatch.setattr(pe, "_save", lambda _p: None)
+        return pe.sweep_expiry(now=now)
+
+    def test_the_deadline_runs_on_the_REQUEST_not_on_a_delivered_probe(self, monkeypatch):
+        """Nothing ever sends the probe. The departure must still happen.
+
+        `_departure_probe_waited` is anchored to `departure_probe_at`, which the
+        engine sets itself — so a home with no push device is only slower, never
+        stuck. If this ever became "wait for a send receipt", Leave Home would
+        stop working entirely on PWA-only homes.
+        """
+        people = [self._silent_at_home()]
+        self._sweep(monkeypatch, people)
+        assert people[0]["departure_probe_pending"] is True   # nothing will clear it
+
+        # Simulate the scheduler finding no FCM device: pending stays True.
+        people[0]["departure_probe_at"] = (
+            NOW - timedelta(seconds=float(pe._cfg("departure_probe_grace_seconds")) + 60)
+        ).isoformat()
+        out = self._sweep(monkeypatch, people)
+
+        assert any(d.result == "committed" for d in out), \
+            "a home with no push device must still detect a departure"
+        assert people[0]["state"] == "not_home"
+
+    def test_a_pwa_foreground_ping_still_settles_it_early(self):
+        """The PWA's own GPS ping is a real answer — it clears the deadline."""
+        p = self._silent_at_home(departure_probe_at=NOW.isoformat(),
+                                 departure_probe_pending=True)
+        pe.note_probe_answered(p)
+        assert "departure_probe_at" not in p
+
+    def test_probe_pass_is_a_silent_noop_with_no_push_devices(self):
+        """No tokens → nothing sent, nothing raised."""
+        import asyncio
+        from services import mobile_push
+        orig = mobile_push._all_devices
+        mobile_push._all_devices = lambda: []
+        try:
+            asyncio.new_event_loop().run_until_complete(mobile_push.probe_devices())
+        finally:
+            mobile_push._all_devices = orig
