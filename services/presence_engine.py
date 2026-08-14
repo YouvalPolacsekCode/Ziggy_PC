@@ -121,6 +121,7 @@ _DEFAULTS = {
     "stale_ping_seconds":  90,
     "stale_home_hours":    8,        # max trust window when LAN actively confirms home
     "stale_home_no_lan_minutes": 30, # GPS-only fallback — iOS Safari suspends watchPosition the moment the tab backgrounds, so a person who left will never send "I'm away" GPS. Decay home → unknown after this if there's no LAN confirmation.
+    "stale_home_at_home_grace_minutes": 360,  # How long a last GPS fix INSIDE the home zone keeps sweep_expiry from manufacturing a departure. The chip may still read "unknown" — this only holds back the destructive leave EVENT (Leave Home turns off lights + AC). Bounded so a phone that suspended GPS on the way out can't pin someone home forever.
     "lan_fresh_seconds":   180,      # LAN probe is "active" if a successful reachability check happened within this window
     "stale_away_minutes":  30,
     "history_size":        20,
@@ -1327,6 +1328,40 @@ def sweep_expiry(now: Optional[datetime] = None) -> list[Decision]:
             prev_confirmed = person.get("state", "unknown")
             eff = effective_state(person, now=ts)
             if prev_confirmed == "home" and eff == "unknown":
+                # The last thing we actually KNEW may have been "they're in the
+                # living room". Silence after that is absence of evidence, not
+                # evidence of departure — and this branch does not merely dim a
+                # chip, it fires Leave Home (lights off, AC off). On 2026-08-14
+                # it did exactly that to someone sitting in the room.
+                #
+                # So: if the last fix is inside the home zone and still within
+                # the trust window, hold the leave event. `effective_state` has
+                # already gone "unknown" and the UI is free to say so — we only
+                # decline to INVENT a departure. Bounded, because a phone that
+                # suspends GPS on the way out would otherwise kill leave
+                # detection for good (the case the 30-min decay exists for).
+                grace = float(_cfg("stale_home_at_home_grace_minutes"))
+                if grace > 0 and gps_recent_home(person, grace, now=ts):
+                    decision = Decision(
+                        person_id=person["id"], person_name=person["name"],
+                        ts=ts, source="expiry",
+                        raw_state="unknown",
+                        prev_confirmed=prev_confirmed, new_confirmed=prev_confirmed,
+                        result="held",
+                        reason="ping_stale_but_last_fix_inside_home",
+                    )
+                    # The sweep runs every minute and the hold can last hours, so
+                    # record it ONCE per episode. history_size is 20 — appending
+                    # every tick would evict the transitions that make this
+                    # diagnosable, which is how the 2026-08-14 incident was read
+                    # in the first place.
+                    hist = person.get("history") or []
+                    already = bool(hist) and hist[-1].get("result") == "held"
+                    if not already:
+                        _append_history(person, decision)
+                        out.append(decision)
+                    continue
+
                 # Stale ping → treat as departure, subject to cooldown.
                 suppress, why = _within_cooldown(person, "not_home", ts)
                 if suppress:

@@ -43,6 +43,7 @@ def engine(tmp_path, monkeypatch):
         "stale_ping_seconds": 90,
         "stale_home_hours":   8,
         "stale_home_no_lan_minutes": 30,
+        "stale_home_at_home_grace_minutes": 360,
         "lan_fresh_seconds":  180,
         "stale_away_minutes": 30,
         "history_size":       20,
