@@ -225,6 +225,34 @@ def _evaluate_payload(p: dict) -> list[dict]:
             coordinator_state=coord,
         ))
 
+    # ── The wiped-automations signature ────────────────────────────────────
+    # The home's live HA config sits inside the git-tracked tree and the repo
+    # ships automations.yaml as `[]`, so a release checkout overwrites it and a
+    # backup/restore dance is the only thing putting it back. That dance has no
+    # validation: it restores an empty file as faithfully as a good one, and
+    # once an empty copy is captured it propagates forever.
+    #
+    # On 2026-08-14 the Canary sat at zero automations for five and a half
+    # hours — Leave Home, Pre-cool and every Smart Room rule dead — and nothing
+    # reported it. Ziggy's own store (user_files/, untracked) still held all
+    # twelve, which is both how the wipe is detectable and how it was repaired.
+    #
+    # Only a MISMATCH is a wipe. A fresh home legitimately has zero in both, and
+    # more in HA than in Ziggy just means hand-written HA automations.
+    autos = health.get("automations") if isinstance(health.get("automations"), dict) else {}
+    z_total, h_total = autos.get("ziggy_total"), autos.get("ha_total")
+    if isinstance(z_total, int) and isinstance(h_total, int) and z_total > 0 and h_total < z_total:
+        issues.append(_issue(
+            "automations_wiped", LEVEL_DOWN,
+            f"Ziggy holds {z_total} automation(s) but Home Assistant only has "
+            f"{h_total} — the home's automations.yaml has been overwritten. "
+            f"Every missing automation is dead until it is restored. Repair: "
+            f"re-save them from Ziggy's own store (user_files/ still has the "
+            f"authoritative copy), or restore the newest non-empty "
+            f"user_files/ha-config-backups/*/docker/ha-config/automations.yaml.",
+            ziggy_total=z_total, ha_total=h_total,
+        ))
+
     # ── The false-lost signature ───────────────────────────────────────────
     r_total, r_lost = registry.get("total"), registry.get("lost")
     if isinstance(r_total, int) and isinstance(r_lost, int) and r_total >= REGISTRY_MASS_LOST_MIN:
@@ -333,10 +361,18 @@ def vitals(payload: Optional[dict]) -> dict:
     registry = health.get("registry") if isinstance(health.get("registry"), dict) else {}
     deploy = p.get("deploy") if isinstance(p.get("deploy"), dict) else {}
 
+    autos = health.get("automations") if isinstance(health.get("automations"), dict) else {}
+
     return {
         "devices_total":   devices.get("total"),
         "devices_offline": devices.get("offline"),
         "devices_lost":    registry.get("lost"),
+        # Two counts, deliberately. Ziggy's store lives in user_files/ (durable,
+        # untracked); HA's lives in the git-tracked automations.yaml the release
+        # checkout overwrites. A gap between them is a wipe — see
+        # ISSUE_AUTOMATIONS_WIPED. `None` on hubs too old to report either.
+        "automations_ziggy": autos.get("ziggy_total"),
+        "automations_ha":    autos.get("ha_total"),
         "disk_pct":        _num(p.get("disk_pct_used")),
         "mem_pct":         _num(p.get("mem_pct")),
         "cpu_pct":         _num(p.get("cpu_pct")),
@@ -428,6 +464,12 @@ _REMEDY = {
     "devices_lost":      "reconcile",
     "devices_offline_many": "recover-ha",
     "zigbee_coordinator_down": "recover-ha",
+    # DELIBERATELY NOT HERE. `_REMEDY` feeds the UNATTENDED repair path, and
+    # writing automations into a customer's Home Assistant off a count mismatch
+    # is not something a machine should do by itself — a false positive would
+    # overwrite a home's real config. It stays a loud human-actioned alarm; the
+    # message carries the fix.
+    #   "automations_wiped": ...
 }
 
 

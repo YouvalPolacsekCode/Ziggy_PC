@@ -542,6 +542,66 @@ def _collect_health() -> Optional[dict]:
     except Exception:
         pass
 
+    try:
+        autos = _collect_automation_counts()
+        if autos:
+            out["automations"] = autos
+    except Exception:
+        pass
+
+    return out or None
+
+
+def _collect_automation_counts() -> Optional[dict]:
+    """How many automations Ziggy holds vs how many Home Assistant actually has.
+
+    These SHOULD be equal, and the gap between them is a specific failure worth
+    a fleet alarm. The home's live `docker/ha-config/automations.yaml` sits
+    inside the git-tracked tree and the repo ships it as `[]`, so every release
+    checkout overwrites it; a backup/restore dance is the only thing putting it
+    back, and that dance restores an empty file as faithfully as a good one.
+
+    On 2026-08-14 the Canary ran five and a half hours with zero automations —
+    Leave Home, Pre-cool and every Smart Room rule dead — and nothing reported
+    it. Ziggy's own store (user_files/, untracked) still held all twelve, which
+    is both what makes the wipe detectable and what makes it repairable.
+
+    Returns None when neither side can be read, so a hub that simply cannot
+    answer stays silent rather than reporting a false zero.
+    """
+    out: dict[str, Any] = {}
+
+    # Ziggy's copy — the durable one, in user_files/.
+    try:
+        from services.local_automation_actions import _load_meta
+        meta = _load_meta() or {}
+        out["ziggy_total"] = len(meta)
+    except Exception:
+        pass
+
+    # Home Assistant's copy — the one a checkout can overwrite.
+    try:
+        from services.home_automation import get_state  # noqa: F401  (import guard)
+        from core.settings_loader import settings as _settings
+        ha_cfg = (_settings.get("home_assistant") or {})
+        url, token = ha_cfg.get("url"), ha_cfg.get("token")
+        if url and token:
+            resp = requests.get(
+                url.rstrip("/") + "/api/states",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                states = resp.json()
+                if isinstance(states, list):
+                    out["ha_total"] = sum(
+                        1 for e in states
+                        if isinstance(e, dict)
+                        and str(e.get("entity_id", "")).startswith("automation.")
+                    )
+    except Exception:
+        pass
+
     return out or None
 
 

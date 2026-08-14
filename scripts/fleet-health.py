@@ -153,6 +153,15 @@ def render(report: dict, *, color: bool) -> None:
         name = home.get("name") or home.get("home_id")
         badge = _color(level, f"[{level.upper():^8}]", color)
         print(f"  {badge} {name}")
+        # Automation counts always print, healthy or not. A home whose
+        # automations silently went to zero looked perfectly fine on this
+        # screen for five and a half hours on 2026-08-14 — "no issues" is not
+        # the same as "and here is what it has".
+        v = home.get("vitals") or {}
+        z, h = v.get("automations_ziggy"), v.get("automations_ha")
+        if z is not None or h is not None:
+            note = "" if z == h else "   <-- MISMATCH"
+            print(f"        automations: ziggy={z} ha={h}{note}")
         for issue in home.get("issues") or []:
             print(f"        - {issue.get('message')}")
         if home.get("actionable"):
