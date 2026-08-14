@@ -49,6 +49,55 @@ function PageLink({ to, children, ...rest }) {
   )
 }
 
+/**
+ * A section that starts folded when this page is embedded in the wall overlay,
+ * and open when it's the normal route.
+ *
+ * The device page has two long setup sections — the sibling-entity list and the
+ * tile controls — that together are ~1,700px, more than 60% of a page like
+ * Outdoor Watering. On the phone that's fine; you scroll. On a wall panel the
+ * whole page is fitted to one screen, and carrying that much configuration
+ * forces the fit so small the parts people actually read stop being legible.
+ *
+ * So they fold there and nowhere else. The route keeps the exact page it has
+ * always had — same order, same content, nothing hidden from the phone.
+ */
+function FoldSection({ title, children }) {
+  const embedded = !!useContext(ExitCtx)
+  const [open, setOpen] = useState(!embedded)
+
+  // On the route, render exactly what was here before — a plain heading, no
+  // chevron, nothing to collapse. Folding earns its place on a panel fitted to
+  // one screen; on the phone it would just be a new control on a page that
+  // didn't ask for one.
+  if (!embedded) {
+    return (
+      <Card className="p-4 mb-3">
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{title}</p>
+        {children}
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="p-4 mb-3">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center justify-between w-full"
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'start' }}
+      >
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider">{title}</p>
+        <ChevronDown
+          size={15}
+          className="text-ink-faint"
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease', flex: 'none' }}
+        />
+      </button>
+      {open && <div style={{ marginTop: 12 }}>{children}</div>}
+    </Card>
+  )
+}
+
 function BatteryBar({ level, unit = '%' }) {
   if (level == null) return null
   const barColor = level > 60 ? 'var(--ok)' : level > 20 ? 'var(--warn)' : 'var(--err)'
@@ -1281,10 +1330,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             device. The primary entity is highlighted so the user always
             knows which one drives the main card / control surface. ── */}
       {showData && usefulSiblings.length > 0 && (
-        <Card className="p-4 mb-3">
-          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">
-            {groupName ? t('deviceDetail.siblingsOn', { name: groupName }) : t('deviceDetail.alsoOnDevice')}
-          </p>
+        <FoldSection title={groupName ? t('deviceDetail.siblingsOn', { name: groupName }) : t('deviceDetail.alsoOnDevice')}>
           <div className="space-y-1.5">
             {usefulSiblings.map(sib => (
               <PageLink
@@ -1316,7 +1362,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
               </PageLink>
             ))}
           </div>
-        </Card>
+        </FoldSection>
       )}
 
       {/* ── Automations using this device ── */}
@@ -1417,8 +1463,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
 
       {/* ── Manage tiles (B: user curation — icon + promote siblings) ── */}
       {showData && group && (
-      <Card className="p-4 mb-3">
-        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.tilesTitle')}</p>
+      <FoldSection title={t('deviceDetail.tilesTitle')}>
         <div style={{ marginBottom: 14 }}>
           <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -1498,7 +1543,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             </div>
           </div>
         )}
-      </Card>
+      </FoldSection>
       )}
 
       {/* ── Who can use this (permission platform; best-effort, admin-only) ──

@@ -59,7 +59,15 @@ export const DevicePageModal = memo(function DevicePageModal({ entityId, onClose
       if (!natural) return
       const avail = window.innerHeight * MAX_VH
       const scale = Math.min(1, Math.max(MIN_SCALE, avail / natural))
-      setFit({ scale, height: Math.min(natural * scale, avail) })
+      // The wrapper takes the FULL scaled height, never the available height.
+      //
+      // Clamping it to `avail` was a bug with teeth: a page too tall to fit even
+      // at MIN_SCALE got a wrapper shorter than its own content, and since the
+      // wrapper hides its overflow there was nothing left to scroll — the rest
+      // of the page was simply unreachable. Outdoor Watering's info tab is
+      // 2790px; 54% of it could not be seen by any means. Give the wrapper its
+      // true height and the scroll container above it does its job.
+      setFit({ scale, height: natural * scale })
     }
     const ro = new ResizeObserver(measure)
     ro.observe(el)
