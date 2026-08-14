@@ -117,7 +117,25 @@ heartbeat() {
 }
 
 # --- docker compose invocation (v2 plugin) ----------------------------------
-dc() { docker compose "$@"; }
+# EVERY compose call must carry the prod overlay. It is not cosmetic — it is
+# what makes a hub a hub:
+#   * extra_hosts host.docker.internal:host-gateway — HA runs network_mode:host,
+#     so this bridge container has no other way to reach it. Without it
+#     HA_URL stops resolving and Ziggy loses Home Assistant entirely.
+#   * HOME_TYPE=hub / CLOUD_MODE=false, and /opt/ziggy/.env as env_file.
+#   * the /etc/ziggy, docker/ha-config and docker/z2m-data mounts the backup
+#     engine needs to see key material, HA config and Zigbee pairings.
+#
+# `build_ziggy` used a bare `docker compose up`, so every OTA rebuild recreated
+# the container in the base DEV topology and silently stripped all of the above.
+# The container kept working only until something forced a recreate. On the
+# Canary, 2026-08-14, a routine release did exactly that: host.docker.internal
+# stopped resolving, Ziggy could not reach HA at all, and the ha-config mount
+# vanished. Imaging brings the stack up with the overlay, which is why this
+# survived so long — nothing else re-applied it.
+COMPOSE_FILES=(-f docker-compose.yml)
+[ -f "$REPO_DIR/docker-compose.prod.yml" ] && COMPOSE_FILES+=(-f docker-compose.prod.yml)
+dc() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
 
 heartbeat "starting"
 
@@ -446,8 +464,12 @@ maybe_sync_infra() {
 
   log "Infra channel=$INFRA_CHANNEL: pulling pinned images: ${svcs[*]}"
   local ilog="$DEPLOY_LOGS_DIR/${TS//:/-}-infra.log"
-  if dc -f docker-compose.yml -f "$INFRA_OVERRIDE" pull "${svcs[@]}" >>"$ilog" 2>&1; then
-    dc -f docker-compose.yml -f "$INFRA_OVERRIDE" up -d --no-deps "${svcs[@]}" >>"$ilog" 2>&1 || \
+  # `dc` already carries base + prod; the pins overlay goes on top of both. It
+  # used to re-specify the base file, which dropped the prod overlay and would
+  # have recreated mosquitto/HA/z2m in the dev topology too (anonymous broker,
+  # no network_mode:host) the first time an infra pin moved.
+  if dc -f "$INFRA_OVERRIDE" pull "${svcs[@]}" >>"$ilog" 2>&1; then
+    dc -f "$INFRA_OVERRIDE" up -d --no-deps "${svcs[@]}" >>"$ilog" 2>&1 || \
       log "WARNING: infra 'up -d' returned non-zero. See $ilog"
   else
     log "WARNING: infra image pull failed. See $ilog (Ziggy deploy continues)."
