@@ -130,6 +130,14 @@ _DEFAULTS = {
     # Before concluding "away" from silence, wake the phone and give it this
     # long to answer. Silence AFTER a failed probe is evidence; silence alone
     # is not — those are the same observation otherwise.
+    #
+    # MEASURED, not guessed. Four FCM probe round-trips on the Canary
+    # (2026-08-14, logged as `probe_latency_sample` in the presence journal):
+    # 5.8s, 10.6s, 5.6s, and 5.9s — the last after a 7-minute idle, so a phone
+    # that had gone to sleep. 240s leaves roughly 22x headroom over the worst
+    # of those. Kept deliberately generous rather than tuned to the data: the
+    # cost of waiting is a late Leave Home, the cost of being early is turning
+    # off the lights and AC on someone who is sitting at home.
     "departure_probe_grace_seconds": 240,
     "lan_fresh_seconds":   180,      # LAN probe is "active" if a successful reachability check happened within this window
     "stale_away_minutes":  30,
