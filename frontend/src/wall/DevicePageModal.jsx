@@ -58,7 +58,15 @@ export const DevicePageModal = memo(function DevicePageModal({ entityId, onClose
       const natural = el.scrollHeight
       if (!natural) return
       const avail = window.innerHeight * MAX_VH
-      const scale = Math.min(1, Math.max(MIN_SCALE, avail / natural))
+      // Shrink ONLY when shrinking actually buys the one-screen fit it's for.
+      //
+      // Scaling is a trade: smaller text and narrower content, in exchange for
+      // seeing the whole page at once. When the page is so tall that even the
+      // floor can't fit it, that trade pays nothing — you'd get a page that is
+      // both squeezed AND scrollable, which is worse than either. So past that
+      // point it renders full size and simply scrolls.
+      const needed = avail / natural
+      const scale = needed >= 1 ? 1 : (needed >= MIN_SCALE ? needed : 1)
       // The wrapper takes the FULL scaled height, never the available height.
       //
       // Clamping it to `avail` was a bug with teeth: a page too tall to fit even
