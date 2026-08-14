@@ -39,6 +39,10 @@ def engine_and_lan(tmp_path, monkeypatch):
         "stale_home_hours": 8, "stale_home_no_lan_minutes": 30,
         "lan_fresh_seconds": 180,
         "stale_away_minutes": 30, "history_size": 20,
+        # Departure is evidence-based: a fix must be FRESH to prove "still
+        # home", and silence gets a probe + this grace before it counts as gone.
+        "gps_fresh_minutes":  12,
+        "departure_probe_grace_seconds": 240,
         # LAN-specific
         "lan_probe_interval_seconds": 60,
         "lan_offline_grace_minutes":  10,
@@ -73,7 +77,21 @@ def _add_person(pe, name, lan_host=None, state="unknown", last_seen_iso=None, la
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run a coroutine on a FRESH loop.
+
+    `asyncio.get_event_loop()` returns whatever loop the process last had — and
+    other tests in the suite close theirs, so this file passed in isolation and
+    failed with RuntimeError in a full run. That silently removed all coverage
+    from the LAN departure path, which is where the 2026-08-14 presence bug
+    lived. Own the loop here so the result doesn't depend on test ordering.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()
 
 
 def test_no_persons_no_probes(engine_and_lan, monkeypatch):
@@ -124,14 +142,45 @@ def test_unreachable_within_grace_no_signal(engine_and_lan, monkeypatch):
     assert person["candidate_state"] is None
 
 
-def test_unreachable_past_grace_starts_not_home_dwell(engine_and_lan, monkeypatch):
-    """Past-grace unreachable → engine receives a not_home signal and starts dwell."""
+def test_unreachable_past_grace_asks_the_phone_before_departing(engine_and_lan, monkeypatch):
+    """Past-grace unreachable → request a probe, do NOT declare a departure yet.
+
+    Wi-Fi silence alone cannot separate "phone dozing at home" from "walked
+    out"; both look identical. On 2026-08-14 guessing "home" here (via a veto
+    that accepted a 12-hour-old fix) meant Leave Home never fired for a real
+    departure, and guessing "away" on the sibling path killed the AC on someone
+    sitting in the room.
+    """
     pe, ln = engine_and_lan
     # Seen 30 minutes ago — past the 10-min grace.
     seen_iso = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
     pid = _add_person(pe, "Alice", lan_host="alice.local",
                       state="home", last_seen_iso=datetime.now(timezone.utc).isoformat(),
                       lan_last_seen=seen_iso)
+
+    monkeypatch.setattr(ln, "_probe_host", lambda host: False)
+    _run(ln.probe_all_persons())
+
+    person = json.loads(pe._REGISTRY.read_text())[0]
+    assert person["candidate_state"] is None, "must not start a departure on silence alone"
+    assert person.get("departure_probe_pending") is True
+    assert person.get("departure_probe_at")
+
+
+def test_unanswered_probe_past_the_grace_does_depart(engine_and_lan, monkeypatch):
+    """The phone was asked and never answered. THAT is a departure."""
+    pe, ln = engine_and_lan
+    now = datetime.now(timezone.utc)
+    seen_iso = (now - timedelta(minutes=30)).isoformat()
+    pid = _add_person(pe, "Alice", lan_host="alice.local",
+                      state="home", last_seen_iso=now.isoformat(),
+                      lan_last_seen=seen_iso)
+
+    # An already-open probe request, well past the grace window.
+    persons = json.loads(pe._REGISTRY.read_text())
+    grace = float(pe._cfg("departure_probe_grace_seconds"))
+    persons[0]["departure_probe_at"] = (now - timedelta(seconds=grace + 120)).isoformat()
+    pe._REGISTRY.write_text(json.dumps(persons))
 
     monkeypatch.setattr(ln, "_probe_host", lambda host: False)
     _run(ln.probe_all_persons())

@@ -43,7 +43,8 @@ def engine(tmp_path, monkeypatch):
         "stale_ping_seconds": 90,
         "stale_home_hours":   8,
         "stale_home_no_lan_minutes": 30,
-        "stale_home_at_home_grace_minutes": 360,
+        "gps_fresh_minutes":  12,
+        "departure_probe_grace_seconds": 240,
         "lan_fresh_seconds":  180,
         "stale_away_minutes": 30,
         "history_size":       20,
@@ -353,6 +354,17 @@ def test_expiry_sweep_fires_once(engine):
 
     # Advance > stale_home_hours so effective_state degrades.
     t += timedelta(hours=9)
+
+    # The last fix is INSIDE the home zone (30 m) but hours stale, and there is
+    # no LAN signal — indistinguishable from a phone dozing at home. The sweep
+    # must now ask the phone before calling it a departure, so the first round
+    # opens a probe and holds instead of firing.
+    decisions = engine.sweep_expiry(now=t)
+    assert all(not d.fired_transition for d in decisions)
+    assert any(d.result == "held" for d in decisions)
+
+    # The phone never answers. Past the grace, that silence IS the departure.
+    t += timedelta(seconds=int(engine._cfg("departure_probe_grace_seconds")) + 60)
     decisions = engine.sweep_expiry(now=t)
     fired = [d for d in decisions if d.fired_transition]
     assert len(fired) == 1

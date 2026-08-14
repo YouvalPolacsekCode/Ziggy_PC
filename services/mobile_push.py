@@ -124,10 +124,24 @@ async def send_location_probe(device: dict, *, boost: bool = False) -> dict:
     return await _send_fcm(token, title=None, body=None, data=data)
 
 
-async def probe_away_devices() -> None:
-    """Scheduler hook (runs each minute): FCM-probe every device whose bound
-    person is currently away. Rate-limited per device; boost cadence when the
-    person's last fix is near home. Silent no-op with no tokens / no FCM creds."""
+async def probe_devices() -> None:
+    """Scheduler hook (runs each minute): wake phones and ask where they are.
+
+    Probed cases, in priority order:
+
+      1. **Departure probe pending** — the presence engine is about to call a
+         departure and wants the phone asked FIRST. Sent immediately, bypassing
+         the rate limit: the engine is holding a deadline open for this answer.
+      2. **Away** — approach detection for Pre-cool. Boosted cadence inside
+         `_PROBE_BOOST_KM` of home.
+      3. **Home but unconfirmed** — LAN has gone quiet and there's no fresh fix,
+         so "home" is an assumption, not an observation. This case used to be
+         skipped entirely (`state == "home"` → `continue`), which is precisely
+         when presence most needs to ask: a phone dozing at home and a phone
+         that left produce identical silence.
+
+    Silent no-op with no tokens / no FCM creds.
+    """
     import time as _time
     try:
         from services import presence_engine, zones_registry
@@ -146,8 +160,15 @@ async def probe_away_devices() -> None:
     now = _time.monotonic()
     for d in devices:
         person = persons.get(d.get("person_id"))
-        if not person or person.get("state") == "home":
+        if not person:
             continue
+
+        pending = bool(person.get("departure_probe_pending"))
+        at_home = person.get("state") == "home"
+
+        if not pending and at_home and not _home_needs_confirming(person, presence_engine):
+            continue  # LAN or a fresh fix already says home — nothing to ask
+
         # Near home (by last known fix) → boost cadence + courier-mode stream.
         boost = False
         try:
@@ -157,15 +178,63 @@ async def probe_away_devices() -> None:
                 boost = dist_m <= _PROBE_BOOST_KM * 1000
         except Exception:
             pass
-        interval = _PROBE_BOOST_INTERVAL_S if boost else _PROBE_INTERVAL_S
-        if now - _last_probe_at.get(d["device_id"], 0.0) < interval:
-            continue
+
+        if not pending:
+            interval = _PROBE_BOOST_INTERVAL_S if boost else _PROBE_INTERVAL_S
+            if now - _last_probe_at.get(d["device_id"], 0.0) < interval:
+                continue
         _last_probe_at[d["device_id"]] = now
         try:
             res = await send_location_probe(d, boost=boost)
-            log_info(f"[mobile_push] loc probe → {d['device_id']} boost={boost} ok={res.get('ok')}")
+            log_info(f"[mobile_push] loc probe → {d['device_id']} boost={boost} "
+                     f"pending_departure={pending} ok={res.get('ok')}")
+            try:
+                from services import presence_journal
+                presence_journal.record(
+                    "probe_sent", person=person.get("name"), device=d["device_id"],
+                    reason=("departure" if pending else ("away" if not at_home else "confirm_home")),
+                    boost=boost, ok=bool(res.get("ok")), error=res.get("error"),
+                )
+            except Exception:
+                pass
+            if pending:
+                # One request, one send. The engine's deadline governs from here;
+                # re-sending every minute would spam the phone and, worse, keep
+                # resetting nothing — the deadline is anchored to the request.
+                person["departure_probe_pending"] = False
+                try:
+                    presence_engine.persist_person(person)
+                except Exception:
+                    pass
         except Exception as e:
             log_error(f"[mobile_push] loc probe failed for {d.get('device_id')}: {e}")
+
+
+def _home_needs_confirming(person: dict, presence_engine) -> bool:
+    """True when "home" rests on assumption rather than a live signal.
+
+    Home is observed when the LAN probe is currently answering, or a GPS fix is
+    fresh. Otherwise it is inertia from the last thing we saw, and inertia is
+    what let a departure go unnoticed for hours.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        lan_seen = presence_engine._parse_iso(person.get("lan_last_seen"))
+        if lan_seen is not None:
+            fresh_s = int(presence_engine._cfg("lan_fresh_seconds"))
+            if (now - lan_seen) < timedelta(seconds=fresh_s):
+                return False
+        if presence_engine.gps_recent_home(
+                person, float(presence_engine._cfg("gps_fresh_minutes")), now=now):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+# Back-compat alias — the scheduler and older call sites used this name.
+probe_away_devices = probe_devices
 
 
 # ── Internals ────────────────────────────────────────────────────────────────

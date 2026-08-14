@@ -110,6 +110,7 @@ from typing import Optional
 
 from core.logger_module import log_info, log_error
 from core.settings_loader import settings
+from services import presence_journal
 
 # ── defaults — overridable via settings.presence ──────────────────────────────
 _DEFAULTS = {
@@ -121,7 +122,15 @@ _DEFAULTS = {
     "stale_ping_seconds":  90,
     "stale_home_hours":    8,        # max trust window when LAN actively confirms home
     "stale_home_no_lan_minutes": 30, # GPS-only fallback — iOS Safari suspends watchPosition the moment the tab backgrounds, so a person who left will never send "I'm away" GPS. Decay home → unknown after this if there's no LAN confirmation.
-    "stale_home_at_home_grace_minutes": 360,  # How long a last GPS fix INSIDE the home zone keeps sweep_expiry from manufacturing a departure. The chip may still read "unknown" — this only holds back the destructive leave EVENT (Leave Home turns off lights + AC). Bounded so a phone that suspended GPS on the way out can't pin someone home forever.
+    # A GPS fix older than this is NOT current evidence of anything. It says
+    # where the phone was, not where it is. Vetoing a departure on a stale fix
+    # is what stopped Leave Home from ever firing (the last fix before you walk
+    # out is always your living room).
+    "gps_fresh_minutes":   12,
+    # Before concluding "away" from silence, wake the phone and give it this
+    # long to answer. Silence AFTER a failed probe is evidence; silence alone
+    # is not — those are the same observation otherwise.
+    "departure_probe_grace_seconds": 240,
     "lan_fresh_seconds":   180,      # LAN probe is "active" if a successful reachability check happened within this window
     "stale_away_minutes":  30,
     "history_size":        20,
@@ -788,6 +797,9 @@ def _ingest_position_locked(
     person["last_lon"]      = lon
     if accuracy is not None:
         person["last_accuracy"] = accuracy
+    # A real position settles any open "are they actually gone?" question — the
+    # phone answered, so stop counting down the departure deadline.
+    note_probe_answered(person)
 
     # Determine raw state.
     confirmed = effective_state(person, now=ts)
@@ -1313,6 +1325,98 @@ def manual_override(person_id: str, new_state: str, now: Optional[datetime] = No
         return decision
 
 
+def request_departure_probe(person: dict, now: Optional[datetime] = None) -> None:
+    """Ask the scheduler's probe pass to wake this phone, now.
+
+    The engine is synchronous and push delivery is async, so the engine records
+    intent on the person and `services.mobile_push.probe_devices` acts on it.
+    `departure_probe_at` doubles as the deadline clock.
+    """
+    ts = now or _now()
+    person["departure_probe_at"] = ts.isoformat()
+    person["departure_probe_pending"] = True
+    presence_journal.record(
+        "departure_probe_requested", person=person.get("name"),
+        lan_last_seen=person.get("lan_last_seen"),
+        last_gps_at=person.get("last_gps_at"),
+    )
+
+
+def _gps_outside_home(person: dict) -> bool:
+    """True when the last known position sits outside the home zone.
+
+    Deliberately unbounded by age: unlike "still home", which decays into a
+    guess, a fix outside the zone plus a silent LAN only ever gets MORE likely
+    to mean gone. Returns False when there's no position or no zone — nothing
+    to conclude.
+    """
+    lat, lon = person.get("last_lat"), person.get("last_lon")
+    if lat is None or lon is None:
+        return False
+    zone = _home_zone()
+    if not zone:
+        return False
+    hlat, hlon, radius = zone
+    try:
+        return haversine_m(float(lat), float(lon), hlat, hlon) > float(radius)
+    except (TypeError, ValueError):
+        return False
+
+
+def _clear_departure_probe(person: dict) -> None:
+    person.pop("departure_probe_at", None)
+    person.pop("departure_probe_pending", None)
+
+
+def _departure_probe_waited(person: dict, now: datetime) -> Optional[float]:
+    """Seconds since a departure probe was requested, or None if none is open."""
+    at = _parse_iso(person.get("departure_probe_at"))
+    if at is None:
+        return None
+    return max(0.0, (now - at).total_seconds())
+
+
+def note_probe_answered(person: dict) -> None:
+    """A fresh position arrived — the open departure question is settled.
+
+    Called from the ingest path so the next sweep starts from a clean slate
+    rather than counting down a deadline the phone already answered.
+    """
+    if person.get("departure_probe_at"):
+        presence_journal.record(
+            "departure_probe_answered", person=person.get("name"),
+            last_gps_at=person.get("last_gps_at"),
+            distance_m=person.get("last_distance_m"),
+        )
+    _clear_departure_probe(person)
+
+
+def _note_hold(person: dict, out: list, ts: datetime, prev: str, reason: str) -> None:
+    """Record a held departure once per episode.
+
+    `history_size` is 20 and the sweep runs every minute, so appending a row per
+    tick would evict the transitions that make an incident readable — exactly
+    the failure that made 2026-08-14 so hard to diagnose. The durable journal
+    gets every hold regardless; the rolling history gets one marker.
+    """
+    decision = Decision(
+        person_id=person["id"], person_name=person["name"],
+        ts=ts, source="expiry", raw_state="unknown",
+        prev_confirmed=prev, new_confirmed=prev,
+        result="held", reason=reason,
+    )
+    presence_journal.record(
+        "departure_held", person=person.get("name"), reason=reason,
+        lan_last_seen=person.get("lan_last_seen"),
+        last_gps_at=person.get("last_gps_at"),
+        distance_m=person.get("last_distance_m"),
+    )
+    hist = person.get("history") or []
+    if not (hist and hist[-1].get("result") == "held"):
+        _append_history(person, decision)
+        out.append(decision)
+
+
 def sweep_expiry(now: Optional[datetime] = None) -> list[Decision]:
     """Detect home → unknown transitions caused by ping expiry.
 
@@ -1328,39 +1432,83 @@ def sweep_expiry(now: Optional[datetime] = None) -> list[Decision]:
             prev_confirmed = person.get("state", "unknown")
             eff = effective_state(person, now=ts)
             if prev_confirmed == "home" and eff == "unknown":
-                # The last thing we actually KNEW may have been "they're in the
-                # living room". Silence after that is absence of evidence, not
-                # evidence of departure — and this branch does not merely dim a
-                # chip, it fires Leave Home (lights off, AC off). On 2026-08-14
-                # it did exactly that to someone sitting in the room.
+                # "Phone dozing at home" and "walked out of the house" produce
+                # IDENTICAL evidence: LAN silent, GPS stale. They cannot be told
+                # apart from those two signals — which is why guessing either way
+                # is wrong half the time. On 2026-08-14 this branch guessed
+                # "left" and killed the AC on someone sitting in the room; the
+                # veto that replaced it guessed "home" and stopped Leave Home
+                # firing for a real departure.
                 #
-                # So: if the last fix is inside the home zone and still within
-                # the trust window, hold the leave event. `effective_state` has
-                # already gone "unknown" and the UI is free to say so — we only
-                # decline to INVENT a departure. Bounded, because a phone that
-                # suspends GPS on the way out would otherwise kill leave
-                # detection for good (the case the 30-min decay exists for).
-                grace = float(_cfg("stale_home_at_home_grace_minutes"))
-                if grace > 0 and gps_recent_home(person, grace, now=ts):
-                    decision = Decision(
-                        person_id=person["id"], person_name=person["name"],
-                        ts=ts, source="expiry",
-                        raw_state="unknown",
-                        prev_confirmed=prev_confirmed, new_confirmed=prev_confirmed,
-                        result="held",
-                        reason="ping_stale_but_last_fix_inside_home",
+                # So don't guess: ASK. Wake the phone and wait. Silence after a
+                # failed probe is evidence; silence on its own is not.
+                #
+                # A FRESH fix inside the home zone still short-circuits this — it
+                # is direct evidence, no probe needed. Freshness is the whole
+                # point: a fix from before you walked out says where you were,
+                # not where you are.
+                if gps_recent_home(person, float(_cfg("gps_fresh_minutes")), now=ts):
+                    _note_hold(person, out, ts, prev_confirmed, "fresh_fix_inside_home")
+                    continue
+
+                # The mirror case: the last known position is OUTSIDE the home
+                # zone. That is affirmative evidence of a departure, not an
+                # absence of evidence — no point waking the phone to confirm
+                # what it already told us, and the probe would only delay the
+                # leave by the grace window.
+                if _gps_outside_home(person):
+                    presence_journal.record(
+                        "departure_confirmed", person=person.get("name"),
+                        reason="last_fix_outside_home",
+                        distance_m=person.get("last_distance_m"),
                     )
-                    # The sweep runs every minute and the hold can last hours, so
-                    # record it ONCE per episode. history_size is 20 — appending
-                    # every tick would evict the transitions that make this
-                    # diagnosable, which is how the 2026-08-14 incident was read
-                    # in the first place.
-                    hist = person.get("history") or []
-                    already = bool(hist) and hist[-1].get("result") == "held"
-                    if not already:
+                    _clear_departure_probe(person)
+                    suppress, why = _within_cooldown(person, "not_home", ts)
+                    if not suppress:
+                        _commit_transition(person, "not_home", ts)
+                        decision = Decision(
+                            person_id=person["id"], person_name=person["name"],
+                            ts=ts, source="expiry", raw_state="not_home",
+                            prev_confirmed=prev_confirmed, new_confirmed="not_home",
+                            result="committed", reason="ping_expired",
+                            fired_transition=True,
+                        )
                         _append_history(person, decision)
                         out.append(decision)
+                        continue
+                    decision = Decision(
+                        person_id=person["id"], person_name=person["name"],
+                        ts=ts, source="expiry", raw_state="unknown",
+                        prev_confirmed=prev_confirmed, new_confirmed=prev_confirmed,
+                        result="suppressed_cooldown", reason=why,
+                    )
+                    _append_history(person, decision)
+                    out.append(decision)
                     continue
+
+                waited = _departure_probe_waited(person, ts)
+                if waited is None:
+                    # No probe outstanding — request one and hold this round. The
+                    # scheduler's probe pass picks the flag up and sends it; the
+                    # engine stays synchronous.
+                    request_departure_probe(person, now=ts)
+                    _note_hold(person, out, ts, prev_confirmed, "probing_phone_before_deciding")
+                    continue
+                if waited < float(_cfg("departure_probe_grace_seconds")):
+                    _note_hold(person, out, ts, prev_confirmed,
+                               f"awaiting_probe_reply_{int(waited)}s")
+                    continue
+
+                # Probed, and the phone did not answer with a fresh fix inside
+                # the grace window. THAT is a departure — an unreachable phone
+                # that also cannot be woken is not sitting on the sofa.
+                presence_journal.record(
+                    "departure_confirmed", person=person.get("name"),
+                    reason="probe_unanswered", waited_s=int(waited),
+                    lan_last_seen=person.get("lan_last_seen"),
+                    last_gps_at=person.get("last_gps_at"),
+                )
+                _clear_departure_probe(person)
 
                 # Stale ping → treat as departure, subject to cooldown.
                 suppress, why = _within_cooldown(person, "not_home", ts)
@@ -1391,10 +1539,41 @@ def sweep_expiry(now: Optional[datetime] = None) -> list[Decision]:
                 _append_history(person, decision)
                 out.append(decision)
 
-        if out:
+        # Save on ANY mutation, not just when a decision was emitted. A held
+        # round still writes `departure_probe_at` — the deadline the next sweep
+        # counts against — and a hold after the first one emits no decision, so
+        # gating the save on `out` would silently drop the clock and re-probe
+        # forever.
+        if out or _departure_probe_dirty(persons):
             _save(persons)
 
     return out
+
+
+def _departure_probe_dirty(persons: list[dict]) -> bool:
+    """True when any person carries departure-probe bookkeeping to persist."""
+    return any(p.get("departure_probe_at") or p.get("departure_probe_pending")
+               for p in persons)
+
+
+def persist_person(person: dict) -> None:
+    """Write one mutated person back to persons.json.
+
+    `_load()` deep-copies, so callers outside this module (lan_presence) hold a
+    copy — mutating it is invisible without this. Matched by id; unknown ids are
+    ignored rather than appended, so a stale copy can't resurrect a deleted
+    person.
+    """
+    pid = person.get("id")
+    if not pid:
+        return
+    with _lock:
+        persons = _load()
+        for i, p in enumerate(persons):
+            if p.get("id") == pid:
+                persons[i] = person
+                _save(persons)
+                return
 
 
 _NO_CHANGE_LOG_THROTTLE_S = 60
@@ -1417,6 +1596,14 @@ def log_decision(decision: Decision) -> None:
             f"[Presence] {d['person']} {d['prev']}→{d['new']} "
             f"src={d['source']} dist={d['dist']} acc={d['acc']} "
             f"result={d['result']} reason={d['reason']}"
+        )
+        # Durable — console logs die with the container and the rolling history
+        # is 20 rows. A confirmed transition is exactly what an investigation
+        # needs weeks later.
+        presence_journal.record(
+            "transition", person=d.get("person"), prev=d.get("prev"), new=d.get("new"),
+            source=d.get("source"), distance_m=d.get("dist"), accuracy_m=d.get("acc"),
+            reason=d.get("reason"),
         )
         return
 

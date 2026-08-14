@@ -410,9 +410,12 @@ async def run_scheduler() -> None:
         # replies with a location fix + re-arms its geofences. Rate-limited
         # inside (5 min plain / 2 min + courier-mode boost when near home).
         # Silent no-op without push tokens or FCM creds.
+        # Also probes a phone the engine has flagged for a departure decision
+        # (immediately, bypassing the rate limit) and one whose "home" rests on
+        # inertia rather than a live LAN/GPS signal.
         try:
-            from services.mobile_push import probe_away_devices
-            await probe_away_devices()
+            from services.mobile_push import probe_devices
+            await probe_devices()
         except Exception as exc:
             log_error(f"[Scheduler] mobile location probe failed: {exc}")
 

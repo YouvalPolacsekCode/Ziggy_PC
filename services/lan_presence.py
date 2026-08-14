@@ -42,7 +42,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from core.logger_module import log_info, log_error
-from services import presence_engine
+from services import presence_engine, presence_journal
 from services.presence_engine import _cfg
 from services.presence_side_effects import schedule_side_effects
 
@@ -50,6 +50,13 @@ from services.presence_side_effects import schedule_side_effects
 _DEFAULTS = {
     "lan_probe_interval_seconds": 60,
     "lan_offline_grace_minutes":  10,
+    # Mirrors of presence_engine._DEFAULTS. `_lan_cfg` falls back to THIS dict
+    # when the engine lookup yields nothing, so every key this module reads must
+    # appear here or the fallback raises KeyError mid-probe and the whole LAN
+    # pass dies. Kept in sync deliberately rather than imported, so a settings
+    # override still resolves through `_cfg` first.
+    "gps_fresh_minutes":          12,
+    "departure_probe_grace_seconds": 240,
     # LAN↔GPS fusion: after the offline grace, DON'T flip to not_home if GPS's
     # last fix still puts the person inside the home zone and it's no older than
     # this. Stops a Wi-Fi nap (battery saver, overnight) from reading as a
@@ -352,23 +359,52 @@ async def probe_all_persons() -> None:
         if offline_for < timedelta(minutes=grace_min):
             continue  # within grace — no signal
 
-        # LAN↔GPS fusion: Wi-Fi gone past grace, but if GPS still places them
-        # inside the home zone (fresh enough), they haven't left — the phone
-        # just dropped Wi-Fi. Don't fire not_home. Background GPS reports a real
-        # departure (position moves out / geofence-exit ping), which lifts the veto.
-        veto_min = float(_lan_cfg("lan_grace_gps_veto_minutes"))
-        if veto_min > 0 and presence_engine.gps_recent_home(person, veto_min, now=now):
+        # LAN↔GPS fusion: Wi-Fi gone past grace. A FRESH fix inside the home
+        # zone means they genuinely haven't left — the phone just dropped Wi-Fi.
+        #
+        # Freshness is load-bearing. This used to accept a fix up to 12 HOURS
+        # old, on the assumption that a real departure fires a geofence-exit fix
+        # that moves the position and lifts the veto. When FCM probes died on
+        # 2026-08-10 that exit fix stopped arriving, so the veto never lifted:
+        # the last fix before you walk out is always your living room, so
+        # `lan_grace` could never report a departure and Leave Home stopped
+        # firing entirely. A stale fix says where the phone WAS, not where it is.
+        fresh_min = float(_lan_cfg("gps_fresh_minutes"))
+        if fresh_min > 0 and presence_engine.gps_recent_home(person, fresh_min, now=now):
             log_info(
-                f"[LAN] {host} offline {int(offline_for.total_seconds())}s but GPS still "
-                f"places {person.get('name')} in the home zone — not flipping to not_home"
+                f"[LAN] {host} offline {int(offline_for.total_seconds())}s but a fresh GPS fix "
+                f"still places {person.get('name')} in the home zone — not flipping to not_home"
+            )
+            presence_journal.record(
+                "lan_grace_held", person=person.get("name"), reason="fresh_fix_inside_home",
+                offline_for_s=int(offline_for.total_seconds()),
             )
             continue
 
+        # No fresh fix. Wi-Fi silence alone cannot tell "dozing at home" from
+        # "walked out" — so ask the phone before declaring a departure. The
+        # engine owns the deadline; we only hold until it expires.
+        waited = presence_engine._departure_probe_waited(person, now)
+        if waited is None:
+            presence_engine.request_departure_probe(person, now=now)
+            presence_engine.persist_person(person)
+            log_info(f"[LAN] {host} offline past grace with no fresh fix — probing "
+                     f"{person.get('name')}'s phone before deciding")
+            continue
+        if waited < float(presence_engine._cfg("departure_probe_grace_seconds")):
+            continue  # still waiting for the phone to answer
+
+        presence_journal.record(
+            "departure_confirmed", person=person.get("name"), source="lan_grace",
+            reason="probe_unanswered", waited_s=int(waited),
+            offline_for_s=int(offline_for.total_seconds()),
+        )
         decision = presence_engine.ingest_external_state(
             person_id     = person_id,
             new_state     = "not_home",
             source        = "lan_grace",
-            reason_suffix = f"lan_host={host} offline_for={int(offline_for.total_seconds())}s",
+            reason_suffix = (f"lan_host={host} offline_for={int(offline_for.total_seconds())}s "
+                             f"probe_unanswered_{int(waited)}s"),
             now           = now,
         )
         presence_engine.log_decision(decision)
