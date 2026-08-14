@@ -241,6 +241,19 @@ async def _startup():
         _threading.Thread(target=_start_presence, name="RoomPresence", daemon=True).start()
     except Exception as _e:
         log_info(f"[RoomPresence] engine start failed: {_e}")
+
+    # Publish household presence to HA as a discovered binary_sensor, so a
+    # compiled automation can gate on Ziggy's presence engine instead of HA
+    # firing on its own weaker view while Ziggy re-checks separately. Retained,
+    # so it survives a broker or hub restart; announced on every boot because a
+    # wiped broker otherwise leaves HA with an entity that never comes back.
+    # Threaded — it does a blocking MQTT connect and must not delay startup.
+    try:
+        import threading as _threading
+        from services.presence_mqtt import announce as _announce_presence
+        _threading.Thread(target=_announce_presence, name="PresenceMQTT", daemon=True).start()
+    except Exception as _e:
+        log_info(f"[PresenceMQTT] announce failed: {_e}")
     # Warm the HA service catalog so the first call to /api/devices/X/commands
     # returns instantly. Without this, the catalog stays empty until the
     # first request triggers it, and that request blocks while the WS round-

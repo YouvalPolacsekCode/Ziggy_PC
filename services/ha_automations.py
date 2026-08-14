@@ -110,7 +110,44 @@ def _for_clause(for_minutes) -> Optional[str]:
     return f"{h:02d}:{m:02d}:00"
 
 
+def presence_entity_id() -> Optional[str]:
+    """The HA entity mirroring Ziggy's household presence, if HA has it yet."""
+    try:
+        from services.presence_mqtt import entity_id
+        return entity_id()
+    except Exception:
+        return None
+
+
 def _condition_to_ha(c: dict) -> Optional[dict]:
+    # ── Presence — Ziggy's own engine, mirrored into HA ────────────────────
+    # HA cannot see Ziggy's presence engine, so this condition used to compile
+    # to nothing: HA fired the automation on its own weaker view and Ziggy
+    # re-checked presence afterwards. One automation, two evaluators — the
+    # shape behind the 2026-08-14 incident.
+    #
+    # `services.presence_mqtt` publishes presence as a real binary_sensor, so
+    # the condition can now be expressed. Only when HA has actually discovered
+    # it: a state condition naming an unknown entity evaluates False, which
+    # would silently stop Leave Home firing forever. Returning None keeps the
+    # previous behaviour (Ziggy re-checks), which is the safe fallback.
+    if c.get("type") == "presence":
+        ent = presence_entity_id()
+        if not ent:
+            return None
+        want = str(c.get("value", "all_away")).lower()
+        if want in ("all_away", "away", "everyone_away"):
+            state_val = "off"
+        elif want in ("anyone_home", "any_home", "home", "someone_home"):
+            state_val = "on"
+        else:
+            return None
+        cond: dict = {"condition": "state", "entity_id": ent, "state": state_val}
+        held = _for_clause(c.get("for_minutes"))
+        if held:
+            cond["for"] = held
+        return cond
+
     # ── Time-window condition ──────────────────────────────────────────────
     if c.get("type") == "time":
         result: dict = {"condition": "time"}

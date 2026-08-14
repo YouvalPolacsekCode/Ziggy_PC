@@ -225,6 +225,18 @@ def schedule_side_effects(decision: Decision) -> None:
             _skip_arrival_push = (
                 _time.monotonic() - _LAST_ZONE_ENTER_FIRE.get(_AZN.lower(), 0.0) < 900
             )
+        # Mirror household presence into HA. Ziggy's engine is the only thing
+        # that knows this, and until it was published HA could not gate an
+        # automation on it — so a compiled Leave Home ran on HA's weaker view
+        # while Ziggy re-checked presence separately. Best-effort: a broker
+        # hiccup must never block the transition itself.
+        try:
+            from services.presence_engine import is_all_away
+            from services import presence_mqtt
+            presence_mqtt.publish_state(anyone_home=not is_all_away())
+        except Exception as exc:
+            log_error(f"[Presence] household presence publish failed: {exc}")
+
         if not _skip_arrival_push:
             asyncio.create_task(_send_push(decision.person_name, new_state, decision.person_id))
         asyncio.create_task(_fire_automations(decision.person_name, new_state))
