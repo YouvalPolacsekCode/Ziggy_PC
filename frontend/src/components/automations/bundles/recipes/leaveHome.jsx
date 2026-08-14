@@ -58,10 +58,18 @@ export default {
     else if (trig.state === 'off' && trig.for_minutes) { sel.add('motion'); min = trig.for_minutes }
     else if (trig.state === 'off') { sel.add('door'); const e = trig.entity_id; door = Array.isArray(e) ? e[0] : (e || door) }
     // Extra sources encoded as conditions.
+    let motionMinFromTrigger = sel.has('motion')
     for (const c of conds) {
       if (c.type === 'presence') sel.add('phone')
       else if (String(c.entity_id || '').includes('door')) { sel.add('door'); door = c.entity_id }
-      else if (String(c.value) === 'off') sel.add('motion')
+      else if (String(c.value) === 'off') {
+        sel.add('motion')
+        // When motion is only a secondary source there is no trigger duration to
+        // read, so the window lives on the conditions. Recover it, or editing an
+        // installed setup silently resets it to the default and re-saves a
+        // weaker guard than the user configured.
+        if (!motionMinFromTrigger && c.for_minutes) min = c.for_minutes
+      }
     }
     const acts = initial?.actions || []
     const chosen = acts.filter((a) => a.type === 'call_service' && (a.entity_id || '').startsWith('light.')).map((a) => a.entity_id)
@@ -131,16 +139,29 @@ export default {
   save: async (v, ctx, initial) => {
     const t = ctx.t
     const motionIds = motionEnts(ctx).map((e) => e.entity_id)
+    // How long the house must have been still to count as empty. Used by BOTH
+    // the trigger and the per-sensor conditions so the two can't disagree.
+    const quietMin = Number(v.motionMin) || 30
     // Trigger event: no-movement → door → phone. The rest become AND conditions.
     const primary = has(v, 'motion') ? 'motion' : has(v, 'door') ? 'door' : 'phone'
     const trigger =
-      primary === 'motion' ? { type: 'state', entity_id: motionIds, state: 'off', for_minutes: Number(v.motionMin) || 30 }
+      primary === 'motion' ? { type: 'state', entity_id: motionIds, state: 'off', for_minutes: quietMin }
       : primary === 'door' ? { type: 'state', entity_id: v.doorEntity, state: 'off' }
       : { type: 'all_persons_left' }
     const conditions = []
     // Motion: a list-trigger fires when ANY sensor goes off, so require EVERY
     // one off (whole house quiet) — as conditions, primary or not.
-    if (has(v, 'motion')) motionIds.forEach((id) => conditions.push({ entity_id: id, operator: 'is', value: 'off' }))
+    //
+    // Each carries the SAME window as the trigger. Without it these are instant
+    // samples, and a PIR in an occupied room is 'off' most of the time — it
+    // reports motion, then drops back after its ~60-90s cooldown. One idle room
+    // (a guest bathroom) hitting the trigger while the living-room PIR sat in a
+    // routine blink-gap read as "house empty" and killed the lights and AC on
+    // someone sitting right there. "Quiet" is a duration, not an instant.
+    if (has(v, 'motion')) {
+      motionIds.forEach((id) => conditions.push(
+        { entity_id: id, operator: 'is', value: 'off', for_minutes: quietMin }))
+    }
     if (has(v, 'door') && primary !== 'door') conditions.push({ entity_id: v.doorEntity, operator: 'is', value: 'off' })
     if (has(v, 'phone') && primary !== 'phone') conditions.push({ type: 'presence', value: 'all_away' })
 

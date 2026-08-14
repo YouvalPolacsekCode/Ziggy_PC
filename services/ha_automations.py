@@ -88,6 +88,28 @@ def needs_ha(data: dict) -> bool:
 
 # ── Ziggy → HA ────────────────────────────────────────────────────────────────
 
+def _for_clause(for_minutes) -> Optional[str]:
+    """Minutes → HA's "HH:MM:SS" duration, or None when there is no duration.
+
+    Shared by triggers and conditions so the two can't drift: an automation that
+    waits 15 minutes for quiet must be able to *verify* 15 minutes of quiet.
+
+    A missing/zero/garbage value returns None rather than raising — a duration
+    is opt-in, and the caller simply omits the key. Bundles that legitimately
+    want an instantaneous check (a door is shut RIGHT NOW) just don't pass one.
+    """
+    if for_minutes in (None, "", 0):
+        return None
+    try:
+        mins = int(for_minutes)
+    except (ValueError, TypeError):
+        return None
+    if mins <= 0:
+        return None
+    h, m = divmod(mins, 60)
+    return f"{h:02d}:{m:02d}:00"
+
+
 def _condition_to_ha(c: dict) -> Optional[dict]:
     # ── Time-window condition ──────────────────────────────────────────────
     if c.get("type") == "time":
@@ -108,7 +130,14 @@ def _condition_to_ha(c: dict) -> Optional[dict]:
     value    = c.get("value", "on")
     if operator in ("is", "is_not"):
         state_val = ("off" if value == "on" else "on") if operator == "is_not" else str(value)
-        return {"condition": "state", "entity_id": entity_id, "state": state_val}
+        cond: dict = {"condition": "state", "entity_id": entity_id, "state": state_val}
+        # Optional duration, mirroring a trigger's `for_minutes`. Without this a
+        # state condition is an INSTANT sample, which is not the same claim as
+        # "this has been true for a while" — see _for_clause.
+        held = _for_clause(c.get("for_minutes"))
+        if held:
+            cond["for"] = held
+        return cond
     if operator == "above":
         try:
             return {"condition": "numeric_state", "entity_id": entity_id, "above": float(value)}
@@ -128,11 +157,9 @@ def _trigger_to_ha(t: dict) -> list:
         return [{"platform": "time", "at": f"{t.get('time', '08:00')}:00"}]
     if kind == "state":
         cfg: dict = {"platform": "state", "entity_id": t.get("entity_id", ""), "to": t.get("state", "on")}
-        for_mins = t.get("for_minutes")
-        if for_mins:
-            mins = int(for_mins)
-            h, m = divmod(mins, 60)
-            cfg["for"] = f"{h:02d}:{m:02d}:00"
+        held = _for_clause(t.get("for_minutes"))
+        if held:
+            cfg["for"] = held
         return [cfg]
     if kind == "numeric_state":
         cfg: dict = {"platform": "numeric_state", "entity_id": t.get("entity_id", "")}

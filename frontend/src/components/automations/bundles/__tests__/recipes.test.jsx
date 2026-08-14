@@ -492,3 +492,110 @@ describe('precool: already-home guard', () => {
     expect(p.conditions).toContainEqual({ type: 'presence', value: 'all_away' })
   })
 })
+
+// ── Leave Home must require SUSTAINED quiet, not an instantaneous snapshot ───
+//
+// Live failure (Canary, 2026-08-14): the AC switched itself off twice in half
+// an hour while Youval sat in the living room, then came back on minutes later
+// as Pre-cool re-fired. No one touched a remote.
+//
+// Leave Home was saved with the motion source over 15 sensors, compiling to:
+//
+//   triggers:   <any of the 15> to 'off' for 00:15:00     # OR across sensors
+//   conditions: <each of the 15> state 'off'              # INSTANT snapshot
+//
+// The trigger is an OR, so any single idle room starts the check — a guest
+// bathroom does that all day while you are home. The conditions were the
+// intended guard ("whole house quiet"), but with no duration they only ask
+// "is every PIR off at this exact instant?" — and a PIR in an OCCUPIED room is
+// off most of the time, dropping back after its ~60-90s cooldown.
+//
+//   13:17:03  guest bathroom hit 15:00 idle; living-room PIR off 93s, on again
+//             at 13:18:17
+//   13:49:27  kitchen hit 15:00 idle; living-room PIR off 70s, on again at
+//             13:49:33 — six seconds after the AC was killed
+//
+// "Quiet" is a duration. Every sensor must have been off for the same window
+// the trigger waited on; the living-room PIR, which saw motion every 1-2
+// minutes throughout, then fails the guard and nothing happens.
+
+describe('leave_home: whole-house-quiet is a duration', () => {
+  const savedPayload = async (values, c = ctx) => {
+    const captured = []
+    const api = await import('../../../../lib/api')
+    const spy = vi.spyOn(api, 'createAutomation').mockImplementation(async (p) => { captured.push(p); return p })
+    const del = vi.spyOn(api, 'deleteAutomation').mockImplementation(async () => ({ ok: true }))
+    await RECIPES.leave_home.save(
+      { sources: { mode: 'choose', ids: ['motion'] }, motionMin: 15,
+        lights: { mode: 'all' }, acOff: true, notify: true, alert: false, ...values },
+      { ...c, t: (k) => k },
+    )
+    spy.mockRestore(); del.mockRestore()
+    return captured.find((p) => p.id === 'ziggy_leave_home')
+  }
+
+  const motionConds = (p) => p.conditions.filter((c) => c.value === 'off' && String(c.entity_id).includes('motion'))
+
+  it('stamps the quiet window on EVERY motion condition', async () => {
+    const p = await savedPayload({})
+    const conds = motionConds(p)
+    expect(conds.length).toBeGreaterThan(1)
+    for (const c of conds) expect(c.for_minutes).toBe(15)
+  })
+
+  it('keeps the guard window equal to the trigger window', async () => {
+    const p = await savedPayload({ motionMin: 25 })
+    expect(p.trigger.for_minutes).toBe(25)
+    for (const c of motionConds(p)) expect(c.for_minutes).toBe(25)
+  })
+
+  it('still guards when phone presence is ANDed in', async () => {
+    // Motion stays the trigger event (priority motion → door → phone) and phone
+    // joins as an all_away condition. On 2026-08-14 phone presence was the
+    // condition that WRONGLY passed — the phone's pinned LAN IP had gone stale,
+    // so "everyone away" was true while Youval sat in the living room. The
+    // motion conditions were the only remaining guard, which is exactly why
+    // they must assert sustained quiet rather than an instant.
+    const p = await savedPayload({ sources: { mode: 'choose', ids: ['phone', 'motion'] } })
+    expect(p.conditions).toContainEqual({ type: 'presence', value: 'all_away' })
+    const conds = motionConds(p)
+    expect(conds.length).toBeGreaterThan(0)
+    for (const c of conds) expect(c.for_minutes).toBe(15)
+  })
+
+  it('leaves the door condition instantaneous — a shut door has no dwell', async () => {
+    const p = await savedPayload({
+      sources: { mode: 'choose', ids: ['motion', 'door'] },
+      doorEntity: 'binary_sensor.door_front',
+    })
+    const door = p.conditions.find((c) => String(c.entity_id).includes('door'))
+    expect(door).toBeDefined()
+    expect(door.for_minutes).toBeUndefined()
+  })
+
+  it('round-trips the window from conditions when phone is the trigger', async () => {
+    // Editing an installed phone+motion setup must not silently reset the
+    // window to the 30-minute default and re-save a weaker guard.
+    const v = RECIPES.leave_home.derive({
+      _isInstalled: true, id: 'ziggy_leave_home',
+      trigger: { type: 'all_persons_left' },
+      conditions: [
+        { entity_id: 'binary_sensor.motion_office', operator: 'is', value: 'off', for_minutes: 15 },
+        { entity_id: 'binary_sensor.motion_living', operator: 'is', value: 'off', for_minutes: 15 },
+      ],
+      actions: [{ type: 'turn_off_all_lights' }],
+    }, ctx)
+    expect(v.sources.ids.sort()).toEqual(['motion', 'phone'])
+    expect(v.motionMin).toBe(15)
+  })
+
+  it('regression: a blinking PIR in an occupied room can no longer pass the guard', async () => {
+    // The living-room sensor is 'off' this instant but saw motion 70s ago. With
+    // a duration on the condition, HA evaluates "off for 15 minutes" and this
+    // sensor fails it — which is the whole point.
+    const p = await savedPayload({})
+    const living = p.conditions.find((c) => c.entity_id === 'binary_sensor.motion_living')
+    expect(living).toBeDefined()
+    expect(living.for_minutes).toBe(15)
+  })
+})
