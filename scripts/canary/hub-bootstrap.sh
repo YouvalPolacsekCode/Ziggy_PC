@@ -68,6 +68,21 @@ git -C "$REPO_DIR" -c advice.detachedHead=false checkout --force "$TARGET_REF"
 # Strip the token back out of the stored remote so it isn't left on disk.
 git -C "$REPO_DIR" remote set-url origin "https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 
+# Home Assistant `!include`s automations/scripts/scenes and refuses to start
+# without them. They are the HOME'S OWN state, not code, so they are gitignored
+# and a fresh clone has none — seed empty ones exactly once. (They used to be
+# tracked and shipped as `[]`, which meant every release checkout overwrote a
+# live home's real automations; on 2026-08-14 that cost a home five and a half
+# hours with no automations at all.) The updater does the same on every run, so
+# this only matters for the window before the first update.
+for _f in automations scripts scenes; do
+  if [ ! -f "$REPO_DIR/docker/ha-config/$_f.yaml" ]; then
+    mkdir -p "$REPO_DIR/docker/ha-config"
+    printf '[]\n' > "$REPO_DIR/docker/ha-config/$_f.yaml"
+    echo "   seeded docker/ha-config/$_f.yaml"
+  fi
+done
+
 echo "== 4/4 mark factory scripts executable =="
 chmod +x "$REPO_DIR"/scripts/factory/*.sh "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/scripts/linux/*.sh 2>/dev/null || true
 

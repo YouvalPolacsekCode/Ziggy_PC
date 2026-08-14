@@ -297,13 +297,60 @@ get_last_verified_sha() {
 # So these paths are backed up before we touch the tree and restored after the
 # checkout. Backups are kept (never overwritten) — recovering a customer's
 # automations must never depend on us having been careful once.
+# The home's own automations/scripts/scenes are now GITIGNORED (see
+# docker/ha-config/.gitignore), so a checkout cannot touch them and nothing has
+# to restore them. They are still BACKED UP — cheap insurance, and the backups
+# are what made the 2026-08-14 recovery possible — but restoring them is what
+# turned one empty file into five and a half hours of a home with no
+# automations at all: an empty copy got captured, and every later cycle
+# faithfully restored the emptiness.
+#
+# configuration.yaml is Ziggy's skeleton rather than the user's, stays tracked,
+# and therefore still needs the restore.
 PROTECTED_PATHS=(
   "docker/ha-config/automations.yaml"
   "docker/ha-config/scripts.yaml"
   "docker/ha-config/scenes.yaml"
   "docker/ha-config/configuration.yaml"
 )
-PROTECTED_BACKUP_DIR="$USER_FILES/ha-config-backups/$TS"
+# All four are still restored, but the shrink guard below is what makes that
+# safe now. The three state files need it exactly once, for the MIGRATION: a hub
+# running the old build has automations.yaml tracked with the customer's content
+# as a local modification, and checking out a release where the file has left
+# the tree makes git DELETE it. Without the restore, the upgrade that fixes this
+# class of bug would itself wipe every home on the fleet.
+#
+# After that one upgrade the file is ignored, a checkout never touches it, and
+# the restore becomes a no-op (backup == live, so `cmp` short-circuits).
+RESTORE_PATHS=(
+  "docker/ha-config/automations.yaml"
+  "docker/ha-config/scripts.yaml"
+  "docker/ha-config/scenes.yaml"
+  "docker/ha-config/configuration.yaml"
+)
+# HA `!include`s these three; without them it refuses to start. They are no
+# longer in the repo, so a fresh clone must be seeded once.
+HA_STATE_FILES=(
+  "docker/ha-config/automations.yaml"
+  "docker/ha-config/scripts.yaml"
+  "docker/ha-config/scenes.yaml"
+)
+# Overridable only so the test suite can inject a deliberately-stale backup and
+# prove the shrink guard below refuses it. Production never sets it.
+PROTECTED_BACKUP_DIR="${ZIGGY_FORCE_BACKUP_DIR:-$USER_FILES/ha-config-backups/$TS}"
+
+ensure_ha_state_files() {
+  $DRY_RUN && return 0
+  local p created=false
+  for p in "${HA_STATE_FILES[@]}"; do
+    if [ ! -f "$REPO_DIR/$p" ]; then
+      mkdir -p "$(dirname "$REPO_DIR/$p")"
+      printf '[]\n' > "$REPO_DIR/$p" && created=true
+    fi
+  done
+  $created && log "Seeded missing HA include file(s) so Home Assistant can start"
+  return 0
+}
 
 backup_protected() {
   $DRY_RUN && return 0
@@ -319,18 +366,31 @@ backup_protected() {
 
 restore_protected() {
   $DRY_RUN && return 0
+  ensure_ha_state_files
   [ -d "$PROTECTED_BACKUP_DIR" ] || return 0
-  local p restored=false
-  for p in "${PROTECTED_PATHS[@]}"; do
+  local p restored=false b_sz l_sz
+  for p in "${RESTORE_PATHS[@]}"; do
     [ -f "$PROTECTED_BACKUP_DIR/$p" ] || continue
-    if ! cmp -s "$PROTECTED_BACKUP_DIR/$p" "$REPO_DIR/$p" 2>/dev/null; then
-      cp -p "$PROTECTED_BACKUP_DIR/$p" "$REPO_DIR/$p" 2>/dev/null && restored=true
+    cmp -s "$PROTECTED_BACKUP_DIR/$p" "$REPO_DIR/$p" 2>/dev/null && continue
+
+    # NEVER shrink a live file to a smaller backup. The backup is taken at the
+    # START of the run, so if anything emptied the file just before that, this
+    # would faithfully re-apply the emptiness on every later cycle — which is
+    # exactly what kept the Canary at zero automations on 2026-08-14 and made
+    # three manual restores get clobbered within ten seconds each.
+    b_sz=$(wc -c < "$PROTECTED_BACKUP_DIR/$p" 2>/dev/null || echo 0)
+    l_sz=$(wc -c < "$REPO_DIR/$p" 2>/dev/null || echo 0)
+    if [ "$l_sz" -gt 0 ] && [ "$b_sz" -lt "$l_sz" ]; then
+      log "REFUSING to restore $p — backup ($b_sz b) is smaller than the live file ($l_sz b)"
+      continue
     fi
+    cp -p "$PROTECTED_BACKUP_DIR/$p" "$REPO_DIR/$p" 2>/dev/null && restored=true
   done
   $restored && log "Restored the home's own HA config over the release copy"
   return 0
 }
 
+ensure_ha_state_files
 backup_protected
 
 # Restore on ANY exit — success, abort, or signal. The dangerous window is

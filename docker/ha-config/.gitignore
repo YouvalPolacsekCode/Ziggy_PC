@@ -1,6 +1,28 @@
 # Keep generated secrets + HA runtime state OUT of git. Only the committed
-# prod skeleton (configuration.yaml, *.template, empty include files) is tracked.
+# prod skeleton (configuration.yaml, *.template) is tracked.
 secrets.yaml
+
+# ── The home's own automations, scripts and scenes ────────────────────────────
+# These are CUSTOMER STATE, not code. They were tracked and shipped as empty
+# `[]` placeholders, which meant every release checkout overwrote a live home's
+# real automations and a backup/restore dance was the only thing putting them
+# back. On 2026-08-14 that dance restored an EMPTY copy over a good one and the
+# Canary ran five and a half hours with zero automations — Leave Home, Pre-cool
+# and every Smart Room rule dead — with nothing reporting it.
+#
+# Ignoring them fixes three things at once:
+#   1. a checkout can no longer touch them, so nothing needs to restore them;
+#   2. the tree stops being permanently dirty, which ended the auto-stash loop
+#      that had accumulated 2331 stashes at one every two minutes; and
+#   3. `git stash push -u` stops sweeping untracked files next to them — that is
+#      how the FCM push credential silently vanished on 2026-08-10.
+#
+# configuration.yaml stays tracked: it is Ziggy's skeleton, not the user's, and
+# it must be updatable by release. HA `!include`s the three files below, so the
+# updater seeds an empty one when missing (see ensure_ha_state_files).
+automations.yaml
+scripts.yaml
+scenes.yaml
 .storage/
 .cloud/
 *.db
