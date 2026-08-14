@@ -158,7 +158,7 @@ def render(report: dict, *, color: bool) -> None:
         # screen for five and a half hours on 2026-08-14 — "no issues" is not
         # the same as "and here is what it has".
         v = home.get("vitals") or {}
-        z, h = v.get("automations_ziggy"), v.get("automations_ha")
+        z, h = v.get("automations_ha_backed"), v.get("automations_ha")
         if z is not None or h is not None:
             note = "" if z == h else "   <-- MISMATCH"
             print(f"        automations: ziggy={z} ha={h}{note}")

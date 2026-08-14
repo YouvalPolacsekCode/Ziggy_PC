@@ -237,21 +237,36 @@ def _evaluate_payload(p: dict) -> list[dict]:
     # reported it. Ziggy's own store (user_files/, untracked) still held all
     # twelve, which is both how the wipe is detectable and how it was repaired.
     #
-    # Only a MISMATCH is a wipe. A fresh home legitimately has zero in both, and
-    # more in HA than in Ziggy just means hand-written HA automations.
+    # Compare against `ziggy_ha_backed`, NOT the raw total: a `zone_entered` or
+    # `all_persons_left` automation has no HA counterpart by design, so the raw
+    # total is permanently higher and comparing it flags healthy homes.
+    #
+    # Two distinct severities, because a total wipe and a one-off bookkeeping
+    # drift are not the same event and must not share an alarm — a detector
+    # that cries wolf on drift gets ignored before the real wipe arrives.
     autos = health.get("automations") if isinstance(health.get("automations"), dict) else {}
-    z_total, h_total = autos.get("ziggy_total"), autos.get("ha_total")
-    if isinstance(z_total, int) and isinstance(h_total, int) and z_total > 0 and h_total < z_total:
-        issues.append(_issue(
-            "automations_wiped", LEVEL_DOWN,
-            f"Ziggy holds {z_total} automation(s) but Home Assistant only has "
-            f"{h_total} — the home's automations.yaml has been overwritten. "
-            f"Every missing automation is dead until it is restored. Repair: "
-            f"re-save them from Ziggy's own store (user_files/ still has the "
-            f"authoritative copy), or restore the newest non-empty "
-            f"user_files/ha-config-backups/*/docker/ha-config/automations.yaml.",
-            ziggy_total=z_total, ha_total=h_total,
-        ))
+    z_backed, h_total = autos.get("ziggy_ha_backed"), autos.get("ha_total")
+    if isinstance(z_backed, int) and isinstance(h_total, int) and z_backed > 0:
+        repair = (" Repair: re-save them from Ziggy's own store (user_files/ "
+                  "still holds the authoritative copy), or restore the newest "
+                  "non-empty user_files/ha-config-backups/*/docker/ha-config/"
+                  "automations.yaml.")
+        if h_total == 0:
+            issues.append(_issue(
+                "automations_wiped", LEVEL_DOWN,
+                f"Home Assistant has NO automations but Ziggy holds {z_backed} "
+                f"that belong there — automations.yaml has been overwritten. "
+                f"Every automation in this home is dead." + repair,
+                ziggy_ha_backed=z_backed, ha_total=h_total,
+            ))
+        elif h_total < z_backed:
+            issues.append(_issue(
+                "automations_missing", LEVEL_DEGRADED,
+                f"Ziggy holds {z_backed} HA-backed automation(s) but Home "
+                f"Assistant has {h_total} — {z_backed - h_total} did not make "
+                f"it into the home." + repair,
+                ziggy_ha_backed=z_backed, ha_total=h_total,
+            ))
 
     # ── The false-lost signature ───────────────────────────────────────────
     r_total, r_lost = registry.get("total"), registry.get("lost")
@@ -371,8 +386,9 @@ def vitals(payload: Optional[dict]) -> dict:
         # untracked); HA's lives in the git-tracked automations.yaml the release
         # checkout overwrites. A gap between them is a wipe — see
         # ISSUE_AUTOMATIONS_WIPED. `None` on hubs too old to report either.
-        "automations_ziggy": autos.get("ziggy_total"),
-        "automations_ha":    autos.get("ha_total"),
+        "automations_ziggy":     autos.get("ziggy_total"),
+        "automations_ha_backed": autos.get("ziggy_ha_backed"),
+        "automations_ha":        autos.get("ha_total"),
         "disk_pct":        _num(p.get("disk_pct_used")),
         "mem_pct":         _num(p.get("mem_pct")),
         "cpu_pct":         _num(p.get("cpu_pct")),

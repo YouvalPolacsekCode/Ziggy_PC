@@ -572,10 +572,29 @@ def _collect_automation_counts() -> Optional[dict]:
     out: dict[str, Any] = {}
 
     # Ziggy's copy — the durable one, in user_files/.
+    #
+    # `ha_backed` is the number that matters. Not every Ziggy automation has an
+    # HA counterpart BY DESIGN: a `zone_entered` or `all_persons_left` trigger
+    # has no HA representation, so Pre-cool lives only in Ziggy. Comparing the
+    # raw total against HA therefore reports a permanent phantom gap — the
+    # first version of this check did exactly that and flagged a healthy Canary
+    # as wiped. `needs_ha` is the same predicate the compiler uses, so the two
+    # sides agree by construction.
     try:
-        from services.local_automation_actions import _load_meta
+        from services.local_automation_actions import _load_meta, get_all_saved_actions
+        from services.ha_automations import needs_ha
         meta = _load_meta() or {}
         out["ziggy_total"] = len(meta)
+        backed = 0
+        for aid, m in meta.items():
+            try:
+                data = dict(m)
+                data.setdefault("actions", get_all_saved_actions(aid))
+                if needs_ha(data):
+                    backed += 1
+            except Exception:
+                continue
+        out["ziggy_ha_backed"] = backed
     except Exception:
         pass
 
