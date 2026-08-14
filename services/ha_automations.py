@@ -228,7 +228,14 @@ def _action_to_ha(a: dict) -> Optional[dict]:
 # Action types that _action_to_ha compiles to a NOTIFY PLACEHOLDER rather than a
 # real effect — HA shows a persistent notification but never sends the IR / runs
 # the capability. These must be re-run by Ziggy when the HA automation fires.
-_HA_PLACEHOLDER_TYPES = {"ir_command", "ziggy_intent"}
+#
+# `notify` is here for the same reason, though it looks native: it compiles to
+# `notify.persistent_notification`, which only drops a row in Home Assistant's
+# own panel — a surface the customer never opens. The push that actually reaches
+# the phone is sent by Ziggy's notify step. Treating HA's panel row as "already
+# delivered" suppressed it, so Leave Home turned off the lights and the AC four
+# times on 2026-08-14 without saying a word.
+_HA_PLACEHOLDER_TYPES = {"ir_command", "ziggy_intent", "notify"}
 
 
 def ha_defers_action(a: dict) -> bool:
@@ -237,10 +244,11 @@ def ha_defers_action(a: dict) -> bool:
     Single source of truth for the sensor-trigger bridge: an automation with a
     state trigger is STORED and fired by HA, but its Ziggy-native actions are
     either dropped (`_action_to_ha` → None, e.g. turn_off_all_lights) or compiled
-    to a harmless notify placeholder (ir_command / ziggy_intent). For those, HA
-    fires the trigger but nothing real happens — Ziggy must execute them itself.
-    `call_service` / `delay` / `notify` run natively in HA, so they are NOT
-    deferred (re-running them would double-fire, e.g. Pre-cool's climate call).
+    to a harmless notify placeholder (ir_command / ziggy_intent / notify). For
+    those, HA fires the trigger but nothing the customer can perceive happens —
+    Ziggy must execute them itself. `call_service` / `delay` run natively in HA,
+    so they are NOT deferred (re-running them would double-fire, e.g. Pre-cool's
+    climate call).
     """
     kind = a.get("type", "call_service")
     if kind in _HA_PLACEHOLDER_TYPES:

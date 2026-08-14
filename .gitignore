@@ -24,6 +24,16 @@ config/gmail_credentials.json
 config/gmail_token.json
 config/settings.yaml
 config/secrets.yaml
+# Push credential. MUST be ignored, not merely untracked: the updater's
+# dirty-tree recovery is `git stash push -u`, which sweeps untracked files but
+# leaves ignored ones alone. docker/ha-config/automations.yaml is tracked and
+# Home Assistant rewrites it, so the tree is dirty on nearly every 2-minute
+# cycle — this file was stashed away on a routine update and push died silently
+# for days (Canary, 2026-08-14: Leave Home turned off the lights and AC four
+# times without notifying anyone, and location probes could not wake the phone,
+# which is what let presence decay into a false "everyone left").
+config/firebase-service-account.json
+config/AuthKey_*.p8
 user_files/auth.db
 user_files/auth.db-*
 # Everything under user_files/ is runtime state — devices, events, layouts,
