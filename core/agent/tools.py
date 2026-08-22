@@ -206,6 +206,56 @@ TOOL_SCHEMAS: list[dict] = [
             "query": {"type": "string"},
         }, "required": ["query"]},
     }},
+    # ── Fixer tools: diagnose & repair a misbehaving home ────────────────────
+    {"type": "function", "function": {
+        "name": "check_home_health",
+        "description": (
+            "Check whether the whole home is healthy. Use when the user says things "
+            "like 'nothing works', 'the house is stuck', 'my devices aren't "
+            "responding', or asks if everything's OK. Read-only."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "diagnose_device",
+        "description": (
+            "Investigate why ONE device is misbehaving — 'why won't the living-room "
+            "light turn on?', 'the AC isn't responding'. Pass the exact entity_id "
+            "from the directory. Read-only; gathers what's wrong so you can explain it."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string", "description": "Exact device id from the directory."},
+        }, "required": ["entity_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "refresh_device",
+        "description": (
+            "Try to wake up / fix ONE stuck device that isn't responding or is showing "
+            "the wrong state. This actually nudges the device back into line — a safe "
+            "action you may take on your own, then tell the user what happened. Pass entity_id."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string", "description": "Exact device id from the directory."},
+        }, "required": ["entity_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "recover_connectivity",
+        "description": (
+            "When lots of devices went offline at once or the home lost contact with "
+            "its wireless devices, reconnect them. A safe action you may take on your "
+            "own. If it can't fix it remotely it returns a simple physical step to tell "
+            "the user. No arguments."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "acknowledge_alerts",
+        "description": (
+            "The user says the devices currently shown as offline are fine that way "
+            "(e.g. unplugged on purpose) — stop flagging them. No arguments."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
 ]
 
 # Tool names that produce a natural action-confirmation and, when they succeed
@@ -359,6 +409,115 @@ async def _exec_design_smart_room(args: dict, lang: str) -> dict:
             "data": {"kind": "automation_bundle_preview", "bundle": bundle}}
 
 
+# Health level → a neutral severity the model can reason on WITHOUT seeing the
+# raw engine issue codes (no "coordinator"/"zigbee" ever reaches the model).
+_HEALTH_SEVERITY = {"ok": "ok", "degraded": "attention", "down": "problem"}
+
+
+async def _exec_check_home_health(lang: str) -> dict:
+    """Read-only 'is the home healthy?' — pre-translated so no jargon reaches the model."""
+    from services import ha_health
+    from core.agent import health_speech
+    snap = await ha_health.health_snapshot()
+    severity = _HEALTH_SEVERITY.get(snap.get("level"), "attention")
+    offline = int((snap.get("devices") or {}).get("offline", 0) or 0)
+    return {
+        "ok": True,
+        "message": health_speech.summarize_health(snap, lang=lang),
+        "data": {"kind": "home_health", "severity": severity, "offline_count": offline},
+    }
+
+
+def _device_label(dev: dict, lang: str) -> str:
+    """A jargon-free name for a device — the Hebrew noun + room, never an entity_id."""
+    if lang == "he":
+        noun = dev.get("he_noun") or dev.get("name") or "המכשיר"
+        room = dev.get("room_he")
+        return f"{noun} ב{room}" if room else noun
+    return dev.get("name") or dev.get("he_noun") or "device"
+
+
+def _no_such_device(lang: str) -> dict:
+    return {"ok": False, "no_such_device": True,
+            "message": ("לא מצאתי מכשיר כזה." if lang == "he"
+                        else "I couldn't find that device.")}
+
+
+async def _exec_refresh_device(args: dict, directory: dict, lang: str) -> dict:
+    """Auto-safe fix: force-poll + one heal cycle on a stuck device, then report."""
+    from services import self_heal
+    from core.agent import health_speech
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    res = await self_heal.manual_refresh_heal(eid)
+    outcome = res.get("outcome", "healing")
+    return {
+        "ok": True,
+        "message": health_speech.describe_self_heal_outcome(outcome, _device_label(dev, lang), lang),
+        "data": {"kind": "device_refresh", "outcome": outcome,
+                 "fixed": outcome in ("recovered", "synced")},
+    }
+
+
+async def _exec_recover_connectivity(lang: str) -> dict:
+    """Auto-safe fix: reconnect the home's wireless devices; translate the outcome."""
+    from services import ha_health
+    from core.agent import health_speech
+    raw = await ha_health.trigger_recover_now()
+    if raw.get("in_progress"):
+        outcome, fixed = "in_progress", False
+    elif raw.get("no_coordinator"):
+        outcome, fixed = "nothing_to_do", False
+    elif raw.get("already_healthy"):
+        outcome, fixed = "healthy", True
+    elif raw.get("ok"):
+        outcome, fixed = "reconnected", True
+    else:
+        outcome, fixed = "needs_replug", False
+    return {
+        "ok": True,
+        "message": health_speech.describe_recovery(outcome, lang),
+        "data": {"kind": "connectivity_recovery", "outcome": outcome, "fixed": fixed},
+    }
+
+
+async def _exec_diagnose_device(args: dict, directory: dict, lang: str) -> dict:
+    """Read-only: gather why a device might be misbehaving, for the agent to reason on."""
+    from services import command_ledger
+    from core.agent import health_speech
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    is_on = bool(dev.get("on"))
+    last = command_ledger.get_last(eid) or {}
+    last_intended = last.get("state")
+    reachable = (dev.get("state") or "").lower() not in ("unavailable", "unknown")
+    return {
+        "ok": True,
+        "message": health_speech.describe_diagnosis(_device_label(dev, lang),
+                                                    is_on, last_intended, lang),
+        "data": {"kind": "device_diagnosis", "is_on": is_on,
+                 "last_intended": last_intended, "reachable": reachable},
+    }
+
+
+async def _exec_acknowledge_alerts(lang: str) -> dict:
+    """User says the currently-offline devices are fine — stop flagging them."""
+    from services import ha_health
+    from services.ha_subscriber import state_cache
+    from services.entity_filter import _should_hide
+    from core.agent import health_speech
+    ids = {eid for eid, e in state_cache.items()
+           if not _should_hide(eid) and (e.get("state") in ("unavailable", "unknown"))}
+    res = ha_health.acknowledge_offline(ids)
+    count = int(res.get("acknowledged_count", 0) or 0)
+    return {"ok": True, "message": health_speech.describe_ack(count, lang),
+            "data": {"kind": "alerts_acknowledged", "count": count}}
+
+
 async def _exec_passthrough(name: str, args: dict) -> dict:
     """Reuse the v1 handler for a tool by dispatching through handle_intent."""
     from core.action_parser import handle_intent
@@ -384,6 +543,16 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en")
         return await _exec_design_smart_room(args, lang)
     if name == "web_search":
         return await _exec_web_search(args)
+    if name == "check_home_health":
+        return await _exec_check_home_health(lang)
+    if name == "refresh_device":
+        return await _exec_refresh_device(args, directory, lang)
+    if name == "recover_connectivity":
+        return await _exec_recover_connectivity(lang)
+    if name == "diagnose_device":
+        return await _exec_diagnose_device(args, directory, lang)
+    if name == "acknowledge_alerts":
+        return await _exec_acknowledge_alerts(lang)
     if name in _PASSTHROUGH:
         return await _exec_passthrough(name, args)
     return {"ok": False, "message": f"unknown tool {name}"}

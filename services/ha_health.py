@@ -389,6 +389,11 @@ def compute_system_health(
         "devices": {
             "total":   total_devices,
             "offline": offline_count,
+            # The fleet report said "3 of 98 devices offline" for a week and
+            # nobody could name the three without SSHing into the home. Capped:
+            # a coordinator outage marks half the house offline and the count
+            # already tells that story.
+            "offline_ids": sorted(offline_primary_ids)[:20],
         },
         "recovery": {
             "in_progress":     _recovery.in_progress,
@@ -438,6 +443,38 @@ def get_last_health(*, max_age_s: float = 900.0) -> dict | None:
     if (time.time() - _last_health_at) > max_age_s:
         return None
     return _last_health
+
+
+async def health_snapshot(now: float | None = None) -> dict:
+    """Read-only "how is the whole home right now" for the agent's eyes.
+
+    Prefers the scheduler's cached result (get_last_health) because
+    compute_system_health has recovery SIDE EFFECTS — we must not double-fire
+    auto-recovery every time the user asks a chat question. Only on cold start
+    (no watchdog tick yet) do we gather + compute once, mirroring ops_router's
+    sourcing: HA reachability + device cache from ha_subscriber, hidden-entity
+    filtering from entity_filter, coordinator state only when HA is reachable.
+    """
+    cached = get_last_health(max_age_s=900.0)
+    if cached is not None:
+        return cached
+
+    from services.ha_subscriber import ha_connected, state_cache
+    from services.entity_filter import _should_hide
+
+    offline_ids = {
+        eid for eid, e in state_cache.items()
+        if not _should_hide(eid) and (e.get("state") in ("unavailable", "unknown"))
+    }
+    total = sum(1 for eid in state_cache if not _should_hide(eid))
+    coord = (await fetch_coordinator_state()) if ha_connected else None
+    return compute_system_health(
+        ha_connected=ha_connected,
+        offline_primary_ids=offline_ids,
+        total_devices=total,
+        coordinator=coord,
+        now=now,
+    )
 
 
 def _classify(
