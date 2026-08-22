@@ -192,4 +192,13 @@ def ensure_bootstrapped(service: PermissionService | None = None) -> dict:
         out["users"] = reconcile_users(svc, auth_db.list_users())
     except Exception as e:  # pragma: no cover
         out["error"] = (out["error"] or "") + f" user reconcile skipped: {e}"
+    # Register the fixer agent (agent:ziggy) + its autonomy envelope so the PDP
+    # can gate the agent's remediations. Lazy import keeps permissions free of a
+    # hard dependency on core.agent; defensive so it can never block boot.
+    try:
+        from core.agent.authz import seed_agent_principal
+        seed_agent_principal(svc)
+        out["agent"] = "seeded"
+    except Exception as e:  # pragma: no cover
+        out["error"] = (out["error"] or "") + f" agent seed skipped: {e}"
     return out

@@ -69,8 +69,25 @@ _MOWER = [
     CapabilityDef("mower.set_zone", "mower", RiskTier.MEDIUM, frozenset({"outdoor", "robotics"})),
 ]
 
+# --- system maintenance: the fixer agent's verbs on the home itself ----------
+# Not a device class — these act on the home. Scope tags drive the AI-autonomy
+# ladder (services/permissions/ai.py): diagnostics=act, connectivity=confirm,
+# shell/config/maintenance/pairing=ask, host=CRITICAL (never autonomous, and the
+# agent's envelope denies it outright).
+_SYSTEM = [
+    CapabilityDef("system.read_health", "system", RiskTier.LOW, frozenset({"diagnostics"})),
+    CapabilityDef("system.read_logs", "system", RiskTier.LOW, frozenset({"diagnostics"})),
+    CapabilityDef("system.refresh_device", "system", RiskTier.LOW, frozenset({"diagnostics"})),
+    CapabilityDef("system.reload_coordinator", "system", RiskTier.MEDIUM, frozenset({"connectivity"})),
+    CapabilityDef("system.exec_diagnostic", "system", RiskTier.MEDIUM, frozenset({"diagnostics", "shell"})),
+    CapabilityDef("system.restart_service", "system", RiskTier.HIGH, frozenset({"maintenance", "shell"})),
+    CapabilityDef("system.edit_config", "system", RiskTier.HIGH, frozenset({"maintenance", "config"})),
+    CapabilityDef("system.repair_device", "system", RiskTier.HIGH, frozenset({"maintenance", "pairing"})),
+    CapabilityDef("system.exec_privileged", "system", RiskTier.CRITICAL, frozenset({"host", "shell"})),
+]
+
 DEFAULT_CAPABILITY_MANIFESTS = [
-    _LIGHT, _MEDIA, _CLIMATE, _LOCK, _GARAGE, _ALARM, _CAMERA, _SENSOR, _EV, _MOWER,
+    _LIGHT, _MEDIA, _CLIMATE, _LOCK, _GARAGE, _ALARM, _CAMERA, _SENSOR, _EV, _MOWER, _SYSTEM,
 ]
 
 
