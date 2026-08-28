@@ -1,0 +1,366 @@
+{
+  "project": "Ziggy",
+  "roots": {
+    "ziggy_pc": "/Users/YouvalPolacsek/ziggy_pc",
+    "ziggy_mobile": "/Users/YouvalPolacsek/ziggy_mobile"
+  },
+  "graph": "graphify-out/graph.json",
+  "exclude": [
+    ".claude/worktrees/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "frontend/dist/**",
+    "graphify-out/**",
+    "logs/**",
+    "cache/**",
+    "piper_voices/**",
+    "oww_data/**",
+    "**/*.png",
+    "**/*.mp3",
+    "**/*.lock",
+    "**/package-lock.json"
+  ],
+  "prod_entrypoints": [
+    "backend/server.py",
+    "services/ziggy_scheduler.py"
+  ],
+  "dead_entrypoints": [
+    "core/ziggy_main.py"
+  ],
+  "status_rules": {
+    "live-prod": "Reachable from a prod entrypoint (backend/server.py or a ziggy_scheduler tick) and present in the newest release-* tag.",
+    "canary-only": "On main and running on the canary cohort, but not yet in a release-* tag.",
+    "flagged": "Present and wired, but gated behind a settings.yaml feature flag that is off by default.",
+    "orphaned": "Code exists with no caller reachable from any prod entrypoint.",
+    "abandoned": "Removed from the tree, or superseded, but present in git history."
+  },
+  "lenses": [
+    "pitch",
+    "capability",
+    "engineering"
+  ],
+  "territories": {
+    "chat-and-assistant": {
+      "description": "Chat, voice, intent parsing, the v2 tool-calling agent, wake word, STT/TTS.",
+      "include": [
+        "core/agent/**",
+        "core/intent_parser.py",
+        "core/action_parser.py",
+        "core/handlers/**",
+        "interfaces/**",
+        "backend/routers/intent_router.py",
+        "services/command_router.py",
+        "frontend/src/pages/Chat*.jsx",
+        "services/communication_manager.py",
+        "services/reference_manager.py",
+        "services/web_manager.py",
+        "services/visual_manager.py",
+        "services/system_tools.py",
+        "services/file_manager.py",
+        "services/quick_ask_manager.py",
+        "services/voice_intents.py",
+        "core/memory.py",
+        "core/session_manager.py",
+        "core/conversation_context.py",
+        "core/intent_utils.py",
+        "core/response_templates.py",
+        "core/result_utils.py",
+        "core/tools_schema.py",
+        "integrations/ollama_client.py",
+        "integrations/openai_client.py",
+        "frontend/src/pages/AIChat.jsx",
+        "frontend/src/pages/Memory.jsx",
+        "frontend/src/pages/QuickAsks.jsx",
+        "frontend/src/stores/chatStore.js",
+        "frontend/src/stores/quickAskStore.js",
+        "frontend/src/stores/voiceStore.js",
+        "frontend/src/lib/quickAsks.js",
+        "backend/routers/quick_ask_router.py",
+        "backend/routers/tts_router.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "automations-and-bundles": {
+      "description": "Automations, routines, bundle wizards and recipes, the Library, Pro designer, HA automation sync.",
+      "include": [
+        "services/automation_*.py",
+        "services/bundle*.py",
+        "services/local_automation_actions.py",
+        "services/routine*.py",
+        "frontend/src/components/automations/**",
+        "frontend/src/lib/automations/**",
+        "frontend/src/pages/Actions.jsx",
+        "backend/routers/automation_router.py",
+        "backend/routers/routine_router.py",
+        "core/automation_file.py",
+        "services/blueprint_importer.py",
+        "services/orchestra_designer.py",
+        "services/smart_room_recipe.py",
+        "services/wizard_prefill.py",
+        "services/mode_service.py",
+        "backend/routers/mode_router.py",
+        "frontend/src/pages/Routines.jsx",
+        "frontend/src/stores/automationStore.js",
+        "services/bundled_blueprints/**",
+        "services/starter_automations/**"
+      ],
+      "root": "ziggy_pc"
+    },
+    "presence": {
+      "description": "Presence engine, persons, zones and geofences, LAN probing, door-aware presence, room presence.",
+      "include": [
+        "services/presence_*.py",
+        "services/lan_presence.py",
+        "services/room_presence_engine.py",
+        "backend/routers/presence_router.py",
+        "frontend/src/lib/mobilePresenceBridge.jsx",
+        "services/fake_occupancy_scheduler.py",
+        "services/zones_registry.py",
+        "frontend/src/pages/People.jsx"
+      ],
+      "root": "ziggy_pc"
+    },
+    "devices-and-pairing": {
+      "description": "Device registry, classification, capability catalog, Zigbee/Matter/WiFi pairing, config flows, delete semantics.",
+      "include": [
+        "services/device_*.py",
+        "services/capability_catalog.py",
+        "services/entity_filter.py",
+        "services/target_resolver.py",
+        "services/display_registry.py",
+        "backend/routers/device_router.py",
+        "frontend/src/components/devices/**",
+        "frontend/src/pages/Devices.jsx",
+        "services/entity_prefs.py",
+        "services/capability_matcher.py",
+        "services/switcher_account.py",
+        "services/switcher_pairing.py",
+        "services/virtual_devices.py",
+        "services/domain_registry.py",
+        "services/template_sensors.py",
+        "frontend/src/lib/domainRegistry.js",
+        "frontend/src/lib/pairingCapture.js",
+        "frontend/src/pages/DeviceDetail.jsx",
+        "frontend/src/pages/VirtualDevices.jsx",
+        "frontend/src/pages/Remote.jsx",
+        "frontend/src/stores/deviceStore.js",
+        "backend/routers/capability_router.py",
+        "backend/routers/virtual_device_router.py",
+        "backend/routers/device_presets_router.py",
+        "backend/routers/pairing_router.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "ir-and-ac": {
+      "description": "IR blasters, protocol decoding, fingerprint matching, IR device registry, IR/WiFi merge.",
+      "include": [
+        "services/ir_*.py",
+        "backend/routers/ir_router.py",
+        "frontend/src/components/ir/**",
+        "backend/routers/ir_walk_router.py",
+        "frontend/src/pages/IrWalkWizard.jsx"
+      ],
+      "root": "ziggy_pc"
+    },
+    "climate-and-lighting": {
+      "description": "Smart climate control, circadian light schedule, presets, power-on behaviour.",
+      "include": [
+        "services/*climate*.py",
+        "services/*light*.py",
+        "services/*circadian*.py",
+        "services/*preset*.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "rooms-and-dashboard": {
+      "description": "Rooms, room ownership, dashboard layouts, the wall display, device groups, quick controls.",
+      "include": [
+        "services/dashboard_layouts.py",
+        "services/device_groups.py",
+        "services/room*.py",
+        "backend/routers/room_router.py",
+        "backend/routers/map_router.py",
+        "frontend/src/pages/Dashboard.jsx",
+        "frontend/src/pages/Rooms.jsx",
+        "frontend/src/components/wall/**",
+        "services/dashboard_tablets.py",
+        "services/map_renderer.py",
+        "services/wall_layouts.py",
+        "services/wall_lists.py",
+        "services/wall_policy.py",
+        "frontend/src/wall/**",
+        "frontend/src/pages/HomeMap*.jsx",
+        "frontend/src/pages/Wall.jsx",
+        "frontend/src/pages/WallTablets.jsx",
+        "frontend/src/pages/Hub.jsx",
+        "frontend/src/lib/wallGrid.js",
+        "frontend/src/lib/wallMode.js",
+        "frontend/src/lib/roomPhotos.js",
+        "frontend/src/lib/hubTablet.js",
+        "frontend/src/stores/hubStore.js",
+        "frontend/src/stores/wallStore.js",
+        "backend/routers/activity_router.py",
+        "backend/routers/dashboard_router.py",
+        "backend/routers/ui_prefs_router.py",
+        "backend/routers/wall_router.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "mobile-and-push": {
+      "description": "Mobile router, push notification substrate, FCM, push actions and preferences, geofencing bridge.",
+      "include": [
+        "services/mobile_*.py",
+        "services/push_*.py",
+        "backend/routers/mobile_router.py",
+        "frontend/src/pages/Mobile*.jsx",
+        "backend/routers/push_action_router.py",
+        "backend/routers/push_router.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "mobile-native": {
+      "description": "The Capacitor app shell, native ziggy-presence plugin, OTA updater, native permissions.",
+      "include": [
+        "**/*"
+      ],
+      "root": "ziggy_mobile"
+    },
+    "cloud-and-billing": {
+      "description": "Fly relay, LLM proxy, per-home HMAC, provisioning, tunnels, billing.",
+      "include": [
+        "relay/**",
+        "integrations/llm_gateway.py",
+        "services/telemetry_client.py",
+        "services/subscription_state.py",
+        "core/relay_signing.py",
+        "frontend/src/pages/CloudAdmin.jsx"
+      ],
+      "root": "ziggy_pc"
+    },
+    "fleet-and-release": {
+      "description": "Release channel, ship.sh, updater, cohorts, fleet health, drift detection, imaging.",
+      "include": [
+        "scripts/**",
+        "services/deploy_state.py",
+        "services/ha_health.py",
+        "services/ha_outage_alert.py",
+        "backend/routers/admin_router.py",
+        "services/kit_manifest.py",
+        "services/first_boot.py",
+        "services/ota_client.py",
+        "services/self_heal.py",
+        "services/starter_pack.py",
+        "core/restart_ziggy.bat",
+        "backend/routers/deploy_router.py",
+        "backend/routers/edge_health_router.py",
+        "backend/routers/first_boot_router.py",
+        "backend/routers/health_router.py",
+        "backend/routers/lifecycle_router.py",
+        "backend/routers/ops_router.py",
+        "backend/routers/self_heal_router.py",
+        "backend/routers/status_router.py",
+        "backend/routers/update_router.py",
+        "frontend/src/pages/AdminConsole.jsx",
+        "frontend/src/pages/AdminSettings.jsx",
+        "frontend/src/pages/OpsConsole.jsx",
+        "frontend/src/pages/FeatureFlags.jsx",
+        "frontend/src/pages/OtaReleases.jsx",
+        "frontend/src/pages/HAUpdate.jsx",
+        "frontend/src/pages/AuditLog.jsx",
+        "frontend/src/pages/DebugPage.jsx",
+        "frontend/src/lib/fleetHealth.js",
+        "frontend/src/stores/featuresStore.js",
+        "frontend/src/components/admin/**"
+      ],
+      "root": "ziggy_pc"
+    },
+    "auth-and-onboarding": {
+      "description": "Auth, permissions platform, onboarding wizards, phone pairing, web onboarding.",
+      "include": [
+        "services/permissions/**",
+        "backend/routers/auth*.py",
+        "backend/middleware/**",
+        "frontend/src/pages/*Onboarding*.jsx",
+        "frontend/src/stores/authStore.js",
+        "services/auth_db.py",
+        "services/auth_hashing.py",
+        "services/consent.py",
+        "services/email_sender.py",
+        "services/onboarding_state.py",
+        "backend/routers/consent_router.py",
+        "backend/routers/invite_router.py",
+        "backend/routers/onboarding_router.py",
+        "backend/routers/onboarding_sensors_router.py",
+        "backend/routers/permissions_router.py",
+        "frontend/src/pages/LoginPage.jsx",
+        "frontend/src/pages/AcceptInvite.jsx",
+        "frontend/src/pages/onboarding/**"
+      ],
+      "root": "ziggy_pc"
+    },
+    "alerts-and-vision": {
+      "description": "Anomaly engine, sensor alerts, vision and camera alerts, suggestions, pattern learning.",
+      "include": [
+        "services/anomaly_*.py",
+        "services/sensor_alerts.py",
+        "services/vision*.py",
+        "services/suggestion_engine.py",
+        "services/pattern_detector.py",
+        "backend/routers/camera_router.py",
+        "frontend/src/pages/Cameras.jsx",
+        "services/camera_utils.py",
+        "services/pattern_logger.py",
+        "services/suggestion_manager.py",
+        "backend/routers/alerts_router.py",
+        "backend/routers/suggestion_router.py",
+        "frontend/src/pages/Anomalies.jsx",
+        "frontend/src/pages/Suggestions.jsx",
+        "frontend/src/stores/cameraStore.js",
+        "frontend/src/stores/suggestionStore.js"
+      ],
+      "root": "ziggy_pc"
+    },
+    "backup-and-dr": {
+      "description": "Backup engine, restore, disaster recovery, customer state protection.",
+      "include": [
+        "services/backup_*.py",
+        "backend/routers/backup_router.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "i18n-and-hebrew": {
+      "description": "Hebrew nativization, RTL, i18n vocabulary, voice style, brand language.",
+      "include": [
+        "frontend/src/lib/i18n/**",
+        "**/*hebrew*",
+        "validate_hebrew_intent.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "platform": {
+      "description": "HA bridge and WebSocket sync, MQTT, WS broadcast hub, settings loader, server bootstrap, scheduler.",
+      "include": [
+        "services/home_automation.py",
+        "services/ha_*.py",
+        "services/ziggy_scheduler.py",
+        "core/settings_loader.py",
+        "core/debug_bus.py",
+        "core/shared_flags.py",
+        "backend/server.py",
+        "backend/ws_manager.py",
+        "services/debug_control.py",
+        "services/home_context.py",
+        "services/mqtt_client.py",
+        "services/manual_overrides.py",
+        "services/state_memory.py",
+        "services/command_ledger.py",
+        "core/brain_edge_contract.py",
+        "core/errors.py",
+        "core/logger_module.py",
+        "backend/routers/debug_router.py",
+        "backend/routers/ha_router.py"
+      ],
+      "root": "ziggy_pc"
+    }
+  }
+}
