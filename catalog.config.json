@@ -202,7 +202,8 @@
         "backend/routers/activity_router.py",
         "backend/routers/dashboard_router.py",
         "backend/routers/ui_prefs_router.py",
-        "backend/routers/wall_router.py"
+        "backend/routers/wall_router.py",
+        "frontend/src/App.jsx"
       ],
       "root": "ziggy_pc"
     },
@@ -294,7 +295,10 @@
         "backend/routers/permissions_router.py",
         "frontend/src/pages/LoginPage.jsx",
         "frontend/src/pages/AcceptInvite.jsx",
-        "frontend/src/pages/onboarding/**"
+        "frontend/src/pages/onboarding/**",
+        "frontend/src/pages/Settings.jsx",
+        "frontend/src/components/settings/**",
+        "frontend/src/components/hub/**"
       ],
       "root": "ziggy_pc"
     },
@@ -334,6 +338,33 @@
         "frontend/src/lib/i18n/**",
         "**/*hebrew*",
         "validate_hebrew_intent.py"
+      ],
+      "root": "ziggy_pc"
+    },
+    "media-and-entertainment": {
+      "description": "Media playback, players and vendors, casting, media diagnostics and settings.",
+      "include": [
+        "services/media_*.py",
+        "core/media/**",
+        "backend/routers/media_router.py",
+        "frontend/src/pages/Media*.jsx",
+        "frontend/src/stores/mediaStore.js",
+        "frontend/src/lib/mediaPlayerVendors.js",
+        "frontend/src/components/media/**"
+      ],
+      "root": "ziggy_pc"
+    },
+    "tasks-events-weather": {
+      "description": "Task lists and reminders, calendar events, and weather.",
+      "include": [
+        "services/task_manager.py",
+        "services/event_manager.py",
+        "core/task_file.py",
+        "backend/routers/task_router.py",
+        "backend/routers/event_router.py",
+        "backend/routers/weather_router.py",
+        "frontend/src/pages/Tasks.jsx",
+        "frontend/src/stores/taskStore.js"
       ],
       "root": "ziggy_pc"
     },

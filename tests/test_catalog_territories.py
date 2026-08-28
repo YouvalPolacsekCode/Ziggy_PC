@@ -27,8 +27,8 @@ def test_node_modules_and_build_output_excluded(cfg):
     assert bt.is_excluded("graphify-out/graph.json", cfg)
 
 
-def test_sixteen_territories_declared(cfg):
-    assert len(cfg["territories"]) == 16
+def test_all_territories_declared(cfg):
+    assert len(cfg["territories"]) == 18
 
 
 def test_every_territory_has_required_fields(cfg):
@@ -45,6 +45,8 @@ def test_known_files_land_in_expected_territory(cfg):
     assert bt.assign_territory("services/mobile_push.py", cfg) == "mobile-and-push"
     assert bt.assign_territory("relay/app/fleet_health.py", cfg) == "cloud-and-billing"
     assert bt.assign_territory("scripts/fleet-health.py", cfg) == "fleet-and-release"
+    assert bt.assign_territory("backend/routers/media_router.py", cfg) == "media-and-entertainment"
+    assert bt.assign_territory("backend/routers/task_router.py", cfg) == "tasks-events-weather"
 
 
 def test_excluded_files_have_no_territory(cfg):
