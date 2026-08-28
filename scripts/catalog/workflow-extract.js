@@ -27,7 +27,18 @@ const SUMMARY = {
 // write `args` literally into the tool call) does not need to transcribe 34 KB / 641 file
 // paths by hand. Renamed from the raw `meta` key on args to avoid shadowing the exported
 // `meta` literal at the top of this file.
-const { names, meta: territoryMeta, territoriesPath, scratch, schemaText, rules } = args
+// The runtime may hand this script `args` as a JSON-encoded string rather than an object
+// (observed at launch: destructuring a string yielded undefined for every field and
+// pipeline(undefined, ...) threw a generic type error with 0 agents run) — normalise first.
+const rawArgs = typeof args === 'string' ? JSON.parse(args) : args
+const { names, meta: territoryMeta, territoriesPath, scratch, schemaText, rules } = rawArgs
+
+if (!Array.isArray(names) || names.length === 0) {
+  throw new Error(`workflow-extract: expected args.names to be a non-empty array, got ${typeof names}`)
+}
+if (!territoryMeta || !territoriesPath || !scratch || !schemaText) {
+  throw new Error('workflow-extract: missing one of args.meta / territoriesPath / scratch / schemaText')
+}
 
 // Repo roots a territory can point at. Most territories live in ziggy_pc; one
 // (mobile-native) lives entirely in the sibling ziggy_mobile checkout. Agents
