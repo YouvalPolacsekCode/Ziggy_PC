@@ -27,20 +27,21 @@ def _err_text() -> str:
     return "משהו השתבש אצלי רגע — אפשר לנסות שוב."
 
 
-def generate_title(thread_id: str) -> None:
+def generate_title(thread_id: str) -> str | None:
     """Best-effort short TLDR title for a thread from its first exchange (cheap LLM).
 
-    Sync (blocking LLM call) — call via asyncio.to_thread so it never blocks the loop.
-    Overwrites the placeholder first-message title; a user rename later stays put because
-    we only generate on the first exchange.
+    Returns the title it set (None if it couldn't make one) so the caller can push it
+    to an open app. Sync (blocking LLM call) — call via asyncio.to_thread so it never
+    blocks the loop. Overwrites the placeholder first-message title; a user rename later
+    stays put because we only generate on the first exchange.
     """
     th = ct.get_thread(thread_id)
     if not th:
-        return
+        return None
     msgs = [m for m in th["messages"]
             if m["role"] in ("user", "assistant") and (m.get("content") or "").strip()]
     if len(msgs) < 2:
-        return
+        return None
     convo = "\n".join(f'{m["role"]}: {m["content"]}' for m in msgs[:6])[:2000]
     try:
         from integrations.llm_gateway import chat_completion
@@ -54,8 +55,26 @@ def generate_title(thread_id: str) -> None:
         if title:
             ct.rename_thread(thread_id, title[:60])
             log_info(f"[chat_runner] titled {thread_id}: {title[:60]}")
+            return title[:60]
     except Exception as e:
         log_error(f"[chat_runner] title generation failed for {thread_id}: {e}")
+    return None
+
+
+async def title_thread(thread_id: str, *,
+                       broadcast: Callable[[dict], Awaitable[None]] | None = None) -> None:
+    """Title a thread and push the result, so an open drawer renames itself live.
+
+    Off the reply path (launch detached): the LLM call takes a second or two and the
+    reply must not wait on it. Nothing is pushed when no title could be made — a
+    failed attempt must never overwrite what the user already sees.
+    """
+    import asyncio
+    title = await asyncio.to_thread(generate_title, thread_id)
+    if not title:
+        return
+    emit = broadcast or _default_broadcast
+    await emit({"type": "thread_titled", "thread_id": thread_id, "title": title})
 
 
 async def run_turn(thread_id: str, text: str, *, compute: ComputeFn,

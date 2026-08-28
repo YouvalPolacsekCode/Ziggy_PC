@@ -366,7 +366,10 @@ async def process_chat(req: ChatRequest, request: Request):
                           if m["role"] in ("user", "assistant")])
                 if _n == 2:
                     from services import chat_runner as _cr
-                    asyncio.create_task(asyncio.to_thread(_cr.generate_title, req.thread_id))
+                    # Detached: the title costs an LLM round-trip, and it pushes
+                    # thread_titled so an open drawer renames itself live instead
+                    # of waiting to be reopened.
+                    asyncio.create_task(_cr.title_thread(req.thread_id))
             except Exception:
                 pass
             await _announce_ziggy_response(req.text, res["reply"], req.source, res["ok"],
