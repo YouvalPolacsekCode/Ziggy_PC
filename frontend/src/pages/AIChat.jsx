@@ -6,6 +6,8 @@ import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
+import { useChatThreads } from '../hooks/useChatThreads'
+import ThreadList from '../components/chat/ThreadList'
 import { useVoiceStore } from '../stores/voiceStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useAutomationStore } from '../stores/automationStore'
@@ -373,6 +375,8 @@ export default function AIChat() {
   const navigate  = useNavigate()
   const { addToast }                              = useUIStore()
   const { messages, addMessage, clearMessages }   = useChatStore()
+  // Durable, resumable threads for the whole chat (persist across reload/navigation).
+  const { threadId, threads, newThread, switchThread, refreshList } = useChatThreads()
   // Direct setter so the bundle accept/discard handlers can replace the
   // preview card in place. The chatStore exposes the array via `messages`
   // — useChatStore.setState() patches it without going through addMessage.
@@ -518,6 +522,7 @@ export default function AIChat() {
     setThinking(false)
     setOrbState('idle')
     clearMessages()
+    newThread()   // "New chat" starts a fresh DURABLE thread (persists across reload)
   }
 
   const onToggleMic = async () => {
@@ -1030,7 +1035,7 @@ export default function AIChat() {
     setThinkingMode(isProModeOutcome(t) ? 'pro' : 'chat')
     setThinking(true); setOrbState('thinking')
     try {
-      const res = await sendChat(t, historyForApi)
+      const res = await sendChat(t, historyForApi, 'web', threadId)
       if (fromInput) setInput('')
       // Build action chip labels from the response
       const actions = res.actions?.map(a => {
@@ -1048,6 +1053,7 @@ export default function AIChat() {
         : null
       addMessage('assistant', res.reply || '…', res.ok !== false,
                  bundle ? { actions, bundle } : { actions })
+      refreshList()   // keep the thread switcher's title/preview fresh
       // Pattern suggestion card
       if (res.pattern_suggestion) {
         addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
@@ -1380,7 +1386,7 @@ export default function AIChat() {
       setThinkingMode(isProModeOutcome(transcription) ? 'pro' : 'chat')
       setThinking(true); setOrbState('thinking')
       try {
-        const res = await sendChat(transcription, historyForApi)
+        const res = await sendChat(transcription, historyForApi, 'web', threadId)
         const actions = res.actions?.map(a => {
           if (typeof a === 'string') return a
           if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
@@ -1632,6 +1638,18 @@ export default function AIChat() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Durable-thread switcher — browse / return to past conversations. */}
+          <details style={{ position: 'relative' }}>
+            <summary style={{ cursor: 'pointer', listStyle: 'none', fontSize: 16 }} title={t('chat.headerTitle')}>🗂</summary>
+            <div style={{
+              position: 'absolute', top: '120%', insetInlineEnd: 0, zIndex: 50,
+              background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12,
+              padding: 8, minWidth: 220, maxHeight: 360, overflowY: 'auto',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            }}>
+              <ThreadList onNew={newThread} onSwitch={switchThread} />
+            </div>
+          </details>
           {/* Wake-word master toggle — controls the backend always-on listener,
               NOT the hold-to-talk mic on this page. Hidden when wake-word is
               not configured/working; in that case only push-to-talk is in play. */}

@@ -332,7 +332,6 @@ async def process_chat(req: ChatRequest, request: Request):
         import asyncio
         from fastapi import HTTPException
         from services import chat_threads as ct
-        from services import chat_runner as cr
 
         # Ownership guard: never append to (or hijack) someone else's thread. A
         # missing thread is created owned by the caller; an existing one must be theirs.
@@ -341,21 +340,40 @@ async def process_chat(req: ChatRequest, request: Request):
             raise HTTPException(status_code=403, detail="not your thread")
 
         ct.ensure_thread(req.thread_id, owner=actor)
+        prior = ct.get_history_for_agent(req.thread_id)   # BEFORE appending this turn
         ct.append_message(req.thread_id, "user", req.text)
-        await manager.broadcast({
-            "type": "thread_message", "thread_id": req.thread_id, "status": "running",
-            "message": {"role": "user", "content": req.text},
-        })
+        ct.set_status(req.thread_id, "running")
 
-        async def _compute(text, prior):
-            res = await _compute_reply(text, prior, req.source, req.engine, actor,
-                                       _new_request_id())
-            await _announce_ziggy_response(text, res["reply"], req.source, res["ok"],
+        # Run the turn as a SHIELDED task: the present client still awaits it and gets
+        # the full rich reply (rendering unchanged), but if the client disconnects /
+        # navigates away mid-turn the task keeps running, persists, and broadcasts — so
+        # the reply is waiting on the thread when they come back. That's the resumable /
+        # background behaviour, without losing the synchronous rich response.
+        async def _job():
+            try:
+                res = await _compute_reply(req.text, prior, req.source, req.engine, actor, request_id)
+            except Exception as e:
+                ct.append_message(req.thread_id, "assistant",
+                                  "משהו השתבש אצלי רגע — אפשר לנסות שוב.", data={"error": str(e)})
+                ct.set_status(req.thread_id, "error")
+                raise
+            ct.append_message(req.thread_id, "assistant", res["reply"], data=res.get("data"))
+            ct.set_status(req.thread_id, "idle")
+            await _announce_ziggy_response(req.text, res["reply"], req.source, res["ok"],
                                            res.get("intent"), request_id, res.get("data"))
+            await manager.broadcast({
+                "type": "thread_message", "thread_id": req.thread_id, "status": "idle",
+                "message": {"role": "assistant", "content": res["reply"], "data": res.get("data")},
+            })
             return res
 
-        asyncio.create_task(cr.run_turn(req.thread_id, req.text, compute=_compute))
-        return {"thread_id": req.thread_id, "status": "running", "request_id": request_id}
+        task = asyncio.create_task(_job())
+        try:
+            res = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            return {"thread_id": req.thread_id, "status": "running", "request_id": request_id}
+        return {"reply": res["reply"], "ok": res["ok"], "data": res.get("data", {}),
+                "request_id": request_id, "thread_id": req.thread_id}
 
     # ── Legacy synchronous mode (unchanged behaviour) ──────────────────────
     res = await _compute_reply(req.text, req.chat_history, req.source, req.engine,
