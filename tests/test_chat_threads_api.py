@@ -34,3 +34,25 @@ def test_thread_crud_roundtrip(client):
 
 def test_get_missing_thread_404(client):
     assert client.get("/api/threads/th_missing").status_code == 404
+
+
+def test_ownership_blocks_idor_and_hijack(client, monkeypatch):
+    import backend.routers.intent_router as ir
+
+    # Actor A creates a thread.
+    monkeypatch.setattr(ir, "_actor_ref", lambda req: "person:a")
+    tid = client.post("/api/threads").json()["thread_id"]
+
+    # Actor B must not be able to read / rename / delete / chat into A's thread.
+    monkeypatch.setattr(ir, "_actor_ref", lambda req: "person:b")
+    assert client.get(f"/api/threads/{tid}").status_code == 403
+    assert client.patch(f"/api/threads/{tid}", json={"title": "x"}).status_code == 403
+    assert client.delete(f"/api/threads/{tid}").status_code == 403
+    assert client.post("/api/chat", json={"text": "hi", "thread_id": tid}).status_code == 403
+
+    # B also can't SEE A's thread in the list.
+    assert all(t["thread_id"] != tid for t in client.get("/api/threads").json()["threads"])
+
+    # Owner A retains access.
+    monkeypatch.setattr(ir, "_actor_ref", lambda req: "person:a")
+    assert client.get(f"/api/threads/{tid}").status_code == 200

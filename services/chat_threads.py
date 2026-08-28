@@ -138,6 +138,7 @@ def get_thread(thread_id: str) -> dict | None:
     return {
         "thread_id": t["thread_id"],
         "title": t["title"] or "New chat",
+        "owner": t["owner"],
         "status": t["status"],
         "created_at": t["created_at"],
         "updated_at": t["updated_at"],

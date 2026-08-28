@@ -330,8 +330,15 @@ async def process_chat(req: ChatRequest, request: Request):
     # (thread_message) — so the user can leave and come back to it, on ANY chat.
     if req.thread_id:
         import asyncio
+        from fastapi import HTTPException
         from services import chat_threads as ct
         from services import chat_runner as cr
+
+        # Ownership guard: never append to (or hijack) someone else's thread. A
+        # missing thread is created owned by the caller; an existing one must be theirs.
+        _existing = ct.get_thread(req.thread_id)
+        if _existing is not None and _existing.get("owner") != actor:
+            raise HTTPException(status_code=403, detail="not your thread")
 
         ct.ensure_thread(req.thread_id, owner=actor)
         ct.append_message(req.thread_id, "user", req.text)
@@ -360,6 +367,18 @@ async def process_chat(req: ChatRequest, request: Request):
 
 
 # ── Thread CRUD — persistent conversations for the whole app ────────────────
+def _assert_thread_access(thread_id: str, actor):
+    """Ownership guard — prevents IDOR / thread-hijack. Access iff owner == actor."""
+    from fastapi import HTTPException
+    from services import chat_threads as ct
+    th = ct.get_thread(thread_id)
+    if th is None:
+        raise HTTPException(status_code=404, detail="thread not found")
+    if th.get("owner") != actor:
+        raise HTTPException(status_code=403, detail="not your thread")
+    return th
+
+
 @router.post("/api/threads")
 async def create_chat_thread(request: Request):
     from services import chat_threads as ct
@@ -373,18 +392,14 @@ async def list_chat_threads(request: Request):
 
 
 @router.get("/api/threads/{thread_id}")
-async def get_chat_thread(thread_id: str):
-    from fastapi import HTTPException
-    from services import chat_threads as ct
-    th = ct.get_thread(thread_id)
-    if th is None:
-        raise HTTPException(status_code=404, detail="thread not found")
-    return th
+async def get_chat_thread(thread_id: str, request: Request):
+    return _assert_thread_access(thread_id, _actor_ref(request))
 
 
 @router.patch("/api/threads/{thread_id}")
-async def rename_chat_thread(thread_id: str, body: dict):
+async def rename_chat_thread(thread_id: str, body: dict, request: Request):
     from services import chat_threads as ct
+    _assert_thread_access(thread_id, _actor_ref(request))
     title = (body or {}).get("title")
     if title:
         ct.rename_thread(thread_id, title)
@@ -392,8 +407,9 @@ async def rename_chat_thread(thread_id: str, body: dict):
 
 
 @router.delete("/api/threads/{thread_id}")
-async def delete_chat_thread(thread_id: str):
+async def delete_chat_thread(thread_id: str, request: Request):
     from services import chat_threads as ct
+    _assert_thread_access(thread_id, _actor_ref(request))
     ct.delete_thread(thread_id)
     return {"ok": True}
 
