@@ -502,14 +502,32 @@ def _no_such_device(lang: str) -> dict:
                         else "I couldn't find that device.")}
 
 
-async def _exec_refresh_device(args: dict, directory: dict, lang: str) -> dict:
+def _needs_approval(fix: str, lang: str, device_label: str = "") -> dict:
+    """The home's policy says this fix needs a human yes — ask for it, plainly.
+
+    There is no approval card in chat yet, so the agent degrades to asking in
+    words; the user's "yes" comes back as the next turn.
+    """
+    from core.agent import health_speech
+    return {
+        "ok": True,
+        "message": health_speech.describe_needs_approval(fix, lang, device_label),
+        "data": {"kind": "needs_approval", "fix": fix, "acted": False},
+    }
+
+
+async def _exec_refresh_device(args: dict, directory: dict, lang: str,
+                               actor: str | None = None) -> dict:
     """Auto-safe fix: force-poll + one heal cycle on a stuck device, then report."""
     from services import self_heal
-    from core.agent import health_speech
+    from core.agent import authz, health_speech
     eid = (args.get("entity_id") or "").strip()
     dev = _dir.get_device(directory, eid)
     if not dev:
         return _no_such_device(lang)
+    may_act, _mode = authz.check("system.refresh_device", on_behalf_of=actor)
+    if not may_act:
+        return _needs_approval("refresh_device", lang, _device_label(dev, lang))
     res = await self_heal.manual_refresh_heal(eid)
     outcome = res.get("outcome", "healing")
     return {
@@ -520,10 +538,13 @@ async def _exec_refresh_device(args: dict, directory: dict, lang: str) -> dict:
     }
 
 
-async def _exec_recover_connectivity(lang: str) -> dict:
+async def _exec_recover_connectivity(lang: str, actor: str | None = None) -> dict:
     """Auto-safe fix: reconnect the home's wireless devices; translate the outcome."""
     from services import ha_health
-    from core.agent import health_speech
+    from core.agent import authz, health_speech
+    may_act, _mode = authz.check("system.reload_coordinator", on_behalf_of=actor)
+    if not may_act:
+        return _needs_approval("recover_connectivity", lang)
     raw = await ha_health.trigger_recover_now()
     if raw.get("in_progress"):
         outcome, fixed = "in_progress", False
@@ -626,8 +647,14 @@ async def _exec_passthrough(name: str, args: dict) -> dict:
     }
 
 
-async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en") -> dict:
-    """Dispatch one tool call. Returns a JSON-serializable result dict."""
+async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
+                       actor: str | None = None) -> dict:
+    """Dispatch one tool call. Returns a JSON-serializable result dict.
+
+    ``actor`` is the chat user's principal ref ("person:<username>") when the
+    turn came from an authenticated human — the state-changing fixes pass it to
+    the PDP so the agent can never exceed the person it acts for.
+    """
     log_info(f"[agent.tools] execute {name} args={args}")
     if name == "control_device":
         return await _exec_control_device(args, directory)
@@ -642,9 +669,9 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en")
     if name == "check_home_health":
         return await _exec_check_home_health(lang)
     if name == "refresh_device":
-        return await _exec_refresh_device(args, directory, lang)
+        return await _exec_refresh_device(args, directory, lang, actor)
     if name == "recover_connectivity":
-        return await _exec_recover_connectivity(lang)
+        return await _exec_recover_connectivity(lang, actor)
     if name == "diagnose_device":
         return await _exec_diagnose_device(args, directory, lang)
     if name == "acknowledge_alerts":

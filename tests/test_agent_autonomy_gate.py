@@ -76,3 +76,69 @@ def test_delegation_cannot_exceed_the_person(svc):
     # person:nobody has no grants → agent acting for them is denied.
     v = authz.gate("system.read_health", on_behalf_of="person:nobody")
     assert v.may_act is False
+
+
+# ── check(): the fail-open wrapper the tools actually call ───────────────────
+#
+# The tools must never REGRESS an action that auto-runs today. A home whose PDP
+# was never bootstrapped (agent principal unseeded / no home space) has no
+# policy to enforce — so the gate steps out of the way instead of blocking.
+
+
+def test_check_allows_a_seeded_safe_action(svc):
+    may_act, mode = authz.check("system.refresh_device")
+    assert may_act is True and mode == "act"
+
+
+def test_check_fails_open_when_the_agent_principal_is_unseeded(tmp_path):
+    bare = PermissionService(store=PolicyStore(str(tmp_path / "bare.db")))
+    bare.add_space(HOME_ID, "home", actor="test")   # home exists, agent never seeded
+    runtime.set_service(bare)
+    try:
+        may_act, mode = authz.check("system.reload_coordinator")
+        assert may_act is True, "an unbootstrapped PDP must not block today's auto-fix"
+        assert mode == "open"
+    finally:
+        runtime.set_service(None)
+
+
+def test_check_fails_open_when_the_home_space_is_missing(tmp_path):
+    bare = PermissionService(store=PolicyStore(str(tmp_path / "nohome.db")))
+    authz.seed_agent_principal(bare)                # agent seeded, but no space:home
+    runtime.set_service(bare)
+    try:
+        may_act, mode = authz.check("system.refresh_device")
+        assert may_act is True and mode == "open"
+    finally:
+        runtime.set_service(None)
+
+
+def test_check_fails_open_when_the_pdp_blows_up(svc, monkeypatch):
+    def boom():
+        raise RuntimeError("policy store unavailable")
+    monkeypatch.setattr("services.permissions.runtime.get_service", boom)
+    may_act, mode = authz.check("system.refresh_device")
+    assert may_act is True and mode == "open"
+
+
+def test_check_blocks_when_autonomy_is_dialled_down(svc):
+    # Operator drops the agent to 'ask' for safe fixes → it must stop acting alone.
+    svc.add_principal(authz.AGENT_REF,
+                      attrs={"autonomy": {"diagnostics": "ask"}, "default_autonomy": "ask"},
+                      actor="test")
+    may_act, mode = authz.check("system.refresh_device")
+    assert may_act is False and mode == "ask"
+
+
+def test_check_clamps_to_a_limited_person(svc):
+    # A person the PDP KNOWS but who may not do this → the agent can't do it for them.
+    svc.add_principal("person:kid", attrs={}, actor="test")
+    may_act, mode = authz.check("system.refresh_device", on_behalf_of="person:kid")
+    assert may_act is False and mode == "deny"
+
+
+def test_check_ignores_an_unknown_person(svc):
+    # An actor the PDP has no record of carries no restriction to intersect with —
+    # clamping there would break the fixer for every un-mirrored user.
+    may_act, mode = authz.check("system.refresh_device", on_behalf_of="person:ghost")
+    assert may_act is True and mode == "act"

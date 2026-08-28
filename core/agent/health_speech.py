@@ -138,6 +138,34 @@ def describe_recovery(outcome: str, lang: str = "en") -> str:
     return he if lang == "he" else en
 
 
+# A fix the agent may offer but not take on its own (this home's autonomy
+# setting says ask first). Stated as a plain hold-off, NOT as "should I?" — a
+# yes typed in chat isn't an approval channel yet, so promising to act on one
+# would be a dead end. Gender-free by construction.
+_APPROVAL_LINES: dict[str, tuple[str, str]] = {
+    "refresh_device": (
+        "ההגדרות בבית לא נותנות לי לטפל ב{label} לבד, אז לא נגעתי.",
+        "This home's settings don't let me touch the {label} on my own, so I've left it alone.",
+    ),
+    "recover_connectivity": (
+        "ההגדרות בבית לא נותנות לי לחבר מחדש את המכשירים לבד, אז לא עשיתי את זה.",
+        "This home's settings don't let me reconnect your devices on my own, so I haven't.",
+    ),
+}
+
+_APPROVAL_FALLBACK = (
+    "ההגדרות בבית לא נותנות לי לעשות את זה לבד, אז לא נגעתי.",
+    "This home's settings don't let me do that on my own, so I've left it alone.",
+)
+
+
+def describe_needs_approval(fix: str, lang: str = "en", device_label: str = "") -> str:
+    """Say — warmly, without jargon — that a fix is out of the agent's own hands."""
+    he, en = _APPROVAL_LINES.get(fix, _APPROVAL_FALLBACK)
+    line = he if lang == "he" else en
+    return line.format(label=device_label)
+
+
 def describe_ack(count: int, lang: str = "en") -> str:
     """Confirm the user's 'these are fine, stop flagging them'."""
     if lang == "he":

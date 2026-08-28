@@ -15,7 +15,8 @@ authority (delegation intersection).
 """
 from __future__ import annotations
 
-from services.permissions.reconcile import HOME_SCOPE
+from core.logger_module import log_info, log_error
+from services.permissions.reconcile import HOME_ID, HOME_SCOPE
 
 AGENT_REF = "agent:ziggy"
 
@@ -91,3 +92,34 @@ def gate(action: str, resource: str = HOME_SCOPE, *,
         get_service(), agent=AGENT_REF, action=action, resource=resource,
         on_behalf_of=on_behalf_of, explicit_confirm=explicit_confirm, context=context,
     )
+
+
+def check(action: str, resource: str = HOME_SCOPE, *,
+          on_behalf_of: str | None = None, explicit_confirm: bool = False,
+          context=None) -> tuple[bool, str]:
+    """``gate()`` for call sites that must not regress — returns (may_act, mode).
+
+    FAILS OPEN (``True, "open"``) when there is no policy to enforce: the PDP
+    isn't bootstrapped (no agent principal / no home space) or it errored. These
+    remediations already run unattended today, so an absent policy engine must
+    never take away a fix the user has always had.
+
+    An ``on_behalf_of`` the PDP has never heard of carries no authority to
+    intersect with, so it is dropped rather than treated as "denied" — otherwise
+    a user who simply hasn't been mirrored into the store would lose the fixer.
+    A person the PDP *does* know still clamps the agent (delegation).
+    """
+    try:
+        from services.permissions.runtime import get_service
+        state = get_service().state()
+        if AGENT_REF not in state.principals or HOME_ID not in state.spaces:
+            return True, "open"
+        if on_behalf_of and on_behalf_of not in state.principals:
+            log_info(f"[agent.authz] unknown delegator {on_behalf_of} — envelope only")
+            on_behalf_of = None
+        verdict = gate(action, resource, on_behalf_of=on_behalf_of,
+                       explicit_confirm=explicit_confirm, context=context)
+        return bool(verdict.may_act), verdict.mode
+    except Exception as e:
+        log_error(f"[agent.authz] gate unavailable for {action}, failing open: {e}")
+        return True, "open"

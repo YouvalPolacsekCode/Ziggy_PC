@@ -130,6 +130,187 @@ async def test_recover_connectivity_failure_translates_replug_not_raw_jargon(mon
     _assert_clean(json.dumps(res, ensure_ascii=False))
 
 
+# ── the PDP gate: state-changing fixes ask the policy engine first ──────────
+#
+# The gate lives BELOW the model: a hijacked prompt can still call the tool, but
+# the tool won't act unless policy says it may.
+
+
+@pytest.fixture
+def gate_calls(monkeypatch):
+    """Record every authz.check() the tools make; allow by default."""
+    from core.agent import authz
+    calls = []
+
+    def fake_check(action, resource=None, *, on_behalf_of=None,
+                   explicit_confirm=False, context=None):
+        calls.append({"action": action, "on_behalf_of": on_behalf_of})
+        return calls_allow[0], calls_mode[0]
+
+    calls_allow = [True]
+    calls_mode = ["act"]
+    monkeypatch.setattr(authz, "check", fake_check)
+    return {"calls": calls, "allow": calls_allow, "mode": calls_mode}
+
+
+@pytest.mark.asyncio
+async def test_refresh_device_asks_the_gate_for_the_refresh_capability(monkeypatch, gate_calls):
+    from services import self_heal
+
+    async def fake_heal(eid):
+        return {"ok": True, "outcome": "recovered", "state": "on"}
+    monkeypatch.setattr(self_heal, "manual_refresh_heal", fake_heal)
+
+    res = await T.execute_tool("refresh_device", {"entity_id": "light.living_room"},
+                               directory=_directory_with_lamp(), lang="en",
+                               actor="person:youval")
+
+    assert res["data"]["fixed"] is True, "an allowed fix must still run"
+    assert gate_calls["calls"] == [
+        {"action": "system.refresh_device", "on_behalf_of": "person:youval"}]
+
+
+@pytest.mark.asyncio
+async def test_refresh_device_does_not_act_when_policy_says_no(monkeypatch, gate_calls):
+    from services import self_heal
+    healed = []
+
+    async def fake_heal(eid):
+        healed.append(eid)
+        return {"ok": True, "outcome": "recovered", "state": "on"}
+    monkeypatch.setattr(self_heal, "manual_refresh_heal", fake_heal)
+    gate_calls["allow"][0], gate_calls["mode"][0] = False, "ask"
+
+    res = await T.execute_tool("refresh_device", {"entity_id": "light.living_room"},
+                               directory=_directory_with_lamp(), lang="en")
+
+    assert healed == [], "must not touch the device without permission"
+    assert res["data"]["kind"] == "needs_approval"
+    assert res["message"].strip(), "must tell the user it needs their OK"
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_blocked_refresh_speaks_hebrew_without_jargon(monkeypatch, gate_calls):
+    gate_calls["allow"][0], gate_calls["mode"][0] = False, "ask"
+    res = await T.execute_tool("refresh_device", {"entity_id": "light.living_room"},
+                               directory=_directory_with_lamp(), lang="he")
+    assert res["data"]["kind"] == "needs_approval"
+    assert any("א" <= c <= "ת" for c in res["message"]), "Hebrew turn → Hebrew answer"
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_recover_connectivity_asks_the_gate_for_the_reconnect_capability(
+        monkeypatch, gate_calls):
+    from services import ha_health as HH
+
+    async def fake_recover():
+        return {"ok": True, "already_healthy": True}
+    monkeypatch.setattr(HH, "trigger_recover_now", fake_recover)
+
+    res = await T.execute_tool("recover_connectivity", {}, directory={}, lang="en",
+                               actor="person:youval")
+
+    assert res["data"]["outcome"] == "healthy"
+    assert gate_calls["calls"] == [
+        {"action": "system.reload_coordinator", "on_behalf_of": "person:youval"}]
+
+
+@pytest.mark.asyncio
+async def test_recover_connectivity_does_not_act_when_policy_says_no(monkeypatch, gate_calls):
+    from services import ha_health as HH
+    tried = []
+
+    async def fake_recover():
+        tried.append(1)
+        return {"ok": True}
+    monkeypatch.setattr(HH, "trigger_recover_now", fake_recover)
+    gate_calls["allow"][0], gate_calls["mode"][0] = False, "ask"
+
+    res = await T.execute_tool("recover_connectivity", {}, directory={}, lang="he")
+
+    assert tried == [], "must not reconnect without permission"
+    assert res["data"]["kind"] == "needs_approval"
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_read_only_tools_are_not_gated(monkeypatch, gate_calls):
+    """Diagnosis must never need permission — it's the thing that explains the home."""
+    from services import down_device_detector as dd
+    monkeypatch.setattr(dd, "find_down_devices", lambda stale_hours=48.0: [])
+
+    await T.execute_tool("diagnose_device", {"entity_id": "light.living_room"},
+                         directory=_directory_with_lamp(), lang="en")
+    await T.execute_tool("list_down_devices", {}, directory={}, lang="en")
+
+    assert gate_calls["calls"] == []
+
+
+# ── who the agent is acting for must survive the whole chat path ────────────
+#
+# Without this the delegation clamp is dead code: the PDP would only ever see
+# the agent's own envelope, never the human's.
+
+
+@pytest.mark.asyncio
+async def test_runner_hands_the_chat_user_down_to_the_tools(monkeypatch):
+    from core.agent import runner
+
+    class _Fn:
+        name = "check_home_health"
+        arguments = "{}"
+
+    class _Call:
+        id = "call_1"
+        function = _Fn()
+
+    class _Msg:
+        content = ""
+        tool_calls = [_Call()]
+
+    class _Resp:
+        choices = [type("C", (), {"message": _Msg()})()]
+
+    replies = [_Resp(), type("R2", (), {"choices": [
+        type("C", (), {"message": type("M", (), {"content": "all good", "tool_calls": []})()})()]})()]
+    monkeypatch.setattr(runner, "chat_completion", lambda *a, **k: replies.pop(0))
+    monkeypatch.setattr(runner, "require_cloud_llm_active", lambda: None)
+
+    async def fake_dir():
+        return {"devices": [], "presence": [], "by_room": {}}
+    monkeypatch.setattr(runner._dir, "build_directory", fake_dir)
+
+    seen = {}
+
+    async def fake_exec(name, args, directory, lang="en", actor=None):
+        seen["actor"] = actor
+        return {"ok": True, "message": "fine"}
+    monkeypatch.setattr(runner._tools, "execute_tool", fake_exec)
+
+    await runner.run_agent("is everything ok?", None, actor="person:youval")
+
+    assert seen["actor"] == "person:youval"
+
+
+@pytest.mark.asyncio
+async def test_chat_route_hands_the_authenticated_caller_to_the_agent(monkeypatch):
+    from backend.routers import intent_router as ir
+    from core.agent import runner
+
+    seen = {}
+
+    async def fake_run_agent(text, history, *, channel="chat", actor=None):
+        seen["actor"] = actor
+        return {"ok": True, "message": "done"}
+    monkeypatch.setattr(runner, "run_agent", fake_run_agent)
+
+    await ir._compute_reply("fix the light", None, "web", "v2", "person:youval", "req1")
+
+    assert seen["actor"] == "person:youval"
+
+
 # ── diagnose_device (read-only fact-gathering for the agent to reason on) ────
 @pytest.mark.asyncio
 async def test_diagnose_device_reports_mismatch_clean(monkeypatch):

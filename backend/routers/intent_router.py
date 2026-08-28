@@ -249,7 +249,7 @@ async def _compute_reply(text, chat_history, source, engine, actor, request_id) 
             run_agent = None
         if run_agent is not None:
             channel = "voice" if "voice" in (source or "") else "chat"
-            result = await run_agent(text, chat_history, channel=channel)
+            result = await run_agent(text, chat_history, channel=channel, actor=actor)
             return {"reply": result.get("message", ""), "ok": result.get("ok", True),
                     "data": result.get("data", {}), "intent": None}
 

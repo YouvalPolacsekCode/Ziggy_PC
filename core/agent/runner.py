@@ -160,7 +160,11 @@ def _slim_result(result: dict) -> dict:
 
 
 async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
-                    *, channel: str = "chat") -> dict:
+                    *, channel: str = "chat", actor: Optional[str] = None) -> dict:
+    """One agent turn. ``actor`` is the authenticated caller's principal ref
+    ("person:<username>") — passed to the tools so a remediation is authorized
+    against the human it's being done for, never above them. None (voice/kiosk
+    with no identity) means the agent's own envelope applies."""
     text = (text or "").strip()
     if not text:
         return ok("")
@@ -218,7 +222,8 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                 if key in result_cache:
                     result = result_cache[key]
                 else:
-                    result = await _tools.execute_tool(name, args, directory, lang=lang)
+                    result = await _tools.execute_tool(name, args, directory,
+                                                       lang=lang, actor=actor)
                     result_cache[key] = result
                 iter_results.append((name, result))
                 messages.append({
