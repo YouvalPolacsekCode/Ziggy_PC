@@ -9,6 +9,17 @@ STATUS_ICON = {
 }
 
 
+def _listing(items, limit, fmt="`{}`"):
+    """Render up to `limit` items, with an explicit marker when more exist.
+
+    Items are pre-formatted (e.g. the `via` composition strings) when `fmt`
+    is passed as "{}"; otherwise each item is wrapped with `fmt`.
+    """
+    shown = ", ".join(fmt.format(i) for i in items[:limit])
+    extra = len(items) - limit
+    return f"{shown} …and {extra} more" if extra > 0 else shown
+
+
 def _capability_block(cap, lines):
     icon = STATUS_ICON.get(cap["status"], "")
     lines.append(f"### {icon} {cap['name']}  `{cap['id']}`")
@@ -19,19 +30,29 @@ def _capability_block(cap, lines):
     lines.append("")
     lines.append(f"- **Status:** `{cap['status']}` — {cap['status_evidence']}")
     lines.append(f"- **Layer:** {cap['layer']} · **Audience:** {cap['audience']}")
+    first_shipped = cap.get("first_shipped")
+    commit = cap.get("commit")
+    if first_shipped or commit:
+        if first_shipped and commit:
+            shipped = f"{first_shipped} (`{commit}`)"
+        elif first_shipped:
+            shipped = first_shipped
+        else:
+            shipped = f"`{commit}`"
+        lines.append(f"- **Shipped:** {shipped}")
     if cap.get("uses"):
         lines.append("- **Built from:** " + ", ".join(f"`{m}`" for m in cap["uses"]))
     if cap.get("composes_with"):
         parts = [
             f"`{link['id']}` (via {', '.join(link['via'])})"
-            for link in cap["composes_with"][:6]
+            for link in cap["composes_with"]
         ]
-        lines.append("- **Composes with:** " + ", ".join(parts))
+        lines.append("- **Composes with:** " + _listing(parts, 6, fmt="{}"))
     if cap.get("entry_points"):
         lines.append("- **Entry points:** " + ", ".join(f"`{e}`" for e in cap["entry_points"]))
-    lines.append("- **Surfaces:** " + ", ".join(f"`{s}`" for s in cap["surfaces"][:8]))
+    lines.append("- **Surfaces:** " + _listing(cap["surfaces"], 8))
     if cap.get("tests"):
-        lines.append("- **Tests:** " + ", ".join(f"`{t}`" for t in cap["tests"][:5]))
+        lines.append("- **Tests:** " + _listing(cap["tests"], 5))
     if cap.get("known_gaps"):
         lines.append("- **Known gaps:** " + "; ".join(cap["known_gaps"]))
     lines.append("")
@@ -41,10 +62,15 @@ def _value_stories_section(stories, lines):
     lines.append("## Value Stories")
     lines.append("")
     for story in stories:
-        lines.append(f"### {story['title']}")
+        title = story.get("title")
+        if not title:
+            continue
+        lines.append(f"### {title}")
         lines.append("")
-        lines.append(story["blurb"])
-        lines.append("")
+        blurb = story.get("blurb")
+        if blurb:
+            lines.append(blurb)
+            lines.append("")
         for cap_id in story.get("capability_ids", []):
             lines.append(f"- `{cap_id}`")
         lines.append("")
@@ -100,7 +126,7 @@ def render(catalog):
             lines.append("- **Used by:** " + (", ".join(f"`{c}`" for c in m["used_by"]) or "_nothing_"))
             if m.get("health"):
                 lines.append(f"- **Health:** ⚠️ {m['health']}")
-            lines.append("- **Surfaces:** " + ", ".join(f"`{s}`" for s in m["surfaces"][:6]))
+            lines.append("- **Surfaces:** " + _listing(m["surfaces"], 6))
             lines.append("")
 
     warnings = catalog.get("warnings", {})

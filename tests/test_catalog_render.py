@@ -60,13 +60,22 @@ def test_render_shows_status_and_evidence():
 def test_render_has_a_mechanism_section_with_used_by():
     md = rm.render(build_catalog())
     assert "## Mechanisms" in md
-    assert "Presence Zones" in md
-    assert "leave-home" in md and "precool-on-arrival" in md
+    mechanisms_section = md.split("## Mechanisms")[1]
+    assert "Presence Zones" in mechanisms_section
+    used_by_line = next(
+        line for line in mechanisms_section.splitlines() if "Used by" in line
+    )
+    assert "leave-home" in used_by_line and "precool-on-arrival" in used_by_line
 
 
 def test_render_surfaces_composition():
     md = rm.render(build_catalog())
-    assert "presence-zones" in md
+    precool_block = md.split("### 🟢 Pre-cool on Arrival")[1].split("### ")[0]
+    composes_line = next(
+        line for line in precool_block.splitlines() if "Composes with" in line
+    )
+    assert "presence-zones" in composes_line
+    assert "leave-home" in composes_line
 
 
 def test_render_includes_health_note():
@@ -96,3 +105,29 @@ def test_render_includes_value_stories_when_present():
 def test_render_omits_value_stories_when_absent():
     md = rm.render(build_catalog())
     assert "## Value Stories" not in md
+
+
+def test_render_marks_truncated_surfaces():
+    catalog = build_catalog()
+    catalog["capabilities"][0]["surfaces"] = [f"file{n}.py" for n in range(12)]
+    md = rm.render(catalog)
+    assert "…and 4 more" in md
+
+
+def test_render_does_not_mark_untruncated_lists():
+    md = rm.render(build_catalog())
+    assert "…and" not in md
+
+
+def test_render_includes_provenance_when_present():
+    catalog = build_catalog()
+    catalog["capabilities"][0]["first_shipped"] = "2026-07"
+    catalog["capabilities"][0]["commit"] = "286341c"
+    md = rm.render(catalog)
+    assert "2026-07" in md
+    assert "286341c" in md
+
+
+def test_render_omits_provenance_when_absent():
+    md = rm.render(build_catalog())
+    assert "**Shipped:**" not in md
