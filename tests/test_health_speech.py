@@ -92,3 +92,30 @@ def test_down_devices_names_them_and_stays_clean(lang):
     out = hs.describe_down_devices(items, lang=lang)
     assert "Entry Light" in out and "Outdoor Watering" in out
     _assert_jargon_free(out)
+
+
+def test_describe_cause_none_is_graceful():
+    out = hs.describe_cause(None, "המנורה בסלון", lang="he")
+    assert out.strip()
+    _assert_jargon_free(out)
+
+
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_describe_cause_automation_names_the_routine(lang):
+    r = {"cause_kind": "automation", "cause_name": "Good Night",
+         "state": "off", "when": "2026-08-28T23:00:00+00:00"}
+    label = "המנורה בסלון" if lang == "he" else "living room lamp"
+    out = hs.describe_cause(r, label, lang=lang)
+    assert "Good Night" in out and label in out
+    _assert_jargon_free(out)
+
+
+@pytest.mark.parametrize("kind", ["person", "device", "unknown"])
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_describe_cause_other_kinds_stay_clean(kind, lang):
+    r = {"cause_kind": kind, "cause_name": "Hall Motion" if kind == "device" else None,
+         "state": "on", "when": None}
+    label = "המנורה בסלון" if lang == "he" else "living room lamp"
+    out = hs.describe_cause(r, label, lang=lang)
+    assert out.strip() and label in out
+    _assert_jargon_free(out)

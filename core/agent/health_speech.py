@@ -7,7 +7,19 @@ those are engine internals the user must never see (feedback_ziggy_product_surfa
 """
 from __future__ import annotations
 
+import datetime
+
 from services import ha_health as _H
+
+
+def _hhmm(when: str | None) -> str | None:
+    if not when:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(when).replace("Z", "+00:00"))
+        return dt.astimezone().strftime("%H:%M")
+    except Exception:
+        return None
 
 
 # primary issue code → (Hebrew, English). Warm, dugri, gender-free; no engine
@@ -147,6 +159,41 @@ def describe_down_devices(items: list[dict], lang: str = "en") -> str:
     what = "one device that's been quiet" if n == 1 else f"{n} devices that have been quiet"
     return (f"I found {what} for a while: {names}. Worth switching them off and on at "
             f"the wall — I'll check if they come back.")
+
+
+def describe_cause(result: dict | None, device_label: str, lang: str = "en") -> str:
+    """Explain what caused a device to change — naming the routine/person/device.
+
+    Hebrew keeps the device as the OBJECT of the action (e.g. 'X כיבתה את המנורה')
+    so we never have to guess the device's grammatical gender.
+    """
+    if not result:
+        return ("לא מצאתי שינוי כזה לאחרונה." if lang == "he"
+                else "I couldn't find a recent change like that.")
+    state = str(result.get("state") or "").lower()
+    kind = result.get("cause_kind")
+    name = result.get("cause_name")
+    t = _hhmm(result.get("when"))
+    if lang == "he":
+        at = f" ב-{t}" if t else ""
+        did = "כיבתה" if state == "off" else ("הדליקה" if state == "on" else "שינתה")
+        did_m = "כיבה" if state == "off" else ("הדליק" if state == "on" else "שינה")
+        if kind == "automation" and name:
+            return f'מצאתי — השגרה "{name}" {did} את {device_label}{at}.'
+        if kind == "person":
+            return f"מישהו {did_m} את {device_label} מהאפליקציה{at}."
+        if kind == "device" and name:
+            return f"משהו {did_m} את {device_label}{at} — בעקבות {name}."
+        return f"לא הצלחתי לזהות מה {did_m} את {device_label}{at}."
+    at = f" at {t}" if t else ""
+    verb = "turned off" if state == "off" else ("turned on" if state == "on" else "changed")
+    if kind == "automation" and name:
+        return f'Found it — the routine "{name}" {verb} {device_label}{at}.'
+    if kind == "person":
+        return f"{device_label} was {verb}{at} by someone from the app."
+    if kind == "device" and name:
+        return f"{device_label} was {verb}{at}, triggered by {name}."
+    return f"{device_label} {verb}{at}, but I couldn't tell what caused it."
 
 
 def describe_diagnosis(device_label: str, is_on: bool, last_intended: str | None,

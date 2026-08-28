@@ -185,3 +185,28 @@ async def test_list_down_devices_none_is_reassuring(monkeypatch):
     res = await T.execute_tool("list_down_devices", {}, directory={}, lang="he")
     assert res["ok"] is True and res["data"]["count"] == 0
     _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+# ── explain_device_change (causal trace — 'what turned my light off?') ───────
+@pytest.mark.asyncio
+async def test_explain_device_change_names_the_automation(monkeypatch):
+    from services import cause_tracer
+    monkeypatch.setattr(cause_tracer, "fetch_logbook", lambda eid, hours=48: [
+        {"entity_id": "light.living_room", "state": "off",
+         "when": "2026-08-28T23:00:00+00:00",
+         "context_domain": "automation", "context_name": "Good Night"}])
+    res = await T.execute_tool("explain_device_change",
+                               {"entity_id": "light.living_room", "action": "off"},
+                               directory=_directory_with_lamp(), lang="he")
+    assert res["ok"] is True
+    assert "Good Night" in res["message"]
+    assert res["data"]["cause_kind"] == "automation"
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_explain_device_change_unknown_device_is_gentle(monkeypatch):
+    res = await T.execute_tool("explain_device_change", {"entity_id": "light.nope"},
+                               directory=_directory_with_lamp(), lang="en")
+    assert res["ok"] is False and res.get("no_such_device") is True
+    _assert_clean(json.dumps(res, ensure_ascii=False))

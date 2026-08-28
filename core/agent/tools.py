@@ -266,6 +266,20 @@ TOOL_SCHEMAS: list[dict] = [
         ),
         "parameters": {"type": "object", "properties": {}},
     }},
+    {"type": "function", "function": {
+        "name": "explain_device_change",
+        "description": (
+            "Explain WHY a device changed on its own — 'why did the living-room light "
+            "turn off last night?', 'what turned on the AC?'. Traces which automation/"
+            "routine, person, or device caused it. Pass the exact entity_id; optionally "
+            "action ('on'/'off') and how many hours back to look. Read-only."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string", "description": "Exact device id from the directory."},
+            "action": {"type": "string", "description": "on or off (optional — which change to explain)."},
+            "hours": {"type": "integer", "description": "How many hours back to look (default 48)."},
+        }, "required": ["entity_id"]},
+    }},
 ]
 
 # Tool names that produce a natural action-confirmation and, when they succeed
@@ -514,6 +528,30 @@ async def _exec_diagnose_device(args: dict, directory: dict, lang: str) -> dict:
     }
 
 
+async def _exec_explain_device_change(args: dict, directory: dict, lang: str) -> dict:
+    """Read-only causal trace: what turned this device on/off? Names only, no ids."""
+    from services import cause_tracer
+    from core.agent import health_speech
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    action = (args.get("action") or "").strip().lower() or None
+    try:
+        hours = int(args.get("hours") or 48)
+    except (TypeError, ValueError):
+        hours = 48
+    entries = cause_tracer.fetch_logbook(eid, hours=hours)
+    res = cause_tracer.explain_change(entries, eid, action=action)
+    return {
+        "ok": True,
+        "message": health_speech.describe_cause(res, _device_label(dev, lang), lang),
+        "data": {"kind": "cause_trace",
+                 "cause_kind": (res or {}).get("cause_kind", "unknown"),
+                 "cause_name": (res or {}).get("cause_name")},
+    }
+
+
 async def _exec_list_down_devices(lang: str) -> dict:
     """Proactive scan: which devices have gone quiet? Names only — never ids."""
     from services import down_device_detector as dd
@@ -578,6 +616,8 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en")
         return await _exec_acknowledge_alerts(lang)
     if name == "list_down_devices":
         return await _exec_list_down_devices(lang)
+    if name == "explain_device_change":
+        return await _exec_explain_device_change(args, directory, lang)
     if name in _PASSTHROUGH:
         return await _exec_passthrough(name, args)
     return {"ok": False, "message": f"unknown tool {name}"}
