@@ -38,6 +38,8 @@ HARD RULES — violating any of these invalidates your output:
 - Do NOT SSH anywhere, call the relay, or run scripts/fleet-health.py. Static reading only.
 - status_evidence MUST cite a concrete file path, flag name, or commit SHA. A claim with no
   citation is a failure. If you cannot prove it, use status "orphaned" and say why.
+- When you return the summary object, set "path" to the exact file you just wrote (the
+  code.json / history.json / reconciled.json / verified.json path given to you above).
 - ${rules}
 
 RECORD SCHEMAS (emit exactly these shapes):
@@ -60,6 +62,25 @@ Set your working directory there before reading files or running git/grep — do
 /Users/YouvalPolacsek/ziggy_pc if this territory's root is different.`
 }
 
+// The universal "live-prod" rule (backend/server.py reachability + presence in the newest
+// release-* tag) does not exist for mobile-native — that repo has neither a backend/server.py
+// nor release-* tags. This carve-out is gated by t.roots the same way rootNote/testsNote are,
+// so it can render in ONLY the mobile-native verifier prompt, never in the other 17 — a
+// verifier wrongly reasoning "app-shell entrypoint" about a ziggy_pc capability (e.g.
+// mobile-and-push, which is real ziggy_pc code) would be exactly the false live-prod this
+// verify stage exists to catch.
+function mobileLiveProdNote(t) {
+  const roots = t.roots && t.roots.length ? t.roots : ['ziggy_pc']
+  if (!roots.includes('ziggy_mobile')) return ''
+  return `
+  (This territory has no backend/server.py and no release-* tag — the mobile-native variant of
+  "live-prod" applies instead: shipped in a built app artifact reachable from the Capacitor app
+  shell's own entrypoints, e.g. wired into MainActivity/AppDelegate or the JS bundle's app root,
+  not merely present in the source tree. Say so explicitly in status_evidence when you apply
+  this variant. This variant applies ONLY to this territory — every other territory uses the
+  backend/server.py + release-* rule above, unmodified.)`
+}
+
 // Only ziggy_pc has the shared tests/ directory (150 files, ~2215 tests) that
 // is deliberately excluded from every territory's file list. Territories
 // rooted elsewhere get a generic version of the same instruction.
@@ -75,9 +96,13 @@ paths, ideally down to the test function, e.g. "tests/test_anomaly_engine.py::Te
 "tests" empty for a capability you genuinely found no coverage for — do not guess or pad it.`
   }
   return `
-Also locate covering tests for each capability: search for a tests/ directory under your
-territory root (if one exists) and record matches in the "tests" field as paths relative to
-that root. Leave "tests" empty rather than guessing.`
+Also locate covering tests for each capability. Search for a tests/ directory under your
+territory root (if one exists), AND search /Users/YouvalPolacsek/ziggy_pc/tests/ (150 test
+files, ~2215 tests total) — capabilities in this territory can plausibly be covered from the
+main ziggy_pc repo (e.g. a native plugin or OTA behaviour exercised by a ziggy_pc integration
+test) even though the territory's own root has no such tree. Record matches in the "tests"
+field as paths relative to whichever root they live under, prefixed so it's unambiguous, e.g.
+"ziggy_pc/tests/test_mobile_push.py::test_x". Leave "tests" empty rather than guessing.`
 }
 
 const names = Object.keys(territories)
@@ -130,11 +155,12 @@ Do NOT start from the code. Start from the record of what was built:
 - git log for these paths (run it with your working directory at the root above). Useful:
   git log --oneline --no-merges -- <path> ...
   Ziggy's commit messages are unusually narrative and often name the feature and the bug.
-- docs/ — runbooks, audits, handoffs, design specs relevant to this territory.
+- docs/ (under the ziggy_pc root) — runbooks, audits, handoffs, design specs relevant to
+  this territory.
 - /Users/YouvalPolacsek/.claude/projects/-Users-YouvalPolacsek-ziggy-pc/memory/*.md —
   92 memory files, many of which are feature journals with status notes.
-- frontend/src/lib/i18n/en.js — the user-facing vocabulary; strings name features
-  that the code does not.
+- frontend/src/lib/i18n/en.js (under the ziggy_pc root) — the user-facing vocabulary;
+  strings name features that the code does not.
 
 Your unique value is finding capabilities that the code alone will NOT show: things built
 then unwired, things shipped then superseded, things whose only trace is a commit and a
@@ -192,10 +218,7 @@ For EVERY capability, prove or correct its "status" by reading the actual wiring
 - "live-prod" requires a call path reachable from backend/server.py (its startup hook) or
   from a services/ziggy_scheduler.py tick, AND presence in the newest release-* tag.
   Check with: git tag --list 'release-*' --sort=-creatordate | head -1
-  (For the mobile-native territory there is no backend/server.py or release-* tag — "live-prod"
-  there means shipped in a built app artifact reachable from the Capacitor app shell's own
-  entrypoints, e.g. wired into MainActivity/AppDelegate or the JS bundle's app root, not merely
-  present in the source tree. Say so explicitly in status_evidence when you apply this variant.)
+${mobileLiveProdNote(t)}
 - CRITICAL: core/ziggy_main.py is NOT the production entrypoint. The container runs
   uvicorn backend.server:app. Anything started ONLY in ziggy_main.py is "orphaned",
   no matter how complete it looks. Four features were already found dead this exact way.
