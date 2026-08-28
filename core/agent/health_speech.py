@@ -212,11 +212,17 @@ def describe_pairing(assessment: dict, lang: str = "en") -> str:
         prefix = _RADIO_DOWN_PREFIX[0] if lang == "he" else _RADIO_DOWN_PREFIX[1]
         return prefix + describe_manual_action(_H.MANUAL_REPLUG_DONGLE, lang)
     he, en = _PAIRING_LINES.get(verdict, _PAIRING_LINES["ready"])
-    line = he if lang == "he" else en
-    return line.format(
+    pending = ", ".join(str(n) for n in (a.get("pending_names") or []))
+    line = (he if lang == "he" else en).format(
         stalled=", ".join(str(n) for n in (a.get("stalled_names") or [])),
-        pending=", ".join(str(n) for n in (a.get("pending_names") or [])),
+        pending=pending,
     )
+    # Something already discovered is worth knowing even when it isn't the
+    # answer — as an aside, never as the headline.
+    if pending and verdict not in ("awaiting_setup", "radio_down"):
+        line += (f" דרך אגב, {pending} כבר מחכה שיסיימו להוסיף אותו." if lang == "he"
+                 else f" By the way, {pending} is already waiting to be finished.")
+    return line
 
 
 def describe_ack(count: int, lang: str = "en") -> str:

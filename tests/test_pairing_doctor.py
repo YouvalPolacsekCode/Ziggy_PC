@@ -148,7 +148,7 @@ def test_a_stalled_device_is_named():
 
 
 def test_a_device_waiting_to_be_added_is_surfaced():
-    a = P.assess_pairing(coordinator_state="loaded", pairing_open=False,
+    a = P.assess_pairing(coordinator_state="loaded", pairing_open=True,
                          stalled=[], pending=[{"title": "Living Room TV"}])
     assert a["verdict"] == "awaiting_setup"
     assert a["pending_names"] == ["Living Room TV"]
@@ -158,6 +158,23 @@ def test_a_closed_window_is_the_answer_when_nothing_else_is_wrong():
     a = P.assess_pairing(coordinator_state="loaded", pairing_open=False,
                          stalled=[], pending=[])
     assert a["verdict"] == "pairing_closed"
+
+
+def test_the_shut_window_outranks_an_idle_discovery():
+    """Live on the Canary a months-old discovery ("智能遥控") was answering the
+    question, while the one actionable fact — the home is shut to new devices —
+    went unsaid. The step the user can take wins; the discovery rides along."""
+    a = P.assess_pairing(coordinator_state="loaded", pairing_open=False,
+                         stalled=[], pending=[{"title": "智能遥控"}])
+    assert a["verdict"] == "pairing_closed"
+    assert a["pending_names"] == ["智能遥控"], "still worth mentioning, just not first"
+
+
+def test_a_discovery_leads_when_the_home_is_open_or_cannot_say():
+    for window in (True, None):
+        a = P.assess_pairing(coordinator_state="loaded", pairing_open=window,
+                             stalled=[], pending=[{"title": "Living Room TV"}])
+        assert a["verdict"] == "awaiting_setup"
 
 
 def test_everything_ready_means_the_device_itself_is_the_problem():

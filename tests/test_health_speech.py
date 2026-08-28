@@ -153,3 +153,12 @@ def test_a_wedged_radio_gets_the_physical_step_not_a_shrug():
     out = hs.describe_pairing(a, lang="en")
     assert "plug" in out.lower(), "a wedged radio needs the replug step"
     _assert_jargon_free(out)
+
+
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_a_shut_window_still_mentions_what_is_waiting(lang):
+    a = {"verdict": "pairing_closed", "radio_ok": True, "pairing_open": False,
+         "stalled_names": [], "pending_names": ["Living Room TV"]}
+    out = hs.describe_pairing(a, lang=lang)
+    assert "Living Room TV" in out, "the discovery is a useful aside, not a secret"
+    _assert_jargon_free(out)

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no ziggy@10.100.102.28 \"docker exec ziggy-ziggy-1 test -f /app/services/pairing_doctor.py\")",
-      "Bash(ssh -o ConnectTimeout=10 ziggy@10.100.102.28 \"cd /opt/ziggy && sudo git log --oneline -1 | cut -c1-8; docker exec ziggy-ziggy-1 sh -c 'grep -c title_thread /app/services/chat_runner.py; grep -c \\\\\"^def check\\\\\" /app/core/agent/authz.py; grep -c diagnose_pairing /app/core/agent/tools.py'; docker ps --filter name=ziggy-ziggy-1 --format '{{.Status}}'\")"
+      "Bash(ssh -o ConnectTimeout=10 ziggy@10.100.102.28 \"cd /opt/ziggy && sudo git log --oneline -1 | cut -c1-8; docker exec ziggy-ziggy-1 sh -c 'grep -c title_thread /app/services/chat_runner.py; grep -c \\\\\"^def check\\\\\" /app/core/agent/authz.py; grep -c diagnose_pairing /app/core/agent/tools.py'; docker ps --filter name=ziggy-ziggy-1 --format '{{.Status}}'\")",
+      "Bash(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no ziggy@10.100.102.28 \"docker exec ziggy-ziggy-1 grep -q addable_discoveries /app/services/pairing_doctor.py && docker exec ziggy-ziggy-1 grep -q title_thread /app/services/chat_runner.py\")"
     ]
   }
 }

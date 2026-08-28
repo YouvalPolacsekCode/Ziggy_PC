@@ -129,10 +129,13 @@ def assess_pairing(*, coordinator_state: str | None, pairing_open: bool | None,
         verdict = "radio_starting"
     elif stalled_names:
         verdict = "stalled"
+    elif pairing_open is False:
+        # A shut window is a step the user can take right now; a discovery may
+        # have been sitting there for months. Lead with the step — the speech
+        # layer still mentions what's waiting.
+        verdict = "pairing_closed"
     elif pending_names:
         verdict = "awaiting_setup"
-    elif pairing_open is False:
-        verdict = "pairing_closed"
     else:
         verdict = "ready"
 
