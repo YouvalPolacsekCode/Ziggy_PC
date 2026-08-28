@@ -522,6 +522,7 @@ export default {
   'deviceDetail.refresh':         'רענון',
   'deviceDetail.refreshRecovered': 'המכשיר לא היה יציב — זיגי החזיר אותו למצב הנכון.',
   'deviceDetail.refreshFailed':   'המכשיר לא מגיב באופן אמין. ייתכן שצריך להחליף אותו.',
+  'deviceDetail.askFixer':        'לא מגיב? תקן',
   'deviceDetail.rename':          'שינוי שם',
   'deviceDetail.tabControls':     'בקרות',
   'deviceDetail.tabInfo':         'מידע',

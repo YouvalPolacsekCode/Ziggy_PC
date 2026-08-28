@@ -21,7 +21,8 @@ import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, get
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
-import { useT, useTranslatedName } from '../lib/i18n'
+import { useT, useTranslatedName, getLang } from '../lib/i18n'
+import { buildFixerQuestion } from '../lib/fixerPrompt'
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -698,6 +699,16 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
     setRefreshing(false)
   }
 
+  // Trigger #2 for the fixer: the refresh button above tries ONE mechanical
+  // nudge. This hands the same device to the assistant, which can actually
+  // investigate (is it silent? did a routine turn it off? is the whole home
+  // wedged?) and explain it. Seeds the chat as if the user had typed it.
+  const handleAskFixer = () => {
+    navigate('/chat', {
+      state: { prefill: buildFixerQuestion(displayName, getLang()) },
+    })
+  }
+
   const handleToggle = async () => {
     if (!liveEntity) return
     try {
@@ -1142,6 +1153,28 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 <Pencil size={13} />
               </button>
             </div>
+
+            {/* Ask Ziggy about THIS device. Louder when the device is actually
+                unreachable — that's the moment the user wants it. Hidden on the
+                wall, where /chat isn't a destination the overlay can reach. */}
+            {!onExit && (
+              <button
+                onClick={handleAskFixer}
+                style={{
+                  marginTop: 12, width: '100%', padding: '9px 12px', borderRadius: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  border: '1px solid var(--line)',
+                  background: facts.isAvailable
+                    ? 'transparent'
+                    : 'color-mix(in srgb, var(--warn) 10%, var(--surface-2))',
+                  color: facts.isAvailable ? 'var(--ink-mute)' : 'var(--warn)',
+                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                <Zap size={13} />
+                {t('deviceDetail.askFixer')}
+              </button>
+            )}
           </div>
 
           {/* Per-kind control surface — passes relevant automations +

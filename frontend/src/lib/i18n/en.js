@@ -524,6 +524,7 @@ export default {
   'deviceDetail.refresh':         'Refresh',
   'deviceDetail.refreshRecovered': 'This device was unreliable — Ziggy nudged it back to the right state.',
   'deviceDetail.refreshFailed':   "This device isn't responding reliably. It may need to be replaced.",
+  'deviceDetail.askFixer':        'Not responding? Fix it',
   'deviceDetail.rename':          'Rename',
   'deviceDetail.tabControls':     'Controls',
   'deviceDetail.tabInfo':         'Info',
