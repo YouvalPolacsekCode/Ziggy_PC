@@ -60,6 +60,72 @@ def test_the_coordinator_itself_is_never_a_stalled_device():
     assert P.stalled_introductions(devices) == []
 
 
+# ── which discoveries are worth telling a user about ────────────────────────
+#
+# Live on the Canary (2026-08-29) the raw pending list was:
+#   ["SMLIGHT SLZB-07", "SMLIGHT SLZB-07", "智能遥控", "cast"]
+# — the home's own Zigbee adapter (twice), and a flow with no name but its
+# handler slug. Reporting those tells the user to go "finish adding" their own
+# hub hardware, and leaks a model number and an engine slug into a user string.
+
+
+def test_the_homes_own_radio_hardware_is_not_a_device_to_add():
+    flows = [{"handler": "smlight", "title": "SMLIGHT SLZB-07"}]
+    assert P.addable_discoveries(flows) == []
+
+
+def test_the_same_discovery_is_only_mentioned_once():
+    flows = [{"handler": "shelly", "title": "Hall Plug"},
+             {"handler": "shelly", "title": "Hall Plug"}]
+    assert [f["title"] for f in P.addable_discoveries(flows)] == ["Hall Plug"]
+
+
+def test_a_discovery_with_no_human_name_is_dropped():
+    # ha_pairing falls back to the handler slug as the title; "cast" is an
+    # engine word, not a device the user can recognise.
+    flows = [{"handler": "cast", "title": "cast"}]
+    assert P.addable_discoveries(flows) == []
+
+
+def test_a_genuinely_new_device_survives():
+    flows = [{"handler": "shelly", "title": "Living Room TV"}]
+    assert [f["title"] for f in P.addable_discoveries(flows)] == ["Living Room TV"]
+
+
+@pytest.mark.asyncio
+async def test_the_canary_noise_does_not_become_a_to_do_for_the_user(monkeypatch):
+    """The real payload above, on a healthy home with the window shut, should
+    answer 'open Add device' — not 'go finish adding your Zigbee adapter'."""
+    from services import ha_health, home_automation, mqtt_client, ha_pairing
+
+    class _Coord:
+        state = "loaded"
+
+    async def fake_coord(force=False):
+        return _Coord()
+
+    async def fake_retained(topic, timeout=3.0):
+        return []
+
+    async def fake_flows(integrations=None, exclude=None):
+        return {"ok": True, "flows": [
+            {"handler": "smlight", "title": "SMLIGHT SLZB-07"},
+            {"handler": "smlight", "title": "SMLIGHT SLZB-07"},
+            {"handler": "cast", "title": "cast"},
+        ]}
+
+    monkeypatch.setattr(ha_health, "fetch_coordinator_state", fake_coord)
+    monkeypatch.setattr(home_automation, "get_all_states", lambda: [
+        {"entity_id": "switch.zigbee2mqtt_bridge_permit_join", "state": "off"}])
+    monkeypatch.setattr(mqtt_client, "read_retained", fake_retained)
+    monkeypatch.setattr(ha_pairing, "get_pending_config_flows", fake_flows)
+
+    a = await P.diagnose_pairing()
+
+    assert a["verdict"] == "pairing_closed"
+    assert a["pending_names"] == []
+
+
 # ── the verdict ──────────────────────────────────────────────────────────────
 def test_a_wedged_radio_outranks_everything_else():
     a = P.assess_pairing(coordinator_state="setup_retry", pairing_open=True,

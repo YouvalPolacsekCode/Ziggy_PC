@@ -69,6 +69,39 @@ def stalled_introductions(devices: list[dict]) -> list[dict]:
     return out
 
 
+# Discovery handlers that are the home's OWN plumbing, not a device someone is
+# adding. Telling a user to "finish adding" their Zigbee adapter is nonsense —
+# and naming the hardware leaks the engine (feedback_ziggy_product_surface).
+_INFRA_HANDLERS = frozenset({
+    "smlight", "zha", "zigbee2mqtt", "mqtt", "thread", "otbr", "matter",
+    "hassio", "homeassistant", "backup", "sun", "met", "radio_browser",
+    "google_translate", "shopping_list", "bluetooth", "upnp", "dhcp", "ssdp",
+})
+
+
+def addable_discoveries(flows: list[dict]) -> list[dict]:
+    """Keep only discoveries a user would recognise as "my new device".
+
+    Drops the home's own infrastructure, drops flows with no human name (where
+    ha_pairing fell back to the handler slug — an engine word we must never
+    say), and mentions each thing once.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for f in flows or []:
+        handler = (f.get("handler") or "").strip().lower()
+        title = (f.get("title") or "").strip()
+        if handler in _INFRA_HANDLERS:
+            continue
+        if not title or title.lower() == handler:
+            continue
+        if title.lower() in seen:
+            continue
+        seen.add(title.lower())
+        out.append(f)
+    return out
+
+
 def assess_pairing(*, coordinator_state: str | None, pairing_open: bool | None,
                    stalled: list[dict], pending: list[dict]) -> dict:
     """Fuse the facts into one verdict, worst-first.
@@ -146,7 +179,7 @@ async def diagnose_pairing() -> dict:
     try:
         from services.ha_pairing import get_pending_config_flows
         res = await get_pending_config_flows()
-        pending = res.get("flows") or []
+        pending = addable_discoveries(res.get("flows") or [])
     except Exception as e:
         log_error(f"[pairing_doctor] pending discoveries unavailable: {e}")
 
