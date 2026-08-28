@@ -285,9 +285,18 @@ export const putUiPrefs = (patch) => put('/ui/prefs', patch)
 // Intent / Voice
 export const sendIntent = (text, source = 'web') => post('/intent', { text, source })
 
-// Chat mode — always routes through GPT with session history and autonomous web search
-export const sendChat = (text, chatHistory = [], source = 'web') =>
-  post('/chat', { text, chat_history: chatHistory, source })
+// Chat mode — always routes through GPT with session history and autonomous web search.
+// When threadId is set, the turn is durable + runs in the background server-side and
+// the reply arrives over WS (thread_message) rather than in this response.
+export const sendChat = (text, chatHistory = [], source = 'web', threadId = null) =>
+  post('/chat', { text, chat_history: chatHistory, source, ...(threadId ? { thread_id: threadId } : {}) })
+
+// Persistent, resumable chat threads (server-side; see services/chat_threads.py)
+export const createThread = () => post('/threads', {})
+export const listThreads  = () => get('/threads')
+export const getThread    = (id) => get(`/threads/${id}`)
+export const renameThread = (id, title) => patch(`/threads/${id}`, { title })
+export const deleteThread = (id) => del(`/threads/${id}`)
 
 // Voice upload — Whisper round-trip can be 5-15s on a warm model so the
 // timeout is generously above the request layer default. Still bounded so a
