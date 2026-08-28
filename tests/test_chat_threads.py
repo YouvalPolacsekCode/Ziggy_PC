@@ -87,6 +87,16 @@ def test_get_missing_thread_is_none():
     assert ct.get_history_for_agent("th_nope") == []
 
 
+def test_ensure_thread_is_idempotent_and_honours_id():
+    tid = "th_client_generated_1"
+    assert ct.ensure_thread(tid, owner="person:x") == tid
+    ct.append_message(tid, "user", "hi")
+    # second ensure must NOT wipe or duplicate
+    assert ct.ensure_thread(tid) == tid
+    th = ct.get_thread(tid)
+    assert th is not None and len(th["messages"]) == 1
+
+
 def test_owner_scoping():
     mine = ct.create_thread(owner="person:youval")
     other = ct.create_thread(owner="person:guest")

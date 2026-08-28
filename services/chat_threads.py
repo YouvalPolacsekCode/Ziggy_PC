@@ -70,6 +70,26 @@ def create_thread(owner: str | None = None, title: str | None = None) -> str:
     return tid
 
 
+def ensure_thread(thread_id: str, owner: str | None = None) -> str:
+    """Create the thread with this exact id if it doesn't exist (idempotent).
+
+    Lets /api/chat accept a client-supplied thread id and 'get-or-create' it, so a
+    first message doesn't need a separate create round-trip.
+    """
+    now = time.time()
+    with _lock, _connect() as c:
+        row = c.execute("SELECT thread_id FROM chat_threads WHERE thread_id=?",
+                        (thread_id,)).fetchone()
+        if row:
+            return thread_id
+        c.execute(
+            "INSERT INTO chat_threads(thread_id,title,owner,status,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?)",
+            (thread_id, None, owner, "idle", now, now),
+        )
+    return thread_id
+
+
 def append_message(thread_id: str, role: str, content: str,
                    data: dict | None = None) -> int:
     now = time.time()

@@ -89,6 +89,7 @@ class ChatRequest(BaseModel):
     chat_history: list[dict[str, Any]] = []
     source: str = "web"
     engine: str | None = None   # "v1" | "v2" — per-request override for A/B
+    thread_id: str | None = None  # when set → durable, background, resumable thread
 
 
 def _resolve_engine(override: str | None) -> str:
@@ -233,65 +234,35 @@ async def process_intent(req: IntentRequest, request: Request):
     }
 
 
-@router.post("/api/chat")
-async def process_chat(req: ChatRequest, request: Request):
-    request_id = _new_request_id()
-    _actor = _actor_ref(request)
+async def _compute_reply(text, chat_history, source, engine, actor, request_id) -> dict:
+    """Run one turn through the engine (v2 agent or v1 dispatch) → {reply, ok, data, intent}.
 
-    bus.emit("intent", BASIC, "request_received",
-             request_id=request_id,
-             input=req.text,
-             source=req.source,
-             endpoint="/api/chat")
-
-    # ── Phrase → routine shortcut (before any engine) ──────────────────────
-    _routine = await _match_routine_phrase(req.text)
-    if _routine:
-        return await _run_routine_phrase(_routine, req.text, req.source, request_id)
-
-    # ── v2 engine: single tool-calling agent ───────────────────────────────
-    # Defensive: if the flag says v2 but the agent module is somehow missing
-    # (e.g. a partial deploy), fall through to v1 rather than 500 on every
-    # chat. v1 stays the always-available safety net.
-    if _resolve_engine(req.engine) == "v2":
+    Extracted so the legacy synchronous /api/chat path AND the background thread runner
+    share identical logic. Does NOT broadcast — callers announce ziggy_response as needed.
+    """
+    # ── v2 engine: single tool-calling agent (falls through to v1 if missing) ──
+    if _resolve_engine(engine) == "v2":
         try:
             from core.agent.runner import run_agent
         except Exception as e:
             log_error(f"[chat] v2 engine requested but unavailable, using v1: {e}")
             run_agent = None
         if run_agent is not None:
-            channel = "voice" if "voice" in (req.source or "") else "chat"
-            result = await run_agent(req.text, req.chat_history, channel=channel)
-            reply = result.get("message", "")
-            await manager.broadcast({
-                "type": "ziggy_response",
-                "input": req.text,
-                "reply": reply,
-                "source": req.source,
-                "ok": result.get("ok", True),
-                "request_id": request_id,
-                **({"data": result.get("data")} if result.get("data") else {}),
-            })
-            return {
-                "reply": reply,
-                "ok": result.get("ok", True),
-                "data": result.get("data", {}),
-                "request_id": request_id,
-                "engine": "v2",
-            }
+            channel = "voice" if "voice" in (source or "") else "chat"
+            result = await run_agent(text, chat_history, channel=channel)
+            return {"reply": result.get("message", ""), "ok": result.get("ok", True),
+                    "data": result.get("data", {}), "intent": None}
 
-    parsed = quick_parse(req.text, chat_history=req.chat_history)
-    parsed["source"] = req.source
+    parsed = quick_parse(text, chat_history=chat_history)
+    parsed["source"] = source
     parsed["request_id"] = request_id
-    parsed["_raw_input"] = req.text
-    if _actor:
-        parsed.setdefault("params", {})["_actor"] = _actor
+    parsed["_raw_input"] = text
+    if actor:
+        parsed.setdefault("params", {})["_actor"] = actor
 
     top_intent = parsed.get("intent")
-
     bus.emit("intent", VERBOSE, "intent_parsed",
-             request_id=request_id,
-             intent=top_intent,
+             request_id=request_id, intent=top_intent,
              params=parsed.get("params", {}),
              gpt_fallback=(top_intent in _GPT_FALLBACK_INTENTS and top_intent != "__multi__"))
 
@@ -300,28 +271,17 @@ async def process_chat(req: ChatRequest, request: Request):
     else:
         result = await handle_intent({
             "intent": "chat_with_gpt",
-            "params": {"text": req.text, "chat_history": req.chat_history},
-            "source": req.source,
-            "request_id": request_id,
+            "params": {"text": text, "chat_history": chat_history},
+            "source": source, "request_id": request_id,
         })
 
     reply = render_result(result)
 
-    # Translate action responses to Hebrew when the user typed in Hebrew.
-    # chat_with_gpt already responds in Hebrew natively; this covers command
-    # intents (toggle_light, control_ac, etc.) and multi-intent combinations
-    # whose handlers return English strings.
-    #
-    # The old gate was `not is_hebrew(reply)` — but is_hebrew returns True if
-    # ANY Hebrew char appears, so a mostly-English multi-intent reply like
-    # "Turning off living room light and Task added: לקנות חלב" was treated
-    # as Hebrew (because of the embedded task title) and translation was
-    # skipped. Switch to a Latin-vs-Hebrew letter ratio: if Latin letters
-    # outweigh Hebrew letters, the connective prose is English and we should
-    # translate.
+    # Translate English handler replies to Hebrew when the user typed Hebrew
+    # (chat_with_gpt already answers in Hebrew; this covers command/multi intents).
     if top_intent not in _GPT_FALLBACK_INTENTS:
         from interfaces.voice_interface import _translate, is_hebrew as _is_hebrew
-        if _is_hebrew(req.text) and reply:
+        if _is_hebrew(text) and reply:
             hebrew_letters = sum(1 for c in reply if 'א' <= c <= 'ת')
             latin_letters = sum(1 for c in reply if 'a' <= c.lower() <= 'z')
             if latin_letters > hebrew_letters:
@@ -335,22 +295,107 @@ async def process_chat(req: ChatRequest, request: Request):
         sub = (parsed.get("intents") or [{}])[0]
         broadcast_intent = f"__multi__({sub.get('intent', '?')}+)"
 
-    await manager.broadcast({
-        "type": "ziggy_response",
-        "input": req.text,
-        "reply": reply,
-        "source": req.source,
-        "ok": result.get("ok", True),
-        "intent": broadcast_intent,
-        "request_id": request_id,
-    })
+    return {"reply": reply, "ok": result.get("ok", True),
+            "data": result.get("data", {}), "intent": broadcast_intent}
 
-    return {
-        "reply": reply,
-        "ok": result.get("ok", True),
-        "data": result.get("data", {}),
-        "request_id": request_id,
-    }
+
+async def _announce_ziggy_response(text, reply, source, ok, intent, request_id, data=None):
+    """The legacy global ziggy_response broadcast (App.jsx keys automation side-effects off it)."""
+    payload = {"type": "ziggy_response", "input": text, "reply": reply,
+               "source": source, "ok": ok, "request_id": request_id}
+    if intent is not None:
+        payload["intent"] = intent
+    if data:
+        payload["data"] = data
+    await manager.broadcast(payload)
+
+
+@router.post("/api/chat")
+async def process_chat(req: ChatRequest, request: Request):
+    request_id = _new_request_id()
+    actor = _actor_ref(request)
+
+    bus.emit("intent", BASIC, "request_received",
+             request_id=request_id, input=req.text, source=req.source, endpoint="/api/chat")
+
+    # ── Phrase → routine shortcut (before any engine) ──────────────────────
+    _routine = await _match_routine_phrase(req.text)
+    if _routine:
+        return await _run_routine_phrase(_routine, req.text, req.source, request_id)
+
+    # ── Durable / background / resumable thread mode ────────────────────────
+    # With a thread_id the conversation is a persistent server-side object: append
+    # the user turn, run the reply as a DETACHED task (survives navigation/disconnect),
+    # and return immediately. The reply lands on the thread + is pushed over WS
+    # (thread_message) — so the user can leave and come back to it, on ANY chat.
+    if req.thread_id:
+        import asyncio
+        from services import chat_threads as ct
+        from services import chat_runner as cr
+
+        ct.ensure_thread(req.thread_id, owner=actor)
+        ct.append_message(req.thread_id, "user", req.text)
+        await manager.broadcast({
+            "type": "thread_message", "thread_id": req.thread_id, "status": "running",
+            "message": {"role": "user", "content": req.text},
+        })
+
+        async def _compute(text, prior):
+            res = await _compute_reply(text, prior, req.source, req.engine, actor,
+                                       _new_request_id())
+            await _announce_ziggy_response(text, res["reply"], req.source, res["ok"],
+                                           res.get("intent"), request_id, res.get("data"))
+            return res
+
+        asyncio.create_task(cr.run_turn(req.thread_id, req.text, compute=_compute))
+        return {"thread_id": req.thread_id, "status": "running", "request_id": request_id}
+
+    # ── Legacy synchronous mode (unchanged behaviour) ──────────────────────
+    res = await _compute_reply(req.text, req.chat_history, req.source, req.engine,
+                               actor, request_id)
+    await _announce_ziggy_response(req.text, res["reply"], req.source, res["ok"],
+                                   res.get("intent"), request_id, res.get("data"))
+    return {"reply": res["reply"], "ok": res["ok"], "data": res.get("data", {}),
+            "request_id": request_id}
+
+
+# ── Thread CRUD — persistent conversations for the whole app ────────────────
+@router.post("/api/threads")
+async def create_chat_thread(request: Request):
+    from services import chat_threads as ct
+    return {"thread_id": ct.create_thread(owner=_actor_ref(request))}
+
+
+@router.get("/api/threads")
+async def list_chat_threads(request: Request):
+    from services import chat_threads as ct
+    return {"threads": ct.list_threads(owner=_actor_ref(request))}
+
+
+@router.get("/api/threads/{thread_id}")
+async def get_chat_thread(thread_id: str):
+    from fastapi import HTTPException
+    from services import chat_threads as ct
+    th = ct.get_thread(thread_id)
+    if th is None:
+        raise HTTPException(status_code=404, detail="thread not found")
+    return th
+
+
+@router.patch("/api/threads/{thread_id}")
+async def rename_chat_thread(thread_id: str, body: dict):
+    from services import chat_threads as ct
+    title = (body or {}).get("title")
+    if title:
+        ct.rename_thread(thread_id, title)
+    return {"ok": True}
+
+
+@router.delete("/api/threads/{thread_id}")
+async def delete_chat_thread(thread_id: str):
+    from services import chat_threads as ct
+    ct.delete_thread(thread_id)
+    return {"ok": True}
 
 
 def _validate_voice_upload(file: UploadFile, request_id: str) -> tuple[str, str]:
