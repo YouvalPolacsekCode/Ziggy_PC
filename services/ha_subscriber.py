@@ -296,11 +296,17 @@ async def _process_event(event: dict) -> None:
     # targeting overridden entities to avoid fighting the user.
     try:
         from services.manual_overrides import (
-            was_ziggy_initiated, mark_manual, CONTROLLABLE_DOMAINS,
+            was_ziggy_initiated, was_recent_ziggy_write, mark_manual,
+            CONTROLLABLE_DOMAINS,
         )
         if prev_s and new_s and prev_s != new_s:
             domain = entity_id.split(".", 1)[0]
-            if domain in CONTROLLABLE_DOMAINS and not was_ziggy_initiated(entity_id):
+            # Out-of-band only: a change with ANY recent Ziggy write behind it
+            # (engine, UI tap, chat, voice) is Ziggy acting, not the user
+            # bypassing Ziggy — it must not lock the entity for 30 minutes.
+            if (domain in CONTROLLABLE_DOMAINS
+                    and not was_ziggy_initiated(entity_id)
+                    and not was_recent_ziggy_write(entity_id)):
                 mark_manual(entity_id)
     except Exception:
         pass

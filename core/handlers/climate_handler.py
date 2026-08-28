@@ -54,7 +54,13 @@ async def handle_control_ac(params: dict, *, source: str = "unknown") -> dict:
                 "אמרו 'הדלק' או 'כבה' את המזגן, או 'כוון את המזגן ל-24 מעלות'.",
             ))
     service = "turn_on" if turn_on else "turn_off"
-    result = call_service("climate", service, {"entity_id": entity_id})
+    # Hybrid-aware: an AC reachable by both smart HA and IR gets the ranked
+    # Wi-Fi↔IR fallback (same as the UI tile path); a plain smart AC (None)
+    # keeps the direct HA call.
+    from services.command_router import hybrid_route_or_none
+    result = hybrid_route_or_none(entity_id, service)
+    if result is None:
+        result = call_service("climate", service, {"entity_id": entity_id})
     if result.get("ok"):
         # Cool-first (Israel-first): on a bare turn-on, nudge the unit into the
         # default mode so it doesn't wake up in last winter's heat setting. An

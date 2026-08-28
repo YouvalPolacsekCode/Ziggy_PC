@@ -108,7 +108,7 @@ _last_meaningful_state: dict[str, str] = {}
 
 # ───────────────────────── reachability checks ─────────────────────────
 
-def _wifi_reachable(entity_id: str) -> bool:
+def wifi_reachable(entity_id: str) -> bool:
     if not entity_id:
         return False
     try:
@@ -217,7 +217,7 @@ def route_command(entry: dict, command: str, params: dict | None = None) -> dict
         # Skip Wi-Fi if we know it's unreachable.
         # IR is always considered "deliverable" — the blaster fires regardless of
         # the controlled device's network state.
-        if src == SOURCE_WIFI and not _wifi_reachable(entry.get("entity_id", "")):
+        if src == SOURCE_WIFI and not wifi_reachable(entry.get("entity_id", "")):
             attempts.append({"source": src, "skipped": "wifi_unreachable"})
             _dbus.emit("command_router", VERBOSE, "skip_unreachable",
                        entity_id=entry.get("entity_id"), command=command, source=src)
@@ -246,6 +246,34 @@ def route_command(entry: dict, command: str, params: dict | None = None) -> dict
                ir_device_id=entry.get("ir_device_id"),
                command=command, attempts=len(attempts))
     return last_result
+
+
+_HYBRID_COMMANDS = frozenset({"turn_on", "turn_off", "toggle"})
+
+
+def hybrid_route_or_none(entity_id: str, command: str,
+                         params: dict | None = None) -> dict | None:
+    """Route through the hybrid engine iff this entity has a linked IR codeset.
+
+    Returns route_command()'s result for hybrid devices, None otherwise — the
+    caller then proceeds with its normal single-source path. This is the seam
+    that gives the natural-language paths (v1 handlers, v2 agent) the same
+    Wi-Fi↔IR fallback as the UI tile path (backend/routers/ha_router.py),
+    without changing behaviour for devices that have no IR link.
+
+    Only power commands are considered: brightness / color / temperature carry
+    values IR can't express, and the tile path never hybrid-routes them either.
+    """
+    if not entity_id or command not in _HYBRID_COMMANDS:
+        return None
+    try:
+        from services.device_registry import get_device_info
+        entry = resolve_hybrid_entry(entity_id, get_device_info(entity_id) or {})
+        if entry.get("ir_device_id"):
+            return route_command(entry, command, params)
+    except Exception as e:
+        log_error(f"[CommandRouter] hybrid_route_or_none({entity_id}, {command}): {e}")
+    return None
 
 
 # ───────────────────────── learning hooks ─────────────────────────

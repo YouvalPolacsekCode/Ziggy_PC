@@ -18,6 +18,16 @@ How it works:
 
 Storage: in-memory only. An override is a short-lived hint, not user data;
 losing it on restart is acceptable.
+
+Two attribution tiers, deliberately separate:
+  - register_ziggy_call / was_ziggy_initiated — an ENGINE's own write
+    (circadian ramp, smart climate, automation executor). The circadian hook
+    uses this to tell its own confirmations from a hand change.
+  - note_ziggy_write / was_recent_ziggy_write — ANY write that left through
+    Ziggy (UI tap, chat, voice, engines). Only suppresses the override stamp.
+    A user's app tap or brightness drag lands here and NOT in the engine tier,
+    so it can't create a 30-minute override against the user's own automations,
+    while the Smart Light Schedule still treats it as a manual change.
 """
 from __future__ import annotations
 
@@ -51,6 +61,7 @@ _ziggy_expected: dict[str, tuple] = {}       # entity_id → (expires_at, expect
 
 _overrides: dict[str, float] = {}            # entity_id → expires_at (epoch)
 _recent_ziggy_calls: dict[str, float] = {}   # entity_id → expires_at (epoch)
+_recent_ziggy_writes: dict[str, float] = {}  # entity_id → expires_at (epoch)
 _lock = threading.Lock()
 
 
@@ -122,6 +133,41 @@ def was_ziggy_initiated(entity_id: str) -> bool:
             return False
         if exp < now:
             _recent_ziggy_calls.pop(entity_id, None)
+            return False
+        return True
+
+
+def note_ziggy_write(entity_id) -> None:
+    """Mark that a write to `entity_id` (str, or a list for batch calls) is
+    about to leave Ziggy for HA — regardless of who asked (UI tap, chat,
+    voice, an engine). Call immediately BEFORE the HTTP post so the resulting
+    state_changed can't race the attribution.
+
+    This is what stops Ziggy's own surface from stamping manual overrides:
+    only changes with no recent Ziggy write behind them (wall switch, HA app,
+    physical remote) count as out-of-band.
+    """
+    if not entity_id:
+        return
+    ids = entity_id if isinstance(entity_id, (list, tuple)) else [entity_id]
+    now = time.time()
+    with _lock:
+        for eid in ids:
+            if isinstance(eid, str) and eid:
+                _recent_ziggy_writes[eid] = now + _ZIGGY_CALL_TTL
+
+
+def was_recent_ziggy_write(entity_id: str) -> bool:
+    """True if any write left Ziggy for this entity in the last _ZIGGY_CALL_TTL s."""
+    if not entity_id:
+        return False
+    now = time.time()
+    with _lock:
+        exp = _recent_ziggy_writes.get(entity_id)
+        if not exp:
+            return False
+        if exp < now:
+            _recent_ziggy_writes.pop(entity_id, None)
             return False
         return True
 

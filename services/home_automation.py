@@ -130,12 +130,23 @@ def _ha_endpoint(path: str) -> str:
 # Generic helpers
 # ---------------------------------------------------------------------------
 
+def _note_ziggy_write(entity_id) -> None:
+    """Attribute an outgoing HA write (str or list of entity_ids) so the
+    subscriber doesn't stamp it as a manual override. Must never block a call."""
+    try:
+        from services.manual_overrides import note_ziggy_write
+        note_ziggy_write(entity_id)
+    except Exception:
+        pass
+
+
 def call_service(domain: str, service: str, data: Dict[str, Any],
                  origin: str = "ziggy") -> Dict[str, Any]:
     import time as _time
     endpoint = _ha_endpoint(f"/api/services/{domain}/{service}")
     bus.emit("ha", VERBOSE, "ha_service_call",
              domain=domain, service=service, payload=data, endpoint=endpoint)
+    _note_ziggy_write((data or {}).get("entity_id"))
     t0 = _time.perf_counter()
     try:
         resp = _session.post(endpoint, headers=_headers(), json=data, timeout=DEFAULT_TIMEOUT)
@@ -454,6 +465,7 @@ def toggle_light(entity_id: str, turn_on: bool = True, origin: str = "ziggy") ->
             payload.update(resolve_default_turn_on(entity_id, {}))
         except Exception as e:
             log_error(f"[HA] default-preset resolve skipped for {entity_id}: {e}")
+    _note_ziggy_write(entity_id)
     try:
         response = _session.post(endpoint, headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
@@ -487,6 +499,7 @@ def set_light_color(entity_id: str, rgb_color: Optional[tuple] = None, color_tem
         payload["rgb_color"] = list(rgb_color)
     if color_temp is not None:
         payload["color_temp"] = color_temp
+    _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/light/turn_on"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
@@ -501,6 +514,7 @@ def set_light_color(entity_id: str, rgb_color: Optional[tuple] = None, color_tem
 
 def set_light_brightness(entity_id: str, brightness: int) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "brightness_pct": max(0, min(int(brightness), 100))}
+    _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/light/turn_on"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
@@ -519,6 +533,7 @@ def set_light_brightness(entity_id: str, brightness: int) -> Tuple[int, str]:
 
 def set_ac_temperature(entity_id: str, temperature: int) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "temperature": int(temperature)}
+    _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/climate/set_temperature"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:
@@ -533,6 +548,7 @@ def set_ac_temperature(entity_id: str, temperature: int) -> Tuple[int, str]:
 
 def set_tv_source(entity_id: str, source: Union[int, str]) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "source": str(source)}
+    _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/media_player/select_source"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
         if response.status_code == 200:

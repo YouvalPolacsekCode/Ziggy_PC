@@ -29,7 +29,13 @@ async def handle_toggle_light(params: dict, *, source: str = "unknown") -> dict:
                      f"אין אור מוגדר ב{room_label}."))
     if "turn_on" not in params:
         params["turn_on"] = (params.get("status") or "").lower() != "off"
-    toggle_light(entity_id, params["turn_on"])
+    # Hybrid-aware power: an IR-linked light routes through the command router
+    # (same as the UI tile path); a normal light (None) keeps toggle_light,
+    # which also applies the default turn-on preset.
+    from services.command_router import hybrid_route_or_none
+    if hybrid_route_or_none(
+            entity_id, "turn_on" if params["turn_on"] else "turn_off") is None:
+        toggle_light(entity_id, params["turn_on"])
     action = "Turning on" if params["turn_on"] else "Turning off"
     action_he = "מדליק" if params["turn_on"] else "מכבה"
     set_context(room=room, device_type="light", entity_id=entity_id,
