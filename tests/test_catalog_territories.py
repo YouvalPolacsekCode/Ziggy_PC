@@ -92,3 +92,31 @@ def test_mechanism_schema_requires_kind_and_domain_concept_flag():
     required = schema.MECHANISM_SCHEMA["required"]
     for field in ("id", "name", "kind", "what_it_is", "surfaces", "domain_concept"):
         assert field in required
+
+
+def test_single_star_does_not_cross_path_separators(cfg):
+    # The landmine: a nested file must NOT be claimed by a single-segment glob.
+    assert not bt._matches_any("services/bundled_blueprints/light_scene.py", ["services/*light*.py"])
+    assert not bt._matches_any("services/permissions/climate_x.py", ["services/*climate*.py"])
+    assert bt._matches_any("services/smart_light_schedule.py", ["services/*light*.py"])
+
+
+def test_double_star_still_spans_path_separators(cfg):
+    assert bt._matches_any(".claude/worktrees/home-fixer/services/presence_engine.py", [".claude/worktrees/**"])
+    assert bt._matches_any("frontend/node_modules/react/index.js", ["**/node_modules/**"])
+    assert bt._matches_any("graphify-out/wiki/Presence_Engine.md", ["graphify-out/**"])
+
+
+def test_leading_double_star_matches_at_any_depth_including_root(cfg):
+    assert bt._matches_any("a.png", ["**/*.png"])
+    assert bt._matches_any("frontend/src/assets/device-icons/lamp.png", ["**/*.png"])
+
+
+def test_bare_double_star_slash_star_matches_everything(cfg):
+    # mobile-native declares exactly ["**/*"] and must keep claiming its whole repo.
+    assert bt._matches_any("package.json", ["**/*"])
+    assert bt._matches_any("android/app/src/main/AndroidManifest.xml", ["**/*"])
+
+
+def test_dot_is_escaped_not_a_wildcard(cfg):
+    assert not bt._matches_any("frontend/src/mainXjsx", ["frontend/src/main.jsx"])

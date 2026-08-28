@@ -182,7 +182,6 @@
         "backend/routers/map_router.py",
         "frontend/src/pages/Dashboard.jsx",
         "frontend/src/pages/Rooms.jsx",
-        "frontend/src/components/wall/**",
         "services/dashboard_tablets.py",
         "services/map_renderer.py",
         "services/wall_layouts.py",

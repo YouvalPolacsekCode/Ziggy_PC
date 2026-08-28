@@ -1,8 +1,8 @@
 """Phase A: deterministic partition of the corpus into product territories."""
 
-import fnmatch
 import json
 import os
+import re
 
 
 def load_config(path):
@@ -10,20 +10,55 @@ def load_config(path):
         return json.load(fh)
 
 
+# Glob -> compiled regex, keyed by pattern string. Patterns repeat across
+# ~1,100 files x ~18 territories, so compiling once per unique pattern (not
+# once per call) matters.
+_PATTERN_CACHE = {}
+
+
+def _compile_glob(pat):
+    """Translate a glob into an anchored regex with path-segment-aware semantics.
+
+    Unlike Python's stdlib `fnmatch` (whose `*` becomes regex `.*` and freely
+    crosses "/"), these globs are path-aware:
+      - "**/"            -> zero or more complete path segments
+      - "**" (elsewhere)  -> anything, including "/"
+      - "*"               -> anything within a single path segment (no "/")
+      - "?"               -> one non-separator character
+      - anything else     -> escaped literally
+    """
+    i, n = 0, len(pat)
+    out = ["^"]
+    while i < n:
+        if pat.startswith("**/", i):
+            out.append("(?:[^/]*/)*")
+            i += 3
+        elif pat.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pat[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pat[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pat[i]))
+            i += 1
+    out.append("$")
+    return re.compile("".join(out))
+
+
+def _pattern(pat):
+    rx = _PATTERN_CACHE.get(pat)
+    if rx is None:
+        rx = _compile_glob(pat)
+        _PATTERN_CACHE[pat] = rx
+    return rx
+
+
 def _matches_any(rel_path, patterns):
-    for pat in patterns:
-        if fnmatch.fnmatch(rel_path, pat):
-            return True
-        # fnmatch does not treat "**" as spanning separators; emulate it.
-        if "**/" in pat and fnmatch.fnmatch(rel_path, pat.replace("**/", "")):
-            return True
-        if pat.endswith("/**") and rel_path.startswith(pat[:-3] + "/"):
-            return True
-        if "/**/" in pat:
-            head, tail = pat.split("/**/", 1)
-            if rel_path.startswith(head + "/") and fnmatch.fnmatch(rel_path, "*" + tail):
-                return True
-    return False
+    return any(_pattern(pat).match(rel_path) for pat in patterns)
 
 
 def is_excluded(rel_path, cfg):
@@ -75,11 +110,15 @@ def build(cfg, graph_path, roots):
         if not os.path.isdir(root_path):
             continue
         for rel in _iter_tracked(root_path):
-            if is_excluded(rel, cfg):
-                continue
             name = assign_territory(rel, cfg, root=root_key)
             if name is None:
-                unassigned.append({"root": root_key, "path": rel})
+                # assign_territory() returns None for both excluded paths and
+                # genuinely-uncovered ones; only the latter belong in the
+                # unassigned report, so disambiguate here instead of guarding
+                # every iteration up front (that guard duplicated the exclude
+                # check assign_territory already does internally).
+                if not is_excluded(rel, cfg):
+                    unassigned.append({"root": root_key, "path": rel})
                 continue
             entry = territories[name]
             entry["files"].append(rel)
