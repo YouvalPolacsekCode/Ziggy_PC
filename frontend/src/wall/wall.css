@@ -19,6 +19,27 @@
  * so `dir="rtl"` mirrors the whole board with no separate rules.
  */
 
+/* ── Dark: cool the two tokens the wall overexposes ──────────────────────────
+   The palette's hairline (--line #2A241D) and faint ink (--ink-faint #645B4E)
+   are both warm brown. On a phone that barely shows: the app's dark dashboard
+   is ~31% full-bleed photography, so those two colours are a rounding error.
+   The wall has no photography and is ~62% bordered, labelled cards, so the
+   same two tokens end up painting most of a 15-inch panel and it reads brown.
+
+   Rather than restyle every rule, re-point the tokens for this subtree only —
+   every `var(--line)` inside the wall picks these up, and the app is untouched.
+   Dark UI is meant to separate with elevation rather than lines anyway: the
+   card fill is already a step lighter than the page, so a cool half-step reads
+   as depth where a warm hairline read as decoration. */
+[data-palette="dark"] .zw-page {
+  --line:      var(--surface-3);
+  --line-2:    var(--surface-3);
+  /* Neutral slate. Every ink token in the palette is warm by design, so there
+     is nothing cooler to borrow — this is the one literal, and it exists to
+     keep section labels from tinting the whole panel. */
+  --ink-faint: #78828E;
+}
+
 /* ── Page shell ─────────────────────────────────────────────────────────── */
 
 .zw-page {

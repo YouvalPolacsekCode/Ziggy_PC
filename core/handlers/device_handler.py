@@ -162,7 +162,16 @@ async def handle_control_device(params: dict, *, source: str = "unknown") -> dic
         # Policy evaluation must never break device control.
         pass
 
-    result = call_service(domain, service, {"entity_id": entity_id})
+    # Power commands go hybrid-aware: a device with a linked IR codeset gets
+    # the same Wi-Fi↔IR ranked fallback as the UI tile path, so "turn on the
+    # TV" works even when the TV's Wi-Fi radio is dead. Non-hybrid devices
+    # (None) keep the plain HA call.
+    result = None
+    if service in ("turn_on", "turn_off"):
+        from services.command_router import hybrid_route_or_none
+        result = hybrid_route_or_none(entity_id, service)
+    if result is None:
+        result = call_service(domain, service, {"entity_id": entity_id})
     if not result.get("ok"):
         return err(result.get("message", L(f"Failed to {action} {meta.label.lower()}.",
                                            f"נכשל בביצוע '{action}' עבור {meta.label.lower()}.")))

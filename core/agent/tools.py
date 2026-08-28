@@ -323,6 +323,15 @@ async def _exec_control_device(args: dict, directory: dict) -> dict:
     dom = eid.split(".", 1)[0]
 
     try:
+        # Hybrid-aware power: an entity with a linked IR codeset routes on/off
+        # through the command router (Wi-Fi↔IR ranked fallback, same as the UI
+        # tile path). hybrid_route_or_none returns None for the 99% of devices
+        # with no IR link — those keep the exact direct paths below.
+        from services.command_router import hybrid_route_or_none, wifi_reachable
+
+        def _routed_failed(routed: dict) -> bool:
+            return not routed.get("ok")
+
         if dom == "light":
             if action == "set_brightness":
                 set_light_brightness(eid, int(float(value)))
@@ -333,29 +342,55 @@ async def _exec_control_device(args: dict, directory: dict) -> dict:
                 done = "set_color"
             else:
                 on = action == "on"
-                toggle_light(eid, on)
+                routed = hybrid_route_or_none(eid, "turn_on" if on else "turn_off")
+                if routed is None:
+                    toggle_light(eid, on)
+                elif _routed_failed(routed):
+                    return {"ok": False, "message": routed.get("message", "command failed"),
+                            "device": dev}
                 done = "on" if on else "off"
         elif dom == "climate":
             if action == "set_temperature":
                 set_ac_temperature(eid, int(float(value)))
                 done = "set_temperature"
             elif action == "off":
-                call_service("climate", "turn_off", {"entity_id": eid})
+                routed = hybrid_route_or_none(eid, "turn_off")
+                if routed is None:
+                    call_service("climate", "turn_off", {"entity_id": eid})
+                elif _routed_failed(routed):
+                    return {"ok": False, "message": routed.get("message", "command failed"),
+                            "device": dev}
                 done = "off"
-            else:  # on — cool-first Israeli default
-                call_service("climate", "set_hvac_mode", {"entity_id": eid, "hvac_mode": "cool"})
+            else:  # on — cool-first Israeli default; IR is the rescue, not the
+                   # default: a live smart AC carries true state (project rule),
+                   # so hybrid routing only kicks in when its Wi-Fi is dead.
+                routed = None
+                if not wifi_reachable(eid):
+                    routed = hybrid_route_or_none(eid, "turn_on")
+                if routed is None:
+                    call_service("climate", "set_hvac_mode", {"entity_id": eid, "hvac_mode": "cool"})
+                elif _routed_failed(routed):
+                    return {"ok": False, "message": routed.get("message", "command failed"),
+                            "device": dev}
                 done = "on"
         else:
-            table = _ONOFF_SERVICE.get(dom)
-            if not table or action not in table:
-                # default to switch semantics
-                svc = ("homeassistant", "turn_on" if action == "on" else "turn_off")
-                call_service(svc[0], svc[1], {"entity_id": eid})
+            routed = hybrid_route_or_none(eid, "turn_on" if action == "on" else "turn_off")
+            if routed is not None:
+                if _routed_failed(routed):
+                    return {"ok": False, "message": routed.get("message", "command failed"),
+                            "device": dev}
                 done = action
             else:
-                d, s = table[action]
-                call_service(d, s, {"entity_id": eid})
-                done = action
+                table = _ONOFF_SERVICE.get(dom)
+                if not table or action not in table:
+                    # default to switch semantics
+                    svc = ("homeassistant", "turn_on" if action == "on" else "turn_off")
+                    call_service(svc[0], svc[1], {"entity_id": eid})
+                    done = action
+                else:
+                    d, s = table[action]
+                    call_service(d, s, {"entity_id": eid})
+                    done = action
     except Exception as e:
         log_error(f"[agent.tools] control_device failed {eid}: {e}")
         return {"ok": False, "message": str(e), "device": dev}
