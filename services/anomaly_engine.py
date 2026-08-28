@@ -1203,6 +1203,73 @@ async def sweep_stale_sensors(
         _push_anomaly(active, room_id, _ANOM10_RULE, AnomalyResult(message=msg, confidence=0.80))
 
 
+# ── ANOM-13: a controllable device gone silent (reports stopped) ─────────────
+#
+# ANOM-07/09 key on HA state == "unavailable". But a Zigbee device can stop
+# reporting while STILL showing a stale on/off (availability tracking off) — the
+# kitchen light that was silent 13 days yet never went "unavailable". Those rules
+# miss it entirely. This sweep uses HA `last_reported` (via down_device_detector)
+# to catch the silent-but-not-unavailable case, keyed per-device and cleared once
+# the device talks again (silence is provisional — devices self-recover).
+_DOWN_DEVICE_COOLDOWN = 12 * 3600     # ≥12 h between repeat pings for one device
+_DOWN_DEVICE_STALE_HOURS = 24         # flag a controllable device silent > 24 h
+
+_ANOM13_RULE = AnomalyRule(
+    rule_id="ANOM-13",
+    scope="entity",
+    severity="warning",
+    cooldown_s=_DOWN_DEVICE_COOLDOWN,
+    fn=lambda _: None,
+)
+
+
+async def sweep_down_devices(cache: dict | None = None,
+                             active: dict | None = None) -> None:
+    """Flag controllable devices that stopped reporting for a long time.
+
+    Runs periodically from ziggy_scheduler. Detection is `last_reported`-based
+    (down_device_detector), NOT the event cache, so it catches devices HA never
+    marked 'unavailable'. Fires through the shared _push_anomaly plumbing → push,
+    snooze, cooldown, history, room card. Keyed per-device; a recovered device is
+    cleared.
+    """
+    if active is None:
+        try:
+            from services.ha_subscriber import active_anomalies as _aa
+            active = _aa
+        except ImportError:
+            return
+
+    cfg = _cfg()
+    if not cfg.get("enabled", True):
+        return
+    stale_hours = cfg.get("anom13_stale_hours", _DOWN_DEVICE_STALE_HOURS)
+
+    from services.down_device_detector import find_down_devices
+    try:
+        down = find_down_devices(stale_hours=stale_hours)
+    except Exception as e:
+        log_error(f"[AnomalyEngine] down-device scan failed: {e}")
+        return
+    down_ids = {d["entity_id"] for d in down}
+
+    # Clear any previously-flagged device that is talking again (self-recovered).
+    for key, entries in list(active.items()):
+        if key not in down_ids and any(e.get("rule_id") == "ANOM-13" for e in entries):
+            _clear_anomaly(active, key, "ANOM-13")
+
+    for d in down:
+        eid = d["entity_id"]
+        if _is_snoozed(eid, "ANOM-13"):
+            continue
+        if not _cooldown_ok(eid, "ANOM-13", _DOWN_DEVICE_COOLDOWN):
+            continue
+        days = max(1, int(d.get("silent_hours", 0) / 24))
+        msg = (f"{d['name']} hasn't responded in {days} day{'s' if days != 1 else ''}. "
+               f"Try switching it off and on at the wall to bring it back.")
+        _push_anomaly(active, eid, _ANOM13_RULE, AnomalyResult(message=msg, confidence=0.90))
+
+
 # ── ANOM-12: occupancy sensor latched in one state while still alive ─────────
 #
 # ANOM-10 above catches a sensor that has gone SILENT — dead battery, fell off

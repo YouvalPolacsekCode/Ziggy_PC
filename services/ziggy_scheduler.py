@@ -443,6 +443,20 @@ async def run_scheduler() -> None:
             except Exception as exc:
                 log_error(f"[Scheduler] Stuck-occupancy sweep failed: {exc}")
 
+        # ── Hourly: controllable devices gone silent (ANOM-13) ───────────────
+        # Catches a device that stopped reporting but is NOT 'unavailable'
+        # (availability tracking off) — the 13-day-silent bulb ANOM-07/09 miss.
+        # Detection is last_reported-based (down_device_detector), fired through
+        # the shared anomaly plumbing (push + snooze + cooldown + history).
+        if _tick % 60 == 0:
+            try:
+                from services.anomaly_engine import sweep_down_devices
+                from services.ha_subscriber import active_anomalies
+                await sweep_down_devices(active=active_anomalies)
+                log_info("[Scheduler] Down-device sweep complete")
+            except Exception as exc:
+                log_error(f"[Scheduler] Down-device sweep failed: {exc}")
+
         # ── Hourly: poll OTA manifest from relay (Prompt 2 §B) ───────────────
         # Gated by relay config presence. A hub with no relay.url / secret /
         # home.id silently skips — that's the legitimate "local-only dev hub"
