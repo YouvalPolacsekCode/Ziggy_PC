@@ -21,7 +21,13 @@ const SUMMARY = {
   },
 }
 
-const { territories, scratch, schemaText, rules } = args
+// territoryMeta is deliberately small — just { description, roots } per territory, no file
+// lists or community names. Those live on disk at territoriesPath; agents read their own
+// territory's slice themselves, since they have file tools and the controller (who has to
+// write `args` literally into the tool call) does not need to transcribe 34 KB / 641 file
+// paths by hand. Renamed from the raw `meta` key on args to avoid shadowing the exported
+// `meta` literal at the top of this file.
+const { names, meta: territoryMeta, territoriesPath, scratch, schemaText, rules } = args
 
 // Repo roots a territory can point at. Most territories live in ziggy_pc; one
 // (mobile-native) lives entirely in the sibling ziggy_mobile checkout. Agents
@@ -89,11 +95,12 @@ function testsNote(t) {
   if (roots.includes('ziggy_pc')) {
     return `
 Also locate covering tests for each capability. ziggy_pc/tests/ (150 test files, ~2215 tests
-total) is deliberately excluded from your files list above, so it will not show up by browsing
-— search it directly, by capability/feature keyword, function name, or route path (grep test
-names and docstrings). Record what you find in each capability's "tests" field as repo-relative
-paths, ideally down to the test function, e.g. "tests/test_anomaly_engine.py::TestAnom01". Leave
-"tests" empty for a capability you genuinely found no coverage for — do not guess or pad it.`
+total) is deliberately excluded from your territory's files list, so it will not show up there
+even after you read it — search it directly, by capability/feature keyword, function name, or
+route path (grep test names and docstrings). Record what you find in each capability's "tests"
+field as repo-relative paths, ideally down to the test function, e.g.
+"tests/test_anomaly_engine.py::TestAnom01". Leave "tests" empty for a capability you genuinely
+found no coverage for — do not guess or pad it.`
   }
   return `
 Also locate covering tests for each capability. Search for a tests/ directory under your
@@ -105,16 +112,24 @@ field as paths relative to whichever root they live under, prefixed so it's unam
 "ziggy_pc/tests/test_mobile_push.py::test_x". Leave "tests" empty rather than guessing.`
 }
 
-const names = Object.keys(territories)
+// Points an agent at its own slice of the full territories JSON on disk instead of having
+// the file list (and graphify community names) inlined into the prompt. Agents have file
+// tools; the controller does not need to hand-transcribe 641 file paths into `args`.
+function territoryFileListNote(name) {
+  return `
+Your territory's file list and its matching graphify community names are in
+${territoriesPath} — a JSON file shaped
+{"territories": {"<name>": {"files": [...], "communities": [...], "roots": [...]}}}.
+Read it and take the entry for "${name}". That list is your territory; do not work outside
+it except to follow a reference or to find a covering test.`
+}
 
 const results = await pipeline(
   names,
 
   // Stage 1: both angles, blind to each other.
   (name) => {
-    const t = territories[name]
-    const files = t.files.slice(0, 400).join('\n')
-    const communities = t.communities.slice(0, 40).join(', ')
+    const t = territoryMeta[name]
     return parallel([
       () => agent(
         `You are mapping the "${name}" territory of the Ziggy smart-home codebase, CODE-FIRST.
@@ -123,15 +138,12 @@ ${rootNote(t)}
 
 Read the code. Your job is to name every CAPABILITY (something a person gets) and every
 MECHANISM (a reusable building block) visible in these files.
-
-Files in your territory:
-${files}
+${territoryFileListNote(name)}
 
 Matching graphify community wiki pages live in graphify-out/wiki/ (under the ziggy_pc root) —
-these are named:
-${communities}
-They are symbol-level, so use them for orientation and for their "Relationships" sections,
-not for product meaning. You may also run: graphify explain "<node>" and graphify path "<a>" "<b>".
+their names are the "communities" array in that same territories.json entry. They are
+symbol-level, so use them for orientation and for their "Relationships" sections, not for
+product meaning. You may also run: graphify explain "<node>" and graphify path "<a>" "<b>".
 
 A capability is what a user or operator GETS. A mechanism is what capabilities are BUILT FROM.
 Apply the stopping rule: only record a mechanism if you believe 2+ capabilities use it, or it
@@ -165,9 +177,7 @@ Do NOT start from the code. Start from the record of what was built:
 Your unique value is finding capabilities that the code alone will NOT show: things built
 then unwired, things shipped then superseded, things whose only trace is a commit and a
 memory note. Record those with status "abandoned" or "orphaned" and say what happened.
-
-Paths in scope:
-${files}
+${territoryFileListNote(name)}
 
 Set "angle" to "history" on every record. Set "territory" to "${name}".
 
@@ -206,11 +216,12 @@ ${RULES}`,
 
   // Stage 3: prove every status claim. Independent of the reconciler.
   (rec, name) => {
-    const t = territories[name]
+    const t = territoryMeta[name]
     return agent(
       `You are an independent verifier for the "${name}" territory of Ziggy. You did not write
 these records and you should not trust them.
 ${rootNote(t)}
+${territoryFileListNote(name)}
 
 Read ${scratch}/catalog-raw/${name}.reconciled.json.
 
