@@ -166,6 +166,59 @@ def describe_needs_approval(fix: str, lang: str = "en", device_label: str = "") 
     return line.format(label=device_label)
 
 
+# "Why won't my new device connect?" — one line per verdict from
+# services.pairing_doctor. Hebrew keeps the device out of the subject slot
+# ("החיבור של X…") so we never guess a device's grammatical gender.
+_PAIRING_LINES: dict[str, tuple[str, str]] = {
+    "radio_starting": (
+        "הבית עוד מתעורר ומתחבר למכשירים — כדאי לחכות דקה ואז לנסות שוב.",
+        "The home is still waking up and finding your devices — give it a minute, then try again.",
+    ),
+    "stalled": (
+        "החיבור של {stalled} התחיל אבל לא הסתיים. כדאי להחזיר אותו למצב חיבור "
+        "(בדרך כלל לחיצה ארוכה על הכפתור שלו), לקרב אותו לזיגי, ולנסות שוב.",
+        "{stalled} started connecting but never finished. Put it back into pairing mode "
+        "(usually a long press on its button), keep it close to Ziggy, and try again.",
+    ),
+    "awaiting_setup": (
+        "אני כבר רואה את {pending} — נשאר רק לסיים את ההוספה באפליקציה.",
+        "I can already see {pending} — all that's left is finishing it in the app.",
+    ),
+    "pairing_closed": (
+        "מצב החיבור לא פתוח כרגע. צריך לפתוח הוספת מכשיר באפליקציה, "
+        "ורק אז להפעיל את המכשיר החדש.",
+        "The home isn't open to new devices right now. Start Add device in the app first, "
+        "then wake the new one.",
+    ),
+    "ready": (
+        "מהצד שלי הכול מוכן — הבית פתוח ומקשיב. כדאי להחזיר את המכשיר החדש "
+        "למצב חיבור ולהחזיק אותו קרוב לזיגי.",
+        "Everything's ready on my side — the home is open and listening. Put the new device "
+        "back into pairing mode and keep it close to Ziggy.",
+    ),
+}
+
+_RADIO_DOWN_PREFIX = (
+    "המכשירים האלחוטיים בבית לא מגיבים כרגע, אז שום מכשיר חדש לא יצליח להתחבר. ",
+    "Your wireless devices aren't reachable right now, so nothing new can join yet. ",
+)
+
+
+def describe_pairing(assessment: dict, lang: str = "en") -> str:
+    """Explain why a new device isn't connecting — jargon-free, with the next step."""
+    a = assessment or {}
+    verdict = a.get("verdict", "ready")
+    if verdict == "radio_down":
+        prefix = _RADIO_DOWN_PREFIX[0] if lang == "he" else _RADIO_DOWN_PREFIX[1]
+        return prefix + describe_manual_action(_H.MANUAL_REPLUG_DONGLE, lang)
+    he, en = _PAIRING_LINES.get(verdict, _PAIRING_LINES["ready"])
+    line = he if lang == "he" else en
+    return line.format(
+        stalled=", ".join(str(n) for n in (a.get("stalled_names") or [])),
+        pending=", ".join(str(n) for n in (a.get("pending_names") or [])),
+    )
+
+
 def describe_ack(count: int, lang: str = "en") -> str:
     """Confirm the user's 'these are fine, stop flagging them'."""
     if lang == "he":

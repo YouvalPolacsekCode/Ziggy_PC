@@ -137,6 +137,86 @@ def _publish_sync(topic: str, payload: bytes, qos: int) -> None:
         client.disconnect()
 
 
+def _decode_retained(payload: bytes) -> Any:
+    """Retained payloads are JSON on Z2M's bridge topics, plain text elsewhere."""
+    text = payload.decode("utf-8", "replace") if isinstance(payload, (bytes, bytearray)) else str(payload)
+    try:
+        return json.loads(text)
+    except Exception:
+        return text
+
+
+def _read_retained_sync(topic: str, timeout: float) -> bytes | None:
+    """Connect, subscribe, wait for the retained message, disconnect.
+
+    Retained messages arrive immediately on subscribe, so this is a short
+    round-trip — but if the topic has no retained value nothing ever arrives,
+    hence the timeout. Same CONNACK discipline as :func:`_publish_sync`: paho's
+    connect() only does the TCP handshake, so an auth rejection would otherwise
+    look like an empty topic.
+    """
+    host, port, tls, user, pw = _parse_broker(_broker_url())
+    if user is None:
+        fb_user, fb_pw = _settings_credentials()
+        if fb_user is not None:
+            user = fb_user
+            pw = pw if pw is not None else fb_pw
+    client = mqtt_client.Client(callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
+    if user is not None:
+        client.username_pw_set(user, pw or "")
+    if tls:
+        client.tls_set()
+
+    got: dict = {"payload": None}
+    arrived = threading.Event()
+    connack: dict = {"rc": None}
+    ready = threading.Event()
+
+    def _on_connect(_c, _u, _flags, reason_code, _props):
+        connack["rc"] = reason_code
+        ready.set()
+
+    def _on_message(_c, _u, msg):
+        got["payload"] = msg.payload
+        arrived.set()
+
+    client.on_connect = _on_connect
+    client.on_message = _on_message
+
+    client.connect(host, port, keepalive=int(_CONNECT_TIMEOUT_S * 2))
+    client.loop_start()
+    try:
+        if not ready.wait(timeout=_CONNECT_TIMEOUT_S):
+            raise RuntimeError("MQTT connect timeout (no CONNACK)")
+        rc = connack["rc"]
+        is_fail = getattr(rc, "is_failure", None)
+        if is_fail is True or (is_fail is None and int(rc) != 0):
+            raise RuntimeError(f"MQTT connect failed: {rc}")
+        client.subscribe(topic, qos=0)
+        arrived.wait(timeout=timeout)
+        return got["payload"]
+    finally:
+        client.loop_stop()
+        client.disconnect()
+
+
+async def read_retained(topic: str, timeout: float = 3.0) -> Any:
+    """Read one retained message, decoded. Returns None if there isn't one.
+
+    Best-effort by contract — a home with no broker, a broker that's down, or a
+    topic nobody retained all yield None rather than an error, so a diagnostic
+    that consults MQTT still works on homes that have none.
+    """
+    try:
+        raw = await asyncio.to_thread(_read_retained_sync, topic, timeout)
+    except Exception as e:
+        log_error(f"[mqtt] read {topic} failed: {e}")
+        return None
+    if raw is None:
+        return None
+    return _decode_retained(raw)
+
+
 async def publish(topic: str, payload: Any, qos: int = 0) -> None:
     """Connect, publish one message, disconnect. Raises on failure.
 

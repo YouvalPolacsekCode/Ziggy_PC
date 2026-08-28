@@ -267,6 +267,20 @@ TOOL_SCHEMAS: list[dict] = [
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
+        "name": "diagnose_pairing",
+        "description": (
+            "Find out why a NEW device won't connect / won't be found / won't "
+            "pair — 'I'm trying to add a new sensor and it won't connect', 'the "
+            "new bulb isn't found', 'למה המכשיר החדש לא מתחבר?'. Checks whether "
+            "the home is open to new devices, whether it can reach its wireless "
+            "devices at all, and whether a device started connecting but never "
+            "finished. Read-only; no arguments. Use this instead of "
+            "check_home_health when the problem is a device that was never "
+            "added yet."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
         "name": "explain_device_change",
         "description": (
             "Explain WHY a device changed on its own — 'why did the living-room light "
@@ -621,6 +635,23 @@ async def _exec_list_down_devices(lang: str) -> dict:
     }
 
 
+async def _exec_diagnose_pairing(lang: str) -> dict:
+    """Read-only: why isn't the new device connecting? Verdict + the next step."""
+    from services import pairing_doctor
+    from core.agent import health_speech
+    assessment = await pairing_doctor.diagnose_pairing()
+    return {
+        "ok": True,
+        "message": health_speech.describe_pairing(assessment, lang),
+        "data": {"kind": "pairing_diagnosis",
+                 "verdict": assessment.get("verdict"),
+                 "radio_ok": assessment.get("radio_ok"),
+                 "open_to_new_devices": assessment.get("pairing_open"),
+                 "unfinished": assessment.get("stalled_names") or [],
+                 "waiting_to_add": assessment.get("pending_names") or []},
+    }
+
+
 async def _exec_acknowledge_alerts(lang: str) -> dict:
     """User says the currently-offline devices are fine — stop flagging them."""
     from services import ha_health
@@ -674,6 +705,8 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
         return await _exec_recover_connectivity(lang, actor)
     if name == "diagnose_device":
         return await _exec_diagnose_device(args, directory, lang)
+    if name == "diagnose_pairing":
+        return await _exec_diagnose_pairing(lang)
     if name == "acknowledge_alerts":
         return await _exec_acknowledge_alerts(lang)
     if name == "list_down_devices":

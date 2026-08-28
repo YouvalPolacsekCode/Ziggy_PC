@@ -119,3 +119,37 @@ def test_describe_cause_other_kinds_stay_clean(kind, lang):
     out = hs.describe_cause(r, label, lang=lang)
     assert out.strip() and label in out
     _assert_jargon_free(out)
+
+
+# ── describe_pairing: "why won't my new device connect?" ────────────────────
+@pytest.mark.parametrize("verdict", ["radio_down", "radio_starting", "stalled",
+                                     "awaiting_setup", "pairing_closed", "ready"])
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_every_pairing_verdict_says_something_useful_and_clean(verdict, lang):
+    a = {"verdict": verdict, "radio_ok": True, "pairing_open": True,
+         "stalled_names": ["Front Door Sensor"], "pending_names": ["Living Room TV"]}
+    out = hs.describe_pairing(a, lang=lang)
+    assert out.strip(), f"no line for {verdict}"
+    _assert_jargon_free(out)
+
+
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_a_stalled_device_is_named_to_the_user(lang):
+    a = {"verdict": "stalled", "radio_ok": True, "pairing_open": True,
+         "stalled_names": ["Front Door Sensor"], "pending_names": []}
+    assert "Front Door Sensor" in hs.describe_pairing(a, lang=lang)
+
+
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_a_discovered_device_is_named_to_the_user(lang):
+    a = {"verdict": "awaiting_setup", "radio_ok": True, "pairing_open": False,
+         "stalled_names": [], "pending_names": ["Living Room TV"]}
+    assert "Living Room TV" in hs.describe_pairing(a, lang=lang)
+
+
+def test_a_wedged_radio_gets_the_physical_step_not_a_shrug():
+    a = {"verdict": "radio_down", "radio_ok": False, "pairing_open": None,
+         "stalled_names": [], "pending_names": []}
+    out = hs.describe_pairing(a, lang="en")
+    assert "plug" in out.lower(), "a wedged radio needs the replug step"
+    _assert_jargon_free(out)

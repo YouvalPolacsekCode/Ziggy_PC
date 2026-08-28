@@ -130,6 +130,47 @@ async def test_recover_connectivity_failure_translates_replug_not_raw_jargon(mon
     _assert_clean(json.dumps(res, ensure_ascii=False))
 
 
+# ── diagnose_pairing (north-star #2: "why won't my new device connect?") ────
+@pytest.mark.asyncio
+async def test_diagnose_pairing_explains_a_stalled_device_without_jargon(monkeypatch):
+    from services import pairing_doctor as pd
+
+    async def fake_diag():
+        return {"verdict": "stalled", "radio_ok": True, "pairing_open": True,
+                "stalled_names": ["Front Door Sensor"], "pending_names": []}
+    monkeypatch.setattr(pd, "diagnose_pairing", fake_diag)
+
+    res = await T.execute_tool("diagnose_pairing", {}, directory={}, lang="he")
+
+    assert res["ok"] is True
+    assert res["data"]["kind"] == "pairing_diagnosis"
+    assert res["data"]["verdict"] == "stalled"
+    assert "Front Door Sensor" in res["message"]
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_diagnose_pairing_reports_a_wedged_radio_cleanly(monkeypatch):
+    from services import pairing_doctor as pd
+
+    async def fake_diag():
+        return {"verdict": "radio_down", "radio_ok": False, "pairing_open": None,
+                "stalled_names": [], "pending_names": []}
+    monkeypatch.setattr(pd, "diagnose_pairing", fake_diag)
+
+    res = await T.execute_tool("diagnose_pairing", {}, directory={}, lang="en")
+
+    assert res["data"]["verdict"] == "radio_down"
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+def test_diagnose_pairing_is_offered_to_the_model():
+    names = [s["function"]["name"] for s in T.TOOL_SCHEMAS]
+    assert "diagnose_pairing" in names
+    schema = next(s for s in T.TOOL_SCHEMAS if s["function"]["name"] == "diagnose_pairing")
+    _assert_clean(json.dumps(schema, ensure_ascii=False))
+
+
 # ── the PDP gate: state-changing fixes ask the policy engine first ──────────
 #
 # The gate lives BELOW the model: a hijacked prompt can still call the tool, but
