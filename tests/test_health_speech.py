@@ -76,3 +76,19 @@ def test_replug_manual_action_is_jargon_free(lang):
     out = hs.describe_manual_action(H.MANUAL_REPLUG_DONGLE, lang=lang)
     assert out.strip(), "expected replug guidance"
     _assert_jargon_free(out)
+
+
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_down_devices_empty_is_reassuring(lang):
+    out = hs.describe_down_devices([], lang=lang)
+    assert out.strip()
+    _assert_jargon_free(out)
+
+
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_down_devices_names_them_and_stays_clean(lang):
+    items = [{"name": "Entry Light", "silent_hours": 336.0},
+             {"name": "Outdoor Watering", "silent_hours": 340.0}]
+    out = hs.describe_down_devices(items, lang=lang)
+    assert "Entry Light" in out and "Outdoor Watering" in out
+    _assert_jargon_free(out)

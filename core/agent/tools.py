@@ -256,6 +256,16 @@ TOOL_SCHEMAS: list[dict] = [
         ),
         "parameters": {"type": "object", "properties": {}},
     }},
+    {"type": "function", "function": {
+        "name": "list_down_devices",
+        "description": (
+            "Proactively scan the WHOLE home for devices that have gone quiet / "
+            "stopped responding for a while (not just one the user named). Use for "
+            "'is anything broken?', 'are all my devices working?', or a general "
+            "health check. Read-only."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    }},
 ]
 
 # Tool names that produce a natural action-confirmation and, when they succeed
@@ -504,6 +514,19 @@ async def _exec_diagnose_device(args: dict, directory: dict, lang: str) -> dict:
     }
 
 
+async def _exec_list_down_devices(lang: str) -> dict:
+    """Proactive scan: which devices have gone quiet? Names only — never ids."""
+    from services import down_device_detector as dd
+    from core.agent import health_speech
+    items = dd.find_down_devices()
+    return {
+        "ok": True,
+        "message": health_speech.describe_down_devices(items, lang),
+        "data": {"kind": "down_devices", "count": len(items),
+                 "names": [i.get("name") for i in items]},
+    }
+
+
 async def _exec_acknowledge_alerts(lang: str) -> dict:
     """User says the currently-offline devices are fine — stop flagging them."""
     from services import ha_health
@@ -553,6 +576,8 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en")
         return await _exec_diagnose_device(args, directory, lang)
     if name == "acknowledge_alerts":
         return await _exec_acknowledge_alerts(lang)
+    if name == "list_down_devices":
+        return await _exec_list_down_devices(lang)
     if name in _PASSTHROUGH:
         return await _exec_passthrough(name, args)
     return {"ok": False, "message": f"unknown tool {name}"}

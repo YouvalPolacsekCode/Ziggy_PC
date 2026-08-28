@@ -133,6 +133,22 @@ def describe_ack(count: int, lang: str = "en") -> str:
     return "Got it — I won't flag those again."
 
 
+def describe_down_devices(items: list[dict], lang: str = "en") -> str:
+    """Summarize the proactive down-device scan, naming the quiet devices."""
+    if not items:
+        return ("כל המכשירים מדברים עם הבית — הכול טוב 🙂" if lang == "he"
+                else "All your devices are talking to the home — all good.")
+    names = ", ".join(str(i.get("name", "?")) for i in items)
+    n = len(items)
+    if lang == "he":
+        what = "מכשיר אחד ששקט" if n == 1 else f"{n} מכשירים ששקטים"
+        return (f"מצאתי {what} כבר זמן מה: {names}. כדאי לכבות ולהדליק אותם מהמפסק "
+                f"בקיר, ואבדוק אם חזרו לדבר.")
+    what = "one device that's been quiet" if n == 1 else f"{n} devices that have been quiet"
+    return (f"I found {what} for a while: {names}. Worth switching them off and on at "
+            f"the wall — I'll check if they come back.")
+
+
 def describe_diagnosis(device_label: str, is_on: bool, last_intended: str | None,
                        lang: str = "en") -> str:
     """One-line jargon-free read on a single device (label already carries Hebrew ה)."""

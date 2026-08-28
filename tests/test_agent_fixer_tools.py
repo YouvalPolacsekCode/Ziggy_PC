@@ -5,24 +5,29 @@ jargon-free: the model must never be handed a raw ISSUE_/entity_id it could
 parrot back to the user (feedback_ziggy_product_surface).
 """
 import json
+import re
 
 import pytest
 
 from core.agent import tools as T
 from services import ha_health as H
 
-_BANNED = [
+_BANNED_WORDS = [
     "home assistant", "zigbee", "coordinator", "integration", "mqtt", "entity",
-    "light.", "climate.", "switch.", "sensor.", "binary_sensor.",
     # raw issue codes must not survive into the model-facing result
     "coordinator_setup_failed", "devices_offline", "ha_unreachable",
 ]
+# A real entity_id is lowercase "domain.identifier" — match that, NOT a proper
+# device name like "Entry Light." (name + punctuation).
+_ENTITY_ID_RE = re.compile(
+    r"\b(light|climate|switch|sensor|binary_sensor|fan|cover|lock|media_player)\.[a-z0-9_]")
 
 
 def _assert_clean(blob: str) -> None:
     low = blob.lower()
-    for w in _BANNED:
+    for w in _BANNED_WORDS:
         assert w not in low, f"jargon leaked: {w!r} in {blob!r}"
+    assert not _ENTITY_ID_RE.search(low), f"entity_id leaked in {blob!r}"
 
 
 @pytest.mark.asyncio
@@ -155,4 +160,28 @@ async def test_acknowledge_alerts_clean(monkeypatch):
                         lambda ids: {"ok": True, "acknowledged_count": len(ids)})
     res = await T.execute_tool("acknowledge_alerts", {}, directory={}, lang="he")
     assert res["ok"] is True
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+# ── list_down_devices (proactive detector, exposed to the agent) ─────────────
+@pytest.mark.asyncio
+async def test_list_down_devices_translates_and_hides_ids(monkeypatch):
+    from services import down_device_detector as dd
+    monkeypatch.setattr(dd, "find_down_devices", lambda stale_hours=48.0: [
+        {"entity_id": "light.0xAAA", "name": "Entry Light", "domain": "light",
+         "state": "off", "silent_hours": 336.0}])
+    res = await T.execute_tool("list_down_devices", {}, directory={}, lang="he")
+    assert res["ok"] is True
+    assert res["data"]["count"] == 1
+    assert "Entry Light" in res["message"]
+    # entity_ids must NOT reach the model-facing result
+    _assert_clean(json.dumps(res, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_list_down_devices_none_is_reassuring(monkeypatch):
+    from services import down_device_detector as dd
+    monkeypatch.setattr(dd, "find_down_devices", lambda stale_hours=48.0: [])
+    res = await T.execute_tool("list_down_devices", {}, directory={}, lang="he")
+    assert res["ok"] is True and res["data"]["count"] == 0
     _assert_clean(json.dumps(res, ensure_ascii=False))
