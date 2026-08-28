@@ -398,6 +398,7 @@ export default function AIChat() {
   } = useVoiceStore()
 
   const [input,     setInput]     = useState('')
+  const [showThreads, setShowThreads] = useState(false)   // side drawer of past conversations
   const [orbState,  setOrbState]  = useState('idle')
   const [thinking,  setThinking]  = useState(false)
   // 'pro' when the user's message looks like a Pro Mode outcome — the
@@ -1638,18 +1639,24 @@ export default function AIChat() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Durable-thread switcher — browse / return to past conversations. */}
-          <details style={{ position: 'relative' }}>
-            <summary style={{ cursor: 'pointer', listStyle: 'none', fontSize: 16 }} title={t('chat.headerTitle')}>🗂</summary>
-            <div style={{
-              position: 'absolute', top: '120%', insetInlineEnd: 0, zIndex: 50,
-              background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12,
-              padding: 8, minWidth: 220, maxHeight: 360, overflowY: 'auto',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            }}>
-              <ThreadList onNew={newThread} onSwitch={switchThread} />
-            </div>
-          </details>
+          {/* Durable-thread switcher — opens a side drawer of past conversations. */}
+          <button
+            onClick={() => setShowThreads(true)}
+            title={t('chat.eyebrow')}
+            aria-label={t('chat.eyebrow')}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 32, height: 32, borderRadius: 8, background: 'transparent',
+              border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="14" y2="17" />
+            </svg>
+          </button>
           {/* Wake-word master toggle — controls the backend always-on listener,
               NOT the hold-to-talk mic on this page. Hidden when wake-word is
               not configured/working; in that case only push-to-talk is in play. */}
@@ -1685,7 +1692,7 @@ export default function AIChat() {
               The dictation itself lives in the LiveUserBubble in the chat;
               this pill is just the steady "what stage am I in" indicator
               (Listening → Transcribing → Thinking → Speaking). */}
-          {(listening || busy) && (
+          {(listening || transcribing || speaking) && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 10px', borderRadius: 999,
@@ -1722,6 +1729,34 @@ export default function AIChat() {
           )}
         </div>
       </div>
+
+      {/* ── Threads drawer (slide-over, ChatGPT/Claude style) ── */}
+      {showThreads && (
+        <div
+          onClick={() => setShowThreads(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.35)' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0,
+              width: 'min(84vw, 320px)', background: 'var(--bg)',
+              borderInlineEnd: '0.5px solid var(--line)', boxShadow: '0 0 40px rgba(0,0,0,0.25)',
+              display: 'flex', flexDirection: 'column', padding: '14px 12px', overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="z-eyebrow">{t('chat.eyebrow')}</span>
+              <button
+                onClick={() => setShowThreads(false)}
+                aria-label="close"
+                style={{ background: 'transparent', border: 'none', fontSize: 20, lineHeight: 1, color: 'var(--ink-mute)', cursor: 'pointer' }}
+              >×</button>
+            </div>
+            <ThreadList onSwitch={(id) => { switchThread(id); setShowThreads(false) }} />
+          </div>
+        </div>
+      )}
 
       {/* ── Empty state ── */}
       <AnimatePresence>

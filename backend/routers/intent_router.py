@@ -359,6 +359,16 @@ async def process_chat(req: ChatRequest, request: Request):
                 raise
             ct.append_message(req.thread_id, "assistant", res["reply"], data=res.get("data"))
             ct.set_status(req.thread_id, "idle")
+            # Auto-title from the first exchange (fire-and-forget, off the reply path).
+            try:
+                _th = ct.get_thread(req.thread_id)
+                _n = len([m for m in (_th or {}).get("messages", [])
+                          if m["role"] in ("user", "assistant")])
+                if _n == 2:
+                    from services import chat_runner as _cr
+                    asyncio.create_task(asyncio.to_thread(_cr.generate_title, req.thread_id))
+            except Exception:
+                pass
             await _announce_ziggy_response(req.text, res["reply"], req.source, res["ok"],
                                            res.get("intent"), request_id, res.get("data"))
             await manager.broadcast({

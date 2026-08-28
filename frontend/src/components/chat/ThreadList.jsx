@@ -6,15 +6,12 @@ import { useChatStore } from '../../stores/chatStore'
  * Drop into AIChat alongside the useChatThreads() hook:
  *   <ThreadList onNew={threads.newThread} onSwitch={threads.switchThread} />
  */
-export default function ThreadList({ onNew, onSwitch }) {
+export default function ThreadList({ onSwitch }) {
   const threads = useChatStore((s) => s.threads)
   const activeId = useChatStore((s) => s.threadId)
 
   return (
     <div className="ziggy-threadlist" dir="rtl">
-      <button type="button" className="ziggy-thread-new" onClick={onNew}>
-        + שיחה חדשה
-      </button>
       <ul className="ziggy-thread-items">
         {(threads || []).map((t) => (
           <li

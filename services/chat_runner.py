@@ -27,6 +27,37 @@ def _err_text() -> str:
     return "משהו השתבש אצלי רגע — אפשר לנסות שוב."
 
 
+def generate_title(thread_id: str) -> None:
+    """Best-effort short TLDR title for a thread from its first exchange (cheap LLM).
+
+    Sync (blocking LLM call) — call via asyncio.to_thread so it never blocks the loop.
+    Overwrites the placeholder first-message title; a user rename later stays put because
+    we only generate on the first exchange.
+    """
+    th = ct.get_thread(thread_id)
+    if not th:
+        return
+    msgs = [m for m in th["messages"]
+            if m["role"] in ("user", "assistant") and (m.get("content") or "").strip()]
+    if len(msgs) < 2:
+        return
+    convo = "\n".join(f'{m["role"]}: {m["content"]}' for m in msgs[:6])[:2000]
+    try:
+        from integrations.llm_gateway import chat_completion
+        resp = chat_completion("intent_parse", [
+            {"role": "system", "content":
+                "Give a very short title (3-5 words) summarizing this chat, in the SAME "
+                "language as the chat. Reply with ONLY the title — no quotes, no trailing period."},
+            {"role": "user", "content": convo},
+        ], temperature=0.2, max_tokens=24)
+        title = (resp.choices[0].message.content or "").strip().strip('"').strip("'").strip()
+        if title:
+            ct.rename_thread(thread_id, title[:60])
+            log_info(f"[chat_runner] titled {thread_id}: {title[:60]}")
+    except Exception as e:
+        log_error(f"[chat_runner] title generation failed for {thread_id}: {e}")
+
+
 async def run_turn(thread_id: str, text: str, *, compute: ComputeFn,
                    broadcast: Callable[[dict], Awaitable[None]] | None = None) -> None:
     """Run one assistant turn to completion: mark running → compute → persist → notify.
