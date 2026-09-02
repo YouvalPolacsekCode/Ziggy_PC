@@ -1,0 +1,450 @@
+{
+  "entries": [
+    {
+      "id": "israel-hebrew-voice-native",
+      "type": "israel",
+      "title_he": "לדבר עם הבית בעברית שלכם",
+      "title_en": "Talk to it in real Hebrew",
+      "body_he": "אפשר לומר ״תדליק את האור בסלון״ או ״תכבה את הדוד״ וזיגי מבין — כולל מילים ישראליות כמו ״דוד״ ו״בוילר״ שמוצר זר פשוט לא מכיר. זיגי גם עונה בקול עברי אמיתי, מוקלט על ידי דוברי עברית, ולא קול אנגלי שמנסה להקריא עברית. השפה שלו נבנתה מראש עם ניסוח נטול מגדר — הוא לא פונה אליכם ב״בחר/י״, ולא מניח שאתם גבר עד שהוא באמת יודע.",
+      "body_en": "Say \"turn on the light in the living room\" or \"turn off the water heater\" and Ziggy understands — including Israeli words for the water heater, \"dud\" or \"boiler,\" that a foreign product has never heard of. It answers back in a real Hebrew voice recorded by Israeli speakers, not an English voice sounding Hebrew out phonetically. And its Hebrew was built gender-neutral from the ground up — it never asks you to pick \"male or female,\" it just doesn't assume.",
+      "capabilities": [
+        "hebrew-conversation-and-voice"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "hebrew",
+        "voice",
+        "chat",
+        "gender-neutral"
+      ]
+    },
+    {
+      "id": "israel-hebrew-writing-native",
+      "type": "israel",
+      "title_he": "עברית שנכתבה כאן, לא תורגמה",
+      "title_en": "Hebrew that was written here, not translated",
+      "body_he": "כל מסך בזיגי קיים בעברית חמה ומדוברת — לא עברית ספרותית שמריחה מתרגום. אין בו מונחי מהנדסים בכלל; חריגה הפכה להתראה, ופעולה אוטומטית היא פשוט ״פעולה אוטומטית״. גם החדרים והמכשירים שאתם קוראים להם בשם משלכם מוצגים בעברית בכל מקום באפליקציה, בלי לשנות את מה שהקלדתם בפועל.",
+      "body_en": "Every screen in Ziggy exists in warm, spoken Hebrew — not the stiff, machine-translated Hebrew you get from a product built somewhere else and localized afterward. There's no leftover engineer's vocabulary anywhere in it; a system alert just reads as an alert, and an automatic action says exactly that. Rooms and devices you name yourself show up in Hebrew everywhere in the app, without ever changing what you actually typed.",
+      "capabilities": [
+        "hebrew-and-rtl-product"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "hebrew",
+        "interface",
+        "jargon-free"
+      ]
+    },
+    {
+      "id": "israel-rtl-done-right",
+      "type": "israel",
+      "title_he": "מימין לשמאל, לא תרגיל אופטי",
+      "title_en": "Right to left, not a mirror trick",
+      "body_he": "כשבוחרים עברית, כל האפליקציה — כל מסך, אשף והודעה — מתהפכת בבת אחת לכיוון מימין לשמאל, בלי הבהוב ובלי מילה אנגלית שנשארת תקועה בטעות. זו לא עברית שהודבקה על ממשק אנגלי; זה בית שנבנה מהיסוד לקרוא בכיוון הנכון — כולל המסך הראשון שרואים כשמוציאים את זיגי מהקופסה, עוד לפני שבחרתם שפה בכלל.",
+      "body_en": "Choose Hebrew and the whole app — every screen, every wizard, every toast message — flips right to left at once, with no flicker and no stray English string left behind. This isn't Hebrew pasted onto an English layout; it's a product built from the ground up to read in the right direction, down to the very first screen you see when you take Ziggy out of the box — before you've chosen a language at all.",
+      "capabilities": [
+        "hebrew-and-rtl-product"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "rtl",
+        "hebrew",
+        "onboarding"
+      ]
+    },
+    {
+      "id": "israel-ac-remote-learning",
+      "type": "israel",
+      "title_he": "השלט של המזגן שלכם, בדיוק כמו שהוא",
+      "title_en": "Your AC's own remote, exactly as it is",
+      "body_he": "אין צורך לזרוק את שלט המזגן הישן. זיגי לומד אותו ישירות — לוחצים על הכפתורים על השלט האמיתי, אחד אחד, וזיגי זוכר בדיוק מה כל כפתור עושה, על כל מותג שיש לכם, לא רק על אלה שהוא ״מכיר״ מראש. אצל תדיראן, המותג הכי נפוץ בישראל, זיגי כבר יודע לגזור טווח טמפרטורות שלם מהליכה מודרכת אחת בבית אמיתי — כולל טמפרטורות שמעולם לא לחצתם עליהן; אצל מותגים אחרים היכולת הזאת עדיין בהתהוות, אבל לימוד כפתור־כפתור עובד על כל שלט שיש לכם.",
+      "body_en": "You don't need to replace your AC's old remote. Ziggy learns it directly — you press each button on your real remote once, and Ziggy remembers exactly what it does, on whatever brand you own, not just the ones it already recognizes. For Tadiran, Israel's most common brand, Ziggy has already worked out a whole temperature ladder from one real walkthrough — including settings you never pressed while teaching it. That deeper trick is still maturing for other brands, but learning button by button already works on any remote you hand it.",
+      "capabilities": [
+        "teach-ziggy-a-remote",
+        "crack-ac-remote-language"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "ac",
+        "ir",
+        "tadiran",
+        "remote"
+      ]
+    },
+    {
+      "id": "israel-ac-from-anywhere",
+      "type": "israel",
+      "title_he": "אחרי שזיגי למד את המזגן, השלט הופך לאופציונלי",
+      "title_en": "Once it's learned the AC, the remote is optional",
+      "body_he": "אחרי שהמזגן נלמד, אפשר לבקש מזיגי להדליק אותו, לכבות, או לשנות טמפרטורה — בצ׳אט, בקול, או כשלב בפעולה אוטומטית — בלי לחפש את השלט בכריות הספה. זו בדיוק הנקודה שבה מוצר זר בדרך כלל נעצר: הוא יודע לדבר עם מזגן ״חכם״ עם Wi-Fi מובנה, אבל לא עם המזגן האינפרא הרגיל שרוב הבתים בישראל מריצים בפועל.",
+      "body_en": "Once the AC is learned, you can ask Ziggy to turn it on, turn it off, or change the temperature — in chat, by voice, or as a step in an automatic action — without hunting for the remote in the couch cushions. This is exactly where a foreign product usually stops: it can talk to an AC with built-in Wi-Fi, but not to the plain infrared unit that most Israeli homes actually run.",
+      "capabilities": [
+        "ir-in-automations"
+      ],
+      "family": "comfort",
+      "moments": [
+        "arriving",
+        "away"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "ac",
+        "ir",
+        "voice",
+        "automation"
+      ]
+    },
+    {
+      "id": "israel-cooling-first",
+      "type": "israel",
+      "title_he": "קירור קודם, כי ככה חם כאן",
+      "title_en": "Cooling comes first, because that's the climate",
+      "body_he": "כשמגדירים בזיגי טווח נוח לחדר, הוא מתחיל אתכם מצד הקירור — לא מהחימום. זה נשמע מובן מאליו, אבל זו לא ברירת המחדל של מוצר שתוכנן במקום קר: ברירת המחדל של זיגי מתחילה מ־24 מעלות, כי זה בית ישראלי, לא דירה בשטוקהולם. אותה מערכת בכל זאת יודעת לחמם כשצריך — היא רק לא מתחילה משם.",
+      "body_en": "When you set up a comfortable range for a room in Ziggy, it starts you on the cooling side — not heating. That sounds obvious, but it isn't the default in a product designed somewhere cold: Ziggy's starting point is 24°C, because that's an Israeli home, not an apartment in Stockholm. The same system still knows how to heat when you need it — it just doesn't start there.",
+      "capabilities": [
+        "smart-climate-control"
+      ],
+      "family": "comfort",
+      "moments": [
+        "evening"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "climate",
+        "ac",
+        "default"
+      ]
+    },
+    {
+      "id": "israel-devices-you-already-own",
+      "type": "israel",
+      "title_he": "המכשירים שכבר יש לכם בבית",
+      "title_en": "The devices you already have at home",
+      "body_he": "״תדליק את הדוד״ הוא משפט שזיגי מבין באופן טבעי, לא תרגום מאולץ. ואם יש לכם דוד חשמל של Switcher — מותג ישראלי שנמצא בהמון בתים — זיגי מצמד אותו דרך אותו אשף הוספת מכשיר שמשמש לכל דבר אחר; מזינים את פרטי חשבון ה־Switcher פעם אחת, וכל מכשיר Switcher נוסף מצטרף בלי לחזור על זה.",
+      "body_en": "\"Turn on the water heater\" is a sentence Ziggy understands natively, not a forced translation. And if you have a Switcher electric water heater — an Israeli brand that's in a lot of homes — Ziggy pairs it through the same add-a-device screen it uses for everything else; you enter your Switcher account once, and every additional Switcher device joins without asking again.",
+      "capabilities": [
+        "add-a-device",
+        "hebrew-conversation-and-voice"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "bathroom"
+      ],
+      "tags": [
+        "switcher",
+        "water-heater",
+        "devices"
+      ]
+    },
+    {
+      "id": "israel-shabbat-one-tap",
+      "type": "israel",
+      "title_he": "שבת: לוחצים פעם אחת, ואז שום דבר לא זז",
+      "title_en": "Shabbat: one tap, then nothing moves",
+      "body_he": "בזיגי יש שגרת ״שבת״ מוכנה מראש: לוחצים עליה פעם אחת לפני הדלקת נרות, והיא מסדרת את הבית למצב שקבעתם — אור בסלון דלוק, מזגן במצב שבחרתם — ומשם שום דבר לא משתנה לבד עד שאתם אומרים אחרת. זו לא ״מצב שבת״ קסום שמבין הלכה — זו פעולה חד־פעמית ומדויקת, בשליטה שלכם מהרגע הראשון.",
+      "body_en": "Ziggy has a ready-made \"Shabbat\" routine: tap it once before candle-lighting, and it sets the home to the state you defined — living room light on, AC where you want it — and from there nothing changes on its own until you say otherwise. It isn't some automatic system that understands halacha; it's a precise, one-time action, fully in your control from the start.",
+      "capabilities": [
+        "more-ready-made-routines"
+      ],
+      "family": "trust",
+      "moments": [
+        "evening"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "shabbat",
+        "routine",
+        "observance"
+      ]
+    },
+    {
+      "id": "israel-local-support",
+      "type": "israel",
+      "title_he": "מי עונה כשמשהו לא עובד",
+      "title_en": "Who answers when something's wrong",
+      "body_he": "ההתקנה של זיגי בנויה להיות עצמאית — לא מחכים לטכנאי כדי להתחיל. אבל אם משהו כן נתקע, מי שעונה הוא לא מוקד תמיכה בחו״ל שמקריא תסריט מתורגם: הצוות יכול להתחבר מרחוק ישירות לזיגי שלכם ולראות מה קורה, בעברית, בלי לחכות לאזור זמן של מישהו אחר.",
+      "body_en": "Setting Ziggy up is meant to be self-serve — you don't wait for a technician to get started. But when something is actually stuck, the person who answers isn't an overseas call center reading from a translated script: the team can log directly into your Ziggy remotely and see what's really happening, in Hebrew, without waiting on someone else's time zone.",
+      "capabilities": [
+        "founder-remote-support",
+        "guided-home-setup"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "support",
+        "remote-access",
+        "hebrew"
+      ]
+    },
+    {
+      "id": "install-guided-setup",
+      "type": "install",
+      "title_he": "מקופסה ריקה לבית שעובד",
+      "title_en": "From an empty box to a working home",
+      "body_he": "הטלפון הראשון שסורק את הקוד על הקופסה הופך לבעלים של הבית. משם, אשף מודרך — אותו אשף באפליקציה ובדפדפן רגיל — מחבר את זיגי לרשת האלחוטית שלכם דרך רשת זמנית שהוא פותח בעצמו, כי אין לו מסך משלו. עוד לפני שיש חשבון בכלל בוחרים שפה, ואז מתבקשים לתת שם, במילים שלכם, לחיישנים שהגיעו בקופסה. בסוף האשף מוצעות חמש פעולות אוטומטיות מוכנות שאפשר להפעיל בלחיצה אחת, וברגע שההתקנה מסתיימת בפועל, זה נרשם גם אצלנו — לא רק אצלכם.",
+      "body_en": "The first phone that scans the code on the box becomes the home's owner. From there, a guided wizard — the same one whether you're using the app or a plain browser — gets Ziggy onto your Wi-Fi through a temporary network it opens itself, since it has no screen of its own. A language gets picked before any account even exists, and you're asked to name the sensors that came in the box, in your own words. The wizard finishes by offering five ready-made automatic actions you can turn on with one tap, and the moment setup actually completes, we know it too — not just you.",
+      "capabilities": [
+        "guided-home-setup"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "onboarding",
+        "wifi",
+        "setup"
+      ]
+    },
+    {
+      "id": "install-devices-ready",
+      "type": "install",
+      "title_he": "רוב מה שבקופסה כבר מכיר את זיגי",
+      "title_en": "Most of what's in the box already knows Ziggy",
+      "body_he": "לפני שערכת זיגי יוצאת אליכם, היא עוברת הדמיה מלאה שמצמידה את זיגי לחיישנים ולמכשירים שמגיעים איתו בקופסה, כסט אחד — לא מגיעה אליכם ערמת חלקים זרים שצריך לחבר אחד־אחד. שום ערכה לא יוצאת בלי בדיקה שמוודאת שאפשר לתקן אותה מרחוק בעתיד, ושהגיבוי הראשון שלה כבר עבד בפועל. כל מה שמתווסף מאוחר יותר — מכשיר Wi-Fi, או מכשיר Switcher ישראלי — עובר דרך אותו מסך הוספת מכשיר אחד.",
+      "body_en": "Before a Ziggy kit ships out, it goes through a full imaging process that matches Ziggy to the sensors and devices that come with it, as one set — it doesn't arrive as a pile of unrelated parts you have to connect one by one. No kit ships without a check that proves it can be fixed remotely later, and that its first backup already worked for real. Anything you add after that — a Wi-Fi device, or an Israeli Switcher device — goes through that same single add-a-device screen.",
+      "capabilities": [
+        "hub-provisioning-and-imaging",
+        "add-a-device"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "kit",
+        "imaging",
+        "setup"
+      ]
+    },
+    {
+      "id": "install-updates-reach-home",
+      "type": "install",
+      "title_he": "איך תיקון מגיע הביתה בלי שתעשו כלום",
+      "title_en": "How a fix reaches your home without you doing anything",
+      "body_he": "כשמתגלה בעיה ומתפרסם תיקון, כל בית שמריץ זיגי בודק בעצמו אם יש גרסה חדשה — כל שתי דקות — ומתקין אותה לבד. אם הגרסה החדשה לא עולה נקי, זיגי חוזר בעצמו לגרסה הקודמת, בלי שאתם צריכים להבחין שמשהו בכלל קרה. אתם לא תלויים בכך שמישהו יזכור להתקשר אליכם — התיקון פשוט מגיע.",
+      "body_en": "When a problem is found and a fix is published, every home running Ziggy checks for a newer version on its own — every two minutes — and installs it without being asked. If the new version doesn't come up clean, Ziggy rolls itself back to the previous one automatically, without you ever noticing something went wrong in the first place. You're not depending on someone remembering to call you — the fix just arrives.",
+      "capabilities": [
+        "release-channel"
+      ],
+      "family": "safety",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "updates",
+        "release",
+        "auto-rollback"
+      ]
+    },
+    {
+      "id": "install-updates-cant-eat-your-setup",
+      "type": "install",
+      "title_he": "עדכון שלא יכול למחוק את מה שבניתם",
+      "title_en": "An update that can't erase what you built",
+      "body_he": "זה היה סיכון אמיתי בעבר: עדכון שרץ על הבית שלכם והחזיר אותו למצב ריק, בלי הפעולות האוטומטיות והחדרים שהגדרתם. היום כל עדכון מגבה קודם את ההגדרות שלכם, ומחזיר אותן בסוף — ואם משהו השתבש והגיבוי יצא ריק או חלקי, זיגי מסרב להחזיר אותו על פני הדבר האמיתי.",
+      "body_en": "This used to be a real risk: an update that ran over your home and reset it to blank, wiping the automatic actions and rooms you'd set up. Today every update backs up your settings first and restores them afterward — and if something goes wrong and that backup comes back empty or partial, Ziggy refuses to restore it over the real thing.",
+      "capabilities": [
+        "safe-update-guarantee"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "updates",
+        "trust",
+        "backup"
+      ]
+    },
+    {
+      "id": "install-cloud-watches",
+      "type": "install",
+      "title_he": "כשמשהו נשבר, מישהו כבר יודע",
+      "title_en": "When something breaks, someone already knows",
+      "body_he": "כל בית שמריץ זיגי מדווח על עצמו באופן קבוע, ומערכת בענן בודקת את הדיווח הזה מול חוקים ברורים — ושתיקה, אצלה, גרועה יותר מדיווח רע. בעיות נפוצות, כמו בית בלי אף פעולה אוטומטית פעילה, מכשיר שמדווח מצב שגוי, או דיסק שהתמלא — מתוקנות אוטומטית דרך רשימת פתרונות ידועים ובטוחים, או מועברות כהתראה למישהו אנושי.",
+      "body_en": "Every home running Ziggy checks in on a schedule, and a system in the cloud judges that check-in against clear rules — where silence counts as worse than a bad report. Common problems, like a home with no automatic actions actually running, a device reporting the wrong state, or a full disk, either get fixed automatically through a known list of safe fixes, or get flagged to an actual person.",
+      "capabilities": [
+        "fleet-health-and-repair"
+      ],
+      "family": "safety",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "monitoring",
+        "auto-repair",
+        "reliability"
+      ]
+    },
+    {
+      "id": "install-remote-support",
+      "type": "install",
+      "title_he": "מישהו יכול להיכנס ולראות, כשצריך",
+      "title_en": "Someone can actually get in and look, when it's needed",
+      "body_he": "כשצריך עזרה שהאשפים לא פותרים לבד, מהצוות של זיגי אפשר להתחבר מרחוק ישירות לזיגי שלכם ולראות מה קורה — לא לנחש לפי מה שמצליחים לתאר בטלפון. ההתחברות תחומה בזמן ומתועדת, ואף אחד לא יכול למחוק בית פעיל בטעות תוך כדי עבודה.",
+      "body_en": "When something needs more than the wizards can fix on their own, someone from the Ziggy team can log in remotely, straight into your Ziggy, and see what's actually happening — not guess based on what you can describe over the phone. Access is time-limited and logged, and no one can accidentally delete a home that's actually in use while they're in there.",
+      "capabilities": [
+        "founder-remote-support"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "support",
+        "remote-access"
+      ]
+    },
+    {
+      "id": "install-add-device-later",
+      "type": "install",
+      "title_he": "מוסיפים מכשיר עוד חודשים — אותו מסך בדיוק",
+      "title_en": "Add a device months later — the exact same screen",
+      "body_he": "אין הבדל בין ההתקנה הראשונה לתוספת שמגיעה הרבה אחר כך: מוסיפים מכשיר חדש דרך אותו אשף אחד, בין אם זה מכשיר Wi-Fi, מכשיר Switcher, או כל דבר אחר שרוצים להכניס לבית. אם מכשיר קיים מפסיק להיראות, זיגי מסמן אותו כמצריך תשומת לב במקום פשוט לשתוק, ומחיקה של מכשיר תמיד מנקה אחריה עד הסוף — כולל ניתוק ממה שהוא היה מחובר אליו.",
+      "body_en": "There's no difference between the first install and an addition that comes much later: you add a new device through the same one wizard, whether it's a Wi-Fi device, a Switcher device, or anything else you want to bring into the home. If an existing device stops responding, Ziggy flags it as needing attention instead of just going quiet about it, and deleting a device always cleans up completely after itself — including letting go of whatever it was connected through.",
+      "capabilities": [
+        "add-a-device",
+        "device-lifecycle-management"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "devices",
+        "lifecycle",
+        "later"
+      ]
+    },
+    {
+      "id": "pricing-whats-in-a-home",
+      "type": "pricing",
+      "title_he": "כמה עולה בית שלם, ומה כלול",
+      "title_en": "What a whole home costs, and what's in it",
+      "body_he": "יש כאן שאלה שעדיין לא סגורה: מה בדיוק כלול בערכת בית אחת — הזיגי עצמו, החיישנים, ההתקנה — ואיזה מחיר מייצג את זה. [כאן ייכנס המחיר, כשיהיה סופי] צריך להבהיר גם אם המחיר משתנה לפי גודל הבית או מספר החדרים, כדי שכל שיחת מכירה תתחיל מאותה נקודה.",
+      "body_en": "This one is still open: exactly what's included in a single home kit — Ziggy itself, the sensors, the install — and what price represents that. [Price goes here once it's set] It also needs deciding whether the price changes with the size of the home or the number of rooms, so every sales conversation starts from the same place.",
+      "needs_input": true,
+      "capabilities": [],
+      "family": "money",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pricing",
+        "kit"
+      ]
+    },
+    {
+      "id": "pricing-extra-device",
+      "type": "pricing",
+      "title_he": "כמה עולה מכשיר נוסף",
+      "title_en": "What one more device costs",
+      "body_he": "אחרי הבית הראשון, לקוח שמוסיף חיישן או מכשיר נוסף צריך לדעת כמה זה עולה — מחיר קבוע לפי סוג מכשיר, מחיר שכולל את העבודה של חיבורו, או שהמכשיר עצמו נמכר בנפרד מהעבודה. [כאן ייכנס המחיר לכל סוג מכשיר] בלי זה, אין תשובה לשאלה הכי טבעית שעולה אחרי שהבית הראשוני כבר עובד.",
+      "body_en": "After the first home, a customer adding another sensor or device needs to know what that costs — a flat price per device type, a price that includes the work of adding it, or the device sold separately from the labor. [Price per device type goes here] Without this, there's no answer to the most natural question that comes up once the initial home is already working.",
+      "needs_input": true,
+      "capabilities": [],
+      "family": "money",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pricing",
+        "devices"
+      ]
+    },
+    {
+      "id": "pricing-subscription-structure",
+      "type": "pricing",
+      "title_he": "יש מנוי? על מה בדיוק משלמים",
+      "title_en": "Is there a subscription, and what does it buy",
+      "body_he": "זיגי כבר עושה כמה דברים שדורשים ענן — השיחה איתו, הגיבוי הלילי, האפשרות שהתמיכה תתחבר מרחוק — ועדיין לא הוחלט אם, וכמה מזה, עולה כסף חוזר, ומה נשאר כלול בלי תוספת. [כאן ייכנס מבנה המנוי, אם יהיה] צריך גם להחליט אם תקופת ניסיון נראית שונה מתקופה קבועה.",
+      "body_en": "Ziggy already does a few things that need the cloud — talking to it, the nightly backup, the ability for support to log in remotely — and it isn't decided yet whether, or how much of that, costs anything ongoing versus what stays included. [Subscription structure goes here, if there is one] It also needs deciding whether a trial period looks different from an ongoing one.",
+      "needs_input": true,
+      "capabilities": [],
+      "family": "money",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pricing",
+        "subscription"
+      ]
+    },
+    {
+      "id": "pricing-non-payment",
+      "type": "pricing",
+      "title_he": "מה קורה אם מפסיקים לשלם",
+      "title_en": "What happens if someone stops paying",
+      "body_he": "אם יש מנוי, צריך תשובה ברורה למה שקורה כשהוא לא מתחדש: האם הבית ממשיך לעבוד באופן מקומי בלי החלקים שדורשים ענן, האם יש תקופת חסד לפני שמשהו נעצר, ומה קורה לגיבויים שכבר קיימים. [כאן ייכנס התהליך בפועל, כשיוחלט] זו שאלה שכל לקוח שואל בעקיפין לפני שהוא חותם, גם אם הוא לא מנסח אותה ככה.",
+      "body_en": "If there's a subscription, there needs to be a clear answer for what happens when it lapses: does the home keep working locally without the cloud-dependent pieces, is there a grace period before anything actually stops, and what happens to backups that already exist. [The real process goes here, once decided] This is a question every customer is quietly asking before they sign, even if they never phrase it that way.",
+      "needs_input": true,
+      "capabilities": [],
+      "family": "money",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pricing",
+        "subscription",
+        "churn"
+      ]
+    },
+    {
+      "id": "pricing-cost-comparison",
+      "type": "pricing",
+      "title_he": "איך זה משתווה, במחיר, לחלופות",
+      "title_en": "How this compares, in cost, to the alternatives",
+      "body_he": "לקוח תמיד שוקל מול משהו — לבנות לבד עם רכיבים זולים ולהתמודד עם החיבור ביניהם לבד, לקנות מוצר זר שלא מדבר עברית ולא שולט במזגן, או לשכור מתקין פרטי שמגיע פעם אחת ונעלם. צריך למסגר את זיגי מול כל אחת מהחלופות האלה במחיר, לא רק בתכונות — [כאן תיכנס ההשוואה במחיר בפועל] כדי שהמוכר לא ייתקע כשעולה השאלה ״למה לא סתם...״.",
+      "body_en": "A customer is always weighing this against something — building it themselves cheaply and dealing with the integration alone, buying a foreign product that doesn't speak Hebrew or control the AC, or hiring a private installer who shows up once and disappears. Ziggy needs to be framed against each of those on actual cost, not just features — [the real cost comparison goes here] so a salesperson isn't stuck when the \"why not just...\" question comes up.",
+      "needs_input": true,
+      "capabilities": [],
+      "family": "money",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pricing",
+        "comparison"
+      ]
+    }
+  ]
+}

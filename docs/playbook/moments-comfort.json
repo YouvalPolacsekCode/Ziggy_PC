@@ -1,0 +1,520 @@
+{
+  "entries": [
+    {
+      "id": "arrive-home-already-comfortable",
+      "type": "moment",
+      "title_he": "הבית כבר קריר כשמגיעים",
+      "title_en": "Home is already cool when you walk in",
+      "problem_he": "בקיץ הישראלי, הרגע שנכנסים הביתה הוא הרגע הכי חם בדירה — המזגן מתחיל לעבוד רק אחרי שמישהו לוחץ עליו, ועד שמרגישים הבדל עברו כבר עשרים דקות.",
+      "problem_en": "In an Israeli summer, the moment you walk in is the hottest the apartment gets all day — the AC only starts once someone switches it on, and by the time it's actually cool, twenty minutes are gone.",
+      "body_he": "זיגי עוקב ברקע אחרי המיקום, ומזהה מתי חוצים אזור ״קרוב לבית״ בדרך חזרה — לא רק את הרגע שנכנסים בפועל בדלת. ברגע שחוצים את האזור, המזגן כבר מתחיל לעבוד, כך שהדלת נפתחת לחלל שכבר התחיל להתקרר. אותו מנגנון עובד גם הפוך: כשכולם באמת עוזבים, האור והמזגן נכבים לבד.",
+      "body_en": "Ziggy tracks location in the background and recognizes when you cross the wider “near home” zone on the way back — not just the moment you actually walk in the door. Crossing that zone is enough to start the AC running, so the door opens onto a room that's already cooling. The same mechanism runs the other way: once everyone has genuinely left, the lights and AC turn themselves off.",
+      "why_it_matters_he": "אין צורך לזכור להדליק את המזגן כשחוזרים — הוא כבר עבד כמה דקות לפני שהדלת נפתחה.",
+      "why_it_matters_en": "No one has to remember to switch on the AC when they get home — it's already been running for a few minutes by the time the door opens.",
+      "discovery_question_he": "כמה זמן לוקח לבית להרגיש נעים אחרי שחוזרים אליו?",
+      "discovery_question_en": "How long does it take the house to actually feel comfortable after you get home?",
+      "capabilities": [
+        "leaving-and-arriving",
+        "mobile-presence-detection"
+      ],
+      "family": "comfort",
+      "moments": [
+        "arriving"
+      ],
+      "rooms": [
+        "whole-home",
+        "entrance"
+      ],
+      "tags": [
+        "precool",
+        "ac",
+        "presence",
+        "arrival"
+      ]
+    },
+    {
+      "id": "house-shuts-down-on-leaving",
+      "type": "moment",
+      "title_he": "הבית נסגר אחריך",
+      "title_en": "The house shuts down behind you",
+      "problem_he": "לפני שיוצאים בודקים בראש: האור בסלון כבוי? המזגן בחדר נכבה? כמעט תמיד שוכחים משהו אחד.",
+      "problem_en": "Before walking out, you run the mental checklist — living room light off, bedroom AC off? Something always gets missed.",
+      "body_he": "כשזיגי בטוח שכולם יצאו — לא רק שהטלפון של מישהו עזב את האזור, אלא שקט ממושך בבית ודלת שנפתחה — האור והמזגן נכבים לבד, ומגיעה התראה שמאשרת את זה. אם אחד מבני הבית עדיין בפנים, שום דבר לא נכבה: זיגי מעדיף לפספס כיבוי מאשר לכבות מזגן על מישהו שיושב בשקט בסלון.",
+      "body_en": "When Ziggy is confident everyone has actually left — not just one phone leaving the zone, but sustained stillness in the house and the front door opening — the lights and AC turn off on their own, and a notice confirms it. If someone is still inside, nothing shuts off: Ziggy would rather miss a shutdown than kill the AC on someone sitting quietly in the living room.",
+      "why_it_matters_he": "זיגי בודק בעצמו שכולם באמת יצאו — מיקום הטלפונים, שקט בבית והדלת הראשית — ורק אז מכבה הכול ושולח עדכון.",
+      "why_it_matters_en": "Ziggy checks for itself that everyone has genuinely left — phone locations, stillness in the house, the front door — and only then turns everything off and sends a notice.",
+      "discovery_question_he": "מי בפועל בודק שהמזגן וכל האור כבויים לפני שיוצאים מהבית?",
+      "discovery_question_en": "Who actually checks that the AC and every light are off before anyone leaves?",
+      "capabilities": [
+        "leaving-and-arriving"
+      ],
+      "family": "effort",
+      "moments": [
+        "leaving"
+      ],
+      "rooms": [
+        "whole-home",
+        "entrance"
+      ],
+      "tags": [
+        "leave-home",
+        "ac",
+        "lights",
+        "presence"
+      ]
+    },
+    {
+      "id": "lights-follow-the-day",
+      "type": "moment",
+      "title_he": "התאורה עוקבת אחרי היום בעצמה",
+      "title_en": "The lights follow the day on their own",
+      "problem_he": "בצהריים האור בבית חד ולבן, ובערב הוא נשאר בדיוק אותו דבר — עד שמישהו נזכר לעמעם ולחמם אותו ידנית, ולרוב זה לא קורה.",
+      "problem_en": "At noon the light in the house is sharp and white, and by evening it's still exactly the same — until someone remembers to dim and warm it by hand, which usually doesn't happen.",
+      "body_he": "בוחרים מראש איך רוצים שהאור ייראה בשיא היום ואיך שייראה קרוב לשינה, ומציינים מתי קמים ומתי הולכים לישון — וזיגי דואג לכל מה שבין לבין בעצמו, מעבר איטי ורציף ולא קפיצה אחת בערב. אור שמדליקים באמצע היום מצטרף מיד לקצב הנכון לאותה שעה, ואם מכוונים אור ביד זיגי נותן לו זמן ואז מחזיר אותו בעדינות לתזמון — או שאפשר ללחוץ סנכרון ולראות הכול חוזר למקום מיד.",
+      "body_en": "You set a look for the peak of the day and one for close to sleep, plus a wake time and a bedtime, and Ziggy handles everything in between on its own — a slow, continuous shift rather than one jump in the evening. A light turned on mid-day joins the current pace immediately, and adjusting a light by hand gets it some room before Ziggy quietly hands it back to the schedule — or you can tap Sync to snap everything back in line right away.",
+      "why_it_matters_he": "זיגי מחשב כל דקה את העוצמה והחום הנכונים ומוביל את האור לשם לאט, מהקימה ועד השינה — בלי שמישהו נוגע במתג.",
+      "why_it_matters_en": "Ziggy works out the right brightness and warmth for the current minute and eases the lights there continuously, from wake-up to bedtime — without anyone touching a switch.",
+      "discovery_question_he": "מי בבית זוכר לעמעם ולחמם את האור כל ערב, לפני שהולכים לישון?",
+      "discovery_question_en": "Who in the house remembers to dim and warm the lights every single evening, before bed?",
+      "capabilities": [
+        "smart-light-schedule"
+      ],
+      "family": "comfort",
+      "moments": [
+        "morning",
+        "evening",
+        "night"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "circadian",
+        "lighting",
+        "schedule"
+      ]
+    },
+    {
+      "id": "room-lights-itself",
+      "type": "moment",
+      "title_he": "חדר שדואג לתאורה של עצמו",
+      "title_en": "A room that looks after its own lighting",
+      "problem_he": "נכנסים לחדר עם הידיים מלאות, מחפשים מתג בקיר, ומוצאים אותו רק אחרי שכבר נתקלים במשהו בחושך.",
+      "problem_en": "You walk into a room with your hands full, feel around for the switch, and find it only after bumping into something in the dark.",
+      "body_he": "זיגי לומד את חיישן החדר וקובע כלל פשוט: כניסה מדליקה, יציאה מכבה, ובלילה העוצמה נמוכה וחמה במקום חדה ולבנה. הכלל מגיב רק למעבר מריק לתפוס — אם עוד מישהו נכנס לחדר שכבר תפוס, שום דבר לא מהבהב או מתחיל מחדש. חדר עם כמה חיישנים — למשל חדר שינה עם ״שירותים״ צמודים — יכול להריץ שתי גרסאות נפרדות, אחת לכל חלל.",
+      "body_en": "Ziggy learns the room's sensor and applies one simple rule: entering turns the light on, leaving turns it off, and at night the light lands warm and low instead of sharp and white. The rule only fires on the actual empty-to-occupied change — if someone else walks into a room that's already occupied, nothing flickers or restarts. A room with more than one sensor — a bedroom and its en-suite, say — can run its own version in each space.",
+      "why_it_matters_he": "ברגע שחדר עובר מריק לתפוס, זיגי מדליק את האור בעוצמה שמתאימה לשעה — חזק ביום, חם ועמום בלילה — ומכבה כשהחדר מתרוקן שוב.",
+      "why_it_matters_en": "The moment a room goes from empty to occupied, Ziggy turns the light on at whatever suits the hour — bright by day, warm and dim at night — and switches it off once the room is empty again.",
+      "discovery_question_he": "כמה פעמים ביום מישהו בבית נכנס לחדר עם הידיים תפוסות ומחפש קיר בחושך?",
+      "discovery_question_en": "How many times a day does someone in the house walk into a room with full hands, feeling for a wall in the dark?",
+      "capabilities": [
+        "smart-room"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "smart-room",
+        "presence",
+        "lighting"
+      ]
+    },
+    {
+      "id": "bathroom-light-holds-through-closed-door",
+      "type": "moment",
+      "title_he": "האור בשירותים לא כבה באמצע",
+      "title_en": "The bathroom light doesn't cut out mid-shower",
+      "problem_he": "חיישן תנועה רגיל “משתעמם” אחרי כמה דקות של עמידה במקום אחד — במקלחת, למשל — והאור פשוט כבה עליך.",
+      "problem_en": "A plain motion sensor “gets bored” after a few minutes of standing still in one spot — in the shower, say — and the light just goes out on you.",
+      "body_he": "זו הגרסה החדה יותר של חדר חכם, לחדרים עם חיישן דלת: פתיחת הדלת נחשבת תפוסה מיידית בלי לחכות לתנועה, וסגירתה אחרי שנראתה תנועה שומרת את החדר תפוס — בדיוק המקרה של מקלחת, שבו החיישן לא רואה אף אחד מאחורי וילון או דלת סגורה. האור נשאר דלוק עד שהחדר באמת מתרוקן.",
+      "body_en": "This is the sharper version of Smart Room, for rooms with a door sensor: opening the door counts as instant occupancy without waiting for motion, and closing it right after motion was seen keeps the room occupied — exactly the shower case, where the sensor can't see anyone behind a curtain or a closed door. The light stays on until the room is actually empty.",
+      "why_it_matters_he": "בחדר עם חיישן דלת, זיגי מתייחס לדלת פתוחה כתפוסה מיידית, ואם נראתה תנועה ממש לפני שהדלת נסגרה — הוא ממשיך להחשיב את החדר כתפוס כל עוד היא סגורה.",
+      "why_it_matters_en": "In a room with a door sensor, Ziggy treats an open door as instantly occupied, and if there was motion right before the door closed, it keeps counting the room as occupied for as long as it stays shut.",
+      "discovery_question_he": "קרה שהאור בשירותים כבה באמצע כי החיישן פשוט הפסיק לראות תנועה?",
+      "discovery_question_en": "Has the bathroom light ever gone out on you mid-shower because the sensor simply stopped seeing movement?",
+      "capabilities": [
+        "smart-room"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "bathroom"
+      ],
+      "tags": [
+        "smart-room",
+        "bathroom",
+        "door-aware"
+      ]
+    },
+    {
+      "id": "comfortable-range-not-a-setpoint",
+      "type": "moment",
+      "title_he": "טווח נעים, לא מספר אחד לרדוף אחריו",
+      "title_en": "A comfortable range, not one number to chase",
+      "problem_he": "קמים לכוון את המזגן מעלה, ואז שוב מטה כעבור שעה, כי מזגן רגיל שומר על מספר בודד ולא על תחושה.",
+      "problem_en": "You get up to nudge the AC up a degree, then back down an hour later, because an ordinary AC holds a single number, not a feeling.",
+      "body_he": "קובעים טווח נוח לחדר וזיגי שומר עליו לבד — הוא לא מוסר טמפרטורת יעד למכשיר, אלא מדליק וכבה אותו בעצמו סביב הטווח. אותו מנגנון עובד על מזגן חכם, מזגן שנשלט רק בשלט ישן, מאוורר או תנור נייד, ואם יש בחדר כמה תרמומטרים הוא יכול להתבסס על הממוצע ביניהם במקום לבחור אחד באקראי. הוא גם מקפיד לכבות רק מכשיר שהוא עצמו הדליק.",
+      "body_en": "You set a comfortable range for the room and Ziggy holds it on its own — it never hands the device a target temperature, it simply switches it on and off itself around that range. The same setup works on a smart AC, an AC controlled only by its old remote, a fan, or a plug-in heater, and if a room has more than one thermometer it can go by their average instead of picking one arbitrarily. It's also careful to only ever turn off something it turned on itself.",
+      "why_it_matters_he": "זיגי לא שולח למזגן טמפרטורת יעד — הוא עוקב אחרי החום האמיתי בחדר ומדליק וכבה סביב הטווח שקבעת, כך שהחדר נשאר נעים בלי שמישהו מכוון כל הזמן.",
+      "why_it_matters_en": "Ziggy never sends the AC a target temperature — it watches the room's real temperature and switches the device on and off around the range you set, so the room stays comfortable without anyone re-adjusting it all day.",
+      "discovery_question_he": "כמה פעמים ביום מישהו קם רק כדי לכוון מעלה אחת במזגן, לכיוון כזה או אחר?",
+      "discovery_question_en": "How many times a day does someone get up just to nudge the AC one degree, one way or the other?",
+      "capabilities": [
+        "smart-climate-control"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "climate",
+        "ac",
+        "comfort-band"
+      ]
+    },
+    {
+      "id": "teach-ziggy-an-old-remote",
+      "type": "moment",
+      "title_he": "שלט ישן, שזיגי לומד פעם אחת",
+      "title_en": "An old remote, taught once",
+      "problem_he": "שולחן הסלון מלא בשלטים — אחד למזגן, אחד לטלוויזיה, אחד למאוורר — וכל אחד מהם עובד רק אם מכוונים אותו בדיוק לעבר המכשיר.",
+      "problem_en": "The living room table is covered in remotes — one for the AC, one for the TV, one for the fan — and each one only works if you point it exactly right.",
+      "body_he": "אשף מודרך מקשר חיישן אינפרא, נותן למכשיר שם (מזגן, טלוויזיה, מאוורר ועוד) ומקליט כל כפתור שלוחצים עליו בשלט האמיתי. ההגדרה הראשונית מציגה רק את ארבעת הכפתורים שבאמת צריך, עם השאר מוסתר מתחת ל״עוד״, ואפשר גם ללמד כפתורים נוספים ולשרשר כמה מהם לרצף אחד עם שם משלו. זיגי גם מוצא לבד את החיישנים ברשת הביתית, ומוצא אותם מחדש אם הכתובת שלהם משתנה.",
+      "body_en": "A guided flow pairs an infrared sensor, names the device (AC, TV, fan and more), and records every button pressed on the real remote. The initial setup shows only the four buttons you actually need, with the rest tucked behind “more,” and extra buttons can be taught and chained into one named sequence. Ziggy also finds the sensors on the home network by itself, and finds them again if their address changes.",
+      "why_it_matters_he": "הליכה מודרכת אחת, שבה לוחצים על כפתורי השלט האמיתי מול החיישן הקטן של זיגי, מספיקה כדי שזיגי ילמד את כל הכפתורים שצריך — ואפשר גם לשרשר כמה כפתורים לרצף אחד עם שם, כמו מצב סרט.",
+      "why_it_matters_en": "One guided walk-through, pressing the real remote's buttons in front of Ziggy's small sensor, is enough for it to learn every button that matters — and several buttons can be chained into one named sequence, like a movie-mode macro.",
+      "discovery_question_he": "כמה שלטים מונחים על שולחן הסלון עכשיו, וכמה מהכפתורים בהם אף אחד כבר לא זוכר מה בדיוק הם עושים?",
+      "discovery_question_en": "How many remotes are sitting on the living room table right now, and how many of their buttons has everyone forgotten the meaning of?",
+      "capabilities": [
+        "teach-ziggy-a-remote"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "ir",
+        "remote",
+        "setup"
+      ]
+    },
+    {
+      "id": "ask-ziggy-to-set-the-ac",
+      "type": "moment",
+      "title_he": "לבקש מזיגי, במקום לקום אל השלט",
+      "title_en": "Ask Ziggy, instead of getting up for the remote",
+      "problem_he": "המזגן בחדר נשלט רק בשלט הישן, והוא תמיד נמצא במקום הלא נכון בדיוק כשצריך אותו.",
+      "problem_en": "The AC is only controlled by its old remote, and it's always in the wrong place exactly when you need it.",
+      "body_he": "אחרי שלב הלימוד, פקודות אינפרא הן פעולה רגילה בכל מקום בזיגי: אפשר לבקש בצ׳אט או בקול לשנות טמפרטורה, להחליף ערוץ, להריץ מאקרו שלם, וגם לשלב כפתור אינפרא כצעד בתוך פעולה אוטומטית. אותו מנגנון הוא גם מה שמאפשר למזגן ״טיפש״ להיכנס לטווח הנוח שקבעת — זיגי פשוט שולח לו את הכפתורים הנכונים בעצמו.",
+      "body_en": "Once the learning step is done, infrared commands are an ordinary action anywhere in Ziggy: you can ask by chat or voice to change the temperature, switch a channel, run a whole macro, and infrared buttons can also be one step inside a bigger automation. The same mechanism is what lets a “dumb” AC join a comfortable range you've set — Ziggy just sends it the right buttons itself.",
+      "why_it_matters_he": "אחרי שזיגי למד את השלט, הוא הופך לכתובת אחת לכל הבית — בצ׳אט, בקול, או בתוך פעולה אוטומטית — ולוחץ בעצמו על הכפתור הנכון בכל פעם.",
+      "why_it_matters_en": "Once Ziggy has learned the remote, it becomes one address for the whole house — by chat, by voice, or inside an automation — and it presses the right button itself, every time.",
+      "discovery_question_he": "מי בבית קם מהספה בשביל לשנות דרגה במזגן שנשלט רק בשלט ישן?",
+      "discovery_question_en": "Who in the house gets up off the couch to change a setting on an AC that only has an old remote?",
+      "capabilities": [
+        "ir-in-automations"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "ir",
+        "voice",
+        "chat",
+        "ac"
+      ]
+    },
+    {
+      "id": "see-what-the-ac-is-set-to",
+      "type": "moment",
+      "title_he": "לדעת על כמה המזגן מכוון, גם כשהוא לא יכול לספר",
+      "title_en": "Knowing what the AC is set to, even though it can't say",
+      "problem_he": "מזגן שנשלט בשלט אינפרא לא מדווח כלום בחזרה — אין דרך לדעת אם הוא דולק, כבוי, או על כמה מעלות, בלי לעמוד מולו ולבדוק.",
+      "problem_en": "An AC controlled by an infrared remote reports nothing back — there's no way to know if it's on, off, or what temperature it's at, without standing in front of it to check.",
+      "body_he": "מכשירים שנשלטים בשלט אינפרא לא יכולים לדווח על מצבם, אז זיגי בונה לעצמו תמונה: מה כל כפתור עושה, טווח הערכים שלו, והערכה סבירה להתחלה. חיישן שמאזין לערוץ הקליטה של השלט מזהה כל לחיצה אמיתית ומשווה אותה מול מה שכבר נלמד, וזיגי גם יודע שמזגן שולח את כל המצב שלו בכל פקודה — ולא רק כפתור בודד — כדי שהמצב שמוצג יתעדכן נכון.",
+      "body_en": "Devices controlled by an infrared remote can't report their own state, so Ziggy builds a picture for itself: what each button does, its range of values, and a reasonable starting guess. A listener on the remote's receive channel matches every real button press against what it has already learned, and Ziggy also knows an AC remote sends its whole state in every command — not just one button — so the state on screen updates correctly.",
+      "why_it_matters_he": "זיגי עוקב בעצמו אחרי מה שהוא (ומי שהחזיק בשלט האמיתי) שלחו למכשיר, ומראה את זה עם נקודה צבעונית שמסמנת כמה הוא בטוח — נשמע ממש עכשיו מהשלט, נזכר מפקודה ששלח בעצמו, או ישן.",
+      "why_it_matters_en": "Ziggy tracks what it (and whoever holds the real remote) has sent to the device, and shows it with a colored dot for how confident it is — just heard from the real remote, remembered from a command it sent itself, or stale.",
+      "discovery_question_he": "כשמישהו שואל ״על כמה המזגן?״, יש למישהו תשובה בלי לקום ולהסתכל?",
+      "discovery_question_en": "When someone asks “what's the AC set to?”, can anyone actually answer without getting up to look?",
+      "capabilities": [
+        "remote-device-state-tracking"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "ir",
+        "ac",
+        "state"
+      ]
+    },
+    {
+      "id": "one-tv-two-remotes-one-card",
+      "type": "moment",
+      "title_he": "טלוויזיה אחת, לא שני מכשירים",
+      "title_en": "One TV, not two devices",
+      "problem_he": "טלוויזיה חכמה מגיבה לרשת כשהיא דולקת, אבל ברגע שמכבים אותה היא “נעלמת” — ואי אפשר להדליק אותה חזרה בלי שלט אינפרא נפרד.",
+      "problem_en": "A smart TV responds over the network while it's on, but the moment it's off it “disappears” — and there's no way to switch it back on without a separate infrared remote.",
+      "body_he": "מקשרים בין המכשיר שמדבר עם זיגי ברשת הביתית לבין המכשיר שנשלט באינפרא, ומאותו רגע שני אמצעי השליטה מופיעים בכרטיס אחד. כשיש מצב מהרשת, זיגי מעדיף אותו על פני ההערכה מהאינפרא — הוא תמיד יודע יותר. הקישור נשמר לפי המזהה של המכשיר ברשת, כך שהחלפת המכשיר דורשת לקשר מחדש.",
+      "body_en": "You link the network-side device to the infrared device, and from that point both control paths show up on one card. Whenever network state is available, Ziggy prefers it over the infrared guess — it always knows more. The link is keyed to the network device's identifier, so replacing that device means relinking.",
+      "why_it_matters_he": "זיגי ממזג את שני צדדי אותו מכשיר לכרטיס אחד: הרשת נותנת מצב חי אמיתי, והאינפרא דואג בעיקר להדלקה. כשהטלוויזיה כבויה ויורדת מהרשת, זיגי לא סופר אותה כמנותקת — הוא פשוט יודע שהיא כבויה ועדיין אפשר לשלוט בה.",
+      "why_it_matters_en": "Ziggy merges both sides of the same device into one card: the network side gives real live state, and infrared mainly handles turning it on. When the TV is off and drops off the network, Ziggy doesn't count it as disconnected — it just knows it's off and still controllable.",
+      "discovery_question_he": "כמה שלטים צריך להרים כדי להדליק את הטלוויזיה בסלון ולהחליף לה ערוץ?",
+      "discovery_question_en": "How many remotes does it take to switch on the living room TV and change the channel?",
+      "capabilities": [
+        "ir-wifi-merged-device"
+      ],
+      "family": "effort",
+      "moments": [
+        "evening"
+      ],
+      "rooms": [
+        "living"
+      ],
+      "tags": [
+        "tv",
+        "ir",
+        "merged-device"
+      ]
+    },
+    {
+      "id": "save-a-lights-look",
+      "type": "moment",
+      "title_he": "לשמור בדיוק איך שהאור נראה עכשיו",
+      "title_en": "Save exactly how the light looks right now",
+      "problem_he": "מכוונים את האור בסלון בדיוק כמו שרוצים — עוצמה, גוון — ולמחרת מתחילים את זה שוב מאפס.",
+      "problem_en": "You get the living room light exactly the way you want it — brightness, color — and tomorrow you start over from zero.",
+      "body_he": "כל נורה יכולה לשמור עד שש תבניות, והתבנית שתואמת את המצב החי שלה מסומנת אוטומטית. סימון תבנית כברירת מחדל אומר שגם פקודת הדלקה פשוטה מעירה את הנורה בדיוק בעוצמה ובגוון האלה — וזיגי גם מתקן, כשאפשר, את התנהגות הנורה עצמה כך שהפעלה מחדש אחרי הפסקת חשמל מהקיר תיפתח ישר לאותו מראה, במקום הבהוב לבן חד לרגע.",
+      "body_en": "Each light can hold up to six saved pills, and the one matching the light's live state highlights on its own. Marking a pill as the default means even a plain “on” command wakes the bulb straight into that exact brightness and color — and where possible, Ziggy also fixes the bulb's own power-on behavior, so a wall-switch power cut boots it back into that look instead of a brief harsh flash.",
+      "why_it_matters_he": "שומרים את המצב הנוכחי כתבנית עם שם, עד שש תבניות לכל נורה, ולוחצים כדי לחזור אליו בכל רגע — תבנית שמסומנת כברירת מחדל הופכת כל הדלקה פשוטה לאותו מראה בדיוק.",
+      "why_it_matters_en": "You save the current state as a named pill, up to six per light, and tap to get it back any time — a pill marked as default turns a plain “on” into that exact look, from the app, chat, voice, or an automation.",
+      "discovery_question_he": "יש בבית אור שלוקח כמה דקות לכוון אותו נכון כל פעם מחדש, ואף פעם לא נשאר ככה?",
+      "discovery_question_en": "Is there a light that takes a few minutes to get right every time, and never stays that way?",
+      "capabilities": [
+        "light-presets"
+      ],
+      "family": "comfort",
+      "moments": [
+        "evening"
+      ],
+      "rooms": [
+        "living",
+        "bedroom"
+      ],
+      "tags": [
+        "lighting",
+        "presets"
+      ]
+    },
+    {
+      "id": "good-night-one-tap",
+      "type": "moment",
+      "title_he": "״לילה טוב״ בלחיצה אחת",
+      "title_en": "“Good Night” in one tap",
+      "problem_he": "לפני השינה עוברים על כל הבית — לכבות אור בסלון, לכבות טלוויזיה, להנמיך את המזגן — כמה תחנות רק בשביל ללכת למיטה.",
+      "problem_en": "Before bed you make the rounds — living room light off, TV off, AC down to a sleep temperature — several stops just to get to bed.",
+      "body_he": "״לילה טוב״ היא אחת משש שגרות מוכנות בלחיצה אחת שאפשר להתקין מהספרייה — האחרות הן ״בוקר טוב״, ״ערב סרט״, ״יוצאים מהבית״, ״נסיעה/חופשה״ ו״שבת״. לחיצה אחת מכבה את כל הבית ומנמיכה את המזגן לטמפרטורת שינה נעימה במקום כיבוי מלא, וכל שגרה כזו נשארת פתוחה לעריכה — אפשר לצמצם אותה רק לאור, או להוסיף לה שלב.",
+      "body_en": "Good Night is one of six ready-made one-tap routines you can add from the Library — the others are Good Morning, Movie Night, Leaving, Away/Vacation, and Shabbat. One tap turns off the whole house and drops the AC to a comfortable sleep temperature rather than off entirely, and every routine like this stays editable — you can trim it to lights only, or add a step.",
+      "why_it_matters_he": "שגרת לילה טוב מוכנה מראש בספרייה, ולחיצה אחת מכבה הכול בבית ומורידה את המזגן לטמפרטורת שינה שקטה — אפשר גם לערוך אותה ולהתאים בדיוק למה שרוצים.",
+      "why_it_matters_en": "A ready-made Good Night routine sits in the Library, and one tap turns everything in the house off and drops the AC to a quiet sleep temperature — it can also be edited to fit exactly what you want.",
+      "discovery_question_he": "כמה תחנות עושים ברגע שהולכים לישון — איזה אור, איזה מזגן, איזו טלוויזיה?",
+      "discovery_question_en": "How many stops does the walk to bed actually involve — which light, which AC, which TV?",
+      "capabilities": [
+        "more-ready-made-routines"
+      ],
+      "family": "effort",
+      "moments": [
+        "night"
+      ],
+      "rooms": [
+        "bedroom",
+        "whole-home"
+      ],
+      "tags": [
+        "routine",
+        "bedtime",
+        "one-tap"
+      ]
+    },
+    {
+      "id": "shabbat-set-before-it-starts",
+      "type": "moment",
+      "title_he": "הבית מוכן לשבת לפני שהיא נכנסת",
+      "title_en": "The house is set for Shabbat before it starts",
+      "problem_he": "בערב שבת יש רגע אחד להספיק את הכול — האור שרוצים דולק כל הערב, המזגן על הטמפרטורה הנכונה — ואחר כך אי אפשר לגעת בכלום.",
+      "problem_en": "On Friday evening there's exactly one window to get everything right — the lights you want on for the evening, the AC at the right temperature — and after that, nothing gets touched.",
+      "body_he": "שגרת ״שבת״ היא אחת משש השגרות המוכנות בספרייה: לחיצה אחת לפני כניסת שבת מדליקה את התאורה שרוצים לכל הערב וקובעת את המזגן פעם אחת — ומשם והלאה שום דבר לא משתנה לבד. אפשר לערוך אותה בדיוק כמו כל שגרה אחרת ולהתאים אותה למה שנהוג בבית.",
+      "body_en": "Shabbat is one of the six ready-made routines in the Library: one tap before Shabbat begins turns on the lighting you want for the whole evening and sets the AC once — and from there, nothing changes on its own. It can be edited just like any other routine, to match what's customary in your home.",
+      "why_it_matters_he": "שגרת שבת מריצה בלחיצה אחת, לפני הדלקת נרות, את כל מה שרוצים קבוע לערב — תאורה וטמפרטורה — כך שכלום לא צריך שינוי עד מוצאי שבת.",
+      "why_it_matters_en": "The Shabbat routine runs everything you want fixed for the evening — lighting and temperature — in one tap before candle-lighting, so nothing needs changing until Shabbat ends.",
+      "discovery_question_he": "מה עושים היום עם האור והמזגן בערב שבת, כשאי אפשר לגעת בהם עד מוצאי שבת?",
+      "discovery_question_en": "What happens with the lights and the AC on a Friday evening, when nothing can be touched again until Shabbat is over?",
+      "capabilities": [
+        "more-ready-made-routines"
+      ],
+      "family": "effort",
+      "moments": [
+        "evening"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "shabbat",
+        "routine",
+        "observance"
+      ]
+    },
+    {
+      "id": "window-open-ac-pauses",
+      "type": "moment",
+      "title_he": "המזגן לא נלחם בחלון פתוח",
+      "title_en": "The AC doesn't fight an open window",
+      "problem_he": "מישהו פותח חלון לאוורר, שוכח שהמזגן דולק, והוא ממשיך לעבוד מול האוויר הפתוח שעות.",
+      "problem_en": "Someone opens a window to air out a room, forgets the AC is running, and it keeps working against the open air for hours.",
+      "body_he": "זו אחת האוטומציות המוכנות בספרייה: חיישן על החלון מזהה פתיחה, וזיגי משהה את המזגן עד שהחלון נסגר שוב וחוזר לעבוד לבד. אפשר גם לבחור גרסה עדינה יותר שרק שולחת תזכורת שהחלון פתוח והמזגן דולק, בלי לכבות כלום לבד.",
+      "body_en": "This is one of the ready-made options in the Library: a sensor on the window detects it opening, and Ziggy pauses the AC until the window closes and it resumes on its own. There's also a gentler version that just sends a reminder that the window is open while the AC is running, without switching anything off by itself.",
+      "why_it_matters_he": "ברגע שחלון נפתח והמזגן דולק, זיגי משהה אותו — ומחזיר אותו לעבודה ברגע שהחלון נסגר, בלי שמישהו צריך לזכור.",
+      "why_it_matters_en": "The moment a window opens while the AC is running, Ziggy pauses it — and brings it back the moment the window closes, without anyone having to remember.",
+      "discovery_question_he": "קרה שהמזגן עבד שעות מול חלון פתוח, בלי ששמו לב?",
+      "discovery_question_en": "Has the AC ever run for hours against an open window, with nobody noticing?",
+      "capabilities": [
+        "more-ready-made-routines"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "window",
+        "ac",
+        "energy"
+      ]
+    },
+    {
+      "id": "movie-night-one-tap",
+      "type": "moment",
+      "title_he": "״ערב סרט״ בלחיצה אחת",
+      "title_en": "“Movie Night” in one tap",
+      "problem_he": "לפני שמתחילים סרט יש כמה תחנות — לעמעם את האור, למצוא את שלט הטלוויזיה, לכוון את המזגן — וכל זה לפני שבכלל התיישבו.",
+      "problem_en": "Before a movie even starts there are a few stops — dim the lights, find the TV remote, set the AC — and that's before anyone's even sat down.",
+      "body_he": "״ערב סרט״ היא שגרה מוכנה בספרייה שמעמעמת את האור בסלון, מדליקה את הטלוויזיה דרך משדר האינפרא שכבר לומד אותה, ומפעילה את המזגן — הכול בלחיצה אחת שאפשר גם לערוך. אותו מנגנון של פקודות אינפרא בתוך שגרה הוא מה שמאפשר לה לגעת גם במכשירים ״טיפשים״ שנשלטים רק בשלט.",
+      "body_en": "Movie Night is a ready-made routine in the Library that dims the living room lights, switches on the TV through the infrared sensor that's already learned it, and turns on the AC — all in one editable tap. The same mechanism, infrared commands inside a routine, is what lets it reach “dumb” devices that only take a remote.",
+      "why_it_matters_he": "לחיצה אחת על ערב סרט מעמעמת את האור בסלון, מדליקה את הטלוויזיה דרך משדר האינפרא, וקובעת את המזגן לנוחות — הכול בלי לגעת בשלט.",
+      "why_it_matters_en": "One tap on Movie Night dims the living room lights, switches on the TV through the infrared sensor, and sets the AC for comfort — all without touching a remote.",
+      "discovery_question_he": "כמה שלבים עוברים לפני שסרט בכלל מתחיל להתנגן בסלון?",
+      "discovery_question_en": "How many steps happen before a movie even starts playing in the living room?",
+      "capabilities": [
+        "more-ready-made-routines",
+        "ir-in-automations"
+      ],
+      "family": "comfort",
+      "moments": [
+        "evening",
+        "night"
+      ],
+      "rooms": [
+        "living"
+      ],
+      "tags": [
+        "routine",
+        "movie",
+        "ir"
+      ]
+    },
+    {
+      "id": "ready-made-shelf-that-actually-works",
+      "type": "moment",
+      "title_he": "מדף של דברים מוכנים שבאמת עובדים בבית שלך",
+      "title_en": "A shelf of ready-made things that actually work in your home",
+      "problem_he": "מחפשים אוטומציה מוכנה, מוסיפים אותה, ומגלים רק אחרי לחיצה שאין בבית המכשיר שהיא צריכה.",
+      "problem_en": "You find a ready-made automation, add it, and only after tapping discover the house doesn't have the device it needs.",
+      "body_he": "כל מה שהבית יודע לעשות נמצא בעמוד אחד, מחולק ל״אוטומטי״ (מתחיל לבד) ו״ביקוש״ (מתחילים אותו) — עם ספרייה מאורגנת שנפתחת מכפתור בראש העמוד. פעולה שכבר מותקנת נפתחת כתקציר מצומצם עם עיפרון לעריכה, ומחיקה בכל מקום בעמוד עוברת דרך אותו אישור לפני שמאבדים משהו.",
+      "body_en": "Everything the house can do lives on one page, split into “Automatic” (starts itself) and “On-demand” (you start it), with a curated Library reachable from a header button. An installed action opens as a compact summary with a pencil to edit, and deleting anything on the page goes through the same confirm-before-you-lose-it step.",
+      "why_it_matters_he": "כל כרטיס בספרייה מראה תיאור פשוט ואם יש בבית מה שצריך כדי שהוא באמת יעבוד — כפתור ההוספה נדלק רק כשאפשר, כך שלחיצה עליו אף פעם לא פותחת טופס מת.",
+      "why_it_matters_en": "Every card in the Library shows a plain description and whether the home has what it needs to actually run — the Add button only lights up when it can work, so tapping it never opens a dead form.",
+      "discovery_question_he": "אם היום הייתם רוצים להוסיף עוד משהו אוטומטי בבית, הייתם יודעים איפה להתחיל?",
+      "discovery_question_en": "If you wanted to add one more thing the house does by itself today, would you know where to start?",
+      "capabilities": [
+        "actions-page-and-library"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "library",
+        "actions",
+        "discovery"
+      ]
+    },
+    {
+      "id": "plain-language-automation",
+      "type": "moment",
+      "title_he": "לבנות כלל בעברית פשוטה, בלי קוד",
+      "title_en": "Build a rule in plain language, no code",
+      "problem_he": "יש הרגל שחוזר על עצמו כל יום — מישהו תמיד מכבה את האור בחדר בשעה מסוימת, למשל — ואף אחד לא טרח להפוך אותו לאוטומטי, כי זה נשמע כמו עבודה טכנית.",
+      "problem_en": "There's a habit that repeats every single day — someone always turns off a certain light at a certain time, say — and nobody's bothered to automate it, because that sounds like a technical job.",
+      "body_he": "אשף שלב-אחר-שלב מרכיב כלל שלם בעברית פשוטה — בוחרים מתי הוא קורה, מוסיפים תנאים לא חובה, ומרכיבים רשימת פעולות: פקודת מכשיר, התראה, מדיה, השהיה, פקודת אינפרא. אפשר גם להדביק תבנית קהילתית ולמלא אותה כמו טופס פשוט, וזיגי עוקב ברקע אחרי ההרגלים ומציע בעצמו להפוך דפוס חוזר לאוטומציה מוכנה — מה שנשאר הוא רק לאשר.",
+      "body_en": "A step-by-step wizard builds a full rule in plain language — pick when it happens, add optional conditions, and assemble a list of actions: a device command, a notification, media, a delay, an infrared command. Community-made patterns can also be pasted in and filled out like a simple form, and Ziggy watches your habits in the background and offers on its own to turn a repeated pattern into a ready-to-save automation — all that's left is to confirm it.",
+      "why_it_matters_he": "בונים כלל צעד-אחר-צעד: מתי (שעה, שקיעה, מכשיר שמשנה מצב, כניסה לאזור, חדר שמתמלא), תנאים לא חובה, ורשימת מה לעשות — כולל פקודות אינפרא. זיגי גם עוקב בעצמו אחרי ההרגלים ומציע להפוך דפוס חוזר לאוטומציה מוכנה לשמירה.",
+      "why_it_matters_en": "You build a rule step by step: a trigger (time, sunrise/sunset, a device changing state, entering a zone, a room filling up), optional conditions, and a list of what to do — infrared commands included. Ziggy also watches your own habits and offers to turn a repeated pattern into an automation ready to save.",
+      "discovery_question_he": "יש משהו שחוזר על עצמו כל יום בבית, ואף אחד לא הפך אותו לאוטומטי כי זה נשמע מסובך?",
+      "discovery_question_en": "Is there something that repeats in the house every day that nobody's automated, just because it sounds complicated?",
+      "capabilities": [
+        "build-your-own-automation"
+      ],
+      "family": "control",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "builder",
+        "custom",
+        "suggestions"
+      ]
+    },
+    {
+      "id": "motion-lights-follow-you",
+      "type": "moment",
+      "title_he": "אור שעוקב אחרי תנועה בלילה",
+      "title_en": "A light that follows movement at night",
+      "problem_he": "קמים לשירותים באמצע הלילה ומרימים יד בחושך לחפש מתג, כי להדליק את התאורה הראשית זה יותר מדי אור בשתיים בלילה.",
+      "problem_en": "You get up for the bathroom in the middle of the night and feel around in the dark for a switch, because the main light is far too bright at 2am.",
+      "body_he": "״אור תנועה״ היא אחת האוטומציות המוכנות בספרייה: האור נדלק לפי תנועה בלבד, ואם ממשיכים לזוז הוא מאריך את עצמו במקום לכבות באמצע. היא נבנתה בדיוק בשביל המקרה הזה — מעבר קצר בלילה שלא צריך תאורה מלאה, רק מספיק אור כדי לא להיתקל בכלום.",
+      "body_en": "Motion Light is one of the ready-made options in the Library: the light turns on purely from movement, and if you keep moving it re-extends itself instead of cutting off midway. It's built exactly for this — a short trip at night that doesn't need full lighting, just enough to not bump into anything.",
+      "why_it_matters_he": "אור תנועה מדליק לפי תנועה בלבד ומאריך את עצמו כל עוד ממשיכים לזוז, כך שהאור לא נכבה באמצע הדרך.",
+      "why_it_matters_en": "Motion Light turns on purely by movement and extends itself for as long as you keep moving, so it doesn't cut out halfway through.",
+      "discovery_question_he": "בלילה, בדרך לשירותים, מי מחפש קיר בחושך במקום שהאור פשוט יידלק?",
+      "discovery_question_en": "On the way to the bathroom at night, who's feeling for a wall in the dark instead of the light just coming on?",
+      "capabilities": [
+        "more-ready-made-routines"
+      ],
+      "family": "comfort",
+      "moments": [
+        "night"
+      ],
+      "rooms": [
+        "bathroom",
+        "whole-home"
+      ],
+      "tags": [
+        "motion",
+        "night",
+        "lighting"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,616 @@
+{
+  "entries": [
+    {
+      "id": "what-is-ziggy",
+      "type": "concept",
+      "title_he": "מה זה בעצם זיגי?",
+      "title_en": "What is Ziggy, actually?",
+      "body_he": "זיגי הוא האינטליגנציה של הבית - לא מכשיר בודד שמוסיפים אליו, אלא השכבה שמחברת בין האורות, המזגן, החיישנים והדלתות, ויודעת מה קורה בבית כרגע. אפשר לדבר איתו, לגעת במסך, או פשוט לתת לו לעבוד ברקע - והוא זה שדואג שהבית יגיב נכון. אין קופסה נפרדת שצריך להכיר: מבחינתך, זיגי הוא הבית.",
+      "body_en": "Ziggy is the intelligence of the home - not a single gadget you add, but the layer that connects the lights, the AC, the sensors and the doors, and knows what's happening in the house right now. You can talk to it, tap a screen, or just let it run in the background - either way, it's the one making sure the house responds correctly. There's no separate box to learn about: as far as you're concerned, Ziggy is the home.",
+      "capabilities": [
+        "device-and-automation-runtime"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-arrives-and-what-it-does",
+      "type": "concept",
+      "title_he": "מה בעצם מגיע הביתה?",
+      "title_en": "What actually shows up at home?",
+      "body_he": "כשזיגי מגיע, הוא כבר מכיר את החיישנים שנשלחו איתו - הם מדברים איתו מהרגע הראשון, בלי לחבר כל אחד בנפרד. מפה זיגי לומד את הבית: אילו חדרים יש, אילו מכשירים נמצאים בהם, ומה כל חיישן בודק. משם והלאה זה כבר עובד - מדליק, מכבה, שומר על טמפרטורה נוחה, ומדווח כשמשהו לא כרגיל.",
+      "body_en": "When Ziggy arrives, it already knows the sensors that shipped with it - they're talking to it from the first minute, with nothing to connect one by one. From there Ziggy learns the home: which rooms exist, which devices are in each one, and what every sensor is checking. After that it just runs - turning things on and off, holding a comfortable temperature, and flagging when something looks off.",
+      "capabilities": [
+        "device-and-automation-runtime",
+        "add-a-device",
+        "alerts-inbox"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "orientation",
+        "unboxing"
+      ]
+    },
+    {
+      "id": "what-is-a-room",
+      "type": "concept",
+      "title_he": "חדר, לא מכשיר בודד",
+      "title_en": "A room, not a single device",
+      "body_he": "חדר - לא רשימת מכשירים - הוא היחידה שזיגי חושב במונחים שלה. מכשיר ששייך לחדר הופך לחלק מהתמונה השלמה שלו: כמה חיישני טמפרטורה יש בו, אם מישהו נמצא בו כרגע, ואילו פעולות אוטומטיות פועלות בו. השיוך תמיד ידני - זיגי לא מנחש לאיזה חדר מכשיר שייך, ומכשיר לא עובר חדר לבד. זו הסיבה שחדרים חשובים יותר ממכשירים בודדים: כשחושבים על ״הסלון״ או ״חדר השינה״, זיגי כבר יודע להסתכל על כל מה שבפנים כמכלול אחד.",
+      "body_en": "A room - not a list of individual devices - is the unit Ziggy actually thinks in. A device that belongs to a room becomes part of that room's whole picture: how many temperature sensors it has, whether someone's in it right now, and which automatic actions run there. Assignment is always manual - Ziggy never guesses which room a device belongs to, and a device never drifts to another room on its own. That's why rooms matter more than individual devices: when you think 'the living room' or 'the bedroom,' Ziggy is already looking at everything inside it as one thing.",
+      "capabilities": [
+        "rooms"
+      ],
+      "family": "control",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "rooms",
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-is-an-automation",
+      "type": "concept",
+      "title_he": "מה זאת בעצם ״פעולה אוטומטית״?",
+      "title_en": "What is an 'automatic action,' really?",
+      "body_he": "פעולה אוטומטית היא פשוט משפט אחד: ״מתי זה קורה, אז תעשה את זה״. למשל: ״מתי כולם עוזבים את הבית, כבה את האורות והמזגן״. אין צורך לכתוב קוד או להבין איך זה עובד מאחורי הקלעים - יש רשימה של אפשרויות, בוחרים מה מפעיל את הפעולה ומה היא עושה, ושומרים. אפשר גם פשוט לבקש מזיגי במילים חופשיות (״תעשה לי שגרת בוקר״) והוא יבנה הצעה שלמה - ותמיד רואים אותה לפני שהיא מופעלת בפועל.",
+      "body_en": "An automatic action is just one sentence: 'when this happens, do that.' For example: 'when everyone leaves the house, turn off the lights and the AC.' There's no code to write and nothing to understand about what's happening underneath - you pick what triggers it and what it does, from a list of options, and save it. You can also just ask Ziggy in your own words ('set up a morning routine for me') and it will put together a full suggestion - you always see it before anything actually turns on.",
+      "capabilities": [
+        "build-your-own-automation",
+        "actions-page-and-library",
+        "design-from-chat"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "automation",
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-is-presence",
+      "type": "concept",
+      "title_he": "מה זה ״נוכחות״ בשביל זיגי?",
+      "title_en": "What does 'presence' mean to Ziggy?",
+      "body_he": "נוכחות זה שהבית יודע מי בפנים ומי לא - לא ניחוש, אלא החלטה שמבוססת על כמה דברים ביחד: איפה הטלפון, אם הוא עונה לרשת הבית, ומה קורה בפועל בחדרים. זיגי במכוון לא ממהר להחליט שמישהו יצא - הוא נותן לזה כמה רגעים להתאמת, כדי שלא יכבה את האורות על מישהו שרק יצא לרגע לחניה. וכשזה לא בטוח, הוא אומר ״לא ברור״ במקום לנחש שאין אף אחד - ההבדל הזה הוא מה ששומר שהאורות לא יכבו על מישהו שעדיין בבית.",
+      "body_en": "Presence means the house knows who's actually in it - not a guess, but a decision built from several things together: where the phone is, whether it answers on the home network, and what's actually happening in the rooms. Ziggy deliberately doesn't rush to decide someone's left - it waits a few moments to be sure, so it doesn't turn off the lights on someone who just stepped out to the car. And when it isn't sure, it says 'not sure' instead of guessing nobody's home - that difference is what keeps the lights from shutting off on someone who's still there.",
+      "capabilities": [
+        "whos-home",
+        "mobile-presence-detection",
+        "leaving-and-arriving"
+      ],
+      "family": "comfort",
+      "moments": [
+        "leaving",
+        "arriving",
+        "away"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "presence",
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-is-a-scene",
+      "type": "concept",
+      "title_he": "מה זה ״תבנית״ או פעולה שמתחילים בעצמכם?",
+      "title_en": "What's a saved 'preset' or a one-tap action?",
+      "body_he": "יש שני סוגים של ״זה מה שאני רוצה עכשיו״: תבנית שמורה לנורה בודדת - עוצמה וגוון שסימנו פעם, ואפשר לקרוא לה בשם בלחיצה אחת. ויש גם פעולות שמריצות כמה דברים ביחד בבת אחת, כמו ״לילה טוב״ שמכבה הכל, או ״ערב סרט״ שמעמעם את הסלון ומדליק את הטלוויזיה - כולן בלחיצה אחת מהאפליקציה, מהמסך על הקיר, או פשוט באמירה.",
+      "body_en": "There are two kinds of 'this is what I want right now': a saved preset on a single light - a brightness and warmth you set once and recall by name with one tap. And there are actions that run several things together at once, like 'Good Night,' which turns everything off, or 'Movie Night,' which dims the living room and turns on the TV - all with one tap from the app, the wall screen, or just by saying it.",
+      "capabilities": [
+        "light-presets",
+        "more-ready-made-routines",
+        "actions-page-and-library"
+      ],
+      "family": "comfort",
+      "moments": [
+        "evening",
+        "night"
+      ],
+      "rooms": [
+        "living",
+        "bedroom"
+      ],
+      "tags": [
+        "preset",
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-is-a-sensor",
+      "type": "concept",
+      "title_he": "מה זה בעצם חיישן?",
+      "title_en": "What is a sensor, really?",
+      "body_he": "חיישן הוא דרך של הבית להרגיש משהו שלא רואים - לא מצלמה, רק עדות קטנה אחת. חיישן תנועה אומר ״מישהו זז כאן״, חיישן דלת אומר ״זה פתוח״ או ״זה סגור״, וחיישן טמפרטורה פשוט מודד. לבד כל חיישן אומר מעט - זיגי הוא זה שמחבר את החתיכות האלה יחד לתמונה שלמה: מישהו בחדר, הדלת נפתחה, בחוץ קר. אין וידאו, אין הקלטה - רק עובדה קטנה שמעדכנת את מה שהבית יודע.",
+      "body_en": "A sensor is the house's way of feeling something you can't see - not a camera, just one small piece of evidence. A motion sensor says 'someone moved here,' a door sensor says 'this is open' or 'this is closed,' and a temperature sensor just measures. Alone, each sensor says very little - it's Ziggy that stitches these pieces together into a full picture: someone's in the room, the door just opened, it's cold outside. No video, no recording - just a small fact updating what the house knows.",
+      "capabilities": [
+        "rooms"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "sensors",
+        "orientation"
+      ]
+    },
+    {
+      "id": "works-without-internet",
+      "type": "concept",
+      "title_he": "מה קורה בלי אינטרנט?",
+      "title_en": "What happens without internet?",
+      "body_he": "הבית עצמו לא תלוי באינטרנט: האורות, החיישנים, לוחות הזמנים והמזגן ממשיכים לעבוד בדיוק כרגיל גם אם החיבור נופל, כי הכל רץ מקומית בבית. מה שכן דורש חיבור כרגע הוא שיחה עם זיגי - השאלות והבקשות בקול או בטקסט עוברות דרך שרת מרוחק. אם החיבור נופל, זיגי אומר את זה בפשטות במקום להעמיד פנים שהוא שומע.",
+      "body_en": "The house itself doesn't depend on the internet: the lights, the sensors, the schedules and the AC keep working exactly as usual even if the connection drops, because it all runs locally in the home. What does need a connection right now is talking with Ziggy - questions and requests by voice or text go through a remote server. If the connection drops, Ziggy says so plainly instead of pretending to listen.",
+      "capabilities": [
+        "device-and-automation-runtime",
+        "cloud-brain-relay",
+        "realtime-state-sync"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "offline",
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-learning-means",
+      "type": "concept",
+      "title_he": "מה ״למידה״ עושה - ומה היא לא עושה",
+      "title_en": "What 'learning' does — and doesn't do",
+      "body_he": "זיגי שם לב לדברים שחוזרים על עצמם בשימוש היומיומי - למשל, שהתאורה בסלון נדלקת כל יום בערך באותה שעה. רק אחרי שדפוס כזה חוזר על עצמו מספיק ימים, זיגי מציע להפוך אותו לפעולה אוטומטית - וזו הצעה בלבד. שום דבר לא נוצר, לא משתנה ולא מופעל לבד ״כי זיגי למד״: ההצעה מחכה לאישור, ואפשר לדחות אותה בלי שום השפעה על איך שהבית עובד.",
+      "body_en": "Ziggy notices things that repeat in day-to-day use - for example, that the living room lights go on around the same time most days. Only after a pattern like that repeats for enough days does Ziggy suggest turning it into an automatic action - and that's just a suggestion. Nothing gets created, changed, or turned on by itself just because 'Ziggy learned something': the suggestion waits for approval, and dismissing it has zero effect on how the house runs.",
+      "capabilities": [
+        "habit-learned-suggestions"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "learning",
+        "orientation"
+      ]
+    },
+    {
+      "id": "old-ac-no-app",
+      "type": "concept",
+      "title_he": "איך זיגי שולט במזגן ישן בלי אפליקציה משלו?",
+      "title_en": "How does Ziggy control an old AC with no app of its own?",
+      "body_he": "מזגן ישן שנשלט רק בשלט, בלי שום חיבור לרשת, לומד לדבר עם זיגי בתהליך קצר: מצמידים חיישן קטן ליד המזגן, ולוחצים על הכפתורים בשלט המקורי - הדלקה, כיבוי, טמפרטורה, מצב - כשזיגי מקליט כל אחד. מהרגע הזה השלט המקורי כבר לא הכרחי: אפשר להדליק, לכבות ולשלוט במזגן מהאפליקציה, מהמסך על הקיר או בקול, וגם לשלב אותו בפעולות אוטומטיות כמו ״כשחם בחדר, הדלק מזגן״.",
+      "body_en": "An old AC that's controlled only by a remote, with no network connection at all, learns to talk to Ziggy in a short process: you attach a small sensor near the AC and press the buttons on the original remote - on, off, temperature, mode - while Ziggy records each one. From that point the original remote isn't necessary any more: you can turn the AC on, off, and control it from the app, the wall screen or by voice, and fold it into automatic actions like 'when the room is warm, turn on the AC.'",
+      "capabilities": [
+        "teach-ziggy-a-remote",
+        "ir-in-automations"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "living",
+        "bedroom"
+      ],
+      "tags": [
+        "ac",
+        "old-devices"
+      ]
+    },
+    {
+      "id": "talking-to-ziggy",
+      "type": "concept",
+      "title_he": "לדבר עם זיגי",
+      "title_en": "Talking to Ziggy",
+      "body_he": "אפשר פשוט להגיד או לכתוב לזיגי מה שרוצים - ״תדליק את האור בסלון״, ״כמה חם בחוץ״, ״תזכיר לי מחר להתקשר לאמא״ - בעברית טבעית, בלי מילות מפתח ובלי לזכור פקודות. זיגי מבין את ההקשר: אם ההודעה הבאה היא ״תכבה את זה״ בלי לפרט, זיגי זוכר על איזה מכשיר היה מדובר קודם ומבין למה הכוונה. התשובה חוזרת כמשפט קצר וברור - בטקסט או בקול - ואם משהו לא ברור, זיגי שואל שאלה קצרה במקום לנחש.",
+      "body_en": "You can just say or type what you want - 'turn on the living room light,' 'how hot is it outside,' 'remind me to call mom tomorrow' - in natural Hebrew, no keywords and nothing to memorize. Ziggy understands context: say 'turn it off' right after talking about a specific device, and it knows what you mean. The answer comes back as one short, plain sentence - in text or spoken aloud - and if something's unclear, Ziggy asks a short question instead of guessing.",
+      "capabilities": [
+        "chat-with-ziggy",
+        "hebrew-conversation-and-voice"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "chat",
+        "voice",
+        "orientation"
+      ]
+    },
+    {
+      "id": "the-ziggy-app",
+      "type": "concept",
+      "title_he": "מה האפליקציה בשביל?",
+      "title_en": "What's the app for?",
+      "body_he": "האפליקציה היא הדרך לקחת את הבית איתך - לראות מה קורה בכל חדר, לשלוט במכשירים, ולקבל התראה כשמשהו דורש תשומת לב, גם מרחוק. היא מתעדכנת בזמן אמת: מה שקורה בבית מופיע על המסך תוך שנייה, בלי לרענן. וכשמישהו מדליק אור ביד או פותח דלת, האפליקציה יודעת מיד - היא לא צריכה שיבקשו ממנה לבדוק.",
+      "body_en": "The app is how you take the house with you - see what's happening in every room, control devices, and get notified when something needs attention, even when you're not home. It updates live: whatever's happening in the house shows on screen within a second, with nothing to refresh. And when someone flips a light by hand or opens a door, the app knows immediately - it doesn't need to be asked to check.",
+      "capabilities": [
+        "ziggy-mobile-app",
+        "live-house-state-on-phone",
+        "mobile-notifications"
+      ],
+      "family": "control",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "app",
+        "orientation"
+      ]
+    },
+    {
+      "id": "the-wall-screen",
+      "type": "concept",
+      "title_he": "ומה זה המסך על הקיר?",
+      "title_en": "And what's the screen on the wall?",
+      "body_he": "מסך שמותקן על הקיר במטבח או במסדרון הופך למרכז שקט של הבית - כל החדרים, כל התבניות, מזג האוויר, ומה שמתנגן, בלי לפתוח אפליקציה. אפשר לגעת בו כמו בכל מסך, או פשוט לדבר אליו. הוא לא נחשב לבן משפחה שנמצא בבית - זה מסך, לא אדם - ומה שמותר לו לגעת בו (אילו חדרים, אילו מנעולים) נקבע מראש, כדי שילד לא יגיע בטעות לפעולה שלא צריך.",
+      "body_en": "A tablet mounted on the kitchen or hallway wall becomes a quiet control point for the house - every room, every preset, the weather, and whatever's playing, without opening an app. You can touch it like any screen, or just talk to it. It never counts as a person being home - it's a screen, not a household member - and what it's allowed to reach (which rooms, which locks) is set in advance, so a child can't accidentally reach something they shouldn't.",
+      "capabilities": [
+        "ziggy-wall",
+        "wall-tablet-mode"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "kitchen",
+        "living",
+        "entrance"
+      ],
+      "tags": [
+        "wall",
+        "orientation"
+      ]
+    },
+    {
+      "id": "adding-a-device-later",
+      "type": "concept",
+      "title_he": "מה קורה כשמוסיפים מכשיר חדש?",
+      "title_en": "What happens when you add a new device later?",
+      "body_he": "כשקונים נורה, שקע חכם או חיישן נוסף, זיגי מוצא אותו לבד - לא צריך להבין באיזו טכנולוגיה הוא משתמש. נותנים לו שם, בוחרים לאיזה חדר הוא שייך, וזהו - הוא כבר חלק מהבית, אפשר לדבר איתו, לשלוט בו, ולשלב אותו בפעולות אוטומטיות קיימות. שום מכשיר לא נכנס לחדר לבד: השיוך תמיד ידני.",
+      "body_en": "When you buy another bulb, smart plug, or sensor, Ziggy finds it on its own - no need to know what technology it speaks. You give it a name, pick which room it belongs to, and that's it - it's already part of the house, ready to talk to, control, and fold into automatic actions you already have. No device ever joins a room on its own: assignment is always something you did.",
+      "capabilities": [
+        "add-a-device",
+        "rooms"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "add-device",
+        "orientation"
+      ]
+    },
+    {
+      "id": "who-can-do-what",
+      "type": "concept",
+      "title_he": "מי בבית יכול לעשות מה?",
+      "title_en": "Who in the household can do what?",
+      "body_he": "לכל אחד בבית יש חשבון משלו, לא סיסמה משותפת - כך שכל אחד מזוהה בתור מי שהוא, וזיגי יודע להגיד ״מי בבית״ ולא רק ״הבית תפוס״. מי שהקים את הבית שולח הזמנה למי שרוצה להצטרף - כל אחד קובע סיסמה משלו, ומצטרף עם התפקיד שהוקצה לו. מסך על הקיר, לעומת זאת, לא נחשב לבן אדם: יש לו הרשאות מוגבלות משלו, בלי שום סיכוי שהוא ייחשב כמישהו שנמצא בבית.",
+      "body_en": "Everyone in the house has their own account, not a shared password - so each person is recognized as themself, and Ziggy can say 'who's home' rather than just 'the house is occupied.' Whoever set up the house sends an invite to anyone who wants to join - each person sets their own password and joins with the role they were given. A screen on the wall, on the other hand, doesn't count as a person: it gets its own limited permissions, with zero chance of counting as someone who's home.",
+      "capabilities": [
+        "household-sign-in",
+        "household-invites"
+      ],
+      "family": "control",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "household",
+        "permissions",
+        "orientation"
+      ]
+    },
+    {
+      "id": "what-ziggy-watches-for",
+      "type": "concept",
+      "title_he": "מה זיגי שם לב אליו בשקט?",
+      "title_en": "What does Ziggy quietly watch for?",
+      "body_he": "זיגי בודק כל הזמן אם משהו נראה לא כשורה - אור שנשאר דלוק כשאין אף אחד בבית, דלת שנשארה פתוחה בזמן שהמזגן פועל, סוללה שנגמרת. כשמשהו כזה קורה, ההתראה מופיעה במקום אחד עם שם החדר האמיתי - לא קוד טכני - ולרוב עם כפתור אחד שמתקן את זה. אפשר להשתיק התראה מסוימת לזמן מוגבל, ובכל בית אפשר לכוון או לכבות כללים ספציפיים.",
+      "body_en": "Ziggy is constantly checking whether something looks off - a light left on with nobody home, a door left open while the AC is running, a battery running low. When something like that happens, the alert lands in one place with the room's real name - not a technical code - and usually with a single button that fixes it. Any specific alert can be snoozed for a while, and every home can tune or turn off specific rules.",
+      "capabilities": [
+        "alerts-inbox",
+        "room-alerts"
+      ],
+      "family": "safety",
+      "moments": [
+        "night",
+        "away"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "alerts",
+        "orientation"
+      ]
+    },
+    {
+      "id": "journey-the-install",
+      "type": "journey",
+      "title_he": "ההתקנה עצמה",
+      "title_en": "Getting set up",
+      "body_he": "הקופסה מגיעה עם החיישנים שכבר מדברים עם זיגי - אין צורך לחבר כל אחד בנפרד ואין הגדרות טכניות לפתוח. הטלפון הראשון שסורק את הקוד שעל הקופסה הופך לבעלים של הבית, ומשם ויזארד קצר מוביל צעד-צעד: התחברות לוויי-פיי של הבית, בחירת שפה עוד לפני שיש בכלל חשבון, ומתן שם לחיישנים שהגיעו בערכה במילים פשוטות - ״חיישן דלת כניסה״, לא קוד טכני. באותו תהליך גם מסמנים לאילו חדרים החיישנים האלה שייכים. בסוף הוויזארד זיגי מציע כמה שגרות מוכנות להתחלה - אפשר לאשר אותן בלחיצה אחת או לדלג ולהוסיף אחר כך. אין שלב שנשארים בו תקועים מול מסך ריק: מרגע שהוויזארד נגמר, הבית כבר מגיב.",
+      "body_en": "The box arrives with sensors that already talk to Ziggy - nothing to pair one by one, and no technical settings to open. Whoever's phone scans the code on the box becomes the home's owner, and from there a short wizard walks through it step by step: joining the home Wi-Fi, picking a language before any account even exists, and naming the sensors that came in the kit in plain words - 'front door sensor,' not a technical code. The same flow is where you say which room each sensor belongs to. At the end, Ziggy offers a few ready-made routines to start with - accept them with one tap, or skip and add them later. There's no stage where you're left staring at an empty screen: the moment the wizard finishes, the house is already responding.",
+      "capabilities": [
+        "guided-home-setup",
+        "hub-provisioning-and-imaging",
+        "add-a-device"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "journey",
+        "setup"
+      ]
+    },
+    {
+      "id": "journey-day-one",
+      "type": "journey",
+      "title_he": "היום הראשון",
+      "title_en": "Day one",
+      "body_he": "ביום הראשון כבר אפשר לגעת בכל מה שהחיישנים והמכשירים שהגיעו בערכה יודעים לעשות: להדליק ולכבות מהאפליקציה, מהמסך על הקיר או בקול, לראות אם דלת פתוחה, לבדוק כמה חם בחדר. השגרות המוכנות שאושרו בוויזארד כבר פועלות - ״לילה טוב״ מכבה הכל בלחיצה, ״עזיבת הבית״ שמה לב שכולם באמת יצאו. האפליקציה כבר מראה את כל החדרים והמכשירים במבט אחד, בלי שום הגדרה נוספת. אין תהליך היכרות ארוך: מה שהיה עובד רגע לפני שזיגי הגיע - המתג על הקיר, השלט של המזגן - ממשיך לעבוד בדיוק כמו קודם, בנוסף לדרכים החדשות.",
+      "body_en": "On day one you can already touch everything the sensors and devices in the kit know how to do: turn things on and off from the app, the wall screen, or your voice, see whether a door's open, check how warm a room is. The ready-made routines you accepted in the wizard are already live - 'Good Night' turns everything off with one tap, 'Leaving' notices when everyone's actually out. The app already shows every room and device at a glance, with nothing extra to set up. There's no long getting-to-know-you period: whatever worked a moment before Ziggy arrived - the switch on the wall, the AC's own remote - keeps working exactly as before, alongside the new ways.",
+      "capabilities": [
+        "device-and-automation-runtime",
+        "more-ready-made-routines",
+        "chat-with-ziggy",
+        "rooms"
+      ],
+      "family": "comfort",
+      "moments": [
+        "morning",
+        "evening"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "journey",
+        "day-one"
+      ]
+    },
+    {
+      "id": "journey-week-one",
+      "type": "journey",
+      "title_he": "השבוע הראשון",
+      "title_en": "The first week",
+      "body_he": "במהלך השבוע הראשון שאר אנשי הבית מצטרפים - כל אחד עם החשבון וההרשאות שלו, לא סיסמה משותפת - וזיגי מתחיל לדעת מי בבית ומי לא, לא רק שהבית ״תפוס״. זה השלב שבו בדרך כלל מוסיפים עוד חיישן או שניים במקומות שהתבררו כחשובים, ומתקנים שיוך של מכשיר לחדר הלא נכון. ההתראות הראשונות מתחילות להופיע - אור שנשכח דלוק, דלת שנשארה פתוחה - והן ההוכחה שהבית באמת עוקב, לא רק מגיב לפקודות.",
+      "body_en": "During the first week the rest of the household joins in - each person with their own account and permissions, not a shared password - and Ziggy starts knowing who's actually home and who isn't, not just that the house is 'occupied.' This is usually when people add another sensor or two somewhere that turned out to matter, and fix a device that got assigned to the wrong room. The first alerts start showing up - a light left on, a door left open - proof the house is actually paying attention, not just reacting to commands.",
+      "capabilities": [
+        "household-invites",
+        "household-sign-in",
+        "whos-home",
+        "room-alerts"
+      ],
+      "family": "comfort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "journey",
+        "week-one"
+      ]
+    },
+    {
+      "id": "journey-month-three",
+      "type": "journey",
+      "title_he": "אחרי שלושה חודשים",
+      "title_en": "Three months in",
+      "body_he": "בשלב הזה כבר אין מי שחושב על זיגי כמכשיר נוסף - הוא פשוט חלק מאיך שהבית מתנהג. התאורה כבר לא נדלקת בעוצמה אחת קבועה כל היום; היא זזה בעדינות מבהירה ולבנה בצהריים לחמה ועמומה בערב, בלי שמישהו נוגע בה. חדר עם מזגן פשוט נשאר בטמפרטורה הנוחה שנקבעה לו - זיגי מדליק ומכבה לבד סביב הטווח, בלי תזכורות. ואם דפוס כלשהו חוזר על עצמו מספיק - אותה נורה שתמיד נדלקת אחרי אותה שעה - זיגי כבר מציע להפוך אותו לפעולה אוטומטית משלו.",
+      "body_en": "By this point nobody's thinking of Ziggy as a separate device - it's just how the house behaves. The lights don't turn on at one fixed brightness all day any more; they ease gently from bright and white at midday to warm and dim in the evening, with nobody touching them. A room with an AC just stays in the comfort range set for it - Ziggy switches it on and off around that range on its own, with no reminders needed. And if some pattern keeps repeating - the same light that always comes on after the same hour - Ziggy is already offering to turn it into its own automatic action.",
+      "capabilities": [
+        "habit-learned-suggestions",
+        "smart-light-schedule",
+        "smart-climate-control"
+      ],
+      "family": "effort",
+      "moments": [
+        "evening",
+        "night"
+      ],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "journey",
+        "month-three"
+      ]
+    },
+    {
+      "id": "journey-adding-more-over-time",
+      "type": "journey",
+      "title_he": "מה קורה כשמוסיפים עוד עם הזמן",
+      "title_en": "Adding more over time",
+      "body_he": "אין צורך לתכנן הכל מראש: מוסיפים מכשיר כשקונים אותו, ולא לפני. כל תוספת - נורה חדשה, שקע, חיישן - מצטרפת לאותו בית שכבר קיים, ולא מתחילה תהליך נפרד משלה. ספריית הפעולות המוכנות גדלה בהתאם למה שיש בבית בפועל: פעולה שלא הייתה רלוונטית כי חסר לה חיישן, פתאום זמינה ברגע שהחיישן הזה מתווסף. ומכשיר שכבר לא בשימוש - מתקלקל, מוחלף, לא רלוונטי יותר - נמחק לגמרי, ולא נשאר תקוע ברשימה כדבר ״לא זמין״ לנצח.",
+      "body_en": "There's no need to plan everything up front: you add a device when you buy it, not before. Every addition - a new bulb, a plug, a sensor - joins the home that already exists; it doesn't start some separate process of its own. The library of ready-made actions grows to match what's actually in the house: something that wasn't relevant because it needed a sensor you didn't have suddenly becomes available the moment that sensor's added. And a device you're done with - broken, replaced, no longer needed - gets removed completely, instead of sitting stuck on the list forever as 'unavailable.'",
+      "capabilities": [
+        "add-a-device",
+        "more-ready-made-routines",
+        "actions-page-and-library",
+        "device-lifecycle-management"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "journey",
+        "growth"
+      ]
+    },
+    {
+      "id": "pitch-one-liner",
+      "type": "pitch",
+      "title_he": "המשפט האחד",
+      "title_en": "The one-liner",
+      "body_he": "זיגי: הבית שמדבר איתך בעברית, מכיר את השגרה שלך, ופשוט עובד.",
+      "body_en": "Ziggy: the home that talks with you in Hebrew, knows your routine, and just works.",
+      "capabilities": [
+        "chat-with-ziggy",
+        "hebrew-conversation-and-voice"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "one-liner",
+        "hebrew-voice",
+        "alt: זיגי - הבית שמבין עברית, לא רק מבצע פקודות.",
+        "alt: הבית שכבר מכיר את הבית שלך."
+      ]
+    },
+    {
+      "id": "pitch-30-second",
+      "type": "pitch",
+      "title_he": "השלושים שניות",
+      "title_en": "The 30-second version",
+      "body_he": "זיגי הוא בית חכם שמדבר איתך בעברית טבעית, לא באנגלית משובשת. אפשר לדבר איתו, לגעת במסך על הקיר, או פשוט לפתוח אפליקציה - הוא מבין את החדרים שלך, את המכשירים שבהם, ואת מי שנמצא בבית ברגע נתון. הוא בונה על זה פעולות שקורות מעצמן - האורות נדלקים כשנכנסים, נכבים כשיוצאים, המזגן שומר על טמפרטורה נוחה בלי שמישהו נוגע בו. אין קופסה שצריך להבין, אין הגדרות טכניות - יש בית שפשוט עובד ככה שנוח.",
+      "body_en": "Ziggy is a smart home that talks with you in natural Hebrew, not broken English. You can talk to it, touch the screen on the wall, or just open the app - it understands your rooms, the devices in them, and who's actually home at any moment. On top of that it builds actions that just happen on their own - lights come on when you walk in, off when you leave, the AC holds a comfortable temperature with nobody touching it. There's no box to understand, no technical settings - just a home that works the comfortable way.",
+      "capabilities": [
+        "chat-with-ziggy",
+        "hebrew-conversation-and-voice",
+        "rooms",
+        "device-and-automation-runtime"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pitch",
+        "30-second"
+      ]
+    },
+    {
+      "id": "pitch-2-minute",
+      "type": "pitch",
+      "title_he": "השתי הדקות",
+      "title_en": "The two-minute version",
+      "body_he": "יש בית שמבין מה קורה בתוכו בלי שצריך להסביר לו כלום. חיישנים בכל חדר יודעים מי נכנס, מי יצא, אם דלת נשארה פתוחה, אם המזגן פועל בחדר ריק. אפשר לדבר עם הבית הזה בעברית רגילה - לא פקודות מוזרות, אלא ״תדליק את האור בסלון״ או ״תזכיר לי מחר בבוקר״ - והוא פשוט מבין. אפשר גם לגעת במסך שעל הקיר, או לפתוח אפליקציה בטלפון ולראות בדיוק מה קורה בבית, גם מרחוק. הבסיס לכל זה הוא שחדר, לא מכשיר בודד, הוא מה שחשוב: זיגי יודע מי בבית, לא רק אילו נורות דולקות. כשדפוס חוזר על עצמו מספיק - אותה תאורה שנדלקת כל ערב באותה שעה - זיגי מציע להפוך אותו לפעולה אוטומטית, ואפשר תמיד לאשר או לדחות. וכשמשהו לא כשורה - אור שנשאר דלוק כשאין אף אחד, סוללה שנגמרת - זה מגיע כהתראה אחת ברורה, עם שם החדר האמיתי, לא קוד טכני. זו לא עוד קופסה שמצטרפת לערימת המכשירים - זו הדרך שבית אמור לעבוד מלכתחילה.",
+      "body_en": "There's a home that understands what's happening inside it without anyone explaining anything. Sensors in every room know who came in, who left, whether a door was left open, whether the AC is running in an empty room. You can talk to this home in plain Hebrew - not stilted commands, just 'turn on the living room light' or 'remind me tomorrow morning' - and it understands. You can also touch the screen on the wall, or open an app on your phone and see exactly what's happening in the house, even from far away. Underneath all of it is one idea: the room, not the single device, is what matters - Ziggy knows who's home, not just which bulbs are lit. When a pattern repeats enough - the same light that comes on every evening at the same time - Ziggy offers to turn it into its own automatic action, and you're always free to accept or ignore it. And when something looks off - a light left on with nobody home, a battery running low - it shows up as one clear alert, with the room's real name, not a technical code. This isn't another gadget joining the pile - it's how a home is supposed to work in the first place.",
+      "capabilities": [
+        "chat-with-ziggy",
+        "hebrew-conversation-and-voice",
+        "rooms",
+        "whos-home",
+        "build-your-own-automation",
+        "alerts-inbox",
+        "habit-learned-suggestions",
+        "ziggy-mobile-app",
+        "ziggy-wall"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pitch",
+        "2-minute"
+      ]
+    },
+    {
+      "id": "pitch-already-has-smart-devices",
+      "type": "pitch",
+      "title_he": "למי שכבר יש כמה מכשירים חכמים",
+      "title_en": "For someone who already has smart devices",
+      "body_he": "אם כבר יש בבית כמה נורות חכמות ותקע או שניים, זו כבר התחלה טובה - השאלה היא אם הם מדברים אחד עם השני, או שכל אחד חי באפליקציה נפרדת משלו. זיגי לא מחליף את המכשירים האלה, הוא מחבר אותם: אותם מכשירים, אבל דרך חדר אחד, שיחה אחת, ואפליקציה אחת שיודעת מה קורה בכל הבית - לא רק בפינה שהמכשיר הזה יושב בה. וכשיש חיישן נוכחות אמיתי בבית, ולא רק תזמון קבוע, המכשירים האלה מתחילים לעשות דברים שהם לא ידעו לעשות לבד - כמו לדעת שהבית באמת ריק ולכבות הכל, לא רק בשעה שמישהו הגדיר מראש.",
+      "body_en": "If the house already has a few smart bulbs and a plug or two, that's a decent start - the question is whether they actually talk to each other, or each one just lives inside its own separate app. Ziggy doesn't replace those devices, it connects them: the same devices, but through one room, one conversation, and one app that knows what's happening across the whole house - not just the corner that device sits in. And once there's a real presence sensor in the house, not just a fixed schedule, those same devices start doing things they couldn't do alone - like knowing the house is actually empty and turning everything off, not just at some hour someone guessed in advance.",
+      "capabilities": [
+        "rooms",
+        "whos-home",
+        "chat-with-ziggy",
+        "alerts-inbox"
+      ],
+      "family": "control",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pitch",
+        "skeptic",
+        "already-has-devices"
+      ]
+    },
+    {
+      "id": "pitch-partner-showing-skeptic",
+      "type": "pitch",
+      "title_he": "למי שלא רוצה עוד ״דבר חכם״ בבית",
+      "title_en": "For someone who doesn't want another 'smart thing'",
+      "body_he": "לא כולם רוצים עוד מסך, עוד אפליקציה, עוד דבר לנהל. אז שווה להתחיל בלי לדבר על טכנולוגיה בכלל: הדלת שנשארה פתוחה בטעות בלילה, האור שנשכח דלוק בחדר ריק, המזגן שרץ שעה מיותרת - אלה דברים שכל בית כבר מכיר, וזה בדיוק מה שזיגי תופס לפני שמישהו שם לב. אין צורך ללמוד שום דבר חדש כדי שזה יעבוד: המתגים על הקיר ממשיכים לעבוד בדיוק כמו קודם, וזיגי פשוט נמצא שם בשקט ברקע - גם בלי לדבר איתו אף פעם.",
+      "body_en": "Not everyone wants another screen, another app, one more thing to manage. So it's worth starting without talking about technology at all: the door left open by accident at night, the light forgotten on in an empty room, the AC running an extra hour for nothing - these are things every household already recognizes, and that's exactly what Ziggy catches before anyone even notices. There's nothing new to learn for it to work: the switches on the wall keep working exactly like before, and Ziggy is just there, quietly, in the background - even if nobody ever talks to it.",
+      "capabilities": [
+        "alerts-inbox"
+      ],
+      "family": "effort",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pitch",
+        "skeptic",
+        "shown-by-partner"
+      ]
+    },
+    {
+      "id": "pitch-origin",
+      "type": "pitch",
+      "title_he": "למה זה בכלל קיים",
+      "title_en": "Why this exists at all",
+      "body_he": "רוב הבתים החכמים בעולם נבנו למישהו אחר - למי שמדבר אנגלית, גר בבית אמריקאי, ורגיל להגיד ״אלקסה״. זיגי נבנה כאן, בשביל בית ישראלי אמיתי: הוא מדבר איתך בעברית שנשמעת כמו שמישהו מפה כתב אותה, לא תרגום מכני. הרעיון פשוט - בית אמור להתאים לאנשים שגרים בו, לא ההפך. לא לומדים איך לדבר עם הבית; הבית לומד לדבר איתך.",
+      "body_en": "Most smart homes in the world were built for someone else - someone who speaks English, lives in an American house, and is used to saying 'Alexa.' Ziggy was built here, for a real Israeli home: it talks with you in Hebrew that sounds like someone from here wrote it, not a mechanical translation. The idea is simple - a home should fit the people living in it, not the other way around. You don't learn how to talk to the house; the house learns how to talk to you.",
+      "capabilities": [
+        "hebrew-conversation-and-voice"
+      ],
+      "family": "trust",
+      "moments": [],
+      "rooms": [
+        "whole-home"
+      ],
+      "tags": [
+        "pitch",
+        "origin",
+        "israel-first"
+      ]
+    }
+  ]
+}
