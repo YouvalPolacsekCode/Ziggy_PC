@@ -2645,7 +2645,10 @@
       ],
       "tags": [
         "expansion",
-        "future-proof"
+        "future-proof",
+        "הרחבה",
+        "שליטה",
+        "control"
       ]
     },
     {
@@ -2671,7 +2674,11 @@
       "tags": [
         "alternatives",
         "voice-assistants",
-        "hebrew"
+        "hebrew",
+        "מתחרים",
+        "competitors",
+        "שליטה",
+        "control"
       ]
     },
     {
@@ -2696,7 +2703,9 @@
       "tags": [
         "existing-devices",
         "compatibility",
-        "honest-limit"
+        "honest-limit",
+        "תאימות",
+        "מכשירים קיימים"
       ]
     },
     {
@@ -2725,7 +2734,11 @@
       ],
       "tags": [
         "adoption",
-        "app-fatigue"
+        "app-fatigue",
+        "נוחות",
+        "אימוץ",
+        "ease-of-use",
+        "household-adoption"
       ]
     },
     {
@@ -2748,7 +2761,12 @@
       ],
       "tags": [
         "pricing",
-        "subscription"
+        "subscription",
+        "מחיר",
+        "מנוי",
+        "price",
+        "value",
+        "כדאיות"
       ],
       "needs_input": true
     },
@@ -2778,7 +2796,12 @@
         "updates",
         "self-repair",
         "support",
-        "away"
+        "away",
+        "אמינות",
+        "תמיכה",
+        "תקלות",
+        "reliability",
+        "breakage"
       ]
     },
     {
@@ -2804,7 +2827,10 @@
       "tags": [
         "security",
         "access",
-        "support-access"
+        "support-access",
+        "פרטיות",
+        "אבטחה",
+        "privacy"
       ]
     },
     {
@@ -2833,7 +2859,10 @@
       "tags": [
         "privacy",
         "presence",
-        "location"
+        "location",
+        "פרטיות",
+        "מידע",
+        "data"
       ]
     },
     {
@@ -2864,7 +2893,12 @@
         "control",
         "transparency",
         "incident",
-        "honest-limit"
+        "honest-limit",
+        "שליטה",
+        "אמון",
+        "trust",
+        "אוטונומיה",
+        "autonomy"
       ]
     },
     {
@@ -2888,7 +2922,12 @@
       "tags": [
         "rental",
         "installation",
-        "no-rewiring"
+        "no-rewiring",
+        "שכירות",
+        "התקנה",
+        "חשמל",
+        "rental-landlord",
+        "wiring"
       ]
     },
     {
@@ -2917,7 +2956,11 @@
       "tags": [
         "price",
         "alternatives",
-        "diy"
+        "diy",
+        "מחיר",
+        "כדאיות",
+        "מתחרים",
+        "competitors"
       ]
     },
     {
@@ -2946,7 +2989,10 @@
       "tags": [
         "adoption",
         "family",
-        "wall-screen"
+        "wall-screen",
+        "אימוץ",
+        "household-adoption",
+        "נוחות"
       ]
     },
     {
@@ -2972,7 +3018,11 @@
       "tags": [
         "vendor-risk",
         "local-first",
-        "honest-limit"
+        "honest-limit",
+        "תלות",
+        "סיכון חברה",
+        "lock-in",
+        "company-risk"
       ]
     },
     {
@@ -2999,7 +3049,8 @@
       "tags": [
         "ease-of-use",
         "onboarding",
-        "hebrew"
+        "hebrew",
+        "נוחות"
       ]
     },
     {
@@ -3027,7 +3078,10 @@
         "offline",
         "resilience",
         "local-first",
-        "honest-limit"
+        "honest-limit",
+        "אופליין",
+        "נפילת אינטרנט",
+        "internet-outage"
       ]
     },
     {
@@ -3053,7 +3107,12 @@
         "privacy",
         "microphone",
         "no-wake-word",
-        "honest-limit"
+        "honest-limit",
+        "פרטיות",
+        "אבטחה",
+        "האזנה",
+        "surveillance-listening",
+        "security"
       ]
     },
     {
@@ -3080,7 +3139,9 @@
       ],
       "tags": [
         "price",
-        "value"
+        "value",
+        "מחיר",
+        "כדאיות"
       ]
     },
     {
@@ -3109,7 +3170,11 @@
         "permissions",
         "kids",
         "guests",
-        "wall-screen"
+        "wall-screen",
+        "ילדים",
+        "children",
+        "אימוץ",
+        "household-adoption"
       ]
     },
     {
@@ -3140,7 +3205,11 @@
         "ac",
         "old-hardware",
         "israel",
-        "remote-control"
+        "remote-control",
+        "תאימות",
+        "מכשירים קיימים",
+        "compatibility",
+        "existing-devices"
       ]
     },
     {
@@ -3166,7 +3235,11 @@
         "reset",
         "privacy",
         "moving-home",
-        "ownership"
+        "ownership",
+        "פרטיות",
+        "מעבר דירה",
+        "moving-house",
+        "שליטה"
       ]
     },
     {
@@ -3193,7 +3266,10 @@
       "tags": [
         "israel",
         "shabbat",
-        "routines"
+        "routines",
+        "שבת",
+        "שליטה",
+        "control"
       ]
     },
     {
@@ -3217,7 +3293,12 @@
       "tags": [
         "hardware-failure",
         "backup",
-        "honest-limit"
+        "honest-limit",
+        "אמינות",
+        "תקלות",
+        "reliability",
+        "support",
+        "תמיכה"
       ]
     },
     {
@@ -3244,7 +3325,11 @@
         "privacy",
         "cloud",
         "backup",
-        "data-residency"
+        "data-residency",
+        "פרטיות",
+        "מידע",
+        "ענן",
+        "data"
       ]
     },
     {
@@ -3272,7 +3357,11 @@
         "privacy",
         "cameras",
         "support-access",
-        "honest-limit"
+        "honest-limit",
+        "פרטיות",
+        "מצלמות",
+        "אבטחה",
+        "security"
       ]
     },
     {
@@ -3297,7 +3386,10 @@
       "tags": [
         "installation",
         "onboarding",
-        "time"
+        "time",
+        "התקנה",
+        "נוחות",
+        "ease-of-use"
       ]
     },
     {
@@ -3326,7 +3418,11 @@
         "energy",
         "waste",
         "savings",
-        "honest-limit"
+        "honest-limit",
+        "מחיר",
+        "כדאיות",
+        "price",
+        "value"
       ]
     },
     {
@@ -3840,6 +3936,6 @@
     "pricing-cost-comparison",
     "another-monthly-subscription"
   ],
-  "built_from_commit": "858bd668601d644d640edde69549411741e97b85",
+  "built_from_commit": "17457fe4dcc1c1d77a5d6e73e5bf44029d2ba002",
   "catalog_built_from": "edadcb1c82f6e5644f9b5d58d8afa3028c3d7195"
 }
