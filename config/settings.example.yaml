@@ -535,6 +535,14 @@ voice:
   # can re-enable as a cloud-gated paid feature. See docs/RUNBOOK_VOICE.md.
   tts_enabled: false
   tts_engine: cartesia    # cartesia | elevenlabs | azure | piper
+  # ---- Spoken-text stage (Hebrew) ----
+  # What the synthesizer receives for Hebrew replies: pauses at ':' and
+  # '(…)', 12-hour spoken clock, number gender, and a per-word pronunciation
+  # dictionary. Built and verified in the Voice Lab (services/speech_text.py).
+  # `enabled: false` reduces to the legacy sanitizer byte for byte.
+  speech_text:
+    enabled: true
+    words: {}               # per-home additions, plain → spoken, e.g. {"רוני": "רוֹנִי"}
   tts_language: en
   # ---- Wake word ----
   # v1 ships PUSH-TO-TALK ONLY. Wake-word inference is experimental and

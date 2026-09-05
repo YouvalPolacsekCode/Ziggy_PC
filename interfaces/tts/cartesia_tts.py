@@ -209,6 +209,25 @@ def _cache_put(key: str, audio_bytes: bytes) -> str:
     return str(path)
 
 
+def evict(text: str, lang: str = "he") -> bool:
+    """Drop the cached audio for (text, active voice, model, lang) so the next
+    request re-renders. Used by the 'that was said wrong' flag — Cartesia's
+    output varies between renders, and the cache would otherwise keep a bad
+    one forever. Returns True if a file was removed."""
+    voice_id = _resolve_voice_id(lang)
+    if not voice_id:
+        return False
+    key = _cache_key(text, voice_id, _model_id(), lang, _output_format())
+    path = _CACHE_DIR / f"{key}.mp3"
+    try:
+        if path.exists():
+            path.unlink()
+            return True
+    except OSError as e:
+        print(f"[Cartesia] Cache evict failed ({e})")
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Render
 # ---------------------------------------------------------------------------

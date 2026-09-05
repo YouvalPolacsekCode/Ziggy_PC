@@ -125,8 +125,7 @@ def test_one_before_adjective_after_noun():
 
 def test_wordfix_touches_only_dictionary_words():
     out = prep.wordfix("הדוד דולק כבר חצי שעה, רוצה שאכבה אותו?")
-    assert out.startswith("הַדּוּד דולק כבר חצי שעה, רוצה <<")
-    assert out.endswith(">> אותו?")
+    assert out == "הַדּוּד דולק כבר חצי שעה, רוצה שֶׁאֲכַבֶּה אותו?"
     assert prep.wordfix("מכבה את האור בחדר שינה.") == "מכבה את האור בחדר שינה."
 
 

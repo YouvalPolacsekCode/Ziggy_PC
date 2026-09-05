@@ -106,3 +106,20 @@ lines:
   - {id: d04, bucket: determinism, source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
   - {id: d05, bucket: determinism, source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
   - {id: d06, bucket: determinism, source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
+
+  # ---- sitting D: mechanisms for the two stubborn verbs, 3 rolls each (render with variant 'raw') ----
+  - {id: e01, bucket: mechanism, source: lab, text: "בעוד שתי דקות אֲכַבֶּה את האור במסדרון."}
+  - {id: e02, bucket: mechanism, source: lab, text: "בעוד שתי דקות אֲכַבֶּה את האור במסדרון."}
+  - {id: e03, bucket: mechanism, source: lab, text: "בעוד שתי דקות אֲכַבֶּה את האור במסדרון."}
+  - {id: e04, bucket: mechanism, source: lab, text: "בעוד שתי דקות <<a|x|a|b|e>> את האור במסדרון."}
+  - {id: e05, bucket: mechanism, source: lab, text: "בעוד שתי דקות <<a|x|a|b|e>> את האור במסדרון."}
+  - {id: e06, bucket: mechanism, source: lab, text: "בעוד שתי דקות <<a|x|a|b|e>> את האור במסדרון."}
+  - {id: e07, bucket: mechanism, source: lab, text: "בעוד שתי דקות אני אכבה את האור במסדרון."}
+  - {id: e08, bucket: mechanism, source: lab, text: "בעוד שתי דקות אני אכבה את האור במסדרון."}
+  - {id: e09, bucket: mechanism, source: lab, text: "בעוד שתי דקות אני אכבה את האור במסדרון."}
+  - {id: e10, bucket: mechanism, source: lab, text: "מְכַבֶּה את האור בחדר שינה."}
+  - {id: e11, bucket: mechanism, source: lab, text: "מְכַבֶּה את האור בחדר שינה."}
+  - {id: e12, bucket: mechanism, source: lab, text: "מְכַבֶּה את האור בחדר שינה."}
+  - {id: e13, bucket: mechanism, source: lab, text: "כיביתי את האור בחדר שינה."}
+  - {id: e14, bucket: mechanism, source: lab, text: "כיביתי את האור בחדר שינה."}
+  - {id: e15, bucket: mechanism, source: lab, text: "כיביתי את האור בחדר שינה."}

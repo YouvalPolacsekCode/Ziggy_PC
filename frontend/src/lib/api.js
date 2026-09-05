@@ -359,6 +359,22 @@ export async function speakTts({ text, lang }) {
   return res.blob()
 }
 
+// "That was said wrong": logs the line for the pronunciation dictionary and
+// evicts its cached audio so the next play re-renders (the engine is not
+// deterministic — a re-roll often fixes it on its own).
+export async function flagTts({ text, lang, note = '' }) {
+  const res = await fetchWithTimeout(`${BASE}/voice/tts/flag`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ text, lang, note }),
+  }, { timeoutMs: 10_000 })
+  if (!res.ok) throw await _toZiggyError(res)
+  return res.json()
+}
+
 // Streaming variant: returns the raw Response so the caller can pipe
 // `res.body` into a MediaSource and start playback as soon as the first
 // chunk arrives — playback latency drops from ~the full synth time

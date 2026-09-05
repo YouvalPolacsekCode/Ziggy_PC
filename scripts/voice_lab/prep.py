@@ -334,15 +334,31 @@ WORDFIX: dict[str, str] = {
     "כוונתי":  "כִּוַּנְתִּי",       # kivanti (nikud worked in fix1)
     "כיוונתי": "כִּיוַּנְתִּי",
     "ירדו":    "יֵרְדוּ",             # future: yerdu (schedules), not past yardu
-    "אכבה":    "<<ʔ|a|χ|a|ˈ|b|e>>",   # nikud gave "achve"; IPA keeps the b
-    "שאכבה":   "<<ʃ|e|ʔ|a|χ|a|ˈ|b|e>>",
+    # sitting C: these were right under nikud in fix1 and rolled wrong plain
+    "השלט":    "הַשָּׁלָט",
+    "שלט":     "שָׁלָט",
+    "מאיה":    "מַאיָה",
+    "ומאיה":   "וְמַאיָה",
+    "ריק":     "רֵיק",
+    "יכבו":    "יְכַבּוּ",
+    "בסלון":   "בַּסָּלוֹן",
+    "במטבח":   "בַּמִּטְבָּח",
+    "בחצר":    "בַּחָצֵר",
+}
+# Candidates still being auditioned (not yet copied to services/speech_text).
+# sitting D: nikud gave "achve", stressed IPA gave "achave" — trying again.
+WORDFIX_OPEN: dict[str, str] = {
+    "אכבה":    "אֲכַבֶּה",
+    "שאכבה":   "שֶׁאֲכַבֶּה",
 }
 
 
-def wordfix(text: str) -> str:
+def wordfix(text: str, include_open: bool = True) -> str:
+    table = {**WORDFIX, **(WORDFIX_OPEN if include_open else {})}
+
     def _tok(m: re.Match) -> str:
         lead, core, tail = _EDGE_PUNCT.match(m.group(1)).groups()
-        rep = WORDFIX.get(strip_nikud(core))
+        rep = table.get(strip_nikud(core))
         return f"{lead}{rep}{tail}" if rep else m.group(0)
     return _TOKEN_RE.sub(_tok, text)
 

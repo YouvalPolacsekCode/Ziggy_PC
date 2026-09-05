@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from core.settings_loader import settings
 from interfaces.tts import cartesia_tts, elevenlabs_tts
+from services.speech_text import prepare_for_speech
 
 
 # Strip characters TTS reads aloud as their literal name. The model
@@ -175,7 +176,11 @@ async def speak_reply(req: SpeakRequest):
     if not cartesia_tts.is_available():
         raise HTTPException(503, "Cartesia not configured "
                                  "(set voice.cartesia.api_key).")
-    spoken_text = _sanitize_for_tts(req.text)
+    # Hebrew goes through the spoken-text stage (pauses, 12-hour clock,
+    # number gender, per-word pronunciation dictionary — see
+    # services/speech_text.py). English and the OFF flag reduce to the
+    # legacy sanitizer above, byte for byte.
+    spoken_text = prepare_for_speech(req.text, req.lang).spoken
     stream = cartesia_tts.synthesize_stream(spoken_text, req.lang)
     if stream is None:
         # Two common causes: no voice configured for this lang, or the
@@ -189,6 +194,41 @@ async def speak_reply(req: SpeakRequest):
         media_type="audio/mpeg",
         headers={"Cache-Control": "private, max-age=3600"},
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /flag — "that was said wrong": log it and re-roll the cached audio
+# ---------------------------------------------------------------------------
+class FlagRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+    lang: str = Field("he", pattern="^(en|he)$")
+    note: str = Field("", max_length=300)
+
+
+@router.post("/flag")
+async def flag_reply(req: FlagRequest):
+    """The synthesizer is not deterministic: the same sentence can come out
+    right one render and wrong the next, and the on-disk cache freezes
+    whichever it got. A flag (1) records the line for the pronunciation
+    dictionary and (2) evicts the cached audio so the next play re-renders.
+    The spoken form is logged too, so the operator sees exactly what the
+    engine received."""
+    import json as _json
+    import time as _time
+    from pathlib import Path as _Path
+
+    prepared = prepare_for_speech(req.text, req.lang)
+    evicted = cartesia_tts.evict(prepared.spoken, req.lang)
+    rec = {"ts": _time.time(), "lang": req.lang, "text": req.text,
+           "spoken": prepared.spoken, "note": req.note, "evicted": evicted}
+    try:
+        p = _Path(__file__).resolve().parents[2] / "user_files" / "tts_flags.jsonl"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fp:
+            fp.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"[TTS] flag log write failed: {e}")
+    return {"ok": True, "evicted": evicted, "spoken": prepared.spoken}
 
 
 # ---------------------------------------------------------------------------

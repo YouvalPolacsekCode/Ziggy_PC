@@ -55,6 +55,9 @@ VARIANTS: dict[str, dict] = {
     "fix3":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "ipa"]},
     # Sitting C candidate: fix0 + per-word dictionary (nikud or IPA per word).
     "fix4":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "wordfix"]},
+    "fix5":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "wordfix"]},
+    # Text exactly as written in corpus.yaml (for hand-authored mechanism tests).
+    "raw":           {"model": "sonic-3.5", "voice": "yardena", "prep": []},
     # Voice candidates for sitting B (baseline prep so only the voice differs).
     "voice_adi":     {"model": "sonic-3.5", "voice": "adi",     "prep": ["sanitize"]},
     "voice_gil":     {"model": "sonic-3.5", "voice": "gil",     "prep": ["sanitize"]},

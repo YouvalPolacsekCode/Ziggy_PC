@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream } from '../lib/api'
+import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream, flagTts } from '../lib/api'
 import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
@@ -90,6 +90,20 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
   const rtl     = isHebrew(msg.text)
+  // "Said wrong" — the voice is not deterministic; flagging logs the line
+  // for the pronunciation dictionary and re-rolls its cached audio.
+  const [flagState, setFlagState] = useState('idle')   // idle | busy | done | error
+  const flagPronunciation = async () => {
+    if (flagState !== 'idle') return
+    setFlagState('busy')
+    try {
+      await flagTts({ text: msg.text, lang: rtl ? 'he' : 'en' })
+      setFlagState('done')
+    } catch {
+      setFlagState('error')
+      setTimeout(() => setFlagState('idle'), 2500)
+    }
+  }
 
   // Pattern card
   if (msg.isPattern) return <PatternCard msg={msg} />
@@ -156,6 +170,25 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
           {formatTime(msg.ts)}
         </p>
       </div>
+
+      {!isUser && !isError && msg.text && (
+        <button
+          type="button"
+          onClick={flagPronunciation}
+          disabled={flagState !== 'idle'}
+          aria-label={t('chat.flagTts')}
+          style={{
+            background: 'none', border: 'none', padding: '0 4px', cursor: flagState === 'idle' ? 'pointer' : 'default',
+            fontSize: 10.5, color: flagState === 'done' ? 'var(--ok)' : 'var(--ink-3, var(--ink-2))',
+            opacity: flagState === 'idle' ? 0.55 : 1, font: 'inherit',
+          }}
+        >
+          {flagState === 'done' ? t('chat.flagTtsDone')
+            : flagState === 'busy' ? '…'
+            : flagState === 'error' ? t('chat.flagTtsError')
+            : t('chat.flagTts')}
+        </button>
+      )}
 
       {/* Action chips — green check bubbles per design */}
       {msg.actions && msg.actions.length > 0 && (
