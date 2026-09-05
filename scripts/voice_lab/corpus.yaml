@@ -1,0 +1,100 @@
+# Voice Lab corpus — Hebrew lines Ziggy actually says (or would say) on Canary.
+# bucket = what the line is designed to test. source = where the phrasing comes from.
+#   vowels    : plain words whose vowels/stress the engine must guess
+#   numgender : numerals that must agree in gender with the noun
+#   time      : clock times, durations
+#   units     : temperature, percent, energy
+#   foreign   : English/brand words inside Hebrew
+#   name      : room / device / person names from the real Canary home
+#   punct     : symbols, quotes, dashes, emoji, parentheses
+#   prosody   : questions, lists, long sentences, intonation
+# All lines follow the Hebrew style guide: זיגי speaks masculine 1st person,
+# addresses the user gender-free, dugri, no engine jargon.
+lines:
+  # ---- confirmations (templates) ----
+  - {id: c01, bucket: vowels,    source: template, text: "מדליק את האור בסלון."}
+  - {id: c02, bucket: vowels,    source: template, text: "מכבה את האור בחדר שינה."}
+  - {id: c03, bucket: vowels,    source: template, text: "כל האורות כבויים."}
+  - {id: c04, bucket: vowels,    source: template, text: "המנורה בסלון כבר דלוקה."}
+  - {id: c05, bucket: vowels,    source: template, text: "עשיתי."}
+  - {id: c06, bucket: vowels,    source: template, text: "סגור, כיביתי את המזגן במשרד."}
+  - {id: c07, bucket: vowels,    source: template, text: "רגע, בודק."}
+  - {id: c08, bucket: vowels,    source: template, text: "אין מזגן מוגדר במטבח."}
+  - {id: c09, bucket: vowels,    source: template, text: "הדלקתי את התאורה בפינת האוכל והורדתי את התריס בסלון."}
+  - {id: c10, bucket: vowels,    source: template, text: "החימום בחדר של רוני פועל, והלחות שם תקינה."}
+  - {id: c11, bucket: vowels,    source: template, text: "הספר על השולחן בסלון לא זז מאתמול."}
+  - {id: c12, bucket: vowels,    source: template, text: "החלון במטבח פתוח והדלת הקדמית סגורה."}
+  - {id: c13, bucket: vowels,    source: agent,    text: "ההשקיה בחצר רצה עכשיו, אני אעצור אותה בעוד עשר דקות."}
+  - {id: c14, bucket: vowels,    source: agent,    text: "הדוד דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: c15, bucket: vowels,    source: agent,    text: "יש תנועה במחסן, אבל הדלת שלו סגורה."}
+
+  # ---- number gender ----
+  - {id: n01, bucket: numgender, source: template, text: "2 מכשירים פעילים כרגע."}
+  - {id: n02, bucket: numgender, source: template, text: "שני מכשירים לא מגיבים כרגע."}
+  - {id: n03, bucket: numgender, source: agent,    text: "3 מנורות דולקות בסלון."}
+  - {id: n04, bucket: numgender, source: agent,    text: "שלוש מנורות דולקות בסלון."}
+  - {id: n05, bucket: numgender, source: agent,    text: "יש 4 חלונות פתוחים: במטבח, בסלון, בחדר שינה ובמשרד."}
+  - {id: n06, bucket: numgender, source: agent,    text: "בעוד 2 דקות אכבה את האור במסדרון."}
+  - {id: n07, bucket: numgender, source: agent,    text: "כמה מכשירים לא מגיבים כרגע (5)."}
+  - {id: n08, bucket: numgender, source: agent,    text: "12 מכשירים בבית, 11 מחוברים ו-1 שקט."}
+
+  # ---- time ----
+  - {id: t01, bucket: time,      source: agent,    text: "האורות בסלון יכבו ב-23:00."}
+  - {id: t02, bucket: time,      source: agent,    text: "המזגן בחדר שינה יופעל ב-6:30 בבוקר."}
+  - {id: t03, bucket: time,      source: agent,    text: "עכשיו 12:15, והתריסים ירדו ב-17:45."}
+  - {id: t04, bucket: time,      source: agent,    text: "שמירת לילה תתחיל בשעה עשר וחצי ותסתיים בשש."}
+  - {id: t05, bucket: time,      source: agent,    text: "התזכורת מוגדרת למחר ב-08:00."}
+  - {id: t06, bucket: time,      source: agent,    text: "האור במחסן דלוק כבר 3 שעות ו-20 דקות."}
+  - {id: t07, bucket: time,      source: agent,    text: "הדלת הקדמית נפתחה לפני 45 שניות."}
+
+  # ---- units ----
+  - {id: u01, bucket: units,     source: template, text: "המזגן בחדר שינה על 24 מעלות."}
+  - {id: u02, bucket: units,     source: template, text: "הטמפרטורה במשרד עומדת על 21.5 מעלות."}
+  - {id: u03, bucket: units,     source: template, text: "בהירות האור בסלון הוגדרה ל-45%."}
+  - {id: u04, bucket: units,     source: template, text: "הלחות בחדר של רוני 62 אחוז."}
+  - {id: u05, bucket: units,     source: agent,    text: "28°C ושמש בתל אביב."}
+  - {id: u06, bucket: units,     source: agent,    text: "המנורה של רוני צורכת 3.2 וואט כרגע."}
+  - {id: u07, bucket: units,     source: agent,    text: "כוונתי את המזגן ל-22 מעלות במצב קירור."}
+  - {id: u08, bucket: units,     source: agent,    text: "הסוללה בחיישן הדלת בחצר על 15%, כדאי להחליף בקרוב."}
+
+  # ---- foreign / brand ----
+  - {id: f01, bucket: foreign,   source: agent,    text: "הפעלתי את הטלוויזיה בסלון עם Netflix."}
+  - {id: f02, bucket: foreign,   source: agent,    text: "הפעלתי נטפליקס בסלון."}
+  - {id: f03, bucket: foreign,   source: agent,    text: "פתחתי YouTube על הטלוויזיה בסלון."}
+  - {id: f04, bucket: foreign,   source: agent,    text: "האינטרנט מחובר, הוויי-פיי עובד."}
+  - {id: f05, bucket: foreign,   source: agent,    text: "ה-WiFi חזר לעבוד."}
+  - {id: f06, bucket: foreign,   source: name,     text: "ה-MIBOX בסלון כבוי."}
+  - {id: f07, bucket: foreign,   source: name,     text: "ה-Switcher של הדוד פועל כבר עשרים דקות."}
+  - {id: f08, bucket: foreign,   source: agent,    text: "השמעתי את הפלייליסט שלך בספוטיפיי."}
+  - {id: f09, bucket: foreign,   source: agent,    text: "השלט של הטלוויזיה LG בסלון מחובר."}
+
+  # ---- names (real Canary rooms/devices/people) ----
+  - {id: m01, bucket: name,      source: name,     text: "הדלקתי את המנורה של רוני."}
+  - {id: m02, bucket: name,      source: name,     text: "יובל בבית, ומאיה לא בבית."}
+  - {id: m03, bucket: name,      source: name,     text: "אני זיגי, עוזר הבית שלך."}
+  - {id: m04, bucket: name,      source: name,     text: "האור בחדר האמבטיה של האורחים דולק."}
+  - {id: m05, bucket: name,      source: name,     text: "המנורה במשרד, האור במטבח והאור בכניסה כבויים."}
+  - {id: m06, bucket: name,      source: name,     text: "חיישן הקרקע בחצר מדווח שהאדמה יבשה."}
+  - {id: m07, bucket: name,      source: name,     text: "הטלוויזיה בסלון דלוקה, והמחשב במשרד כבוי."}
+  - {id: m08, bucket: name,      source: name,     text: "החדר של רוני ריק כבר שעתיים."}
+
+  # ---- punctuation / symbols ----
+  - {id: p01, bucket: punct,     source: template, text: "הכול תקין בבית 🙂"}
+  - {id: p02, bucket: punct,     source: template, text: "בטוח? להגיד ״כן״ לאישור, ״ביטול״ כדי לעצור."}
+  - {id: p03, bucket: punct,     source: template, text: "הבית לא מחובר כרגע — אני לא מצליח להגיע למערכת הבית."}
+  - {id: p04, bucket: punct,     source: template, text: "הבית מתחבר מחדש למכשירים, רגע…"}
+  - {id: p05, bucket: punct,     source: template, text: "החדר של רוני ריק (חיישן תנועה)."}
+  - {id: p06, bucket: punct,     source: template, text: "לא הצלחתי להחזיר את המנורה מרחוק. כבו אותה מהמפסק בקיר לכ־20 שניות ואז הדליקו."}
+  - {id: p07, bucket: punct,     source: template, text: "בוצע! האוטומציה 'לילה טוב' נוצרה."}
+
+  # ---- prosody ----
+  - {id: r01, bucket: prosody,   source: template, text: "איזה חדר?"}
+  - {id: r02, bucket: prosody,   source: template, text: "באיזה חדר להדליק את האור?"}
+  - {id: r03, bucket: prosody,   source: agent,    text: "יש שתי מנורות בסלון, המנורה הגדולה או המנורה ליד הספה?"}
+  - {id: r04, bucket: prosody,   source: template, text: "את זה אני עדיין לא יודע לעשות. אפשר לנסות: הדלק את האור בסלון, הוסף משימה, או מה הטמפרטורה בחדר שינה."}
+  - {id: r05, bucket: prosody,   source: template, text: "לילה טוב."}
+  - {id: r06, bucket: prosody,   source: template, text: "בוקר טוב! עכשיו 7 בבוקר, 19 מעלות בחוץ, ושמש."}
+  - {id: r07, bucket: prosody,   source: template, text: "היה עקשן רגע — החזרתי את האור במטבח למצב הנכון."}
+  - {id: r08, bucket: prosody,   source: template, text: "אף אחד לא בבית."}
+  - {id: r09, bucket: prosody,   source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
+  - {id: r10, bucket: prosody,   source: template, text: "ההגדרות בבית לא נותנות לי לעשות את זה לבד, אז לא נגעתי."}

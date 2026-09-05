@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ziggy Voice Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  :root {
+    --bg:#f6f7f4; --surface:#fff; --ink:#172033; --ink2:#4a5468; --ink3:#7c8496; --line:#dde1d9;
+    --accent:#0f7a78; --accent-soft:#e2f1ef; --bad:#b3541e; --bad-soft:#fbeee4; --good:#2f7d4a; --good-soft:#e5f3ea;
+    --mark:#ffd8c2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --surface:#1a2027; --ink:#e8ebe6; --ink2:#aab2bd; --ink3:#7d8593; --line:#2c343e;
+      --accent:#4fc3bf; --accent-soft:#163634; --bad:#e6935a; --bad-soft:#3a2616; --good:#6fc48a; --good-soft:#16321f; --mark:#5a3a24; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:Heebo,system-ui,sans-serif; font-size:16px; line-height:1.5; }
+  header { display:flex; align-items:center; gap:18px; padding:14px 24px; border-bottom:1px solid var(--line); background:var(--surface); position:sticky; top:0; z-index:2; }
+  header h1 { font-family:"Frank Ruhl Libre",serif; font-size:20px; margin:0; font-weight:700; }
+  nav { display:flex; gap:6px; }
+  nav button { background:none; border:1px solid var(--line); color:var(--ink2); padding:6px 12px; border-radius:4px; font:inherit; cursor:pointer; }
+  nav button.on { background:var(--accent-soft); color:var(--accent); border-color:transparent; font-weight:700; }
+  .spacer { flex:1; }
+  .prog { font-family:"JetBrains Mono",monospace; font-size:13px; color:var(--ink3); direction:ltr; }
+  main { max-width: 860px; margin: 0 auto; padding: 28px 24px 120px; }
+  .card { background:var(--surface); border:1px solid var(--line); padding:26px 28px; }
+  .meta { display:flex; gap:14px; align-items:center; font-size:12px; color:var(--ink3); letter-spacing:.04em; text-transform:uppercase; direction:ltr; justify-content:flex-end; }
+  .meta .b { padding:2px 8px; background:var(--accent-soft); color:var(--accent); border-radius:3px; }
+  .line { font-size: 34px; line-height: 1.5; margin: 18px 0 10px; font-weight:500; text-wrap: balance; }
+  .line .w { cursor:pointer; padding:0 2px; border-radius:3px; }
+  .line .w:hover { background:var(--accent-soft); }
+  .line .w.bad { background:var(--mark); text-decoration: underline wavy var(--bad); }
+  .sent { font-size:13px; color:var(--ink3); font-family:"JetBrains Mono",monospace; direction:rtl; margin-top:6px; }
+  .help { color:var(--ink2); font-size:14px; margin: 6px 0 0; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:18px; flex-wrap:wrap; }
+  button.k { font:inherit; font-size:15px; padding:10px 16px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
+  button.k kbd { font-family:"JetBrains Mono",monospace; font-size:12px; background:var(--bg); border:1px solid var(--line); border-radius:3px; padding:1px 6px; margin-inline-start:8px; color:var(--ink3); }
+  button.k.play { border-color:var(--accent); color:var(--accent); }
+  button.k.good.on { background:var(--good-soft); color:var(--good); border-color:transparent; font-weight:700; }
+  button.k.bad.on { background:var(--bad-soft); color:var(--bad); border-color:transparent; font-weight:700; }
+  button.k.ab.on { background:var(--accent-soft); color:var(--accent); border-color:transparent; font-weight:700; }
+  button.k.rec { border-color:var(--bad); color:var(--bad); }
+  button.k.rec.on { background:var(--bad); color:#fff; }
+  input.note { flex:1; min-width:240px; font:inherit; font-size:16px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  .foot { display:flex; gap:10px; margin-top:18px; align-items:center; }
+  .foot .st { color:var(--ink3); font-size:13px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px; }
+  .abbox { border:1px solid var(--line); padding:14px; text-align:center; }
+  .abbox .lbl { font-family:"Frank Ruhl Libre",serif; font-size:28px; color:var(--accent); }
+  .list { margin-top:26px; display:grid; gap:4px; }
+  .list .it { display:flex; gap:10px; align-items:center; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:14px; }
+  .list .it:hover { background:var(--accent-soft); }
+  .list .it.cur { outline:1px solid var(--accent); }
+  .list .dot { width:9px; height:9px; border-radius:50%; background:var(--line); flex:none; }
+  .list .dot.good { background:var(--good); } .list .dot.bad { background:var(--bad); } .list .dot.ab { background:var(--accent); }
+  .list .id { font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--ink3); direction:ltr; width:40px; }
+  .list .t { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .empty { padding:40px; color:var(--ink3); text-align:center; }
+  .done { background:var(--good-soft); color:var(--good); padding:14px 18px; margin-top:14px; border-radius:6px; }
+  .sm { font-size:13px; color:var(--ink3); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ziggy Voice Lab</h1>
+  <nav id="nav"></nav>
+  <div class="spacer"></div>
+  <div class="prog" id="prog"></div>
+</header>
+<main id="main"><div class="empty">טוען…</div></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = { sitting: new URLSearchParams(location.search).get('sitting') || 'A',
+                ab: new URLSearchParams(location.search).get('ab') || '',
+                mode: 'rate', variant: 'baseline', idx: 0, data: null, verdicts: {}, audio: null, bad: new Set(),
+                rec: null, recChunks: [] };
+
+const MODES = [
+  ['rate',   'דירוג'],
+  ['pairs',  'זוגות בדיקה'],
+  ['ab',     'A/B'],
+  ['record', 'הקלטה'],
+];
+
+async function load() {
+  const r = await fetch(`/api/session?sitting=${state.sitting}${state.ab ? '&ab=' + state.ab : ''}`);
+  state.data = await r.json();
+  state.verdicts = {};
+  for (const v of state.data.verdicts) state.verdicts[v.mode + ':' + v.key] = v;   // last wins
+  if (!state.data.variants[state.variant]) state.variant = Object.keys(state.data.variants)[0] || 'baseline';
+  // start where the operator left off
+  const items = itemsFor(state.mode);
+  const first = items.findIndex(it => !state.verdicts[state.mode + ':' + it.key]);
+  state.idx = first < 0 ? 0 : first;
+  render();
+}
+
+function itemsFor(mode) {
+  const d = state.data; if (!d) return [];
+  if (mode === 'rate') {
+    const man = d.variants[state.variant] || {};
+    return d.corpus.filter(l => man[l.id] && man[l.id].ok).map(l => ({
+      key: state.variant + ':' + l.id, id: l.id, text: l.text, bucket: l.bucket,
+      sent: man[l.id].sent, url: `/audio/${state.variant}/${l.id}.mp3` }));
+  }
+  if (mode === 'pairs') {
+    const p = d.probe_pairs.map(x => ({ key: x.id, id: x.id, text: x.text, question: x.question, kind: x.kind, a: x.a, b: x.b }));
+    const s = d.probe_singles.map(x => ({ key: x.id, id: x.id, text: x.text, url: x.url, single: true }));
+    return p.concat(s);
+  }
+  if (mode === 'ab') return d.ab_pairs.map(x => ({ key: x.id, id: x.id, text: x.text, bucket: x.bucket, a: x.a, b: x.b }));
+  if (mode === 'record') return d.stt_script.map(l => ({ key: l.id, id: l.id, text: l.text, recorded: d.stt_recorded.includes(l.id) }));
+  return [];
+}
+
+function verdictFor(it) { return state.verdicts[state.mode + ':' + it.key]; }
+
+async function saveVerdict(it, patch) {
+  const prev = verdictFor(it) || {};
+  const rec = Object.assign({ sitting: state.sitting, mode: state.mode, key: it.key, line_id: it.id, text: it.text,
+    variant: state.mode === 'rate' ? state.variant : undefined,
+    a: it.a, b: it.b, kind: it.kind }, prev, patch, { ts: undefined });
+  state.verdicts[state.mode + ':' + it.key] = rec;
+  await fetch('/api/verdict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rec) });
+  renderList(); renderProg();
+}
+
+function stopAudio() { if (state.audio) { state.audio.pause(); state.audio = null; } }
+function play(url) {
+  stopAudio();
+  const a = new Audio(url); state.audio = a; a.play().catch(() => {});
+  return a;
+}
+
+function words(text) {
+  return text.split(/(\s+)/).map((w, i) => /\s+/.test(w) ? w :
+    `<span class="w${state.bad.has(i) ? ' bad' : ''}" data-i="${i}">${w.replace(/</g, '&lt;')}</span>`).join('');
+}
+
+function render() {
+  $('#nav').innerHTML = MODES.map(([m, l]) => `<button class="${state.mode === m ? 'on' : ''}" data-m="${m}">${l}</button>`).join('');
+  document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { state.mode = b.dataset.m; stopAudio(); const items = itemsFor(state.mode); const f = items.findIndex(it => !verdictFor(it)); state.idx = f < 0 ? 0 : f; render(); });
+  const items = itemsFor(state.mode);
+  const main = $('#main');
+  if (!items.length) { main.innerHTML = `<div class="empty">אין פריטים במצב הזה עדיין.</div>`; renderProg(); return; }
+  state.idx = Math.max(0, Math.min(state.idx, items.length - 1));
+  const it = items[state.idx];
+  const v = verdictFor(it) || {};
+  state.bad = new Set(v.bad_words || []);
+
+  let body = '';
+  const meta = `<div class="meta"><span>${state.idx + 1} / ${items.length}</span>${it.bucket ? `<span class="b">${it.bucket}</span>` : ''}${it.kind ? `<span class="b">${it.kind}</span>` : ''}<span>${it.id}</span></div>`;
+
+  if (state.mode === 'rate' || (state.mode === 'pairs' && it.single)) {
+    body = `${meta}
+      <div class="line" id="line">${words(it.text)}</div>
+      ${it.sent && it.sent !== it.text ? `<div class="sent">נשלח: ${it.sent}</div>` : ''}
+      <p class="help">רווח = השמעה · 1 = תקין · 2 = לא תקין, ואז לחיצה על המילה הבעייתית · Enter = הבא</p>
+      <div class="row">
+        <button class="k play" id="play">השמע<kbd>space</kbd></button>
+        <button class="k good ${v.verdict === 'good' ? 'on' : ''}" id="good">תקין<kbd>1</kbd></button>
+        <button class="k bad ${v.verdict === 'bad' ? 'on' : ''}" id="bad">לא תקין<kbd>2</kbd></button>
+      </div>
+      <div class="row">
+        <input class="note" id="note" placeholder="איך זה צריך להישמע? (לא חובה)" value="${(v.note || '').replace(/"/g, '&quot;')}">
+      </div>`;
+  } else if (state.mode === 'pairs' || state.mode === 'ab') {
+    body = `${meta}
+      <div class="line">${it.text.replace(/</g, '&lt;')}</div>
+      ${it.question ? `<p class="help">${it.question}</p>` : '<p class="help">שני ביצועים של אותו משפט. איזה נשמע נכון יותר?</p>'}
+      <div class="grid">
+        <div class="abbox"><div class="lbl">A</div><button class="k play" id="playA">השמע A<kbd>Q</kbd></button></div>
+        <div class="abbox"><div class="lbl">B</div><button class="k play" id="playB">השמע B<kbd>W</kbd></button></div>
+      </div>
+      <p class="help">Q = A · W = B · ואז: A / B / S (אותו דבר) · Enter = הבא</p>
+      <div class="row">
+        <button class="k ab ${v.verdict === 'a' ? 'on' : ''}" id="pickA">A עדיף<kbd>A</kbd></button>
+        <button class="k ab ${v.verdict === 'b' ? 'on' : ''}" id="pickB">B עדיף<kbd>B</kbd></button>
+        <button class="k ab ${v.verdict === 'same' ? 'on' : ''}" id="pickS">אותו דבר<kbd>S</kbd></button>
+      </div>
+      <div class="row"><input class="note" id="note" placeholder="מה ההבדל ששמעת? (לא חובה)" value="${(v.note || '').replace(/"/g, '&quot;')}"></div>`;
+  } else if (state.mode === 'record') {
+    body = `${meta}
+      <div class="line">${it.text}</div>
+      <p class="help">R = התחלת/סיום הקלטה · P = השמעת ההקלטה · Enter = הבא. אפשר להקליט שוב, ההקלטה האחרונה נשמרת.</p>
+      <div class="row">
+        <button class="k rec" id="rec">הקלטה<kbd>R</kbd></button>
+        <button class="k" id="playRec" ${it.recorded ? '' : 'disabled'}>השמע<kbd>P</kbd></button>
+        <span class="sm" id="recst">${it.recorded ? 'הוקלט ✓' : 'לא הוקלט'}</span>
+      </div>`;
+  }
+  const done = items.every(x => (state.mode === 'record' ? x.recorded : verdictFor(x)));
+  main.innerHTML = `<div class="card">${body}
+      <div class="foot"><button class="k" id="prev">הקודם<kbd>←</kbd></button><button class="k" id="next">הבא<kbd>Enter</kbd></button><span class="st" id="st"></span></div>
+    </div>${done ? '<div class="done">סיימת את המצב הזה. תודה. אפשר לסגור את הדף, הכול נשמר.</div>' : ''}<div class="list" id="list"></div>`;
+  wire(it, items);
+  renderList(); renderProg();
+  if (state.mode === 'rate' || (state.mode === 'pairs' && it.single)) play(it.url);
+}
+
+function wire(it, items) {
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on('#play', () => play(it.url));
+  on('#good', () => saveVerdict(it, { verdict: 'good', bad_words: [], bad_text: [] }).then(render));
+  on('#bad', () => { saveVerdict(it, { verdict: 'bad' }).then(() => { render(); $('#note') && $('#note').focus(); }); });
+  on('#playA', () => play(it.a.url)); on('#playB', () => play(it.b.url));
+  on('#pickA', () => saveVerdict(it, { verdict: 'a' }).then(render));
+  on('#pickB', () => saveVerdict(it, { verdict: 'b' }).then(render));
+  on('#pickS', () => saveVerdict(it, { verdict: 'same' }).then(render));
+  on('#prev', () => { state.idx--; stopAudio(); render(); });
+  on('#next', () => { state.idx++; stopAudio(); render(); });
+  on('#rec', () => toggleRecord(it));
+  on('#playRec', () => play(`/audio/stt_audio/${it.id}.webm`));
+  const line = $('#line');
+  if (line) line.querySelectorAll('.w').forEach(w => w.onclick = () => {
+    const i = +w.dataset.i;
+    state.bad.has(i) ? state.bad.delete(i) : state.bad.add(i);
+    w.classList.toggle('bad');
+    const toks = it.text.split(/(\s+)/);
+    saveVerdict(it, { verdict: 'bad', bad_words: [...state.bad], bad_text: [...state.bad].map(k => toks[k]) });
+    $('#bad').classList.add('on'); $('#good').classList.remove('on');
+  });
+  const note = $('#note');
+  if (note) { note.onchange = () => saveVerdict(it, { note: note.value, verdict: (verdictFor(it) || {}).verdict || (note.value ? 'bad' : undefined) }); }
+}
+
+function renderList() {
+  const el = $('#list'); if (!el) return;
+  const items = itemsFor(state.mode);
+  el.innerHTML = items.map((x, i) => {
+    const v = verdictFor(x);
+    const cls = state.mode === 'record' ? (x.recorded ? 'good' : '') : (!v ? '' : v.verdict === 'good' ? 'good' : v.verdict === 'bad' ? 'bad' : 'ab');
+    return `<div class="it ${i === state.idx ? 'cur' : ''}" data-i="${i}"><span class="dot ${cls}"></span><span class="id">${x.id}</span><span class="t">${x.text}</span>${v && v.bad_text && v.bad_text.length ? `<span class="sm">${v.bad_text.join(' · ')}</span>` : ''}</div>`;
+  }).join('');
+  el.querySelectorAll('.it').forEach(d => d.onclick = () => { state.idx = +d.dataset.i; stopAudio(); render(); });
+}
+
+function renderProg() {
+  const items = itemsFor(state.mode);
+  const n = items.filter(x => state.mode === 'record' ? x.recorded : verdictFor(x)).length;
+  $('#prog').textContent = `${state.sitting} · ${state.mode}${state.mode === 'rate' ? '/' + state.variant : ''} · ${n}/${items.length}`;
+}
+
+// ---- recording (STT script) ----
+async function toggleRecord(it) {
+  if (state.rec) {
+    state.rec.stop();
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+             : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  state.rec = rec; state.recChunks = [];
+  rec.ondataavailable = e => state.recChunks.push(e.data);
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(state.recChunks, { type: rec.mimeType || 'audio/webm' });
+    state.rec = null;
+    $('#recst').textContent = 'שומר…';
+    const r = await fetch(`/api/record?id=${it.id}`, { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+    const j = await r.json();
+    it.recorded = true; state.data.stt_recorded.push(it.id);
+    $('#recst').textContent = `הוקלט ✓ (${Math.round(j.bytes / 1024)} KB)`;
+    $('#rec').classList.remove('on'); $('#playRec').disabled = false;
+    renderList(); renderProg();
+  };
+  rec.start();
+  $('#rec').classList.add('on'); $('#recst').textContent = 'מקליט… (R לסיום)';
+}
+
+// ---- keyboard ----
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') { if (e.key === 'Enter') { e.target.blur(); state.idx++; stopAudio(); render(); } return; }
+  const items = itemsFor(state.mode); if (!items.length) return;
+  const it = items[state.idx];
+  const k = e.key;
+  if (k === ' ') { e.preventDefault(); if (it.url) play(it.url); }
+  else if (k === 'Enter' || k === 'ArrowLeft') { state.idx++; stopAudio(); render(); }
+  else if (k === 'ArrowRight') { state.idx--; stopAudio(); render(); }
+  else if (state.mode === 'rate' || (state.mode === 'pairs' && it.single)) {
+    if (k === '1') $('#good').click(); else if (k === '2') $('#bad').click();
+  } else if (state.mode === 'pairs' || state.mode === 'ab') {
+    const kk = k.toLowerCase();
+    if (kk === 'q') play(it.a.url); else if (kk === 'w') play(it.b.url);
+    else if (kk === 'a') $('#pickA').click(); else if (kk === 'b') $('#pickB').click(); else if (kk === 's') $('#pickS').click();
+  } else if (state.mode === 'record') {
+    const kk = k.toLowerCase();
+    if (kk === 'r') toggleRecord(it); else if (kk === 'p') $('#playRec').click();
+  }
+});
+
+load();
+</script>
+</body>
+</html>
