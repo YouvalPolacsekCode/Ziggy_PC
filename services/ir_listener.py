@@ -1319,6 +1319,10 @@ async def send_ir_direct(host: str, code_b64: str) -> bool:
     Send a raw IR code directly via python-broadlink (no HA intermediation).
     Returns True on success.
     """
+    from services import rehearsal as _rehearsal
+    if _rehearsal.active():
+        _rehearsal.note("ir_send_direct", host=host)
+        return True
     import broadlink
     loop = asyncio.get_event_loop()
 

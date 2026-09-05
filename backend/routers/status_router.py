@@ -105,6 +105,30 @@ async def patch_voice_settings(patch: VoicePatch, _: dict = Depends(get_current_
     return {"ok": True, "voice": voice}
 
 
+# ---------------------------------------------------------------------------
+# Rehearsal mode — talk to Ziggy without touching the home
+# ---------------------------------------------------------------------------
+
+@router.get("/api/assistant/rehearsal")
+async def get_rehearsal(_: dict = Depends(get_current_user)):
+    from services import rehearsal
+    return {"enabled": rehearsal.is_enabled()}
+
+
+class RehearsalPatch(BaseModel):
+    enabled: bool
+
+
+@router.patch("/api/assistant/rehearsal")
+async def patch_rehearsal(patch: RehearsalPatch, _: dict = Depends(get_current_user)):
+    """Persisted `assistant.rehearsal`. While on, chat/voice/intent turns skip
+    every home write (HA services, IR sends, routines, config tools) but keep
+    replying and speaking. Background automations are unaffected."""
+    from services import rehearsal
+    rehearsal.set_enabled(patch.enabled)
+    return {"ok": True, "enabled": patch.enabled}
+
+
 @router.get("/api/voice/status")
 async def voice_status(_: dict = Depends(get_current_user)):
     """Runtime listening state — distinct from /api/settings/voice (config)."""

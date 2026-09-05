@@ -37,6 +37,20 @@ regressions on control lines. Facts that shape future work:
 
 Lab tooling and the operator flow: `scripts/voice_lab/README.md`.
 
+### Rehearsal mode (talk to Ziggy without touching the home)
+
+`assistant.rehearsal: true` (pill in the chat header, or `PATCH
+/api/assistant/rehearsal {enabled}`). While on, every chat / voice / intent
+turn runs with a request-scoped flag (`services/rehearsal.py`) and the last
+hop to the house is skipped: HA service writes in `home_automation`, IR
+sends in `ir_manager` / `ir_listener`, phrase-triggered routines, and the
+config tools `create_automation` / `refresh_device` / `recover_connectivity`.
+Reads still work, replies and TTS are unchanged. Background automations,
+Smart Climate, Leave Home etc. are NOT affected — the flag is per request,
+not global. Skipped writes are logged as `rehearsal_skipped` on the debug
+bus. Not covered: writes made from UI pages (device tiles, automation
+editor) — those are not chat.
+
 ## What ships in v1
 
 Push-to-talk, Hebrew + English STT, local intent routing, cloud LLM fallback for free-form Q&A, response delivered as **push notification + on-screen text**. No spoken response.

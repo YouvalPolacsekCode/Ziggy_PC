@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from backend.ws_manager import manager
 from core.action_parser import handle_intent
+from services import rehearsal
 from core.intent_parser import quick_parse
 from core.logger_module import log_error, log_info
 from core.result_utils import render_result
@@ -145,11 +146,16 @@ async def _run_routine_phrase(routine: dict, req_text: str, source: str, request
     from services.local_automation_actions import execute_ziggy_actions
     name = routine.get("name") or "Routine"
     ok = True
-    try:
-        await execute_ziggy_actions(routine["id"], name)
-    except Exception as e:
-        log_error(f"[chat] routine '{name}' run failed: {e}")
-        ok = False
+    if rehearsal.active():
+        # Rehearsal: acknowledge the phrase, run nothing (a routine is a
+        # sequence of home writes with delays — not something to half-guard).
+        rehearsal.note("routine", routine=name, routine_id=routine.get("id"))
+    else:
+        try:
+            await execute_ziggy_actions(routine["id"], name)
+        except Exception as e:
+            log_error(f"[chat] routine '{name}' run failed: {e}")
+            ok = False
     reply = f"✓ {name}" if ok else f"Couldn't run {name}."
     bus.emit("intent", BASIC, "routine_phrase_run",
              request_id=request_id, routine=name, result="ok" if ok else "error")
@@ -181,6 +187,7 @@ def _actor_ref(request: Request | None) -> str | None:
 @router.post("/api/intent")
 async def process_intent(req: IntentRequest, request: Request):
     request_id = _new_request_id()
+    rehearsal.activate_if_enabled()
 
     bus.emit("intent", BASIC, "request_received",
              request_id=request_id,
@@ -314,6 +321,8 @@ async def _announce_ziggy_response(text, reply, source, ok, intent, request_id, 
 async def process_chat(req: ChatRequest, request: Request):
     request_id = _new_request_id()
     actor = _actor_ref(request)
+    # Rehearsal mode: this turn (and any task it spawns) skips home writes.
+    rehearsal.activate_if_enabled()
 
     bus.emit("intent", BASIC, "request_received",
              request_id=request_id, input=req.text, source=req.source, endpoint="/api/chat")
@@ -527,6 +536,7 @@ async def transcribe_voice(request: Request, file: UploadFile = File(...)):
 async def process_voice(request: Request, file: UploadFile = File(...)):
     _voice_rate_check(request)
     request_id = _new_request_id()
+    rehearsal.activate_if_enabled()
 
     ctype = (file.content_type or "").split(";", 1)[0].strip().lower()
     if ctype and ctype not in _VOICE_ALLOWED_TYPES:

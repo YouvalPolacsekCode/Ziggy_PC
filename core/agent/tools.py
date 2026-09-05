@@ -319,6 +319,15 @@ _PASSTHROUGH = {
 }
 
 
+# Tools that change home configuration outside the HA-service / IR hop.
+# Value = the success message the agent narrates from during rehearsal.
+_REHEARSAL_BLOCKED = {
+    "create_automation":    "created (rehearsal — nothing was changed in the home)",
+    "refresh_device":       "done (rehearsal — nothing was changed in the home)",
+    "recover_connectivity": "done (rehearsal — nothing was changed in the home)",
+}
+
+
 def _norm_action(action: str) -> str:
     return _ACTION_ALIASES.get((action or "").strip().lower(), (action or "").strip().lower())
 
@@ -687,6 +696,14 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
     the PDP so the agent can never exceed the person it acts for.
     """
     log_info(f"[agent.tools] execute {name} args={args}")
+    # Rehearsal mode: configuration-changing tools are acknowledged, not run.
+    # Device control is NOT intercepted here — it flows into home_automation /
+    # ir_manager, whose writes are the guarded hop, so the reply reads naturally.
+    if name in _REHEARSAL_BLOCKED:
+        from services import rehearsal as _rehearsal
+        if _rehearsal.active():
+            _rehearsal.note("tool", tool=name, args=args)
+            return {"ok": True, "rehearsal": True, "message": _REHEARSAL_BLOCKED[name]}
     if name == "control_device":
         return await _exec_control_device(args, directory)
     if name == "query_devices":

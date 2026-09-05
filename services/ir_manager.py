@@ -936,6 +936,14 @@ def send_ir_command(device_id: str, logical_command: str, repeats: int = 1) -> d
                         suggestion=f"Device '{device_id}' not in IR device list. Check IR Devices settings.")
         return {"ok": False, "message": f"IR device '{device_id}' not found."}
 
+    # Rehearsal mode: the chat turn must not reach the blaster.
+    from services import rehearsal as _rehearsal
+    if _rehearsal.active():
+        _rehearsal.note("ir_send", device_id=device_id, device_name=device.get("name"),
+                        command=logical_command, repeats=repeats)
+        return {"ok": True, "rehearsal": True,
+                "message": f"rehearsal: {logical_command} not sent to {device.get('name') or device_id}"}
+
     # Path 1: direct send via python-broadlink (supports continuous receive)
     blaster_host = (device.get("blaster_host") or "").strip()
     ir_codes: dict = device.get("ir_codes") or {}

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream, flagTts } from '../lib/api'
+import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream, flagTts, getRehearsal, patchRehearsal } from '../lib/api'
 import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
@@ -429,6 +429,22 @@ export default function AIChat() {
     fetchStatus: fetchVoiceStatus,
     setMicEnabled,
   } = useVoiceStore()
+
+  // Rehearsal mode (persisted server-side): null until loaded so the pill
+  // never flashes the wrong state.
+  const [rehearsal, setRehearsal] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getRehearsal()
+      .then(r => { if (alive) setRehearsal(!!r.enabled) })
+      .catch(() => { if (alive) setRehearsal(false) })
+    return () => { alive = false }
+  }, [])
+  const onToggleRehearsal = async () => {
+    const next = !rehearsal
+    setRehearsal(next)
+    try { await patchRehearsal(next) } catch { setRehearsal(!next) }
+  }
 
   const [input,     setInput]     = useState('')
   const [showThreads, setShowThreads] = useState(false)   // side drawer of past conversations
@@ -1690,6 +1706,35 @@ export default function AIChat() {
               <line x1="4" y1="17" x2="14" y2="17" />
             </svg>
           </button>
+          {/* Rehearsal mode — Ziggy replies and speaks, but nothing reaches
+              the home. Loud on purpose while on: the user must never wonder
+              why the light didn't come on. */}
+          {rehearsal !== null && (
+            <button
+              onClick={onToggleRehearsal}
+              title={rehearsal ? t('chat.rehearsalOnTitle') : t('chat.rehearsalOffTitle')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', borderRadius: 999,
+                background: rehearsal
+                  ? 'color-mix(in srgb, var(--warn, #b3541e) 16%, var(--surface))'
+                  : 'var(--surface)',
+                border: rehearsal
+                  ? '0.5px solid color-mix(in srgb, var(--warn, #b3541e) 60%, var(--line))'
+                  : '0.5px solid var(--line)',
+                fontSize: 11, fontWeight: rehearsal ? 700 : 400,
+                color: rehearsal ? 'var(--warn, #b3541e)' : 'var(--ink-mute)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: rehearsal ? 'var(--warn, #b3541e)' : 'var(--ink-faint)',
+              }} />
+              {rehearsal ? t('chat.rehearsalOn') : t('chat.rehearsalOff')}
+            </button>
+          )}
+
           {/* Wake-word master toggle — controls the backend always-on listener,
               NOT the hold-to-talk mic on this page. Hidden when wake-word is
               not configured/working; in that case only push-to-talk is in play. */}

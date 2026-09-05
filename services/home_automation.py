@@ -13,6 +13,7 @@ from requests.adapters import HTTPAdapter
 from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from core.debug_bus import bus, BASIC, VERBOSE, TRACE
+from services import rehearsal as _rehearsal
 
 DEFAULT_TIMEOUT: int = 10
 
@@ -130,6 +131,12 @@ def _ha_endpoint(path: str) -> str:
 # Generic helpers
 # ---------------------------------------------------------------------------
 
+def _rehearsing() -> bool:
+    """Rehearsal mode (services.rehearsal): a chat/voice turn that must not
+    touch the home. Checked at every HA write in this module."""
+    return _rehearsal.active()
+
+
 def _note_ziggy_write(entity_id) -> None:
     """Attribute an outgoing HA write (str or list of entity_ids) so the
     subscriber doesn't stamp it as a manual override. Must never block a call."""
@@ -143,6 +150,10 @@ def _note_ziggy_write(entity_id) -> None:
 def call_service(domain: str, service: str, data: Dict[str, Any],
                  origin: str = "ziggy") -> Dict[str, Any]:
     import time as _time
+    if _rehearsing():
+        _rehearsal.note("ha_service", domain=domain, service=service,
+                        entity_id=(data or {}).get("entity_id"), origin=origin)
+        return _rehearsal.simulated(f"rehearsal: {domain}.{service} not sent")
     endpoint = _ha_endpoint(f"/api/services/{domain}/{service}")
     bus.emit("ha", VERBOSE, "ha_service_call",
              domain=domain, service=service, payload=data, endpoint=endpoint)
@@ -465,6 +476,9 @@ def toggle_light(entity_id: str, turn_on: bool = True, origin: str = "ziggy") ->
             payload.update(resolve_default_turn_on(entity_id, {}))
         except Exception as e:
             log_error(f"[HA] default-preset resolve skipped for {entity_id}: {e}")
+    if _rehearsing():
+        _rehearsal.note("ha_service", domain="light", service=action, entity_id=entity_id, origin=origin)
+        return 200, "rehearsal"
     _note_ziggy_write(entity_id)
     try:
         response = _session.post(endpoint, headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
@@ -499,6 +513,9 @@ def set_light_color(entity_id: str, rgb_color: Optional[tuple] = None, color_tem
         payload["rgb_color"] = list(rgb_color)
     if color_temp is not None:
         payload["color_temp"] = color_temp
+    if _rehearsing():
+        _rehearsal.note("ha_service", domain="light", service="turn_on(color)", entity_id=entity_id)
+        return 200, "rehearsal"
     _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/light/turn_on"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
@@ -514,6 +531,9 @@ def set_light_color(entity_id: str, rgb_color: Optional[tuple] = None, color_tem
 
 def set_light_brightness(entity_id: str, brightness: int) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "brightness_pct": max(0, min(int(brightness), 100))}
+    if _rehearsing():
+        _rehearsal.note("ha_service", domain="light", service="turn_on(brightness)", entity_id=entity_id)
+        return 200, "rehearsal"
     _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/light/turn_on"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
@@ -533,6 +553,9 @@ def set_light_brightness(entity_id: str, brightness: int) -> Tuple[int, str]:
 
 def set_ac_temperature(entity_id: str, temperature: int) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "temperature": int(temperature)}
+    if _rehearsing():
+        _rehearsal.note("ha_service", domain="climate", service="set_temperature", entity_id=entity_id)
+        return 200, "rehearsal"
     _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/climate/set_temperature"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)
@@ -548,6 +571,9 @@ def set_ac_temperature(entity_id: str, temperature: int) -> Tuple[int, str]:
 
 def set_tv_source(entity_id: str, source: Union[int, str]) -> Tuple[int, str]:
     payload = {"entity_id": entity_id, "source": str(source)}
+    if _rehearsing():
+        _rehearsal.note("ha_service", domain="media_player", service="select_source", entity_id=entity_id)
+        return 200, "rehearsal"
     _note_ziggy_write(entity_id)
     try:
         response = _session.post(_ha_endpoint("/api/services/media_player/select_source"), headers=_headers(), json=payload, timeout=DEFAULT_TIMEOUT)

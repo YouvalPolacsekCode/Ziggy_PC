@@ -617,6 +617,9 @@ export const getVoiceSettings = () => get('/settings/voice')
 export const patchVoiceSettings = (data) => patch('/settings/voice', data)
 // Runtime listening state (mic_enabled, wake state, voice thread running)
 export const getVoiceRuntimeStatus = () => get('/voice/status')
+// Rehearsal mode: chat/voice replies and speaks, but no home write goes out.
+export const getRehearsal = () => get('/assistant/rehearsal')
+export const patchRehearsal = (enabled) => patch('/assistant/rehearsal', { enabled })
 export const getGeneralSettings = () => get('/settings/general')
 export const patchGeneralSettings = (data) => patch('/settings/general', data)
 
