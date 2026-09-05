@@ -44,6 +44,15 @@ VARIANTS: dict[str, dict] = {
     "full":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "normalize", "lexicon", "nikud"]},
     "full36":        {"model": "sonic-3.6", "voice": "yardena", "prep": ["sanitize", "normalize", "lexicon", "nikud"]},
     "slow":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize"], "speed": "slow"},
+    # Sitting B candidates, built from sitting A's error map: pauses at ':'
+    # and '(…)', 12-hour clock, construct numbers, nikud + domain fixups.
+    # Latin brand names stayed correct in sitting A, so no lexicon step.
+    "fix1":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "nikud"]},
+    "fix2":          {"model": "sonic-3.6", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "nikud"]},
+    # Control: same text fixes WITHOUT nikud — isolates what nikud adds.
+    "fix0":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize"]},
+    # Insurance: phonemes instead of nikud, in case the engine ignores nikud.
+    "fix3":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "ipa"]},
     # Voice candidates for sitting B (baseline prep so only the voice differs).
     "voice_adi":     {"model": "sonic-3.5", "voice": "adi",     "prep": ["sanitize"]},
     "voice_gil":     {"model": "sonic-3.5", "voice": "gil",     "prep": ["sanitize"]},

@@ -57,14 +57,27 @@ def test_unknown_noun_leaves_digits_alone():
 
 # ---- time ----
 @pytest.mark.parametrize("src,exp", [
-    ("ב-23:00", "בעשרים ושלוש"),
+    ("ב-23:00", "באחת עשרה"),            # sitting A: 23:00 is SAID as 11
     ("ב-6:30 בבוקר", "בשש וחצי בבוקר"),
     ("עכשיו 12:15", "עכשיו שתים עשרה ורבע"),
     ("ב-08:00", "בשמונה"),
-    ("ב-17:45", "בשבע עשרה ארבעים וחמש"),
+    ("ב-17:45", "ברבע לשש"),
+    ("ב-00:30", "בשתים עשרה וחצי"),
+    ("ב-14:20", "בשתיים עשרים"),
 ])
 def test_clock_times(src, exp):
     assert prep.normalize(src) == exp
+
+
+# ---- pauses ----
+def test_colon_before_list_becomes_period():
+    assert prep.pauses("אפשר לנסות: הדלק את האור") == "אפשר לנסות. הדלק את האור"
+    assert prep.pauses("ב-23:00") == "ב-23:00"          # clock colon untouched
+
+
+def test_parentheses_become_comma_clause():
+    assert prep.pauses("החדר ריק (חיישן תנועה).") == "החדר ריק, חיישן תנועה."
+    assert prep.run("לא מגיבים כרגע (5).", ["pauses", "normalize"]) == "לא מגיבים כרגע, חמש."
 
 
 # ---- units ----
@@ -94,6 +107,38 @@ def test_lexicon_leaves_unknown_latin():
 
 # ---- nikud (optional) ----
 _HAS_MODEL = any(p.exists() for p in prep._MODEL_CANDIDATES)
+
+
+@pytest.mark.skipif(not _HAS_MODEL, reason="phonikud model not downloaded")
+def test_nikud_fixups_win_over_model():
+    # sitting A: the model said "dod" (uncle) for the water heater
+    assert "הַדּוּד" in prep.nikud("הדוד דולק כבר חצי שעה.")
+    assert "בַּמִּטְבָּח" in prep.nikud("החלון במטבח פתוח.")
+    assert "הַשָּׁלָט" in prep.nikud("השלט של הטלוויזיה בסלון.")
+    out = prep.nikud("ריק (חיישן).")
+    assert out.startswith("רֵיק (") and out.endswith(").")   # punctuation kept around tokens
+
+
+def test_one_before_adjective_after_noun():
+    assert prep.normalize("11 מחוברים ו-1 שקט") == "אחד עשר מחוברים ואחד שקט"
+
+
+@pytest.mark.parametrize("src,exp", [
+    ("hadˈud", "h|a|ˈ|d|u|d"),
+    ("basalˈon", "b|a|s|a|ˈ|l|o|n"),
+    ("χatsˈi", "χ|a|ˈ|t|s|i"),
+    ("ʔˈet", "ˈ|ʔ|e|t"),
+    ("ʃel", "ʃ|e|l"),
+])
+def test_ipa_stress_moves_to_syllable_onset(src, exp):
+    assert prep._to_cartesia_ipa(src) == exp
+
+
+@pytest.mark.skipif(not _HAS_MODEL, reason="phonikud model not downloaded")
+def test_ipa_wraps_only_hebrew_tokens():
+    out = prep.ipa("ה-MIBOX בסלון כבוי.")
+    assert "MIBOX" in out and "<<" in out and out.endswith(">>.")
+    assert "|" in out and "ˈ" in out
 
 
 @pytest.mark.skipif(not _HAS_MODEL, reason="phonikud model not downloaded")

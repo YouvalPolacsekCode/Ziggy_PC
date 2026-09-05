@@ -88,20 +88,31 @@ _NOUN_GENDER = {
     "סגורים": "m", "שקטים": "m", "שקט": "m",
     "דולקות": "f", "כבויות": "f", "פתוחות": "f", "סגורות": "f",
 }
+_ADJECTIVES = {"מחוברים", "פעילים", "דולקים", "כבויים", "פתוחים", "סגורים", "שקטים", "שקט",
+               "דולקות", "כבויות", "פתוחות", "סגורות"}
 
 _TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
 _TEMP_RE = re.compile(r"(?<![\d.])(-?\d{1,2}(?:\.\d)?)\s*°\s*C?", re.IGNORECASE)
 _PCT_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d)?)\s*%")
 _DECIMAL_RE = re.compile(r"(?<![\d.])(\d{1,3})\.(\d)(?!\d)")
-_COUNT_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d.:%°])\s+([א-ת]+)")
-_LONE_NUM_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d.:%°])")
+# A digit run that is not part of a time/decimal/percent/degree token. A
+# trailing sentence period ("(5).") must NOT count as a decimal point.
+_COUNT_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d:%°])(?!\.\d)\s+([א-ת]+)")
+_LONE_NUM_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d:%°])(?!\.\d)")
 _PREFIX_RE = re.compile(r"([בלמכשוה])-(?=\d)")
 
 
+def _hour12(h: int) -> int:
+    h = h % 12
+    return 12 if h == 0 else h
+
+
 def _hour_words(h: int, m: int) -> str:
-    # Spoken Israeli clock: 24h is what the UI shows; say it as-is in feminine
-    # (hours are feminine: "עשרים ושלוש", "שש וחצי", "שבע ורבע").
-    h_words = number_words(h, "f")
+    # Spoken Israeli clock (sitting A verdict): the UI writes 23:00 but people
+    # SAY "אחת עשרה"; hours are feminine; :15 = "ורבע", :30 = "וחצי",
+    # :45 = "רבע ל<next hour>". Day-part words (בבוקר/בערב) stay as the reply
+    # text already carries them.
+    h_words = number_words(_hour12(h), "f")
     if m == 0:
         return h_words
     if m == 30:
@@ -109,8 +120,21 @@ def _hour_words(h: int, m: int) -> str:
     if m == 15:
         return f"{h_words} ורבע"
     if m == 45:
-        return f"{h_words} ארבעים וחמש"
+        return f"רבע ל{number_words(_hour12(h + 1), 'f')}"
     return f"{h_words} {number_words(m, 'f')}"
+
+
+_COLON_LIST_RE = re.compile(r":\s+(?=[א-תA-Za-z\"״'])")
+_PAREN_RE = re.compile(r"\s*\(([^)]*)\)")
+
+
+def pauses(text: str) -> str:
+    """Sitting A: the voice runs straight through ':' before a list and into
+    '(…)'. A period is the strongest pause Cartesia honours; parentheses
+    become a comma clause ("(חיישן תנועה)" → ", חיישן תנועה")."""
+    out = _COLON_LIST_RE.sub(". ", text)
+    out = _PAREN_RE.sub(r", \1", out)
+    return out
 
 
 def normalize(text: str) -> str:
@@ -135,9 +159,11 @@ def normalize(text: str) -> str:
             g = _NOUN_GENDER.get(bare[1:])
         if g is None:
             return m.group(0)  # unknown noun: leave digits alone (engine rule)
-        # "1 X" → "X אחד/אחת" (Hebrew puts 'one' after the noun)
+        # "1 X" → "X אחד/אחת" (Hebrew puts 'one' after a NOUN) but "1 שקט"
+        # (adjective standing for a device) keeps 'one' first: "אחד שקט".
         if n == 1:
-            return f"{noun} {'אחד' if g == 'm' else 'אחת'}"
+            one = "אחד" if g == "m" else "אחת"
+            return f"{one} {noun}" if bare in _ADJECTIVES else f"{noun} {one}"
         return f"{number_words(n, g, construct=True)} {noun}"
 
     out = _COUNT_RE.sub(_count, out)
@@ -206,13 +232,95 @@ def _phonikud():
     return _PHONIKUD
 
 
+# Words phonikud points wrong for Ziggy's domain (sitting A, 2026-09-05).
+# Keyed by the UNVOCALIZED word; value is the pointed form. This is Ziggy's
+# pronunciation dictionary in Hebrew script — it survives model swaps.
+NIKUD_FIXUPS: dict[str, str] = {
+    "הדוד":    "הַדּוּד",       # water heater (dud), not uncle (dod)
+    "דוד":     "דּוּד",
+    "במטבח":   "בַּמִּטְבָּח",  # definite: ba-, not be-
+    "בחצר":    "בַּחָצֵר",
+    "השלט":    "הַשָּׁלָט",     # remote control: shalat
+    "שלט":     "שָׁלָט",
+    "שקט":     "שָׁקֵט",        # adjective (a quiet device), not the noun
+    "כיוונתי": "כִּיוַּנְתִּי", # kivanti
+    "כוונתי":  "כִּוַּנְתִּי",
+    "ומאיה":   "וְמַאיָה",
+    "מאיה":    "מַאיָה",
+    "יכבו":    "יְכַבּוּ",       # "the lights will go off": yechabu (sitting A)
+}
+_NIKUD_ALL = re.compile(r"[֑-ׇ]")
+_TOKEN_RE = re.compile(r"([^\s]+)")
+# lead punctuation / word core (letters + nikud) / trailing punctuation
+_EDGE_PUNCT = re.compile(r"^([^\wא-ת֑-ׇ]*)(.*?)([^\wא-ת֑-ׇ]*)$", re.UNICODE)
+
+
+def strip_nikud(s: str) -> str:
+    return _NIKUD_ALL.sub("", s)
+
+
+def _apply_fixups(vocalized: str) -> str:
+    def _tok(m: re.Match) -> str:
+        lead, core, tail = _EDGE_PUNCT.match(m.group(1)).groups()
+        fixed = NIKUD_FIXUPS.get(strip_nikud(core))
+        return f"{lead}{fixed}{tail}" if fixed else m.group(0)
+    return _TOKEN_RE.sub(_tok, vocalized)
+
+
 def nikud(text: str) -> str:
-    """Vowel-point Hebrew words; leave Latin/digits untouched."""
+    """Vowel-point Hebrew words; leave Latin/digits untouched; apply fixups."""
     v = _phonikud().add_diacritics(text)
-    return _PHONIKUD_MARKS.sub("", v)
+    v = _PHONIKUD_MARKS.sub("", v)
+    return _apply_fixups(v)
 
 
-STEPS = {"sanitize": sanitize, "normalize": normalize, "lexicon": lexicon, "nikud": nikud}
+# ---------------------------------------------------------------------------
+# ipa — every Hebrew word as an inline Cartesia phoneme override <<a|b|c>>
+# ---------------------------------------------------------------------------
+# Insurance in case the engine ignores nikud: phonikud's G2P output (χ ʁ ʔ ʃ
+# ts, ˈ stress) was accepted by the API for sonic-3.5/3.6 (probe_ipa.py).
+# Only Hebrew-script tokens are converted; Latin words, punctuation and
+# already-normalized text pass through. Run AFTER normalize (no digits).
+_HEBREW_CORE = re.compile(r"^[א-ת֑-ׇ'\"״׳־-]+$")
+
+
+_IPA_VOWELS = set("aeiouəɛɔ")
+
+
+def _to_cartesia_ipa(phones: str) -> str:
+    """phonikud puts ˈ right before the stressed VOWEL ("hadˈud"); Cartesia's
+    examples put it before the stressed SYLLABLE's onset ("s|ə|ˈ|p|i|n|ə").
+    Move each stress mark left over the consonant cluster, then pipe-join."""
+    chars = [c for c in phones if not c.isspace()]
+    out: list[str] = []
+    for c in chars:
+        if c == "ˈ":
+            j = len(out)
+            while j > 0 and out[j - 1] not in _IPA_VOWELS and out[j - 1] != "ˈ":
+                j -= 1
+            out.insert(j, "ˈ")
+        else:
+            out.append(c)
+    return "|".join(out)
+
+
+def ipa(text: str) -> str:
+    from phonikud import phonemize
+    vocalized = nikud(text)
+
+    def _tok(m: re.Match) -> str:
+        lead, core, tail = _EDGE_PUNCT.match(m.group(1)).groups()
+        if not core or not _HEBREW_CORE.match(core):
+            return m.group(0)
+        ph = phonemize(core).strip()
+        if not ph:
+            return m.group(0)
+        return f"{lead}<<{_to_cartesia_ipa(ph)}>>{tail}"
+    return _TOKEN_RE.sub(_tok, vocalized)
+
+
+STEPS = {"sanitize": sanitize, "pauses": pauses, "normalize": normalize, "lexicon": lexicon,
+         "nikud": nikud, "ipa": ipa}
 
 
 def run(text: str, steps: list[str]) -> str:

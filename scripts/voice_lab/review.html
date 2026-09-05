@@ -73,9 +73,13 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const state = { sitting: new URLSearchParams(location.search).get('sitting') || 'A',
-                ab: new URLSearchParams(location.search).get('ab') || '',
-                mode: 'rate', variant: 'baseline', idx: 0, data: null, verdicts: {}, audio: null, bad: new Set(),
+const _q = new URLSearchParams(location.search);
+const state = { sitting: _q.get('sitting') || 'A',
+                ab: _q.get('ab') || '',
+                // ?variant=fix1&only=c02,c12 → rate a chosen variant on a subset
+                only: (_q.get('only') || '').split(',').filter(Boolean),
+                mode: _q.get('mode') || 'rate', variant: _q.get('variant') || 'baseline',
+                idx: 0, data: null, verdicts: {}, audio: null, bad: new Set(),
                 rec: null, recChunks: [] };
 
 const MODES = [
@@ -102,7 +106,8 @@ function itemsFor(mode) {
   const d = state.data; if (!d) return [];
   if (mode === 'rate') {
     const man = d.variants[state.variant] || {};
-    return d.corpus.filter(l => man[l.id] && man[l.id].ok).map(l => ({
+    const keep = state.only.length ? new Set(state.only) : null;
+    return d.corpus.filter(l => man[l.id] && man[l.id].ok && (!keep || keep.has(l.id))).map(l => ({
       key: state.variant + ':' + l.id, id: l.id, text: l.text, bucket: l.bucket,
       sent: man[l.id].sent, url: `/audio/${state.variant}/${l.id}.mp3` }));
   }
