@@ -97,8 +97,8 @@ _PCT_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d)?)\s*%")
 _DECIMAL_RE = re.compile(r"(?<![\d.])(\d{1,3})\.(\d)(?!\d)")
 # A digit run that is not part of a time/decimal/percent/degree token. A
 # trailing sentence period ("(5).") must NOT count as a decimal point.
-_COUNT_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d:%°])(?!\.\d)\s+([א-ת]+)")
-_LONE_NUM_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d:%°])(?!\.\d)")
+_COUNT_RE = re.compile(r"(?<![\d.:,])(\d{1,3})(?![\d:%°])(?!\.\d)(?!,\d)\s+([א-ת]+)")
+_LONE_NUM_RE = re.compile(r"(?<![\d.:,])(\d{1,3})(?![\d:%°])(?!\.\d)(?!,\d)")
 _PREFIX_RE = re.compile(r"([בלמכשוה])-(?=\d)")
 
 
@@ -173,6 +173,7 @@ def normalize(text: str) -> str:
     out = _LONE_NUM_RE.sub(
         lambda m: m.group(0) if re.match(r"\s+[א-ת]", out[m.end():m.end() + 2])
         else number_words(int(m.group(1)), "f"), out)
+    out = re.sub(r"(?<![א-ת])([בלמכשוה])(?=\d)", r"\1-", out)
     return _WS.sub(" ", out).strip()
 
 

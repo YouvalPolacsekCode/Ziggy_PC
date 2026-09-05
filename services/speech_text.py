@@ -112,8 +112,10 @@ _TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
 _TEMP_RE = re.compile(r"(?<![\d.])(-?\d{1,2}(?:\.\d)?)\s*°\s*C?", re.IGNORECASE)
 _PCT_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d)?)\s*%")
 _DECIMAL_RE = re.compile(r"(?<![\d.])(\d{1,3})\.(\d)(?!\d)")
-_COUNT_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d:%°])(?!\.\d)\s+([א-ת]+)")
-_LONE_NUM_RE = re.compile(r"(?<![\d.:])(\d{1,3})(?![\d:%°])(?!\.\d)")
+# 1-3 digits standing alone: not part of a time, decimal, percent, degree or
+# a thousands-grouped figure ("3,400" stays digits; the engine reads those).
+_COUNT_RE = re.compile(r"(?<![\d.:,])(\d{1,3})(?![\d:%°])(?!\.\d)(?!,\d)\s+([א-ת]+)")
+_LONE_NUM_RE = re.compile(r"(?<![\d.:,])(\d{1,3})(?![\d:%°])(?!\.\d)(?!,\d)")
 _PREFIX_RE = re.compile(r"([בלמכשוה])-(?=\d)")
 
 
@@ -163,6 +165,9 @@ def normalize(text: str) -> str:
     out = _LONE_NUM_RE.sub(
         lambda m: m.group(0) if re.match(r"\s+[א-ת]", out[m.end():m.end() + 2])
         else number_words(int(m.group(1)), "f"), out)
+    # a prefix letter left glued to digits that stayed digits ("ל3,400",
+    # "ב2026") gets its hyphen back — that is how Hebrew writes it
+    out = re.sub(r"(?<![א-ת])([בלמכשוה])(?=\d)", r"\1-", out)
     return _WS.sub(" ", out).strip()
 
 

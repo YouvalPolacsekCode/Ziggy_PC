@@ -47,6 +47,13 @@ def test_disabled_is_legacy_sanitize():
         assert r.steps == ("sanitize",)
 
 
+def test_grouped_and_long_figures_stay_digits():
+    # prose from other surfaces (Jeff, kinetic): sums, years, big counts
+    assert st.normalize("עלייה של 12% ל-3,400 שקל") == "עלייה של שנים עשר אחוז ל-3,400 שקל"
+    assert st.normalize("בשנת 2026 היו 1500 מבקרים") == "בשנת 2026 היו 1500 מבקרים"
+    assert st.normalize("ב-2026") == "ב-2026"
+
+
 # ---- 3. English only sanitized ----------------------------------------------
 def test_english_untouched_beyond_sanitize():
     r = st.prepare_for_speech("Lights off at 23:00, 24°C, 45% (5).", "en", enabled=True)
