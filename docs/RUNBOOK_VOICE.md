@@ -37,6 +37,15 @@ regressions on control lines. Facts that shape future work:
 
 Lab tooling and the operator flow: `scripts/voice_lab/README.md`.
 
+**The same stage voices the kinetic surfaces.** `services/speech_text.py` is
+vendored byte-for-byte as `hebrew_speech.py` into `~/Code/kinetic/api/kinetic`
+(oracle/OpenAI sources) and `~/Code/jeff/jeff` (Jeff and Ziggy-expert
+surfaces, relayed through youval-jeff). After changing the dictionary here:
+`python scripts/voice_lab/sync_speech_text.py`, run their tests, commit and
+`flyctl deploy` each. Both default to `words` (this stage, no sentence-wide
+nakdan); `KINETIC_HE_POINTING=full` / jeff `he_pointing=full` restore the
+old Dicta pointing.
+
 ### Rehearsal mode (talk to Ziggy without touching the home)
 
 `assistant.rehearsal: true` (pill in the chat header, or `PATCH
