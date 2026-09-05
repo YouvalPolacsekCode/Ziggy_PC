@@ -98,3 +98,11 @@ lines:
   - {id: r08, bucket: prosody,   source: template, text: "אף אחד לא בבית."}
   - {id: r09, bucket: prosody,   source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
   - {id: r10, bucket: prosody,   source: template, text: "ההגדרות בבית לא נותנות לי לעשות את זה לבד, אז לא נגעתי."}
+
+  # ---- determinism check (sitting C): identical text rendered three times ----
+  - {id: d01, bucket: determinism, source: template, text: "מכבה את האור בחדר שינה."}
+  - {id: d02, bucket: determinism, source: template, text: "מכבה את האור בחדר שינה."}
+  - {id: d03, bucket: determinism, source: template, text: "מכבה את האור בחדר שינה."}
+  - {id: d04, bucket: determinism, source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
+  - {id: d05, bucket: determinism, source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}
+  - {id: d06, bucket: determinism, source: agent,    text: "כשכולם יוצאים מהבית אני מכבה את האורות, מוריד את התריסים ומכבה את המזגן."}

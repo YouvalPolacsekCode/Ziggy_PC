@@ -319,8 +319,36 @@ def ipa(text: str) -> str:
     return _TOKEN_RE.sub(_tok, vocalized)
 
 
+# ---------------------------------------------------------------------------
+# wordfix — per-word pronunciation dictionary, NO global nikud
+# ---------------------------------------------------------------------------
+# Sitting B (2026-09-05): whole-sentence nikud fixed דוד/כיוונתי but made the
+# engine read בּ as v and swallow vowels elsewhere (מכבה→mechave, יבשה→yevsha,
+# כרגע→karaga). Whole-sentence IPA sounded bad. So: leave the sentence plain
+# and touch only the words the operator flagged, each with the mechanism
+# that worked for it — nikud when the word has no בגדכפת ambiguity, inline
+# IPA when it does.
+WORDFIX: dict[str, str] = {
+    "הדוד":    "הַדּוּד",             # water heater (nikud worked in fix1)
+    "דוד":     "דּוּד",
+    "כוונתי":  "כִּוַּנְתִּי",       # kivanti (nikud worked in fix1)
+    "כיוונתי": "כִּיוַּנְתִּי",
+    "ירדו":    "יֵרְדוּ",             # future: yerdu (schedules), not past yardu
+    "אכבה":    "<<ʔ|a|χ|a|ˈ|b|e>>",   # nikud gave "achve"; IPA keeps the b
+    "שאכבה":   "<<ʃ|e|ʔ|a|χ|a|ˈ|b|e>>",
+}
+
+
+def wordfix(text: str) -> str:
+    def _tok(m: re.Match) -> str:
+        lead, core, tail = _EDGE_PUNCT.match(m.group(1)).groups()
+        rep = WORDFIX.get(strip_nikud(core))
+        return f"{lead}{rep}{tail}" if rep else m.group(0)
+    return _TOKEN_RE.sub(_tok, text)
+
+
 STEPS = {"sanitize": sanitize, "pauses": pauses, "normalize": normalize, "lexicon": lexicon,
-         "nikud": nikud, "ipa": ipa}
+         "nikud": nikud, "ipa": ipa, "wordfix": wordfix}
 
 
 def run(text: str, steps: list[str]) -> str:

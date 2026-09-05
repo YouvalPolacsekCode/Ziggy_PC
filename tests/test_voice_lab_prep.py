@@ -123,6 +123,18 @@ def test_one_before_adjective_after_noun():
     assert prep.normalize("11 מחוברים ו-1 שקט") == "אחד עשר מחוברים ואחד שקט"
 
 
+def test_wordfix_touches_only_dictionary_words():
+    out = prep.wordfix("הדוד דולק כבר חצי שעה, רוצה שאכבה אותו?")
+    assert out.startswith("הַדּוּד דולק כבר חצי שעה, רוצה <<")
+    assert out.endswith(">> אותו?")
+    assert prep.wordfix("מכבה את האור בחדר שינה.") == "מכבה את האור בחדר שינה."
+
+
+def test_wordfix_after_normalize():
+    assert prep.run("כוונתי את המזגן ל-22 מעלות.", ["normalize", "wordfix"]) == \
+        "כִּוַּנְתִּי את המזגן לעשרים ושתיים מעלות."
+
+
 @pytest.mark.parametrize("src,exp", [
     ("hadˈud", "h|a|ˈ|d|u|d"),
     ("basalˈon", "b|a|s|a|ˈ|l|o|n"),

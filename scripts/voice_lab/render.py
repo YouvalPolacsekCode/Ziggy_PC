@@ -53,6 +53,8 @@ VARIANTS: dict[str, dict] = {
     "fix0":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize"]},
     # Insurance: phonemes instead of nikud, in case the engine ignores nikud.
     "fix3":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "ipa"]},
+    # Sitting C candidate: fix0 + per-word dictionary (nikud or IPA per word).
+    "fix4":          {"model": "sonic-3.5", "voice": "yardena", "prep": ["sanitize", "pauses", "normalize", "wordfix"]},
     # Voice candidates for sitting B (baseline prep so only the voice differs).
     "voice_adi":     {"model": "sonic-3.5", "voice": "adi",     "prep": ["sanitize"]},
     "voice_gil":     {"model": "sonic-3.5", "voice": "gil",     "prep": ["sanitize"]},
