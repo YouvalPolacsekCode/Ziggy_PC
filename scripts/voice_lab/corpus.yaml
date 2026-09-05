@@ -123,3 +123,16 @@ lines:
   - {id: e13, bucket: mechanism, source: lab, text: "כיביתי את האור בחדר שינה."}
   - {id: e14, bucket: mechanism, source: lab, text: "כיביתי את האור בחדר שינה."}
   - {id: e15, bucket: mechanism, source: lab, text: "כיביתי את האור בחדר שינה."}
+  # water heater: nikud הַדּוּד still rolls "dod" sometimes (sitting D) — four alternatives, 3 rolls each
+  - {id: e16, bucket: mechanism, source: lab, text: "<<h|a|d|u|d>> דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e17, bucket: mechanism, source: lab, text: "<<h|a|d|u|d>> דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e18, bucket: mechanism, source: lab, text: "<<h|a|d|u|d>> דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e19, bucket: mechanism, source: lab, text: "הדוּד דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e20, bucket: mechanism, source: lab, text: "הדוּד דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e21, bucket: mechanism, source: lab, text: "הדוּד דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e22, bucket: mechanism, source: lab, text: "הבוילר דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e23, bucket: mechanism, source: lab, text: "הבוילר דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e24, bucket: mechanism, source: lab, text: "הבוילר דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e25, bucket: mechanism, source: lab, text: "דוד המים דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e26, bucket: mechanism, source: lab, text: "דוד המים דולק כבר חצי שעה, רוצה שאכבה אותו?"}
+  - {id: e27, bucket: mechanism, source: lab, text: "דוד המים דולק כבר חצי שעה, רוצה שאכבה אותו?"}

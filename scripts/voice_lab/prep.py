@@ -329,8 +329,8 @@ def ipa(text: str) -> str:
 # that worked for it — nikud when the word has no בגדכפת ambiguity, inline
 # IPA when it does.
 WORDFIX: dict[str, str] = {
-    "הדוד":    "הַדּוּד",             # water heater (nikud worked in fix1)
-    "דוד":     "דּוּד",
+    "הדוד":    "הדוּד",   # water heater: shuruk ONLY held 3/3 (sitting D); full nikud rolled "dod"
+    "דוד":     "דוּד",
     "כוונתי":  "כִּוַּנְתִּי",       # kivanti (nikud worked in fix1)
     "כיוונתי": "כִּיוַּנְתִּי",
     "ירדו":    "יֵרְדוּ",             # future: yerdu (schedules), not past yardu

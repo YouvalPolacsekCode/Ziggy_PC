@@ -174,8 +174,8 @@ def normalize(text: str) -> str:
 # see scripts/voice_lab/prep.py WORDFIX for provenance. Add entries there
 # first, prove them in a sitting, then copy here.
 WORDFIX: dict[str, str] = {
-    "הדוד":    "הַדּוּד",       # water heater, not uncle
-    "דוד":     "דּוּד",
+    "הדוד":    "הדוּד",       # water heater, not uncle — a single shuruk held 3/3 rolls; full nikud did not
+    "דוד":     "דוּד",
     "כוונתי":  "כִּוַּנְתִּי",
     "כיוונתי": "כִּיוַּנְתִּי",
     "ירדו":    "יֵרְדוּ",       # future tense in schedules

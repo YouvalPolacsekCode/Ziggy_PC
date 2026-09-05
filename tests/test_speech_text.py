@@ -62,7 +62,7 @@ def test_home_words_extend_dictionary(monkeypatch):
 
 
 def test_wordfix_keeps_punctuation_and_unknown_words():
-    assert st.wordfix("הדוד, דולק? (ריק)") == "הַדּוּד, דולק? (רֵיק)"
+    assert st.wordfix("הדוד, דולק? (ריק)") == "הדוּד, דולק? (רֵיק)"
     assert st.wordfix("Netflix בסלון.") == "Netflix בַּסָּלוֹן."
 
 
