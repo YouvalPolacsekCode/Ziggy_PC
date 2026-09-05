@@ -1,5 +1,42 @@
 # Voice Pipeline Runbook
 
+## Hebrew pronunciation (2026-09-05, Voice Lab)
+
+**What the engine gets is not the reply text.** Hebrew replies pass through
+`services/speech_text.prepare_for_speech` before Cartesia:
+
+| step | what | why (measured in the lab) |
+|---|---|---|
+| sanitize | strip markdown symbols | legacy; unchanged |
+| pauses | `: ` before a list → `. `; `(…)` → `, …` | the voice ran through both |
+| normalize | `23:00` → אחת עשרה, `6:30` → שש וחצי, `17:45` → רבע לשש, `45%` → 45 אחוז, `24°` → 24 מעלות, `2 מכשירים` → שני מכשירים, `2 דקות` → שתי דקות | numerals were read in the wrong gender or skipped |
+| wordfix | per-word dictionary (`WORDFIX`), nikud or inline IPA per word | דוד read as "uncle", כוונתי as "kavanti", ריק as "rak", etc. |
+
+On the operator's 22 mispronounced lines this took failures to 5 with no
+regressions on control lines. Facts that shape future work:
+
+- **Whole-sentence nikud is worse than none.** Cartesia reads a pointed בּ as
+  v and swallows vowels (מכבה → "mechave", יבשה → "yevsha"). Point single
+  words only, and only after hearing them.
+- **Whole-sentence IPA sounds bad.** Inline `<<…>>` works for a single
+  foreign word (Netflix) but not as a general path.
+- **Sonic 3.6 ≈ 3.5 for Hebrew; `speed` is inaudible; the vendor
+  pronunciation dictionary made things worse** (our IPA guesses).
+- **The engine is non-deterministic.** Same text, different audio each
+  render. The on-disk cache freezes the first render. `POST
+  /api/voice/tts/flag` ("Said wrong?" in chat) logs the line to
+  `user_files/tts_flags.jsonl` and evicts the cache so the next play
+  re-rolls. Read the flags file when curating `WORDFIX`.
+- Per-home words: `voice.speech_text.words: {plain: spoken}`. Kill switch:
+  `voice.speech_text.enabled: false` (= legacy sanitizer, byte for byte).
+- Adding a dictionary word: put it in `scripts/voice_lab/prep.py`
+  `WORDFIX_OPEN`, render it (`render.py`), have the operator hear it, then
+  move it to `WORDFIX` in both prep.py and `services/speech_text.py`
+  (a test keeps the two equal) and regenerate
+  `tests/fixtures/speech_text_corpus.json`.
+
+Lab tooling and the operator flow: `scripts/voice_lab/README.md`.
+
 ## What ships in v1
 
 Push-to-talk, Hebrew + English STT, local intent routing, cloud LLM fallback for free-form Q&A, response delivered as **push notification + on-screen text**. No spoken response.
