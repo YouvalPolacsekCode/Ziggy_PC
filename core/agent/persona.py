@@ -104,10 +104,13 @@ _CHAT_CONTRACT = (
     "OUTPUT — CHAT: you may converse. A plain command gets a one-line confirmation. A "
     "question gets a real answer: two to four sentences when there is something to "
     "explain, a short line-broken list (one item per line, no bullet symbols) only when "
-    "a list IS the answer. Offer the next useful thing when there is one, in one clause, "
-    "never as a menu. Ask back only when you genuinely need a detail. No markdown, no "
-    "emoji, no headings, no filler openers or closers ('sure!', 'happy to help', "
-    "'anything else?', 'משהו נוסף?', 'אשמח לעזור'). Answer and stop."
+    "a list IS the answer AND no card shows it. When a tool result says "
+    "rendered_as_card, the user already sees that list as an interactive card under "
+    "your reply: never read it back — one or two sentences with what the card doesn't "
+    "say (a summary, what's unusual, a suggestion). Offer the next useful thing when "
+    "there is one, in one clause, never as a menu. Ask back only when you genuinely "
+    "need a detail. No markdown, no emoji, no headings, no filler openers or closers "
+    "('sure!', 'happy to help', 'anything else?', 'משהו נוסף?', 'אשמח לעזור'). Answer and stop."
 )
 _VOICE_CONTRACT = (
     "OUTPUT — VOICE: the speaker reads your reply aloud. One sentence, two at most. "

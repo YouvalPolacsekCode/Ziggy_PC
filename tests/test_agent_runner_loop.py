@@ -103,6 +103,39 @@ def test_query_turn_yields_card_and_narration(monkeypatch, wired):
     assert wired[0][0] == "query_devices"
 
 
+def test_card_results_are_flagged_to_the_model_and_slimmed(monkeypatch, wired):
+    seen_tool_msgs = []
+    calls = iter([
+        _resp(_Msg(tool_calls=[_tool_call("query_devices", '{}')])),
+        _resp(_Msg(content="Six things are on; the office is dark.")),
+    ])
+
+    def fake_chat(purpose, messages, **kw):
+        seen_tool_msgs.extend(m for m in messages if m.get("role") == "tool")
+        return next(calls)
+    monkeypatch.setattr(R, "chat_completion", fake_chat)
+
+    async def fake_exec(name, args, directory, lang="en", actor=None):
+        return {"ok": True, "message": "16 devices", "devices": [{"name": "Lamp"}] * 16,
+                "data": {"kind": "device_list", "devices": [{"entity_id": f"light.{i}", "name": f"L{i}", "on": True} for i in range(16)]}}
+    monkeypatch.setattr(R._tools, "execute_tool", fake_exec)
+
+    out = asyncio.run(R.run_agent("show me my home", None, channel="chat"))
+    import json as _json
+    fed = _json.loads(seen_tool_msgs[-1]["content"])
+    assert fed["rendered_as_card"] is True and "Do NOT repeat" in fed["card_note"]
+    assert "devices" not in fed["data"]                 # per-item payload not fed twice
+    assert out["data"]["card"]["lang"] == "en" and len(out["data"]["card"]["devices"]) == 16
+
+
+def test_pretty_names_drop_serial_tails():
+    from core.agent.directory import _pretty_name as p
+    assert p("Switcher_Touch_36D8") == "Switcher Touch"
+    assert p("Living Room Lamp") == "Living Room Lamp"
+    assert p("outdoor_watering") == "outdoor watering"
+    assert p(None) is None
+
+
 def test_model_error_gives_the_soft_reply(monkeypatch, wired):
     def boom(*a, **k):
         raise RuntimeError("relay 502")

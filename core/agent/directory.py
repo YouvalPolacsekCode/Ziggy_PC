@@ -94,6 +94,21 @@ def he_noun(entity_id: str, name: str) -> str:
     return "המכשיר"
 
 
+def _pretty_name(name: Optional[str]) -> Optional[str]:
+    """A friendly_name that is really a device id ("Switcher_Touch_36D8") reads
+    as plumbing. Underscores become spaces; a trailing hex/serial chunk is
+    dropped when there's a real name in front of it."""
+    if not name:
+        return name
+    n = str(name).strip()
+    if "_" in n and " " not in n:
+        parts = n.split("_")
+        if len(parts) > 1 and all(c in "0123456789ABCDEFabcdef" for c in parts[-1]) and len(parts[-1]) >= 3:
+            parts = parts[:-1]
+        n = " ".join(p for p in parts if p)
+    return n
+
+
 def _slugify_area(name: str) -> str:
     return (name or "").strip().lower().replace(" ", "_")
 
@@ -155,7 +170,7 @@ async def build_directory() -> dict[str, Any]:
         dom = eid.split(".", 1)[0]
         attrs = s.get("attributes") or {}
         state = str(s.get("state", ""))
-        name = attrs.get("friendly_name") or eid.split(".", 1)[1].replace("_", " ").title()
+        name = _pretty_name(attrs.get("friendly_name")) or eid.split(".", 1)[1].replace("_", " ").title()
         room = area_map.get(eid) or _registry_room(eid)
 
         # Presence sensors (for room_occupancy) — motion / occupancy / presence.

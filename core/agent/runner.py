@@ -72,6 +72,21 @@ def _assistant_echo(msg: Any) -> dict:
 def _slim_result(result: dict) -> dict:
     """What we feed back to the model as the tool result (drop bulky bundle)."""
     out = {k: v for k, v in result.items() if k not in ("bundle",)}
+    rd = result.get("data") if isinstance(result.get("data"), dict) else None
+    if rd and rd.get("kind") in _CARD_KINDS:
+        # The app renders this result as an interactive card right under the
+        # reply. Telling the model so is what keeps the prose short: it adds
+        # what the card can't show instead of reading the list back.
+        out["rendered_as_card"] = True
+        out["card_note"] = (
+            "The user SEES this result as an interactive card (list with live "
+            "controls) below your reply. Do NOT repeat the list or its items in "
+            "prose. Reply in one or two sentences with what the card doesn't "
+            "say: a summary, what's unusual, or a suggestion.")
+        # The model doesn't need the per-item payload twice.
+        out["data"] = {k: v for k, v in rd.items() if k not in ("devices", "automations",
+                                                                "capabilities", "changes")}
+    return out
     if result.get("bundle"):
         b = result["bundle"]
         arts = (b.get("artifacts") or {})
@@ -187,6 +202,7 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                     card = dict(rd)
                     if "entity_id" in args_for_card and "entity_id" not in card:
                         card["entity_id"] = args_for_card["entity_id"]
+                    card["lang"] = lang      # labels follow the turn, not the UI locale
                     data["card"] = card
 
             # Pro Mode bundle preview: if a tool returned the v1 preview-card
