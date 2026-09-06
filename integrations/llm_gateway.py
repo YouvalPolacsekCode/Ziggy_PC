@@ -56,13 +56,17 @@ _BACKEND_OPENAI_WHISPER = "openai_whisper"
 # before the gateway was introduced. Keep these in sync with the docstring.
 _DEFAULTS: dict[str, dict[str, str | None]] = {
     "intent_parse":            {"backend": _BACKEND_OPENAI,         "model": "gpt-4o-mini"},
-    "chat":                    {"backend": _BACKEND_OPENAI,         "model": "gpt-4o"},
+    # The v3 agent brain (core/agent/runner.py). gpt-5.5 verified through the
+    # relay on 2026-09-06: tool calls work at reasoning_effort="none" in under
+    # a second; it rejects `max_tokens` and rejects reasoning WITH function
+    # tools on chat/completions — both handled by _reasoning_kwargs below.
+    "chat":                    {"backend": _BACKEND_OPENAI,         "model": "gpt-5.5"},
     "translate":               {"backend": _BACKEND_OPENAI,         "model": "gpt-4o-mini"},
     # Ziggy Pro designer (Session D3) — reasons over the full capability
     # catalog + home context to produce a structured automation bundle.
     # Higher-quality model justified by the complex reasoning and JSON
     # output requirement; low temperature for schema consistency.
-    "automation_design":       {"backend": _BACKEND_OPENAI,         "model": "gpt-4o"},
+    "automation_design":       {"backend": _BACKEND_OPENAI,         "model": "gpt-5.5"},
     # suggestion_quality_gate's model defaults to settings.ollama.model
     # (preserving the previous behavior where the caller read that key
     # directly). The None below triggers that lookup in _resolve().
@@ -101,6 +105,64 @@ def _resolve(purpose: str) -> tuple[str, str]:
             f"llm_gateway: no model resolved for purpose={purpose!r} backend={backend!r}"
         )
     return backend, model
+
+
+# ── Reasoning-model parameter shim ──────────────────────────────────────────
+# OpenAI's gpt-5 family (and o-series) changed the chat/completions contract:
+#   * `max_tokens` is rejected → `max_completion_tokens`
+#   * `reasoning_effort` controls hidden thinking; "none" (gpt-5.1+) or
+#     "minimal" (gpt-5 / -mini / -nano) is what a sub-second assistant wants
+#   * with function tools, gpt-5.5 only accepts effort "none" on this endpoint
+#   * `temperature` is only honoured when effort is "none"
+# Every fact above was measured through the relay on 2026-09-06.
+_MINIMAL_ONLY_MODELS = ("gpt-5-mini", "gpt-5-nano", "gpt-5-chat")
+# Rescue model when the configured id is retired/unknown upstream. A dead
+# model id must degrade chat, never kill it.
+_FALLBACK_MODEL = "gpt-4o"
+
+
+def _is_reasoning_model(model: str) -> bool:
+    m = (model or "").lower()
+    return m.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
+def _default_effort(model: str) -> str:
+    m = (model or "").lower()
+    if m.startswith(_MINIMAL_ONLY_MODELS) or m == "gpt-5" or m.startswith("gpt-5-2"):
+        return "minimal"
+    if m.startswith(("o1", "o3", "o4")):
+        return "low"
+    return "none"
+
+
+def _reasoning_kwargs(model: str, purpose: str, kwargs: dict) -> dict:
+    """Translate legacy chat/completions kwargs for a reasoning model."""
+    if not _is_reasoning_model(model):
+        return kwargs
+    out = dict(kwargs)
+    if "max_tokens" in out:
+        out["max_completion_tokens"] = out.pop("max_tokens")
+    cfg = (settings.get("models") or {}).get(purpose) or {}
+    effort = cfg.get("reasoning_effort") or _default_effort(model)
+    if out.get("tools") and (model or "").lower().startswith("gpt-5"):
+        # Tools + reasoning is refused on this endpoint for gpt-5.5; force
+        # the one mode measured to work for each model family. Operators
+        # wanting reasoning with tools need the Responses API, which the
+        # relay does not proxy yet.
+        effort = _default_effort(model)
+    out["reasoning_effort"] = effort
+    if effort != "none":
+        out.pop("temperature", None)
+    return out
+
+
+def _is_unsupported_model_error(exc: Exception) -> bool:
+    s = str(exc).lower()
+    if "model" not in s:
+        return False
+    return any(k in s for k in ("does not exist", "not found", "unsupported model",
+                                "invalid model", "deprecated", "no longer supported",
+                                "model_not_found"))
 
 
 def _client_for(backend: str):
@@ -161,7 +223,27 @@ def chat_completion(
         kwargs["timeout"] = timeout
     if response_format is not None:
         kwargs["response_format"] = response_format
-    return client.chat.completions.create(**kwargs)
+    if backend == _BACKEND_OPENAI:
+        kwargs = _reasoning_kwargs(model, purpose, kwargs)
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as e:
+        if backend != _BACKEND_OPENAI or model == _FALLBACK_MODEL \
+                or not _is_unsupported_model_error(e):
+            raise
+        # The configured model id is gone upstream: retry once on the rescue
+        # model with legacy kwargs so the home keeps talking. Loud in the log.
+        try:
+            from core.logger_module import log_error
+            log_error(f"[llm_gateway] model {model!r} rejected for {purpose} ({e}); "
+                      f"falling back to {_FALLBACK_MODEL}")
+        except Exception:
+            pass
+        legacy = {k: v for k, v in kwargs.items() if k != "reasoning_effort"}
+        if "max_completion_tokens" in legacy:
+            legacy["max_tokens"] = legacy.pop("max_completion_tokens")
+        legacy["model"] = _FALLBACK_MODEL
+        return client.chat.completions.create(**legacy)
 
 
 def transcribe(
