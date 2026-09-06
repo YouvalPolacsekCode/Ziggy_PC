@@ -297,3 +297,106 @@ def describe_diagnosis(device_label: str, is_on: bool, last_intended: str | None
     if lang == "he":
         return f"{device_label} נראה תקין — הוא {on_he} כרגע."
     return f"The {device_label} looks fine — it's {on_en} right now."
+
+
+# ── Why did X NOT happen ─────────────────────────────────────────────────────
+# Verdict code → (Hebrew, English). {label} already carries the Hebrew article.
+# {auto} is the automation/routine name, {room} the room's Hebrew/English name.
+_WHY_NOT_LINES: dict[str, tuple[str, str]] = {
+    "device_unreachable": (
+        "{label} לא מגיב לזיגי כרגע, אז שום שגרה לא יכלה להדליק אותו. "
+        "כדאי לכבות ולהדליק מהמפסק בקיר — ואז אבדוק שוב.",
+        "The {label} isn't responding to Ziggy right now, so no routine could have "
+        "turned it on. Try switching it off and on at the wall and I'll check again.",
+    ),
+    "sensor_latched": (
+        "החיישן ב{room} נתקע במצב אחד ולא רואה כניסה או יציאה, אז השגרה לא קיבלה "
+        "את הסימן. בדרך כלל הוצאת הסוללה לרגע והחזרתה מסדרת את זה.",
+        "The sensor in the {room} is stuck in one state and isn't seeing anyone come "
+        "or go, so the routine never got its signal. Pulling its battery for a moment "
+        "and putting it back usually clears it.",
+    ),
+    "sensor_silent": (
+        "החיישן ב{room} שקט כבר זמן מה — כנראה סוללה או ניתוק. בלי חיישן שרואה "
+        "אותך, {label} לא נדלק לבד.",
+        "The sensor in the {room} has gone quiet — likely a battery or a dropped "
+        "connection. Without a sensor that sees you, the {label} won't come on by itself.",
+    ),
+    "automation_disabled": (
+        "השגרה ״{auto}״ כבויה, אז היא לא הייתה אמורה להדליק את {label}. רוצה שאפעיל אותה?",
+        "The routine \"{auto}\" is switched off, so it wasn't going to turn on the "
+        "{label}. Want me to enable it?",
+    ),
+    "automation_did_not_trigger": (
+        "השגרה ״{auto}״ פעילה אבל לא רצה בזמן הזה — הסימן שהיא מחכה לו לא הגיע. "
+        "לרוב זה החיישן בחדר או תנאי שעה.",
+        "The routine \"{auto}\" is on but didn't run in that window — the signal it "
+        "waits for never came. Usually that's the room sensor or a time condition.",
+    ),
+    "automation_stopped_on_conditions": (
+        "השגרה ״{auto}״ כן רצה, אבל נעצרה בתנאי שלה — למשל שעה, מצב הבית או מישהו "
+        "שכבר בחדר — ולכן לא נגעה ב{label}.",
+        "The routine \"{auto}\" did run, but stopped on one of its conditions — time "
+        "of day, house mode, or someone already in the room — so it didn't touch the {label}.",
+    ),
+    "automation_failed": (
+        "השגרה ״{auto}״ רצה ונכשלה בדרך. אני בודק את {label} עכשיו.",
+        "The routine \"{auto}\" ran and failed partway. Let me check the {label} now.",
+    ),
+    "manual_override": (
+        "מישהו שינה את {label} ידנית אחרי הפקודה האחרונה, והשגרה מכבדת את זה.",
+        "Someone changed the {label} by hand after the last command, and the routine "
+        "respects that.",
+    ),
+    "no_automation_for_device": (
+        "אין שגרה שמדליקה את {label} כשנכנסים — אז זה לא תקלה, פשוט לא הוגדר. "
+        "אפשר לבנות אחת: ״תדליק את {label} כשמישהו נכנס״.",
+        "There's no routine that turns on the {label} when someone walks in — so it's "
+        "not a fault, it was never set up. I can build one: \"turn on the {label} when "
+        "someone enters\".",
+    ),
+    "unknown": (
+        "לא מצאתי סיבה ברורה. {label} מגיב והשגרות שלו פעילות — אם זה חוזר, אבדוק "
+        "יותר לעומק.",
+        "I couldn't find a clear reason. The {label} responds and its routines are on "
+        "— if it happens again, I'll dig deeper.",
+    ),
+}
+
+_REPAIR_NOTE = (
+    " כבר ניסיתי להעיר אותו ולחבר מחדש — לא הצליח.",
+    " I already tried waking it and reconnecting it — no luck.",
+)
+
+
+def describe_why_not(verdicts: list[str], facts: dict, device_label: str,
+                     room_label: str | None, lang: str = "en") -> str:
+    """Phrase the top verdict + the next step. Never an id, never an engine word."""
+    top = (verdicts or ["unknown"])[0]
+    he, en = _WHY_NOT_LINES.get(top, _WHY_NOT_LINES["unknown"])
+    line = he if lang == "he" else en
+    autos = facts.get("automations") or []
+    pick = None
+    for a in autos:
+        runs = a.get("runs") or []
+        first = runs[0] if runs else {}
+        if top == "automation_disabled" and not a.get("enabled", True):
+            pick = a
+            break
+        if top == "automation_did_not_trigger" and a.get("enabled", True) and not runs:
+            pick = a
+            break
+        if top == "automation_stopped_on_conditions" and first.get("status") == "stopped":
+            pick = a
+            break
+        if top == "automation_failed" and first.get("status") == "failed":
+            pick = a
+            break
+    auto_name = (pick or (autos[0] if autos else {})).get("name") or (
+        "השגרה" if lang == "he" else "the routine")
+    room = room_label or ("החדר" if lang == "he" else "room")
+    out = line.format(label=device_label, auto=auto_name, room=room)
+    tried = [r for r in (facts.get("repairs") or []) if r.get("outcome") not in (None, "skipped")]
+    if tried and top in ("device_unreachable", "sensor_silent", "sensor_latched"):
+        out += _REPAIR_NOTE[0] if lang == "he" else _REPAIR_NOTE[1]
+    return out

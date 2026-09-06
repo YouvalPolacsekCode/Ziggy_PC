@@ -68,6 +68,7 @@ TOOL_SCHEMAS: list[dict] = [
             "entity_id": {"type": "string", "description": "Exact device id from the directory."},
             "action": {"type": "string", "description": "on, off, open, close, lock, unlock, set_temperature, set_brightness, set_color"},
             "value": {"type": "string", "description": "For set_temperature: °C. set_brightness: 0-100. set_color: colour name."},
+            "confirmed": {"type": "boolean", "description": "true ONLY after the user explicitly said yes to an action the home's policy asked to confirm (locks etc.)."},
         }, "required": ["entity_id", "action"]},
     }},
     {"type": "function", "function": {
@@ -294,11 +295,99 @@ TOOL_SCHEMAS: list[dict] = [
             "hours": {"type": "integer", "description": "How many hours back to look (default 48)."},
         }, "required": ["entity_id"]},
     }},
+    # ── v3: self-knowledge, memory of the home, routines, why-not ───────────
+    {"type": "function", "function": {
+        "name": "what_can_ziggy_do",
+        "description": (
+            "Ziggy's own catalog of what he can do. Use for 'what can you do', 'can "
+            "you X', 'do you support Y', 'מה אתה יודע לעשות', 'אתה יכול…'. Returns "
+            "matching capabilities with a plain description and whether each is live. "
+            "Answer from it honestly in your own words; never invent a capability."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "What the user asked about, in their words. Empty for a general overview."},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "recent_activity",
+        "description": (
+            "What changed in the home recently — devices that turned on/off, in "
+            "which room, when. Use for 'what happened', 'what changed', 'מה קרה "
+            "בבית', 'did anything turn on'. Optional room and hours (default 3)."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "hours": {"type": "number"}, "room": {"type": "string"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "explain_missing_action",
+        "description": (
+            "Explain why something that SHOULD have happened to a device did NOT — "
+            "'why didn't the light turn on when I came in?', 'למה האור לא נדלק "
+            "כשנכנסתי?', 'the AC should have started'. Checks whether the device is "
+            "reachable, which routines act on it and what their last runs did, what "
+            "the room's sensors saw, and what Ziggy already tried. Pass the exact "
+            "device id from the directory; hours back to look (default 3)."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string", "description": "Exact device id from the directory."},
+            "hours": {"type": "number"},
+        }, "required": ["entity_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "repair_history",
+        "description": (
+            "What Ziggy already tried to fix for a device on his own (wake, "
+            "reconnect, re-add) and how it went. Use before suggesting a fix, or when "
+            "the user asks 'did you try anything?'. Pass the exact device id."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string"},
+        }, "required": ["entity_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "run_routine",
+        "description": (
+            "Run one of the home's on-demand routines by name — 'good night', "
+            "'run the movie routine', 'לילה טוב', 'תפעיל את שגרת הבוקר'. Fuzzy name "
+            "match; if nothing matches you get the list of routine names back."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "toggle_automation",
+        "description": (
+            "Enable or disable an existing automation/routine by name — 'turn off the "
+            "night routine', 'תכבה את האוטומציה של הסלון'. Fuzzy name match."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "enabled": {"type": "boolean"},
+        }, "required": ["name", "enabled"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_automation",
+        "description": (
+            "Delete an existing automation/routine by name. Deletion is final, so "
+            "the first call answers needs_approval naming what would be deleted; ask "
+            "the user, and only after an explicit yes call again with confirmed=true."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "confirmed": {"type": "boolean"},
+        }, "required": ["name"]},
+    }},
 ]
 
 # Tool names that produce a natural action-confirmation and, when they succeed
 # alone with no model narration, can be confirmed deterministically (1 round-trip).
 TERMINAL_ACTION_TOOLS = frozenset({"control_device", "create_automation", "add_task"})
+
+# Device verbs the home's policy may want a human yes for. control_device asks
+# the PDP for these; everything else acts (a light is a light).
+_POLICY_VERBS = {"lock": "device.lock", "unlock": "device.unlock",
+                 "open": "device.open", "close": "device.close"}
+_POLICY_DOMAINS = {"lock", "cover", "alarm_control_panel"}
 
 # Passthrough tools → (intent name for handle_intent).
 _PASSTHROUGH = {
@@ -325,6 +414,9 @@ _REHEARSAL_BLOCKED = {
     "create_automation":    "created (rehearsal — nothing was changed in the home)",
     "refresh_device":       "done (rehearsal — nothing was changed in the home)",
     "recover_connectivity": "done (rehearsal — nothing was changed in the home)",
+    "toggle_automation":    "done (rehearsal — nothing was changed in the home)",
+    "delete_automation":    "deleted (rehearsal — nothing was changed in the home)",
+    "run_routine":          "ran (rehearsal — nothing was changed in the home)",
 }
 
 
@@ -332,7 +424,22 @@ def _norm_action(action: str) -> str:
     return _ACTION_ALIASES.get((action or "").strip().lower(), (action or "").strip().lower())
 
 
-async def _exec_control_device(args: dict, directory: dict) -> dict:
+def _policy_says_ask(eid: str, action: str, actor: str | None, confirmed: bool) -> bool:
+    """True when the home's policy wants a human yes for this verb and none was given."""
+    dom = eid.split(".", 1)[0]
+    if dom not in _POLICY_DOMAINS or action not in _POLICY_VERBS:
+        return False
+    try:
+        from core.agent import authz
+        may_act, _mode = authz.check(_POLICY_VERBS[action], on_behalf_of=actor,
+                                     explicit_confirm=bool(confirmed))
+        return not may_act
+    except Exception:
+        return False
+
+
+async def _exec_control_device(args: dict, directory: dict, actor: str | None = None,
+                               lang: str = "en") -> dict:
     from services.home_automation import (
         toggle_light, set_light_brightness, set_light_color,
         set_ac_temperature, call_service,
@@ -344,6 +451,13 @@ async def _exec_control_device(args: dict, directory: dict) -> dict:
     if not dev:
         return {"ok": False, "message": f"unknown device {eid}", "no_such_device": True}
     dom = eid.split(".", 1)[0]
+    if _policy_says_ask(eid, action, actor, bool(args.get("confirmed"))):
+        label = _device_label(dev, lang)
+        return {"ok": True, "needs_approval": True, "device": dev, "action": action,
+                "message": (f"{label}: זה דורש אישור — לשאול את המשתמש ולקרוא שוב עם confirmed=true אחרי כן."
+                            if lang == "he" else
+                            f"{label}: this needs the user's explicit yes — ask, then call again with confirmed=true."),
+                "data": {"kind": "needs_approval", "fix": f"control_device:{action}", "acted": False}}
 
     try:
         # Hybrid-aware power: an entity with a linked IR codeset routes on/off
@@ -675,6 +789,178 @@ async def _exec_acknowledge_alerts(lang: str) -> dict:
             "data": {"kind": "alerts_acknowledged", "count": count}}
 
 
+# ── v3 executors ─────────────────────────────────────────────────────────────
+def _exec_what_can_ziggy_do(args: dict) -> dict:
+    from services import capability_lookup as cl
+    q = (args.get("query") or "").strip()
+    items = cl.search(q, limit=6) if q else cl.overview()
+    return {"ok": True, "message": f"{len(items)} capabilities",
+            "capabilities": items,
+            "note": "status 'live' means it works in this home today; anything else is not available to the user yet."}
+
+
+def _exec_recent_activity(args: dict, directory: dict) -> dict:
+    from core.agent import context as _ctx
+    from services.room_alias_bank import resolve_room
+    try:
+        hours = float(args.get("hours") or 3)
+    except (TypeError, ValueError):
+        hours = 3.0
+    room = (args.get("room") or "").strip().lower()
+    target = resolve_room(room) if room else None
+    d = directory
+    if target:
+        d = {**directory, "devices": [x for x in (directory.get("devices") or []) if (x.get("room") or "") == target]}
+    text = _ctx.recent_text(d, minutes=int(hours * 60))
+    if not text:
+        return {"ok": True, "message": "nothing changed in that window", "changes": []}
+    return {"ok": True, "message": "changes (newest first)",
+            "changes": [ln.strip() for ln in text.splitlines()]}
+
+
+def _room_label(dev: dict, lang: str) -> str | None:
+    return dev.get("room_he") if lang == "he" else (dev.get("room") or "").replace("_", " ") or None
+
+
+async def _exec_explain_missing_action(args: dict, directory: dict, lang: str) -> dict:
+    import asyncio
+    from services import why_not
+    from core.agent import health_speech
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    try:
+        hours = float(args.get("hours") or 3)
+    except (TypeError, ValueError):
+        hours = 3.0
+    facts = await asyncio.to_thread(why_not.gather_facts, eid, hours, directory=directory)
+    verdicts = why_not.judge(facts)
+    msg = health_speech.describe_why_not(verdicts, facts, _device_label(dev, lang),
+                                         _room_label(dev, lang), lang)
+    # Model-facing facts: names only, no ids, no engine codes.
+    autos = [{"name": a.get("name"), "enabled": a.get("enabled"),
+              "last_run": ((a.get("runs") or [{}])[0].get("status") if a.get("runs") else "none in window")}
+             for a in facts.get("automations") or []]
+    sensors = [{"room": _room_label(dev, lang), "state": s.get("state"),
+                "held_minutes": int((s.get("held_s") or 0) / 60),
+                "problem": ("stuck" if "ANOM-12" in (s.get("anomalies") or []) else
+                            "quiet" if any(a in (s.get("anomalies") or []) for a in ("ANOM-10", "ANOM-13")) else None)}
+               for s in facts.get("sensors") or []]
+    return {"ok": True, "message": msg,
+            "data": {"kind": "why_not", "verdicts": verdicts,
+                     "device_reachable": (facts.get("device") or {}).get("reachable"),
+                     "routines": autos, "room_sensors": sensors,
+                     "occupancy": facts.get("occupancy"),
+                     "tried": [{"step": r.get("rung"), "outcome": r.get("outcome")} for r in facts.get("repairs") or []]}}
+
+
+def _exec_repair_history(args: dict, directory: dict, lang: str) -> dict:
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    try:
+        from services import repair_ladder
+        rows = repair_ladder.history(eid, limit=10) or []
+    except Exception:
+        rows = []
+    if not rows:
+        return {"ok": True, "message": ("עוד לא ניסיתי לתקן את זה לבד." if lang == "he"
+                                        else "I haven't tried fixing this on my own yet."),
+                "data": {"kind": "repair_history", "attempts": []}}
+    steps = {"nudge": ("להעיר אותו", "wake it"), "reinterview": ("לחבר מחדש", "reconnect it"),
+             "repair": ("להוסיף מחדש", "re-add it"), "physical": ("צעד פיזי", "a physical step")}
+    parts = [f"{steps.get(r.get('rung'), (r.get('rung'), r.get('rung')))[0 if lang == 'he' else 1]} → {r.get('outcome')}"
+             for r in rows[:5]]
+    return {"ok": True,
+            "message": ("ניסיתי: " if lang == "he" else "I tried: ") + "; ".join(parts),
+            "data": {"kind": "repair_history",
+                     "attempts": [{"step": r.get("rung"), "outcome": r.get("outcome"), "ts": r.get("ts")} for r in rows]}}
+
+
+def _best_name_match(name: str, items: list[dict]) -> dict | None:
+    import re as _re
+    q = _re.sub(r"[^\w֐-׿]+", " ", (name or "").lower()).strip()
+    if not q:
+        return None
+    qs = set(q.split())
+    best, best_score = None, 0.0
+    for it in items:
+        n = _re.sub(r"[^\w֐-׿]+", " ", str(it.get("name") or "").lower()).strip()
+        if not n:
+            continue
+        if n == q:
+            return it
+        ns = set(n.split())
+        overlap = len(qs & ns)
+        score = overlap / max(1, len(ns)) + (0.5 if q in n or n in q else 0)
+        if score > best_score:
+            best, best_score = it, score
+    return best if best_score >= 0.5 else None
+
+
+async def _exec_run_routine(args: dict, lang: str) -> dict:
+    import asyncio
+    from services.ha_scripts import list_scripts
+    from services.local_automation_actions import execute_ziggy_actions
+    routines = await asyncio.to_thread(list_scripts)
+    hit = _best_name_match(args.get("name") or "", routines or [])
+    if not hit:
+        names = [r.get("name") for r in (routines or [])][:10]
+        return {"ok": False, "message": "no such routine", "routines": names}
+    try:
+        await execute_ziggy_actions(hit["id"], hit.get("name") or "Routine")
+    except Exception as e:
+        log_error(f"[agent.tools] run_routine failed: {e}")
+        return {"ok": False, "message": (f"לא הצלחתי להפעיל את ״{hit.get('name')}״." if lang == "he"
+                                         else f"Couldn't run \"{hit.get('name')}\".")}
+    return {"ok": True, "message": (f"הפעלתי את ״{hit.get('name')}״." if lang == "he"
+                                    else f"Ran \"{hit.get('name')}\"."),
+            "routine": hit.get("name")}
+
+
+async def _exec_toggle_automation(args: dict, lang: str) -> dict:
+    import asyncio
+    from services.ha_automations import list_automations, toggle_automation
+    autos = await asyncio.to_thread(list_automations)
+    hit = _best_name_match(args.get("name") or "", autos or [])
+    if not hit:
+        return {"ok": False, "message": "no such automation",
+                "automations": [a.get("name") for a in (autos or [])][:15]}
+    enabled = bool(args.get("enabled"))
+    ok_ = await asyncio.to_thread(toggle_automation, hit["id"], enabled)
+    if not ok_:
+        return {"ok": False, "message": "could not change it"}
+    if lang == "he":
+        msg = f"{'הפעלתי' if enabled else 'כיביתי'} את ״{hit.get('name')}״."
+    else:
+        msg = f"{'Enabled' if enabled else 'Disabled'} \"{hit.get('name')}\"."
+    return {"ok": True, "message": msg, "automation": hit.get("name"), "enabled": enabled}
+
+
+async def _exec_delete_automation(args: dict, lang: str, actor: str | None) -> dict:
+    import asyncio
+    from services.ha_automations import list_automations, delete_automation
+    autos = await asyncio.to_thread(list_automations)
+    hit = _best_name_match(args.get("name") or "", autos or [])
+    if not hit:
+        return {"ok": False, "message": "no such automation",
+                "automations": [a.get("name") for a in (autos or [])][:15]}
+    if not args.get("confirmed"):
+        return {"ok": True, "needs_approval": True, "automation": hit.get("name"),
+                "message": (f"למחוק את ״{hit.get('name')}״? זה סופי. לשאול את המשתמש ולקרוא שוב עם confirmed=true."
+                            if lang == "he" else
+                            f"Delete \"{hit.get('name')}\"? This is final. Ask the user, then call again with confirmed=true."),
+                "data": {"kind": "needs_approval", "fix": "delete_automation", "acted": False}}
+    ok_ = await asyncio.to_thread(delete_automation, hit["id"])
+    if not ok_:
+        return {"ok": False, "message": "could not delete it"}
+    return {"ok": True, "message": (f"מחקתי את ״{hit.get('name')}״." if lang == "he"
+                                    else f"Deleted \"{hit.get('name')}\"."),
+            "automation": hit.get("name")}
+
+
 async def _exec_passthrough(name: str, args: dict) -> dict:
     """Reuse the v1 handler for a tool by dispatching through handle_intent."""
     from core.action_parser import handle_intent
@@ -705,7 +991,21 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
             _rehearsal.note("tool", tool=name, args=args)
             return {"ok": True, "rehearsal": True, "message": _REHEARSAL_BLOCKED[name]}
     if name == "control_device":
-        return await _exec_control_device(args, directory)
+        return await _exec_control_device(args, directory, actor, lang)
+    if name == "what_can_ziggy_do":
+        return _exec_what_can_ziggy_do(args)
+    if name == "recent_activity":
+        return _exec_recent_activity(args, directory)
+    if name == "explain_missing_action":
+        return await _exec_explain_missing_action(args, directory, lang)
+    if name == "repair_history":
+        return _exec_repair_history(args, directory, lang)
+    if name == "run_routine":
+        return await _exec_run_routine(args, lang)
+    if name == "toggle_automation":
+        return await _exec_toggle_automation(args, lang)
+    if name == "delete_automation":
+        return await _exec_delete_automation(args, lang, actor)
     if name == "query_devices":
         return _exec_query_devices(args, directory)
     if name == "room_occupancy":
