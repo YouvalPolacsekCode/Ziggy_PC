@@ -14,6 +14,7 @@ import { useDeviceStore, applyRoomsOrder } from '../stores/deviceStore'
 import { deviceFacts } from '../lib/devices'
 import { useT, useTranslatedName } from '../lib/i18n'
 import { useDeviceActions } from './useWallControl'
+import { ExitWallButton } from './WallChrome'
 
 const CONTROLLABLE = new Set(['light', 'switch', 'media_player', 'climate', 'fan', 'water_heater'])
 
@@ -262,7 +263,7 @@ const RoomCard = memo(function RoomCard({ room, entityMap, expanded, onExpand, a
 
 // ─── the rail ───────────────────────────────────────────────────────────────
 
-export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice, footer }) {
+export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice, footer, onExit = null }) {
   const t = useT()
   // GROUPED view, the same one the app's Rooms page uses. Reading raw
   // `ziggyRooms` listed every entity a room owns — an Office with two lamps
@@ -345,6 +346,9 @@ export default function RoomsRail({ open, onClose, guard, toast, onOpenDevice, f
         </div>
         {/* Fixed furniture pinned to the bottom of the rail — see ZiggyBar. */}
         {footer}
+        {/* The way back to the regular app, where a person looking for
+            "settings" on a wall panel goes first: the rooms panel. */}
+        {onExit && <ExitWallButton onExit={onExit} variant="row" />}
       </aside>
     </>
   )

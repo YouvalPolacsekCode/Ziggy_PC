@@ -34,11 +34,20 @@ describe('ExitWallSheet', () => {
 })
 
 describe('ExitWallButton', () => {
-  it('is a labelled, visible control', () => {
+  it('spells out what it does, in words, and fires the exit', () => {
     const onExit = vi.fn()
     render(<ExitWallButton onExit={onExit} />)
     const btn = screen.getByRole('button', { name: 'Exit wall mode' })
+    expect(btn).toHaveTextContent('Exit wall mode')
     fireEvent.click(btn)
     expect(onExit).toHaveBeenCalledTimes(1)
+  })
+
+  it('has a full-width row variant for the rooms panel', () => {
+    const onExit = vi.fn()
+    render(<ExitWallButton onExit={onExit} variant="row" />)
+    const btn = screen.getByRole('button', { name: 'Exit wall mode' })
+    expect(btn.className).toBe('zw-rail-exit')
+    expect(btn).toHaveTextContent('Exit wall mode')
   })
 })
