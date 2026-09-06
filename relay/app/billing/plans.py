@@ -19,17 +19,37 @@ indefinitely so existing subscriptions keep resolving.
 Price IDs are read from env at *call time*, not at module import, so
 test fixtures and Fly secret rotations take effect without a relay
 restart.
+
+Entitlements (v3 brain, spec §3.8):
+  Each plan carries a `features` set. The relay copies the home's plan
+  and its entitlements into the signed OTA manifest so a hub can gate
+  tier-bound features (diagnostics, auto-repair, explain-changes)
+  without ever holding billing state itself. `entitlements_for` is the
+  single resolver; it FAILS OPEN — a home with no plan_id (founder
+  homes provisioned before billing existed) or an unrecognised plan_id
+  gets everything, because a billing hiccup must never strip a paying
+  home of features it already relies on.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
 class PlanMisconfiguredError(RuntimeError):
     """Raised when a plan's Stripe Price env var is unset at call time."""
+
+
+# Every feature a hub can gate on. Today every plan gets all of them;
+# the set exists so a future restricted tier is a one-line change here
+# and zero changes on the hub, which only reads the manifest list.
+ALL_FEATURES: frozenset[str] = frozenset({
+    "diagnostics",      # Fixer may diagnose (read-only investigation)
+    "auto_repair",      # Fixer may apply PDP-gated repairs
+    "explain_changes",  # brain narrates what changed and why
+})
 
 
 @dataclass(frozen=True)
@@ -40,6 +60,10 @@ class Plan:
     is_founder: bool       # If True, checkout creation must reserve a founder slot
     has_trial: bool        # If True, the 14-day kit_received_at trial applies
     interval: str          # 'month' | 'year' — display hint, source of truth is Stripe
+    # Hub-gateable features this plan unlocks (subset of ALL_FEATURES).
+    # Default empty so a plan added without thinking about entitlements
+    # is visibly locked down in tests rather than silently over-granting.
+    features: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def stripe_price_id(self) -> str:
@@ -59,6 +83,7 @@ PLANS: dict[str, Plan] = {
         is_founder=True,
         has_trial=False,  # the price IS the offer — no separate trial
         interval="month",
+        features=ALL_FEATURES,
     ),
     "standard_monthly_2026": Plan(
         id="standard_monthly_2026",
@@ -67,6 +92,7 @@ PLANS: dict[str, Plan] = {
         is_founder=False,
         has_trial=True,
         interval="month",
+        features=ALL_FEATURES,
     ),
     "standard_annual_2026": Plan(
         id="standard_annual_2026",
@@ -75,6 +101,7 @@ PLANS: dict[str, Plan] = {
         is_founder=False,
         has_trial=True,
         interval="year",
+        features=ALL_FEATURES,
     ),
 }
 
@@ -83,6 +110,27 @@ def get_plan(plan_id: str) -> Plan:
     if plan_id not in PLANS:
         raise KeyError(f"Unknown plan: {plan_id!r}. Known: {sorted(PLANS)}")
     return PLANS[plan_id]
+
+
+def entitlements_for(plan_id: Optional[str]) -> list[str]:
+    """Resolve the feature list a hub should be told it is entitled to.
+
+    Fails OPEN by design:
+      * plan_id None/"" — founder homes provisioned before billing existed
+        have plan_id NULL in `homes`; they must get everything.
+      * unknown plan_id — a slug this relay build doesn't know (e.g. a
+        newer relay wrote it, or a typo in an admin edit). Locking a
+        home out because of a catalog mismatch is the wrong failure
+        mode; the audit trail, not the hub, is where that gets noticed.
+    Sorted so the manifest bytes — and therefore its HMAC — are stable
+    across calls.
+    """
+    if not plan_id:
+        return sorted(ALL_FEATURES)
+    plan = PLANS.get(plan_id)
+    if plan is None:
+        return sorted(ALL_FEATURES)
+    return sorted(plan.features)
 
 
 def plan_for_stripe_price(stripe_price_id: str) -> Optional[Plan]:

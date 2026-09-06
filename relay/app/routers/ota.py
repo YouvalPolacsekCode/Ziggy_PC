@@ -74,6 +74,7 @@ from pydantic import BaseModel, Field
 from ..audit import log_event, sign as sign_signature, verify as verify_signature
 from ..auth import current_user, require_role
 from ..billing import is_operational
+from ..billing.plans import entitlements_for
 from ..database import get_db
 
 router = APIRouter()
@@ -83,7 +84,11 @@ router = APIRouter()
 # consumers ignore the new fields; schema-2 consumers read them. The
 # version bump is a hygiene signal, not enforced — no edge code asserts
 # schema_version=N today.
-OTA_MANIFEST_SCHEMA_VERSION = 2
+# Schema 3 (v3 brain, spec §3.8) adds plan_id + entitlements so hubs can
+# gate tier-bound features. Still additive; still unenforced (verified
+# 2026-09-06: services/ota_client.py and services/subscription_state.py
+# only mention the schema in comments).
+OTA_MANIFEST_SCHEMA_VERSION = 3
 
 # How long an edge agent may trust a cached subscription_state value
 # before treating it as stale. 24h gives slack against transient relay
@@ -154,9 +159,9 @@ async def get_ota_manifest(device_id: str, request: Request):
     body, so the signed payload is `"<ts>."` plus zero bytes. Same scheme
     as POST handlers but with the body bytes always empty.
 
-    Response shape (schema 2):
+    Response shape (schema 3):
       {
-        schema_version: 2,
+        schema_version: 3,
         home_id: "home-abc",
         device_id: "home-abc",       # v1: equals home_id
         release_id: 7,
@@ -167,6 +172,8 @@ async def get_ota_manifest(device_id: str, request: Request):
         released_at: "<iso8601>",
         subscription_state: "active",                   # Prompt 9 chunk 3
         subscription_state_expires_at: "<iso8601>",     # cached value TTL
+        plan_id: "standard_monthly_2026" | null,        # schema 3; null = founder/legacy
+        entitlements: ["auto_repair", "diagnostics", "explain_changes"],
         signature: "t=...,v1=..."
       }
 
@@ -174,6 +181,12 @@ async def get_ota_manifest(device_id: str, request: Request):
     user_files/subscription_state.json and that the cloud-LLM + backup
     gates consult. Edge consumers older than schema 2 ignore the new
     fields and remain ungated (matching their pre-Prompt-9 behavior).
+
+    plan_id + entitlements (schema 3) let the hub gate tier-bound brain
+    features without holding billing state. Both sit INSIDE the signed
+    body, so a hub cannot be handed a forged entitlement list by anyone
+    who doesn't hold its relay secret. Resolution is fail-open — see
+    billing/plans.py::entitlements_for.
 
     Returns 401 on signature mismatch, 403 on suspended home or
     billing-gated home, 404 on unknown home or empty release catalog.
@@ -186,7 +199,8 @@ async def get_ota_manifest(device_id: str, request: Request):
 
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT id, status, subscription_state, relay_secret, ota_pinned_release_id "
+            "SELECT id, status, subscription_state, relay_secret, ota_pinned_release_id, "
+            "       plan_id "
             "FROM homes WHERE id=?",
             (home_id,),
         )
@@ -276,6 +290,12 @@ async def get_ota_manifest(device_id: str, request: Request):
         datetime.now(timezone.utc)
         + timedelta(hours=SUBSCRIPTION_STATE_TTL_HOURS)
     ).isoformat()
+    # Plan + entitlements (schema 3) — added BEFORE signing so the HMAC
+    # covers them. plan_id is None for founder/legacy homes; the resolver
+    # fails open and hands them the full feature set.
+    plan_id = home["plan_id"]
+    manifest["plan_id"] = plan_id
+    manifest["entitlements"] = entitlements_for(plan_id)
     body_bytes = _canonical_bytes_for_signing(manifest)
     manifest["signature"] = sign_signature(secret, body_bytes)
 
