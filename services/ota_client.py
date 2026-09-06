@@ -294,6 +294,11 @@ def poll_once(
         # in cloud LLM + backup engine read the cache file written here.
         # No-op if the relay is still serving schema 1.
         _sub_state.update_from_manifest(manifest)
+        try:
+            from services import entitlements as _ents
+            _ents.update_from_manifest(manifest)
+        except Exception as e:  # never let a cache write break OTA
+            log.warning("entitlements cache update failed: %s", e)
 
         delta = _has_delta(state.get("installed"), manifest)
         state["last_poll_ts"] = now_fn().isoformat()
