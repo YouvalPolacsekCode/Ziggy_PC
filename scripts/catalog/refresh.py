@@ -538,6 +538,14 @@ def cmd_merge(cfg: dict, catalog: dict, brief_dir: str, apply: bool = False) -> 
         with open(CATALOG_PATH, "w", encoding="utf-8") as f:
             json.dump(new_catalog, f, indent=2, ensure_ascii=False)
             f.write("\n")
+        # The hub reads the catalog from services/data (docs/ never enters
+        # the image — .dockerignore). Keep the shipped copy identical;
+        # tests/test_capability_catalog_shipped.py fails a tag otherwise.
+        shipped = os.path.join(REPO, "services/data/capability-catalog.json")
+        os.makedirs(os.path.dirname(shipped), exist_ok=True)
+        with open(shipped, "w", encoding="utf-8") as f:
+            json.dump(new_catalog, f, indent=2, ensure_ascii=False)
+            f.write("\n")
         with open(MARKDOWN_PATH, "w", encoding="utf-8") as f:
             f.write(rm.render(new_catalog))
             f.write("\n")
