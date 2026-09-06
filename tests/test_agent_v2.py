@@ -149,3 +149,8 @@ def test_resolve_engine_priority(monkeypatch):
     assert _resolve_engine(None) == "v2"
     monkeypatch.setenv("ZIGGY_ASSISTANT_ENGINE", "v1")
     assert _resolve_engine(None) == "v1"
+    # v3 brain: with nothing set anywhere, every home runs the agent.
+    monkeypatch.delenv("ZIGGY_ASSISTANT_ENGINE", raising=False)
+    from core import settings_loader as _sl
+    monkeypatch.setattr(_sl, "settings", {"assistant": {}}, raising=False)
+    assert _resolve_engine(None) == "v2"

@@ -91,14 +91,17 @@ class ChatRequest(BaseModel):
     source: str = "web"
     engine: str | None = None   # "v1" | "v2" — per-request override for A/B
     thread_id: str | None = None  # when set → durable, background, resumable thread
+    mode: str | None = None       # "diagnostic" | None — the app echoes what the server set
 
 
 def _resolve_engine(override: str | None) -> str:
     """Which assistant engine handles this turn.
 
     Priority: per-request override > env ZIGGY_ASSISTANT_ENGINE > settings
-    assistant.engine > "v1" (the working fallback). v2 is the single tool-calling
-    agent (core.agent.runner); v1 is the legacy quick_parse + handlers path.
+    assistant.engine > "v2". v2 is the single tool-calling agent
+    (core.agent.runner) and, since the v3 brain (2026-09-06), the default for
+    every home; v1 is the legacy quick_parse + handlers path kept as an
+    explicit opt-out and as the fallback when the agent module is missing.
     """
     if override in ("v1", "v2"):
         return override
@@ -112,7 +115,73 @@ def _resolve_engine(override: str | None) -> str:
             return val
     except Exception:
         pass
-    return "v1"
+    return "v2"
+
+
+# ── Diagnostic mode ────────────────────────────────────────────────────────
+# A spoken/typed trigger phrase flips the thread into diagnostic mode (deeper
+# "why" answers, technician tone — see core/agent/persona.py). Same agent,
+# same tools; the mode only changes how far it goes. Gated by the home's
+# `diagnostics` entitlement.
+
+def _is_mode_trigger(text: str) -> bool:
+    from core.agent.persona import DIAGNOSTIC_TRIGGERS
+    q = _norm_phrase(text)
+    return bool(q) and q in {_norm_phrase(t) for t in DIAGNOSTIC_TRIGGERS}
+
+
+def _mode_reply(new_mode: str | None, lang_he: bool, entitled: bool = True) -> str:
+    if not entitled:
+        return ("מצב אבחון לא כלול בתוכנית של הבית הזה. אפשר להוסיף אותו — ובינתיים אני עדיין "
+                "עונה על כל שאלה רגילה." if lang_he else
+                "Diagnostic mode isn't included in this home's plan. It can be added — "
+                "meanwhile I still answer any ordinary question.")
+    if new_mode == "diagnostic":
+        return ("מצב אבחון פעיל. שאלו אותי למה משהו קרה או לא קרה, ואני אפרט: מה השגרה "
+                "ראתה, מה החיישן עשה, ומה כבר ניסיתי. אותה מילה שוב — ואני יוצא."
+                if lang_he else
+                "Diagnostic mode is on. Ask me why something did or didn't happen and I'll "
+                "lay it out: what the routine saw, what the sensor did, what I already tried. "
+                "Say the same phrase again to leave.")
+    return "יצאתי ממצב אבחון." if lang_he else "Left diagnostic mode."
+
+
+async def _handle_mode_trigger(text: str, source: str, request_id: str,
+                               thread_id: str | None, current_mode: str | None,
+                               actor: str | None) -> dict:
+    from services import entitlements
+    lang_he = any("֐" <= c <= "׿" for c in text)
+    entitled = entitlements.has("diagnostics")
+    new_mode = None if (current_mode == "diagnostic" or not entitled) else "diagnostic"
+    if thread_id:
+        from services import chat_threads as ct
+        ct.ensure_thread(thread_id, owner=actor)
+        ct.set_mode(thread_id, new_mode)
+        ct.append_message(thread_id, "user", text)
+    reply = _mode_reply(new_mode, lang_he, entitled)
+    data = {"kind": "mode_changed", "mode": new_mode, "spoken": reply}
+    if thread_id:
+        from services import chat_threads as ct
+        ct.append_message(thread_id, "assistant", reply, data=data)
+    bus.emit("intent", BASIC, "diagnostic_mode_toggled", request_id=request_id,
+             mode=new_mode, entitled=entitled)
+    await manager.broadcast({"type": "ziggy_response", "input": text, "reply": reply,
+                             "source": source, "ok": True, "request_id": request_id, "data": data})
+    return {"reply": reply, "ok": True, "data": data, "request_id": request_id,
+            **({"thread_id": thread_id} if thread_id else {})}
+
+
+def _effective_mode(req_mode: str | None, thread_id: str | None) -> str | None:
+    """The thread's stored mode wins; the app's echoed mode covers threadless chats."""
+    if thread_id:
+        try:
+            from services import chat_threads as ct
+            th = ct.get_thread(thread_id)
+            if th is not None:
+                return th.get("mode")
+        except Exception:
+            pass
+    return "diagnostic" if req_mode == "diagnostic" else None
 
 
 # ── Phrase → routine shortcut ──────────────────────────────────────────────
@@ -241,7 +310,8 @@ async def process_intent(req: IntentRequest, request: Request):
     }
 
 
-async def _compute_reply(text, chat_history, source, engine, actor, request_id) -> dict:
+async def _compute_reply(text, chat_history, source, engine, actor, request_id,
+                         mode: str | None = None) -> dict:
     """Run one turn through the engine (v2 agent or v1 dispatch) → {reply, ok, data, intent}.
 
     Extracted so the legacy synchronous /api/chat path AND the background thread runner
@@ -256,7 +326,7 @@ async def _compute_reply(text, chat_history, source, engine, actor, request_id) 
             run_agent = None
         if run_agent is not None:
             channel = "voice" if "voice" in (source or "") else "chat"
-            result = await run_agent(text, chat_history, channel=channel, actor=actor)
+            result = await run_agent(text, chat_history, channel=channel, actor=actor, mode=mode)
             return {"reply": result.get("message", ""), "ok": result.get("ok", True),
                     "data": result.get("data", {}), "intent": None}
 
@@ -332,6 +402,12 @@ async def process_chat(req: ChatRequest, request: Request):
     if _routine:
         return await _run_routine_phrase(_routine, req.text, req.source, request_id)
 
+    # ── Diagnostic-mode trigger ("claude ziggy") — toggles, no engine call ──
+    if _is_mode_trigger(req.text):
+        return await _handle_mode_trigger(req.text, req.source, request_id, req.thread_id,
+                                          _effective_mode(req.mode, req.thread_id), actor)
+    mode = _effective_mode(req.mode, req.thread_id)
+
     # ── Durable / background / resumable thread mode ────────────────────────
     # With a thread_id the conversation is a persistent server-side object: append
     # the user turn, run the reply as a DETACHED task (survives navigation/disconnect),
@@ -360,7 +436,8 @@ async def process_chat(req: ChatRequest, request: Request):
         # background behaviour, without losing the synchronous rich response.
         async def _job():
             try:
-                res = await _compute_reply(req.text, prior, req.source, req.engine, actor, request_id)
+                res = await _compute_reply(req.text, prior, req.source, req.engine, actor,
+                                           request_id, mode=mode)
             except Exception as e:
                 ct.append_message(req.thread_id, "assistant",
                                   "משהו השתבש אצלי רגע — אפשר לנסות שוב.", data={"error": str(e)})
@@ -399,7 +476,7 @@ async def process_chat(req: ChatRequest, request: Request):
 
     # ── Legacy synchronous mode (unchanged behaviour) ──────────────────────
     res = await _compute_reply(req.text, req.chat_history, req.source, req.engine,
-                               actor, request_id)
+                               actor, request_id, mode=mode)
     await _announce_ziggy_response(req.text, res["reply"], req.source, res["ok"],
                                    res.get("intent"), request_id, res.get("data"))
     return {"reply": res["reply"], "ok": res["ok"], "data": res.get("data", {}),
@@ -595,7 +672,8 @@ async def process_voice(request: Request, file: UploadFile = File(...)):
             _v2 = False
         if _v2:
             from core.agent.runner import run_agent
-            result = await run_agent(transcription, None, channel="voice")
+            result = await run_agent(transcription, None, channel="voice",
+                                     actor=_actor_ref(request))
             reply = result.get("message", "")
             await manager.broadcast({
                 "type": "ziggy_response", "input": transcription, "reply": reply,

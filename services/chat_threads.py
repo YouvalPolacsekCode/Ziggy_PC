@@ -48,6 +48,11 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)   # idempotent
+    # Additive migration: `mode` (diagnostic | NULL) arrived with the v3 brain.
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_threads)")}
+    if "mode" not in cols:
+        conn.execute("ALTER TABLE chat_threads ADD COLUMN mode TEXT")
+        conn.commit()
     return conn
 
 
@@ -109,6 +114,13 @@ def append_message(thread_id: str, role: str, content: str,
     return mid
 
 
+def set_mode(thread_id: str, mode: str | None) -> None:
+    """Per-thread assistant mode ("diagnostic" or None)."""
+    with _lock, _connect() as c:
+        c.execute("UPDATE chat_threads SET mode=?, updated_at=? WHERE thread_id=?",
+                  (mode, time.time(), thread_id))
+
+
 def set_status(thread_id: str, status: str) -> None:
     with _lock, _connect() as c:
         c.execute("UPDATE chat_threads SET status=?, updated_at=? WHERE thread_id=?",
@@ -140,6 +152,7 @@ def get_thread(thread_id: str) -> dict | None:
         "title": t["title"] or "New chat",
         "owner": t["owner"],
         "status": t["status"],
+        "mode": t["mode"] if "mode" in t.keys() else None,
         "created_at": t["created_at"],
         "updated_at": t["updated_at"],
         "messages": [

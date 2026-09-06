@@ -418,6 +418,17 @@ users: []
 #     salt:           <hex>
 #     session_tokens: [<token>, ...]   # capped at 20
 
+# ---- Assistant (the chat/voice brain) ------------------------------------
+# engine: v2 is the single tool-calling agent (core/agent/) and the default
+#         for every home since the v3 brain (2026-09-06). v1 is the legacy
+#         classifier + handlers path, kept as an explicit opt-out.
+# rehearsal: true = talk to Ziggy without touching the home (replies and
+#         speaks, but no device/routine/automation write). Also toggled from
+#         the chat header. Leave false in a customer home.
+assistant:
+  engine: v2
+  rehearsal: false
+
 voice:
   active_timeout_s: 90
   azure:
