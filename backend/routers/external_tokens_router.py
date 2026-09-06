@@ -24,9 +24,23 @@ class MintBody(BaseModel):
 
 
 def mcp_url() -> str | None:
-    """`<tunnel_url>/mcp`, or None when this home has no tunnel yet."""
+    """The address an outside assistant should use for /mcp.
+
+    Precedence: an explicit `relay.public_url` in settings → the public
+    address the relay sent in the OTA manifest (homes.public_hostname, cached
+    by services/entitlements) → the raw tunnel url (last resort: it is not
+    publicly routable, but it is honest about what exists) → None.
+    """
     relay = settings.get("relay") or {}
-    base = (relay.get("tunnel_url") or "").strip()
+    base = (relay.get("public_url") or "").strip()
+    if not base:
+        try:
+            from services import entitlements
+            base = entitlements.public_url() or ""
+        except Exception:
+            base = ""
+    if not base:
+        base = (relay.get("tunnel_url") or "").strip()
     if not base:
         return None
     return base.rstrip("/") + "/mcp"

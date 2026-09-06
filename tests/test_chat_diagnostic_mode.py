@@ -91,3 +91,21 @@ def test_entitlements_cache_fail_open_and_manifest(tmp_path):
     assert E.has("diagnostics", path=p) is False
     snap = E.snapshot(path=p)
     assert snap["plan_id"] == "standard_monthly_2026" and snap["source"] == "manifest"
+    assert E.public_url(path=p) is None
+    E.update_from_manifest({"plan_id": None, "entitlements": ["diagnostics"],
+                            "public_url": "https://app.ziggy-home.com/"}, path=p)
+    assert E.public_url(path=p) == "https://app.ziggy-home.com"
+
+
+def test_mcp_url_prefers_public_address(monkeypatch):
+    from backend.routers import external_tokens_router as X
+    monkeypatch.setattr(X, "settings", {"relay": {"tunnel_url": "https://x.cfargotunnel.com"}})
+    monkeypatch.setattr(E, "public_url", lambda path=None: "https://app.ziggy-home.com")
+    assert X.mcp_url() == "https://app.ziggy-home.com/mcp"
+    monkeypatch.setattr(E, "public_url", lambda path=None: None)
+    assert X.mcp_url() == "https://x.cfargotunnel.com/mcp"
+    monkeypatch.setattr(X, "settings", {"relay": {"public_url": "https://mine.example/",
+                                                  "tunnel_url": "https://x.cfargotunnel.com"}})
+    assert X.mcp_url() == "https://mine.example/mcp"
+    monkeypatch.setattr(X, "settings", {})
+    assert X.mcp_url() is None

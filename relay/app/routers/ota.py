@@ -200,7 +200,7 @@ async def get_ota_manifest(device_id: str, request: Request):
     async with get_db() as db:
         rows = await db.execute_fetchall(
             "SELECT id, status, subscription_state, relay_secret, ota_pinned_release_id, "
-            "       plan_id "
+            "       plan_id, public_hostname "
             "FROM homes WHERE id=?",
             (home_id,),
         )
@@ -296,6 +296,10 @@ async def get_ota_manifest(device_id: str, request: Request):
     plan_id = home["plan_id"]
     manifest["plan_id"] = plan_id
     manifest["entitlements"] = entitlements_for(plan_id)
+    # The home's public https address (what an outside assistant uses for
+    # /mcp; the raw tunnel host is not publicly routable). Additive; None
+    # until provisioning assigned one.
+    manifest["public_url"] = home["public_hostname"] or None
     body_bytes = _canonical_bytes_for_signing(manifest)
     manifest["signature"] = sign_signature(secret, body_bytes)
 

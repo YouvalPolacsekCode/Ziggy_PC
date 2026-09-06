@@ -41,6 +41,10 @@ def update_from_manifest(manifest: dict, path: Path = CACHE_PATH) -> None:
     payload = {
         "plan_id": manifest.get("plan_id"),
         "entitlements": sorted(str(e) for e in ents),
+        # The home's public address (relay homes.public_hostname) — what an
+        # outside assistant must use for /mcp; the raw tunnel host is not
+        # publicly routable. Optional; older relays don't send it.
+        "public_url": (str(manifest.get("public_url") or "").strip().rstrip("/") or None),
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
@@ -77,6 +81,14 @@ def has(feature: str, path: Path = CACHE_PATH) -> bool:
     if data is None:
         return True
     return feature in set(data.get("entitlements") or [])
+
+
+def public_url(path: Path = CACHE_PATH) -> Optional[str]:
+    """The home's public https address as the relay knows it, or None."""
+    data = _load(path)
+    if not data:
+        return None
+    return data.get("public_url") or None
 
 
 def snapshot(path: Path = CACHE_PATH) -> dict:

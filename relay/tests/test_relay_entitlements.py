@@ -157,6 +157,27 @@ class TestServedManifest:
         assert m["plan_id"] == "plan_from_the_future_2031"
         assert m["entitlements"] == sorted(ALL_FEATURES)
 
+    def test_public_url_is_present_and_none_until_provisioned(self, client):
+        m = _get_manifest(client, FOUNDER_HOME)
+        assert "public_url" in m and m["public_url"] is None
+
+    def test_public_url_carries_the_homes_public_hostname(self, client, db):
+        import asyncio
+
+        async def _set():
+            async with db.get_db() as d:
+                await d.execute("UPDATE homes SET public_hostname=? WHERE id=?",
+                                ("https://app.ziggy-home.com", STANDARD_HOME))
+                await d.commit()
+        # The sync TestClient test can't await; run the update on a private loop.
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_set())
+        finally:
+            loop.close()
+        m = _get_manifest(client, STANDARD_HOME)
+        assert m["public_url"] == "https://app.ziggy-home.com"
+
     def test_schema_version_is_3(self, client):
         m = _get_manifest(client, FOUNDER_HOME)
         assert m["schema_version"] == otamod.OTA_MANIFEST_SCHEMA_VERSION == 3
