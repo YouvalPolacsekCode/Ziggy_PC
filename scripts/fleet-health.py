@@ -153,11 +153,28 @@ def render(report: dict, *, color: bool) -> None:
         name = home.get("name") or home.get("home_id")
         badge = _color(level, f"[{level.upper():^8}]", color)
         print(f"  {badge} {name}")
+        v = home.get("vitals") or {}
+        # What the home actually RUNS, always. The relay sends release_tag /
+        # cohort / drifted in vitals for every home, but this screen only
+        # surfaced them inside a release_drift issue — so "is the fleet on
+        # the tag I just shipped?" needed a second tool. Drift is loud here
+        # because a drifted hub cannot receive fixes at all.
+        tag, cohort = v.get("release_tag"), v.get("cohort")
+        if tag or cohort:
+            drift = _color("down", "   <-- DRIFTED (updater blocked)", color) if v.get("drifted") else ""
+            print(f"        release: {tag or '?'} · cohort {cohort or '?'}{drift}")
+        disk, up = v.get("disk_pct"), v.get("uptime_s")
+        if disk is not None or up is not None:
+            parts = []
+            if disk is not None:
+                parts.append(f"disk {disk:.0f}%")
+            if up is not None:
+                parts.append(f"up {up / 86400:.1f}d")
+            print(f"        {' · '.join(parts)}")
         # Automation counts always print, healthy or not. A home whose
         # automations silently went to zero looked perfectly fine on this
         # screen for five and a half hours on 2026-08-14 — "no issues" is not
         # the same as "and here is what it has".
-        v = home.get("vitals") or {}
         z, h = v.get("automations_ha_backed"), v.get("automations_ha")
         if z is not None or h is not None:
             note = "" if z == h else "   <-- MISMATCH"
