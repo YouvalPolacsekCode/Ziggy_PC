@@ -20,6 +20,7 @@ exposes a Z2M permit service of its own.
 from __future__ import annotations
 
 import os
+import re
 from typing import Literal, Optional
 
 from services.ha_areas import _ws
@@ -166,6 +167,76 @@ async def get_device_entities(device_id: str) -> list[str]:
     except Exception as e:
         log_error(f"[zigbee] get_device_entities: {e}")
         return []
+
+
+# ---------------------------------------------------------------------------
+# Re-interview — Zigbee2MQTT only
+# ---------------------------------------------------------------------------
+#
+# A stalled Z2M interview leaves a device "always open" / half-exposed; asking
+# Z2M to interview it again is the fix (memory: SNZB-04PR2 interview-stall).
+# HA's device registry carries the IEEE for Z2M devices in `identifiers`:
+#   ["zigbee2mqtt", "0x00158d0001abcd12"]              (zigbee2mqtt integration)
+#   ["mqtt", "zigbee2mqtt_0x00158d0001abcd12"]         (MQTT discovery)
+# ZHA stores it under `connections` = [["zigbee", "00:15:8d:…"]] instead — that
+# is NOT Z2M and cannot be re-interviewed over MQTT, so it maps to `not_zigbee`.
+_Z2M_IDENT_KINDS = ("zigbee2mqtt", "mqtt")
+_IEEE_RE = re.compile(r"0x[0-9a-fA-F]{16}")
+
+
+def z2m_ieee_from_device(device: dict) -> Optional[str]:
+    """Extract the Z2M IEEE (``0x`` + 16 hex) from an HA device-registry row.
+
+    Returns None when the device carries no Zigbee2MQTT identifier.
+    """
+    for ident in (device or {}).get("identifiers") or []:
+        if not isinstance(ident, (list, tuple)) or len(ident) < 2:
+            continue
+        kind, value = str(ident[0]).lower(), str(ident[1])
+        if kind not in _Z2M_IDENT_KINDS:
+            continue
+        m = _IEEE_RE.search(value)
+        if m:
+            return m.group(0).lower()
+    return None
+
+
+async def reinterview_entity(entity_id: str) -> dict:
+    """Ask Zigbee2MQTT to re-interview the device behind ``entity_id``.
+
+    entity → device_id (entity registry) → device row (device registry) → IEEE
+    from a zigbee2mqtt/mqtt identifier → publish ``{"id": ieee}`` to
+    ``zigbee2mqtt/bridge/request/device/interview``.
+
+    Returns ``{ok, ieee, reason}``; ``reason`` is ``"not_zigbee"`` when the
+    entity cannot be mapped to a Z2M device (unknown entity, no device, ZHA or
+    non-Zigbee device), ``"publish_failed"`` when the MQTT publish raised.
+    """
+    if not entity_id:
+        return {"ok": False, "ieee": None, "reason": "not_zigbee"}
+    try:
+        ent_res, = await _ws({"type": "config/entity_registry/list"})
+        entities = ent_res.get("result") or []
+        device_id = next(
+            (e.get("device_id") for e in entities if e.get("entity_id") == entity_id), None)
+        if not device_id:
+            return {"ok": False, "ieee": None, "reason": "not_zigbee"}
+        dev_res, = await _ws({"type": "config/device_registry/list"})
+        devices = dev_res.get("result") or []
+        device = next((d for d in devices if d.get("id") == device_id), None)
+    except Exception as e:
+        log_error(f"[zigbee] reinterview lookup {entity_id}: {e}")
+        return {"ok": False, "ieee": None, "reason": "lookup_failed"}
+
+    ieee = z2m_ieee_from_device(device or {})
+    if not ieee:
+        return {"ok": False, "ieee": None, "reason": "not_zigbee"}
+    try:
+        await mqtt_publish("zigbee2mqtt/bridge/request/device/interview", {"id": ieee})
+        return {"ok": True, "ieee": ieee, "reason": ""}
+    except Exception as e:
+        log_error(f"[zigbee] reinterview publish {entity_id} ({ieee}): {e}")
+        return {"ok": False, "ieee": ieee, "reason": "publish_failed"}
 
 
 async def rename_device(device_id: str, name: str) -> dict:

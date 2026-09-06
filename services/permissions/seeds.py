@@ -79,6 +79,7 @@ _SYSTEM = [
     CapabilityDef("system.read_logs", "system", RiskTier.LOW, frozenset({"diagnostics"})),
     CapabilityDef("system.refresh_device", "system", RiskTier.LOW, frozenset({"diagnostics"})),
     CapabilityDef("system.reload_coordinator", "system", RiskTier.MEDIUM, frozenset({"connectivity"})),
+    CapabilityDef("system.reinterview_device", "system", RiskTier.MEDIUM, frozenset({"connectivity"})),
     CapabilityDef("system.exec_diagnostic", "system", RiskTier.MEDIUM, frozenset({"diagnostics", "shell"})),
     CapabilityDef("system.restart_service", "system", RiskTier.HIGH, frozenset({"maintenance", "shell"})),
     CapabilityDef("system.edit_config", "system", RiskTier.HIGH, frozenset({"maintenance", "config"})),

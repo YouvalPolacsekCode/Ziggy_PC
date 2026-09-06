@@ -1267,6 +1267,20 @@ async def sweep_down_devices(cache: dict | None = None,
         days = max(1, int(d.get("silent_hours", 0) / 24))
         msg = (f"{d['name']} hasn't responded in {days} day{'s' if days != 1 else ''}. "
                f"Try switching it off and on at the wall to bring it back.")
+        # Repair ladder: try to bring it back before nagging (≤ once / 12 h).
+        # A ladder failure must never break the sweep — fall through to the push.
+        try:
+            from services import repair_ladder
+            if repair_ladder.should_run(eid):
+                res = await repair_ladder.run_ladder(eid, trigger="ANOM-13", kind="device")
+                if res.get("fixed"):
+                    _clear_anomaly(active, eid, "ANOM-13")
+                    continue
+                tried = repair_ladder.describe_attempts(res, "en")
+                if tried:
+                    msg = msg + " " + tried
+        except Exception as e:
+            log_error(f"[AnomalyEngine] repair ladder failed for {eid}: {e}")
         _push_anomaly(active, eid, _ANOM13_RULE, AnomalyResult(message=msg, confidence=0.90))
 
 
@@ -1450,6 +1464,20 @@ async def sweep_stuck_occupancy(cache: dict | None = None, active: dict | None =
             f"stops anything in that room from responding. Try removing and "
             f"refitting its battery."
         )
+        # Repair ladder: poll / reconnect the sensor before nagging (≤ once / 12 h).
+        # A ladder failure must never break the sweep — fall through to the push.
+        try:
+            from services import repair_ladder
+            if repair_ladder.should_run(eid):
+                res = await repair_ladder.run_ladder(eid, trigger="ANOM-12", kind="sensor")
+                if res.get("fixed"):
+                    _clear_anomaly(active, room_id, "ANOM-12")
+                    continue
+                tried = repair_ladder.describe_attempts(res, "en")
+                if tried:
+                    msg = msg + " " + tried
+        except Exception as e:
+            log_error(f"[AnomalyEngine] repair ladder failed for {eid}: {e}")
         _push_anomaly(active, room_id, _ANOM12_RULE,
                       AnomalyResult(message=msg, confidence=0.85))
 
