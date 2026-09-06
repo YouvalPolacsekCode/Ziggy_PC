@@ -1,0 +1,913 @@
+<title>Ziggy Capability Catalog</title>
+<style>
+  :root{
+    --paper:#faf8f5;
+    --surface:#ffffff;
+    --surface-raised:#ffffff;
+    --ink:#14161c;
+    --muted:#5a5f6b;
+    --hairline:#e3ded6;
+    --accent:#16706b;
+    --accent-ink:#ffffff;
+    --accent-tint:#e4f1ef;
+    --shadow:0 12px 32px -16px rgba(20,22,28,0.22);
+    --shadow-soft:0 2px 8px -2px rgba(20,22,28,0.10);
+
+    --st-live:#2f7a4f;       --st-live-bg:#e4f3e9;
+    --st-canary:#a8801c;     --st-canary-bg:#faf1de;
+    --st-flagged:#3a6ea8;    --st-flagged-bg:#e6eef7;
+    --st-orphaned:#c05621;   --st-orphaned-bg:#fbe9de;
+    --st-abandoned:#7c8288;  --st-abandoned-bg:#eceded;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#12141a;
+      --surface:#1a1d25;
+      --surface-raised:#20232c;
+      --ink:#eceae5;
+      --muted:#9aa0ab;
+      --hairline:#2a2f3a;
+      --accent:#4fb3a8;
+      --accent-ink:#0c1512;
+      --accent-tint:#193430;
+      --shadow:0 12px 32px -16px rgba(0,0,0,0.55);
+      --shadow-soft:0 2px 10px -2px rgba(0,0,0,0.4);
+
+      --st-live:#5bc17f;       --st-live-bg:#193a26;
+      --st-canary:#e0b656;     --st-canary-bg:#3a2f14;
+      --st-flagged:#7aa8e0;    --st-flagged-bg:#182c42;
+      --st-orphaned:#f0895a;   --st-orphaned-bg:#402314;
+      --st-abandoned:#a9afb8;  --st-abandoned-bg:#2b2d31;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#12141a;
+    --surface:#1a1d25;
+    --surface-raised:#20232c;
+    --ink:#eceae5;
+    --muted:#9aa0ab;
+    --hairline:#2a2f3a;
+    --accent:#4fb3a8;
+    --accent-ink:#0c1512;
+    --accent-tint:#193430;
+    --shadow:0 12px 32px -16px rgba(0,0,0,0.55);
+    --shadow-soft:0 2px 10px -2px rgba(0,0,0,0.4);
+
+    --st-live:#5bc17f;       --st-live-bg:#193a26;
+    --st-canary:#e0b656;     --st-canary-bg:#3a2f14;
+    --st-flagged:#7aa8e0;    --st-flagged-bg:#182c42;
+    --st-orphaned:#f0895a;   --st-orphaned-bg:#402314;
+    --st-abandoned:#a9afb8;  --st-abandoned-bg:#2b2d31;
+  }
+
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Instrument Sans", -apple-system, "Segoe UI", sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    overflow-x:hidden;
+  }
+  ::selection{ background:var(--accent); color:var(--accent-ink); }
+
+  h1,h2,h3,h4{ font-family:"Bricolage Grotesque", "Instrument Sans", sans-serif; text-wrap:balance; margin:0; }
+  code, .mono, .num{ font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
+
+  a{ color:inherit; }
+  button{ font-family:inherit; color:inherit; }
+  .cap-card{ color:var(--ink); }
+
+  :focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+    border-radius:4px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; scroll-behavior:auto !important; }
+  }
+
+  /* ---------- layout shell ---------- */
+  .app{ max-width:1280px; margin:0 auto; padding:0 28px 80px; }
+
+  header.top{
+    position:sticky; top:0; z-index:20;
+    background:var(--paper);
+    border-bottom:1px solid var(--hairline);
+    padding-top:26px;
+  }
+  .app > header.top{ margin:0 -28px; padding-left:28px; padding-right:28px; }
+
+  .top-row{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap;
+    padding-bottom:16px;
+  }
+  .titleblock h1{ font-size:26px; font-weight:700; letter-spacing:-0.01em; }
+  .titleblock .sub{ color:var(--muted); font-size:13.5px; margin-top:4px; }
+
+  .counts{
+    display:flex; gap:22px; align-items:baseline; flex-shrink:0;
+  }
+  .count-stat{ text-align:right; }
+  .count-stat .n{ font-size:22px; font-weight:600; }
+  .count-stat .label{ display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:2px; }
+
+  .legend-row{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding-bottom:14px;
+  }
+  .legend-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-right:2px; }
+
+  .chip{
+    display:inline-flex; align-items:center; gap:6px;
+    border:1px solid var(--hairline);
+    background:var(--surface);
+    padding:5px 11px 5px 9px;
+    border-radius:100px;
+    font-size:12.5px;
+    cursor:pointer;
+    line-height:1.3;
+    transition:border-color .12s ease, background .12s ease, transform .08s ease;
+    white-space:nowrap;
+  }
+  .chip:hover{ border-color:var(--muted); }
+  .chip:active{ transform:scale(0.97); }
+  .chip .dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .chip .cnt{ font-family:"JetBrains Mono", monospace; opacity:0.65; }
+  .chip.on{ box-shadow:inset 0 0 0 1.5px currentColor; }
+
+  .chip[data-status="live-prod"]{ color:var(--st-live); }
+  .chip[data-status="canary-only"]{ color:var(--st-canary); }
+  .chip[data-status="flagged"]{ color:var(--st-flagged); }
+  .chip[data-status="orphaned"]{ color:var(--st-orphaned); }
+  .chip[data-status="abandoned"]{ color:var(--st-abandoned); }
+  .chip[data-status] .dot{ background:currentColor; }
+  .chip.on[data-status="live-prod"]{ background:var(--st-live-bg); }
+  .chip.on[data-status="canary-only"]{ background:var(--st-canary-bg); }
+  .chip.on[data-status="flagged"]{ background:var(--st-flagged-bg); }
+  .chip.on[data-status="orphaned"]{ background:var(--st-orphaned-bg); }
+  .chip.on[data-status="abandoned"]{ background:var(--st-abandoned-bg); }
+
+  .dead-btn{
+    display:inline-flex; align-items:center; gap:7px;
+    border:1px dashed color-mix(in srgb, var(--st-orphaned) 55%, var(--hairline));
+    background:transparent;
+    color:var(--st-orphaned);
+    padding:5px 12px 5px 10px;
+    border-radius:100px;
+    font-size:12.5px;
+    cursor:pointer;
+    margin-left:6px;
+  }
+  .dead-btn:hover{ background:var(--st-orphaned-bg); }
+  .dead-btn.on{ background:var(--st-orphaned-bg); border-style:solid; }
+
+  .clear-filters{
+    border:none; background:none; color:var(--muted); font-size:12px; text-decoration:underline;
+    cursor:pointer; padding:5px 4px;
+  }
+
+  nav.tabs{
+    display:flex; gap:4px;
+  }
+  nav.tabs button{
+    border:none; background:none; cursor:pointer;
+    padding:11px 4px; margin-right:22px;
+    font-size:14px; color:var(--muted);
+    border-bottom:2px solid transparent;
+    font-weight:600;
+  }
+  nav.tabs button.active{ color:var(--ink); border-bottom-color:var(--accent); }
+  nav.tabs button:hover{ color:var(--ink); }
+
+  main{ padding-top:22px; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* ---------- Features view ---------- */
+  .controls-row{
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    margin-bottom:22px;
+  }
+  .search-wrap{ position:relative; flex:1 1 260px; max-width:420px; }
+  .search-wrap input{
+    width:100%;
+    padding:9px 12px 9px 34px;
+    border-radius:9px;
+    border:1px solid var(--hairline);
+    background:var(--surface);
+    color:var(--ink);
+    font-size:14px;
+  }
+  .search-wrap input::placeholder{ color:var(--muted); }
+  .search-wrap svg{ position:absolute; left:11px; top:50%; transform:translateY(-50%); opacity:0.55; pointer-events:none; }
+  .search-wrap kbd{
+    position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    font-size:10.5px; color:var(--muted); border:1px solid var(--hairline);
+    border-radius:4px; padding:1px 5px; font-family:"JetBrains Mono",monospace;
+  }
+
+  select{
+    padding:8px 30px 8px 12px;
+    border-radius:9px;
+    border:1px solid var(--hairline);
+    background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="%235a5f6b" fill="none" stroke-width="1.4"/></svg>') no-repeat right 10px center;
+    color:var(--ink);
+    font-size:13.5px;
+    appearance:none;
+    cursor:pointer;
+  }
+
+  .result-count{ color:var(--muted); font-size:12.5px; margin-left:auto; }
+
+  .layer-group{ margin-bottom:34px; }
+  .layer-group-head{
+    display:flex; align-items:baseline; gap:9px;
+    margin-bottom:13px;
+    padding-bottom:7px;
+    border-bottom:1px solid var(--hairline);
+  }
+  .layer-group-head h2{ font-size:15px; font-weight:700; }
+  .layer-group-head .n{ color:var(--muted); font-size:12.5px; }
+
+  .card-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(258px, 1fr));
+    gap:12px;
+  }
+
+  .cap-card{
+    text-align:left;
+    background:var(--surface);
+    border:1px solid var(--hairline);
+    border-radius:12px;
+    padding:14px 15px 13px;
+    cursor:pointer;
+    display:flex; flex-direction:column; gap:8px;
+    transition:border-color .12s ease, box-shadow .12s ease, transform .08s ease;
+  }
+  .cap-card:hover{ border-color:var(--accent); box-shadow:var(--shadow-soft); }
+  .cap-card:active{ transform:scale(0.995); }
+
+  .cap-card-top{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+  .cap-card h3{ font-size:14.5px; font-weight:700; line-height:1.3; }
+  .status-chip{
+    flex-shrink:0;
+    font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em;
+    padding:3px 8px; border-radius:100px; white-space:nowrap;
+  }
+  .status-chip[data-status="live-prod"]{ color:var(--st-live); background:var(--st-live-bg); }
+  .status-chip[data-status="canary-only"]{ color:var(--st-canary); background:var(--st-canary-bg); }
+  .status-chip[data-status="flagged"]{ color:var(--st-flagged); background:var(--st-flagged-bg); }
+  .status-chip[data-status="orphaned"]{ color:var(--st-orphaned); background:var(--st-orphaned-bg); }
+  .status-chip[data-status="abandoned"]{ color:var(--st-abandoned); background:var(--st-abandoned-bg); }
+
+  .cap-card .pitch{ color:var(--muted); font-size:13px; line-height:1.45; flex:1; }
+  .cap-card-foot{ display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:var(--muted); }
+  .cap-card-foot .layer-tag{ font-family:"JetBrains Mono",monospace; }
+  .cap-card-foot .compose-n{ display:flex; align-items:center; gap:4px; }
+
+  .empty-state{ color:var(--muted); font-size:14px; padding:40px 0; text-align:center; }
+
+  /* ---------- Foundations view ---------- */
+  .kind-group{ margin-bottom:30px; }
+  .kind-group-head{
+    display:flex; align-items:baseline; gap:9px; margin-bottom:12px;
+    padding-bottom:7px; border-bottom:1px solid var(--hairline);
+  }
+  .kind-group-head h2{ font-size:15px; font-weight:700; text-transform:capitalize; }
+  .kind-group-head .n{ color:var(--muted); font-size:12.5px; }
+
+  .mech-list{ display:flex; flex-direction:column; gap:10px; }
+  .mech-row{
+    background:var(--surface); border:1px solid var(--hairline); border-radius:11px;
+    padding:14px 16px;
+  }
+  .mech-row-head{ display:flex; justify-content:space-between; gap:14px; align-items:baseline; flex-wrap:wrap; }
+  .mech-row-head h3{ font-size:14.5px; font-weight:700; }
+  .mech-row-head .mech-id{ color:var(--muted); font-size:11.5px; }
+  .mech-row .desc{ color:var(--muted); font-size:13px; margin-top:6px; line-height:1.5; max-width:70ch; }
+  .health-note{
+    display:flex; gap:8px; align-items:flex-start;
+    margin-top:10px; padding:9px 12px;
+    background:var(--st-orphaned-bg); color:var(--st-orphaned);
+    border-radius:8px; font-size:12.5px; line-height:1.5;
+  }
+  .health-note svg{ flex-shrink:0; margin-top:1px; }
+  .used-by{ margin-top:11px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .used-by .lbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-right:2px; }
+  .cap-chip{
+    border:1px solid var(--hairline); background:var(--paper); color:var(--ink);
+    font-size:12px; padding:4px 10px; border-radius:100px; cursor:pointer;
+  }
+  .cap-chip:hover{ border-color:var(--accent); color:var(--accent); }
+  .no-users{ color:var(--muted); font-size:12px; font-style:italic; }
+
+  /* ---------- Compose view ---------- */
+  .compose-wrap{ max-width:820px; }
+  .compose-pickers{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-bottom:26px; }
+  .compose-pickers select{ min-width:260px; }
+  .compose-pickers .x{ color:var(--muted); font-size:14px; }
+
+  .compose-answer{
+    font-family:"Bricolage Grotesque", sans-serif;
+    font-size:20px; font-weight:600; line-height:1.4;
+    padding:20px 22px; border-radius:14px;
+    background:var(--surface); border:1px solid var(--hairline);
+    margin-bottom:22px;
+  }
+  .compose-answer .n{ color:var(--accent); }
+  .compose-answer.none{ color:var(--muted); font-weight:500; font-size:16px; }
+
+  .shared-mechs{ display:flex; flex-direction:column; gap:9px; margin-bottom:26px; }
+  .shared-mech-item{
+    background:var(--accent-tint); border:1px solid color-mix(in srgb, var(--accent) 30%, var(--hairline));
+    border-radius:10px; padding:11px 14px;
+  }
+  .shared-mech-item .name{ font-weight:700; font-size:13.5px; }
+  .shared-mech-item .kind-tag{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; margin-left:6px; }
+  .shared-mech-item .what{ color:var(--muted); font-size:12.5px; margin-top:4px; line-height:1.5; }
+
+  .stands-on{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:640px){ .stands-on{ grid-template-columns:1fr; } }
+  .stands-on-col h4{ font-size:12.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:9px; }
+  .stands-on-col ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+  .stands-on-col li{
+    font-size:12.5px; padding:7px 10px; border-radius:7px; background:var(--surface); border:1px solid var(--hairline);
+  }
+  .stands-on-col li.shared{ border-color:var(--accent); background:var(--accent-tint); font-weight:600; }
+  .compose-placeholder{ color:var(--muted); font-size:14px; padding:30px 0; }
+
+  /* ---------- Detail panel ---------- */
+  .backdrop{
+    position:fixed; inset:0; background:rgba(10,10,12,0.42);
+    opacity:0; pointer-events:none; transition:opacity .16s ease;
+    z-index:40;
+  }
+  .backdrop.open{ opacity:1; pointer-events:auto; }
+
+  .panel{
+    position:fixed; top:0; right:0; height:100%;
+    width:min(560px, 100vw);
+    background:var(--surface);
+    border-left:1px solid var(--hairline);
+    box-shadow:var(--shadow);
+    transform:translateX(100%);
+    transition:transform .2s cubic-bezier(.2,.7,.3,1);
+    z-index:41;
+    display:flex; flex-direction:column;
+  }
+  .panel.open{ transform:translateX(0); }
+  .panel-scroll{ overflow-y:auto; padding:28px 30px 60px; flex:1; }
+  .panel-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:6px; }
+  .panel-close{
+    border:1px solid var(--hairline); background:var(--paper); border-radius:50%;
+    width:32px; height:32px; flex-shrink:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; color:var(--muted);
+  }
+  .panel-close:hover{ color:var(--ink); border-color:var(--muted); }
+  .panel h2{ font-size:21px; font-weight:700; line-height:1.3; }
+  .panel .panel-meta{ display:flex; gap:8px; align-items:center; margin:12px 0 4px; flex-wrap:wrap; }
+  .panel .panel-layer{ font-size:12px; color:var(--muted); font-family:"JetBrains Mono",monospace; }
+  .panel .pitch{ font-size:14.5px; color:var(--muted); margin:12px 0 18px; line-height:1.55; }
+
+  .panel-section{ margin-bottom:22px; }
+  .panel-section h4{ font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); margin-bottom:9px; }
+  .panel-section .body-text{ font-size:14px; line-height:1.6; }
+
+  .evidence-box{
+    background:var(--paper); border:1px solid var(--hairline); border-radius:9px;
+    padding:11px 13px; font-size:12px; line-height:1.6; color:var(--muted);
+    font-family:"JetBrains Mono",monospace; white-space:pre-wrap; word-break:break-word;
+  }
+  .meta-line{ font-size:12.5px; color:var(--muted); margin-bottom:3px; }
+  .meta-line .mono{ color:var(--ink); }
+
+  .chip-wrap{ display:flex; flex-wrap:wrap; gap:6px; }
+  .rel-chip{
+    border:1px solid var(--hairline); background:var(--paper); color:var(--ink);
+    font-size:12px; padding:5px 11px; border-radius:100px; cursor:pointer; text-align:left;
+  }
+  .rel-chip:hover{ border-color:var(--accent); color:var(--accent); }
+  .rel-chip .via{ display:block; font-size:10.5px; color:var(--muted); margin-top:1px; }
+  .rel-chip:hover .via{ color:var(--accent); opacity:0.8; }
+
+  .mono-list{
+    list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px;
+    font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--muted);
+    overflow-x:auto;
+  }
+  .mono-list li{ white-space:nowrap; }
+
+  .gaps-box{
+    background:var(--st-orphaned-bg); border-radius:9px; padding:12px 14px;
+  }
+  .gaps-box ul{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:7px; }
+  .gaps-box li{ font-size:13px; line-height:1.55; color:var(--ink); }
+
+  .panel-empty{ color:var(--muted); font-size:12.5px; font-style:italic; }
+
+  @media (max-width:720px){
+    .app{ padding:0 16px 60px; }
+    .app > header.top{ padding-left:16px; padding-right:16px; margin:0 -16px; }
+    .panel{ width:100vw; }
+    .top-row{ flex-direction:column; }
+    .counts{ align-self:flex-start; }
+  }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<div class="app">
+  <header class="top">
+    <div class="top-row">
+      <div class="titleblock">
+        <h1>Ziggy Capability Catalog</h1>
+        <div class="sub">Everything Ziggy actually ships, and how it's wired together — built from commit <span class="mono" id="built-commit"></span></div>
+      </div>
+      <div class="counts">
+        <div class="count-stat"><span class="n num" id="cap-count"></span><span class="label">Capabilities</span></div>
+        <div class="count-stat"><span class="n num" id="mech-count"></span><span class="label">Mechanisms</span></div>
+      </div>
+    </div>
+    <div class="legend-row" id="legend-row">
+      <span class="legend-label">Status</span>
+      <!-- status chips injected -->
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-view="features" class="active">Features</button>
+      <button data-view="foundations">Foundations</button>
+      <button data-view="compose">Compose</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="view active" id="view-features">
+      <div class="controls-row">
+        <div class="search-wrap">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <input type="text" id="search-input" placeholder="Search name, pitch, or what it does…" autocomplete="off">
+          <kbd>/</kbd>
+        </div>
+        <select id="layer-filter"><option value="">All layers</option></select>
+        <select id="audience-filter"><option value="">All audiences</option></select>
+        <span class="result-count num" id="result-count"></span>
+      </div>
+      <div id="feature-groups"></div>
+    </section>
+
+    <section class="view" id="view-foundations">
+      <div id="mechanism-groups"></div>
+    </section>
+
+    <section class="view" id="view-compose">
+      <div class="compose-wrap">
+        <div class="compose-pickers">
+          <select id="compose-a"><option value="">Choose a capability…</option></select>
+          <span class="x">shares foundations with</span>
+          <select id="compose-b"><option value="">Choose another…</option></select>
+        </div>
+        <div id="compose-result">
+          <div class="compose-placeholder">Pick two capabilities to see what they already share — or could.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="panel" id="panel" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="panel-scroll" id="panel-body"></div>
+</aside>
+
+<script type="application/json" id="catalog">/*__CATALOG__*/</script>
+<script>
+(function(){
+  "use strict";
+  var DATA = JSON.parse(document.getElementById('catalog').textContent);
+  var CAPS = DATA.capabilities;
+  var MECHS = DATA.mechanisms;
+  var capById = {}; CAPS.forEach(function(c){ capById[c.id] = c; });
+  var mechById = {}; MECHS.forEach(function(m){ mechById[m.id] = m; });
+
+  var STATUS_ORDER = ['live-prod','canary-only','flagged','orphaned','abandoned'];
+  var STATUS_LABEL = {
+    'live-prod':'Live in production',
+    'canary-only':'Canary only',
+    'flagged':'Behind a flag',
+    'orphaned':'Orphaned',
+    'abandoned':'Abandoned'
+  };
+  var KIND_LABEL = {
+    'trigger':'Triggers', 'condition':'Conditions', 'action':'Actions',
+    'alert-channel':'Alert channels', 'engine':'Engines', 'store':'Stores', 'bridge':'Bridges'
+  };
+  var KIND_ORDER = ['engine','store','bridge','trigger','condition','action','alert-channel'];
+
+  function esc(s){
+    if(s===undefined || s===null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ---------------- state ---------------- */
+  var state = {
+    view:'features',
+    statusFilter:new Set(),
+    deadOnly:false,
+    layer:'',
+    audience:'',
+    query:'',
+    panelStack:[]
+  };
+
+  /* ---------------- header: counts + legend ---------------- */
+  document.getElementById('built-commit').textContent = DATA.built_from_commit || '—';
+  document.getElementById('cap-count').textContent = DATA.counts.capabilities;
+  document.getElementById('mech-count').textContent = DATA.counts.mechanisms;
+
+  var legendRow = document.getElementById('legend-row');
+  STATUS_ORDER.forEach(function(st){
+    var n = DATA.counts.by_status[st] || 0;
+    var chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.dataset.status = st;
+    chip.innerHTML = '<span class="dot"></span>' + esc(STATUS_LABEL[st]) + ' <span class="cnt num">' + n + '</span>';
+    chip.addEventListener('click', function(){
+      if(state.statusFilter.has(st)) state.statusFilter.delete(st);
+      else state.statusFilter.add(st);
+      state.deadOnly = false;
+      syncChips(); renderFeatures();
+    });
+    legendRow.appendChild(chip);
+  });
+  var deadBtn = document.createElement('button');
+  deadBtn.className = 'dead-btn';
+  deadBtn.id = 'dead-btn';
+  var deadCount = (DATA.counts.by_status['orphaned']||0) + (DATA.counts.by_status['abandoned']||0);
+  deadBtn.innerHTML = '⚠ Built but not running <span class="cnt num">' + deadCount + '</span>';
+  deadBtn.addEventListener('click', function(){
+    state.deadOnly = !state.deadOnly;
+    if(state.deadOnly){ state.statusFilter = new Set(['orphaned','abandoned']); }
+    else { state.statusFilter = new Set(); }
+    syncChips(); renderFeatures();
+  });
+  legendRow.appendChild(deadBtn);
+  var clearBtn = document.createElement('button');
+  clearBtn.className = 'clear-filters';
+  clearBtn.textContent = 'Clear';
+  clearBtn.addEventListener('click', function(){
+    state.statusFilter = new Set(); state.deadOnly = false; syncChips(); renderFeatures();
+  });
+  legendRow.appendChild(clearBtn);
+
+  function syncChips(){
+    legendRow.querySelectorAll('.chip[data-status]').forEach(function(ch){
+      ch.classList.toggle('on', state.statusFilter.has(ch.dataset.status));
+    });
+    deadBtn.classList.toggle('on', state.deadOnly);
+  }
+
+  /* ---------------- tabs ---------------- */
+  document.getElementById('tabs').addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-view]');
+    if(!btn) return;
+    state.view = btn.dataset.view;
+    document.querySelectorAll('#tabs button').forEach(function(b){ b.classList.toggle('active', b===btn); });
+    document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+    document.getElementById('view-' + state.view).classList.add('active');
+  });
+
+  /* ---------------- Features view ---------------- */
+  var layers = Array.from(new Set(CAPS.map(function(c){ return c.layer; }))).sort();
+  var layerSel = document.getElementById('layer-filter');
+  layers.forEach(function(l){
+    var o = document.createElement('option'); o.value = l; o.textContent = l; layerSel.appendChild(o);
+  });
+  layerSel.addEventListener('change', function(){ state.layer = layerSel.value; renderFeatures(); });
+
+  var audSel = document.getElementById('audience-filter');
+  ['user-facing','operator','internal'].forEach(function(a){
+    var o = document.createElement('option'); o.value = a; o.textContent = a; audSel.appendChild(o);
+  });
+  audSel.addEventListener('change', function(){ state.audience = audSel.value; renderFeatures(); });
+
+  var searchInput = document.getElementById('search-input');
+  searchInput.addEventListener('input', function(){ state.query = searchInput.value.trim().toLowerCase(); renderFeatures(); });
+
+  function matchesFilters(c){
+    if(state.statusFilter.size && !state.statusFilter.has(c.status)) return false;
+    if(state.layer && c.layer !== state.layer) return false;
+    if(state.audience && c.audience !== state.audience) return false;
+    if(state.query){
+      var hay = (c.name + ' ' + c.pitch + ' ' + (c.what_it_does||'')).toLowerCase();
+      if(hay.indexOf(state.query) === -1) return false;
+    }
+    return true;
+  }
+
+  function statusChipHTML(status){
+    return '<span class="status-chip" data-status="' + esc(status) + '">' + esc(STATUS_LABEL[status]) + '</span>';
+  }
+
+  function renderFeatures(){
+    var filtered = CAPS.filter(matchesFilters);
+    document.getElementById('result-count').textContent = filtered.length + ' of ' + CAPS.length;
+
+    var byLayer = {};
+    filtered.forEach(function(c){
+      (byLayer[c.layer] = byLayer[c.layer] || []).push(c);
+    });
+    var container = document.getElementById('feature-groups');
+    container.innerHTML = '';
+
+    if(filtered.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Nothing matches. Try clearing a filter or the search.';
+      container.appendChild(empty);
+      return;
+    }
+
+    Object.keys(byLayer).sort().forEach(function(layer){
+      var caps = byLayer[layer];
+      var group = document.createElement('div');
+      group.className = 'layer-group';
+      var head = document.createElement('div');
+      head.className = 'layer-group-head';
+      head.innerHTML = '<h2>' + esc(layer) + '</h2><span class="n num">' + caps.length + '</span>';
+      group.appendChild(head);
+      var grid = document.createElement('div');
+      grid.className = 'card-grid';
+      caps.forEach(function(c){
+        var card = document.createElement('button');
+        card.className = 'cap-card';
+        card.type = 'button';
+        var n = (c.composes_with || []).length;
+        card.innerHTML =
+          '<div class="cap-card-top"><h3>' + esc(c.name) + '</h3>' + statusChipHTML(c.status) + '</div>' +
+          '<div class="pitch">' + esc(c.pitch) + '</div>' +
+          '<div class="cap-card-foot"><span class="layer-tag">' + esc(c.audience) + '</span>' +
+          '<span class="compose-n">' + n + ' link' + (n===1?'':'s') + '</span></div>';
+        card.addEventListener('click', function(){ openPanel(c.id); });
+        grid.appendChild(card);
+      });
+      group.appendChild(grid);
+      container.appendChild(group);
+    });
+  }
+
+  /* ---------------- Foundations view ---------------- */
+  function renderFoundations(){
+    var byKind = {};
+    MECHS.forEach(function(m){ (byKind[m.kind] = byKind[m.kind] || []).push(m); });
+    var container = document.getElementById('mechanism-groups');
+    container.innerHTML = '';
+    KIND_ORDER.forEach(function(kind){
+      var mechs = byKind[kind];
+      if(!mechs) return;
+      mechs.sort(function(a,b){ return (b.used_by||[]).length - (a.used_by||[]).length; });
+      var group = document.createElement('div');
+      group.className = 'kind-group';
+      var head = document.createElement('div');
+      head.className = 'kind-group-head';
+      head.innerHTML = '<h2>' + esc(KIND_LABEL[kind] || kind) + '</h2><span class="n num">' + mechs.length + '</span>';
+      group.appendChild(head);
+      var list = document.createElement('div');
+      list.className = 'mech-list';
+      mechs.forEach(function(m){
+        var row = document.createElement('div');
+        row.className = 'mech-row';
+        var usedBy = m.used_by || [];
+        var head2 = '<div class="mech-row-head"><h3>' + esc(m.name) + '</h3><span class="mech-id mono">' + esc(m.id) + '</span></div>';
+        var desc = '<div class="desc">' + esc(m.what_it_is) + '</div>';
+        var health = '';
+        if(m.health){
+          health = '<div class="health-note"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l7 12.5H1L8 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r="0.8" fill="currentColor"/></svg><span>' + esc(m.health) + '</span></div>';
+        }
+        var usedByHTML = '<div class="used-by"><span class="lbl">Used by</span>';
+        if(usedBy.length === 0){
+          usedByHTML += '<span class="no-users">nothing currently</span>';
+        } else {
+          usedBy.forEach(function(cid){
+            var cap = capById[cid];
+            if(!cap) return;
+            usedByHTML += '<button class="cap-chip" data-cap="' + esc(cid) + '">' + esc(cap.name) + '</button>';
+          });
+        }
+        usedByHTML += '</div>';
+        row.innerHTML = head2 + desc + health + usedByHTML;
+        row.querySelectorAll('.cap-chip').forEach(function(btn){
+          btn.addEventListener('click', function(){ openPanel(btn.dataset.cap); });
+        });
+        list.appendChild(row);
+      });
+      group.appendChild(list);
+      container.appendChild(group);
+    });
+  }
+
+  /* ---------------- Compose view ---------------- */
+  var composeA = document.getElementById('compose-a');
+  var composeB = document.getElementById('compose-b');
+  var capsSorted = CAPS.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+  capsSorted.forEach(function(c){
+    var oa = document.createElement('option'); oa.value = c.id; oa.textContent = c.name; composeA.appendChild(oa);
+    var ob = document.createElement('option'); ob.value = c.id; ob.textContent = c.name; composeB.appendChild(ob);
+  });
+  composeA.addEventListener('change', renderCompose);
+  composeB.addEventListener('change', renderCompose);
+
+  function renderCompose(){
+    var out = document.getElementById('compose-result');
+    var a = capById[composeA.value], b = capById[composeB.value];
+    if(!a || !b){
+      out.innerHTML = '<div class="compose-placeholder">Pick two capabilities to see what they already share — or could.</div>';
+      return;
+    }
+    if(a.id === b.id){
+      out.innerHTML = '<div class="compose-placeholder">Pick two different capabilities.</div>';
+      return;
+    }
+    var usesA = a.uses || [], usesB = b.uses || [];
+    var setB = new Set(usesB);
+    var shared = usesA.filter(function(id){ return setB.has(id); });
+
+    var html = '';
+    if(shared.length > 0){
+      html += '<div class="compose-answer"><span class="n num">' + a.name + '</span> and <span class="n num">' + b.name + '</span> already share <span class="n num">' + shared.length + '</span> foundation' + (shared.length===1?'':'s') + '.</div>';
+      html += '<div class="shared-mechs">';
+      shared.forEach(function(mid){
+        var m = mechById[mid];
+        if(!m) return;
+        html += '<div class="shared-mech-item"><span class="name">' + esc(m.name) + '</span><span class="kind-tag">' + esc(m.kind) + '</span><div class="what">' + esc(m.what_it_is) + '</div></div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="compose-answer none">' + esc(a.name) + ' and ' + esc(b.name) + ' share no foundations today — anything connecting them would be new work.</div>';
+    }
+
+    html += '<div class="stands-on">';
+    [['A', a, usesA], ['B', b, usesB]].forEach(function(pair){
+      var cap = pair[1], uses = pair[2];
+      html += '<div class="stands-on-col"><h4>' + esc(cap.name) + ' stands on</h4><ul>';
+      if(uses.length === 0){
+        html += '<li>Nothing catalogued</li>';
+      } else {
+        uses.forEach(function(mid){
+          var m = mechById[mid];
+          var isShared = shared.indexOf(mid) !== -1;
+          html += '<li class="' + (isShared?'shared':'') + '">' + esc(m ? m.name : mid) + '</li>';
+        });
+      }
+      html += '</ul></div>';
+    });
+    html += '</div>';
+
+    out.innerHTML = html;
+  }
+
+  /* ---------------- Detail panel ---------------- */
+  var panel = document.getElementById('panel');
+  var panelBody = document.getElementById('panel-body');
+  var backdrop = document.getElementById('backdrop');
+
+  function relChip(list, kind){
+    if(!list || list.length === 0) return '<span class="panel-empty">None catalogued.</span>';
+    var html = '<div class="chip-wrap">';
+    list.forEach(function(item){
+      if(kind === 'mech'){
+        var m = mechById[item];
+        if(!m) return;
+        html += '<button class="rel-chip" data-cap-target="mech" data-id="' + esc(item) + '">' + esc(m.name) + '</button>';
+      } else {
+        var cap = capById[item.id];
+        if(!cap) return;
+        var viaNames = (item.via||[]).map(function(vid){ var m = mechById[vid]; return m ? m.name : vid; }).join(', ');
+        html += '<button class="rel-chip" data-cap-target="cap" data-id="' + esc(item.id) + '">' + esc(cap.name) + (viaNames ? '<span class="via">via ' + esc(viaNames) + '</span>' : '') + '</button>';
+      }
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function monoList(items){
+    if(!items || items.length === 0) return '<span class="panel-empty">None catalogued.</span>';
+    return '<ul class="mono-list">' + items.map(function(i){ return '<li>' + esc(i) + '</li>'; }).join('') + '</ul>';
+  }
+
+  function renderPanelFor(id){
+    var c = capById[id];
+    if(!c){ return; }
+    var meta = [];
+    if(c.first_shipped) meta.push('<span class="meta-line">First shipped <span class="mono">' + esc(c.first_shipped) + '</span></span>');
+    if(c.commit) meta.push('<span class="meta-line">Commit <span class="mono">' + esc(c.commit) + '</span></span>');
+    if(c.territory) meta.push('<span class="meta-line">Territory <span class="mono">' + esc(c.territory) + '</span></span>');
+
+    var html = '';
+    html += '<div class="panel-head"><h2>' + esc(c.name) + '</h2>' +
+            '<button class="panel-close" id="panel-close" aria-label="Close">' +
+            '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>';
+    html += '<div class="panel-meta">' + statusChipHTML(c.status) + '<span class="panel-layer">' + esc(c.layer) + ' · ' + esc(c.audience) + '</span></div>';
+    html += '<div class="pitch">' + esc(c.pitch) + '</div>';
+
+    html += '<div class="panel-section"><h4>What it does</h4><div class="body-text">' + esc(c.what_it_does) + '</div></div>';
+
+    if(meta.length){
+      html += '<div class="panel-section"><h4>Provenance</h4>' + meta.join('') + '</div>';
+    }
+
+    html += '<div class="panel-section"><h4>Evidence for this status</h4><div class="evidence-box">' + esc(c.status_evidence || '—') + '</div></div>';
+
+    html += '<div class="panel-section"><h4>Stands on (' + (c.uses||[]).length + ')</h4>' + relChip(c.uses, 'mech') + '</div>';
+
+    html += '<div class="panel-section"><h4>Composes with (' + (c.composes_with||[]).length + ')</h4>' + relChip(c.composes_with, 'compose') + '</div>';
+
+    if(c.entry_points && c.entry_points.length){
+      html += '<div class="panel-section"><h4>Entry points</h4>' + monoList(c.entry_points) + '</div>';
+    }
+    html += '<div class="panel-section"><h4>Surfaces</h4>' + monoList(c.surfaces) + '</div>';
+    if(c.tests && c.tests.length){
+      html += '<div class="panel-section"><h4>Tests</h4>' + monoList(c.tests) + '</div>';
+    }
+
+    if(c.known_gaps && c.known_gaps.length){
+      html += '<div class="panel-section"><h4>Known gaps</h4><div class="gaps-box"><ul>' +
+        c.known_gaps.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
+    }
+
+    panelBody.innerHTML = html;
+    panelBody.scrollTop = 0;
+
+    document.getElementById('panel-close').addEventListener('click', closePanel);
+    panelBody.querySelectorAll('.rel-chip').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var target = btn.dataset.capTarget, id2 = btn.dataset.id;
+        if(target === 'mech'){ openMechInPanel(id2); }
+        else { openPanel(id2); }
+      });
+    });
+  }
+
+  function openMechInPanel(mid){
+    var m = mechById[mid];
+    if(!m) return;
+    var usedBy = m.used_by || [];
+    var html = '';
+    html += '<div class="panel-head"><h2>' + esc(m.name) + '</h2>' +
+            '<button class="panel-close" id="panel-close" aria-label="Close">' +
+            '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>';
+    html += '<div class="panel-meta"><span class="status-chip" data-status="flagged" style="background:var(--accent-tint);color:var(--accent)">' + esc(m.kind) + '</span><span class="panel-layer">Foundation / mechanism</span></div>';
+    html += '<div class="panel-section"><h4>What it is</h4><div class="body-text">' + esc(m.what_it_is) + '</div></div>';
+    if(m.domain_concept){
+      html += '<div class="panel-section"><h4>Note</h4><div class="body-text">Domain concept — a shared idea, not just plumbing.</div></div>';
+    }
+    if(m.health){
+      html += '<div class="panel-section"><h4>Health</h4><div class="health-note"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l7 12.5H1L8 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r="0.8" fill="currentColor"/></svg><span>' + esc(m.health) + '</span></div></div>';
+    }
+    html += '<div class="panel-section"><h4>Surfaces</h4>' + monoList(m.surfaces) + '</div>';
+    html += '<div class="panel-section"><h4>Used by (' + usedBy.length + ')</h4>' + relChip(usedBy.map(function(id){ return {id:id, via:[]}; }), 'compose') + '</div>';
+
+    panelBody.innerHTML = html;
+    panelBody.scrollTop = 0;
+    document.getElementById('panel-close').addEventListener('click', closePanel);
+    panelBody.querySelectorAll('.rel-chip').forEach(function(btn){
+      btn.addEventListener('click', function(){ openPanel(btn.dataset.id); });
+    });
+  }
+
+  function openPanel(id){
+    renderPanelFor(id);
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden','false');
+    backdrop.classList.add('open');
+  }
+  function closePanel(){
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden','true');
+    backdrop.classList.remove('open');
+  }
+  backdrop.addEventListener('click', closePanel);
+
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){ closePanel(); return; }
+    if(e.key === '/' && document.activeElement !== searchInput){
+      e.preventDefault();
+      state.view = 'features';
+      document.querySelectorAll('#tabs button').forEach(function(b){ b.classList.toggle('active', b.dataset.view==='features'); });
+      document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+      document.getElementById('view-features').classList.add('active');
+      searchInput.focus();
+    }
+  });
+
+  /* ---------------- init ---------------- */
+  syncChips();
+  renderFeatures();
+  renderFoundations();
+})();
+</script>
