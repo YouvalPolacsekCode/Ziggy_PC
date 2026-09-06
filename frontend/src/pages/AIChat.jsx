@@ -21,6 +21,11 @@ import BundlePreviewCard from '../components/automations/BundlePreviewCard'
 // browsers. MediaRecorder records strictly until WE call .stop(), which is the
 // behavior the product needs. The backend transcribes via /api/voice (Whisper).
 
+// The phrase that flips diagnostic mode on the server. Sent verbatim through
+// the normal chat path when the header badge is tapped, so the exchange lands
+// on the thread exactly as if the user had said it.
+const DIAG_TOGGLE_PHRASE = 'claude ziggy'
+
 // ── Voice wave ────────────────────────────────────────────────────────────────
 function VoiceWave({ active, size = 22 }) {
   return (
@@ -167,7 +172,9 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
           unicodeBidi: 'plaintext',
         }}
       >
-        <p style={{ margin: 0, color: isError ? 'var(--err)' : undefined }}>{msg.text}</p>
+        {/* pre-wrap: replies can be several sentences with line breaks and
+            short lists; keep them as the server shaped them (no markdown). */}
+        <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: isError ? 'var(--err)' : undefined }}>{msg.text}</p>
         <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: 'end' }}>
           {formatTime(msg.ts)}
         </p>
@@ -436,7 +443,7 @@ export default function AIChat() {
   const location  = useLocation()
   const navigate  = useNavigate()
   const { addToast }                              = useUIStore()
-  const { messages, addMessage, clearMessages }   = useChatStore()
+  const { messages, addMessage, clearMessages, mode, setMode } = useChatStore()
   // Durable, resumable threads for the whole chat (persist across reload/navigation).
   const { threadId, threads, newThread, switchThread, refreshList } = useChatThreads()
   // Direct setter so the bundle accept/discard handlers can replace the
@@ -474,6 +481,23 @@ export default function AIChat() {
     setRehearsal(next)
     try { await patchRehearsal(next) } catch { setRehearsal(!next) }
   }
+
+  // Diagnostic mode is owned by the server (toggled by saying "claude ziggy");
+  // a reply carrying data.kind === 'mode_changed' is how we learn it flipped.
+  // The store mirrors it per thread so the badge survives reload.
+  const noteModeChange = (res) => {
+    if (res?.data?.kind === 'mode_changed') setMode(res.data.mode, threadId)
+  }
+  // Badge tap: drop the badge immediately, then send the toggle phrase through
+  // the ordinary send path so the server flips too (and the exchange is on
+  // the thread like any other turn).
+  const onLeaveDiagnostic = () => {
+    setMode(null, threadId)
+    handleSend(DIAG_TOGGLE_PHRASE)
+  }
+  // Voice output prefers the reply's spoken rendering when the server sent
+  // one — long, list-shaped answers read badly aloud verbatim.
+  const spokenOf = (res) => res?.data?.spoken || res?.reply || ''
 
   const [input,     setInput]     = useState('')
   const [showThreads, setShowThreads] = useState(false)   // side drawer of past conversations
@@ -1114,8 +1138,9 @@ export default function AIChat() {
     setThinkingMode(isProModeOutcome(t) ? 'pro' : 'chat')
     setThinking(true); setOrbState('thinking')
     try {
-      const res = await sendChat(t, historyForApi, 'web', threadId)
+      const res = await sendChat(t, historyForApi, 'web', threadId, mode)
       if (fromInput) setInput('')
+      noteModeChange(res)
       // Build action chip labels from the response
       const actions = res.actions?.map(a => {
         if (typeof a === 'string') return a
@@ -1133,7 +1158,7 @@ export default function AIChat() {
       addMessage('assistant', res.reply || '…', res.ok !== false,
                  bundle ? { actions, bundle } : { actions })
       // Rehearsal is for hearing the voice: every reply is spoken, typed or not.
-      if (rehearsal && res.reply) playTtsReply(res.reply, lang)
+      if (rehearsal && res.reply) playTtsReply(spokenOf(res), lang)
       refreshList()   // keep the thread switcher's title/preview fresh
       // Pattern suggestion card
       if (res.pattern_suggestion) {
@@ -1163,7 +1188,7 @@ export default function AIChat() {
       const res = await sendDirectIntent(qa.intent, qa.params)
       const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
       addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
-      if (rehearsal && res.reply) playTtsReply(res.reply, lang)
+      if (rehearsal && res.reply) playTtsReply(spokenOf(res), lang)
       setOrbState('speaking')
       // Don't clobber a fresh 'listening' state if the user starts another
       // hold-to-talk before this 2.5 s timer fires.
@@ -1468,7 +1493,8 @@ export default function AIChat() {
       setThinkingMode(isProModeOutcome(transcription) ? 'pro' : 'chat')
       setThinking(true); setOrbState('thinking')
       try {
-        const res = await sendChat(transcription, historyForApi, 'web', threadId)
+        const res = await sendChat(transcription, historyForApi, 'web', threadId, mode)
+        noteModeChange(res)
         const actions = res.actions?.map(a => {
           if (typeof a === 'string') return a
           if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
@@ -1490,7 +1516,7 @@ export default function AIChat() {
         // user's utterance, not the UI locale — answers should match the
         // question's language even if the user types Hebrew in an English
         // UI or vice versa.
-        playTtsReply(res.reply || '', detectedLang)
+        playTtsReply(spokenOf(res), detectedLang)
       } catch (e) {
         const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : t('chat.somethingWrongShort')
         addMessage('assistant', msg, false)
@@ -1633,7 +1659,8 @@ export default function AIChat() {
     setThinkingMode(isProModeOutcome(dictated) ? 'pro' : 'chat')
     setThinking(true); setOrbState('thinking')
     try {
-      const res = await sendChat(dictated, historyForApi)
+      const res = await sendChat(dictated, historyForApi, 'web', threadId, mode)
+      noteModeChange(res)
       const actions = res.actions?.map(a => {
         if (typeof a === 'string') return a
         if (a.entity && a.service) return `${a.entity.split('.')[1]?.replace(/_/g, ' ')} → ${a.service.replace(/_/g, ' ')}`
@@ -1651,7 +1678,7 @@ export default function AIChat() {
           isPattern: true,
         })
       }
-      playTtsReply(res.reply || '', detectedLang)
+      playTtsReply(spokenOf(res), detectedLang)
     } catch (e) {
       const msg = e?.message && !e.message.startsWith('HTTP') ? e.message : t('chat.somethingWrongShort')
       addMessage('assistant', msg, false)
@@ -1778,6 +1805,26 @@ export default function AIChat() {
             </button>
           )}
 
+          {/* Diagnostic mode — deeper "why did that happen" answers. Server-
+              owned; shown only while on. Tap = leave (sends the toggle phrase). */}
+          {mode === 'diagnostic' && (
+            <button
+              onClick={onLeaveDiagnostic}
+              title={t('chat.diagModeTitle')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', borderRadius: 999,
+                background: 'color-mix(in srgb, var(--accent) 12%, var(--surface))',
+                border: '0.5px solid color-mix(in srgb, var(--accent) 45%, var(--line))',
+                fontSize: 11, fontWeight: 700, color: 'var(--accent)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
+              {t('chat.diagModeOn')}
+            </button>
+          )}
+
           {/* Wake-word master toggle — controls the backend always-on listener,
               NOT the hold-to-talk mic on this page. Hidden when wake-word is
               not configured/working; in that case only push-to-talk is in play. */}
@@ -1850,6 +1897,27 @@ export default function AIChat() {
           )}
         </div>
       </div>
+
+      {/* ── Rehearsal banner ── full-width companion to the header chip. The
+          chip can be missed on a phone; a "nothing here touches the home"
+          strip above the conversation cannot. Same toggle as the chip. */}
+      {rehearsal && (
+        <button
+          onClick={onToggleRehearsal}
+          title={t('chat.rehearsalOnTitle')}
+          style={{
+            display: 'block', width: '100%', flexShrink: 0,
+            paddingBlock: 6, paddingInline: 18,
+            background: 'color-mix(in srgb, var(--warn, #b3541e) 10%, var(--surface))',
+            borderBlockEnd: '0.5px solid color-mix(in srgb, var(--warn, #b3541e) 50%, var(--line))',
+            borderInline: 'none', borderBlockStart: 'none',
+            color: 'var(--warn, #b3541e)', fontSize: 12, fontWeight: 600,
+            textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          {t('chat.rehearsalBanner')}
+        </button>
+      )}
 
       {/* ── Threads drawer (slide-over, ChatGPT/Claude style) ── */}
       {showThreads && (

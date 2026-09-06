@@ -288,8 +288,14 @@ export const sendIntent = (text, source = 'web') => post('/intent', { text, sour
 // Chat mode — always routes through GPT with session history and autonomous web search.
 // When threadId is set, the turn is durable + runs in the background server-side and
 // the reply arrives over WS (thread_message) rather than in this response.
-export const sendChat = (text, chatHistory = [], source = 'web', threadId = null) =>
-  post('/chat', { text, chat_history: chatHistory, source, ...(threadId ? { thread_id: threadId } : {}) })
+// `mode` ("diagnostic" | null) is the chat's thinking mode; only sent when set so
+// callers that predate it keep producing the exact same request body.
+export const sendChat = (text, chatHistory = [], source = 'web', threadId = null, mode = null) =>
+  post('/chat', {
+    text, chat_history: chatHistory, source,
+    ...(threadId ? { thread_id: threadId } : {}),
+    ...(mode ? { mode } : {}),
+  })
 
 // Persistent, resumable chat threads (server-side; see services/chat_threads.py)
 export const createThread = () => post('/threads', {})

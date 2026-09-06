@@ -8,6 +8,7 @@ export const useChatStore = create((set) => ({
   threadId: null,          // active durable thread (null → legacy ephemeral mode)
   threads: [],             // list for the switcher: [{thread_id,title,status,updated_at,preview}]
   status: 'idle',          // active thread: idle | running | error
+  mode: null,              // 'diagnostic' | null — per-thread; the server owns it, we mirror it
 
   addMessage: (role, text, ok = true, extras = {}) =>
     set((s) => ({
@@ -18,6 +19,19 @@ export const useChatStore = create((set) => ({
   setThreadId: (threadId) => set({ threadId }),
   setThreads: (threads) => set({ threads }),
   setStatus: (status) => set({ status }),
+  // Mirrors the thread's mode. Persisted per thread in localStorage so a reload
+  // shows the right badge before (or without) the server round-trip; the
+  // server's value wins whenever a thread is (re)loaded.
+  setMode: (mode, threadId = null) => {
+    const m = mode === 'diagnostic' ? 'diagnostic' : null
+    if (threadId) {
+      try {
+        if (m) localStorage.setItem(`ziggy_chat_mode:${threadId}`, m)
+        else localStorage.removeItem(`ziggy_chat_mode:${threadId}`)
+      } catch { /* private window / storage blocked — store still updates */ }
+    }
+    set({ mode: m })
+  },
 
   // Replace the visible message list from a server thread payload (thread.messages),
   // mapping the server shape {role, content, data, ts} → the UI shape {role, text, data}.

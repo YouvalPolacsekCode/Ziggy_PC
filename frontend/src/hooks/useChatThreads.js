@@ -6,6 +6,13 @@ import { applyThreadTitle } from '../lib/threadTitles'
 
 const LS_KEY = 'ziggy_active_thread'
 
+// Per-thread mode cache (written by chatStore.setMode). Read only as a
+// pre-fetch hint so the badge doesn't flash off→on while the thread loads.
+function cachedMode(tid) {
+  try { return localStorage.getItem(`ziggy_chat_mode:${tid}`) === 'diagnostic' ? 'diagnostic' : null }
+  catch { return null }
+}
+
 /**
  * Durable, resumable chat threads for the whole app.
  *
@@ -23,7 +30,7 @@ const LS_KEY = 'ziggy_active_thread'
  */
 export function useChatThreads() {
   const {
-    threadId, threads, setThreadId, setThreads, setStatus, loadThreadMessages,
+    threadId, threads, setThreadId, setThreads, setStatus, setMode, loadThreadMessages,
   } = useChatStore()
 
   const refreshList = async () => {
@@ -41,10 +48,12 @@ export function useChatThreads() {
         }
         if (cancelled) return
         setThreadId(tid)
+        setMode(cachedMode(tid), tid)
         try {
           const th = await getThread(tid)
           loadThreadMessages(th.messages)
           setStatus(th.status)
+          if ('mode' in th) setMode(th.mode, tid)
         } catch { /* new/empty thread */ }
         refreshList()
       } catch { /* offline — legacy ephemeral chat still works */ }
@@ -80,16 +89,19 @@ export function useChatThreads() {
     setThreadId(tid)
     loadThreadMessages([])
     setStatus('idle')
+    setMode(null, tid)          // a fresh thread always starts in the normal mode
     refreshList()
   }
 
   const switchThread = async (tid) => {
     localStorage.setItem(LS_KEY, tid)
     setThreadId(tid)
+    setMode(cachedMode(tid), tid)
     try {
       const th = await getThread(tid)
       loadThreadMessages(th.messages)
       setStatus(th.status)
+      if ('mode' in th) setMode(th.mode, tid)
     } catch { loadThreadMessages([]) }
   }
 
