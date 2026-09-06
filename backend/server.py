@@ -604,7 +604,13 @@ app.include_router(invite_router)
 _auth = [Depends(get_current_user)]
 # Agent-first: the action registry (core/actions) behind the app and /mcp.
 from backend.routers.actions_router import router as actions_router  # noqa: E402
+from backend.routers.external_tokens_router import router as external_tokens_router  # noqa: E402
+from backend.routers.mcp_router import router as mcp_router  # noqa: E402
 app.include_router(actions_router,       dependencies=_auth)
+app.include_router(external_tokens_router, dependencies=_auth)
+# MCP for external agents — deliberately WITHOUT the global session auth: its
+# credential is a zgy_ bearer token (services/external_tokens) it verifies itself.
+app.include_router(mcp_router)
 app.include_router(intent_router,        dependencies=_auth)
 app.include_router(device_router,        dependencies=_auth)
 app.include_router(ha_router,            dependencies=_auth)
