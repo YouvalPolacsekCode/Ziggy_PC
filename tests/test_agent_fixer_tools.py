@@ -342,8 +342,9 @@ async def test_chat_route_hands_the_authenticated_caller_to_the_agent(monkeypatc
 
     seen = {}
 
-    async def fake_run_agent(text, history, *, channel="chat", actor=None):
+    async def fake_run_agent(text, history, *, channel="chat", actor=None, mode=None):
         seen["actor"] = actor
+        seen["mode"] = mode
         return {"ok": True, "message": "done"}
     monkeypatch.setattr(runner, "run_agent", fake_run_agent)
 
