@@ -83,6 +83,11 @@ def request(method: str, url: str, token: str | None = None, body: dict | None =
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    # The relay proxy forwards our User-Agent to the hub's Cloudflare tunnel,
+    # and Cloudflare answers "Python-urllib/*" with a 403 HTML page before the
+    # hub ever sees the request. Every repair verb went that way, so --fix
+    # could never reach a home. Identify as ourselves instead.
+    req.add_header("User-Agent", "ziggy-fleet-health/1.0")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
