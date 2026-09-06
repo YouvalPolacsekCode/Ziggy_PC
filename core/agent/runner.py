@@ -178,7 +178,10 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                     args_for_card = json.loads(tc.function.arguments or "{}")
                 except Exception:
                     args_for_card = {}
-                await _announce(n, args_for_card, r, actor=actor)
+                try:
+                    await _announce(n, args_for_card, r, actor=actor, source=channel)
+                except Exception as e:  # a broadcast hiccup must never fail a turn
+                    log_error(f"[agent] announce failed: {e}")
                 rd = r.get("data") if isinstance(r.get("data"), dict) else None
                 if rd and rd.get("kind") in _CARD_KINDS:
                     card = dict(rd)
