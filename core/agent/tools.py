@@ -553,7 +553,14 @@ def _exec_query_devices(args: dict, directory: dict) -> dict:
          "state": d["state"], "on": d["on"], "he_noun": d["he_noun"], "room_he": d["room_he"]}
         for d in devices
     ]
-    return {"ok": True, "message": f"{len(summary)} devices", "devices": summary}
+    # `devices` (no ids) is what the model reads; `data` (with ids) is what
+    # the chat card renders with live toggles. The sanitizer keeps ids out
+    # of the reply text either way.
+    card = [{**s, "entity_id": d["entity_id"]} for s, d in zip(summary, devices)
+            if not d.get("ir")]
+    return {"ok": True, "message": f"{len(summary)} devices", "devices": summary,
+            "data": {"kind": "device_list", "devices": card,
+                     "room": room or None, "only_on": only_on}}
 
 
 def _exec_room_occupancy(args: dict, directory: dict) -> dict:
@@ -803,6 +810,7 @@ def _exec_what_can_ziggy_do(args: dict) -> dict:
     return {"ok": True, "message": f"{len(items)} capabilities",
             "capabilities": items,
             "overview": general,
+            "data": {"kind": "capabilities", "capabilities": items, "overview": general},
             "note": ("These are Ziggy's live capabilities; answer in your own words, "
                      "grouped naturally, without listing them all. "
                      "status 'live' means it works in this home today; anything else "
@@ -823,9 +831,11 @@ def _exec_recent_activity(args: dict, directory: dict) -> dict:
         d = {**directory, "devices": [x for x in (directory.get("devices") or []) if (x.get("room") or "") == target]}
     text = _ctx.recent_text(d, minutes=int(hours * 60))
     if not text:
-        return {"ok": True, "message": "nothing changed in that window", "changes": []}
-    return {"ok": True, "message": "changes (newest first)",
-            "changes": [ln.strip() for ln in text.splitlines()]}
+        return {"ok": True, "message": "nothing changed in that window", "changes": [],
+                "data": {"kind": "recent_activity", "changes": [], "hours": hours}}
+    changes = [ln.strip() for ln in text.splitlines()]
+    return {"ok": True, "message": "changes (newest first)", "changes": changes,
+            "data": {"kind": "recent_activity", "changes": changes, "hours": hours}}
 
 
 def _room_label(dev: dict, lang: str) -> str | None:
@@ -976,10 +986,17 @@ async def _exec_passthrough(name: str, args: dict) -> dict:
     from core.action_parser import handle_intent
     intent = _PASSTHROUGH[name]
     res = await handle_intent({"intent": intent, "params": dict(args), "source": "agent"})
+    data = res.get("data")
+    if name == "list_automations" and isinstance(data, dict) and isinstance(data.get("automations"), list):
+        # Card-shaped copy for the chat (ids stay internal to the app's switches).
+        data = {"kind": "automations", "automations": [
+            {"id": a.get("id"), "name": a.get("name"), "enabled": bool(a.get("enabled", True)),
+             "last_triggered": a.get("last_triggered")}
+            for a in data["automations"] if isinstance(a, dict)]}
     return {
         "ok": bool(res.get("ok")),
         "message": res.get("message", ""),
-        "data": res.get("data"),
+        "data": data,
     }
 
 

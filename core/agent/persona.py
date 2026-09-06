@@ -201,6 +201,9 @@ def build_system_prompt(ctx: dict[str, Any]) -> str:
         parts.append("AUTOMATIONS AND ROUTINES (name | on/off | last ran):\n" + ctx["automations_text"])
     if ctx.get("recent_text"):
         parts.append("CHANGED IN THE LAST HOUR (newest first):\n" + ctx["recent_text"])
+    if ctx.get("app_actions_text"):
+        parts.append("WHAT PEOPLE DID IN THE APP RECENTLY (newest first; 'via app' = a tap "
+                     "in the app, 'via mcp' = an outside assistant):\n" + ctx["app_actions_text"])
     parts.append(
         "DEVICE DIRECTORY (real names + rooms + current state; ids are for your tool "
         "calls only, never shown to the user):\n" + (ctx.get("directory_text") or "NO DEVICES FOUND.")

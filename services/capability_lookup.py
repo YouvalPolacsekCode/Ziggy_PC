@@ -17,6 +17,10 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+# docs/ is NOT copied into the hub image (.dockerignore), so the shipped copy
+# lives under services/data/. The docs copy is the generator's output and the
+# one humans read; scripts/catalog keeps both in step (see tests).
+_SHIPPED_PATH = Path(__file__).resolve().parent / "data" / "capability-catalog.json"
 _CATALOG_PATH = Path(__file__).resolve().parent.parent / "docs" / "capability-catalog.json"
 
 # Statuses that mean "this works in a customer home today".
@@ -39,9 +43,14 @@ _WORD = re.compile(r"[a-z0-9]+|[א-ת]+")
 
 @lru_cache(maxsize=1)
 def _load() -> list[dict]:
-    try:
-        data = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
-    except Exception:
+    data = None
+    for p in (_SHIPPED_PATH, _CATALOG_PATH):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            break
+        except Exception:
+            continue
+    if data is None:
         return []
     caps = data.get("capabilities") if isinstance(data, dict) else data
     return [c for c in (caps or []) if isinstance(c, dict)]

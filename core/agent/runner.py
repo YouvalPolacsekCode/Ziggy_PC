@@ -34,6 +34,14 @@ from core.agent.output import render_device_confirmation, sanitize_reply, spoken
 
 # A real conversation can need several tool rounds (diagnose → fix → verify).
 _MAX_ITERS = 6
+
+try:  # agent-first sync (core/actions); the runner must work without it in tests
+    from core.actions.registry import announce as _announce, CARD_KINDS as _CARD_KINDS
+except Exception:  # pragma: no cover
+    _CARD_KINDS = frozenset()
+
+    async def _announce(*a, **k):
+        return None
 # Output budgets per channel. Chat may explain; voice is read aloud.
 _MAX_TOKENS = {"chat": 900, "voice": 320}
 
@@ -161,6 +169,22 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
             bus.emit("intent", VERBOSE, "agent_tools_executed",
                      tools=[n for n, _ in iter_results],
                      ok=[bool(r.get("ok")) for _, r in iter_results])
+
+            # Agent → app sync: every tool the agent ran is announced exactly
+            # like an app action, so open screens react (agent-first §2).
+            # A renderable tool result becomes the turn's chat card (§3).
+            for tc, (n, r) in zip(msg.tool_calls, iter_results):
+                try:
+                    args_for_card = json.loads(tc.function.arguments or "{}")
+                except Exception:
+                    args_for_card = {}
+                await _announce(n, args_for_card, r, actor=actor)
+                rd = r.get("data") if isinstance(r.get("data"), dict) else None
+                if rd and rd.get("kind") in _CARD_KINDS:
+                    card = dict(rd)
+                    if "entity_id" in args_for_card and "entity_id" not in card:
+                        card["entity_id"] = args_for_card["entity_id"]
+                    data["card"] = card
 
             # Pro Mode bundle preview: if a tool returned the v1 preview-card
             # envelope, surface it verbatim so the app renders BundlePreviewCard

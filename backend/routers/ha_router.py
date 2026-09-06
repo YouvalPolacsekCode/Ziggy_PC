@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 
 from backend.ws_manager import manager
@@ -383,7 +383,8 @@ class HaControlBody(BaseModel):
 
 
 @router.post("/api/ha/control")
-async def ha_control(body: HaControlBody, background_tasks: BackgroundTasks):
+async def ha_control(body: HaControlBody, background_tasks: BackgroundTasks,
+                     request: Request = None):
     """Fire-and-forget device control.
 
     HA's `switch.turn_on` for Switcher (and many Wi-Fi devices) blocks until
@@ -396,6 +397,17 @@ async def ha_control(body: HaControlBody, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=422, detail="action must be 'turn_on' or 'turn_off'")
 
     new_state = "on" if body.action == "turn_on" else "off"
+
+    # App → agent sync: a tile tap is something the agent should know about
+    # next turn ("you turned it on from the app at 21:04").
+    try:
+        from services import ui_journal
+        _u = getattr(getattr(request, "state", None), "user", None) if request is not None else None
+        _actor = f"person:{_u['username']}" if isinstance(_u, dict) and _u.get("username") else None
+        ui_journal.record("control_device", {"entity_id": body.entity_id, "action": new_state},
+                          actor=_actor, source=body.source or "app", label="tile")
+    except Exception:
+        pass
 
     # Optimistic broadcast — FE clients update before HA confirms. Shape
     # must match ha_subscriber's state_changed events (type/new_state/attrs)

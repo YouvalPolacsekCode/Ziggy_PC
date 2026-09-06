@@ -170,6 +170,19 @@ def memory_text() -> str:
     return out[:_MAX_MEMORY_CHARS]
 
 
+def app_actions_text(directory: dict, hours: float = 24.0) -> str:
+    """What people did in the app recently (device names, never ids)."""
+    try:
+        from services import ui_journal
+        rows = ui_journal.recent(hours=hours, limit=12)
+        if not rows:
+            return ""
+        names = {d["entity_id"]: d["name"] for d in (directory.get("devices") or [])}
+        return ui_journal.format_for_prompt(rows, names)
+    except Exception:
+        return ""
+
+
 def entitlements_map() -> dict[str, bool]:
     try:
         from services import entitlements
@@ -203,6 +216,7 @@ def build_context(directory: dict, *, lang: str, channel: str,
     for key, fn in (("occupancy_text", lambda: occupancy_text(directory)),
                     ("automations_text", automations_text),
                     ("recent_text", lambda: recent_text(directory)),
+                    ("app_actions_text", lambda: app_actions_text(directory)),
                     ("memory_text", memory_text)):
         try:
             ctx[key] = fn()
