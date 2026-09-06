@@ -20,13 +20,13 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useWsConnected, useWsMessages } from '../hooks/useWebSocket'
 import { useT } from '../lib/i18n'
 import { getTabletId, setTabletId as persistTabletId, getTabletToken, setTabletToken } from '../lib/hubTablet'
-import { isWallMode } from '../lib/wallMode'
+import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { getWallPolicy, wallTabletHeartbeat, wallWentIdle, getWeather, setWallMode, adoptThisWallTablet } from '../lib/api'
 import { useCapabilityGuard } from '../wall/useWallControl'
 import { deviceFacts } from '../lib/devices'
 import RoomsRail from '../wall/RoomsRail'
 import WallGrid from '../wall/WallGrid'
-import { WallHeader, ConnectionChip, WallToast, IdleScreen, PinGate, ModulePicker } from '../wall/WallChrome'
+import { WallHeader, ConnectionChip, WallToast, IdleScreen, PinGate, ModulePicker, ExitWallSheet } from '../wall/WallChrome'
 import { AutomationsView, DevicesModal } from '../wall/WallViews'
 import { PairBanner, PairDialog } from '../wall/PairPanel'
 import { DevicePageModal } from '../wall/DevicePageModal'
@@ -85,6 +85,29 @@ export default function Wall() {
   useEffect(() => () => clearTimeout(toastTimer.current), [])
 
   const guard = useCapabilityGuard(policy, showToast)
+
+  // ── leaving wall mode ────────────────────────────────────────────────────
+  // Only offered when THIS device is set to wall mode — a plain browser visit
+  // to /wall has nothing to leave. Behind the tablet's PIN when one is set
+  // (same elevation flow as locks/cameras), then an in-app confirm. Exiting
+  // clears the device-local flag and boots the regular app; the tablet's
+  // pairing and policy are left as they are, so switching wall mode back on
+  // from Settings restores exactly the same panel.
+  const isElevated = useWallStore((s) => s.isElevated)
+  const requestPin = useWallStore((s) => s.requestPin)
+  const [exitOpen, setExitOpen] = useState(false)
+  const requestExit = useCallback(async () => {
+    if (policy?.has_pin && !isElevated('settings')) {
+      const ok = await requestPin('settings')
+      if (!ok) return
+    }
+    setExitOpen(true)
+  }, [policy, isElevated, requestPin])
+  const confirmExit = useCallback(() => {
+    setWallModeFlag(false)
+    window.location.assign('/')
+  }, [])
+  const onExit = isWallMode() ? requestExit : null
 
   // ── installable as its own app ───────────────────────────────────────────
   // "Add to home screen" installs whatever manifest the CURRENT document
@@ -251,6 +274,7 @@ export default function Wall() {
         onOpenRail={() => setRailOpen(true)}
         weather={weather}
         policy={policy}
+        onExit={onExit}
       />
 
       {!tabletId && !pairHidden && !isWallMode() && (
@@ -303,6 +327,7 @@ export default function Wall() {
       />
       <DevicePageModal entityId={deviceOpen} onClose={() => setDeviceOpen(null)} onOpenDevice={setDeviceOpen} />
       <PinGate tabletId={tabletId} />
+      <ExitWallSheet open={exitOpen} onCancel={() => setExitOpen(false)} onConfirm={confirmExit} />
       <ConnectionChip connected={connected} />
       <WallToast toast={toast} />
 

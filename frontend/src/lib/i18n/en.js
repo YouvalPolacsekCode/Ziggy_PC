@@ -4816,6 +4816,8 @@ export default {
   'wall.editHint':          'Drag to move, pull the corner to resize.',
   'wall.editMove':          'Move card',
   'wall.exitConfirm':       'Stop using this device as a wall dashboard?',
+  'wall.exit':              'Exit wall mode',
+  'wall.exitBody':          'This screen goes back to the regular Ziggy app. You can turn the wall dashboard on again any time from Settings.',
   'mobileOnboard.wallInstead':    'Use this as a wall dashboard',
   'mobileOnboard.wallInsteadSub': 'Skip pairing — for a tablet mounted on the wall',
   'wall.expand':            'Open larger',

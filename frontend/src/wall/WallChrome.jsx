@@ -8,32 +8,84 @@ import { useUIStore } from '../stores/uiStore'
 import { useWallStore } from '../stores/wallStore'
 import { availableManifests } from './modules/registry'
 import { verifyWallPin } from '../lib/api'
-import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { useNow } from './modules/CoreModules'
 
-/**
- * The Ziggy mark, and the way out of wall mode.
- *
- * A wall panel deliberately has no visible "exit" — a button that drops a
- * kitchen display back to a phone app is a button a child will press. But a
- * device that CANNOT be recovered without clearing its storage is worse. So
- * the escape is a deliberate 2-second press on the logo: obvious once you know,
- * invisible if you don't.
- */
-const ZiggyMark = ({ size = 26 }) => {
+// ─── Leaving wall mode ──────────────────────────────────────────────────────
+//
+// A wall panel is touched by everyone in the house, so "exit" cannot be a
+// bare tap: a button that drops the kitchen display back to a phone app is a
+// button a child will press. It used to be hidden entirely — a 2-second press
+// on the logo, confirmed with window.confirm — and that failed the other way:
+// nobody found it, and on a touch screen the browser's own long-press
+// handling could cancel the pointer before the timer fired. A device you
+// cannot get out of wall mode without clearing its storage is a trap.
+//
+// So the exit is now VISIBLE and DELIBERATE: a labelled button in the header
+// (the logo long-press still works as a second way in), confirmed in-app, and
+// — when the tablet has a PIN — behind that PIN. `onExit` is wired by Wall.jsx,
+// which owns the PIN gate; it is null for a plain browser visit to /wall,
+// where there is nothing to leave.
+
+const ExitIcon = ({ size = 15 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
+       strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5" />
+    <path d="M15 8l4 4-4 4" /><path d="M19 12H9" />
+  </svg>
+)
+
+export const ExitWallButton = memo(function ExitWallButton({ onExit }) {
   const t = useT()
+  return (
+    <button
+      type="button"
+      className="zw-btn zw-btn-icon zw-exit"
+      onClick={onExit}
+      aria-label={t('wall.exit')}
+      title={t('wall.exit')}
+    ><ExitIcon /></button>
+  )
+})
+
+export const ExitWallSheet = memo(function ExitWallSheet({ open, onCancel, onConfirm }) {
+  const t = useT()
+  if (!open) return null
+  return (
+    <div className="zw-scrim" onClick={onCancel}>
+      <div className="zw-modal" role="dialog" aria-modal="true" aria-labelledby="zw-exit-title"
+           style={{ width: 'min(420px, 92vw)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="zw-modal-head">
+          <div className="zw-modal-title" id="zw-exit-title">{t('wall.exitConfirm')}</div>
+        </div>
+        <div className="zw-modal-body" style={{ paddingTop: 10 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.45 }}>
+            {t('wall.exitBody')}
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+            <button type="button" className="zw-btn" onClick={onCancel}>{t('common.cancel')}</button>
+            <button type="button" className="zw-btn is-on" onClick={onConfirm}>{t('wall.exit')}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+/**
+ * The Ziggy mark. A deliberate 2-second press on it is the second way out of
+ * wall mode (see above) — kept for anyone who learned it, and because it works
+ * even if a policy later hides the header button.
+ */
+const ZiggyMark = ({ size = 26, onExit }) => {
   const timer = useRef(null)
   const [armed, setArmed] = useState(false)
 
-  const start = () => {
-    if (!isWallMode()) return
-    timer.current = setTimeout(() => {
-      setArmed(false)
-      if (window.confirm(t('wall.exitConfirm'))) {
-        setWallModeFlag(false)
-        window.location.assign('/')
-      }
-    }, 2000)
+  const start = (e) => {
+    if (!onExit) return
+    // Hold the pointer: without capture a finger drifting a few pixels fires
+    // pointerleave and silently disarms the press.
+    try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch {}
+    timer.current = setTimeout(() => { setArmed(false); onExit() }, 2000)
     setArmed(true)
   }
   const stop = () => { clearTimeout(timer.current); setArmed(false) }
@@ -48,6 +100,9 @@ const ZiggyMark = ({ size = 26 }) => {
       onPointerUp={stop}
       onPointerLeave={stop}
       onPointerCancel={stop}
+      // A long press must not become the browser's context menu / image
+      // callout — that both cancels the pointer and covers the screen.
+      onContextMenu={(e) => e.preventDefault()}
     >
       <g stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" fill="none">
         <path d="M12 3v18" /><path d="M4.2 7.5l15.6 9" /><path d="M19.8 7.5l-15.6 9" />
@@ -59,7 +114,7 @@ const ZiggyMark = ({ size = 26 }) => {
 // ─── Header ─────────────────────────────────────────────────────────────────
 
 export const WallHeader = memo(function WallHeader({
-  view, setView, onOpenDevices, onOpenRail, weather, policy,
+  view, setView, onOpenDevices, onOpenRail, weather, policy, onExit = null,
 }) {
   const t = useT()
   const now = useNow(20_000)
@@ -91,7 +146,7 @@ export const WallHeader = memo(function WallHeader({
         aria-label={t('wall.rail.expand')}
       >☰</button>
 
-      <ZiggyMark />
+      <ZiggyMark onExit={onExit} />
 
       <div className="zw-ident">
         <div className="zw-eyebrow zw-date">
@@ -132,6 +187,7 @@ export const WallHeader = memo(function WallHeader({
           className={`zw-btn${editing ? ' is-on' : ''}`}
           onClick={() => (editing ? commitEdit() : startEdit())}
         >{editing ? t('wall.editDone') : `✎ ${t('wall.edit')}`}</button>
+        {onExit && <ExitWallButton onExit={onExit} />}
       </div>
     </header>
   )

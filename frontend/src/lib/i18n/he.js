@@ -4659,6 +4659,8 @@ export default {
   'wall.editHint':          'גררו כדי להזיז, משכו בפינה כדי לשנות גודל.',
   'wall.editMove':          'הזזת כרטיס',
   'wall.exitConfirm':       'להפסיק להשתמש במכשיר הזה כלוח קיר?',
+  'wall.exit':              'יציאה ממצב קיר',
+  'wall.exitBody':          'המסך הזה יחזור לאפליקציית זיגי הרגילה. אפשר להפעיל שוב את לוח הקיר בכל רגע מההגדרות.',
   'mobileOnboard.wallInstead':    'להשתמש בזה כלוח קיר',
   'mobileOnboard.wallInsteadSub': 'בלי צימוד — לטאבלט שמותקן על הקיר',
   'wall.expand':            'פתיחה בגדול',

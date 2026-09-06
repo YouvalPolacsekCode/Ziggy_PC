@@ -83,7 +83,17 @@
   min-height: 0;
 }
 
-.zw-mark { color: var(--accent); flex: none; }
+.zw-mark {
+  color: var(--accent);
+  flex: none;
+  /* Long-press is the mark's job (exit wall mode). The browser must not claim
+     the gesture for scrolling, text selection or the image callout. */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.zw-exit { color: var(--ink-faint); }
 
 .zw-ident { min-width: 0; flex: 0 1 auto; }
 .zw-date  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

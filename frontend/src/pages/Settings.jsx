@@ -1517,8 +1517,8 @@ function WallModeCard() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Use as wall dashboard</div>
         <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>
-          This device opens straight into the wall view. Long-press the Ziggy mark
-          on the wall to come back.
+          This device opens straight into the wall view. Use the exit button in the
+          wall header (or long-press the Ziggy mark) to come back.
         </div>
       </div>
       <button

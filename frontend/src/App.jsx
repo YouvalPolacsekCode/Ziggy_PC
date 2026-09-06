@@ -80,6 +80,27 @@ import SubscriptionGateBanner from './components/SubscriptionGateBanner'
 
 function ProtectedOpsRoute() {
   const role = useAuthStore(s => s.role)
+  const setRole = useAuthStore(s => s.setRole)
+  // A home-screen shortcut saved from the ops console must reopen the ops
+  // console, not the phone app — see useDocumentManifest.
+  useDocumentManifest('/ops.webmanifest')
+
+  // A role of null means "not known yet" (older sessions never stored one),
+  // not "not an admin". Bouncing on it sent an ops bookmark to the dashboard
+  // before /api/auth/status had a chance to answer. Resolve it here, and only
+  // send away someone whose role is KNOWN to be short of super_admin.
+  const [resolved, setResolved] = useState(!!role)
+  useEffect(() => {
+    if (role) { setResolved(true); return }
+    let cancelled = false
+    getAuthStatus()
+      .then(d => { if (!cancelled && d?.role) setRole(d.role) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setResolved(true) })
+    return () => { cancelled = true }
+  }, [role, setRole])
+
+  if (!resolved) return null
   if (role !== 'super_admin') return <Navigate to="/" replace />
   return <Outlet />
 }
@@ -126,11 +147,11 @@ function OpsPageWrapper({ title }) {
 // 'reload' = F5/Ctrl+R (stay on current URL), 'navigate' = cold start (redirect to /).
 const _navType = performance?.getEntriesByType?.('navigation')?.[0]?.type ?? 'navigate'
 
-// A wall tablet is mounted in kiosk mode and cold-boots straight to /wall, so
-// the cold-start "send them home" rewrite below must not hijack it — every
-// single boot is a fresh navigation, which would otherwise land the wall panel
-// on the phone dashboard forever. Same exemption /presence/ already has.
-const _isWallPath = () => window.location.pathname.startsWith('/wall')
+// Which paths survive the boot-time rewrites (a kiosk /wall boot, an ops
+// console bookmark, a public presence page) and where everything else lands
+// is decided by lib/bootRedirect — pure, and tested there.
+import { bootPath as _bootPath } from './lib/bootRedirect'
+import { useDocumentManifest } from './lib/useDocumentManifest'
 
 // A device set to "wall dashboard" boots into /wall instead of the phone
 // dashboard. Read once at module load, before BrowserRouter mounts, so a
@@ -1117,42 +1138,30 @@ export default function App() {
     return <UnauthenticatedGate />
   }
 
-  // Post-login redirect: when authenticated flips false→true (the user just
-  // logged in), the URL is whatever they were on when they last logged out
-  // — typically /settings, since that's where the Logout button lives.
-  // Without this rewrite, BrowserRouter mounts on the stale URL and lands
-  // the user right back on the post-logout page. Always send them home.
-  // Skip /presence/ for consistency with the cold-start branch below
-  // (public deep links shouldn't get hijacked).
+  // Boot-time URL rewrite, applied before BrowserRouter mounts so the router
+  // never renders a page we are about to leave. Two triggers:
+  //
+  //   - just logged in (authenticated flipped false→true): the URL is whatever
+  //     page had the Logout button, typically /settings, and landing back
+  //     there reads as "login did nothing" — so go home.
+  //   - cold start (PWA tap, new tab — NOT an F5 reload): go home, and on a
+  //     wall-mode device go to /wall with no flash of the phone app first.
+  //
+  // Deep links (/ops, /wall, /presence) are exempt from both: a bookmark to
+  // the ops console must open the ops console. See lib/bootRedirect.
   const _justLoggedIn = !_wasAuthenticated && authenticated
   _wasAuthenticated = true
-  if (_justLoggedIn &&
-      window.location.pathname !== '/' &&
-      !window.location.pathname.startsWith('/presence/') &&
-      !_isWallPath()) {
-    window.history.replaceState(null, '', '/')
-  }
-
-  // Cold-start redirect: rewrite URL to '/' before BrowserRouter initializes.
-  // Only fires on fresh navigations (PWA tap, new tab) — NOT on F5/Ctrl+R reloads.
-  // _appMounted prevents re-firing on subsequent React re-renders.
-  if (!_appMounted) {
+  if (_justLoggedIn || !_appMounted) {
+    const target = _bootPath({
+      pathname: window.location.pathname,
+      // A re-render after login is never a cold start; only the very first
+      // mount consults the navigation type.
+      navType: _appMounted ? 'reload' : _navType,
+      justLoggedIn: _justLoggedIn,
+      wallMode: _wallModeDevice,
+    })
     _appMounted = true
-    if (
-      _navType !== 'reload' &&
-      window.location.pathname !== '/' &&
-      !window.location.pathname.startsWith('/presence/') &&
-      !_isWallPath()
-    ) {
-      window.history.replaceState(null, '', '/')
-    }
-    // Wall-mode devices land on the wall rather than the phone dashboard.
-    // Done here, before the router mounts, so there is no visible flash of
-    // the app first — which on a wall panel would look like a glitch every
-    // time the screen wakes.
-    if (_wallModeDevice && window.location.pathname === '/') {
-      window.history.replaceState(null, '', '/wall')
-    }
+    if (target) window.history.replaceState(null, '', target)
   }
 
   return (
