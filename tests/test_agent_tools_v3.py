@@ -122,12 +122,11 @@ def test_explain_missing_action_uses_why_not(monkeypatch):
 
 
 def test_repair_history_empty_and_filled(monkeypatch):
-    import types, sys
-    fake = types.SimpleNamespace(history=lambda eid, limit=10: [])
-    monkeypatch.setitem(sys.modules, "services.repair_ladder", fake)
+    from services import repair_ladder as RL
+    monkeypatch.setattr(RL, "history", lambda eid, limit=10: [])
     r = asyncio.run(T.execute_tool("repair_history", {"entity_id": "light.hall"}, DIR, lang="en"))
     assert r["ok"] and r["data"]["attempts"] == []
-    fake.history = lambda eid, limit=10: [{"rung": "nudge", "outcome": "failed", "ts": 1.0}]
+    monkeypatch.setattr(RL, "history", lambda eid, limit=10: [{"rung": "nudge", "outcome": "failed", "ts": 1.0}])
     r2 = asyncio.run(T.execute_tool("repair_history", {"entity_id": "light.hall"}, DIR, lang="he"))
     assert "להעיר" in r2["message"] and r2["data"]["attempts"][0]["step"] == "nudge"
 

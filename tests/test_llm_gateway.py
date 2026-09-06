@@ -12,9 +12,11 @@ from integrations import llm_gateway
 
 
 def test_resolve_defaults_match_previously_hardcoded_models():
-    """The baked-in defaults must reproduce the pre-gateway choices exactly."""
+    """The baked-in defaults: legacy purposes keep their pre-gateway choices;
+    the v3 brain purposes (chat, automation_design) ride gpt-5.5 (2026-09-06)."""
     assert llm_gateway._resolve("intent_parse") == ("openai", "gpt-4o-mini")
-    assert llm_gateway._resolve("chat") == ("openai", "gpt-4o")
+    assert llm_gateway._resolve("chat") == ("openai", "gpt-5.5")
+    assert llm_gateway._resolve("automation_design") == ("openai", "gpt-5.5")
     assert llm_gateway._resolve("translate") == ("openai", "gpt-4o-mini")
     assert llm_gateway._resolve("map_render") == ("openai", "gpt-4o")
     assert llm_gateway._resolve("stt") == ("openai_whisper", "whisper-1")
