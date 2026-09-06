@@ -648,6 +648,9 @@ async def process_voice(request: Request, file: UploadFile = File(...)):
 @router.post("/api/direct-intent")
 async def process_direct_intent(req: DirectIntentRequest, request: Request):
     request_id = _new_request_id()
+    # Quick-ask chips in the chat ("turn off everything") land here — they
+    # are chat too, so rehearsal covers them (sitting C: a chip reached the home).
+    rehearsal.activate_if_enabled()
     params = dict(req.params or {})
     _actor = _actor_ref(request)
     if _actor:

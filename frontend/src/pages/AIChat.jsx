@@ -92,12 +92,14 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
   const rtl     = isHebrew(msg.text)
   // "Said wrong" — the voice is not deterministic; flagging logs the line
   // for the pronunciation dictionary and re-rolls its cached audio.
-  const [flagState, setFlagState] = useState('idle')   // idle | busy | done | error
-  const flagPronunciation = async () => {
-    if (flagState !== 'idle') return
+  // idle → ask (an input opens: "how should it sound?") → busy → done | error
+  const [flagState, setFlagState] = useState('idle')
+  const [flagNote, setFlagNote] = useState('')
+  const flagPronunciation = async (note) => {
+    if (flagState === 'busy' || flagState === 'done') return
     setFlagState('busy')
     try {
-      await flagTts({ text: msg.text, lang: rtl ? 'he' : 'en' })
+      await flagTts({ text: msg.text, lang: rtl ? 'he' : 'en', note: (note || '').trim() })
       setFlagState('done')
     } catch {
       setFlagState('error')
@@ -171,10 +173,10 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
         </p>
       </div>
 
-      {!isUser && !isError && msg.text && (
+      {!isUser && !isError && msg.text && flagState !== 'ask' && (
         <button
           type="button"
-          onClick={flagPronunciation}
+          onClick={() => { if (flagState === 'idle') setFlagState('ask') }}
           disabled={flagState !== 'idle'}
           aria-label={t('chat.flagTts')}
           style={{
@@ -188,6 +190,33 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
             : flagState === 'error' ? t('chat.flagTtsError')
             : t('chat.flagTts')}
         </button>
+      )}
+      {flagState === 'ask' && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); flagPronunciation(flagNote) }}
+          style={{ display: 'flex', gap: 6, alignItems: 'center', maxWidth: '88%' }}
+        >
+          <input
+            autoFocus
+            dir="auto"
+            value={flagNote}
+            onChange={(e) => setFlagNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setFlagState('idle') }}
+            placeholder={t('chat.flagTtsHow')}
+            style={{
+              flex: 1, minWidth: 180, fontSize: 12.5, padding: '6px 10px', borderRadius: 999,
+              border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', font: 'inherit',
+            }}
+          />
+          <button type="submit" style={{
+            fontSize: 11, padding: '6px 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
+            background: 'var(--ink)', color: 'var(--bg)', font: 'inherit',
+          }}>{t('chat.flagTtsSend')}</button>
+          <button type="button" onClick={() => flagPronunciation('')} style={{
+            fontSize: 11, padding: '6px 8px', borderRadius: 999, border: '0.5px solid var(--line)', cursor: 'pointer',
+            background: 'none', color: 'var(--ink-2)', font: 'inherit',
+          }}>{t('chat.flagTtsSkip')}</button>
+        </form>
       )}
 
       {/* Action chips — green check bubbles per design */}
@@ -1103,6 +1132,8 @@ export default function AIChat() {
         : null
       addMessage('assistant', res.reply || '…', res.ok !== false,
                  bundle ? { actions, bundle } : { actions })
+      // Rehearsal is for hearing the voice: every reply is spoken, typed or not.
+      if (rehearsal && res.reply) playTtsReply(res.reply, lang)
       refreshList()   // keep the thread switcher's title/preview fresh
       // Pattern suggestion card
       if (res.pattern_suggestion) {
@@ -1132,6 +1163,7 @@ export default function AIChat() {
       const res = await sendDirectIntent(qa.intent, qa.params)
       const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
       addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      if (rehearsal && res.reply) playTtsReply(res.reply, lang)
       setOrbState('speaking')
       // Don't clobber a fresh 'listening' state if the user starts another
       // hold-to-talk before this 2.5 s timer fires.
@@ -1538,21 +1570,32 @@ export default function AIChat() {
         capSR.stop().catch(() => {})
         capSrActiveRef.current = false
       }
-      // The plugin's start() promise is also unreliable: sometimes
-      // rejects, sometimes never resolves. Race against a tight 300ms
-      // window so we don't add perceptible latency. Even if it resolves
-      // with matches, we prefer the partial-result buffer because it's
-      // the same data the user already saw in the live bubble.
-      if (capSrStartPromiseRef.current) {
-        try {
-          const res = await Promise.race([
-            capSrStartPromiseRef.current,
-            new Promise((r) => setTimeout(() => r(null), 300)),
-          ])
+      // The last word the user said usually arrives AFTER stop(): the
+      // engine finishes decoding and delivers it either as one more
+      // partialResults event or only in start()'s final matches. A fixed
+      // 300 ms race cut that word off ("keeps all but the last word").
+      // Instead: keep the partial listener attached and wait until the
+      // final matches land OR the buffer has been quiet for 400 ms, with
+      // a 1.5 s ceiling so a hung plugin can't freeze the send.
+      let finalResolved = false
+      const finalP = capSrStartPromiseRef.current
+      if (finalP) {
+        finalP.then((res) => {
           if (res?.matches?.length) finalNativeMatches = res.matches
-        } catch {}
-        capSrStartPromiseRef.current = null
+          finalResolved = true
+        }).catch(() => { finalResolved = true })
       }
+      const t0 = Date.now()
+      let lastText = composeBuffer()
+      let lastChange = t0
+      while (Date.now() - t0 < 1500) {
+        await new Promise((r) => setTimeout(r, 100))
+        if (finalResolved) break
+        const cur = composeBuffer()
+        if (cur !== lastText) { lastText = cur; lastChange = Date.now() }
+        else if (Date.now() - lastChange >= 400 && Date.now() - t0 >= 500) break
+      }
+      capSrStartPromiseRef.current = null
       // Detach listeners. Fire-and-forget for the same reason — Android
       // removeListener can also stall.
       if (capSrPartialRef.current) {
