@@ -35,15 +35,22 @@ export const useChatStore = create((set) => ({
 
   // Replace the visible message list from a server thread payload (thread.messages),
   // mapping the server shape {role, content, data, ts} → the UI shape {role, text, data}.
+  // `data.card` (an embedded tool-result card) is lifted to `card` so it renders
+  // exactly as it did when the reply first arrived — cards survive reload.
   loadThreadMessages: (serverMessages) =>
     set({
-      messages: (serverMessages || []).map((m) => ({
-        id: Date.now() + Math.random(),
-        role: m.role,
-        text: m.content,
-        ok: true,
-        ts: m.ts ? new Date(m.ts * 1000) : new Date(),
-        ...(m.data ? { data: m.data } : {}),
-      })),
+      messages: (serverMessages || []).map((m) => {
+        const card = m.role !== 'user' && m.data?.card && typeof m.data.card === 'object' && m.data.card.kind
+          ? m.data.card : null
+        return {
+          id: Date.now() + Math.random(),
+          role: m.role,
+          text: m.content,
+          ok: true,
+          ts: m.ts ? new Date(m.ts * 1000) : new Date(),
+          ...(m.data ? { data: m.data } : {}),
+          ...(card ? { card } : {}),
+        }
+      }),
     }),
 }))

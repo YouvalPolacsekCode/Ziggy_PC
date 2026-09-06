@@ -8,6 +8,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom, getClimate, toggleClimate, syncClimate, deleteClimate } from '../lib/api'
 import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
+import { useZiggyActions, AUTOMATION_ACTIONS } from '../hooks/useZiggyActions'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
 import AutomationViewModal from '../components/automations/AutomationViewModal'
 import AutomationCard from '../components/automations/AutomationCard'
@@ -137,6 +138,10 @@ export default function Automations() {
 
     return { circadianGroup, smartRoomGroups, visibleAutomations: visible }
   }, [automations, roomNameMap, occupancySensors])
+
+  // Agent → app: when the chat agent (or an outside assistant) toggles,
+  // creates or deletes an automation, the list here refreshes by itself.
+  useZiggyActions(() => { fetchAutomations({ force: true }).catch(() => {}) }, AUTOMATION_ACTIONS)
 
   // Only fetch what isn't cached. Re-fetching on every revisit toggles the
   // store's `loading` flag, which flashes skeleton placeholders mid-mount.

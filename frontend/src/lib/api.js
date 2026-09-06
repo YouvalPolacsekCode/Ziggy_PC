@@ -297,6 +297,21 @@ export const sendChat = (text, chatHistory = [], source = 'web', threadId = null
     ...(mode ? { mode } : {}),
   })
 
+// Actions registry (core/actions/) — the same tools the chat agent calls,
+// exposed to the app so an embedded chat card can act without a round-trip
+// through the LLM. `runAction` returns the tool envelope
+// {ok, message, data, needs_approval, result}.
+export const listActions = () => get('/actions')
+export const runAction = (name, args = {}, lang = null) =>
+  post(`/actions/${encodeURIComponent(name)}`, { args, ...(lang ? { lang } : {}) })
+
+// External assistants (Settings → External assistants). A token lets an
+// outside agent (Claude, Cursor, …) drive this home through /mcp. The raw
+// token is returned exactly once, by createExternalToken.
+export const listExternalTokens  = () => get('/external-tokens')
+export const createExternalToken = (name) => post('/external-tokens', { name })
+export const revokeExternalToken = (id) => del(`/external-tokens/${encodeURIComponent(id)}`)
+
 // Persistent, resumable chat threads (server-side; see services/chat_threads.py)
 export const createThread = () => post('/threads', {})
 export const listThreads  = () => get('/threads')

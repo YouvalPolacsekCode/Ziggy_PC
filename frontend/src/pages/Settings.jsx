@@ -17,7 +17,7 @@ import {
   Sun, Moon, User, Lock, LogOut, RefreshCw,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
-  Smartphone, Bell, ChevronLeft, Volume2, Monitor,
+  Smartphone, Bell, ChevronLeft, Volume2, Monitor, Bot,
 } from 'lucide-react'
 import { PairWithPhone } from '../components/PairWithPhone'
 import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
@@ -38,6 +38,7 @@ import {
   getUsers, updateUser, deleteUser,
   deleteMyAccount, factoryResetHub,
   createInvite, listInvites, revokeInvite,
+  listExternalTokens, createExternalToken, revokeExternalToken,
   getPresenceZone, savePresenceZone, getPresenceDebug,
   pingMePresence, getMyPresencePerson, setMyPresenceLanHost,
   listPresenceZones, createPresenceZone, updatePresenceZone, deletePresenceZone,
@@ -1455,6 +1456,224 @@ export function IrHubsPage() {
   )
 }
 
+// ─── External assistants — let Claude / Cursor / ChatGPT-style tools drive
+// this home through Ziggy's /mcp endpoint. A token ("קוד גישה" in Hebrew,
+// never "טוקן") is minted per assistant, shown raw exactly once, and can be
+// revoked here. The call runs as this user, so the permission ladder applies.
+
+function _copyText(text) {
+  // navigator.clipboard is undefined on http://<lan-ip> (non-secure
+  // context) — fall back to the selection API so the button still works.
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).catch(() => _copyLegacy(text))
+  return Promise.resolve(_copyLegacy(text))
+}
+function _copyLegacy(text) {
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+  } catch { /* nothing else to try */ }
+}
+
+function _when(ts) {
+  if (!ts) return null
+  try {
+    const d = typeof ts === 'number' ? new Date(ts < 1e12 ? ts * 1000 : ts) : new Date(ts)
+    if (Number.isNaN(d.getTime())) return String(ts)
+    return d.toLocaleString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+  } catch { return String(ts) }
+}
+
+function CopyButton({ text, label, copiedLabel }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => { await _copyText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+      className="z-btn-secondary"
+      style={{ height: 32, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+      {copied ? copiedLabel : label}
+    </button>
+  )
+}
+
+function ExternalAssistantsSection() {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const [mcpUrl, setMcpUrl] = useState(null)
+  const [tokens, setTokens] = useState([])
+  const [loadState, setLoadState] = useState('loading')   // loading | ok | error
+  const [name, setName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [fresh, setFresh] = useState(null)                 // { name, token } — shown once
+  const [revoking, setRevoking] = useState(null)
+
+  const load = async () => {
+    try {
+      const res = await listExternalTokens()
+      setMcpUrl(res?.mcp_url || null)
+      const list = Array.isArray(res) ? res : (res?.tokens || res?.items || [])
+      setTokens(list)
+      setLoadState('ok')
+    } catch {
+      setLoadState('error')
+    }
+  }
+  useEffect(() => { load() }, [])
+
+  const create = async (e) => {
+    e?.preventDefault?.()
+    const n = name.trim()
+    if (!n || creating) return
+    setCreating(true)
+    try {
+      const res = await createExternalToken(n)
+      const raw = res?.token || res?.raw_token || res?.secret
+      setFresh({ name: res?.name || n, token: raw || '' })
+      setName('')
+      await load()
+    } catch {
+      addToast(t('settings.assistants.createFailed'), 'error')
+    } finally { setCreating(false) }
+  }
+
+  const revoke = async (tok) => {
+    if (!tok?.id || revoking) return
+    setRevoking(tok.id)
+    try {
+      await revokeExternalToken(tok.id)
+      await load()
+    } catch {
+      addToast(t('settings.assistants.revokeFailed'), 'error')
+    } finally { setRevoking(null) }
+  }
+
+  const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, direction: 'ltr', unicodeBidi: 'isolate', overflowWrap: 'anywhere' }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }}>{t('settings.assistants.intro')}</p>
+
+      {/* Connection address */}
+      <Card>
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.mcpUrl')}</p>
+          {mcpUrl ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <span style={{ ...mono, color: 'var(--ink)', minWidth: 0 }}>{mcpUrl}</span>
+              <CopyButton text={mcpUrl} label={t('common.copy')} copiedLabel={t('common.copied')} />
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }}>
+              {loadState === 'loading' ? '…' : t('settings.assistants.mcpUrlUnavailable')}
+            </p>
+          )}
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: 0 }}>{t('settings.assistants.howTo')}</p>
+        </div>
+      </Card>
+
+      {/* Freshly minted token — shown once */}
+      <AnimatePresence>
+        {fresh && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <div style={{ borderRadius: 18, padding: '12px 16px', background: 'var(--surface)', border: '0.5px solid color-mix(in srgb, var(--warn) 55%, var(--line))', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{t('settings.assistants.newTokenTitle', { name: fresh.name })}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ ...mono, color: 'var(--ink)', minWidth: 0, background: 'var(--surface-2)', padding: '8px 10px', borderRadius: 9, flex: 1 }}>{fresh.token || '—'}</span>
+                {fresh.token && <CopyButton text={fresh.token} label={t('common.copy')} copiedLabel={t('common.copied')} />}
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--warn)', margin: 0 }}>{t('settings.assistants.newTokenWarn')}</p>
+              <button type="button" onClick={() => setFresh(null)} className="z-btn-secondary" style={{ alignSelf: 'flex-start', height: 30, padding: '0 12px', borderRadius: 9, fontSize: 12 }}>
+                {t('common.done')}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Token list */}
+      <Card>
+        <div style={{ padding: '12px 16px 4px' }}>
+          <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.tokens')}</p>
+        </div>
+        {loadState === 'error' && (
+          <div style={{ padding: '8px 16px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <p style={{ fontSize: 12, color: 'var(--err)', margin: 0 }}>{t('settings.assistants.loadFailed')}</p>
+            <button type="button" onClick={load} className="z-btn-secondary" style={{ height: 28, padding: '0 10px', borderRadius: 8, fontSize: 11 }}>{t('common.tryAgain')}</button>
+          </div>
+        )}
+        {loadState === 'ok' && tokens.length === 0 && (
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '8px 16px 14px', margin: 0 }}>{t('settings.assistants.noTokens')}</p>
+        )}
+        {tokens.map((tok) => {
+          const revoked = !!(tok.revoked || tok.revoked_at)
+          const created = _when(tok.created_at ?? tok.created)
+          const used = _when(tok.last_used_at ?? tok.last_used)
+          return (
+            <div key={tok.id || tok.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', borderBlockStart: '0.5px solid var(--line)', opacity: revoked ? 0.55 : 1 }}>
+              <div style={{ minWidth: 0 }}>
+                <p dir="auto" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {tok.name || '—'}
+                  {revoked && <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontWeight: 400 }}> · {t('settings.assistants.revoked')}</span>}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '1px 0 0' }}>
+                  {[created && t('settings.assistants.created', { when: created }),
+                    used ? t('settings.assistants.lastUsed', { when: used }) : t('settings.assistants.neverUsed')]
+                    .filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              {!revoked && (
+                <button
+                  type="button"
+                  onClick={() => revoke(tok)}
+                  disabled={revoking === tok.id}
+                  style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, cursor: 'pointer', padding: '5px 9px', color: 'var(--err)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, fontFamily: 'inherit' }}
+                >
+                  <Trash2 size={12} />
+                  {t('settings.assistants.revoke')}
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </Card>
+
+      {/* Create */}
+      <Card>
+        <form onSubmit={create} style={{ padding: '12px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.create')}</p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t('settings.assistants.namePlaceholder')}
+                maxLength={60}
+                aria-label={t('settings.assistants.nameLabel')}
+              />
+            </div>
+            <button type="submit" disabled={creating || !name.trim()} className="z-btn-primary" style={{ height: 40, padding: '0 14px', borderRadius: 10, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              <Plus size={13} />
+              {t('settings.assistants.create')}
+            </button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  )
+}
+
+export function AssistantsPage() {
+  const t = useT()
+  return (
+    <SettingsPageWrapper title={t('settings.assistants')}>
+      <ExternalAssistantsSection />
+    </SettingsPageWrapper>
+  )
+}
+
 export function VoicePage() {
   const t = useT()
   return (
@@ -1581,6 +1800,7 @@ export default function Settings() {
           <HubCard icon={Users}     title="People & Access"  subtitle="Members, roles and what each person can control"  to="/settings/people" />
         )}
         <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
+        <HubCard icon={Bot}         title={t('settings.assistants')}      subtitle={t('settings.assistantsSub')}      to="/settings/assistants" />
         <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
         {isSuperAdmin && (
           <HubCard icon={MapPin}    title="Wall tablets"  subtitle="Pair wall dashboards and set what each one may control"  to="/settings/tablets" />

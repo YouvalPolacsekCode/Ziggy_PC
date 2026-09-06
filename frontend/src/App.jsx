@@ -29,6 +29,7 @@ const NotificationsPage = lazy(() => import('./pages/Settings').then(m => ({ def
 const LocationPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.LocationPage })))
 const UsersPage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.UsersPage })))
 const MemoryPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MemoryPage })))
+const AssistantsPage   = lazy(() => import('./pages/Settings').then(m => ({ default: m.AssistantsPage })))
 const VoicePage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.VoicePage })))
 // Ops sub-pages migrated out of the old /admin route during the 2026-06 refactor
 const SystemDiagnosticsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SystemDiagnosticsPage })))
@@ -482,6 +483,7 @@ function AppRoutes() {
         <Route path="settings/people"        element={<People />} />
         <Route path="people"                 element={<Navigate to="/settings/people" replace />} />
         <Route path="settings/memory"        element={<MemoryPage />} />
+        <Route path="settings/assistants"    element={<AssistantsPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
         {/* Wall dashboard tablet management (additive) */}
         <Route path="settings/tablets"       element={<WallTablets />} />

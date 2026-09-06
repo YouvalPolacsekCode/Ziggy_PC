@@ -14,6 +14,16 @@ import { useAutomationStore } from '../stores/automationStore'
 import { formatTime, isHebrew } from '../lib/utils'
 import { useT, useLang, translateNamePhrase, t as translateWithLang } from '../lib/i18n'
 import BundlePreviewCard from '../components/automations/BundlePreviewCard'
+import ChatCard from '../components/chat/ChatCards'
+
+// The chat envelope may carry `data.card` — the last renderable tool result of
+// the turn (device_list, automations, why_not, …). Threaded onto the message as
+// `card` so Message() renders it above the text bubble; threads persist `data`,
+// so the same shape comes back on reload (see chatStore.loadThreadMessages).
+function cardOf(res) {
+  const c = res?.data?.card
+  return c && typeof c === 'object' && c.kind ? c : null
+}
 
 // Hold-to-talk uses MediaRecorder exclusively. The Web Speech API was
 // previously the "fast path" but its auto-end behavior (even with
@@ -149,6 +159,12 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
     >
       {!isUser && (
         <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
+      )}
+      {/* Embedded tool-result card (device list, automations, why-not, …).
+          Sits above the prose; the text still explains, the card lets the
+          user act. Only assistant messages carry one. */}
+      {!isUser && msg.card && (
+        <ChatCard card={msg.card} entityId={msg.card.entity_id} />
       )}
       <div
         dir="auto"
@@ -1155,8 +1171,9 @@ export default function AIChat() {
       const bundle = res.data?.kind === 'automation_bundle_preview'
         ? res.data.bundle
         : null
+      const card = cardOf(res)
       addMessage('assistant', res.reply || '…', res.ok !== false,
-                 bundle ? { actions, bundle } : { actions })
+                 { actions, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
       // Rehearsal is for hearing the voice: every reply is spoken, typed or not.
       if (rehearsal && res.reply) playTtsReply(spokenOf(res), lang)
       refreshList()   // keep the thread switcher's title/preview fresh
@@ -1187,7 +1204,8 @@ export default function AIChat() {
     try {
       const res = await sendDirectIntent(qa.intent, qa.params)
       const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
-      addMessage('assistant', res.reply || '…', res.ok !== false, { actions })
+      const card = cardOf(res)
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions, ...(card ? { card } : {}) })
       if (rehearsal && res.reply) playTtsReply(spokenOf(res), lang)
       setOrbState('speaking')
       // Don't clobber a fresh 'listening' state if the user starts another
@@ -1504,8 +1522,9 @@ export default function AIChat() {
         const bundle = res.data?.kind === 'automation_bundle_preview'
           ? res.data.bundle
           : null
+        const card = cardOf(res)
         addMessage('assistant', res.reply || '…', res.ok !== false,
-                   bundle ? { actions, bundle } : { actions })
+                   { actions, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
         if (res.pattern_suggestion) {
           addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
             patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
@@ -1670,8 +1689,9 @@ export default function AIChat() {
       const bundle = res.data?.kind === 'automation_bundle_preview'
         ? res.data.bundle
         : null
+      const card = cardOf(res)
       addMessage('assistant', res.reply || '…', res.ok !== false,
-                 bundle ? { actions, bundle } : { actions })
+                 { actions, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
       if (res.pattern_suggestion) {
         addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
           patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
