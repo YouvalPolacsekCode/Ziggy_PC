@@ -93,7 +93,41 @@
   -webkit-user-select: none;
   user-select: none;
 }
-.zw-exit { color: var(--ink-faint); }
+/* Exit wall mode — header pill. Words, not just a glyph. */
+.zw-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  border: 0.5px solid var(--line);
+}
+/* Very small headers keep only the glyph; the rooms panel row still spells it out. */
+@media (max-width: 620px) {
+  .zw-exit .zw-exit-label { display: none; }
+}
+
+/* Exit wall mode — full-width row pinned at the bottom of the rooms panel.
+   The drawer behind ☰ on narrow screens, a permanent column on wide ones. */
+.zw-rail-exit {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.zw-rail-exit:active { transform: scale(0.98); }
 
 .zw-ident { min-width: 0; flex: 0 1 auto; }
 .zw-date  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

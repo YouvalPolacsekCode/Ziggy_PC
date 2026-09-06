@@ -290,6 +290,7 @@ export default function Wall() {
               guard={guard}
               toast={showToast}
               onOpenDevice={setDeviceOpen}
+              onExit={onExit}
               // Wide: mic + field under the rooms, in the rail's own column.
               footer={wideRail ? <ZiggyBar ctx={ctx} variant="inline" /> : null}
             />

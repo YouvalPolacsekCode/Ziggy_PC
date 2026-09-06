@@ -34,16 +34,26 @@ const ExitIcon = ({ size = 15 }) => (
   </svg>
 )
 
-export const ExitWallButton = memo(function ExitWallButton({ onExit }) {
+/**
+ * The exit control. Labelled with words, not an icon alone — an icon among
+ * the theme / language / edit icons is exactly what went unnoticed. `variant`
+ * picks the header pill or the full-width row at the bottom of the rooms
+ * panel; both call the same `onExit`.
+ */
+export const ExitWallButton = memo(function ExitWallButton({ onExit, variant = 'pill' }) {
   const t = useT()
+  const row = variant === 'row'
   return (
     <button
       type="button"
-      className="zw-btn zw-btn-icon zw-exit"
+      className={row ? 'zw-rail-exit' : 'zw-btn zw-exit'}
       onClick={onExit}
       aria-label={t('wall.exit')}
       title={t('wall.exit')}
-    ><ExitIcon /></button>
+    >
+      <ExitIcon size={row ? 16 : 14} />
+      <span className="zw-exit-label">{t('wall.exit')}</span>
+    </button>
   )
 })
 
