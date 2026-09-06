@@ -818,6 +818,7 @@ export default function AIChat({ docked = false }) {
       speechRef.current = rec
       rec.start()
       srStartedRef.current = true
+      logger.diag('stt_start', { path: 'web', lang: rec.lang })
       return true
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -895,8 +896,10 @@ export default function AIChat({ docked = false }) {
 
     const audio = new Audio()
     ttsAudioRef.current = audio
+    logger.diag('tts_play', { chars: text.length, lang: langKey, mse: supportsMSE })
     const onDone = () => {
       if (ttsAudioRef.current === audio) {
+        logger.diag('tts_done', { error: !!audio.error, code: audio.error?.code ?? null })
         stopTtsPlayback()
         setOrbState(prev => prev === 'speaking' ? 'idle' : prev)
       }
@@ -974,6 +977,10 @@ export default function AIChat({ docked = false }) {
     } catch (e) {
       // Aborted by stopTtsPlayback → silent exit, that was deliberate.
       if (e?.name === 'AbortError' || myToken !== ttsPlayIdRef.current) return
+      // NotAllowedError here = the browser refused to play without a fresh
+      // gesture (autoplay policy). That is exactly the "only talks once"
+      // shape, so name it in the diagnostics.
+      logger.diag('tts_play_rejected', { name: e?.name || 'Error', message: String(e?.message || e) })
       // Network / render failure. Don't break chat — visual blip.
       if (audio.src) try { URL.revokeObjectURL(audio.src) } catch {}
       if (ttsAudioRef.current === audio) ttsAudioRef.current = null
@@ -1288,17 +1295,31 @@ export default function AIChat({ docked = false }) {
       const srLang = (lang === 'he' || osHebrew) ? 'he-IL' : 'en-US'
       capSrStoppingRef.current = false
       capSrRestartsRef.current = 0
+      // A previous turn's session may still be wedged in the native engine
+      // (Samsung: stop() never resolves, so finish fires it and moves on).
+      // A start() on top of that rejects — and used to be swallowed, so the
+      // dot pulsed over a dead mic. Clear the deck first, bounded so a hung
+      // plugin can't delay the press.
+      const bounded = (p, ms) => Promise.race([p.catch(() => null), new Promise((r) => setTimeout(r, ms))])
+      try { await bounded(capSR.stop(), 250) } catch {}
+      try { if (capSR.removeAllListeners) await bounded(capSR.removeAllListeners(), 150) } catch {}
       // Kick (or re-kick) a native recognition session. Don't await — start()
       // doesn't resolve until recognition ENDS (our stop() or silence), with
       // the final matches as its value. Stash the promise; finishSrOnlyRecording
       // awaits it after stop() to harvest the final transcript.
+      let startFailed = null
       const kickCapSr = () => {
+        startFailed = null
         capSrStartPromiseRef.current = capSR.start({
           language: srLang,
           maxResults: 1,
           partialResults: true,
           popup: false,
-        }).catch(() => null)  // swallow rejection so finish's await doesn't throw
+        }).catch((e) => {
+          startFailed = String(e?.message || e || 'start rejected')
+          logger.diag('stt_native_start_failed', { message: startFailed })
+          return null   // finish's await must not throw
+        })
         capSrActiveRef.current = true
       }
       // Wire partial-result listener BEFORE start so we don't miss the
@@ -1333,10 +1354,27 @@ export default function AIChat({ docked = false }) {
       // already released and we're about to return early.
       if (!intentRef.current) return false
       kickCapSr()
+      // A rejection ("already listening", engine busy) lands within a few
+      // hundred ms; a healthy session simply keeps running. Give it that
+      // window, recover once by stopping harder, then hand over to Web SR.
+      await new Promise((r) => setTimeout(r, 350))
+      if (startFailed) {
+        try { await bounded(capSR.stop(), 400) } catch {}
+        kickCapSr()
+        await new Promise((r) => setTimeout(r, 350))
+        if (startFailed) {
+          logger.diag('stt_native_gave_up', { message: startFailed })
+          capSrActiveRef.current = false
+          return false
+        }
+        logger.diag('stt_native_recovered', {})
+      }
       srStartedRef.current = true
+      logger.diag('stt_start', { path: 'native', lang: srLang })
       return true
-    } catch {
+    } catch (e) {
       // Plugin failure → caller falls back to Web SR.
+      logger.diag('stt_native_error', { message: String(e?.message || e) })
       return false
     }
   }
@@ -1557,6 +1595,7 @@ export default function AIChat({ docked = false }) {
     // 100 ms timeslice → ondataavailable fires steadily so the final blob
     // has all chunks even if stop() fires very quickly after start().
     mr.start(100)
+    logger.diag('stt_start', { path: 'recorder', sr: !!srStartedRef.current })
     // Haptic fires AFTER the recorder actually starts (not on pointerdown)
     // so the buzz signals "you are now being recorded" — matches the
     // moment the system mic indicator lights up, instead of feeling like
@@ -1672,10 +1711,12 @@ export default function AIChat({ docked = false }) {
     // complete than the last partial; joinDeduped trims the overlap.
     const dictated = joinDeduped(composeBuffer(), (finalNativeMatches?.[0] || '').trim())
     if (!dictated) {
+      logger.diag('stt_empty', { path: usingCapPath ? 'native' : 'web' })
       setLiveTranscript('')
       setOrbState('idle')
       return
     }
+    logger.diag('stt_result', { path: usingCapPath ? 'native' : 'web', chars: dictated.length })
     const detectedLang = (speechRef.current?.lang || '').startsWith('he')
       ? 'he'
       : (lang === 'he' ? 'he' : 'en')

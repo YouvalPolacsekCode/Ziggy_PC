@@ -263,6 +263,15 @@ async def ingest_frontend_event(
         if scope not in _VALID_SCOPES:
             scope = "frontend"
         lvl_int = _FE_LEVEL_INT.get(ev.level, BASIC)
+        # Voice diagnostics (stt_* / tts_*) also go to the log file, regardless
+        # of the bus level: a "the mic stopped after the first turn" report is
+        # only debuggable from the hub if the phone's timeline survives there.
+        if str(ev.step or "").startswith(("stt_", "tts_")):
+            try:
+                from core.logger_module import log_info
+                log_info(f"[voice-fe] {ev.step} {ev.data or {}}")
+            except Exception:
+                pass
         if bus.emit(scope, lvl_int, ev.step,
                     request_id=ev.request_id,
                     **(ev.data or {})):

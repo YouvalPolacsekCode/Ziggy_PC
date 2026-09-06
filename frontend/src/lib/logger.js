@@ -183,6 +183,28 @@ function action(name, extra = {}, requestId) {
   return _push('basic', name, extra, requestId)
 }
 
+// Voice diagnostics that ALWAYS ship, whatever the debug level: a "the mic
+// stopped after the first turn" report is only debuggable from the hub if
+// the phone's stt_*/tts_* timeline gets there. Tiny volume (a handful per
+// turn), scope 'voice'; the hub also writes them to its log file.
+function diag(step, data = {}) {
+  const safe = data ? sanitize(data) : undefined
+  const ev = {
+    id: Math.random().toString(36).slice(2, 14),
+    ts: new Date().toISOString(),
+    scope: 'voice',
+    level: 'basic',
+    step,
+    request_id: null,
+    data: safe,
+  }
+  _ring.push(ev)
+  if (_ring.length > MAX_BUFFER) _ring.shift()
+  _outbox.push(ev)
+  _scheduleFlush()
+  return ev
+}
+
 function navigate(from, to) {
   return _push('basic', 'navigate', { from, to })
 }
@@ -243,7 +265,7 @@ const logger = {
   click, action, navigate,
   api, apiResponse, apiError,
   ws,
-  error, trace,
+  error, trace, diag,
   snapshot, clear,
 }
 
@@ -254,6 +276,6 @@ export {
   click, action, navigate,
   api, apiResponse, apiError,
   ws,
-  error, trace,
+  error, trace, diag,
   snapshot, clear,
 }
