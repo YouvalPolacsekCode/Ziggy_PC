@@ -485,3 +485,41 @@ class _FakeRequests:
     Used as a monkeypatch target; only .get is exercised here."""
     def __init__(self, get):
         self.get = get
+
+
+# ── relay reply carries the home's plan / entitlements / public address ─────
+class _FakeJsonResp(_FakeResp):
+    def __init__(self, status, body):
+        super().__init__(status, "")
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+def test_post_once_caches_home_block_from_reply(monkeypatch):
+    from services import telemetry_client as tc
+    from services import entitlements as E
+    seen = {}
+    monkeypatch.setattr(E, "update_from_manifest", lambda block, path=None: seen.update(block))
+    _cap, fake = _capture_post(_FakeJsonResp(200, {
+        "ok": True, "ts": "x",
+        "home": {"plan_id": None, "entitlements": ["diagnostics"],
+                 "public_url": "https://app.ziggy-home.com"},
+    }))
+    res = tc.post_once(settings=_good_settings(), _http_post=fake,
+                       _build_payload_fn=_fixed_payload)
+    assert res["ok"]
+    assert seen["public_url"] == "https://app.ziggy-home.com"
+    assert seen["entitlements"] == ["diagnostics"]
+
+
+def test_post_once_ignores_replies_without_home_block(monkeypatch):
+    from services import telemetry_client as tc
+    from services import entitlements as E
+    called = []
+    monkeypatch.setattr(E, "update_from_manifest", lambda block, path=None: called.append(block))
+    _cap, fake = _capture_post(_FakeJsonResp(200, {"ok": True, "ts": "x"}))
+    res = tc.post_once(settings=_good_settings(), _http_post=fake,
+                       _build_payload_fn=_fixed_payload)
+    assert res["ok"] and called == []

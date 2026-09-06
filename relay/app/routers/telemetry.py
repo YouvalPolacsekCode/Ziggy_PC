@@ -95,7 +95,8 @@ async def post_telemetry(device_id: str, request: Request):
 
     async with get_db() as db:
         rows = await db.execute_fetchall(
-            "SELECT status, subscription_state, relay_secret FROM homes WHERE id=?",
+            "SELECT status, subscription_state, relay_secret, plan_id, public_hostname "
+            "FROM homes WHERE id=?",
             (home_id,),
         )
     if not rows:
@@ -176,7 +177,21 @@ async def post_telemetry(device_id: str, request: Request):
                 f"ziggy={payload.get('ziggy_version')} "
                 f"uptime_s={payload.get('uptime_s')}"),
     )
-    return {"ok": True, "ts": now_iso}
+    # The reply is the one relay→hub channel that runs on every home every
+    # five minutes (the OTA manifest is only served to homes with OTA release
+    # rows, which the git-tag updater fleet doesn't have). So the home's plan,
+    # entitlements and public address ride here; the hub caches them
+    # (services/entitlements). Additive — old hubs ignore the block.
+    try:
+        from ..billing.plans import entitlements_for
+        home_block = {
+            "plan_id": home["plan_id"],
+            "entitlements": entitlements_for(home["plan_id"]),
+            "public_url": home["public_hostname"] or None,
+        }
+    except Exception:
+        home_block = None
+    return {"ok": True, "ts": now_iso, **({"home": home_block} if home_block else {})}
 
 
 # ---------------------------------------------------------------------------

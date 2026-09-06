@@ -102,6 +102,12 @@ async def test_post_telemetry_happy_path(client):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["ok"] is True
+    # The reply carries the home's plan / entitlements / public address — the
+    # relay→hub channel that actually runs every five minutes on every home.
+    home = resp.json()["home"]
+    assert home["plan_id"] is None
+    assert "diagnostics" in home["entitlements"]
+    assert home["public_url"] is None          # fixture home has no public hostname
 
     async with dbmod.get_db() as conn:
         rows = await conn.execute_fetchall(

@@ -729,6 +729,17 @@ def post_once(
         if 200 <= resp.status_code < 300:
             global LAST_POST_AT_UTC
             LAST_POST_AT_UTC = datetime.now(timezone.utc).isoformat()
+            # The relay answers with the home's plan / entitlements / public
+            # address (schema-additive). Cache it — this is the channel that
+            # actually runs on every home; the OTA manifest is not.
+            try:
+                reply = resp.json() if hasattr(resp, "json") else None
+                home_block = reply.get("home") if isinstance(reply, dict) else None
+                if isinstance(home_block, dict) and "entitlements" in home_block:
+                    from services import entitlements as _ents
+                    _ents.update_from_manifest(home_block)
+            except Exception as e:  # never let a cache write fail the post
+                log.debug("telemetry reply home block ignored: %s", e)
             return TelemetryPostResult(
                 ok=True, reason="posted", status=resp.status_code,
                 payload_bytes=len(body),
