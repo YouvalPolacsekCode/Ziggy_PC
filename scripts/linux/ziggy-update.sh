@@ -181,7 +181,11 @@ write_task_heartbeat() {
   # "active" — so `|| echo unknown` used to append a second line
   # ("activating\nunknown"), a raw newline inside a JSON string, and the
   # container's reader then saw the whole snapshot as unreadable.
-  active="$(systemctl is-active "$svc" 2>/dev/null | head -n1)"
+  # NOTE the `|| true` INSIDE the group: under `set -o pipefail` a bare
+  # `is-active | head` fails the whole assignment with is-active's exit
+  # code (3 = not active) and `set -e` kills the run before it ever
+  # fetches — which crash-looped Canary on 2026-09-06.
+  active="$( { systemctl is-active "$svc" 2>/dev/null || true; } | head -n1)"
   [ -n "$active" ] || active="unknown"
   next_run="$(systemctl show "$tmr" -p NextElapseUSecRealtime --value 2>/dev/null || echo '')"
   # one JSON string value: no newlines, quotes escaped
