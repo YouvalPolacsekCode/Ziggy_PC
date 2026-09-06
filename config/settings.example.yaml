@@ -311,11 +311,18 @@ openai:
 
 # Optional. Every LLM call routes through integrations/llm_gateway.py and
 # resolves (backend, model) per purpose. Omit this block to use the baked-in
-# defaults (shown below — these match what was previously hardcoded).
-# Backends: openai | ollama | openai_whisper
+# defaults (shown below). Backends: openai | ollama | openai_whisper
+#
+# chat / automation_design are the assistant's brain (gpt-5.5 since the v3
+# brain, 2026-09-06). A value equal to a RETIRED default (gpt-4o for these two)
+# is treated as unset so an old copy of this file never pins a home to a 2024
+# model; add `pinned: true` to force an old model on purpose. gpt-5.x accepts
+# an optional `reasoning_effort` (none | minimal | low …); with function tools
+# only `none` works on this endpoint, which is what the gateway sends.
 models:
   intent_parse:            {backend: openai,         model: gpt-4o-mini}
-  chat:                    {backend: openai,         model: gpt-4o}
+  chat:                    {backend: openai,         model: gpt-5.5}
+  automation_design:       {backend: openai,         model: gpt-5.5}
   translate:               {backend: openai,         model: gpt-4o-mini}
   # If model is omitted for ollama, falls back to ollama.model above.
   suggestion_quality_gate: {backend: ollama,         model: qwen2.5:3b}

@@ -41,6 +41,29 @@ def test_defaults_point_chat_at_gpt_55():
     assert G._DEFAULTS["automation_design"]["model"] == "gpt-5.5"
 
 
+def test_stale_example_override_does_not_pin_chat_to_gpt4o(monkeypatch):
+    """Every imaged home carries models.chat=gpt-4o copied from the old example."""
+    monkeypatch.setattr(G, "settings", {"models": {
+        "chat": {"backend": "openai", "model": "gpt-4o"},
+        "automation_design": {"backend": "openai", "model": "gpt-4o"},
+        "map_render": {"backend": "openai", "model": "gpt-4o"},
+    }})
+    assert G._resolve("chat") == ("openai", "gpt-5.5")
+    assert G._resolve("automation_design") == ("openai", "gpt-5.5")
+    assert G._resolve("map_render") == ("openai", "gpt-4o")   # not a retired default there
+
+
+def test_explicit_pin_keeps_old_model(monkeypatch):
+    monkeypatch.setattr(G, "settings", {"models": {
+        "chat": {"backend": "openai", "model": "gpt-4o", "pinned": True}}})
+    assert G._resolve("chat") == ("openai", "gpt-4o")
+
+
+def test_other_overrides_still_win(monkeypatch):
+    monkeypatch.setattr(G, "settings", {"models": {"chat": {"backend": "openai", "model": "gpt-5.1"}}})
+    assert G._resolve("chat") == ("openai", "gpt-5.1")
+
+
 def test_reasoning_model_detection():
     assert G._is_reasoning_model("gpt-5.5")
     assert G._is_reasoning_model("gpt-5-mini")

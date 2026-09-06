@@ -113,6 +113,9 @@ def sanitize_reply(text: str, *, channel: str = "chat") -> str:
         return text
     text = _ENTITY_RE.sub("", text)
     text = _IR_ID_RE.sub("", text)
+    # The directory tags remote-controlled devices "[IR]"; the model must not
+    # echo that tag ("the TV (IR)") — it's plumbing, not a name.
+    text = re.sub(r"\s*[\(\[]\s*IR\s*[\)\]]", "", text)
     text = _HA_TERMS_RE.sub("", text)
     text = _HE_TERMS_RE.sub("", text)
     if channel == "voice":
@@ -145,6 +148,17 @@ def spoken_summary(reply: str, lang: str = "en") -> str:
     if not reply:
         return ""
     flat = re.sub(r"^\s*[-*•·\d]+[.)]?\s+", "", reply, flags=re.MULTILINE)
+    # A list-shaped reply ("Right now on:\nA\nB\nC…") is spoken as its lead
+    # line plus the first few items and a count — not just the first item.
+    lines = [ln.strip() for ln in flat.splitlines() if ln.strip()]
+    if len(lines) >= 3 and lines[0].endswith((":", "׃")):
+        items = lines[1:]
+        head = ", ".join(items[:3])
+        rest = len(items) - 3
+        if rest > 0:
+            head += (f" ועוד {rest}" if lang == "he" else f" and {rest} more")
+        out = f"{lines[0]} {head}"
+        return sanitize_reply(out[:_SPOKEN_MAX_CHARS], channel="voice")
     sentences = [s.strip() for s in _SENT_SPLIT.split(flat) if s and s.strip()]
     if not sentences:
         return sanitize_reply(reply, channel="voice")[:_SPOKEN_MAX_CHARS]

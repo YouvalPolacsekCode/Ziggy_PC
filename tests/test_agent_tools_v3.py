@@ -42,7 +42,10 @@ def test_what_can_ziggy_do_tool_shape():
     res = asyncio.run(T.execute_tool("what_can_ziggy_do", {"query": "presence"}, DIR))
     assert res["ok"] and isinstance(res["capabilities"], list)
     res2 = asyncio.run(T.execute_tool("what_can_ziggy_do", {}, DIR))
-    assert res2["capabilities"]
+    assert res2["capabilities"] and res2["overview"]
+    # A generic Hebrew "what can you do" must never come back empty.
+    res3 = asyncio.run(T.execute_tool("what_can_ziggy_do", {"query": "מה אתה יודע לעשות"}, DIR))
+    assert res3["capabilities"] and res3["overview"]
 
 
 def test_control_device_lock_asks_when_policy_says_ask(monkeypatch):

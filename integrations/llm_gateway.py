@@ -76,6 +76,15 @@ _DEFAULTS: dict[str, dict[str, str | None]] = {
 }
 
 
+# Per purpose: model ids that were once the baked-in default and are now
+# superseded. A settings override equal to one of these is a stale copy of the
+# example file, not a decision (see _resolve).
+_RETIRED_DEFAULTS: dict[str, tuple[str, ...]] = {
+    "chat":              ("gpt-4o",),
+    "automation_design": ("gpt-4o",),
+}
+
+
 def _resolve(purpose: str) -> tuple[str, str]:
     """Resolve (backend, model) for a purpose.
 
@@ -92,6 +101,17 @@ def _resolve(purpose: str) -> tuple[str, str]:
     cfg = (settings.get("models") or {}).get(purpose) or {}
     backend = cfg.get("backend") or default["backend"]
     model = cfg.get("model") or default.get("model")
+
+    # Every imaged home carries a `models:` block copied verbatim from the
+    # 2026-06 example, which pinned chat to gpt-4o. That was never an
+    # operator's choice — it was the default of the day written to disk — and
+    # it would silently keep every home on a 2024 model forever. A value that
+    # equals a RETIRED default is treated as "unset" and follows the code
+    # default. An operator who truly wants an old model says so explicitly
+    # with `pinned: true` next to it.
+    if (backend == _BACKEND_OPENAI and model in _RETIRED_DEFAULTS.get(purpose, ())
+            and not cfg.get("pinned")):
+        model = default.get("model")
 
     if backend == _BACKEND_OLLAMA and not model:
         ollama_cfg = settings.get("ollama") or {}

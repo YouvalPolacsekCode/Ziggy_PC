@@ -793,10 +793,20 @@ async def _exec_acknowledge_alerts(lang: str) -> dict:
 def _exec_what_can_ziggy_do(args: dict) -> dict:
     from services import capability_lookup as cl
     q = (args.get("query") or "").strip()
-    items = cl.search(q, limit=6) if q else cl.overview()
+    items = cl.search(q, limit=6) if q else []
+    general = not q or not items
+    if general:
+        # A generic "what can you do" (or a query the catalog doesn't match)
+        # gets the overview rather than an empty list the model would turn
+        # into "I can't say" — Ziggy always knows what he can do.
+        items = cl.overview()
     return {"ok": True, "message": f"{len(items)} capabilities",
             "capabilities": items,
-            "note": "status 'live' means it works in this home today; anything else is not available to the user yet."}
+            "overview": general,
+            "note": ("These are Ziggy's live capabilities; answer in your own words, "
+                     "grouped naturally, without listing them all. "
+                     "status 'live' means it works in this home today; anything else "
+                     "is not available to the user yet.")}
 
 
 def _exec_recent_activity(args: dict, directory: dict) -> dict:

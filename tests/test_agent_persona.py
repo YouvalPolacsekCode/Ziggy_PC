@@ -76,6 +76,19 @@ def test_spoken_summary_takes_two_sentences_and_strips_lists():
     assert "\n" not in s and "-" not in s
 
 
+def test_spoken_summary_reads_a_list_as_lead_plus_items_and_count():
+    reply = "כרגע דלוקים בבית:\nהטלוויזיה בסלון\nהאור במטבח\nהאור בחדר שינה\nהמזגן בסלון\nהאור באמבטיה"
+    s = O.spoken_summary(reply, "he")
+    assert s.startswith("כרגע דלוקים בבית: הטלוויזיה בסלון, האור במטבח, האור בחדר שינה")
+    assert "ועוד 2" in s and "\n" not in s
+    en = O.spoken_summary("Right now on:\nTV\nKitchen light\nBedroom light\nAC", "en")
+    assert en.endswith("and 1 more")
+
+
+def test_sanitizer_drops_ir_tag():
+    assert O.sanitize_reply("הטלוויזיה בסלון (IR) דולקת", channel="chat") == "הטלוויזיה בסלון דולקת"
+
+
 def test_spoken_summary_caps_length():
     long = "word " * 120
     s = O.spoken_summary(long.strip() + ".", "en")
