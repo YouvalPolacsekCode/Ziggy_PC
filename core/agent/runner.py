@@ -1,16 +1,19 @@
-"""v2 agent runner — the single brain.
+"""v3 agent runner — the single brain.
 
-run_agent(text, chat_history, channel) →
-    {"reply": str, "ok": bool, "data": dict, "meta": {...}}
+run_agent(text, chat_history, channel, actor, mode) →
+    {"message": str, "ok": bool, "data": {"spoken": str, ...}}
 
-One model call with the HA-truth directory in context. If the model calls
-tools, execute them (de-duplicated), then either:
-  - fast path (1 round-trip): all calls are successful device actions with no
-    model narration → deterministic terse confirmation, or
-  - narrate (2nd round-trip): feed tool results back so the model phrases the
-    answer (queries, web search, automation preview, ambiguity, errors).
+One model call with the home in context (device directory, rooms, automations,
+recent changes, memory — core/agent/context.py) and Ziggy's character
+(core/agent/persona.py). If the model calls tools, execute them (de-duplicated
+within the turn), then either:
+  - fast path (1 round-trip): every call is a successful device action with no
+    narration → deterministic native confirmation, or
+  - narrate: feed tool results back so the model phrases the answer.
 
-Device actions run through the existing tested services; the LLM never
+Two output contracts: the chat reply may converse; `data.spoken` is the short
+rendering the speaker reads. On the voice channel the reply IS the spoken
+text. Device actions run through the existing tested services; the LLM never
 free-hands hardware.
 """
 from __future__ import annotations
@@ -25,109 +28,18 @@ from integrations.openai_client import CloudLLMUnavailable, require_cloud_llm_ac
 from core.intent_utils import ok, err
 from core.agent import directory as _dir
 from core.agent import tools as _tools
-from core.agent.output import render_device_confirmation, sanitize_reply
+from core.agent import context as _ctx
+from core.agent import persona as _persona
+from core.agent.output import render_device_confirmation, sanitize_reply, spoken_summary
 
-_MAX_ITERS = 3
+# A real conversation can need several tool rounds (diagnose → fix → verify).
+_MAX_ITERS = 6
+# Output budgets per channel. Chat may explain; voice is read aloud.
+_MAX_TOKENS = {"chat": 900, "voice": 320}
 
 
 def _is_hebrew(text: str) -> bool:
     return any("֐" <= c <= "׿" for c in (text or ""))
-
-
-def _persons_and_mode() -> tuple[list[dict], str]:
-    persons: list[dict] = []
-    mode = "home"
-    try:
-        from services.presence_engine import list_persons
-        for p in list_persons():
-            persons.append({"name": p.get("name") or p.get("username") or p.get("id"),
-                            "state": p.get("effective_state") or "unknown"})
-    except Exception:
-        pass
-    try:
-        from services.mode_service import _load as _mode_load, DEFAULT_MODE
-        mode = str((_mode_load() or {}).get("mode") or DEFAULT_MODE)
-    except Exception:
-        pass
-    return persons, mode
-
-
-def _build_system_prompt(directory: dict, lang: str) -> str:
-    persons, mode = _persons_and_mode()
-    who = ", ".join(f"{p['name']}={p['state']}" for p in persons) or "unknown"
-    dir_text = _dir.format_directory_for_prompt(directory)
-
-    lang_rule = (
-        "ALWAYS reply in Hebrew. Speak like a real Israeli — warm, short, dugri, "
-        "בגובה העיניים. Never literary/translated Hebrew. "
-        "Refer to a device by its natural Hebrew noun + room, NOT its English "
-        "name and NEVER its id: say 'המנורה בסלון', 'המזגן בחדר שינה' — never "
-        "'Living Room Lamp', never 'living room', never an id. "
-        "Ziggy speaks about himself in masculine 1st person (כיביתי, בדקתי, עדיין "
-        "לא יודע). Address the user GENDER-FREE by construction — never guess a "
-        "gender: say 'אפשר לנסח שוב?' not 'תוכל/תוכלי', 'רוצה שאמשיך?' not "
-        "'אתה/את רוצה'. 24h clock, °C, ₪."
-        if lang == "he" else
-        "Reply in English. Refer to devices by their real name; never show an id."
-    )
-
-    return (
-        "You are Ziggy, the smart-home assistant. You are ONE agent that handles "
-        "everything the user says: commands, questions, presence/state, and "
-        "automations.\n\n"
-        f"{lang_rule}\n\n"
-        "OUTPUT SHAPE: one short sentence for actions and simple answers "
-        "(voice reads your reply aloud). Plain prose only — no markdown, bullets, "
-        "symbols, emoji, or lists. Answer and STOP — NEVER append a filler tail "
-        "like 'anything else?', 'happy to help', 'משהו נוסף?', 'יש עוד משהו "
-        "לעזור?', 'אשמח לעזור', 'אני כאן'.\n\n"
-        "HOW YOU ACT:\n"
-        "- To control a device, call control_device with the EXACT id from the "
-        "directory below. Resolve the user's words ('the lamp in the living "
-        "room', 'המנורה בסלון') to the right device yourself by matching its name "
-        "and room.\n"
-        "- If two or more devices genuinely match and you can't tell which, DO "
-        "NOT guess — ask ONE short question naming the options. When the user "
-        "then clarifies (including 'no, the X' corrections), re-resolve using the "
-        "conversation and act.\n"
-        "- 'is anyone in <room>' → room_occupancy. 'what's on' / 'is X on' → "
-        "query_devices. Temperature → get_temperature.\n"
-        "- Make a whole ROOM smart ('make the bedroom smart', 'תבנה לי חדר שינה "
-        "חכם') → design_smart_room with the room. A FREE-FORM outcome that isn't a "
-        "whole-room setup ('make my office cozy', 'morning routine') → "
-        "design_automation. An explicit single trigger+action ('turn off the "
-        "bedroom light at 23:00') → create_automation.\n"
-        "- A device tagged [IR] in the directory has no id you can pass to "
-        "control_device — use the ir_* tools instead (ir_send_command for TV/AC "
-        "power/mode, ir_set_ac_temperature for AC temperature, ir_send_channel "
-        "for TV channels), giving device_type + room.\n"
-        "- A live-data question (weather/news/prices/scores) → web_search.\n"
-        "WHEN SOMETHING'S BROKEN (the user says a device won't respond, won't turn "
-        "on, keeps flipping back, or the home feels stuck):\n"
-        "  · First understand the problem. 'Is everything OK?' / 'nothing works' / "
-        "'the house is stuck' → check_home_health. One specific device misbehaving "
-        "→ diagnose_device with its id.\n"
-        "  · A device the user is trying to ADD ('the new sensor won't connect', "
-        "'it can't find my new bulb', 'למה המכשיר החדש לא מתחבר') is a different "
-        "problem → diagnose_pairing, not check_home_health. Relay its answer and "
-        "the physical step it gives.\n"
-        "  · Then, if a safe fix is obvious, DO it and tell them: refresh_device "
-        "wakes a single stuck device; recover_connectivity reconnects many at once. "
-        "These are safe — take them yourself, then say what you did in one sentence. "
-        "If a fix returns a physical step (e.g. flip a switch), relay that step "
-        "plainly.\n"
-        "  · Explain the cause in human terms first, act second. Never expose the "
-        "engine: no 'Home Assistant', no 'Zigbee', no 'coordinator', no ids.\n"
-        "- Gibberish / a lone symbol / impossible request → one short reply "
-        "asking to rephrase or declining. NEVER invent a question, NEVER greet "
-        "unless greeted, NEVER list your capabilities, NEVER echo a user-style "
-        "question back.\n"
-        "- Never mention Home Assistant, entities, integrations, or any id.\n\n"
-        f"HOUSE: mode={mode}; people: {who}.\n\n"
-        "DEVICE DIRECTORY (real names + rooms + current state; ids are for your "
-        "tool calls only, never shown to the user):\n"
-        f"{dir_text}\n"
-    )
 
 
 def _canonical(name: str, args: dict) -> str:
@@ -163,12 +75,22 @@ def _slim_result(result: dict) -> dict:
     return out
 
 
+def _build_system_prompt(directory: dict, lang: str, *, channel: str = "chat",
+                         mode: Optional[str] = None) -> str:
+    ctx = _ctx.build_context(directory, lang=lang, channel=channel, mode=mode)
+    return _persona.build_system_prompt(ctx)
+
+
 async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
-                    *, channel: str = "chat", actor: Optional[str] = None) -> dict:
-    """One agent turn. ``actor`` is the authenticated caller's principal ref
-    ("person:<username>") — passed to the tools so a remediation is authorized
-    against the human it's being done for, never above them. None (voice/kiosk
-    with no identity) means the agent's own envelope applies."""
+                    *, channel: str = "chat", actor: Optional[str] = None,
+                    mode: Optional[str] = None) -> dict:
+    """One agent turn.
+
+    ``actor`` is the authenticated caller's principal ref ("person:<username>")
+    — passed to the tools so a remediation is authorized against the human it's
+    being done for, never above them. None (voice/kiosk with no identity) means
+    the agent's own envelope applies. ``mode`` is "diagnostic" or None.
+    """
     text = (text or "").strip()
     if not text:
         return ok("")
@@ -179,6 +101,7 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
         return err(str(gate_err), details="cloud_llm_gated")
 
     lang = "he" if _is_hebrew(text) else "en"
+    channel = "voice" if channel == "voice" else "chat"
 
     try:
         directory = await _dir.build_directory()
@@ -186,7 +109,7 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
         log_error(f"[agent] directory build failed: {e}")
         directory = {"devices": [], "presence": [], "by_room": {}}
 
-    system_prompt = _build_system_prompt(directory, lang)
+    system_prompt = _build_system_prompt(directory, lang, channel=channel, mode=mode)
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     history = chat_history or []
     messages.extend(history)
@@ -194,7 +117,7 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
         messages.append({"role": "user", "content": text})
 
     bus.emit("intent", BASIC, "agent_turn_start", input=text, channel=channel,
-             lang=lang, devices=len(directory.get("devices") or []))
+             lang=lang, mode=mode, devices=len(directory.get("devices") or []))
 
     data: dict = {}
     reply = ""
@@ -205,7 +128,7 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
             resp = chat_completion(
                 "chat", messages,
                 tools=_tools.TOOL_SCHEMAS, tool_choice="auto",
-                temperature=0.3, max_tokens=500,
+                temperature=0.4, max_tokens=_MAX_TOKENS[channel],
             )
             msg = resp.choices[0].message
 
@@ -241,9 +164,8 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
 
             # Pro Mode bundle preview: if a tool returned the v1 preview-card
             # envelope, surface it verbatim so the app renders BundlePreviewCard
-            # (accept/edit/undo). Skip the 2nd model turn — the card replaces the
-            # text bubble anyway. This is what makes "build me a smart room" work
-            # in chat.
+            # (accept/edit/undo). Skip the next model turn — the card replaces
+            # the text bubble anyway.
             preview_res = next(
                 (r for _, r in iter_results
                  if (r.get("data") or {}).get("kind") == "automation_bundle_preview"
@@ -256,16 +178,16 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                     "bundle": preview_res["data"]["bundle"],
                 }
                 reply = (preview_res.get("message") or "").strip() or (
-                    "עיצבתי לך את החדר החכם — סקור ואשר." if lang == "he"
+                    "עיצבתי לך את החדר החכם — אפשר לעבור ולאשר." if lang == "he"
                     else "Here's the smart room I designed — review and accept.")
                 break
 
             # Fast path: first turn, no narration, every call a successful device
-            # action → deterministic terse confirmation, skip 2nd round-trip.
+            # action → deterministic native confirmation, skip the 2nd round-trip.
             if (iteration == 0 and not (msg.content or "").strip()
                     and iter_results
-                    and all(n == "control_device" and r.get("ok") for n, r in iter_results)):
-                # de-dup the results for phrasing (unique devices)
+                    and all(n == "control_device" and r.get("ok") and not r.get("rehearsal")
+                            for n, r in iter_results)):
                 uniq: list[dict] = []
                 seen: set = set()
                 for _, r in iter_results:
@@ -280,20 +202,23 @@ async def run_agent(text: str, chat_history: Optional[list[dict]] = None,
                     break
             # otherwise loop → next model call narrates from tool results
         else:
-            # ran out of iterations without a plain-content answer
             reply = reply or ("סיימתי." if lang == "he" else "Done.")
     except Exception as e:
         log_error(f"[agent] run failed: {e}")
-        return err("GPT error while chatting.", details=str(e))
+        return err("משהו השתבש אצלי רגע — אפשר לנסות שוב." if lang == "he"
+                   else "Something went wrong on my side — try again.", details=str(e))
 
     reply = sanitize_reply(reply, channel=channel)
     if not reply:
         reply = "סיימתי." if lang == "he" else "Done."
 
+    # Voice contract: the reply is what gets spoken. Chat contract: derive the
+    # short spoken rendering so the app can read it aloud without a 2nd call.
+    data["spoken"] = reply if channel == "voice" else spoken_summary(reply, lang)
+
     bus.emit("intent", BASIC, "agent_turn_done", reply=reply,
-             has_preview=bool(data.get("preview")))
+             has_preview=bool(data.get("bundle")))
 
     out = ok(reply)
-    if data:
-        out["data"] = data
+    out["data"] = data
     return out

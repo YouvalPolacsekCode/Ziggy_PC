@@ -92,19 +92,66 @@ def render_device_confirmation(results: list[dict], lang: str) -> Optional[str]:
 # entity_id shape: domain.rest  (lowercase domain, then a dot, then id chars)
 _ENTITY_RE = re.compile(r"\b(?:light|switch|climate|media_player|fan|cover|lock|"
                         r"vacuum|humidifier|water_heater|binary_sensor|sensor|"
-                        r"input_boolean|automation)\.[a-z0-9_]+", re.IGNORECASE)
-_HA_TERMS_RE = re.compile(r"\b(home assistant|hass|entity[_ ]id|integration)\b", re.IGNORECASE)
+                        r"input_boolean|automation|script|camera|person|device_tracker)"
+                        r"\.[a-z0-9_]+", re.IGNORECASE)
+# IR devices carry "ir:<uuid>" ids in the directory.
+_IR_ID_RE = re.compile(r"\bir:[a-z0-9_-]{4,}\b", re.IGNORECASE)
+# Engine words in both languages. Word-bounded for Latin; Hebrew has no \b
+# semantics for prefixes, so match the bare term.
+_HA_TERMS_RE = re.compile(
+    r"\b(home assistant|hass|entity[_ ]ids?|entities|integrations?|zigbee2mqtt|"
+    r"zigbee|coordinator|mqtt)\b", re.IGNORECASE)
+_HE_TERMS_RE = re.compile(r"(ישויות|ישות|טריגר|אינטגרציה|קונטרולר|מרכזייה|רכז זיגבי)")
 # Voice: structural markdown chars TTS would read literally.
 _MD_RE = re.compile(r"[*_`#|>]+")
+# Chat: markdown emphasis/heading/bullet markers the model may still emit.
+_MD_INLINE_RE = re.compile(r"(\*\*|__|`+|^#{1,6}\s*|^\s*[-*•·]\s+)", re.MULTILINE)
 
 
 def sanitize_reply(text: str, *, channel: str = "chat") -> str:
     if not text:
         return text
     text = _ENTITY_RE.sub("", text)
+    text = _IR_ID_RE.sub("", text)
     text = _HA_TERMS_RE.sub("", text)
+    text = _HE_TERMS_RE.sub("", text)
     if channel == "voice":
         text = _MD_RE.sub("", text)
-    # collapse whitespace the substitutions may have left
-    text = re.sub(r"\s{2,}", " ", text).strip()
-    return text
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+    text = _MD_INLINE_RE.sub("", text)
+    # An id stripped from inside brackets leaves "()" / "[]" behind.
+    text = re.sub(r"\s*[\(\[]\s*[\)\]]", "", text)
+    # Collapse runs of spaces but keep intentional line breaks (chat contract
+    # allows one item per line). Max one blank line.
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r" +\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+# ── Spoken rendering for the voice contract ──────────────────────────────────
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+|(?<=[׃])\s+|\n+")
+_SPOKEN_MAX_CHARS = 220
+
+
+def spoken_summary(reply: str, lang: str = "en") -> str:
+    """Deterministic short spoken rendering of a chat reply.
+
+    First two sentences, capped, list markers and line breaks removed, then the
+    voice sanitizer. Zero latency: no model call. The chat bubble keeps the
+    full text; this is what the speaker says.
+    """
+    if not reply:
+        return ""
+    flat = re.sub(r"^\s*[-*•·\d]+[.)]?\s+", "", reply, flags=re.MULTILINE)
+    sentences = [s.strip() for s in _SENT_SPLIT.split(flat) if s and s.strip()]
+    if not sentences:
+        return sanitize_reply(reply, channel="voice")[:_SPOKEN_MAX_CHARS]
+    out = sentences[0]
+    if len(sentences) > 1 and len(out) + 1 + len(sentences[1]) <= _SPOKEN_MAX_CHARS:
+        out = out + " " + sentences[1]
+    if len(out) > _SPOKEN_MAX_CHARS:
+        cut = out[:_SPOKEN_MAX_CHARS].rsplit(" ", 1)[0]
+        out = cut.rstrip(",;:") + ("…" if not cut.endswith((".", "!", "?")) else "")
+    return sanitize_reply(out, channel="voice")

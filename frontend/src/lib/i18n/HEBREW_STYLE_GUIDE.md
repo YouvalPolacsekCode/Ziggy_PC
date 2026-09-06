@@ -2,6 +2,8 @@
 
 The goal: Ziggy's Hebrew reads and sounds like a **real, warm, native Israeli** — never translated, textbook, or robotic. Every string in `he.js` (and Ziggy's spoken replies in the backend) follows the rules below. When adding or editing Hebrew, match these.
 
+> **The assistant's own voice lives in `core/agent/persona.py`.** That module is what the chat/voice brain actually follows (identity, Hebrew rules, chat vs. voice contracts). This guide governs UI strings; when the two disagree about how Ziggy *talks*, fix `persona.py` first and mirror the rule here.
+
 ## 1. Register & gender — "neutral by construction"
 
 We never gender the user, and we never use slash forms (`בחר/י`). We neutralize by *how we phrase*, not by adding `/ה`.
