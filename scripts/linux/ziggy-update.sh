@@ -177,18 +177,25 @@ write_task_heartbeat() {
   result="$(systemctl show "$svc" -p Result --value 2>/dev/null || echo '')"
   n_restarts="$(systemctl show "$svc" -p NRestarts --value 2>/dev/null || echo '')"
   last_run="$(systemctl show "$svc" -p ExecMainExitTimestamp --value 2>/dev/null || echo '')"
-  active="$(systemctl is-active "$svc" 2>/dev/null || echo 'unknown')"
+  # `is-active` PRINTS the state and exits non-zero for anything but
+  # "active" — so `|| echo unknown` used to append a second line
+  # ("activating\nunknown"), a raw newline inside a JSON string, and the
+  # container's reader then saw the whole snapshot as unreadable.
+  active="$(systemctl is-active "$svc" 2>/dev/null | head -n1)"
+  [ -n "$active" ] || active="unknown"
   next_run="$(systemctl show "$tmr" -p NextElapseUSecRealtime --value 2>/dev/null || echo '')"
+  # one JSON string value: no newlines, quotes escaped
+  jstr() { printf '%s' "$1" | tr -d '\n\r' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
   {
     printf '{'
-    printf '"written_at":"%s",'       "$TS"
-    printf '"unit":"%s",'             "$svc"
-    printf '"active_state":"%s",'     "${active:-unknown}"
-    printf '"result":"%s",'           "${result:-}"
-    printf '"exec_main_status":"%s",' "${exec_status:-}"
-    printf '"n_restarts":"%s",'       "${n_restarts:-}"
-    printf '"last_run":"%s",'         "${last_run:-}"
-    printf '"next_run":"%s"'          "${next_run:-}"
+    printf '"written_at":"%s",'       "$(jstr "$TS")"
+    printf '"unit":"%s",'             "$(jstr "$svc")"
+    printf '"active_state":"%s",'     "$(jstr "${active:-unknown}")"
+    printf '"result":"%s",'           "$(jstr "${result:-}")"
+    printf '"exec_main_status":"%s",' "$(jstr "${exec_status:-}")"
+    printf '"n_restarts":"%s",'       "$(jstr "${n_restarts:-}")"
+    printf '"last_run":"%s",'         "$(jstr "${last_run:-}")"
+    printf '"next_run":"%s"'          "$(jstr "${next_run:-}")"
     printf '}\n'
   } > "$TASK_HEARTBEAT" 2>/dev/null || true
 }

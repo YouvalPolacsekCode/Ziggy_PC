@@ -67,6 +67,54 @@ def test_ota_clock_skew_clamps_negative(eh, tmp_path, monkeypatch):
     assert snap["status"] == "ok"  # fresh, not mis-flagged stale/silent
 
 
+def _write_updater_hb(eh, tmp_path, monkeypatch, delta_seconds):
+    p = tmp_path / "update.heartbeat"
+    p.write_text("%s idle git=deadbeef\n" % _now_z(delta_seconds))
+    monkeypatch.setattr(eh, "_UPDATER_HEARTBEAT_PATH", str(p))
+
+
+def test_ota_quiet_main_with_live_updater_is_ok(eh, tmp_path, monkeypatch):
+    # Last deploy 8h ago (nothing to deploy) but the updater ran a minute ago:
+    # the hub can take a fix any time — that is "ok", not "silent"/"down".
+    log = tmp_path / "deploy_log"
+    log.write_text("---\nts:        %s\nverified:  True\n" % _now_z(-8 * 3600))
+    monkeypatch.setattr(eh, "_DEPLOY_LOG_PATH", str(log))
+    _write_updater_hb(eh, tmp_path, monkeypatch, -60)
+    snap = eh._ota_snapshot()
+    assert snap["status"] == "ok"
+    assert snap["seconds_since"] >= 8 * 3600 - 5          # deploy age still reported
+    assert 0 <= snap["updater_seconds_since"] < 600
+
+
+def test_ota_silent_when_updater_stopped(eh, tmp_path, monkeypatch):
+    log = tmp_path / "deploy_log"
+    log.write_text("---\nts:        %s\nverified:  True\n" % _now_z(-8 * 3600))
+    monkeypatch.setattr(eh, "_DEPLOY_LOG_PATH", str(log))
+    _write_updater_hb(eh, tmp_path, monkeypatch, -3 * 3600)
+    assert eh._ota_snapshot()["status"] == "silent"
+
+
+def test_ota_without_heartbeat_file_keeps_old_rule(eh, tmp_path, monkeypatch):
+    log = tmp_path / "deploy_log"
+    log.write_text("---\nts:        %s\nverified:  True\n" % _now_z(-8 * 3600))
+    monkeypatch.setattr(eh, "_DEPLOY_LOG_PATH", str(log))
+    monkeypatch.setattr(eh, "_UPDATER_HEARTBEAT_PATH", str(tmp_path / "nope"))
+    snap = eh._ota_snapshot()
+    assert snap["status"] == "silent" and snap["updater_seconds_since"] is None
+
+
+def test_task_snapshot_tolerates_raw_newline_in_value(eh, tmp_path, monkeypatch):
+    # what the Linux updater wrote when systemd said "activating": a literal
+    # newline inside the JSON string — must not read as "unknown"
+    p = tmp_path / "update_task.json"
+    p.write_text('{"written_at":"%s","unit":"ziggy-update.service","active_state":"activating\nunknown",'
+                 '"result":"success","exec_main_status":"0"}' % _now_z())
+    monkeypatch.setattr(eh, "_TASK_HEARTBEAT_PATH", str(p))
+    snap = eh._task_scheduler_snapshot()
+    assert snap["status"] == "ok"
+    assert snap["heartbeat_age_seconds"] is not None
+
+
 def test_ota_normal_age(eh, tmp_path, monkeypatch):
     log = tmp_path / "deploy_log"
     log.write_text("---\nts:        %s\nverified:  True\n" % _now_z(-120))

@@ -96,6 +96,24 @@ def _last_post_is_fresh(last_post_at: Optional[str], *,
 _OTA_STALE_WARN_S  = 30 * 60
 _OTA_STALE_DOWN_S  = 2 * 60 * 60
 _DEPLOY_LOG_PATH   = "/app/user_files/deploy_log"
+# Written by scripts/linux/ziggy-update.sh on EVERY run ("<ts> idle git=…"),
+# deploy or not — the proof the updater is alive on a quiet main.
+_UPDATER_HEARTBEAT_PATH = "/app/user_files/update.heartbeat"
+
+
+def _updater_heartbeat_age_s() -> "int | None":
+    """Seconds since the updater last ran, from update.heartbeat; None when
+    the file is missing or unreadable (Windows-era hubs, fresh images)."""
+    import os
+    try:
+        if not os.path.exists(_UPDATER_HEARTBEAT_PATH):
+            return None
+        with open(_UPDATER_HEARTBEAT_PATH, "r", encoding="utf-8") as f:
+            first = (f.read().strip().split() or [""])[0]
+        dt = datetime.fromisoformat(first.replace("Z", "+00:00"))
+        return max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
+    except Exception:
+        return None
 # Task Scheduler heartbeat written by scripts/update.ps1 on every run. The
 # container can't query Windows Task Scheduler, so this JSON is the only view
 # into the ZiggyAutoUpdate task's own LastTaskResult / run cadence.
@@ -174,10 +192,16 @@ def _ota_snapshot() -> dict:
         clock_skew_suspected = seconds_since < 0
         if clock_skew_suspected:
             seconds_since = 0
-        # Classify
-        if seconds_since >= _OTA_STALE_DOWN_S:
+        # Classify on the updater's ACTIVITY, not on the age of the last
+        # deploy. A quiet main means no deploy for days; the updater still
+        # runs every 2 min and writes update.heartbeat. "silent" must mean
+        # "the updater stopped", which is what leaves a hub unreachable to
+        # fixes — not "nothing needed deploying".
+        updater_age = _updater_heartbeat_age_s()
+        activity_age = seconds_since if updater_age is None else min(seconds_since, updater_age)
+        if activity_age >= _OTA_STALE_DOWN_S:
             status = "silent"
-        elif seconds_since >= _OTA_STALE_WARN_S:
+        elif activity_age >= _OTA_STALE_WARN_S:
             status = "stale"
         else:
             status = "ok"
@@ -187,6 +211,7 @@ def _ota_snapshot() -> dict:
         return {
             "last_deploy_at":       last_ts_str,
             "seconds_since":        seconds_since,
+            "updater_seconds_since": updater_age,
             "last_verified":        last_verified,
             "status":               status,
             "clock_skew_suspected": clock_skew_suspected,
@@ -218,7 +243,11 @@ def _task_scheduler_snapshot() -> dict:
                     "last_run_at": None, "next_run_at": None,
                     "missed_runs": None, "heartbeat_age_seconds": None}
         with open(_TASK_HEARTBEAT_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw = f.read()
+        # Older Linux updaters wrote a raw newline inside a string value
+        # ("activating\nunknown"); tolerate it rather than report "unknown".
+        import re as _re
+        data = json.loads(_re.sub(r"[\x00-\x1f]+", " ", raw))
 
         written_at = data.get("written_at")
         age = None
