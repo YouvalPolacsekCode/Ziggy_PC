@@ -12,6 +12,9 @@ import { behaviorSummary } from '../../lib/automations/summaries'
 // on the page that was the dominant cost on every device toggle.
 const AutomationCard = React.memo(function AutomationCard({
   automation, offlineEntityIds, onToggle, onView, onEdit, onDelete, onTrigger,
+  // Deep-link focus (/actions?focus=<id> from a chat card): accent ring for a
+  // moment so the eye lands on the right card after the scroll.
+  highlighted = false,
 }) {
   const t = useT()
   const automationName = useTranslatedName(automation.name)
@@ -34,8 +37,14 @@ const AutomationCard = React.memo(function AutomationCard({
   const hasOfflineDep = automation.enabled && offlineEntities.length > 0
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
-      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} data-automation-id={automation.id}>
+      <div style={{
+        padding: '14px 16px', borderRadius: 12, background: 'var(--surface)',
+        border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`,
+        boxShadow: highlighted ? '0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent)' : 'none',
+        transition: 'box-shadow 0.4s ease',
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+      }}>
         {(() => {
           const triggerType = automation.trigger?.type || 'time'
           const tintMap = { time: 'var(--info)', state: 'var(--ok)', zone: 'var(--accent)', sunrise: 'var(--gold)', sunset: 'var(--accent)', webhook: 'var(--warn)', manual: 'var(--ink-mute)' }

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal } from '../components/ui/Modal'
 import { useAutomationStore } from '../stores/automationStore'
@@ -45,6 +46,13 @@ export default function Automations() {
     return s
   }, [entities])
   const [tab,               setTab]               = useState('automations')
+  // Deep link from a chat card: /actions?focus=<automation config id> scrolls
+  // that card into view and rings it for a moment. Local state (not the URL)
+  // holds the highlight so it fades once and doesn't re-fire on re-renders.
+  const [searchParams] = useSearchParams()
+  const focusParam = searchParams.get('focus')
+  const [focusId, setFocusId] = useState(focusParam || null)
+  useEffect(() => { setFocusId(focusParam || null) }, [focusParam])
   // Library (OOTB templates + community blueprints) and Suggested (habit feed)
   // are no longer tabs — they open as modals from the Automations tab.
   const [showLibrary,       setShowLibrary]       = useState(false)
@@ -138,6 +146,23 @@ export default function Automations() {
 
     return { circadianGroup, smartRoomGroups, visibleAutomations: visible }
   }, [automations, roomNameMap, occupancySensors])
+
+  // ?focus=<id>: once the focused card exists in the list, scroll it into
+  // view (AutomationCard stamps data-automation-id) and drop the ring after a
+  // beat. An id that never shows up (grouped / filtered / gone) just does nothing.
+  useEffect(() => {
+    if (!focusId) return undefined
+    if (!visibleAutomations.some(a => a.id === focusId)) return undefined
+    setTab('automations')
+    let cancelled = false
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return
+      const el = document.querySelector(`[data-automation-id="${CSS.escape(focusId)}"]`)
+      el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    })
+    const timer = setTimeout(() => { if (!cancelled) setFocusId(null) }, 3000)
+    return () => { cancelled = true; cancelAnimationFrame(raf); clearTimeout(timer) }
+  }, [focusId, visibleAutomations])
 
   // Agent → app: when the chat agent (or an outside assistant) toggles,
   // creates or deletes an automation, the list here refreshes by itself.
@@ -503,6 +528,7 @@ export default function Automations() {
               ))}
               {visibleAutomations.map(a => (
                 <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
+                  highlighted={!!focusId && a.id === focusId}
                   onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
                   onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }} />
               ))}

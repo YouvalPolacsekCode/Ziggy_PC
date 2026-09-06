@@ -2324,6 +2324,10 @@ export default {
   'chat.suggestMovie':            'זמן סרט',
   'chat.suggestWhoHome':          'מי בבית?',
   'chat.suggestMorning':          'בוקר טוב',
+  // ניווט מתוך הצ׳אט: כרטיס פתח דף; הצ׳אט נשאר בהישג יד (עמודת צד במסך רחב, כפתור חזרה בנייד).
+  'chat.backToChat':              'חזרה לצ׳אט',
+  'chat.dock.close':              'סגירת הצ׳אט',
+  'chat.dock.expand':             'פתיחה במסך מלא',
 
   // ── כרטיסים בצ׳אט (components/chat/ChatCards.jsx) ───────────────────
   'chat.card.devices':            '{n} מכשירים',

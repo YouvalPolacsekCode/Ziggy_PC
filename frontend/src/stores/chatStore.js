@@ -1,5 +1,22 @@
 import { create } from 'zustand'
 
+// In-context navigation: tapping an object inside a chat card opens that
+// object's real page while the conversation stays at hand. On wide screens
+// the chat re-renders as a side dock beside the page (AppShell); on phones
+// the page shows a "back to chat" pill instead. One breakpoint decides both —
+// 1024px, deliberately wider than the Sidebar's `md` (768px): sidebar (196px)
+// + dock (400px) leave nothing usable for the page at 768.
+export const CHAT_DOCK_MIN_WIDTH = 1024
+export const CHAT_DOCK_QUERY = `(min-width: ${CHAT_DOCK_MIN_WIDTH}px)`
+
+export function isWideForChatDock() {
+  try {
+    if (typeof window === 'undefined') return false
+    if (window.matchMedia) return window.matchMedia(CHAT_DOCK_QUERY).matches
+    return window.innerWidth >= CHAT_DOCK_MIN_WIDTH
+  } catch { return false }
+}
+
 // Chat state. `messages` + addMessage/clearMessages keep the original ephemeral API
 // (used everywhere in AIChat). The thread fields make a conversation a durable,
 // resumable, background-running server object — for ALL chats, not just the fixer.
@@ -9,6 +26,8 @@ export const useChatStore = create((set) => ({
   threads: [],             // list for the switcher: [{thread_id,title,status,updated_at,preview}]
   status: 'idle',          // active thread: idle | running | error
   mode: null,              // 'diagnostic' | null — per-thread; the server owns it, we mirror it
+  chatDock: false,         // wide screens: keep the chat open as a side column beside the page
+  setChatDock: (chatDock) => set({ chatDock: !!chatDock }),
 
   addMessage: (role, text, ok = true, extras = {}) =>
     set((s) => ({

@@ -453,7 +453,13 @@ function joinDeduped(prev, next) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function AIChat() {
+/**
+ * @param {boolean} [props.docked] rendered inside AppShell's wide-screen chat
+ *   dock (a fixed-width side column) rather than as the /chat page. Docked,
+ *   the component fills its container instead of measuring the viewport, and
+ *   drops the page title block (the dock has its own header row).
+ */
+export default function AIChat({ docked = false }) {
   const t = useT()
   const lang = useLang()
   const location  = useLocation()
@@ -1000,6 +1006,8 @@ export default function AIChat() {
     }
     const setSize = () => {
       if (!containerRef.current) return
+      // Docked: the dock column owns the height; the container just fills it.
+      if (docked) { containerRef.current.style.height = '100%'; return }
       const vv = window.visualViewport
       const viewH = vv ? vv.height : window.innerHeight
       const isMobile = window.innerWidth < 768
@@ -1025,7 +1033,7 @@ export default function AIChat() {
         window.visualViewport.removeEventListener('scroll', setSize)
       }
     }
-  }, [])
+  }, [docked])
 
   useEffect(() => {
     if (sentPrefillRef.current) return
@@ -1753,19 +1761,22 @@ export default function AIChat() {
         // Pre-JS fallback: dvh minus the nav row + bottom safe-area floor.
         // The useEffect above immediately overrides this with the exact pixel
         // value, but this avoids a single-frame "too tall" flash before hydration.
-        height: 'calc(var(--vh) - var(--nav-h) - max(var(--safe-bottom), 8px))',
+        // Docked (AppShell side column) it simply fills the column.
+        height: docked ? '100%' : 'calc(var(--vh) - var(--nav-h) - max(var(--safe-bottom), 8px))',
+        minHeight: 0,
         background: 'var(--bg)',
         overflow: 'hidden',
       }}
     >
-      {/* ── Header bar ── */}
+      {/* ── Header bar ── (docked: controls only — the dock header carries the
+          title, and the width has no room for the awareness strip) */}
       <div style={{
-        padding: '14px 20px 10px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: docked ? '8px 12px' : '14px 20px 10px',
+        display: 'flex', alignItems: 'center', justifyContent: docked ? 'flex-end' : 'space-between',
         borderBottom: '0.5px solid var(--line)',
         flexShrink: 0,
       }}>
-        <div>
+        {!docked && <div>
           <p className="z-eyebrow">{t('chat.eyebrow')}</p>
           <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>{t('chat.headerTitle')}</h1>
           {knownDevices > 0 && (
@@ -1776,8 +1787,8 @@ export default function AIChat() {
               {knownRoutines > 0 ? ` · ${knownRoutines === 1 ? t('chat.routinesOne', { n: knownRoutines }) : t('chat.routinesMany', { n: knownRoutines })}` : ''}
             </p>
           )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        </div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: docked ? 'wrap' : 'nowrap', justifyContent: 'flex-end' }}>
           {/* Durable-thread switcher — opens a side drawer of past conversations. */}
           <button
             onClick={() => setShowThreads(true)}

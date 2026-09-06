@@ -2740,6 +2740,11 @@ export default {
   'chat.suggestMovie':            'Movie time',
   'chat.suggestWhoHome':          'Who is home?',
   'chat.suggestMorning':          'Good morning',
+  // In-context navigation: a chat card opened a page; the chat stays at hand
+  // (side dock on wide screens, back pill on phones).
+  'chat.backToChat':              'Back to chat',
+  'chat.dock.close':              'Close chat',
+  'chat.dock.expand':             'Open full',
 
   // ── Chat cards (components/chat/ChatCards.jsx) ──────────────────────
   'chat.card.devices':            '{n} devices',

@@ -12,9 +12,61 @@
 // ui/ is the one shared control (gotcha: Radix wants onCheckedChange).
 
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { runAction } from '../../lib/api'
 import { useT, useLang } from '../../lib/i18n'
 import { Toggle } from '../ui/Toggle'
+import { useChatStore, isWideForChatDock } from '../../stores/chatStore'
+
+// ── In-context navigation ─────────────────────────────────────────────────────
+// A card names a real object; tapping the name opens that object's page. The
+// conversation stays at hand: on wide screens AppShell keeps the chat docked
+// beside the page (chatDock), on phones it shows a "back to chat" pill for any
+// location whose state carries `fromChat`. Cards render inside the router in
+// both places (the /chat page and the dock), so useNavigate is safe here.
+
+function useChatNav() {
+  const navigate = useNavigate()
+  const setChatDock = useChatStore((s) => s.setChatDock)
+  return (path) => {
+    if (!path) return
+    if (isWideForChatDock()) setChatDock(true)
+    navigate(path, { state: { fromChat: true } })
+  }
+}
+
+// Name-as-link: a real button (keyboard + screen reader) that looks like the
+// plain name it replaces. Stops propagation so a row that also holds a Toggle
+// never sees the click.
+function LinkName({ to, children, style, title }) {
+  const go = useChatNav()
+  if (!to) return <span dir="auto" style={style}>{children}</span>
+  return (
+    <button
+      type="button"
+      dir="auto"
+      title={title}
+      onClick={(e) => { e.stopPropagation(); go(to) }}
+      style={{
+        background: 'none', border: 'none', padding: 0, margin: 0,
+        font: 'inherit', color: 'inherit', textAlign: 'start', cursor: 'pointer',
+        textDecoration: 'underline', textDecorationColor: 'color-mix(in srgb, var(--ink) 25%, transparent)',
+        textUnderlineOffset: 3, maxWidth: '100%', minWidth: 0,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function devicePath(entityId) {
+  return entityId ? `/devices/${encodeURIComponent(entityId)}` : null
+}
+
+export function automationPath(id) {
+  return id ? `/actions?focus=${encodeURIComponent(id)}` : '/actions'
+}
 
 // ── Shared chrome ─────────────────────────────────────────────────────────────
 
@@ -155,8 +207,8 @@ function DeviceRow({ device, lang, onAction }) {
 
   return (
     <div style={rowStyle}>
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <span dir="auto" style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <LinkName to={devicePath(device.entity_id)} style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</LinkName>
         <span dir="auto" style={muteStyle}>
           {[room && humanize(room), !canToggle && device.state].filter(Boolean).join(' · ')}
           {failed && <span style={{ color: 'var(--err)' }}> · {t('chat.card.actionFailed')}</span>}
@@ -206,8 +258,8 @@ function AutomationRow({ auto, lang, onAction }) {
 
   return (
     <div style={rowStyle}>
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <span dir="auto" style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auto.name}</span>
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <LinkName to={automationPath(auto.id)} style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auto.name}</LinkName>
         <span style={muteStyle}>
           {auto.last_triggered ? t('chat.card.lastRun', { when: formatWhen(auto.last_triggered) }) : t('chat.card.neverRan')}
           {failed && <span style={{ color: 'var(--err)' }}> · {t('chat.card.actionFailed')}</span>}
@@ -298,10 +350,16 @@ function WhyNotCard({ card, entityId, onAction }) {
     ? (card.occupancy.state || card.occupancy.status || null)
     : card.occupancy
 
+  // The card is about one device (entity_id from the runner when it knows it);
+  // its verdict line doubles as the way into that device's page.
+  const deviceLink = devicePath(card.entity_id || entityId)
+
   return (
     <Card title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
       {primary && (
-        <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{verdictTitle(t, primary)}</p>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>
+          <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 14 }}>{verdictTitle(t, primary)}</LinkName>
+        </p>
       )}
       {verdicts.length > 1 && (
         <p style={muteStyle}>{t('chat.card.alsoPossible')}: {verdicts.slice(1).map((v) => verdictTitle(t, v)).join(' · ')}</p>
@@ -379,7 +437,9 @@ function DownDevicesCard({ card }) {
   const count = card.count ?? names.length
   return (
     <Card title={t('chat.card.downDevices', { n: count })} tone={count > 0 ? 'warn' : undefined}>
-      <List items={names} render={(n) => <span dir="auto">{n}</span>} empty={t('chat.card.allReachable')} />
+      {/* No ids in this card — names open the Devices list, where the offline
+          filter/banner takes over. */}
+      <List items={names} render={(n) => <LinkName to="/devices">{n}</LinkName>} empty={t('chat.card.allReachable')} />
     </Card>
   )
 }
@@ -417,7 +477,7 @@ function CameraLookCard({ card }) {
   const t = useT()
   const title = [card.camera, card.room && humanize(card.room)].filter(Boolean).join(' · ') || t('chat.card.camera')
   return (
-    <Card title={title}>
+    <Card title={<LinkName to="/cameras" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>{title}</LinkName>}>
       {card.description && <p dir="auto" style={{ margin: 0 }}>{card.description}</p>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
         {typeof card.people_count === 'number' && <Badge tone="accent">{t('chat.card.people', { n: card.people_count })}</Badge>}

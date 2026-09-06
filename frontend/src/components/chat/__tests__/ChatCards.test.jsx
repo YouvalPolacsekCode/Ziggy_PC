@@ -3,7 +3,8 @@
 
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 
 const runAction = vi.fn()
 vi.mock('../../../lib/api', () => ({ runAction: (...a) => runAction(...a) }))
@@ -15,6 +16,27 @@ vi.mock('../../../lib/i18n', () => ({
 }))
 
 import ChatCard, { CARD_KINDS, verdictTitle } from '../ChatCards'
+import { useChatStore } from '../../../stores/chatStore'
+
+// Cards navigate (useNavigate), so every render lives inside a router. The
+// probe echoes the current location so tests can assert where a click went.
+function LocationProbe() {
+  const loc = useLocation()
+  return <div data-testid="loc" data-path={loc.pathname + loc.search} data-state={JSON.stringify(loc.state)} />
+}
+
+function render(ui) {
+  return rtlRender(
+    <MemoryRouter initialEntries={['/chat']}>
+      <Routes>
+        <Route path="*" element={<>{ui}<LocationProbe /></>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+const locPath = () => screen.getByTestId('loc').getAttribute('data-path')
+const locState = () => JSON.parse(screen.getByTestId('loc').getAttribute('data-state'))
 
 const SAMPLES = {
   device_list: { kind: 'device_list', devices: [
@@ -45,7 +67,10 @@ const SAMPLES = {
   device_diagnosis: { kind: 'device_diagnosis', reachable: true, battery: 40, signal: 'weak' },
 }
 
-beforeEach(() => { runAction.mockReset() })
+beforeEach(() => {
+  runAction.mockReset()
+  useChatStore.setState({ chatDock: false })
+})
 
 describe('ChatCard', () => {
   it('covers every registered kind in the samples', () => {
@@ -60,8 +85,9 @@ describe('ChatCard', () => {
   }
 
   it('renders nothing for a missing or kind-less card', () => {
-    expect(render(<ChatCard card={null} />).container.firstChild).toBeNull()
-    expect(render(<ChatCard card={{ devices: [] }} />).container.firstChild).toBeNull()
+    const bare = (ui) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+    expect(bare(<ChatCard card={null} />).container.firstChild).toBeNull()
+    expect(bare(<ChatCard card={{ devices: [] }} />).container.firstChild).toBeNull()
   })
 
   it('key/value fallback hides id-looking keys', () => {
@@ -129,5 +155,89 @@ describe('ChatCard', () => {
     const t = (k) => k
     expect(verdictTitle(t, 'device_unreachable')).toBe('chat.card.verdict.deviceUnreachable')
     expect(verdictTitle(t, 'something_new')).toBe('something new')
+  })
+
+  // ── In-context navigation ──────────────────────────────────────────────────
+
+  describe('deep links', () => {
+    it('device name opens /devices/<id> with state.fromChat', () => {
+      render(<ChatCard card={SAMPLES.device_list} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Kitchen light' }))
+      expect(locPath()).toBe('/devices/light.kitchen')
+      expect(locState()).toEqual({ fromChat: true })
+    })
+
+    it('device toggle does NOT navigate', () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      render(<ChatCard card={SAMPLES.device_list} />)
+      fireEvent.click(screen.getAllByRole('switch')[0])
+      expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.kitchen', action: 'off' }, 'en')
+      expect(locPath()).toBe('/chat')
+      expect(locState()).toBeNull()
+    })
+
+    // jsdom ships no matchMedia; stub it per test so the breakpoint is explicit.
+    const withViewport = (matches, fn) => {
+      const orig = window.matchMedia
+      window.matchMedia = vi.fn(() => ({ matches, addEventListener() {}, removeEventListener() {} }))
+      try { fn() } finally { window.matchMedia = orig }
+    }
+
+    it('does not dock the chat on a narrow screen', () => withViewport(false, () => {
+      render(<ChatCard card={SAMPLES.device_list} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Kitchen light' }))
+      expect(useChatStore.getState().chatDock).toBe(false)
+      expect(locPath()).toBe('/devices/light.kitchen')
+    }))
+
+    it('docks the chat when the viewport is wide', () => withViewport(true, () => {
+      render(<ChatCard card={SAMPLES.device_list} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Kitchen light' }))
+      expect(useChatStore.getState().chatDock).toBe(true)
+      expect(locPath()).toBe('/devices/light.kitchen')
+    }))
+
+    it('automation name opens /actions?focus=<id>, or /actions without one', () => {
+      const { unmount } = render(<ChatCard card={SAMPLES.automations} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Night lights' }))
+      expect(locPath()).toBe('/actions?focus=a1')
+      expect(locState()).toEqual({ fromChat: true })
+      unmount()
+
+      render(<ChatCard card={{ kind: 'automations', automations: [{ name: 'No id', enabled: true }] }} />)
+      fireEvent.click(screen.getByRole('button', { name: 'No id' }))
+      expect(locPath()).toBe('/actions')
+    })
+
+    it('automation switch does NOT navigate', () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      render(<ChatCard card={SAMPLES.automations} />)
+      fireEvent.click(screen.getAllByRole('switch')[0])
+      expect(locPath()).toBe('/chat')
+    })
+
+    it('why_not verdict opens the device only when an entity id is known', () => {
+      const { unmount } = render(<ChatCard card={SAMPLES.why_not} />)
+      // Without an id the verdict is plain text, not a link.
+      expect(screen.queryByRole('button', { name: 'chat.card.verdict.deviceUnreachable' })).toBeNull()
+      unmount()
+
+      render(<ChatCard card={{ ...SAMPLES.why_not, entity_id: 'light.hall' }} />)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.verdict.deviceUnreachable' }))
+      expect(locPath()).toBe('/devices/light.hall')
+      expect(locState()).toEqual({ fromChat: true })
+    })
+
+    it('down_devices names open the devices list; camera_look opens cameras', () => {
+      const { unmount } = render(<ChatCard card={SAMPLES.down_devices} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Balcony light' }))
+      expect(locPath()).toBe('/devices')
+      unmount()
+
+      render(<ChatCard card={SAMPLES.camera_look} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Porch · entrance' }))
+      expect(locPath()).toBe('/cameras')
+      expect(locState()).toEqual({ fromChat: true })
+    })
   })
 })
