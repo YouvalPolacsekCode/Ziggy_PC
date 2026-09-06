@@ -2332,6 +2332,8 @@ export default {
   // ── כרטיסים בצ׳אט (components/chat/ChatCards.jsx) ───────────────────
   'chat.card.devices':            '{n} מכשירים',
   'chat.card.noDevices':          'לא נמצאו מכשירים',
+  'chat.card.showAll':            'הצגת הכל ({n})',
+  'chat.card.less':               'פחות',
   'chat.card.actionFailed':       'לא עבר',
   'chat.card.automations':        '{n} שגרות',
   'chat.card.noAutomations':      'עדיין אין שגרות',

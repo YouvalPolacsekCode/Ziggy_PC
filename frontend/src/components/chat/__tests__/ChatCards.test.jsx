@@ -8,14 +8,16 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 
 const runAction = vi.fn()
 vi.mock('../../../lib/api', () => ({ runAction: (...a) => runAction(...a) }))
-// i18n → identity so assertions match on keys; lang fixed to 'en'.
+// i18n → identity so assertions match on keys; UI lang fixed to 'en'. Cards
+// translate with the pure `t(key, params, lang)` bound to the turn's language.
 vi.mock('../../../lib/i18n', () => ({
+  t: (k) => k,
   useT: () => (k) => k,
   useLang: () => 'en',
   useIsRTL: () => false,
 }))
 
-import ChatCard, { CARD_KINDS, verdictTitle } from '../ChatCards'
+import ChatCard, { CARD_KINDS, verdictTitle, deviceLabel, roomLabel, sortDevices } from '../ChatCards'
 import { useChatStore } from '../../../stores/chatStore'
 
 // Cards navigate (useNavigate), so every render lives inside a router. The
@@ -67,9 +69,25 @@ const SAMPLES = {
   device_diagnosis: { kind: 'device_diagnosis', reachable: true, battery: 40, signal: 'weak' },
 }
 
+// jsdom's default innerWidth is 1024 — exactly the wide breakpoint — so every
+// collapse test pins the viewport explicitly.
+function setViewport(width) {
+  Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
+}
+
+// n switchable lights, half of them on, spread over four rooms.
+function manyDevices(n) {
+  const rooms = ['kitchen', 'living_room', 'bedroom', 'hall']
+  return Array.from({ length: n }, (_, i) => ({
+    entity_id: `light.d${i}`, name: `Device ${i}`, room: rooms[i % 4], room_he: `חדר ${i % 4}`,
+    domain: 'light', state: i % 2 ? 'on' : 'off', on: i % 2 === 1, he_noun: `אור ${i}`,
+  }))
+}
+
 beforeEach(() => {
   runAction.mockReset()
   useChatStore.setState({ chatDock: false })
+  setViewport(400)
 })
 
 describe('ChatCard', () => {
@@ -155,6 +173,137 @@ describe('ChatCard', () => {
     const t = (k) => k
     expect(verdictTitle(t, 'device_unreachable')).toBe('chat.card.verdict.deviceUnreachable')
     expect(verdictTitle(t, 'something_new')).toBe('something new')
+  })
+
+  // ── Compact grid + collapse ────────────────────────────────────────────────
+
+  describe('device_list grid', () => {
+    it('shows 8 cells on a narrow window and a show-all button that expands to 16', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(16) }} />)
+      expect(screen.getAllByRole('switch')).toHaveLength(8)
+      const more = screen.getByRole('button', { name: 'chat.card.showAll' })
+      expect(more).toHaveAttribute('aria-expanded', 'false')
+      fireEvent.click(more)
+      expect(screen.getAllByRole('switch')).toHaveLength(16)
+      const less = screen.getByRole('button', { name: 'chat.card.less' })
+      expect(less).toHaveAttribute('aria-expanded', 'true')
+      fireEvent.click(less)
+      expect(screen.getAllByRole('switch')).toHaveLength(8)
+    })
+
+    it('shows 12 cells on a wide window', () => {
+      setViewport(1280)
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(16) }} />)
+      expect(screen.getAllByRole('switch')).toHaveLength(12)
+      expect(screen.getByRole('button', { name: 'chat.card.showAll' })).toBeInTheDocument()
+    })
+
+    it('has no show-all button when everything fits', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(8) }} />)
+      expect(screen.getAllByRole('switch')).toHaveLength(8)
+      expect(screen.queryByRole('button', { name: 'chat.card.showAll' })).toBeNull()
+    })
+
+    it('lays the cells out as an auto-fill grid', () => {
+      const { container } = render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(3) }} />)
+      const grid = [...container.querySelectorAll('div')].find((el) => el.style.display === 'grid')
+      expect(grid).toBeTruthy()
+      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(150px, 1fr))')
+    })
+
+    it('puts ON devices first, then sorts by room', () => {
+      const devices = [
+        { entity_id: 'light.a', name: 'A', room: 'kitchen', domain: 'light', on: false },
+        { entity_id: 'light.b', name: 'B', room: 'hall', domain: 'light', on: true },
+        { entity_id: 'light.c', name: 'C', room: 'bedroom', domain: 'light', on: false },
+        { entity_id: 'light.d', name: 'D', room: 'kitchen', domain: 'light', on: true },
+      ]
+      expect(sortDevices(devices, 'en').map((d) => d.name)).toEqual(['B', 'D', 'C', 'A'])
+      render(<ChatCard card={{ kind: 'device_list', devices }} />)
+      const names = screen.getAllByRole('button').map((b) => b.textContent).filter((n) => /^[A-D]$/.test(n))
+      expect(names).toEqual(['B', 'D', 'C', 'A'])
+    })
+  })
+
+  describe('labels follow the turn language', () => {
+    const devices = [
+      { entity_id: 'light.kitchen', name: 'Kitchen light', room: 'kitchen', room_he: 'מטבח', domain: 'light', on: true, he_noun: 'אור במטבח' },
+      { entity_id: 'switch.plug', name: 'Plug', room: 'living_room', room_he: 'סלון', domain: 'switch', on: false, he_noun: 'המכשיר' },
+    ]
+
+    it("card.lang === 'en' shows name, not he_noun", () => {
+      render(<ChatCard card={{ kind: 'device_list', lang: 'en', devices }} />)
+      expect(screen.getByRole('button', { name: 'Kitchen light' })).toBeInTheDocument()
+      expect(screen.queryByText('אור במטבח')).toBeNull()
+      expect(screen.getByText('Living room')).toBeInTheDocument()
+    })
+
+    it("card.lang === 'he' shows he_noun and room_he", () => {
+      render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
+      expect(screen.getByRole('button', { name: 'אור במטבח' })).toBeInTheDocument()
+      expect(screen.queryByText('Kitchen light')).toBeNull()
+      expect(screen.getByText('מטבח')).toBeInTheDocument()
+    })
+
+    it("'he' with the generic noun falls back to the real name", () => {
+      render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
+      expect(screen.getByRole('button', { name: 'Plug' })).toBeInTheDocument()
+      expect(screen.queryByText('המכשיר')).toBeNull()
+    })
+
+    it('falls back to the UI language when the card carries none', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices }} />)
+      expect(screen.getByRole('button', { name: 'Kitchen light' })).toBeInTheDocument()
+    })
+
+    it('in-card actions run in the turn language', () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
+      fireEvent.click(screen.getAllByRole('switch')[0])
+      expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.kitchen', action: 'off' }, 'he')
+    })
+
+    it('deviceLabel / roomLabel helpers', () => {
+      expect(deviceLabel({ name: 'X', he_noun: 'המכשיר' }, 'he')).toBe('X')
+      expect(deviceLabel({ name: 'X', he_noun: 'האור' }, 'he')).toBe('האור')
+      expect(deviceLabel({ name: '', he_noun: 'המכשיר' }, 'he')).toBe('המכשיר')
+      expect(deviceLabel({ name: 'X', he_noun: 'האור' }, 'en')).toBe('X')
+      expect(deviceLabel({ he_noun: 'האור' }, 'en')).toBe('האור')
+      expect(roomLabel({ room: 'living_room', room_he: 'סלון' }, 'en')).toBe('Living room')
+      expect(roomLabel({ room: 'living_room', room_he: 'סלון' }, 'he')).toBe('סלון')
+      expect(roomLabel({ room: 'living_room' }, 'he')).toBe('living room')
+    })
+  })
+
+  describe('collapse on the other list cards', () => {
+    it('automations collapse to 8 and expand', () => {
+      const automations = Array.from({ length: 10 }, (_, i) => ({ id: `a${i}`, name: `Auto ${i}`, enabled: true }))
+      render(<ChatCard card={{ kind: 'automations', automations }} />)
+      expect(screen.getAllByRole('switch')).toHaveLength(8)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
+      expect(screen.getAllByRole('switch')).toHaveLength(10)
+    })
+
+    it('capabilities render as a 2-column grid, collapse to 8 and expand', () => {
+      const capabilities = Array.from({ length: 11 }, (_, i) => ({ name: `Cap ${i}`, pitch: `Pitch ${i}`, live: i % 2 === 0 }))
+      const { container } = render(<ChatCard card={{ kind: 'capabilities', capabilities }} />)
+      const grid = [...container.querySelectorAll('div')].find((el) => el.style.display === 'grid')
+      expect(grid.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')
+      expect(screen.getAllByText(/^Cap \d+$/)).toHaveLength(8)
+      expect(screen.getAllByRole('img', { name: 'chat.card.live' })).toHaveLength(4)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
+      expect(screen.getAllByText(/^Cap \d+$/)).toHaveLength(11)
+    })
+
+    it('recent_activity collapses to 8 and expands', () => {
+      const changes = Array.from({ length: 9 }, (_, i) => `Change ${i}`)
+      render(<ChatCard card={{ kind: 'recent_activity', changes }} />)
+      expect(screen.getAllByRole('listitem')).toHaveLength(8)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
+      expect(screen.getAllByRole('listitem')).toHaveLength(9)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.less' }))
+      expect(screen.getAllByRole('listitem')).toHaveLength(8)
+    })
   })
 
   // ── In-context navigation ──────────────────────────────────────────────────

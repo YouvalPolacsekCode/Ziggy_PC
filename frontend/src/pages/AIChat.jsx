@@ -160,12 +160,6 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
       {!isUser && (
         <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
       )}
-      {/* Embedded tool-result card (device list, automations, why-not, …).
-          Sits above the prose; the text still explains, the card lets the
-          user act. Only assistant messages carry one. */}
-      {!isUser && msg.card && (
-        <ChatCard card={msg.card} entityId={msg.card.entity_id} />
-      )}
       <div
         dir="auto"
         style={{
@@ -240,6 +234,14 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
             background: 'none', color: 'var(--ink-2)', font: 'inherit',
           }}>{t('chat.flagTtsSkip')}</button>
         </form>
+      )}
+
+      {/* Embedded tool-result card (device list, automations, why-not, …).
+          Sits BELOW the prose: the chat auto-scrolls to the bottom, so the
+          interactive card is what stays in view while the (short) text sits
+          above it. Only assistant messages carry one. */}
+      {!isUser && msg.card && (
+        <ChatCard card={msg.card} entityId={msg.card.entity_id} />
       )}
 
       {/* Action chips — green check bubbles per design */}

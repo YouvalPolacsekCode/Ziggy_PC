@@ -2749,6 +2749,8 @@ export default {
   // ── Chat cards (components/chat/ChatCards.jsx) ──────────────────────
   'chat.card.devices':            '{n} devices',
   'chat.card.noDevices':          'No devices found',
+  'chat.card.showAll':            'Show all ({n})',
+  'chat.card.less':               'Less',
   'chat.card.actionFailed':       'Didn’t go through',
   'chat.card.automations':        '{n} automations',
   'chat.card.noAutomations':      'No automations yet',
