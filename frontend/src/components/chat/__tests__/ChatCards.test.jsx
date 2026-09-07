@@ -60,8 +60,8 @@ vi.mock('framer-motion', () => {
 })
 
 import ChatCard, {
-  CARD_KINDS, CHIP_LIMIT, verdictTitle, deviceLabel, roomLabel, sortDevices, groupByRoom, deviceKind,
-  enterProps, roomPath, slugifyRoom, stateSuffix,
+  CARD_KINDS, CHIP_LIMIT, verdictTitle, deviceLabel, roomLabel, sortDevices, sortChips, groupByRoom, deviceKind,
+  enterProps, roomPath, slugifyRoom, stateSuffix, formatReading, navigateLabel,
 } from '../ChatCards'
 import { useUIStore } from '../../../stores/uiStore'
 import { useChatStore } from '../../../stores/chatStore'
@@ -114,6 +114,16 @@ const SAMPLES = {
   pairing_diagnosis: { kind: 'pairing_diagnosis', verdict: 'radio_down', radio: 'off', device_id: 'abc123', hint: 'Plug the stick back in' },
   cause_trace: { kind: 'cause_trace', cause: 'leave_home', at: '21:04', entity_id: 'light.kitchen' },
   device_diagnosis: { kind: 'device_diagnosis', reachable: true, battery: 40, signal: 'weak' },
+  device: { kind: 'device', path: '/devices/light.desk_lamp', device: {
+    entity_id: 'light.desk_lamp', name: 'Desk lamp', room: 'study', room_he: 'חדר עבודה', domain: 'light',
+    state: 'on', on: true, he_noun: 'המנורה', place_he: 'על השולחן', ir: false, ir_id: null,
+  } },
+  reading: { kind: 'reading', readings: [
+    { name: 'Study temperature', room: 'Study', value: 26, unit: '°C' },
+    { name: 'Study humidity', room: 'Study', value: 48, unit: '%' },
+    { name: 'Power', room: '', value: 1.2, unit: 'kW' },
+  ] },
+  navigate: { kind: 'navigate', path: '/devices/light.desk_lamp', screen: 'device', label: 'Desk lamp' },
 }
 
 // jsdom's default innerWidth is 1024 — exactly the wide breakpoint — so every
@@ -482,6 +492,169 @@ describe('ChatCard', () => {
       expect(roomLabel({ room: 'living_room', room_he: 'סלון' }, 'en')).toBe('Living room')
       expect(roomLabel({ room: 'living_room', room_he: 'סלון' }, 'he')).toBe('סלון')
       expect(roomLabel({ room: 'living_room' }, 'he')).toBe('living room')
+    })
+
+    // ── place_he: "האור במטבח" even when the device is filed elsewhere ────
+
+    describe('Hebrew label with place_he', () => {
+      const living = [
+        { entity_id: 'light.kitchen', name: 'Kitchen Light', room: 'living_room', room_he: 'סלון', domain: 'light', on: false, he_noun: 'האור', place_he: 'במטבח' },
+        { entity_id: 'light.dining', name: 'Dining Light', room: 'living_room', room_he: 'סלון', domain: 'light', on: false, he_noun: 'האור', place_he: 'בפינת האוכל' },
+        { entity_id: 'light.main', name: 'Main Light', room: 'living_room', room_he: 'סלון', domain: 'light', on: true, he_noun: 'האור' },
+        { entity_id: 'switch.plug', name: 'Plug', room: 'living_room', room_he: 'סלון', domain: 'switch', on: false, he_noun: 'המכשיר', place_he: 'במטבח' },
+      ]
+
+      it('label = he_noun + place_he when a place is present, else he_noun', () => {
+        expect(deviceLabel(living[0], 'he')).toBe('האור במטבח')
+        expect(deviceLabel(living[1], 'he')).toBe('האור בפינת האוכל')
+        expect(deviceLabel(living[2], 'he')).toBe('האור')
+        expect(deviceLabel({ he_noun: 'האור', place_he: '  ' }, 'he')).toBe('האור')
+      })
+
+      it('the generic noun falls back to the real name, place or no place', () => {
+        expect(deviceLabel(living[3], 'he')).toBe('Plug')
+        expect(deviceLabel({ name: 'Plug', he_noun: 'המכשיר' }, 'he')).toBe('Plug')
+      })
+
+      it('English ignores place_he and shows the name', () => {
+        expect(deviceLabel(living[0], 'en')).toBe('Kitchen Light')
+      })
+
+      it('three "האור" chips in one tile become distinct chips', () => {
+        render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices: living }} />)
+        expect(chipButton('האור במטבח')).toBeInTheDocument()
+        expect(chipButton('האור בפינת האוכל')).toBeInTheDocument()
+        expect(chipButton('האור')).toBeInTheDocument()
+        expect(chipButton('Plug')).toBeInTheDocument()
+        expect(screen.queryByText('המכשיר')).toBeNull()
+      })
+
+      it('chips in a tile sort ON first, then by label', () => {
+        // ON leads; then the labels collate (Latin before Hebrew, מ before פ).
+        expect(sortChips(living, 'he').map((d) => d.entity_id)).toEqual(['light.main', 'switch.plug', 'light.kitchen', 'light.dining'])
+        render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices: living }} />)
+        const names = screen.getAllByTestId('device-chip').map((c) => c.querySelector('.zc-chip-name').textContent)
+        expect(names).toEqual(['האור', 'Plug', 'האור במטבח', 'האור בפינת האוכל'])
+      })
+
+      it('English tiles sort ON first, then by name', () => {
+        expect(sortChips(living, 'en').map((d) => d.name)).toEqual(['Main Light', 'Dining Light', 'Kitchen Light', 'Plug'])
+      })
+    })
+  })
+
+  // ── device: one large chip + "Open page" ───────────────────────────────────
+
+  describe('device card', () => {
+    it('renders one large chip that toggles via control_device', async () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      const onAction = vi.fn()
+      render(<ChatCard card={SAMPLES.device} onAction={onAction} />)
+      const chips = screen.getAllByTestId('device-chip')
+      expect(chips).toHaveLength(1)
+      expect(chips[0].className).toContain('zc-chip--lg')
+      expect(chips[0]).toHaveAttribute('data-on', 'true')
+      expect(screen.queryAllByRole('switch')).toHaveLength(0)
+      fireEvent.click(chipButton('Desk lamp'))
+      expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.desk_lamp', action: 'off' }, 'en')
+      await waitFor(() => expect(onAction).toHaveBeenCalled())
+      expect(chipButton('Desk lamp')).toHaveAttribute('aria-pressed', 'false')
+      // Toggling does not navigate.
+      expect(locPath()).toBe('/chat')
+    })
+
+    it('the "Open page" button opens card.path with state.fromChat', () => {
+      render(<ChatCard card={SAMPLES.device} />)
+      const open = screen.getByTestId('open-page')
+      expect(open.textContent).toBe('chat.card.openPage')
+      expect(open.style.textDecoration).not.toContain('underline')
+      fireEvent.click(open)
+      expect(locPath()).toBe('/devices/light.desk_lamp')
+      expect(locState()).toEqual({ fromChat: true })
+    })
+
+    it('the chip chevron follows card.path too (an IR device lives under /remote)', () => {
+      const card = { ...SAMPLES.device, path: '/remote/rm4-tv', device: { ...SAMPLES.device.device, ir: true, ir_id: 'rm4-tv' } }
+      render(<ChatCard card={card} />)
+      fireEvent.click(within(screen.getByTestId('device-chip')).getByRole('button', { name: 'chat.card.open' }))
+      expect(locPath()).toBe('/remote/rm4-tv')
+    })
+
+    it('shows the room as the eyebrow and the Hebrew label in a Hebrew turn', () => {
+      const { container } = render(<ChatCard card={{ ...SAMPLES.device, lang: 'he' }} />)
+      expect(container.querySelector('.z-eyebrow').textContent).toBe('חדר עבודה')
+      expect(chipButton('המנורה על השולחן')).toBeInTheDocument()
+      expect(container.querySelector('.zc-card').getAttribute('dir')).toBe('rtl')
+    })
+
+    it('docks the chat on a wide screen when opening the page', () => {
+      const orig = window.matchMedia
+      window.matchMedia = vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+      try {
+        render(<ChatCard card={SAMPLES.device} />)
+        fireEvent.click(screen.getByTestId('open-page'))
+        expect(useChatStore.getState().chatDock).toBe(true)
+      } finally { window.matchMedia = orig }
+    })
+  })
+
+  // ── reading: value pills ───────────────────────────────────────────────────
+
+  describe('reading card', () => {
+    it('renders one pill per reading: value, then where', () => {
+      render(<ChatCard card={SAMPLES.reading} />)
+      const pills = screen.getAllByTestId('reading-pill')
+      expect(pills.map((p) => p.textContent)).toEqual(['26°C·Study', '48%·Study', '1.2 kW·Power'])
+      expect(pills[0].querySelector('.zc-pill-value').textContent).toBe('26°C')
+      // No control, no link: readings are for reading.
+      expect(screen.queryAllByRole('button')).toHaveLength(0)
+    })
+
+    it('formatReading glues symbol units and spaces word units', () => {
+      expect(formatReading(26, '°C')).toBe('26°C')
+      expect(formatReading('48', '%')).toBe('48%')
+      expect(formatReading(1.2, 'kW')).toBe('1.2 kW')
+      expect(formatReading(5, '')).toBe('5')
+      expect(formatReading(null, '°C')).toBe('°C')
+    })
+
+    it('renders nothing for an empty list', () => {
+      const { container } = render(<ChatCard card={{ kind: 'reading', readings: [] }} />)
+      expect(container.querySelector('.zc-card')).toBeNull()
+    })
+  })
+
+  // ── navigate: the receipt ──────────────────────────────────────────────────
+
+  describe('navigate card', () => {
+    it('reads "Opened <label>" and "Open again" navigates with state.fromChat', () => {
+      render(<ChatCard card={SAMPLES.navigate} />)
+      expect(screen.getByTestId('navigate-card').textContent).toContain('chat.card.opened')
+      // Rendering the card alone does NOT navigate — AIChat does that once.
+      expect(locPath()).toBe('/chat')
+      fireEvent.click(screen.getByTestId('open-again'))
+      expect(locPath()).toBe('/devices/light.desk_lamp')
+      expect(locState()).toEqual({ fromChat: true })
+    })
+
+    it('names the screen when no label is given; generic text when neither', () => {
+      const t = (k) => k
+      expect(navigateLabel({ label: 'Desk lamp', screen: 'device' }, t)).toBe('Desk lamp')
+      expect(navigateLabel({ screen: 'alerts' }, t)).toBe('chat.card.screen.alerts')
+      expect(navigateLabel({ screen: 'Settings' }, t)).toBe('chat.card.screen.settings')
+      expect(navigateLabel({ screen: 'something_else' }, t)).toBe('')
+      render(<ChatCard card={{ kind: 'navigate', path: '/settings' }} />)
+      expect(screen.getByText('chat.card.openedPage')).toBeInTheDocument()
+    })
+
+    it('has no "Open again" without a path', () => {
+      render(<ChatCard card={{ kind: 'navigate', label: 'Alerts' }} />)
+      expect(screen.queryByTestId('open-again')).toBeNull()
+    })
+
+    it('lays out rtl for a Hebrew turn', () => {
+      const { container } = render(<ChatCard card={{ ...SAMPLES.navigate, lang: 'he', label: 'המנורה' }} />)
+      expect(container.querySelector('.zc-card').getAttribute('dir')).toBe('rtl')
     })
   })
 

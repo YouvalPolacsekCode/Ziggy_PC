@@ -15,11 +15,15 @@ import { formatTime, isHebrew } from '../lib/utils'
 import { useT, useLang, translateNamePhrase, t as translateWithLang } from '../lib/i18n'
 import BundlePreviewCard from '../components/automations/BundlePreviewCard'
 import ChatCard from '../components/chat/ChatCards'
+import { useFollowNavigateCards } from '../components/chat/useFollowNavigateCards'
 
 // The chat envelope may carry `data.card` — the last renderable tool result of
 // the turn (device_list, automations, why_not, …). Threaded onto the message as
 // `card` so Message() renders it above the text bubble; threads persist `data`,
 // so the same shape comes back on reload (see chatStore.loadThreadMessages).
+// A reply added by a send path here is stamped `live: true`; a restored one
+// is not — that flag is what lets a `navigate` card be followed exactly once
+// (useFollowNavigateCards) and never on reload.
 function cardOf(res) {
   const c = res?.data?.card
   return c && typeof c === 'object' && c.kind ? c : null
@@ -500,6 +504,9 @@ export default function AIChat({ docked = false }) {
   const { messages, addMessage, clearMessages, mode, setMode } = useChatStore()
   // Durable, resumable threads for the whole chat (persist across reload/navigation).
   const { threadId, threads, newThread, switchThread, refreshList } = useChatThreads()
+  // The agent may answer with a `navigate` card ("take me to the lamp's
+  // page"): follow it once, when it lands — same dock rule as a card link.
+  useFollowNavigateCards(messages)
   // Direct setter so the bundle accept/discard handlers can replace the
   // preview card in place. The chatStore exposes the array via `messages`
   // — useChatStore.setState() patches it without going through addMessage.
@@ -1220,7 +1227,7 @@ export default function AIChat({ docked = false }) {
         : null
       const card = cardOf(res)
       addMessage('assistant', res.reply || '…', res.ok !== false,
-                 { actions, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
+                 { actions, live: true, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
       // Rehearsal is for hearing the voice: every reply is spoken, typed or not.
       if (rehearsal && res.reply) playTtsReply(spokenOf(res), lang)
       refreshList()   // keep the thread switcher's title/preview fresh
@@ -1252,7 +1259,7 @@ export default function AIChat({ docked = false }) {
       const res = await sendDirectIntent(qa.intent, qa.params)
       const actions = res.actions?.map(a => typeof a === 'string' ? a : (a.label || String(a))) || []
       const card = cardOf(res)
-      addMessage('assistant', res.reply || '…', res.ok !== false, { actions, ...(card ? { card } : {}) })
+      addMessage('assistant', res.reply || '…', res.ok !== false, { actions, live: true, ...(card ? { card } : {}) })
       if (rehearsal && res.reply) playTtsReply(spokenOf(res), lang)
       setOrbState('speaking')
       // Don't clobber a fresh 'listening' state if the user starts another
@@ -1602,7 +1609,7 @@ export default function AIChat({ docked = false }) {
           : null
         const card = cardOf(res)
         addMessage('assistant', res.reply || '…', res.ok !== false,
-                   { actions, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
+                   { actions, live: true, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
         if (res.pattern_suggestion) {
           addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
             patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),
@@ -1772,7 +1779,7 @@ export default function AIChat({ docked = false }) {
         : null
       const card = cardOf(res)
       addMessage('assistant', res.reply || '…', res.ok !== false,
-                 { actions, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
+                 { actions, live: true, ...(bundle ? { bundle } : {}), ...(card ? { card } : {}) })
       if (res.pattern_suggestion) {
         addMessage('pattern', res.pattern_suggestion.message || t('chat.patternDetectedFallback'), true, {
           patternLabel: res.pattern_suggestion.suggested_name || t('chat.routineFallback'),

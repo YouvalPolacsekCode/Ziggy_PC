@@ -21,6 +21,13 @@
 // language. Rooms show every chip; a room with more than CHIP_LIMIT devices
 // folds the rest behind a "+N" ghost chip.
 //
+// Three small kinds sit beside the list cards: `device` is ONE device as a
+// large chip (same chip, so tapping still flips it) with a way into its page;
+// `reading` is a row of value pills ("26°C · study"); `navigate` is the quiet
+// receipt of the agent opening a screen ("Opened the lamp" + "Open again") —
+// the actual navigation is AIChat's job (useFollowNavigateCards), the card
+// only has to survive a reload.
+//
 // Layout: on a wide enough column the chat page puts the reply text and the
 // card side by side (see AIChat's Message and chatCards.css); the card itself
 // is the same either way.
@@ -37,15 +44,14 @@
 // everywhere else.
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Zap, Stethoscope, HeartPulse, Sparkles, Camera, ChevronRight } from 'lucide-react'
+import { Zap, Stethoscope, HeartPulse, Sparkles, Camera, ChevronRight, ArrowUpRight } from 'lucide-react'
 import { runAction } from '../../lib/api'
 import { useLang, t as translateWithLang } from '../../lib/i18n'
 import { getKind } from '../../lib/devices'
 import { DeviceIcon } from '../../lib/deviceIcons'
-import { useChatStore, isWideForChatDock } from '../../stores/chatStore'
 import { useDeviceStore } from '../../stores/deviceStore'
+import { useChatNav } from './chatNav'
 import './chatCards.css'
 
 // ── Motion ────────────────────────────────────────────────────────────────────
@@ -104,21 +110,8 @@ function useCardI18n(card) {
 }
 
 // ── In-context navigation ─────────────────────────────────────────────────────
-// A card names a real object; opening it keeps the conversation at hand: on
-// wide screens AppShell keeps the chat docked beside the page (chatDock), on
-// phones it shows a "back to chat" pill for any location whose state carries
-// `fromChat`. Cards render inside the router in both places (the /chat page
-// and the dock), so useNavigate is safe here.
-
-function useChatNav() {
-  const navigate = useNavigate()
-  const setChatDock = useChatStore((s) => s.setChatDock)
-  return (path) => {
-    if (!path) return
-    if (isWideForChatDock()) setChatDock(true)
-    navigate(path, { state: { fromChat: true } })
-  }
-}
+// A card names a real object; opening it keeps the conversation at hand (see
+// chatNav.js: dock on wide screens, `fromChat` state for the back pill).
 
 // Name-as-link: a real button (keyboard + screen reader) that looks like the
 // plain name it replaces — no underline; a chevron at the trailing edge says
@@ -347,25 +340,40 @@ function useCollapse(items, cardRef) {
   return { shown, total, collapsible, expanded, toggle, limit, order, reduce }
 }
 
-// Quiet text button on the trailing edge: no underline, a soft hover wash
-// (chatCards.css), the count in the label.
-function ShowAll({ t, collapse }) {
-  if (!collapse.collapsible) return null
+// Quiet text button: no underline, a soft hover wash (chatCards.css). Used
+// for "Show all", "Open page", "Open again" — anything that is a way out or
+// a way further, never the main act of a card.
+function TextButton({ children, onClick, ariaExpanded, testid, style }) {
   return (
     <button
       type="button"
       className="zc-showall"
-      onClick={collapse.toggle}
-      aria-expanded={collapse.expanded}
+      data-testid={testid}
+      onClick={onClick}
+      aria-expanded={ariaExpanded}
       style={{
-        alignSelf: 'flex-end', background: 'none', border: 'none', padding: '4px 8px',
-        margin: 0, marginBlockStart: 2, marginInlineEnd: -8, borderRadius: 8,
+        background: 'none', border: 'none', padding: '4px 8px', margin: 0, borderRadius: 8,
         font: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--ink-mute)',
-        cursor: 'pointer',
+        cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+        ...style,
       }}
     >
-      {collapse.expanded ? t('chat.card.less') : t('chat.card.showAll', { n: collapse.total })}
+      {children}
     </button>
+  )
+}
+
+// "Show all (n)" on the trailing edge, the count in the label.
+function ShowAll({ t, collapse }) {
+  if (!collapse.collapsible) return null
+  return (
+    <TextButton
+      onClick={collapse.toggle}
+      ariaExpanded={collapse.expanded}
+      style={{ alignSelf: 'flex-end', marginBlockStart: 2, marginInlineEnd: -8 }}
+    >
+      {collapse.expanded ? t('chat.card.less') : t('chat.card.showAll', { n: collapse.total })}
+    </TextButton>
   )
 }
 
@@ -384,7 +392,7 @@ const LONG_PRESS_MS = 500
 // Failure feedback is quiet: the state suffix reads "didn't go through" in
 // the error colour for a moment (and the chip's title says the same); the
 // fill simply returns to where it was. No shake.
-function Chip({ lit, on, busy, failed, icon, label, suffix, onPress, to, title, testid, ghost, t, ariaLabel }) {
+function Chip({ lit, on, busy, failed, icon, label, suffix, onPress, to, title, testid, ghost, large, t, ariaLabel }) {
   const go = useChatNav()
   const press = useRef({ timer: null, fired: false })
 
@@ -404,7 +412,7 @@ function Chip({ lit, on, busy, failed, icon, label, suffix, onPress, to, title, 
   }
 
   const switchable = typeof onPress === 'function'
-  const cls = ['zc-chip', lit ? 'zc-chip--on' : '', !switchable && on ? 'zc-chip--lit' : '', ghost ? 'zc-chip--ghost' : ''].filter(Boolean).join(' ')
+  const cls = ['zc-chip', lit ? 'zc-chip--on' : '', !switchable && on ? 'zc-chip--lit' : '', ghost ? 'zc-chip--ghost' : '', large ? 'zc-chip--lg' : ''].filter(Boolean).join(' ')
   return (
     <div className={cls} data-testid={testid} data-on={lit ? 'true' : 'false'} title={failed ? t('chat.card.actionFailed') : title}>
       <button
@@ -490,11 +498,17 @@ function useFlip(initial, send, onDone) {
 // "המכשיר" chips on screen; the real name is more useful even in Hebrew.
 const GENERIC_HE_NOUN = 'המכשיר'
 
+// Hebrew label = noun + place. The directory files a device under its HA
+// area but its NAME may say where it really is ("Kitchen Light" in the
+// living-room area → he_noun "האור", place_he "במטבח"), so three "האור"
+// chips in one tile read "האור במטבח", "האור בפינת האוכל"… A generic noun
+// has nothing to attach a place to; the real name wins there.
 export function deviceLabel(device, lang) {
   if (!device) return ''
   if (lang === 'he') {
     const noun = (device.he_noun || '').trim()
-    if (noun && noun !== GENERIC_HE_NOUN) return noun
+    const place = (device.place_he || '').trim()
+    if (noun && noun !== GENERIC_HE_NOUN) return place ? `${noun} ${place}` : noun
     return device.name || noun || ''
   }
   return device.name || device.he_noun || ''
@@ -523,8 +537,18 @@ export function sortDevices(devices, lang) {
     .map((x) => x.d)
 }
 
+// Inside one tile: ON first, then by label, stable. (The room is the same
+// for every chip in a tile, so the label is what tells neighbours apart.)
+export function sortChips(devices, lang) {
+  return devices
+    .map((d, i) => ({ d, i, on: d.on === true ? 0 : 1, label: deviceLabel(d, lang) }))
+    .sort((a, b) => (a.on - b.on) || a.label.localeCompare(b.label) || (a.i - b.i))
+    .map((x) => x.d)
+}
+
 // Rooms, ordered by how much is on in them (then by name); devices with no
-// room gather last under "Elsewhere". Inside a room, ON chips lead.
+// room gather last under "Elsewhere". Inside a room, ON chips lead, then
+// the labels sort.
 export function groupByRoom(devices, lang) {
   const groups = new Map()
   for (const d of devices || []) {
@@ -536,7 +560,7 @@ export function groupByRoom(devices, lang) {
   }
   const out = [...groups.values()]
   out.sort((a, b) => ((a.slug ? 0 : 1) - (b.slug ? 0 : 1)) || (b.on - a.on) || a.name.localeCompare(b.name))
-  for (const g of out) g.devices = sortDevices(g.devices, lang)
+  for (const g of out) g.devices = sortChips(g.devices, lang)
   return out
 }
 
@@ -579,7 +603,9 @@ export function stateSuffix(device, kind, t) {
   return humanize(s)
 }
 
-function DeviceChip({ device, lang, t, onAction }) {
+// `to` overrides the chip's own page (the device card is handed a path by
+// the agent — an IR-only device lives under /remote, not /devices).
+function DeviceChip({ device, lang, t, onAction, large, to }) {
   const canToggle = isSwitchable(device)
   const name = deviceLabel(device, lang)
   const kind = useMemo(() => deviceKind(device), [device])
@@ -596,12 +622,13 @@ function DeviceChip({ device, lang, t, onAction }) {
       on={canToggle ? on : device.on === true}
       busy={busy}
       failed={failed}
-      icon={<DeviceIcon kind={kind} size={18} />}
+      icon={<DeviceIcon kind={kind} size={large ? 22 : 18} />}
       label={name}
       suffix={suffix}
       onPress={canToggle ? flip : undefined}
-      to={devicePath(device.entity_id)}
+      to={to || devicePath(device.entity_id)}
       title={name}
+      large={large}
       t={t}
     />
   )
@@ -665,6 +692,118 @@ function DeviceListCard({ card, onAction }) {
             ))}
           </div>
         )}
+    </Card>
+  )
+}
+
+// ── device (one device) ───────────────────────────────────────────────────────
+
+// The agent talked about ONE device: the same chip as in a room tile, a size
+// up, so tapping it still flips the thing; the room name is the eyebrow and
+// a quiet "Open page" is the way into its full page (`card.path` — the
+// agent's choice, which is /remote/<id> for an IR-only device).
+function DeviceCard({ card, onAction }) {
+  const { t, lang } = useCardI18n(card)
+  const go = useChatNav()
+  const device = card.device || {}
+  const path = card.path || devicePath(device.entity_id)
+  const room = roomLabel(device, lang)
+  return (
+    <Card lang={lang} title={room || undefined}>
+      <div className="zc-one" data-testid="device-one">
+        <DeviceChip device={device} lang={lang} t={t} onAction={onAction} large to={path} />
+        {path && (
+          <TextButton testid="open-page" onClick={() => go(path)}>
+            {t('chat.card.openPage')}
+          </TextButton>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+// ── reading ───────────────────────────────────────────────────────────────────
+
+// "26°C" — a symbol unit glues to the number, a word unit takes a space.
+export function formatReading(value, unit) {
+  const v = value == null ? '' : String(value).trim()
+  const u = (unit || '').trim()
+  if (!u) return v
+  if (!v) return u
+  return /^[°%‰′″]/.test(u) ? `${v}${u}` : `${v} ${u}`
+}
+
+// A row of value pills, one per reading: the value in ink, then where it was
+// read (the room; the sensor's name when it has no room). Numbers sit in
+// their own bidi run so RTL punctuation never reorders "26°C · חדר עבודה".
+function ReadingCard({ card }) {
+  const { lang } = useCardI18n(card)
+  const readings = (card.readings || []).filter((r) => r && (r.value != null || r.name))
+  if (readings.length === 0) return null
+  return (
+    <Card lang={lang}>
+      <div className="zc-pills" data-testid="reading-pills">
+        {readings.map((r, i) => {
+          const value = formatReading(r.value, r.unit)
+          const where = r.room || r.name || ''
+          return (
+            <span key={i} className="zc-pill" data-testid="reading-pill" title={r.name && r.room ? `${r.name} · ${r.room}` : (r.name || r.room || undefined)}>
+              <bdi className="zc-pill-value">{value}</bdi>
+              {value && where && <span className="zc-pill-sep" aria-hidden="true">·</span>}
+              {where && <span className="zc-pill-where" dir="auto">{where}</span>}
+            </span>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ── navigate ──────────────────────────────────────────────────────────────────
+
+// Fallback names for the screens the agent can open, when the card carries
+// no label of its own (Hebrew forms are definite: "פתחתי את המכשירים").
+const SCREEN_KEYS = {
+  devices: 'chat.card.screen.devices',
+  device: 'chat.card.screen.device',
+  rooms: 'chat.card.screen.rooms',
+  room: 'chat.card.screen.room',
+  actions: 'chat.card.screen.actions',
+  automations: 'chat.card.screen.actions',
+  routines: 'chat.card.screen.routines',
+  alerts: 'chat.card.screen.alerts',
+  settings: 'chat.card.screen.settings',
+  assistants: 'chat.card.screen.assistants',
+  remote: 'chat.card.screen.remote',
+}
+
+export function navigateLabel(card, t) {
+  const label = (card?.label || '').trim()
+  if (label) return label
+  const key = SCREEN_KEYS[String(card?.screen || '').toLowerCase()]
+  return key ? t(key) : ''
+}
+
+// The agent opened a screen. AIChat already followed the card when it
+// arrived (useFollowNavigateCards); what stays in the thread is this quiet
+// receipt, so after a reload the user still sees what happened and can go
+// there again.
+function NavigateCard({ card }) {
+  const { t, lang } = useCardI18n(card)
+  const go = useChatNav()
+  const name = navigateLabel(card, t)
+  const text = name ? t('chat.card.opened', { name }) : t('chat.card.openedPage')
+  return (
+    <Card lang={lang}>
+      <div className="zc-nav" data-testid="navigate-card">
+        <ArrowUpRight className="zc-nav-ico" size={14} strokeWidth={2} aria-hidden="true" />
+        <span className="zc-nav-text" dir="auto">{text}</span>
+        {card.path && (
+          <TextButton testid="open-again" onClick={() => go(card.path)}>
+            {t('chat.card.openAgain')}
+          </TextButton>
+        )}
+      </div>
     </Card>
   )
 }
@@ -992,6 +1131,9 @@ function KeyValueCard({ card }) {
 
 const CARDS = {
   device_list: DeviceListCard,
+  device: DeviceCard,
+  reading: ReadingCard,
+  navigate: NavigateCard,
   automations: AutomationsCard,
   capabilities: CapabilitiesCard,
   why_not: WhyNotCard,
@@ -1007,7 +1149,7 @@ export const CARD_KINDS = Object.keys(CARDS)
 
 // Tile/chip cards are allowed to grow with the chat column (240px tiles → 1
 // on a phone/dock, 3–4 on the wide chat page); row/list cards stay narrow.
-const CARD_MAX_WIDTH = { device_list: 940, automations: 640, capabilities: 640 }
+const CARD_MAX_WIDTH = { device_list: 940, automations: 640, capabilities: 640, reading: 640 }
 
 /**
  * @param {object} props.card       tool result object with a `kind` (and,

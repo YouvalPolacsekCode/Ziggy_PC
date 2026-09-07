@@ -2398,6 +2398,21 @@ export default {
   'chat.card.verdict.manualOverride': 'מישהו שינה את זה ידנית',
   'chat.card.verdict.noAutomationForDevice': 'אין שגרה ששולטת במכשיר הזה',
   'chat.card.verdict.unknown':    'עדיין לא בטוח',
+  // מכשיר אחד / מסך שזיגי פתח / מדדים. זיגי מדבר על עצמו בזכר, גוף ראשון.
+  'chat.card.openPage':           'פתיחת העמוד',
+  'chat.card.opened':             'פתחתי את {name}',
+  'chat.card.openedPage':         'פתחתי את העמוד',
+  'chat.card.openAgain':          'פתיחה שוב',
+  'chat.card.screen.devices':     'המכשירים',
+  'chat.card.screen.device':      'המכשיר',
+  'chat.card.screen.rooms':       'החדרים',
+  'chat.card.screen.room':        'החדר',
+  'chat.card.screen.actions':     'הפעולות',
+  'chat.card.screen.routines':    'השגרות',
+  'chat.card.screen.alerts':      'ההתראות',
+  'chat.card.screen.settings':    'ההגדרות',
+  'chat.card.screen.assistants':  'העוזרים החיצוניים',
+  'chat.card.screen.remote':      'השלט',
 
   // ── Tasks additions ─────────────────────────────────────────────────
   'tasks.eyebrow':                'משימות',

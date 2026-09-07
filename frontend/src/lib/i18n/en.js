@@ -2815,6 +2815,21 @@ export default {
   'chat.card.verdict.manualOverride': 'Someone changed it by hand',
   'chat.card.verdict.noAutomationForDevice': 'No routine controls this device',
   'chat.card.verdict.unknown':    'Not sure yet',
+  // One device / a screen the agent opened / readings
+  'chat.card.openPage':           'Open page',
+  'chat.card.opened':             'Opened {name}',
+  'chat.card.openedPage':         'Opened the page',
+  'chat.card.openAgain':          'Open again',
+  'chat.card.screen.devices':     'Devices',
+  'chat.card.screen.device':      'the device',
+  'chat.card.screen.rooms':       'Rooms',
+  'chat.card.screen.room':        'the room',
+  'chat.card.screen.actions':     'Actions',
+  'chat.card.screen.routines':    'On-demand',
+  'chat.card.screen.alerts':      'Alerts',
+  'chat.card.screen.settings':    'Settings',
+  'chat.card.screen.assistants':  'External assistants',
+  'chat.card.screen.remote':      'the remote',
 
   // ── Tasks additions ─────────────────────────────────────────────────
   'tasks.eyebrow':                'Tasks',
