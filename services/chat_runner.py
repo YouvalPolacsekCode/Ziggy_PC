@@ -27,6 +27,15 @@ def _err_text() -> str:
     return "משהו השתבש אצלי רגע — אפשר לנסות שוב."
 
 
+_GENERIC_TITLE_WORDS = ("conversation", "chat", "user", "system", "assistant",
+                        "שיחה", "משתמש", "מערכת", "עוזר")
+
+
+def _is_generic_title(title: str) -> bool:
+    low = (title or "").lower()
+    return not low or any(w in low for w in _GENERIC_TITLE_WORDS)
+
+
 def generate_title(thread_id: str) -> str | None:
     """Best-effort short TLDR title for a thread from its first exchange (cheap LLM).
 
@@ -47,11 +56,18 @@ def generate_title(thread_id: str) -> str | None:
         from integrations.llm_gateway import chat_completion
         resp = chat_completion("intent_parse", [
             {"role": "system", "content":
-                "Give a very short title (3-5 words) summarizing this chat, in the SAME "
-                "language as the chat. Reply with ONLY the title — no quotes, no trailing period."},
+                "Give a very short title (2-5 words) for this chat, in the SAME language as "
+                "the chat, naming the concrete topic: the device, room, question or task "
+                "(e.g. 'המנורה בסלון', 'מה דולק עכשיו', 'Office AC not turning off'). "
+                "NEVER generic words like 'conversation', 'chat', 'user', 'system', 'שיחה', "
+                "'משתמש', 'מערכת'. Reply with ONLY the title — no quotes, no trailing period."},
             {"role": "user", "content": convo},
         ], temperature=0.2, max_tokens=24)
         title = (resp.choices[0].message.content or "").strip().strip('"').strip("'").strip()
+        if _is_generic_title(title):
+            # A bland title is worse than the user's own first words.
+            first_user = next((m["content"] for m in msgs if m["role"] == "user"), "")
+            title = " ".join(first_user.split()[:6])
         if title:
             ct.rename_thread(thread_id, title[:60])
             log_info(f"[chat_runner] titled {thread_id}: {title[:60]}")

@@ -34,12 +34,25 @@ _EN_VERB = {
 }
 
 
+_HE_ALREADY = {"on": "כבר דולק", "off": "כבר כבוי", "open": "כבר פתוח", "close": "כבר סגור",
+               "lock": "כבר נעול", "unlock": "כבר פתוח"}
+_EN_ALREADY = {"on": "already on", "off": "already off", "open": "already open",
+               "close": "already closed", "lock": "already locked", "unlock": "already unlocked"}
+
+
+def _he_where(dev: dict) -> str:
+    """'במטבח' from the device's own name when it carries a place, else the area."""
+    return dev.get("place_he") or room_prep_he(dev.get("room"))
+
+
 def _he_one(res: dict) -> Optional[str]:
     dev = res.get("device") or {}
     action = res.get("action")
     noun = dev.get("he_noun") or "המכשיר"
-    prep = room_prep_he(dev.get("room"))
+    prep = _he_where(dev)
     val = res.get("value")
+    if res.get("already") and action in _HE_ALREADY:
+        return f"{noun} {prep} {_HE_ALREADY[action]}".strip()
     if action == "set_temperature":
         return f"כיוונתי את המזגן {prep} ל-{val} מעלות".strip()
     if action == "set_brightness":
@@ -55,6 +68,8 @@ def _en_one(res: dict) -> Optional[str]:
     action = res.get("action")
     name = dev.get("name") or "device"
     val = res.get("value")
+    if res.get("already") and action in _EN_ALREADY:
+        return f"The {name} is {_EN_ALREADY[action]}"
     if action == "set_temperature":
         return f"Set the {name} to {val}°C"
     if action == "set_brightness":

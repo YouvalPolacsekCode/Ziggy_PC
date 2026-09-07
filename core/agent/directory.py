@@ -67,6 +67,46 @@ def room_prep_he(slug: Optional[str]) -> str:
     return f"ב{he}" if he else ""
 
 
+# ── Place words inside a device NAME ─────────────────────────────────────────
+# "Kitchen Light" filed under the Living Room area must still be called
+# האור במטבח — the name's place beats the area it happens to be filed in.
+# (Canary 2026-09-07 01:14: "אור במטבח" was confirmed as "האור בסלון" three
+# times because the confirmation used the area.) Longest match first.
+_PLACE_WORDS_HE: tuple[tuple[str, str], ...] = (
+    ("guest bathroom", "אמבטיית האורחים"), ("big guest bathroom", "אמבטיית האורחים"),
+    ("master bathroom", "חדר הרחצה של חדר השינה"), ("bedroom bathroom", "חדר הרחצה של חדר השינה"),
+    ("dining room", "פינת האוכל"), ("dining", "פינת האוכל"),
+    ("living room", "סלון"), ("kitchen", "מטבח"), ("bathroom", "אמבטיה"),
+    ("shower", "מקלחת"), ("toilet", "שירותים"), ("bedroom", "חדר השינה"),
+    ("office", "חדר העבודה"), ("study", "חדר העבודה"), ("entry", "כניסה"),
+    ("entrance", "כניסה"), ("hall", "מסדרון"), ("hallway", "מסדרון"),
+    ("corridor", "מסדרון"), ("storage", "מחסן"), ("garage", "חניה"),
+    ("garden", "גינה"), ("outdoor", "חוץ"), ("yard", "חצר"), ("balcony", "מרפסת"),
+    ("porch", "מרפסת"), ("laundry", "חדר הכביסה"), ("kids", "חדר הילדים"),
+    ("nursery", "חדר התינוק"), ("basement", "מרתף"), ("attic", "עליית הגג"),
+)
+_PLACE_SORTED = sorted(_PLACE_WORDS_HE, key=lambda kv: len(kv[0]), reverse=True)
+
+
+def place_he_from_name(name: Optional[str]) -> Optional[str]:
+    """Hebrew 'in <place>' taken from the device's own name, or None.
+
+    "Kitchen Light" → "במטבח"; "Roni's Lamp" → "אצל רוני"; "Lamp" → None.
+    """
+    low = (name or "").lower()
+    if not low:
+        return None
+    for en, he in _PLACE_SORTED:
+        if en in low:
+            return f"ב{he}"
+    # "<Name>'s room / lamp / light" → אצל <Name>
+    import re as _re
+    m = _re.match(r"^([A-Za-z֐-׿]+)(?:'s|׳s|'s)\b", (name or "").strip())
+    if m:
+        return f"אצל {m.group(1)}"
+    return None
+
+
 # ── Hebrew device noun (native phrasing, never the English proper name) ───────
 def he_noun(entity_id: str, name: str) -> str:
     """A native Hebrew noun for a device so replies read 'המנורה' / 'המזגן'
@@ -201,16 +241,51 @@ async def build_directory() -> dict[str, Any]:
             "state": state,
             "on": state not in ("off", "unavailable", "unknown", "", "closed", "locked", "idle", "standby"),
             "he_noun": he_noun(eid, name),
+            # Hebrew 'in <place>' from the NAME, when the name carries one.
+            # Confirmations prefer this over the area (see place_he_from_name).
+            "place_he": place_he_from_name(name),
+        })
+
+    # ── Sensors the agent can read (temperature / humidity / illuminance) ──
+    sensors: list[dict] = []
+    for s in states or []:
+        eid = s.get("entity_id") or ""
+        if not eid.startswith("sensor."):
+            continue
+        attrs = s.get("attributes") or {}
+        dc = (attrs.get("device_class") or "").lower()
+        if dc not in ("temperature", "humidity", "illuminance"):
+            continue
+        val = str(s.get("state", ""))
+        if val in ("unavailable", "unknown", ""):
+            continue
+        room = area_map.get(eid) or _registry_room(eid)
+        name = _pretty_name(attrs.get("friendly_name")) or eid
+        sensors.append({
+            "entity_id": eid, "name": name, "room": room, "room_he": room_he(room),
+            "kind": dc, "value": val, "unit": attrs.get("unit_of_measurement") or "",
+            "place_he": place_he_from_name(name),
         })
 
     # ── IR devices (Broadlink) — no HA entity; controlled via the ir_* tools ──
-    devices.extend(_ir_devices())
+    # An IR codeset LINKED to a Wi-Fi entity (the merged TV) is the same
+    # device seen twice; the entity carries true state, so the twin is hidden.
+    linked_ir: set[str] = set()
+    try:
+        from services.device_registry import get_all as _reg_all
+        for row in _reg_all() or []:
+            if row.get("ir_device_id") and row.get("entity_id"):
+                linked_ir.add(str(row["ir_device_id"]))
+    except Exception:
+        pass
+    devices.extend(d for d in _ir_devices() if str(d.get("ir_id")) not in linked_ir)
 
     by_room: dict[str, list] = {}
     for d in devices:
         by_room.setdefault(d["room"] or "unknown", []).append(d)
 
-    return {"devices": devices, "presence": presence, "by_room": by_room}
+    return {"devices": devices, "presence": presence, "sensors": sensors,
+            "by_room": by_room}
 
 
 _IR_NOUN = {"tv": "הטלוויזיה", "ac": "המזגן", "fan": "המאוורר",
@@ -297,6 +372,13 @@ def format_directory_for_prompt(directory: dict) -> str:
                 f"  room={p.get('room') or 'unknown'} | {'occupied' if p['on'] else 'clear'} "
                 f"| id={p['entity_id']}"
             )
+    # Readings — "what's the temperature in Roni's room" is answered from here.
+    sens = directory.get("sensors") or []
+    if sens:
+        lines.append("[readings]")
+        for s in sens[:40]:
+            lines.append(f"  {s['name']} | room={s.get('room') or 'unknown'} | "
+                         f"{s['kind']}={s['value']}{s.get('unit') or ''} | id={s['entity_id']}")
     return "\n".join(lines)
 
 

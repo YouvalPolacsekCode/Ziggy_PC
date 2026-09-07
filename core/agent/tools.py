@@ -367,6 +367,32 @@ TOOL_SCHEMAS: list[dict] = [
         }, "required": ["name", "enabled"]},
     }},
     {"type": "function", "function": {
+        "name": "show_device",
+        "description": (
+            "Show ONE device as a card the user can act on — 'show me the lamp', "
+            "'תראה לי את המנורה בסלון'. Pass the exact device id from the directory. "
+            "The card has the device's control and a button that opens its page."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string", "description": "Exact device id from the directory."},
+        }, "required": ["entity_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "open_screen",
+        "description": (
+            "Open a screen in the app — 'take me to the lamp's page', 'קח אותי "
+            "לעמוד של המנורה', 'open the automations', 'go to the bedroom', 'show "
+            "settings'. screen: device | room | devices | rooms | automations | "
+            "routines | alerts | settings | assistants. For device pass the exact "
+            "device id in `id`; for room pass the room slug from the directory."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "screen": {"type": "string", "enum": ["device", "room", "devices", "rooms", "automations",
+                                                  "routines", "alerts", "settings", "assistants"]},
+            "id": {"type": "string", "description": "Device id or room slug when screen is device/room."},
+        }, "required": ["screen"]},
+    }},
+    {"type": "function", "function": {
         "name": "delete_automation",
         "description": (
             "Delete an existing automation/routine by name. Deletion is final, so "
@@ -459,6 +485,14 @@ async def _exec_control_device(args: dict, directory: dict, actor: str | None = 
                             f"{label}: this needs the user's explicit yes — ask, then call again with confirmed=true."),
                 "data": {"kind": "needs_approval", "fix": f"control_device:{action}", "acted": False}}
 
+    # Already there? Say so instead of "I turned it off" twice (Canary 01:03).
+    if action in ("on", "off") and dom != "climate":
+        if bool(dev.get("on")) == (action == "on") and (dev.get("state") or "") not in ("unavailable", "unknown", ""):
+            log_info(f"[agent.tools] control_device {eid} {action} route=noop (already {action})")
+            return {"ok": True, "message": f"already {action} {dev['name']}",
+                    "device": dev, "action": action, "value": value, "already": True}
+
+    routed = None
     try:
         # Hybrid-aware power: an entity with a linked IR codeset routes on/off
         # through the command router (Wi-Fi↔IR ranked fallback, same as the UI
@@ -532,9 +566,14 @@ async def _exec_control_device(args: dict, directory: dict, actor: str | None = 
         log_error(f"[agent.tools] control_device failed {eid}: {e}")
         return {"ok": False, "message": str(e), "device": dev}
 
+    # The route is the evidence a "it worked the third time" report needs:
+    # hybrid = the command router (Wi-Fi↔IR codeset), direct = HA service.
+    route = "hybrid:" + str((routed or {}).get("via") or (routed or {}).get("path") or "ir") \
+        if routed is not None else f"direct:{dom}"
+    log_info(f"[agent.tools] control_device {eid} {done} route={route}")
     return {
         "ok": True, "message": f"{done} {dev['name']}",
-        "device": dev, "action": done, "value": value,
+        "device": dev, "action": done, "value": value, "route": route,
     }
 
 
@@ -550,7 +589,8 @@ def _exec_query_devices(args: dict, directory: dict) -> dict:
         devices = [d for d in devices if d["on"]]
     summary = [
         {"name": d["name"], "room": d["room"], "domain": d["domain"],
-         "state": d["state"], "on": d["on"], "he_noun": d["he_noun"], "room_he": d["room_he"]}
+         "state": d["state"], "on": d["on"], "he_noun": d["he_noun"], "room_he": d["room_he"],
+         "place_he": d.get("place_he")}
         for d in devices
     ]
     # `devices` (no ids) is what the model reads; `data` (with ids) is what
@@ -632,11 +672,14 @@ async def _exec_check_home_health(lang: str) -> dict:
 
 
 def _device_label(dev: dict, lang: str) -> str:
-    """A jargon-free name for a device — the Hebrew noun + room, never an entity_id."""
+    """A jargon-free name for a device — the Hebrew noun + where, never an entity_id.
+
+    'Where' comes from the device's own name when it carries a place ("Kitchen
+    Light" → במטבח) and only then from the area it is filed under."""
     if lang == "he":
         noun = dev.get("he_noun") or dev.get("name") or "המכשיר"
-        room = dev.get("room_he")
-        return f"{noun} ב{room}" if room else noun
+        where = dev.get("place_he") or (f"ב{dev['room_he']}" if dev.get("room_he") else "")
+        return f"{noun} {where}".strip()
     return dev.get("name") or dev.get("he_noun") or "device"
 
 
@@ -797,6 +840,83 @@ async def _exec_acknowledge_alerts(lang: str) -> dict:
 
 
 # ── v3 executors ─────────────────────────────────────────────────────────────
+_SCREEN_PATHS = {
+    "devices": "/devices", "rooms": "/rooms", "automations": "/actions",
+    "routines": "/routines", "alerts": "/alerts", "settings": "/settings",
+    "assistants": "/settings/assistants",
+}
+
+
+def _exec_open_screen(args: dict, directory: dict, lang: str) -> dict:
+    """Agent-first: the agent can drive the app. Returns a navigate card the
+    app follows (with the chat kept at hand on wide screens)."""
+    screen = (args.get("screen") or "").strip().lower()
+    ident = (args.get("id") or "").strip()
+    if screen == "device":
+        dev = _dir.get_device(directory, ident)
+        if not dev:
+            return _no_such_device(lang)
+        if dev.get("ir"):
+            path, label = f"/remote/{dev.get('ir_id')}", _device_label(dev, lang)
+        else:
+            path, label = f"/devices/{ident}", _device_label(dev, lang)
+    elif screen == "room":
+        from services.room_alias_bank import resolve_room
+        slug = resolve_room(ident.lower()) if ident else ""
+        path, label = (f"/rooms/{slug}" if slug else "/rooms"), (_dir.room_he(slug) if lang == "he" else slug.replace("_", " ")) or ""
+    elif screen in _SCREEN_PATHS:
+        path, label = _SCREEN_PATHS[screen], screen
+    else:
+        return {"ok": False, "message": f"unknown screen {screen}"}
+    msg = (f"פותח את {label}." if lang == "he" else f"Opening {label}.") if label else ("פותח." if lang == "he" else "Opening.")
+    return {"ok": True, "message": msg,
+            "data": {"kind": "navigate", "path": path, "screen": screen, "label": label}}
+
+
+def _exec_show_device(args: dict, directory: dict, lang: str) -> dict:
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    label = _device_label(dev, lang)
+    state_he = "דולק" if dev.get("on") else "כבוי"
+    msg = (f"הנה {label} — {state_he} כרגע." if lang == "he"
+           else f"Here's the {label} — it's {'on' if dev.get('on') else 'off'} right now.")
+    return {"ok": True, "message": msg,
+            "data": {"kind": "device", "device": {k: dev.get(k) for k in
+                     ("entity_id", "name", "room", "room_he", "domain", "state", "on", "he_noun", "place_he", "ir", "ir_id")},
+                     "path": (f"/remote/{dev.get('ir_id')}" if dev.get("ir") else f"/devices/{eid}")}}
+
+
+def _exec_get_temperature(args: dict, directory: dict, lang: str) -> Optional[dict]:
+    """Answer from the home's real readings; None → caller falls back to v1."""
+    from services.room_alias_bank import resolve_room
+    room = (args.get("room") or "").strip()
+    target = resolve_room(room.lower()) if room else ""
+    sens = [s for s in (directory.get("sensors") or []) if s.get("kind") == "temperature"]
+    if not sens:
+        return None
+    low = room.lower()
+    hits = [s for s in sens if target and (s.get("room") or "") == target]
+    if not hits and low:
+        hits = [s for s in sens if low in (s.get("name") or "").lower()
+                or (s.get("place_he") and low in s["place_he"])]
+    if not hits and not room:
+        hits = sens
+    if not hits:
+        return None
+    parts = []
+    for s in hits[:4]:
+        where = (s.get("place_he") or (f"ב{s['room_he']}" if s.get("room_he") else "")) if lang == "he" \
+            else (s.get("room") or s.get("name") or "").replace("_", " ")
+        unit = s.get("unit") or "°"
+        parts.append(f"{s['value']}{unit} {where}".strip())
+    msg = ("הטמפרטורה: " if lang == "he" else "Temperature: ") + "; ".join(parts) + "."
+    return {"ok": True, "message": msg,
+            "data": {"kind": "reading", "readings": [{"name": s["name"], "room": s.get("room"),
+                                                       "value": s["value"], "unit": s.get("unit")} for s in hits[:4]]}}
+
+
 def _exec_what_can_ziggy_do(args: dict) -> dict:
     from services import capability_lookup as cl
     q = (args.get("query") or "").strip()
@@ -1021,6 +1141,15 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
         return await _exec_control_device(args, directory, actor, lang)
     if name == "what_can_ziggy_do":
         return _exec_what_can_ziggy_do(args)
+    if name == "open_screen":
+        return _exec_open_screen(args, directory, lang)
+    if name == "show_device":
+        return _exec_show_device(args, directory, lang)
+    if name == "get_temperature":
+        res = _exec_get_temperature(args, directory, lang)
+        if res is not None:
+            return res
+        # no reading in the directory → the legacy device-map handler
     if name == "recent_activity":
         return _exec_recent_activity(args, directory)
     if name == "explain_missing_action":
