@@ -86,6 +86,72 @@ def needs_ha(data: dict) -> bool:
     return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook", "zone", "time_pattern")
 
 
+def has_executable_actions(data: dict) -> bool:
+    """True when this automation will actually DO something when it fires.
+
+    An automation with no actions is not a half-finished automation, it is a
+    dead one: Home Assistant stores it, fires it faithfully on every trigger,
+    records a successful run, and nothing happens. A customer hit exactly this
+    on 2026-09-05 — the balcony motion rule fired for two days and never turned
+    the light on, and every surface reported success.
+
+    Three shapes legitimately carry the steps:
+      - `actions`        the normal Ziggy list
+      - `ha_native_body` blueprint-sourced bodies, whose Ziggy list is empty
+                         because the steps use HA-only constructs
+      - `stages`         paired templates (Night Watch), fanned out at save time
+    """
+    if data.get("paired") and data.get("stages"):
+        return any(has_executable_actions(s or {}) for s in data["stages"])
+    native = data.get("ha_native_body")
+    if isinstance(native, dict) and native.get("actions"):
+        return True
+    return bool(data.get("actions"))
+
+
+def _saved_actions_for(auto_id: str) -> list:
+    """Ziggy's own stored steps for an automation (indirection for tests)."""
+    from services.local_automation_actions import get_all_saved_actions
+    return get_all_saved_actions(auto_id) or []
+
+
+def _ha_config_actions(auto_id: str) -> list:
+    """The action list HA holds in its own config for this automation."""
+    try:
+        resp = requests.get(f"{HA_URL()}/api/config/automation/config/{auto_id}",
+                            headers=HEADERS(), timeout=10)
+        if resp.status_code != 200:
+            return []
+        cfg = resp.json() or {}
+        acts = cfg.get("actions") or cfg.get("action") or []
+        return [acts] if isinstance(acts, dict) else list(acts)
+    except Exception as e:
+        log_error(f"[HA Automations] config actions for {auto_id}: {e}")
+        return []
+
+
+def resolve_run_target(auto_id: str) -> str:
+    """Who should execute a manual Run: 'ziggy', 'ha', or 'none'.
+
+    Ziggy's executor owns the run whenever Ziggy has stored steps — it handles
+    call_service, IR, delays and capabilities, and asking HA as well would
+    double-fire the call_service ones.
+
+    When Ziggy has NO steps the automation is not necessarily empty: a
+    blueprint-instantiated rule keeps its steps only in HA. Those must be run
+    by HA rather than silently doing nothing.
+
+    'none' means nobody has steps. Saying so is the whole point — reporting a
+    successful run of an automation that cannot do anything is what let a dead
+    rule sit in a customer's home for two days.
+    """
+    if _saved_actions_for(auto_id):
+        return "ziggy"
+    if _ha_config_actions(auto_id):
+        return "ha"
+    return "none"
+
+
 # ── Ziggy → HA ────────────────────────────────────────────────────────────────
 
 def _for_clause(for_minutes) -> Optional[str]:
@@ -571,6 +637,15 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     they are fanned out atomically by _save_paired_automation — see that helper
     for the rollback contract.
     """
+    # An automation with no steps would be stored, fired, and reported
+    # successful forever without doing anything (see has_executable_actions).
+    # Refuse it here rather than in the wizard alone, so no caller — app, agent
+    # or script — can create one.
+    if not has_executable_actions(data):
+        return {"ok": False, "reason": "no_actions",
+                "error": "This automation has no actions, so it would never do "
+                         "anything when it runs. Add at least one action."}
+
     if data.get("paired") and data.get("stages"):
         return _save_paired_automation(data, auto_id)
 
