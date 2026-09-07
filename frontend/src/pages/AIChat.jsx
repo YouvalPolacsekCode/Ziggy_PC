@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream, flagTts, getRehearsal, patchRehearsal } from '../lib/api'
 import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
@@ -105,6 +105,11 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
   const rtl     = isHebrew(msg.text)
+  // An assistant reply that carries an embedded card: on a wide enough
+  // column the text and the card share one row (chatCards.css decides by
+  // container width, so the dock keeps stacking); on phones they stack.
+  const hasCard = !isUser && !!msg.card
+  const reduceMotion = useReducedMotion()
   // "Said wrong" — the voice is not deterministic; flagging logs the line
   // for the pronunciation dictionary and re-rolls its cached audio.
   // idle → ask (an input opens: "how should it sound?") → busy → done | error
@@ -143,23 +148,11 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
     )
   }
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18 }}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: isUser ? 'flex-end' : 'flex-start',
-        gap: 4,
-        maxWidth: '88%',
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-      }}
-    >
-      {!isUser && (
-        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
-      )}
+  // The text side of a reply: the bubble, the "Said wrong?" flag (and its
+  // note input), and the action chips — the pieces that stay together under
+  // the prose whether or not a card sits beside it.
+  const textBlock = (
+    <>
       <div
         dir="auto"
         style={{
@@ -236,14 +229,6 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
         </form>
       )}
 
-      {/* Embedded tool-result card (device list, automations, why-not, …).
-          Sits BELOW the prose: the chat auto-scrolls to the bottom, so the
-          interactive card is what stays in view while the (short) text sits
-          above it. Only assistant messages carry one. */}
-      {!isUser && msg.card && (
-        <ChatCard card={msg.card} entityId={msg.card.entity_id} />
-      )}
-
       {/* Action chips — green check bubbles per design */}
       {msg.actions && msg.actions.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxWidth: '88%' }}>
@@ -261,6 +246,48 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
           ))}
         </div>
       )}
+    </>
+  )
+
+  // Entrance: a plain bubble keeps its quick 6px rise; a reply with a card
+  // is a bigger object and gets 8px over 220ms on a strong ease-out so the
+  // row lands as one piece. Reduced motion: mount in place, no transition.
+  const enter = reduceMotion
+    ? { initial: false }
+    : hasCard
+      ? { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.22, ease: [0.23, 1, 0.32, 1] } }
+      : { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.18 } }
+
+  return (
+    <motion.div
+      {...enter}
+      className={hasCard ? 'zc-msg' : undefined}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: isUser ? 'flex-end' : 'flex-start',
+        gap: 4,
+        // With a card the wrapper is the container the row is measured
+        // against (.zc-msg: full width, capped at 1180px).
+        ...(hasCard ? {} : { maxWidth: '88%' }),
+        alignSelf: isUser ? 'flex-end' : 'flex-start',
+      }}
+    >
+      {!isUser && (
+        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
+      )}
+      {hasCard ? (
+        /* Text at inline-start, card at inline-end when the column is wide
+           enough; stacked (text, then card) otherwise. The chat auto-scrolls
+           to the bottom, so on a phone the interactive card is what stays
+           in view while the (short) text sits above it. */
+        <div className="zc-row">
+          <div className="zc-row-text">{textBlock}</div>
+          <div className="zc-row-card">
+            <ChatCard card={msg.card} entityId={msg.card.entity_id} />
+          </div>
+        </div>
+      ) : textBlock}
     </motion.div>
   )
 }

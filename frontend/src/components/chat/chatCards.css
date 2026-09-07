@@ -1,0 +1,93 @@
+/* Chat cards — the few things inline styles cannot express: the responsive
+   text|card row, pointer-only hover, and the reduced-motion guard.
+
+   Logical properties only (RTL-safe). Tokens are the app's CSS variables.
+
+   The row is decided by a CONTAINER query on the message wrapper, not by the
+   viewport: the same AIChat renders on the /chat page (wide) and in the
+   AppShell dock (a ~400px column on a wide viewport). A viewport query would
+   split the dock into two unusable slivers; a container query gives the row
+   only where it has room. On the /chat page (18px gutters) the 720px threshold
+   is crossed at a 768px viewport. */
+
+.zc-msg {
+  container-type: inline-size;
+  width: 100%;
+  max-width: min(100%, 1180px);
+}
+
+.zc-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  align-self: stretch;   /* the message wrapper aligns children to the start */
+  width: 100%;
+  gap: 10px;
+  min-width: 0;
+}
+
+.zc-row-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.zc-row-card {
+  min-width: 0;
+}
+
+@container (min-width: 720px) {
+  .zc-row {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .zc-row-text {
+    flex: 0 1 38%;
+    max-width: 460px;
+  }
+  .zc-row-card {
+    flex: 1 1 0;
+  }
+  /* The card fills its column; the per-kind max widths no longer apply once
+     the column itself is the constraint. */
+  .zc-row-card > .zc-card-wrap { max-width: none; }
+}
+
+/* ── Cells ──────────────────────────────────────────────────────────────── */
+
+.zc-cell {
+  /* Only what changes on hover/press — never `all`. */
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+              border-color 160ms ease,
+              background-color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .zc-cell:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--ink) 28%, var(--line));
+  }
+  .zc-cell--on:hover {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  }
+}
+
+/* Quiet text button (Show all / Less) */
+.zc-showall {
+  transition: color 120ms ease, background-color 120ms ease, transform 120ms ease-out;
+}
+.zc-showall:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  .zc-showall:hover {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zc-cell, .zc-showall { transition: none; }
+  .zc-cell:hover { transform: none; }
+}

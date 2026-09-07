@@ -16,16 +16,74 @@
 // window) behind a "Show all (n)" text button so reply + card fit one screen
 // on a phone and on the desktop chat page alike.
 //
+// Layout: on a wide enough column the chat page puts the reply text and the
+// card side by side (see AIChat's Message and chatCards.css); the card itself
+// is the same either way.
+//
+// Motion: one grammar for everything here — fade + a 6px rise on a strong
+// ease-out, cells staggered 25ms apart (capped so a full first page lands
+// under ~400ms). Expanding "Show all" animates the card's height (a FLIP on
+// the real height via WAAPI, so nothing inside is scale-distorted). Under
+// prefers-reduced-motion every element mounts instantly with no transition
+// props at all.
+//
 // Kept deliberately plain: inline styles on the app's CSS variables, logical
 // properties only (RTL-safe), no new libraries. The Radix-backed Toggle from
-// ui/ is the one shared control (gotcha: Radix wants onCheckedChange).
+// ui/ is the one shared control (gotcha: Radix wants onCheckedChange). Device
+// glyphs come from the central DeviceIcon, so they follow the user's
+// Settings → Display icon style like everywhere else.
 
-import { useCallback, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { motion, useReducedMotion } from 'framer-motion'
+import { Zap, Stethoscope, HeartPulse, Sparkles, Camera } from 'lucide-react'
 import { runAction } from '../../lib/api'
 import { useLang, t as translateWithLang } from '../../lib/i18n'
+import { getKind } from '../../lib/devices'
+import { DeviceIcon } from '../../lib/deviceIcons'
 import { Toggle } from '../ui/Toggle'
 import { useChatStore, isWideForChatDock } from '../../stores/chatStore'
+import './chatCards.css'
+
+// ── Motion ────────────────────────────────────────────────────────────────────
+
+const EASE_OUT = [0.23, 1, 0.32, 1]
+const CARD_EASE_CSS = 'cubic-bezier(0.23, 1, 0.32, 1)'
+const STAGGER_S = 0.025
+const STAGGER_CAP = 8            // ≥ this index every cell shares one delay
+
+// Props for a motion element entering as the `order`-th of its siblings, or
+// nothing at all when the user asked for reduced motion.
+export function enterProps(reduce, order = 0) {
+  if (reduce) return {}
+  return {
+    initial: { opacity: 0, y: 6 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.18, ease: EASE_OUT, delay: Math.min(order, STAGGER_CAP) * STAGGER_S },
+  }
+}
+
+// FLIP the card's height when its content grows/shrinks (Show all / Less):
+// `before()` is called by the toggle right before the state change, the
+// layout effect measures the new height and animates between the two. Only
+// this one box animates, so nothing inside it is scale-distorted.
+function useHeightFlip(ref, dep, enabled) {
+  const before = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref?.current
+    const from = before.current
+    before.current = null
+    if (!enabled || !el || from == null || typeof el.animate !== 'function') return
+    const to = el.offsetHeight
+    if (to === from) return
+    const anim = el.animate(
+      [{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }],
+      { duration: 220, easing: CARD_EASE_CSS },
+    )
+    return () => { try { anim.cancel() } catch { /* already done */ } }
+  }, [dep, enabled, ref])
+  return useCallback(() => { before.current = ref?.current?.offsetHeight ?? null }, [ref])
+}
 
 // ── Turn language ─────────────────────────────────────────────────────────────
 
@@ -118,43 +176,87 @@ const rowStyle = {
   minWidth: 0,
 }
 
-// Two-line compact row (name + one detail line, control on the trailing edge).
-const compactRowStyle = {
-  ...rowStyle,
-  padding: '4px 0',
-  minHeight: 40,
-  boxSizing: 'border-box',
-}
-
-// One cell of a grid card: name over detail, control on the trailing edge.
+// One cell of a grid card: icon | name over detail | control on the trailing
+// edge. ON reads as a light accent tint; OFF sits flat on the surface.
 const cellStyle = {
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 8,
-  minHeight: 44,
+  gap: 10,
+  minHeight: 48,
   boxSizing: 'border-box',
-  padding: '5px 8px',
-  borderRadius: 10,
+  padding: '6px 10px',
+  borderRadius: 12,
   border: '0.5px solid var(--line)',
-  background: 'var(--surface-2, var(--surface))',
+  background: 'var(--surface)',
   minWidth: 0,
+}
+
+const cellOnStyle = {
+  background: 'color-mix(in srgb, var(--accent) 8%, var(--surface))',
+  borderColor: 'color-mix(in srgb, var(--accent) 35%, var(--line))',
+}
+
+// The leading icon box of a cell. Tinted with the accent when the thing is
+// on, muted when it is off, so state reads before the toggle does.
+function cellIconStyle(on) {
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 30, height: 30, borderRadius: 9,
+    color: on ? 'var(--accent)' : 'var(--ink-faint)',
+    background: on
+      ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
+      : 'color-mix(in srgb, var(--ink) 5%, transparent)',
+    transition: 'color 160ms ease, background-color 160ms ease',
+  }
 }
 
 const muteStyle = { fontSize: 11, color: 'var(--ink-mute)' }
 
 const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-const nameStyle = { fontSize: 12.5, fontWeight: 550, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
+const nameStyle = { fontSize: 13, fontWeight: 600, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
 const detailStyle = { ...muteStyle, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
 
-function Card({ title, children, tone }) {
+// Header eyebrow: an optional kind glyph, the title, and — when the title is
+// a "{n} things" string — the count lifted into a small mono pill. The count
+// is found inside the translated string, so no locale needs a second key.
+export function CountTitle({ text, n }) {
+  if (typeof text !== 'string' || typeof n !== 'number') return text
+  const needle = String(n)
+  const at = text.indexOf(needle)
+  if (at < 0) return text
+  const head = text.slice(0, at), tail = text.slice(at + needle.length)
   return (
-    <div style={{
+    <>
+      {head}
+      <span className="z-mono" style={{
+        display: 'inline-block', fontSize: 10, fontWeight: 600, lineHeight: 1,
+        padding: '3px 6px', borderRadius: 999, marginInline: head ? 4 : 0,
+        color: 'var(--ink-2, var(--ink))',
+        background: 'color-mix(in srgb, var(--ink) 7%, transparent)',
+        border: '0.5px solid color-mix(in srgb, var(--ink) 12%, transparent)',
+        letterSpacing: 0,
+      }}>{needle}</span>
+      {tail}
+    </>
+  )
+}
+
+function Card({ title, count, icon: Icon, children, tone, cardRef }) {
+  return (
+    <div ref={cardRef} style={{
       ...cardStyle,
       ...(tone ? { borderColor: `color-mix(in srgb, var(--${tone}) 45%, var(--line))` } : {}),
     }}>
       {title && (
-        <p className="z-eyebrow" style={{ margin: 0, fontSize: 10, color: 'var(--ink-mute)' }}>{title}</p>
+        <p className="z-eyebrow" style={{
+          margin: 0, fontSize: 10, color: 'var(--ink-mute)',
+          display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
+        }}>
+          {Icon && <Icon size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: tone ? `var(--${tone})` : 'var(--ink-faint)' }} />}
+          <span style={{ minWidth: 0, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            <CountTitle text={title} n={count} />
+          </span>
+        </p>
       )}
       {children}
     </div>
@@ -247,28 +349,39 @@ function collapseLimit() {
 
 // Decided once at mount: the page size should not jump under the user's
 // finger when a phone rotates mid-conversation.
-function useCollapse(items) {
+//
+// The card that owns the list hands us its root ref so expanding animates the
+// card's height instead of jumping; the toggle snapshots the height first.
+function useCollapse(items, cardRef) {
+  const reduce = useReducedMotion()
   const [limit] = useState(collapseLimit)
   const [expanded, setExpanded] = useState(false)
   const total = items.length
   const collapsible = total > limit
   const shown = collapsible && !expanded ? items.slice(0, limit) : items
-  const toggle = useCallback(() => setExpanded((v) => !v), [])
-  return { shown, total, collapsible, expanded, toggle }
+  const snapshot = useHeightFlip(cardRef, expanded, !reduce && !!cardRef)
+  const toggle = useCallback(() => { snapshot(); setExpanded((v) => !v) }, [snapshot])
+  // Stagger order for the i-th shown item: the first page counts from 0; the
+  // items revealed by "Show all" count from 0 again so they cascade too.
+  const order = useCallback((i) => (expanded && i >= limit ? i - limit : i), [expanded, limit])
+  return { shown, total, collapsible, expanded, toggle, limit, order, reduce }
 }
 
+// Quiet text button on the trailing edge: no underline, a soft hover wash
+// (chatCards.css), the count in the label.
 function ShowAll({ t, collapse }) {
   if (!collapse.collapsible) return null
   return (
     <button
       type="button"
+      className="zc-showall"
       onClick={collapse.toggle}
       aria-expanded={collapse.expanded}
       style={{
-        alignSelf: 'flex-start', background: 'none', border: 'none', padding: '2px 0', margin: 0,
-        font: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--ink-2, var(--ink))',
-        cursor: 'pointer', textDecoration: 'underline',
-        textDecorationColor: 'color-mix(in srgb, var(--ink) 25%, transparent)', textUnderlineOffset: 3,
+        alignSelf: 'flex-end', background: 'none', border: 'none', padding: '4px 8px',
+        margin: 0, marginBlockStart: 2, marginInlineEnd: -8, borderRadius: 8,
+        font: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--ink-mute)',
+        cursor: 'pointer',
       }}
     >
       {collapse.expanded ? t('chat.card.less') : t('chat.card.showAll', { n: collapse.total })}
@@ -314,13 +427,32 @@ export function sortDevices(devices, lang) {
 
 // ── device_list ───────────────────────────────────────────────────────────────
 
-function DeviceCell({ device, lang, t, onAction }) {
+// The card payload is the agent's directory row, not a full HA entity, so
+// the kind resolver gets a synthesized shape: entity_id + domain drive the
+// domain switch, the display name feeds the keyword pass that tells a kettle
+// from a plug (device_class is not in the payload; binary sensors fall back
+// to the name scan and then to the generic binary glyph).
+export function deviceKind(device) {
+  return getKind({
+    entity_id: device?.entity_id || '',
+    domain: device?.domain || (device?.entity_id || '').split('.')[0],
+    friendly_name: device?.name || '',
+    device_class: device?.device_class,
+  })
+}
+
+function DeviceCell({ device, lang, t, onAction, order = 0, reduce = false }) {
   const [on, setOn] = useState(!!device.on)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const canToggle = !!device.entity_id && SWITCHABLE.has(device.domain) && typeof device.on === 'boolean'
   const name = deviceLabel(device, lang)
   const room = roomLabel(device, lang)
+  const kind = useMemo(() => deviceKind(device), [device])
+  // State colour: a switchable thing that is on; a sensor reporting "on"
+  // (motion / open door) counts too, so the cell's tint tells the state at a
+  // glance even where there is no toggle.
+  const lit = canToggle ? on : device.on === true
 
   const toggle = async (next) => {
     if (busy) return
@@ -341,30 +473,44 @@ function DeviceCell({ device, lang, t, onAction }) {
     : [room, !canToggle && device.state ? humanize(device.state) : ''].filter(Boolean).join(' · ')
 
   return (
-    <div style={cellStyle}>
-      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+    <motion.div
+      className={`zc-cell${lit ? ' zc-cell--on' : ''}`}
+      data-testid="device-cell"
+      data-on={lit ? 'true' : 'false'}
+      style={{ ...cellStyle, ...(lit ? cellOnStyle : {}) }}
+      {...enterProps(reduce, order)}
+    >
+      <span style={cellIconStyle(lit)}>
+        <DeviceIcon kind={kind} size={18} />
+      </span>
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
         <LinkName to={devicePath(device.entity_id)} title={name} style={nameStyle}>{name}</LinkName>
         <span dir="auto" title={detail} style={{ ...detailStyle, ...(failed ? { color: 'var(--err)' } : {}) }}>{detail || ' '}</span>
       </div>
       {canToggle
         ? <Toggle checked={on} onCheckedChange={toggle} disabled={busy} />
         : null}
-    </div>
+    </motion.div>
   )
 }
 
 function DeviceListCard({ card, onAction }) {
   const { t, lang } = useCardI18n(card)
   const devices = sortDevices(card.devices || [], lang)
-  const collapse = useCollapse(devices)
+  const cardRef = useRef(null)
+  const collapse = useCollapse(devices, cardRef)
   return (
-    <Card title={t('chat.card.devices', { n: devices.length })}>
+    <Card cardRef={cardRef} title={t('chat.card.devices', { n: devices.length })} count={devices.length}>
       {devices.length === 0
         ? <p style={muteStyle}>{t('chat.card.noDevices')}</p>
         : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 6, minWidth: 0 }}>
             {collapse.shown.map((d, i) => (
-              <DeviceCell key={d.entity_id || `${d.name}-${i}`} device={d} lang={lang} t={t} onAction={onAction} />
+              <DeviceCell
+                key={d.entity_id || `${d.name}-${i}`}
+                device={d} lang={lang} t={t} onAction={onAction}
+                order={collapse.order(i)} reduce={collapse.reduce}
+              />
             ))}
           </div>
         )}
@@ -375,7 +521,7 @@ function DeviceListCard({ card, onAction }) {
 
 // ── automations ───────────────────────────────────────────────────────────────
 
-function AutomationRow({ auto, lang, t, onAction }) {
+function AutomationRow({ auto, lang, t, onAction, order = 0, reduce = false }) {
   const [enabled, setEnabled] = useState(!!auto.enabled)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -399,25 +545,45 @@ function AutomationRow({ auto, lang, t, onAction }) {
     : auto.last_triggered ? t('chat.card.lastRun', { when: formatWhen(auto.last_triggered) }) : t('chat.card.neverRan')
 
   return (
-    <div style={compactRowStyle}>
-      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+    <motion.div
+      className={`zc-cell${enabled ? ' zc-cell--on' : ''}`}
+      data-testid="automation-cell"
+      data-on={enabled ? 'true' : 'false'}
+      style={{ ...cellStyle, ...(enabled ? cellOnStyle : {}) }}
+      {...enterProps(reduce, order)}
+    >
+      <span style={cellIconStyle(enabled)}>
+        <Zap size={16} strokeWidth={2} aria-hidden="true" fill={enabled ? 'currentColor' : 'none'} />
+      </span>
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
         <LinkName to={automationPath(auto.id)} title={auto.name} style={nameStyle}>{auto.name}</LinkName>
         <span style={{ ...detailStyle, ...(failed ? { color: 'var(--err)' } : {}) }}>{detail}</span>
       </div>
       <Toggle checked={enabled} onCheckedChange={toggle} disabled={busy || !auto.name} />
-    </div>
+    </motion.div>
   )
 }
 
 function AutomationsCard({ card, onAction }) {
   const { t, lang } = useCardI18n(card)
   const autos = card.automations || []
-  const collapse = useCollapse(autos)
+  const cardRef = useRef(null)
+  const collapse = useCollapse(autos, cardRef)
   return (
-    <Card title={t('chat.card.automations', { n: autos.length })}>
+    <Card cardRef={cardRef} title={t('chat.card.automations', { n: autos.length })} count={autos.length}>
       {autos.length === 0
         ? <p style={muteStyle}>{t('chat.card.noAutomations')}</p>
-        : collapse.shown.map((a, i) => <AutomationRow key={a.id || a.name || i} auto={a} lang={lang} t={t} onAction={onAction} />)}
+        : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+            {collapse.shown.map((a, i) => (
+              <AutomationRow
+                key={a.id || a.name || i}
+                auto={a} lang={lang} t={t} onAction={onAction}
+                order={collapse.order(i)} reduce={collapse.reduce}
+              />
+            ))}
+          </div>
+        )}
       <ShowAll t={t} collapse={collapse} />
     </Card>
   )
@@ -428,21 +594,27 @@ function AutomationsCard({ card, onAction }) {
 function CapabilitiesCard({ card }) {
   const { t } = useCardI18n(card)
   const caps = card.capabilities || []
-  const collapse = useCollapse(caps)
+  const cardRef = useRef(null)
+  const collapse = useCollapse(caps, cardRef)
   return (
-    <Card title={card.overview ? t('chat.card.whatZiggyCanDo') : t('chat.card.capabilities')}>
+    <Card cardRef={cardRef} icon={Sparkles} title={card.overview ? t('chat.card.whatZiggyCanDo') : t('chat.card.capabilities')}>
       {caps.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
           {collapse.shown.map((c, i) => {
             const pitch = c.pitch || c.what_it_does || ''
             return (
-              <div key={c.name || i} style={cellStyle}>
-                <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+              <motion.div
+                key={c.name || i}
+                className={`zc-cell${c.live ? ' zc-cell--on' : ''}`}
+                style={{ ...cellStyle, ...(c.live ? cellOnStyle : {}) }}
+                {...enterProps(collapse.reduce, collapse.order(i))}
+              >
+                <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
                   <span dir="auto" title={c.name} style={nameStyle}>{c.name}</span>
                   <span dir="auto" title={pitch} style={detailStyle}>{pitch || ' '}</span>
                 </div>
                 <Dot tone={c.live ? 'ok' : 'ink-mute'} title={c.live ? t('chat.card.live') : t('chat.card.notLive')} />
-              </div>
+              </motion.div>
             )
           })}
         </div>
@@ -503,7 +675,7 @@ function WhyNotCard({ card, entityId, onAction }) {
   const deviceLink = devicePath(card.entity_id || entityId)
 
   return (
-    <Card title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
+    <Card icon={Stethoscope} title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
       {primary && (
         <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>
           <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 14 }}>{verdictTitle(t, primary)}</LinkName>
@@ -570,8 +742,16 @@ function HomeHealthCard({ card }) {
     : t('chat.card.healthOk')
   return (
     <Card title={t('chat.card.homeHealth')}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Dot tone={tone} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span aria-hidden="true" style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          width: 28, height: 28, borderRadius: '50%',
+          color: `var(--${tone})`,
+          background: `color-mix(in srgb, var(--${tone}) 14%, transparent)`,
+          boxShadow: `0 0 0 3px color-mix(in srgb, var(--${tone}) 10%, transparent)`,
+        }}>
+          <HeartPulse size={15} strokeWidth={2.25} />
+        </span>
         <span style={{ fontWeight: 600 }}>{label}</span>
         <span style={muteStyle}>· {t('chat.card.offlineCount', { n: card.offline_count ?? 0 })}</span>
       </div>
@@ -613,9 +793,10 @@ function RepairHistoryCard({ card }) {
 function RecentActivityCard({ card }) {
   const { t } = useCardI18n(card)
   const changes = card.changes || []
-  const collapse = useCollapse(changes)
+  const cardRef = useRef(null)
+  const collapse = useCollapse(changes, cardRef)
   return (
-    <Card title={t('chat.card.recentActivity')}>
+    <Card cardRef={cardRef} title={t('chat.card.recentActivity')}>
       <List items={collapse.shown} empty={t('chat.card.noActivity')} render={(c) => <span dir="auto">{String(c)}</span>} />
       <ShowAll t={t} collapse={collapse} />
     </Card>
@@ -628,7 +809,7 @@ function CameraLookCard({ card }) {
   const { t } = useCardI18n(card)
   const title = [card.camera, card.room && humanize(card.room)].filter(Boolean).join(' · ') || t('chat.card.camera')
   return (
-    <Card title={<LinkName to="/cameras" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>{title}</LinkName>}>
+    <Card icon={Camera} title={<LinkName to="/cameras" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>{title}</LinkName>}>
       {card.description && <p dir="auto" style={{ margin: 0 }}>{card.description}</p>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
         {typeof card.people_count === 'number' && <Badge tone="accent">{t('chat.card.people', { n: card.people_count })}</Badge>}
@@ -711,7 +892,7 @@ export default function ChatCard({ card, entityId, onAction }) {
   if (!card || typeof card !== 'object' || !card.kind) return null
   const Comp = CARDS[card.kind] || KeyValueCard
   return (
-    <div style={{ width: '100%', maxWidth: CARD_MAX_WIDTH[card.kind] ?? 420, alignSelf: 'flex-start' }}>
+    <div className="zc-card-wrap" style={{ width: '100%', maxWidth: CARD_MAX_WIDTH[card.kind] ?? 420, alignSelf: 'flex-start' }}>
       <Comp card={card} entityId={entityId ?? card.entity_id} onAction={onAction} />
     </div>
   )

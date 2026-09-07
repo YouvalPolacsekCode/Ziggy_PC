@@ -17,7 +17,43 @@ vi.mock('../../../lib/i18n', () => ({
   useIsRTL: () => false,
 }))
 
-import ChatCard, { CARD_KINDS, verdictTitle, deviceLabel, roomLabel, sortDevices } from '../ChatCards'
+// framer-motion → plain elements. `motion.<tag>` strips the animation props
+// (jsdom has no rAF-driven animation to speak of) and records them on the
+// element as data attributes so tests can assert what would have animated.
+// `useReducedMotion` reads a switchable flag.
+// The real uiStore persists through localStorage, which jsdom's opaque origin
+// refuses; DeviceIcon only reads `iconStyle`, so a bare store stands in.
+vi.mock('../../../stores/uiStore', async () => {
+  const { create } = await import('zustand')
+  return { useUIStore: create(() => ({ iconStyle: 'emoji' })) }
+})
+
+const motionState = { reduce: false }
+const MOTION_PROPS = ['initial', 'animate', 'exit', 'transition', 'layout', 'whileHover', 'whileTap', 'variants']
+vi.mock('framer-motion', () => {
+  const cache = {}
+  const motion = new Proxy({}, {
+    get(_, tag) {
+      if (!cache[tag]) {
+        cache[tag] = React.forwardRef(function Motion(props, ref) {
+          const rest = { ...props }
+          const had = []
+          for (const k of MOTION_PROPS) if (k in rest) { if (rest[k] != null && rest[k] !== false) had.push(k); delete rest[k] }
+          return React.createElement(tag, { ...rest, ref, 'data-motion': had.join(' ') || undefined })
+        })
+      }
+      return cache[tag]
+    },
+  })
+  return {
+    motion,
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => motionState.reduce,
+  }
+})
+
+import ChatCard, { CARD_KINDS, verdictTitle, deviceLabel, roomLabel, sortDevices, deviceKind, enterProps, CountTitle } from '../ChatCards'
+import { useUIStore } from '../../../stores/uiStore'
 import { useChatStore } from '../../../stores/chatStore'
 
 // Cards navigate (useNavigate), so every render lives inside a router. The
@@ -87,6 +123,8 @@ function manyDevices(n) {
 beforeEach(() => {
   runAction.mockReset()
   useChatStore.setState({ chatDock: false })
+  useUIStore.setState({ iconStyle: 'emoji' })
+  motionState.reduce = false
   setViewport(400)
 })
 
@@ -222,6 +260,108 @@ describe('ChatCard', () => {
       render(<ChatCard card={{ kind: 'device_list', devices }} />)
       const names = screen.getAllByRole('button').map((b) => b.textContent).filter((n) => /^[A-D]$/.test(n))
       expect(names).toEqual(['B', 'D', 'C', 'A'])
+    })
+  })
+
+  // ── Icons + motion ─────────────────────────────────────────────────────────
+
+  describe('device cell icon and state', () => {
+    it('every cell carries the shared DeviceIcon for its kind (emoji style)', () => {
+      render(<ChatCard card={SAMPLES.device_list} />)
+      const cells = screen.getAllByTestId('device-cell')
+      expect(cells).toHaveLength(2)
+      // light.kitchen → kind 'light' → 💡; binary_sensor "Front door" → 'door' → 🚪
+      expect(cells[0].querySelector('[aria-hidden="true"]').textContent).toBe('💡')
+      expect(cells[1].querySelector('[aria-hidden="true"]').textContent).toBe('🚪')
+    })
+
+    it('follows the Settings → Display icon style (image mode renders an <img>)', () => {
+      useUIStore.setState({ iconStyle: 'line' })
+      render(<ChatCard card={SAMPLES.device_list} />)
+      const [light] = screen.getAllByTestId('device-cell')
+      expect(light.querySelector('img[aria-hidden="true"]')).toBeTruthy()
+    })
+
+    it('marks on/off state on the cell and flips it with the toggle', async () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      render(<ChatCard card={SAMPLES.device_list} />)
+      const [light, door] = screen.getAllByTestId('device-cell')
+      expect(light).toHaveAttribute('data-on', 'true')
+      expect(light.className).toContain('zc-cell--on')
+      expect(door).toHaveAttribute('data-on', 'false')
+      fireEvent.click(screen.getAllByRole('switch')[0])
+      await waitFor(() => expect(light).toHaveAttribute('data-on', 'false'))
+      expect(light.className).not.toContain('zc-cell--on')
+    })
+
+    it('deviceKind resolves from the card payload shape', () => {
+      expect(deviceKind({ entity_id: 'light.kitchen', domain: 'light', name: 'Kitchen light' })).toBe('light')
+      expect(deviceKind({ entity_id: 'switch.kettle', domain: 'switch', name: 'Kettle' })).toBe('kettle')
+      expect(deviceKind({ entity_id: 'climate.ac', domain: 'climate', name: 'AC' })).toBe('ac')
+      expect(deviceKind({ entity_id: 'binary_sensor.x', domain: 'binary_sensor', name: 'Hall motion' })).toBe('motion')
+      expect(deviceKind({ entity_id: 'sensor.temp', domain: 'sensor', name: 'Temp', device_class: 'temperature' })).toBe('temperature')
+      expect(deviceKind({})).toBe('unknown')
+    })
+
+    it('automation rows are tinted cells with the lightning glyph', () => {
+      render(<ChatCard card={SAMPLES.automations} />)
+      const [night, morning] = screen.getAllByTestId('automation-cell')
+      expect(night).toHaveAttribute('data-on', 'true')
+      expect(morning).toHaveAttribute('data-on', 'false')
+      expect(night.querySelector('svg.lucide-zap')).toBeTruthy()
+    })
+
+    it('lifts the count out of the translated title into a mono pill (en + he)', () => {
+      // The i18n mock returns bare keys, so exercise the splitter directly
+      // with the real strings' shapes.
+      const en = rtlRender(<CountTitle text="16 devices" n={16} />)
+      expect(en.container.querySelector('.z-mono').textContent).toBe('16')
+      expect(en.container.textContent).toBe('16 devices')
+      const he = rtlRender(<CountTitle text="16 מכשירים" n={16} />)
+      expect(he.container.querySelector('.z-mono').textContent).toBe('16')
+      expect(he.container.textContent).toBe('16 מכשירים')
+      // No number in the string → rendered untouched.
+      const plain = rtlRender(<CountTitle text="chat.card.devices" n={16} />)
+      expect(plain.container.querySelector('.z-mono')).toBeNull()
+      expect(plain.container.textContent).toBe('chat.card.devices')
+    })
+  })
+
+  describe('motion', () => {
+    it('cells stagger in: each cell gets initial/animate/transition, later cells later', () => {
+      const props = [0, 1, 2, 9].map((i) => enterProps(false, i))
+      for (const p of props) {
+        expect(p.initial).toEqual({ opacity: 0, y: 6 })
+        expect(p.animate).toEqual({ opacity: 1, y: 0 })
+        expect(p.transition.duration).toBeLessThanOrEqual(0.25)
+      }
+      expect(props[1].transition.delay).toBeCloseTo(0.025)
+      expect(props[2].transition.delay).toBeCloseTo(0.05)
+      // Delay is capped so a full first page (12 cells) still lands under ~400ms.
+      expect(props[3].transition.delay + props[3].transition.duration).toBeLessThan(0.4)
+      render(<ChatCard card={SAMPLES.device_list} />)
+      for (const cell of screen.getAllByTestId('device-cell')) {
+        expect(cell.getAttribute('data-motion')).toBe('initial animate transition')
+      }
+    })
+
+    it('reduced motion: no transition props at all', () => {
+      motionState.reduce = true
+      expect(enterProps(true, 3)).toEqual({})
+      render(<ChatCard card={SAMPLES.device_list} />)
+      for (const cell of screen.getAllByTestId('device-cell')) {
+        expect(cell.getAttribute('data-motion')).toBeNull()
+      }
+      render(<ChatCard card={SAMPLES.automations} />)
+      for (const cell of screen.getAllByTestId('automation-cell')) {
+        expect(cell.getAttribute('data-motion')).toBeNull()
+      }
+    })
+
+    it('newly revealed cells cascade from zero again after Show all', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(10) }} />)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
+      expect(screen.getAllByTestId('device-cell')).toHaveLength(10)
     })
   })
 
