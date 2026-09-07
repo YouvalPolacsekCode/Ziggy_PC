@@ -17,6 +17,8 @@ from services.ha_automations import (
     toggle_automation,
     get_automation_traces,
     get_trace_detail,
+    resolve_run_target,
+    trigger_automation as ha_trigger_automation,
 )
 from services.local_automation_actions import (
     delete_ziggy_actions,
@@ -850,6 +852,11 @@ async def create_automation_endpoint(body: AutomationBody):
         # "create the sensor first" message instead of a generic failure.
         if result.get("reason") == "trigger_entity_missing":
             raise HTTPException(status_code=422, detail=result.get("error", "Trigger entity missing"))
+        # No actions is the user's to fix too, and it is the one failure that
+        # otherwise looks like success all the way down (see
+        # ha_automations.has_executable_actions).
+        if result.get("reason") == "no_actions":
+            raise HTTPException(status_code=422, detail=result.get("error", "Add at least one action"))
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     auto_id = result["id"]
     _bus.emit("automation", _BASIC,
@@ -976,17 +983,35 @@ async def toggle_automation_endpoint(automation_id: str, body: AutomationToggle)
 
 @router.post("/api/automations/{automation_id}/trigger")
 async def trigger_automation_endpoint(automation_id: str, background_tasks: BackgroundTasks):
-    # Always use Ziggy's executor — it handles call_service, IR, delay, and all
-    # other step types natively. Calling trigger_automation() in addition would
-    # cause HA to double-execute call_service steps for HA-backed automations.
+    # Ziggy's executor owns the run whenever Ziggy holds the steps — it handles
+    # call_service, IR, delay and capability steps natively, and asking HA as
+    # well would double-execute the call_service ones. When Ziggy holds none,
+    # the steps may still live in HA (a blueprint-sourced rule): hand it over
+    # rather than running an empty list and calling that a success.
     # HA state-triggered automations auto-fire independently of this endpoint.
     label = get_automation_meta(automation_id).get("name") or automation_id
+    target = await asyncio.to_thread(resolve_run_target, automation_id)
+
+    if target == "none":
+        _bus.emit("automation", _BASIC, "automation_trigger_no_steps",
+                  automation_id=automation_id, name=label, source="manual",
+                  result="no_steps")
+        raise HTTPException(
+            status_code=422,
+            detail="This automation has no steps, so running it would do nothing. "
+                   "Open it and add an action.",
+        )
+
     _bus.emit("automation", _BASIC, "automation_triggered",
-              automation_id=automation_id, name=label, source="manual")
-    background_tasks.add_task(
-        execute_ziggy_actions, automation_id, label, "manual",
-    )
-    return {"ok": True, "message": "Automation triggered"}
+              automation_id=automation_id, name=label, source="manual",
+              ran_in=target)
+    if target == "ziggy":
+        background_tasks.add_task(
+            execute_ziggy_actions, automation_id, label, "manual",
+        )
+    else:
+        background_tasks.add_task(ha_trigger_automation, automation_id)
+    return {"ok": True, "message": "Automation triggered", "ran_in": target}
 
 
 @router.get("/api/automations/{automation_id}/history")

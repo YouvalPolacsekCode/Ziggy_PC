@@ -530,7 +530,7 @@ export default function Automations() {
                 <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
                   highlighted={!!focusId && a.id === focusId}
                   onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
-                  onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }} />
+                  onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch (e) { addToast(e?.userMessage || t('automations.failedToTrigger'), 'error') } }} />
               ))}
             </div>
           </AnimatePresence>
@@ -685,7 +685,7 @@ export default function Automations() {
           automation={viewTarget}
           roomNameMap={roomNameMap}
           onEdit={(automation) => { setViewTarget(null); handleEdit(automation) }}
-          onTrigger={async (id) => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch { addToast(t('automations.failedToTrigger'), 'error') } }}
+          onTrigger={async (id) => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch (e) { addToast(e?.userMessage || t('automations.failedToTrigger'), 'error') } }}
           onClose={() => setViewTarget(null)}
         />
       </Modal>

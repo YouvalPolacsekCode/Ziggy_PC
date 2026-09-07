@@ -12,6 +12,7 @@ import { AndConnector } from './Atoms'
 import { DraggableActionRow } from './ActionRow'
 import ReviewPanel from './ReviewPanel'
 import { StepFrame } from '../bundles/engine/StepFrame'
+import { saveBlocker } from '../../../lib/automations/completeness'
 
 // ── AutomationWizard ──────────────────────────────────────────────────────────
 // The free-form builder, rendered through the SAME StepFrame shell as every
@@ -50,6 +51,11 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const removeAction    = key => { setActions(a => a.filter(x => x._key !== key)); setCollapsedActions(prev => { const next = new Set(prev); next.delete(key); return next }) }
   const toggleCollapse  = key => setCollapsedActions(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next })
   const canNext = () => step === 0 ? name.trim().length > 0 : !!(trigger.type || 'time')
+
+  // What still stands between this and a working automation. An automation
+  // with no usable action would save, fire, and do nothing forever — so the
+  // last step refuses rather than letting it through with a faint note.
+  const blocker = saveBlocker({ name, actions })
 
   const handleSave = async () => {
     setSaving(true)
@@ -91,7 +97,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
       onBack={() => (step === 0 ? onClose() : setStep(s => s - 1))}
       backLabel={step === 0 ? t('common.cancel') : t('automations.bundles.back')}
       onPrimary={isLast ? handleSave : () => setStep(s => s + 1)}
-      primaryDisabled={isLast ? saving : !canNext()}
+      primaryDisabled={isLast ? (saving || !!blocker) : !canNext()}
       primaryLabel={primaryLabel}
     >
       {wizardWarnings.length > 0 && (
@@ -180,6 +186,19 @@ function AutomationWizard({ initial, onSave, onClose }) {
           )}
           {step === 4 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {blocker && (
+                <div
+                  dir="auto"
+                  style={{
+                    padding: '10px 13px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.45,
+                    background: 'rgba(255, 196, 0, 0.12)',
+                    border: '0.5px solid rgba(255, 196, 0, 0.45)',
+                    color: 'var(--ink)',
+                  }}
+                >
+                  {t(`automations.wizard.blocked.${blocker}`)}
+                </div>
+              )}
               <ReviewPanel name={name} description={description} trigger={trigger} conditions={conditions.map(({ _key, ...rest }) => rest)} actions={actions.map(({ _key, ...rest }) => ({ ...rest, _key }))} />
               <div>
                 <Select label={t('automations.mode.label')} options={getRunModes()} value={mode} onChange={e => setMode(e.target.value)} />

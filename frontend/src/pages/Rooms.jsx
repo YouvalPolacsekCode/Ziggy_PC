@@ -1504,7 +1504,7 @@ export function RoomDetail() {
                         {a.description && <p dir="auto" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</p>}
                       </div>
                     </button>
-                    <button onClick={async e => { e.stopPropagation(); try { await triggerAutomation(a.id); addToast(t('rooms.triggered', { name: a.name }), 'success') } catch { addToast(t('rooms.failedShort'), 'error') } }}
+                    <button onClick={async e => { e.stopPropagation(); try { await triggerAutomation(a.id); addToast(t('rooms.triggered', { name: a.name }), 'success') } catch (err) { addToast(err?.userMessage || t('rooms.failedShort'), 'error') } }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ok)', padding: 6 }} title={t('rooms.runNow')}>
                       <Play size={13} />
                     </button>
