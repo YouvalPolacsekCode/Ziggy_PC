@@ -31,6 +31,8 @@ CARD_KINDS = frozenset({
     "device_list", "automations", "capabilities", "why_not", "home_health",
     "down_devices", "repair_history", "recent_activity", "camera_look",
     "needs_approval", "pairing_diagnosis", "cause_trace", "device_diagnosis",
+    # the agent driving the app / single-object answers
+    "navigate", "device", "reading",
 })
 
 # risk hints for the app / MCP listing: "read" never changes the home,
@@ -91,6 +93,7 @@ _TOOL_KIND = {
     "repair_history": "repair_history", "recent_activity": "recent_activity",
     "camera_look": "camera_look", "diagnose_pairing": "pairing_diagnosis",
     "explain_device_change": "cause_trace", "diagnose_device": "device_diagnosis",
+    "open_screen": "navigate", "show_device": "device", "get_temperature": "reading",
 }
 
 

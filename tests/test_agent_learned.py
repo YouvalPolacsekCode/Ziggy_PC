@@ -92,6 +92,31 @@ def test_open_screen_and_show_device():
     assert not asyncio.run(T.execute_tool("show_device", {"entity_id": "light.nope"}, d))["ok"]
     names = {t["function"]["name"] for t in T.TOOL_SCHEMAS}
     assert {"open_screen", "show_device"} <= names
+    # The runner only attaches card kinds it knows — a navigate the app never
+    # sees is a "took you there" that took you nowhere (Canary probe 07/09).
+    from core.actions.registry import CARD_KINDS
+    assert {"navigate", "device", "reading"} <= CARD_KINDS
+
+
+def test_navigate_lands_as_the_turns_card(monkeypatch, ):
+    from types import SimpleNamespace
+    from core.agent import runner as R
+    async def fake_dir():
+        return {"devices": [_dev()], "presence": []}
+    monkeypatch.setattr(R._dir, "build_directory", fake_dir)
+    monkeypatch.setattr(R, "require_cloud_llm_active", lambda: None)
+    monkeypatch.setattr(R, "_build_system_prompt", lambda *a, **k: "SYSTEM")
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(R, "_announce", _noop)
+    tc = SimpleNamespace(id="c1", function=SimpleNamespace(name="open_screen",
+                         arguments='{"screen":"device","id":"light.kitchen"}'))
+    calls = iter([SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[tc]))]),
+                  SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="פתחתי.", tool_calls=[]))])])
+    monkeypatch.setattr(R, "chat_completion", lambda *a, **k: next(calls))
+    out = asyncio.run(R.run_agent("קח אותי לעמוד של האור במטבח", None, channel="chat"))
+    assert out["data"]["card"]["kind"] == "navigate"
+    assert out["data"]["card"]["path"] == "/devices/light.kitchen"
 
 
 # 6 ─────────────────────────────────────────────────────────────────────────
