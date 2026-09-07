@@ -29,6 +29,16 @@ def test_shipped_copy_matches_docs_copy():
         "services/data/capability-catalog.json is stale — copy docs/capability-catalog.json over it"
 
 
+def test_capability_tiles_know_where_they_live():
+    """A capability whose surfaces include an app screen opens that screen."""
+    assert CL.path_for({"surfaces": ["frontend/src/pages/Actions.jsx", "services/x.py"]}) == "/actions"
+    assert CL.path_for({"surfaces": ["frontend/src/components/PairingWizard.jsx"]}) == "/devices"
+    assert CL.path_for({"surfaces": ["services/presence_engine.py"]}) is None
+    items = CL.overview()
+    assert all("path" in c and "id" in c for c in items)
+    assert any(c["path"] for c in items)
+
+
 def test_lookup_reads_the_shipped_copy_first():
     assert CL._SHIPPED_PATH == SHIPPED
     assert CL.overview()

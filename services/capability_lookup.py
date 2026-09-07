@@ -16,6 +16,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 # docs/ is NOT copied into the hub image (.dockerignore), so the shipped copy
 # lives under services/data/. The docs copy is the generator's output and the
@@ -88,8 +89,37 @@ def search(query: str, limit: int = 5, *, live_only: bool = False) -> list[dict]
     return [_slim(c) for _, c in scored[:limit]]
 
 
+# Catalog `surfaces` are source files. The ones that are app screens map to
+# routes, so a capability tile can open the place where the feature lives.
+# First match in a capability's surface list wins; order = specificity.
+_SURFACE_ROUTES: tuple[tuple[str, str], ...] = (
+    ("pages/DeviceDetail.jsx", "/devices"), ("pages/Devices.jsx", "/devices"),
+    ("PairingWizard", "/devices"), ("ConfigFlowRunner", "/devices"),
+    ("pages/RoomDetail", "/rooms"), ("pages/RoomsList", "/rooms"), ("pages/Rooms", "/rooms"),
+    ("components/rooms/", "/rooms"),
+    ("pages/Actions.jsx", "/actions"), ("components/automations/", "/actions"),
+    ("pages/Routines", "/routines"), ("pages/Cameras", "/cameras"),
+    ("pages/Anomalies", "/alerts"), ("pages/Suggestions", "/suggestions"),
+    ("pages/Tasks", "/tasks"), ("pages/AIChat", "/chat"), ("components/chat/", "/chat"),
+    ("pages/MediaSettings", "/settings/media"), ("pages/People", "/settings/people"),
+    ("pages/WallTablets", "/settings/tablets"), ("wall/", "/settings/tablets"),
+    ("pages/Settings.jsx", "/settings"), ("pages/AdminSettings", "/settings"),
+    ("pages/Dashboard", "/"),
+)
+
+
+def path_for(c: dict) -> Optional[str]:
+    """The app route where this capability lives, if any of its surfaces is a screen."""
+    surfaces = [str(s) for s in (c.get("surfaces") or [])]
+    for needle, route in _SURFACE_ROUTES:
+        if any(needle in s for s in surfaces):
+            return route
+    return None
+
+
 def _slim(c: dict) -> dict:
     return {
+        "id": c.get("id"),
         "name": c.get("name"),
         "pitch": c.get("pitch"),
         "what_it_does": (c.get("what_it_does") or "")[:600],
@@ -97,6 +127,7 @@ def _slim(c: dict) -> dict:
         "live": c.get("status") in LIVE_STATUSES,
         "layer": c.get("layer"),
         "known_gaps": (c.get("known_gaps") or [])[:3],
+        "path": path_for(c),
     }
 
 
