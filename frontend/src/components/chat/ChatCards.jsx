@@ -28,6 +28,14 @@
 // the actual navigation is AIChat's job (useFollowNavigateCards), the card
 // only has to survive a reload.
 //
+// The capabilities card is a 2-column grid of tiles (name over pitch, a live
+// dot). A tile opens in place on tap — the full "what it does", any known
+// gaps, and two quiet ways on: "Open" (the feature's own screen, via
+// chatNav) and "Ask Ziggy" (sends "How do I use X?" through the chat via the
+// `onAsk` prop AIChat threads in). One tile open at a time; the open tile
+// spans both columns. A not-yet-live feature is a muted tile with a "Soon"
+// tag where "Open" would be.
+//
 // Layout: on a wide enough column the chat page puts the reply text and the
 // card side by side (see AIChat's Message and chatCards.css); the card itself
 // is the same either way.
@@ -51,7 +59,7 @@ import { useLang, t as translateWithLang } from '../../lib/i18n'
 import { getKind } from '../../lib/devices'
 import { DeviceIcon } from '../../lib/deviceIcons'
 import { useDeviceStore } from '../../stores/deviceStore'
-import { useChatNav } from './chatNav'
+import { useChatNav, isAppPath } from './chatNav'
 import './chatCards.css'
 
 // ── Motion ────────────────────────────────────────────────────────────────────
@@ -92,6 +100,28 @@ function useHeightFlip(ref, dep, enabled) {
     return () => { try { anim.cancel() } catch { /* already done */ } }
   }, [dep, enabled, ref])
   return useCallback(() => { before.current = ref?.current?.offsetHeight ?? null }, [ref])
+}
+
+// Same FLIP, self-measuring: the element remembers the height it last
+// settled at and animates from there whenever `dep` changes. For a box that
+// can change without being tapped itself — a capability tile folds because a
+// sibling opened — so nobody is around to snapshot it first. Reduced motion
+// (or no WAAPI) → the height just jumps.
+function useHeightFollow(ref, dep, enabled) {
+  const last = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref?.current
+    if (!el) return
+    const from = last.current
+    const to = el.offsetHeight
+    last.current = to
+    if (!enabled || from == null || from === to || typeof el.animate !== 'function') return
+    const anim = el.animate(
+      [{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }],
+      { duration: 220, easing: CARD_EASE_CSS },
+    )
+    return () => { try { anim.cancel() } catch { /* already done */ } }
+  }, [dep, enabled, ref])
 }
 
 // ── Turn language ─────────────────────────────────────────────────────────────
@@ -185,15 +215,15 @@ const rowStyle = {
   minWidth: 0,
 }
 
-// One cell of the capabilities grid: name over pitch, a live dot on the
-// trailing edge. Live reads as a light accent tint; the rest sits flat.
+// One cell of the capabilities grid: a head row (name over pitch, a live dot
+// on the trailing edge — the tap target) and, when open, a body under it.
+// Live reads as a light accent tint; the rest sits flat. The padding lives
+// on the head and body (chatCards.css) so the box itself can animate height.
 const cellStyle = {
   display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-  minHeight: 48,
+  flexDirection: 'column',
+  alignItems: 'stretch',
   boxSizing: 'border-box',
-  padding: '6px 10px',
   borderRadius: 12,
   border: '0.5px solid var(--line)',
   background: 'var(--surface)',
@@ -859,30 +889,98 @@ function AutomationsCard({ card, onAction }) {
 
 // ── capabilities ──────────────────────────────────────────────────────────────
 
-function CapabilitiesCard({ card }) {
+// The question "Ask Ziggy" sends for a feature, in the turn's language. A
+// Hebrew prefix glued to a Latin name takes the maqaf ("ב־Smart Room"), a
+// Hebrew name takes none ("בחדר חכם") — HEBREW_STYLE_GUIDE §4.
+export function askHowText(name, lang, t) {
+  const n = String(name ?? '').trim()
+  if (lang === 'he') return t('chat.card.askHow', { name: /^[A-Za-z0-9]/.test(n) ? `־${n}` : n })
+  return t('chat.card.askHow', { name: n })
+}
+
+// One capability. The head is the tap target (aria-expanded); the body
+// holds the full description, the known gaps, and the two quiet buttons.
+// `onAsk` is optional: without it (dock, tests) the ask button is not drawn.
+function CapabilityTile({ cap, t, lang, order, reduce, expanded, onToggle, onAsk }) {
+  const go = useChatNav()
+  const ref = useRef(null)
+  useHeightFollow(ref, expanded, !reduce)
+  const name = cap.name || ''
+  const pitch = cap.pitch || cap.what_it_does || ''
+  const live = !!cap.live
+  const path = live && isAppPath(cap.path) ? cap.path : null
+  const gaps = (cap.known_gaps || []).map((g) => String(g ?? '').trim()).filter(Boolean)
+  const cls = ['zc-cell', live ? 'zc-cell--on' : 'zc-cell--soon', expanded ? 'zc-cell--open' : ''].filter(Boolean).join(' ')
+  return (
+    <motion.div
+      ref={ref}
+      className={cls}
+      data-testid="cap-tile"
+      data-open={expanded ? 'true' : 'false'}
+      style={{ ...cellStyle, ...(live ? cellOnStyle : {}), ...(expanded ? { gridColumn: '1 / -1' } : {}) }}
+      {...enterProps(reduce, order)}
+    >
+      <button
+        type="button"
+        className="zc-cell-head"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        title={expanded ? undefined : (pitch ? `${name} · ${pitch}` : name)}
+      >
+        <span className="zc-cell-text">
+          <span dir="auto" style={{ ...nameStyle, ...(live ? {} : { color: 'var(--ink-mute)' }) }}>{name}</span>
+          <span dir="auto" style={detailStyle}>{pitch || ' '}</span>
+        </span>
+        <Dot tone={live ? 'ok' : 'ink-faint'} title={live ? t('chat.card.live') : t('chat.card.notLive')} />
+      </button>
+      {expanded && (
+        <div className="zc-cell-body" data-testid="cap-body">
+          {cap.what_it_does && <p dir="auto" className="zc-cell-what">{cap.what_it_does}</p>}
+          {gaps.length > 0 && (
+            <div>
+              <p className="zc-cell-gaps-title">{t('chat.card.knownGaps')}</p>
+              <ul className="zc-cell-gaps">
+                {gaps.map((g, i) => <li key={i} dir="auto">{g}</li>)}
+              </ul>
+            </div>
+          )}
+          <div className="zc-cell-actions">
+            {path
+              ? <TextButton testid="cap-open" onClick={() => go(path)}>{t('chat.card.openFeature')}</TextButton>
+              : !live && <Badge tone="ink-mute">{t('chat.card.soon')}</Badge>}
+            {typeof onAsk === 'function' && (
+              <TextButton testid="cap-ask" onClick={() => onAsk(askHowText(name, lang, t))}>{t('chat.card.askZiggy')}</TextButton>
+            )}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+function CapabilitiesCard({ card, onAsk }) {
   const { t, lang } = useCardI18n(card)
   const caps = card.capabilities || []
   const cardRef = useRef(null)
   const collapse = useCollapse(caps, cardRef)
+  // One open tile at a time, keyed by the capability's id (name as fallback).
+  const [openKey, setOpenKey] = useState(null)
+  const keyOf = (c, i) => c.id || c.name || String(i)
   return (
     <Card lang={lang} cardRef={cardRef} icon={Sparkles} title={card.overview ? t('chat.card.whatZiggyCanDo') : t('chat.card.capabilities')}>
       {caps.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
           {collapse.shown.map((c, i) => {
-            const pitch = c.pitch || c.what_it_does || ''
+            const key = keyOf(c, i)
             return (
-              <motion.div
-                key={c.name || i}
-                className={`zc-cell${c.live ? ' zc-cell--on' : ''}`}
-                style={{ ...cellStyle, ...(c.live ? cellOnStyle : {}) }}
-                {...enterProps(collapse.reduce, collapse.order(i))}
-              >
-                <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
-                  <span dir="auto" title={c.name} style={nameStyle}>{c.name}</span>
-                  <span dir="auto" title={pitch} style={detailStyle}>{pitch || ' '}</span>
-                </div>
-                <Dot tone={c.live ? 'ok' : 'ink-mute'} title={c.live ? t('chat.card.live') : t('chat.card.notLive')} />
-              </motion.div>
+              <CapabilityTile
+                key={key}
+                cap={c} t={t} lang={lang}
+                order={collapse.order(i)} reduce={collapse.reduce}
+                expanded={openKey === key}
+                onToggle={() => setOpenKey((k) => (k === key ? null : key))}
+                onAsk={onAsk}
+              />
             )
           })}
         </div>
@@ -1158,13 +1256,16 @@ const CARD_MAX_WIDTH = { device_list: 940, automations: 640, capabilities: 640, 
  *                                  the payload; the runner adds card.entity_id
  *                                  when it knows it)
  * @param {function} [props.onAction] called after an in-card action succeeds
+ * @param {function} [props.onAsk]    sends a text through the chat as if the
+ *                                  user typed it (AIChat's handleSend); a
+ *                                  card without it draws no "Ask Ziggy"
  */
-export default function ChatCard({ card, entityId, onAction }) {
+export default function ChatCard({ card, entityId, onAction, onAsk }) {
   if (!card || typeof card !== 'object' || !card.kind) return null
   const Comp = CARDS[card.kind] || KeyValueCard
   return (
     <div className="zc-card-wrap" style={{ width: '100%', maxWidth: CARD_MAX_WIDTH[card.kind] ?? 420, alignSelf: 'flex-start' }}>
-      <Comp card={card} entityId={entityId ?? card.entity_id} onAction={onAction} />
+      <Comp card={card} entityId={entityId ?? card.entity_id} onAction={onAction} onAsk={onAsk} />
     </div>
   )
 }

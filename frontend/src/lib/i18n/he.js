@@ -2357,6 +2357,13 @@ export default {
   'chat.card.whatZiggyCanDo':     'מה זיגי יודע לעשות',
   'chat.card.live':               'פעיל',
   'chat.card.notLive':            'עדיין לא',
+  // אריח תכונה פתוח: התיאור המלא, מה עדיין חסר, ושתי דרכים להמשיך. כפתורים
+  // בשם־פעולה (פתיחה, שאלה) — לא בציווי. השאלה עצמה סתמית (״משתמשים״).
+  'chat.card.openFeature':        'פתיחה',
+  'chat.card.askZiggy':           'שאלה לזיגי',
+  'chat.card.askHow':             'איך משתמשים ב{name}?',
+  'chat.card.soon':               'בקרוב',
+  'chat.card.knownGaps':          'עדיין חסר',
   'chat.card.whyNot':             'למה זה לא קרה',
   'chat.card.alsoPossible':       'יכול להיות גם',
   'chat.card.deviceUnreachable':  'זיגי לא מצליח להגיע למכשיר',

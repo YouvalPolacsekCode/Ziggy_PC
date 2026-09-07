@@ -104,7 +104,9 @@ function PatternCard({ msg, onSaveRoutine }) {
 }
 
 // ── Message bubble (Chat-A) ───────────────────────────────────────────────────
-function Message({ msg, onBundleAccept, onBundleDiscard }) {
+// `onAsk(text)` lets a card put a question into the conversation on the
+// user's behalf (a capability tile's "Ask Ziggy") — it is handleSend.
+function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
   const t = useT()
   const isUser  = msg.role === 'user'
   const isError = !isUser && msg.ok === false
@@ -291,7 +293,7 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
         <div className="zc-row">
           <div className="zc-row-text">{textBlock}</div>
           <div className="zc-row-card">
-            <ChatCard card={msg.card} entityId={msg.card.entity_id} />
+            <ChatCard card={msg.card} entityId={msg.card.entity_id} onAsk={onAsk} />
           </div>
         </div>
       ) : textBlock}
@@ -2137,6 +2139,7 @@ export default function AIChat({ docked = false }) {
               msg={msg}
               onBundleAccept={onBundleAccept}
               onBundleDiscard={onBundleDiscard}
+              onAsk={handleSend}
             />
           ))}
           {/* Pending live-dictation bubble: rendered as a normal user

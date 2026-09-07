@@ -2774,6 +2774,12 @@ export default {
   'chat.card.whatZiggyCanDo':     'What Ziggy can do',
   'chat.card.live':               'Live',
   'chat.card.notLive':            'Not yet',
+  // A capability tile, opened: the full description, its gaps, and two ways on
+  'chat.card.openFeature':        'Open',
+  'chat.card.askZiggy':           'Ask Ziggy',
+  'chat.card.askHow':             'How do I use {name}?',
+  'chat.card.soon':               'Soon',
+  'chat.card.knownGaps':          'Still missing',
   'chat.card.whyNot':             'Why it didn’t happen',
   'chat.card.alsoPossible':       'Could also be',
   'chat.card.deviceUnreachable':  'Ziggy can’t reach the device',

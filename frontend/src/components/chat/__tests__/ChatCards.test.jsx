@@ -61,7 +61,7 @@ vi.mock('framer-motion', () => {
 
 import ChatCard, {
   CARD_KINDS, CHIP_LIMIT, verdictTitle, deviceLabel, roomLabel, sortDevices, sortChips, groupByRoom, deviceKind,
-  enterProps, roomPath, slugifyRoom, stateSuffix, formatReading, navigateLabel,
+  enterProps, roomPath, slugifyRoom, stateSuffix, formatReading, navigateLabel, askHowText,
 } from '../ChatCards'
 import { useUIStore } from '../../../stores/uiStore'
 import { useChatStore } from '../../../stores/chatStore'
@@ -97,8 +97,10 @@ const SAMPLES = {
     { id: 'a2', name: 'Morning', enabled: false },
   ] },
   capabilities: { kind: 'capabilities', overview: true, capabilities: [
-    { name: 'Smart Room', pitch: 'Lights follow you', what_it_does: '…', status: 'live', live: true, layer: 'recipe' },
-    { name: 'Pre-cool', pitch: 'Cool before you arrive', status: 'planned', live: false, layer: 'bundle' },
+    { id: 'smart_room', name: 'Smart Room', pitch: 'Lights follow you', what_it_does: 'Lights in a room follow the people in it, and stay off for a sleeper.',
+      path: '/actions', known_gaps: ['No dimming curve yet', 'One room at a time'], status: 'live', live: true, layer: 'recipe' },
+    { id: 'precool', name: 'Pre-cool', pitch: 'Cool before you arrive', what_it_does: 'Starts the AC when you are near home.',
+      path: '/actions', known_gaps: [], status: 'planned', live: false, layer: 'bundle' },
   ] },
   why_not: { kind: 'why_not', verdicts: ['device_unreachable', 'automation_disabled'], device_reachable: false,
     routines: [{ name: 'Hall motion', enabled: false, last_run: 'none in window' }],
@@ -670,6 +672,17 @@ describe('ChatCard', () => {
       expect(screen.getAllByText(/^Cap \d+$/)).toHaveLength(11)
     })
 
+    it('capabilities: the collapse survives an open tile', () => {
+      const capabilities = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: `Cap ${i}`, pitch: `Pitch ${i}`, what_it_does: `Does ${i}`, live: true }))
+      render(<ChatCard card={{ kind: 'capabilities', capabilities }} />)
+      fireEvent.click(screen.getByRole('button', { name: /^Cap 3 / }))
+      expect(screen.getAllByTestId('cap-tile')).toHaveLength(8)
+      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
+      expect(screen.getAllByTestId('cap-tile')).toHaveLength(11)
+      // Still the one open tile after the page grew.
+      expect(screen.getAllByTestId('cap-tile').filter((el) => el.getAttribute('data-open') === 'true')).toHaveLength(1)
+    })
+
     it('recent_activity collapses to 8 and expands', () => {
       const changes = Array.from({ length: 9 }, (_, i) => `Change ${i}`)
       render(<ChatCard card={{ kind: 'recent_activity', changes }} />)
@@ -678,6 +691,130 @@ describe('ChatCard', () => {
       expect(screen.getAllByRole('listitem')).toHaveLength(9)
       fireEvent.click(screen.getByRole('button', { name: 'chat.card.less' }))
       expect(screen.getAllByRole('listitem')).toHaveLength(8)
+    })
+  })
+
+  // ── capabilities: tiles open in place ──────────────────────────────────────
+
+  describe('capability tiles', () => {
+    const tiles = () => screen.getAllByTestId('cap-tile')
+    const head = (name) => screen.getByRole('button', { name: new RegExp(`^${name} `) })
+
+    it('a tap opens the tile in place: full text, known gaps, aria-expanded, both columns', () => {
+      render(<ChatCard card={SAMPLES.capabilities} />)
+      const [smart, precool] = tiles()
+      expect(smart).toHaveAttribute('data-open', 'false')
+      expect(head('Smart Room')).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.queryByTestId('cap-body')).toBeNull()
+      expect(smart.style.gridColumn).toBe('')
+
+      fireEvent.click(head('Smart Room'))
+      expect(head('Smart Room')).toHaveAttribute('aria-expanded', 'true')
+      expect(smart).toHaveAttribute('data-open', 'true')
+      expect(smart.style.gridColumn).toBe('1 / -1')
+      const body = within(smart).getByTestId('cap-body')
+      expect(within(body).getByText('Lights in a room follow the people in it, and stay off for a sleeper.')).toBeInTheDocument()
+      expect(within(body).getByText('chat.card.knownGaps')).toBeInTheDocument()
+      expect(within(body).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['No dimming curve yet', 'One room at a time'])
+      // The other tile is untouched.
+      expect(precool).toHaveAttribute('data-open', 'false')
+      expect(precool.style.gridColumn).toBe('')
+    })
+
+    it('only one tile is open at a time; a second tap folds it back', () => {
+      render(<ChatCard card={SAMPLES.capabilities} />)
+      fireEvent.click(head('Smart Room'))
+      fireEvent.click(head('Pre-cool'))
+      const [smart, precool] = tiles()
+      expect(smart).toHaveAttribute('data-open', 'false')
+      expect(precool).toHaveAttribute('data-open', 'true')
+      expect(screen.getAllByTestId('cap-body')).toHaveLength(1)
+      fireEvent.click(head('Pre-cool'))
+      expect(precool).toHaveAttribute('data-open', 'false')
+      expect(screen.queryByTestId('cap-body')).toBeNull()
+      expect(head('Pre-cool')).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('"Open" navigates to the capability\'s path with state.fromChat', () => {
+      render(<ChatCard card={SAMPLES.capabilities} />)
+      fireEvent.click(head('Smart Room'))
+      const open = screen.getByTestId('cap-open')
+      expect(open.textContent).toBe('chat.card.openFeature')
+      expect(open.style.textDecoration).not.toContain('underline')
+      fireEvent.click(open)
+      expect(locPath()).toBe('/actions')
+      expect(locState()).toEqual({ fromChat: true })
+    })
+
+    it('has no "Open" without a path, or with one that is not an app path', () => {
+      const { unmount } = render(<ChatCard card={{ kind: 'capabilities', capabilities: [
+        { id: 'x', name: 'Nowhere', what_it_does: 'No screen of its own', path: null, live: true },
+      ] }} />)
+      fireEvent.click(head('Nowhere'))
+      expect(screen.queryByTestId('cap-open')).toBeNull()
+      unmount()
+
+      render(<ChatCard card={{ kind: 'capabilities', capabilities: [
+        { id: 'y', name: 'Elsewhere', what_it_does: 'Points off-app', path: 'https://evil.example', live: true },
+      ] }} />)
+      fireEvent.click(head('Elsewhere'))
+      expect(screen.queryByTestId('cap-open')).toBeNull()
+    })
+
+    it('"Ask Ziggy" sends the how-to question through onAsk and does not navigate', () => {
+      const onAsk = vi.fn()
+      render(<ChatCard card={SAMPLES.capabilities} onAsk={onAsk} />)
+      fireEvent.click(head('Smart Room'))
+      const ask = screen.getByTestId('cap-ask')
+      expect(ask.textContent).toBe('chat.card.askZiggy')
+      fireEvent.click(ask)
+      // The i18n mock is identity, so the key comes back; the wording itself
+      // is pinned by the askHowText test below.
+      expect(onAsk).toHaveBeenCalledTimes(1)
+      expect(onAsk).toHaveBeenCalledWith('chat.card.askHow')
+      expect(locPath()).toBe('/chat')
+    })
+
+    it('askHowText: English plain; Hebrew glues the prefix with a maqaf only to a Latin name', () => {
+      const t = (k, p) => (k === 'chat.card.askHow' ? (p.name.startsWith('־') || /[֐-׿]/.test(p.name) ? `איך משתמשים ב${p.name}?` : `How do I use ${p.name}?`) : k)
+      expect(askHowText('Smart Room', 'en', t)).toBe('How do I use Smart Room?')
+      expect(askHowText('Smart Room', 'he', t)).toBe('איך משתמשים ב־Smart Room?')
+      expect(askHowText('חדר חכם', 'he', t)).toBe('איך משתמשים בחדר חכם?')
+      expect(askHowText('  Pre-cool ', 'en', t)).toBe('How do I use Pre-cool?')
+    })
+
+    it('without onAsk (dock, tests) there is no "Ask Ziggy"', () => {
+      render(<ChatCard card={SAMPLES.capabilities} />)
+      fireEvent.click(head('Smart Room'))
+      expect(screen.getByTestId('cap-open')).toBeInTheDocument()
+      expect(screen.queryByTestId('cap-ask')).toBeNull()
+    })
+
+    it('a not-live capability is muted, dotted faint, and says "Soon" instead of "Open"', () => {
+      const onAsk = vi.fn()
+      render(<ChatCard card={SAMPLES.capabilities} onAsk={onAsk} />)
+      const [smart, precool] = tiles()
+      expect(smart.className).toContain('zc-cell--on')
+      expect(precool.className).toContain('zc-cell--soon')
+      expect(precool.className).not.toContain('zc-cell--on')
+      expect(within(precool).getByRole('img', { name: 'chat.card.notLive' }).style.background).toBe('var(--ink-faint)')
+      expect(within(smart).getByRole('img', { name: 'chat.card.live' }).style.background).toBe('var(--ok)')
+
+      fireEvent.click(head('Pre-cool'))
+      const body = within(precool).getByTestId('cap-body')
+      expect(within(body).getByText('chat.card.soon')).toBeInTheDocument()
+      expect(within(body).queryByTestId('cap-open')).toBeNull()
+      // Empty gaps → no gaps block; asking is still allowed.
+      expect(within(body).queryByText('chat.card.knownGaps')).toBeNull()
+      expect(within(body).getByTestId('cap-ask')).toBeInTheDocument()
+    })
+
+    it('tiles keep the entrance stagger; reduced motion mounts them plain', () => {
+      render(<ChatCard card={SAMPLES.capabilities} />)
+      for (const tile of tiles()) expect(tile.getAttribute('data-motion')).toBe('initial animate transition')
+      motionState.reduce = true
+      const { container } = rtlRender(<MemoryRouter><ChatCard card={SAMPLES.capabilities} /></MemoryRouter>)
+      for (const tile of container.querySelectorAll('[data-testid="cap-tile"]')) expect(tile.getAttribute('data-motion')).toBeNull()
     })
   })
 
