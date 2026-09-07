@@ -273,16 +273,19 @@ button.zc-room-title { cursor: pointer; }
   text-align: start;
   cursor: pointer;
 }
-.zc-link-go {
+.zc-link-go,
+.zc-room-go {
   flex-shrink: 0;
   color: var(--ink-faint);
   opacity: 0.6;
   transition: opacity 120ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
-  .zc-link-go { opacity: 0; }
+  .zc-link-go, .zc-room-go { opacity: 0; }
   .zc-link:hover .zc-link-go,
-  .zc-link:focus-visible .zc-link-go { opacity: 1; }
+  .zc-link:focus-visible .zc-link-go,
+  .zc-room-title:hover .zc-room-go,
+  .zc-room-title:focus-visible .zc-room-go { opacity: 1; }
 }
 
 /* Chevrons point into the reading direction. */
