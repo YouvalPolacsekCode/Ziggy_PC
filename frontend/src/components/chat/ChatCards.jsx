@@ -504,7 +504,10 @@ function DeviceListCard({ card, onAction }) {
       {devices.length === 0
         ? <p style={muteStyle}>{t('chat.card.noDevices')}</p>
         : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 6, minWidth: 0 }}>
+          // Cell minimum: 150px keeps two columns on a phone; inside a wide
+          // text|card row chatCards.css raises it (--zc-cell-min) so names
+          // get room next to the icon and the toggle.
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(var(--zc-cell-min, 150px), 1fr))', gap: 6, minWidth: 0 }}>
             {collapse.shown.map((d, i) => (
               <DeviceCell
                 key={d.entity_id || `${d.name}-${i}`}

@@ -50,6 +50,7 @@
   }
   .zc-row-card {
     flex: 1 1 0;
+    --zc-cell-min: 172px;   /* device grid: room for icon + name + toggle */
   }
   /* The card fills its column; the per-kind max widths no longer apply once
      the column itself is the constraint. */

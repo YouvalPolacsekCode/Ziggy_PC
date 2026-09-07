@@ -246,7 +246,10 @@ describe('ChatCard', () => {
       const { container } = render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(3) }} />)
       const grid = [...container.querySelectorAll('div')].find((el) => el.style.display === 'grid')
       expect(grid).toBeTruthy()
-      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(150px, 1fr))')
+      // 150px keeps two columns on a phone; the wide text|card row raises the
+      // minimum through --zc-cell-min (chatCards.css) so names get room next
+      // to the icon and the toggle.
+      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(var(--zc-cell-min, 150px), 1fr))')
     })
 
     it('puts ON devices first, then sorts by room', () => {
