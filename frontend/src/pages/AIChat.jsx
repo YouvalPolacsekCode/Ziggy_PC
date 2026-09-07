@@ -155,6 +155,7 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
     <>
       <div
         dir="auto"
+        className={hasCard ? 'zc-bubble' : undefined}
         style={{
           padding: '10px 14px',
           borderRadius: 18,
@@ -165,7 +166,9 @@ function Message({ msg, onBundleAccept, onBundleDiscard }) {
           border:      isError
             ? '0.5px solid color-mix(in srgb, var(--err) 60%, var(--line))'
             : isUser ? 'none' : '0.5px solid var(--line)',
-          fontSize: 14.5, lineHeight: 1.45,
+          // Beside a card the prose is the quieter half of the row: a notch
+          // smaller and more open, capped at 420px (chatCards.css).
+          fontSize: hasCard ? 14 : 14.5, lineHeight: hasCard ? 1.5 : 1.45,
           // Bubble text aligns with the bubble's bidi direction (which `dir="auto"`
           // resolves from the message content — Hebrew → rtl, English → ltr,
           // mixed → first strong character wins). Timestamp goes on the

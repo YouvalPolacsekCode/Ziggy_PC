@@ -1,5 +1,6 @@
 /* Chat cards — the few things inline styles cannot express: the responsive
-   text|card row, pointer-only hover, and the reduced-motion guard.
+   text|card row, pointer-only hover, tokens that flip with the palette, and
+   the reduced-motion guard.
 
    Logical properties only (RTL-safe). Tokens are the app's CSS variables.
 
@@ -46,18 +47,250 @@
   }
   .zc-row-text {
     flex: 0 1 38%;
-    max-width: 460px;
+    max-width: 420px;
   }
+  /* The bubble's first line sits level with the card's eyebrow: both boxes
+     start at 12px of padding, the eyebrow line (10px × 1.5) is centred 1px
+     above the bubble's first line (14px × 1.5) — close enough to read as one
+     row without a second measurement. */
+  .zc-row-text > .zc-bubble { padding-block-start: 12px; }
   .zc-row-card {
     flex: 1 1 0;
-    --zc-cell-min: 172px;   /* device grid: room for icon + name + toggle */
   }
   /* The card fills its column; the per-kind max widths no longer apply once
      the column itself is the constraint. */
   .zc-row-card > .zc-card-wrap { max-width: none; }
 }
 
-/* ── Cells ──────────────────────────────────────────────────────────────── */
+/* ── Card + tokens ──────────────────────────────────────────────────────── */
+
+.zc-card {
+  /* The room tile ground: a whisper of ink over the surface in light, the
+     page's second background in dark (mixing ink into a dark surface only
+     makes it greyer, not deeper). */
+  --zc-tile: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  --zc-chip-on: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  --zc-chip-line: color-mix(in srgb, var(--line) 70%, transparent);
+  -webkit-touch-callout: none;   /* long-press opens the device page, not the OS menu */
+}
+[data-palette="dark"] .zc-card {
+  --zc-tile: var(--bg-2);
+}
+
+/* ── Room tiles ─────────────────────────────────────────────────────────── */
+
+.zc-rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.zc-room {
+  background: var(--zc-tile);
+  border-radius: 16px;
+  padding: 12px 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zc-room-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.zc-room-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  text-align: start;
+}
+.zc-room-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.zc-room-title { cursor: pointer; }
+
+.zc-room-on {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Chips ──────────────────────────────────────────────────────────────── */
+
+.zc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.zc-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  max-width: 100%;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 0.5px solid var(--zc-chip-line);
+  color: var(--ink-mute);
+  box-sizing: border-box;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease,
+              transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.zc-chip--on {
+  background: var(--zc-chip-on);
+  border-color: transparent;
+  color: var(--ink);
+}
+.zc-chip--ghost {
+  background: transparent;
+  border-style: dashed;
+}
+.zc-chip:active { transform: scale(0.97); }
+
+/* The chip body — the press target. A real button for keyboard and screen
+   readers; visually it is the whole pill. */
+.zc-chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  padding-inline: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.zc-chip-main[aria-busy="true"] { cursor: progress; }
+.zc-chip-main:disabled { cursor: default; }
+
+.zc-chip-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--ink-faint);
+  opacity: 0.7;
+  transition: color 120ms ease, opacity 120ms ease;
+}
+.zc-chip--on .zc-chip-ico,
+.zc-chip--lit .zc-chip-ico { color: var(--accent); opacity: 1; }
+
+.zc-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zc-chip-suffix {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms ease;
+}
+.zc-chip-suffix--err { color: var(--err); }
+
+/* Deep link: a chevron at the chip's trailing edge. On a pointer device the
+   slot is reserved (so nothing shifts) and the glyph fades in on hover /
+   focus; on touch the slot is gone and a long-press opens the page. */
+.zc-chip-go {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 100%;
+  margin: 0;
+  margin-inline-start: -8px;
+  padding: 0;
+  padding-inline-end: 4px;
+  background: none;
+  border: none;
+  border-radius: inherit;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.zc-chip-go:focus-visible { opacity: 1; outline: none; color: var(--ink); }
+
+@media (hover: hover) and (pointer: fine) {
+  .zc-chip-go { display: inline-flex; }
+  .zc-chip:hover .zc-chip-go,
+  .zc-chip:focus-within .zc-chip-go { opacity: 1; }
+  .zc-chip-go:hover { color: var(--ink); }
+  .zc-chip:hover { border-color: color-mix(in srgb, var(--ink) 18%, var(--zc-chip-line)); }
+  .zc-chip--on:hover { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
+/* ── Name-as-link (why_not verdict, down_devices, camera title) ─────────── */
+
+.zc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.zc-link-go {
+  flex-shrink: 0;
+  color: var(--ink-faint);
+  opacity: 0.6;
+  transition: opacity 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .zc-link-go { opacity: 0; }
+  .zc-link:hover .zc-link-go,
+  .zc-link:focus-visible .zc-link-go { opacity: 1; }
+}
+
+/* Chevrons point into the reading direction. */
+[dir="rtl"] .zc-chip-go svg,
+[dir="rtl"] .zc-link-go,
+[dir="rtl"] .zc-room-go { transform: scaleX(-1); }
+
+/* ── Cells (capabilities) ───────────────────────────────────────────────── */
 
 .zc-cell {
   /* Only what changes on hover/press — never `all`. */
@@ -89,6 +322,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .zc-cell, .zc-showall { transition: none; }
-  .zc-cell:hover { transform: none; }
+  .zc-cell, .zc-showall, .zc-chip, .zc-chip-ico, .zc-chip-go, .zc-link-go { transition: none; }
+  .zc-cell:hover, .zc-chip:active { transform: none; }
 }

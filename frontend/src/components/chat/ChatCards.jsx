@@ -1,63 +1,66 @@
 // Embedded UI in chat — one small card per tool-result `kind`.
 //
 // The agent's tool results carry `data.card` (see core/agent/runner) with a
-// `kind` and just enough structure to render. Cards sit BELOW the assistant's
-// text bubble: the chat auto-scrolls to the bottom, so the interactive card is
-// what stays in view while the (deliberately short) prose sits above it. The
-// card lets the user act without another round-trip through the model.
-// Interactive bits call the actions registry directly (`runAction` → POST
-// /api/actions/{name}), which is the same code path the agent itself uses.
+// `kind` and just enough structure to render. The card lets the user act
+// without another round-trip through the model: interactive bits call the
+// actions registry directly (`runAction` → POST /api/actions/{name}), which
+// is the same code path the agent itself uses.
 //
 // Language: the runner stamps `card.lang` ("he" | "en") = the language of the
 // turn. Every label on a card follows that, not the UI locale, so a Hebrew
 // answer never carries an English card (and vice versa). Missing → UI locale.
+// The card root also takes its `dir` from that language, so a Hebrew card
+// lays out right-to-left even inside an English UI.
 //
-// Density: list-shaped cards collapse to a first page (8 items, 12 on a wide
-// window) behind a "Show all (n)" text button so reply + card fit one screen
-// on a phone and on the desktop chat page alike.
+// The device card shows the home as ROOMS, not rows: one soft tile per room,
+// ordered by how much is on in it, and inside each tile the devices as pill
+// chips. The chip IS the switch — tapping it flips the device (optimistic,
+// rolled back on failure) — so there is no separate control per device and
+// nothing reads as a settings panel. A device's own page is one hover-chevron
+// (pointer) or long-press (touch) away. Automations use the same chip
+// language. Rooms show every chip; a room with more than CHIP_LIMIT devices
+// folds the rest behind a "+N" ghost chip.
 //
 // Layout: on a wide enough column the chat page puts the reply text and the
 // card side by side (see AIChat's Message and chatCards.css); the card itself
 // is the same either way.
 //
-// Motion: one grammar for everything here — fade + a 6px rise on a strong
-// ease-out, cells staggered 25ms apart (capped so a full first page lands
-// under ~400ms). Expanding "Show all" animates the card's height (a FLIP on
-// the real height via WAAPI, so nothing inside is scale-distorted). Under
+// Motion: tiles enter with a fade and a 4px rise on a strong ease-out,
+// 30ms apart (capped); the chips inside ride with their tile — no second
+// cascade. State flips are a 120ms fill transition (chatCards.css). Under
 // prefers-reduced-motion every element mounts instantly with no transition
 // props at all.
 //
-// Kept deliberately plain: inline styles on the app's CSS variables, logical
-// properties only (RTL-safe), no new libraries. The Radix-backed Toggle from
-// ui/ is the one shared control (gotcha: Radix wants onCheckedChange). Device
-// glyphs come from the central DeviceIcon, so they follow the user's
-// Settings → Display icon style like everywhere else.
+// Kept deliberately plain: the app's CSS variables, logical properties only
+// (RTL-safe), no new libraries. Device glyphs come from the central
+// DeviceIcon, so they follow the user's Settings → Display icon style like
+// everywhere else.
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Zap, Stethoscope, HeartPulse, Sparkles, Camera } from 'lucide-react'
+import { Zap, Stethoscope, HeartPulse, Sparkles, Camera, ChevronRight } from 'lucide-react'
 import { runAction } from '../../lib/api'
 import { useLang, t as translateWithLang } from '../../lib/i18n'
 import { getKind } from '../../lib/devices'
 import { DeviceIcon } from '../../lib/deviceIcons'
-import { Toggle } from '../ui/Toggle'
 import { useChatStore, isWideForChatDock } from '../../stores/chatStore'
+import { useDeviceStore } from '../../stores/deviceStore'
 import './chatCards.css'
 
 // ── Motion ────────────────────────────────────────────────────────────────────
 
 const EASE_OUT = [0.23, 1, 0.32, 1]
 const CARD_EASE_CSS = 'cubic-bezier(0.23, 1, 0.32, 1)'
-const STAGGER_S = 0.025
-const STAGGER_CAP = 8            // ≥ this index every cell shares one delay
+const STAGGER_S = 0.03
+const STAGGER_CAP = 8            // ≥ this index every tile shares one delay
 
 // Props for a motion element entering as the `order`-th of its siblings, or
 // nothing at all when the user asked for reduced motion.
 export function enterProps(reduce, order = 0) {
   if (reduce) return {}
   return {
-    initial: { opacity: 0, y: 6 },
+    initial: { opacity: 0, y: 4 },
     animate: { opacity: 1, y: 0 },
     transition: { duration: 0.18, ease: EASE_OUT, delay: Math.min(order, STAGGER_CAP) * STAGGER_S },
   }
@@ -101,11 +104,11 @@ function useCardI18n(card) {
 }
 
 // ── In-context navigation ─────────────────────────────────────────────────────
-// A card names a real object; tapping the name opens that object's page. The
-// conversation stays at hand: on wide screens AppShell keeps the chat docked
-// beside the page (chatDock), on phones it shows a "back to chat" pill for any
-// location whose state carries `fromChat`. Cards render inside the router in
-// both places (the /chat page and the dock), so useNavigate is safe here.
+// A card names a real object; opening it keeps the conversation at hand: on
+// wide screens AppShell keeps the chat docked beside the page (chatDock), on
+// phones it shows a "back to chat" pill for any location whose state carries
+// `fromChat`. Cards render inside the router in both places (the /chat page
+// and the dock), so useNavigate is safe here.
 
 function useChatNav() {
   const navigate = useNavigate()
@@ -118,8 +121,8 @@ function useChatNav() {
 }
 
 // Name-as-link: a real button (keyboard + screen reader) that looks like the
-// plain name it replaces. Stops propagation so a row that also holds a Toggle
-// never sees the click.
+// plain name it replaces — no underline; a chevron at the trailing edge says
+// "this opens" (hover on a pointer device, always faintly on touch).
 function LinkName({ to, children, style, title }) {
   const go = useChatNav()
   if (!to) return <span dir="auto" style={style}>{children}</span>
@@ -128,16 +131,12 @@ function LinkName({ to, children, style, title }) {
       type="button"
       dir="auto"
       title={title}
+      className="zc-link"
       onClick={(e) => { e.stopPropagation(); go(to) }}
-      style={{
-        background: 'none', border: 'none', padding: 0, margin: 0,
-        font: 'inherit', color: 'inherit', textAlign: 'start', cursor: 'pointer',
-        textDecoration: 'underline', textDecorationColor: 'color-mix(in srgb, var(--ink) 25%, transparent)',
-        textUnderlineOffset: 3, maxWidth: '100%', minWidth: 0,
-        ...style,
-      }}
+      style={style}
     >
-      {children}
+      <span style={{ minWidth: 0 }}>{children}</span>
+      <ChevronRight className="zc-link-go" size={13} strokeWidth={2} aria-hidden="true" />
     </button>
   )
 }
@@ -150,11 +149,28 @@ export function automationPath(id) {
   return id ? `/actions?focus=${encodeURIComponent(id)}` : '/actions'
 }
 
+// The card's room is the agent directory's slug of the HA area NAME
+// (core/agent/directory._slugify_area: lower-case, spaces → underscores). The
+// Rooms page routes by HA area_id. Those coincide for a plainly named area
+// that was never renamed, but not in general (a renamed area keeps its old
+// id; a Hebrew name gets transliterated), so the slug is matched against the
+// rooms the app already holds — by id, then by the same slugging of the name
+// — and when nothing matches the title opens the Rooms list instead.
+export function slugifyRoom(name) {
+  return String(name ?? '').trim().toLowerCase().replace(/\s+/g, '_')
+}
+
+export function roomPath(slug, rooms) {
+  if (!slug) return null
+  const hit = (rooms || []).find((r) => r && (r.id === slug || slugifyRoom(r.name) === slug))
+  return hit?.id ? `/rooms/${encodeURIComponent(hit.id)}` : '/rooms'
+}
+
 // ── Shared chrome ─────────────────────────────────────────────────────────────
 
 const cardStyle = {
-  padding: '10px 12px',
-  borderRadius: 14,
+  padding: '12px 14px',
+  borderRadius: 16,
   background: 'var(--surface)',
   border: '0.5px solid var(--line)',
   fontSize: 13,
@@ -162,7 +178,7 @@ const cardStyle = {
   color: 'var(--ink)',
   display: 'flex',
   flexDirection: 'column',
-  gap: 6,
+  gap: 8,
   minWidth: 0,
 }
 
@@ -176,8 +192,8 @@ const rowStyle = {
   minWidth: 0,
 }
 
-// One cell of a grid card: icon | name over detail | control on the trailing
-// edge. ON reads as a light accent tint; OFF sits flat on the surface.
+// One cell of the capabilities grid: name over pitch, a live dot on the
+// trailing edge. Live reads as a light accent tint; the rest sits flat.
 const cellStyle = {
   display: 'flex',
   alignItems: 'center',
@@ -196,66 +212,30 @@ const cellOnStyle = {
   borderColor: 'color-mix(in srgb, var(--accent) 35%, var(--line))',
 }
 
-// The leading icon box of a cell. Tinted with the accent when the thing is
-// on, muted when it is off, so state reads before the toggle does.
-function cellIconStyle(on) {
-  return {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    width: 30, height: 30, borderRadius: 9,
-    color: on ? 'var(--accent)' : 'var(--ink-faint)',
-    background: on
-      ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
-      : 'color-mix(in srgb, var(--ink) 5%, transparent)',
-    transition: 'color 160ms ease, background-color 160ms ease',
-  }
-}
-
 const muteStyle = { fontSize: 11, color: 'var(--ink-mute)' }
 
 const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 const nameStyle = { fontSize: 13, fontWeight: 600, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
 const detailStyle = { ...muteStyle, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
 
-// Header eyebrow: an optional kind glyph, the title, and — when the title is
-// a "{n} things" string — the count lifted into a small mono pill. The count
-// is found inside the translated string, so no locale needs a second key.
-export function CountTitle({ text, n }) {
-  if (typeof text !== 'string' || typeof n !== 'number') return text
-  const needle = String(n)
-  const at = text.indexOf(needle)
-  if (at < 0) return text
-  const head = text.slice(0, at), tail = text.slice(at + needle.length)
+function Card({ title, icon: Icon, children, tone, cardRef, lang }) {
   return (
-    <>
-      {head}
-      <span className="z-mono" style={{
-        display: 'inline-block', fontSize: 10, fontWeight: 600, lineHeight: 1,
-        padding: '3px 6px', borderRadius: 999, marginInline: head ? 4 : 0,
-        color: 'var(--ink-2, var(--ink))',
-        background: 'color-mix(in srgb, var(--ink) 7%, transparent)',
-        border: '0.5px solid color-mix(in srgb, var(--ink) 12%, transparent)',
-        letterSpacing: 0,
-      }}>{needle}</span>
-      {tail}
-    </>
-  )
-}
-
-function Card({ title, count, icon: Icon, children, tone, cardRef }) {
-  return (
-    <div ref={cardRef} style={{
-      ...cardStyle,
-      ...(tone ? { borderColor: `color-mix(in srgb, var(--${tone}) 45%, var(--line))` } : {}),
-    }}>
+    <div
+      ref={cardRef}
+      className="zc-card"
+      dir={lang === 'he' ? 'rtl' : lang === 'en' ? 'ltr' : undefined}
+      style={{
+        ...cardStyle,
+        ...(tone ? { borderColor: `color-mix(in srgb, var(--${tone}) 45%, var(--line))` } : {}),
+      }}
+    >
       {title && (
         <p className="z-eyebrow" style={{
-          margin: 0, fontSize: 10, color: 'var(--ink-mute)',
+          margin: 0, fontSize: 10, lineHeight: 1.5, color: 'var(--ink-mute)',
           display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
         }}>
           {Icon && <Icon size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: tone ? `var(--${tone})` : 'var(--ink-faint)' }} />}
-          <span style={{ minWidth: 0, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
-            <CountTitle text={title} n={count} />
-          </span>
+          <span style={{ minWidth: 0, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>{title}</span>
         </p>
       )}
       {children}
@@ -336,7 +316,7 @@ function formatWhen(ts) {
   } catch { return String(ts) }
 }
 
-// ── Collapse: first page + "Show all (n)" ─────────────────────────────────────
+// ── Collapse: first page + "Show all (n)" (list cards) ────────────────────────
 
 export const COLLAPSE_NARROW = 8
 export const COLLAPSE_WIDE = 12
@@ -389,11 +369,125 @@ function ShowAll({ t, collapse }) {
   )
 }
 
+// ── Chips ─────────────────────────────────────────────────────────────────────
+
+// Chips per room (or per automations card) before the rest folds behind "+N".
+export const CHIP_LIMIT = 8
+
+const LONG_PRESS_MS = 500
+
+// The chip: a pill whose whole body is the press target. `onPress` flips a
+// switchable thing (the body then carries aria-pressed); a static chip
+// (sensor) opens its page on tap instead, since there is nothing to flip.
+// `to` adds the trailing chevron for a pointer and the long-press for touch.
+//
+// Failure feedback is quiet: the state suffix reads "didn't go through" in
+// the error colour for a moment (and the chip's title says the same); the
+// fill simply returns to where it was. No shake.
+function Chip({ lit, on, busy, failed, icon, label, suffix, onPress, to, title, testid, ghost, t, ariaLabel }) {
+  const go = useChatNav()
+  const press = useRef({ timer: null, fired: false })
+
+  const clear = () => {
+    if (press.current.timer) { clearTimeout(press.current.timer); press.current.timer = null }
+  }
+  const onPointerDown = (e) => {
+    if (!to || e.pointerType !== 'touch') return
+    press.current.fired = false
+    clear()
+    press.current.timer = setTimeout(() => { press.current.fired = true; press.current.timer = null; go(to) }, LONG_PRESS_MS)
+  }
+  const onClick = () => {
+    if (press.current.fired) { press.current.fired = false; return }
+    if (onPress) onPress()
+    else if (to) go(to)
+  }
+
+  const switchable = typeof onPress === 'function'
+  const cls = ['zc-chip', lit ? 'zc-chip--on' : '', !switchable && on ? 'zc-chip--lit' : '', ghost ? 'zc-chip--ghost' : ''].filter(Boolean).join(' ')
+  return (
+    <div className={cls} data-testid={testid} data-on={lit ? 'true' : 'false'} title={failed ? t('chat.card.actionFailed') : title}>
+      <button
+        type="button"
+        className="zc-chip-main"
+        aria-pressed={switchable ? !!on : undefined}
+        aria-busy={busy ? 'true' : undefined}
+        aria-label={ariaLabel}
+        disabled={!switchable && !to}
+        onClick={onClick}
+        onPointerDown={onPointerDown}
+        onPointerUp={clear}
+        onPointerCancel={clear}
+        onPointerLeave={clear}
+        onContextMenu={(e) => { if (press.current.timer || press.current.fired) e.preventDefault() }}
+      >
+        {icon && <span className="zc-chip-ico" aria-hidden="true">{icon}</span>}
+        <span className="zc-chip-name" dir="auto">{label}</span>
+        {(failed || suffix) && (
+          <span className={`zc-chip-suffix${failed ? ' zc-chip-suffix--err' : ''}`} dir="auto">
+            {failed ? t('chat.card.actionFailed') : suffix}
+          </span>
+        )}
+      </button>
+      {to && (
+        <button
+          type="button"
+          className="zc-chip-go"
+          aria-label={t('chat.card.open', { name: label })}
+          onClick={(e) => { e.stopPropagation(); go(to) }}
+        >
+          <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// "+N" ghost chip: expands its group in place. One-way — chips are small,
+// nothing needs folding back.
+function MoreChip({ n, onClick, t }) {
+  return (
+    <div className="zc-chip zc-chip--ghost" data-testid="more-chip">
+      <button
+        type="button"
+        className="zc-chip-main"
+        aria-label={t('chat.card.showMore', { n })}
+        onClick={onClick}
+      >
+        <span className="zc-chip-name">{t('chat.card.more', { n })}</span>
+      </button>
+    </div>
+  )
+}
+
+// Optimistic on/off with rollback. `send(next)` performs the action; the hook
+// owns the busy/failed flags and the timed reset of the failure note.
+function useFlip(initial, send, onDone) {
+  const [on, setOn] = useState(!!initial)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const flip = async () => {
+    if (busy) return
+    const prev = on
+    const next = !on
+    setOn(next); setBusy(true); setFailed(false)
+    try {
+      const res = await send(next)
+      if (res?.ok === false) throw new Error(res?.message || 'failed')
+      onDone?.(next)
+    } catch {
+      setOn(prev); setFailed(true)
+      setTimeout(() => setFailed(false), 1200)
+    } finally { setBusy(false) }
+  }
+  return { on, busy, failed, flip }
+}
+
 // ── Device labels ─────────────────────────────────────────────────────────────
 
 // The directory's fallback noun when it has nothing better to say about a
 // device (core/agent/directory.py). Showing it would put sixteen identical
-// "המכשיר" cells on screen; the real name is more useful even in Hebrew.
+// "המכשיר" chips on screen; the real name is more useful even in Hebrew.
 const GENERIC_HE_NOUN = 'המכשיר'
 
 export function deviceLabel(device, lang) {
@@ -412,9 +506,13 @@ export function roomLabel(device, lang) {
   return device.room ? titleish(device.room) : (device.room_he || '')
 }
 
-// Cards for the primary domains that have a meaningful on/off. Sensors and
+// Chips for the primary domains that have a meaningful on/off. Sensors and
 // the like are listed but not switchable.
 const SWITCHABLE = new Set(['light', 'switch', 'fan', 'climate', 'media_player', 'humidifier', 'input_boolean'])
+
+export function isSwitchable(device) {
+  return !!device?.entity_id && SWITCHABLE.has(device.domain) && typeof device.on === 'boolean'
+}
 
 // ON first, then by room, stable within a group — the things the user can
 // act on right now come first, and neighbours sit together.
@@ -423,6 +521,23 @@ export function sortDevices(devices, lang) {
     .map((d, i) => ({ d, i, on: d.on === true ? 0 : 1, room: roomLabel(d, lang) }))
     .sort((a, b) => (a.on - b.on) || a.room.localeCompare(b.room) || (a.i - b.i))
     .map((x) => x.d)
+}
+
+// Rooms, ordered by how much is on in them (then by name); devices with no
+// room gather last under "Elsewhere". Inside a room, ON chips lead.
+export function groupByRoom(devices, lang) {
+  const groups = new Map()
+  for (const d of devices || []) {
+    const slug = d?.room ? String(d.room) : ''
+    if (!groups.has(slug)) groups.set(slug, { slug: slug || null, name: slug ? roomLabel(d, lang) : '', devices: [], on: 0 })
+    const g = groups.get(slug)
+    g.devices.push(d)
+    if (isSwitchable(d) && d.on === true) g.on += 1
+  }
+  const out = [...groups.values()]
+  out.sort((a, b) => ((a.slug ? 0 : 1) - (b.slug ? 0 : 1)) || (b.on - a.on) || a.name.localeCompare(b.name))
+  for (const g of out) g.devices = sortDevices(g.devices, lang)
+  return out
 }
 
 // ── device_list ───────────────────────────────────────────────────────────────
@@ -441,153 +556,164 @@ export function deviceKind(device) {
   })
 }
 
-function DeviceCell({ device, lang, t, onAction, order = 0, reduce = false }) {
-  const [on, setOn] = useState(!!device.on)
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const canToggle = !!device.entity_id && SWITCHABLE.has(device.domain) && typeof device.on === 'boolean'
-  const name = deviceLabel(device, lang)
-  const room = roomLabel(device, lang)
-  const kind = useMemo(() => deviceKind(device), [device])
-  // State colour: a switchable thing that is on; a sensor reporting "on"
-  // (motion / open door) counts too, so the cell's tint tells the state at a
-  // glance even where there is no toggle.
-  const lit = canToggle ? on : device.on === true
-
-  const toggle = async (next) => {
-    if (busy) return
-    const prev = on
-    setOn(next); setBusy(true); setFailed(false)
-    try {
-      const res = await runAction('control_device', { entity_id: device.entity_id, action: next ? 'on' : 'off' }, lang)
-      if (res?.ok === false) throw new Error(res?.message || 'failed')
-      onAction?.({ name: 'control_device', args: { entity_id: device.entity_id, action: next ? 'on' : 'off' }, ok: true })
-    } catch {
-      setOn(prev); setFailed(true)
-      setTimeout(() => setFailed(false), 2500)
-    } finally { setBusy(false) }
+// The small state suffix of a static chip: "24°", "open", "motion". Binary
+// states are read through the device's kind so a door says open/closed and
+// a motion sensor says motion/clear, in the turn's language.
+export function stateSuffix(device, kind, t) {
+  const raw = device?.state
+  if (raw == null || raw === '' || raw === 'unknown' || raw === 'unavailable') return ''
+  const s = String(raw)
+  const num = Number(s)
+  if (s.trim() !== '' && !Number.isNaN(num)) {
+    if (kind === 'temperature') return `${Math.round(num)}°`
+    if (kind === 'humidity') return `${Math.round(num)}%`
+    return s
   }
+  const isBinary = (device.domain || (device.entity_id || '').split('.')[0]) === 'binary_sensor'
+  if (isBinary && (s === 'on' || s === 'off')) {
+    const onState = s === 'on'
+    if (kind === 'door' || kind === 'window') return t(onState ? 'chat.card.state.open' : 'chat.card.state.closed')
+    if (kind === 'motion' || kind === 'occupancy') return t(onState ? 'chat.card.state.motion' : 'chat.card.state.clear')
+    return t(onState ? 'chat.card.state.on' : 'chat.card.state.off')
+  }
+  return humanize(s)
+}
 
-  const detail = failed
-    ? t('chat.card.actionFailed')
-    : [room, !canToggle && device.state ? humanize(device.state) : ''].filter(Boolean).join(' · ')
-
+function DeviceChip({ device, lang, t, onAction }) {
+  const canToggle = isSwitchable(device)
+  const name = deviceLabel(device, lang)
+  const kind = useMemo(() => deviceKind(device), [device])
+  const { on, busy, failed, flip } = useFlip(
+    device.on,
+    (next) => runAction('control_device', { entity_id: device.entity_id, action: next ? 'on' : 'off' }, lang),
+    (next) => onAction?.({ name: 'control_device', args: { entity_id: device.entity_id, action: next ? 'on' : 'off' }, ok: true }),
+  )
+  const suffix = canToggle ? '' : stateSuffix(device, kind, t)
   return (
-    <motion.div
-      className={`zc-cell${lit ? ' zc-cell--on' : ''}`}
-      data-testid="device-cell"
-      data-on={lit ? 'true' : 'false'}
-      style={{ ...cellStyle, ...(lit ? cellOnStyle : {}) }}
+    <Chip
+      testid="device-chip"
+      lit={canToggle && on}
+      on={canToggle ? on : device.on === true}
+      busy={busy}
+      failed={failed}
+      icon={<DeviceIcon kind={kind} size={18} />}
+      label={name}
+      suffix={suffix}
+      onPress={canToggle ? flip : undefined}
+      to={devicePath(device.entity_id)}
+      title={name}
+      t={t}
+    />
+  )
+}
+
+function RoomTile({ group, lang, t, onAction, order, reduce, rooms }) {
+  const go = useChatNav()
+  const [expanded, setExpanded] = useState(false)
+  const path = roomPath(group.slug, rooms)
+  const title = group.slug ? group.name : t('chat.card.elsewhere')
+  const shown = expanded || group.devices.length <= CHIP_LIMIT ? group.devices : group.devices.slice(0, CHIP_LIMIT)
+  const hidden = group.devices.length - shown.length
+  const onText = group.on === 0 ? '' : group.on === 1 ? t('chat.card.onOne') : t('chat.card.onCount', { n: group.on })
+  return (
+    <motion.section
+      className="zc-room"
+      data-testid="room-tile"
+      data-room={group.slug || ''}
       {...enterProps(reduce, order)}
     >
-      <span style={cellIconStyle(lit)}>
-        <DeviceIcon kind={kind} size={18} />
-      </span>
-      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
-        <LinkName to={devicePath(device.entity_id)} title={name} style={nameStyle}>{name}</LinkName>
-        <span dir="auto" title={detail} style={{ ...detailStyle, ...(failed ? { color: 'var(--err)' } : {}) }}>{detail || ' '}</span>
+      <header className="zc-room-head">
+        {path
+          ? (
+            <button type="button" className="zc-room-title" onClick={() => go(path)} aria-label={t('chat.card.openRoom', { name: title })}>
+              <span dir="auto">{title}</span>
+              <ChevronRight className="zc-room-go" size={13} strokeWidth={2} aria-hidden="true" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+            </button>
+          )
+          : <span className="zc-room-title"><span dir="auto">{title}</span></span>}
+        {onText && <span className="zc-room-on" dir="auto">{onText}</span>}
+      </header>
+      <div className="zc-chips">
+        {shown.map((d, i) => (
+          <DeviceChip key={d.entity_id || `${d.name}-${i}`} device={d} lang={lang} t={t} onAction={onAction} />
+        ))}
+        {hidden > 0 && <MoreChip n={hidden} t={t} onClick={() => setExpanded(true)} />}
       </div>
-      {canToggle
-        ? <Toggle checked={on} onCheckedChange={toggle} disabled={busy} />
-        : null}
-    </motion.div>
+    </motion.section>
   )
 }
 
 function DeviceListCard({ card, onAction }) {
   const { t, lang } = useCardI18n(card)
-  const devices = sortDevices(card.devices || [], lang)
-  const cardRef = useRef(null)
-  const collapse = useCollapse(devices, cardRef)
+  const reduce = useReducedMotion()
+  const rooms = useDeviceStore((s) => s.ziggyRooms)
+  const devices = card.devices || []
+  const groups = useMemo(() => groupByRoom(devices, lang), [devices, lang])
+  const title = `${t('chat.card.home')} · ${t('chat.card.devices', { n: devices.length })}`
   return (
-    <Card cardRef={cardRef} title={t('chat.card.devices', { n: devices.length })} count={devices.length}>
+    <Card lang={lang} title={title}>
       {devices.length === 0
         ? <p style={muteStyle}>{t('chat.card.noDevices')}</p>
         : (
-          // Cell minimum: 150px keeps two columns on a phone; inside a wide
-          // text|card row chatCards.css raises it (--zc-cell-min) so names
-          // get room next to the icon and the toggle.
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(var(--zc-cell-min, 150px), 1fr))', gap: 6, minWidth: 0 }}>
-            {collapse.shown.map((d, i) => (
-              <DeviceCell
-                key={d.entity_id || `${d.name}-${i}`}
-                device={d} lang={lang} t={t} onAction={onAction}
-                order={collapse.order(i)} reduce={collapse.reduce}
+          <div className="zc-rooms">
+            {groups.map((g, i) => (
+              <RoomTile
+                key={g.slug || '__elsewhere'}
+                group={g} lang={lang} t={t} onAction={onAction}
+                order={i} reduce={reduce} rooms={rooms}
               />
             ))}
           </div>
         )}
-      <ShowAll t={t} collapse={collapse} />
     </Card>
   )
 }
 
 // ── automations ───────────────────────────────────────────────────────────────
 
-function AutomationRow({ auto, lang, t, onAction, order = 0, reduce = false }) {
-  const [enabled, setEnabled] = useState(!!auto.enabled)
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
-
-  const toggle = async (next) => {
-    if (busy) return
-    const prev = enabled
-    setEnabled(next); setBusy(true); setFailed(false)
-    try {
-      const res = await runAction('toggle_automation', { name: auto.name, enabled: next }, lang)
-      if (res?.ok === false) throw new Error(res?.message || 'failed')
-      onAction?.({ name: 'toggle_automation', args: { name: auto.name, enabled: next }, ok: true })
-    } catch {
-      setEnabled(prev); setFailed(true)
-      setTimeout(() => setFailed(false), 2500)
-    } finally { setBusy(false) }
-  }
-
-  const detail = failed
-    ? t('chat.card.actionFailed')
-    : auto.last_triggered ? t('chat.card.lastRun', { when: formatWhen(auto.last_triggered) }) : t('chat.card.neverRan')
-
+function AutomationChip({ auto, lang, t, onAction }) {
+  const { on, busy, failed, flip } = useFlip(
+    auto.enabled,
+    (next) => runAction('toggle_automation', { name: auto.name, enabled: next }, lang),
+    (next) => onAction?.({ name: 'toggle_automation', args: { name: auto.name, enabled: next }, ok: true }),
+  )
+  const detail = auto.last_triggered ? t('chat.card.lastRun', { when: formatWhen(auto.last_triggered) }) : t('chat.card.neverRan')
   return (
-    <motion.div
-      className={`zc-cell${enabled ? ' zc-cell--on' : ''}`}
-      data-testid="automation-cell"
-      data-on={enabled ? 'true' : 'false'}
-      style={{ ...cellStyle, ...(enabled ? cellOnStyle : {}) }}
-      {...enterProps(reduce, order)}
-    >
-      <span style={cellIconStyle(enabled)}>
-        <Zap size={16} strokeWidth={2} aria-hidden="true" fill={enabled ? 'currentColor' : 'none'} />
-      </span>
-      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
-        <LinkName to={automationPath(auto.id)} title={auto.name} style={nameStyle}>{auto.name}</LinkName>
-        <span style={{ ...detailStyle, ...(failed ? { color: 'var(--err)' } : {}) }}>{detail}</span>
-      </div>
-      <Toggle checked={enabled} onCheckedChange={toggle} disabled={busy || !auto.name} />
-    </motion.div>
+    <Chip
+      testid="automation-chip"
+      lit={on}
+      on={on}
+      busy={busy}
+      failed={failed}
+      icon={<Zap size={14} strokeWidth={2} aria-hidden="true" fill={on ? 'currentColor' : 'none'} />}
+      label={auto.name}
+      onPress={auto.name ? flip : undefined}
+      to={automationPath(auto.id)}
+      title={`${auto.name} · ${detail}`}
+      t={t}
+    />
   )
 }
 
 function AutomationsCard({ card, onAction }) {
   const { t, lang } = useCardI18n(card)
+  const reduce = useReducedMotion()
   const autos = card.automations || []
-  const cardRef = useRef(null)
-  const collapse = useCollapse(autos, cardRef)
+  const [expanded, setExpanded] = useState(false)
+  const shown = expanded || autos.length <= CHIP_LIMIT ? autos : autos.slice(0, CHIP_LIMIT)
+  const hidden = autos.length - shown.length
   return (
-    <Card cardRef={cardRef} title={t('chat.card.automations', { n: autos.length })} count={autos.length}>
+    <Card lang={lang} title={t('chat.card.automations', { n: autos.length })}>
       {autos.length === 0
         ? <p style={muteStyle}>{t('chat.card.noAutomations')}</p>
         : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-            {collapse.shown.map((a, i) => (
-              <AutomationRow
-                key={a.id || a.name || i}
-                auto={a} lang={lang} t={t} onAction={onAction}
-                order={collapse.order(i)} reduce={collapse.reduce}
-              />
+          <motion.div className="zc-chips" data-testid="automation-chips" {...enterProps(reduce, 0)}>
+            {shown.map((a, i) => (
+              <AutomationChip key={a.id || a.name || i} auto={a} lang={lang} t={t} onAction={onAction} />
             ))}
-          </div>
+            {hidden > 0 && <MoreChip n={hidden} t={t} onClick={() => setExpanded(true)} />}
+          </motion.div>
         )}
-      <ShowAll t={t} collapse={collapse} />
     </Card>
   )
 }
@@ -595,12 +721,12 @@ function AutomationsCard({ card, onAction }) {
 // ── capabilities ──────────────────────────────────────────────────────────────
 
 function CapabilitiesCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   const caps = card.capabilities || []
   const cardRef = useRef(null)
   const collapse = useCollapse(caps, cardRef)
   return (
-    <Card cardRef={cardRef} icon={Sparkles} title={card.overview ? t('chat.card.whatZiggyCanDo') : t('chat.card.capabilities')}>
+    <Card lang={lang} cardRef={cardRef} icon={Sparkles} title={card.overview ? t('chat.card.whatZiggyCanDo') : t('chat.card.capabilities')}>
       {caps.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
           {collapse.shown.map((c, i) => {
@@ -614,7 +740,7 @@ function CapabilitiesCard({ card }) {
               >
                 <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
                   <span dir="auto" title={c.name} style={nameStyle}>{c.name}</span>
-                  <span dir="auto" title={pitch} style={detailStyle}>{pitch || ' '}</span>
+                  <span dir="auto" title={pitch} style={detailStyle}>{pitch || ' '}</span>
                 </div>
                 <Dot tone={c.live ? 'ok' : 'ink-mute'} title={c.live ? t('chat.card.live') : t('chat.card.notLive')} />
               </motion.div>
@@ -678,7 +804,7 @@ function WhyNotCard({ card, entityId, onAction }) {
   const deviceLink = devicePath(card.entity_id || entityId)
 
   return (
-    <Card icon={Stethoscope} title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
+    <Card lang={lang} icon={Stethoscope} title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
       {primary && (
         <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>
           <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 14 }}>{verdictTitle(t, primary)}</LinkName>
@@ -738,13 +864,13 @@ function WhyNotCard({ card, entityId, onAction }) {
 // ── home_health / down_devices / repair_history / recent_activity ─────────────
 
 function HomeHealthCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   const tone = card.severity === 'problem' ? 'err' : card.severity === 'attention' ? 'warn' : 'ok'
   const label = card.severity === 'problem' ? t('chat.card.healthProblem')
     : card.severity === 'attention' ? t('chat.card.healthAttention')
     : t('chat.card.healthOk')
   return (
-    <Card title={t('chat.card.homeHealth')}>
+    <Card lang={lang} title={t('chat.card.homeHealth')}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span aria-hidden="true" style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -763,11 +889,11 @@ function HomeHealthCard({ card }) {
 }
 
 function DownDevicesCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   const names = card.names || []
   const count = card.count ?? names.length
   return (
-    <Card title={t('chat.card.downDevices', { n: count })} tone={count > 0 ? 'warn' : undefined}>
+    <Card lang={lang} title={t('chat.card.downDevices', { n: count })} tone={count > 0 ? 'warn' : undefined}>
       {/* No ids in this card — names open the Devices list, where the offline
           filter/banner takes over. */}
       <List items={names} render={(n) => <LinkName to="/devices">{n}</LinkName>} empty={t('chat.card.allReachable')} />
@@ -776,9 +902,9 @@ function DownDevicesCard({ card }) {
 }
 
 function RepairHistoryCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   return (
-    <Card title={t('chat.card.repairHistory')}>
+    <Card lang={lang} title={t('chat.card.repairHistory')}>
       <List
         items={card.attempts || []}
         empty={t('chat.card.noRepairs')}
@@ -794,12 +920,12 @@ function RepairHistoryCard({ card }) {
 }
 
 function RecentActivityCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   const changes = card.changes || []
   const cardRef = useRef(null)
   const collapse = useCollapse(changes, cardRef)
   return (
-    <Card cardRef={cardRef} title={t('chat.card.recentActivity')}>
+    <Card lang={lang} cardRef={cardRef} title={t('chat.card.recentActivity')}>
       <List items={collapse.shown} empty={t('chat.card.noActivity')} render={(c) => <span dir="auto">{String(c)}</span>} />
       <ShowAll t={t} collapse={collapse} />
     </Card>
@@ -809,10 +935,10 @@ function RecentActivityCard({ card }) {
 // ── camera_look / needs_approval ──────────────────────────────────────────────
 
 function CameraLookCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   const title = [card.camera, card.room && humanize(card.room)].filter(Boolean).join(' · ') || t('chat.card.camera')
   return (
-    <Card icon={Camera} title={<LinkName to="/cameras" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>{title}</LinkName>}>
+    <Card lang={lang} icon={Camera} title={<LinkName to="/cameras" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>{title}</LinkName>}>
       {card.description && <p dir="auto" style={{ margin: 0 }}>{card.description}</p>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
         {typeof card.people_count === 'number' && <Badge tone="accent">{t('chat.card.people', { n: card.people_count })}</Badge>}
@@ -823,9 +949,9 @@ function CameraLookCard({ card }) {
 }
 
 function NeedsApprovalCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   return (
-    <Card title={t('chat.card.needsApproval')} tone="warn">
+    <Card lang={lang} title={t('chat.card.needsApproval')} tone="warn">
       {card.fix && <p dir="auto" style={{ margin: 0, fontWeight: 500 }}>{typeof card.fix === 'string' ? card.fix : humanize(card.fix.name || card.fix.step || JSON.stringify(card.fix))}</p>}
       <p style={muteStyle}>{t('chat.card.needsApprovalNote')}</p>
     </Card>
@@ -837,7 +963,7 @@ function NeedsApprovalCard({ card }) {
 const ID_KEY_RE = /(^|_)(id|ids|uuid|entity_id|entity_ids|device_id|unique_id|token)$/i
 
 function KeyValueCard({ card }) {
-  const { t } = useCardI18n(card)
+  const { t, lang } = useCardI18n(card)
   const entries = Object.entries(card || {}).filter(([k, v]) =>
     k !== 'kind' && k !== 'lang' && !ID_KEY_RE.test(k) && v != null && v !== '' && typeof v !== 'function')
   const titleKey = `chat.card.kind.${card.kind}`
@@ -850,7 +976,7 @@ function KeyValueCard({ card }) {
     return String(v)
   }
   return (
-    <Card title={title}>
+    <Card lang={lang} title={title}>
       {entries.length === 0 && <p style={muteStyle}>—</p>}
       {entries.map(([k, v]) => (
         <div key={k} style={{ ...rowStyle, alignItems: 'flex-start' }}>
@@ -879,9 +1005,9 @@ const CARDS = {
 
 export const CARD_KINDS = Object.keys(CARDS)
 
-// Grid cards are allowed to grow with the chat column (150px cells → 2 on a
-// phone/dock, 4–6 on the wide chat page); row/list cards stay narrow.
-const CARD_MAX_WIDTH = { device_list: 940, capabilities: 640 }
+// Tile/chip cards are allowed to grow with the chat column (240px tiles → 1
+// on a phone/dock, 3–4 on the wide chat page); row/list cards stay narrow.
+const CARD_MAX_WIDTH = { device_list: 940, automations: 640, capabilities: 640 }
 
 /**
  * @param {object} props.card       tool result object with a `kind` (and,

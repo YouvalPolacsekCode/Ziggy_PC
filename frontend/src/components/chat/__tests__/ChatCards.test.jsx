@@ -3,7 +3,7 @@
 
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 
 const runAction = vi.fn()
@@ -23,9 +23,16 @@ vi.mock('../../../lib/i18n', () => ({
 // `useReducedMotion` reads a switchable flag.
 // The real uiStore persists through localStorage, which jsdom's opaque origin
 // refuses; DeviceIcon only reads `iconStyle`, so a bare store stands in.
+// The deviceStore talks to the API on import; the cards only read
+// `ziggyRooms` (to map a room slug to a Rooms-page id), so a bare store
+// stands in for that too.
 vi.mock('../../../stores/uiStore', async () => {
   const { create } = await import('zustand')
   return { useUIStore: create(() => ({ iconStyle: 'emoji' })) }
+})
+vi.mock('../../../stores/deviceStore', async () => {
+  const { create } = await import('zustand')
+  return { useDeviceStore: create(() => ({ ziggyRooms: [] })) }
 })
 
 const motionState = { reduce: false }
@@ -52,9 +59,13 @@ vi.mock('framer-motion', () => {
   }
 })
 
-import ChatCard, { CARD_KINDS, verdictTitle, deviceLabel, roomLabel, sortDevices, deviceKind, enterProps, CountTitle } from '../ChatCards'
+import ChatCard, {
+  CARD_KINDS, CHIP_LIMIT, verdictTitle, deviceLabel, roomLabel, sortDevices, groupByRoom, deviceKind,
+  enterProps, roomPath, slugifyRoom, stateSuffix,
+} from '../ChatCards'
 import { useUIStore } from '../../../stores/uiStore'
 import { useChatStore } from '../../../stores/chatStore'
+import { useDeviceStore } from '../../../stores/deviceStore'
 
 // Cards navigate (useNavigate), so every render lives inside a router. The
 // probe echoes the current location so tests can assert where a click went.
@@ -112,18 +123,23 @@ function setViewport(width) {
 }
 
 // n switchable lights, half of them on, spread over four rooms.
-function manyDevices(n) {
-  const rooms = ['kitchen', 'living_room', 'bedroom', 'hall']
+function manyDevices(n, rooms = ['kitchen', 'living_room', 'bedroom', 'hall']) {
   return Array.from({ length: n }, (_, i) => ({
-    entity_id: `light.d${i}`, name: `Device ${i}`, room: rooms[i % 4], room_he: `חדר ${i % 4}`,
+    entity_id: `light.d${i}`, name: `Device ${i}`, room: rooms[i % rooms.length], room_he: `חדר ${i % rooms.length}`,
     domain: 'light', state: i % 2 ? 'on' : 'off', on: i % 2 === 1, he_noun: `אור ${i}`,
   }))
 }
+
+// The chip's press target (the body button) for a device by its name.
+const chipButton = (name) => screen.getByRole('button', { name })
+const toggles = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
+const tileNames = () => screen.getAllByTestId('room-tile').map((t) => t.getAttribute('data-room'))
 
 beforeEach(() => {
   runAction.mockReset()
   useChatStore.setState({ chatDock: false })
   useUIStore.setState({ iconStyle: 'emoji' })
+  useDeviceStore.setState({ ziggyRooms: [] })
   motionState.reduce = false
   setViewport(400)
 })
@@ -150,38 +166,6 @@ describe('ChatCard', () => {
     render(<ChatCard card={SAMPLES.pairing_diagnosis} />)
     expect(screen.queryByText('abc123')).toBeNull()
     expect(screen.getByText('Plug the stick back in')).toBeInTheDocument()
-  })
-
-  it('device toggle calls control_device and rolls back on failure', async () => {
-    runAction.mockRejectedValueOnce(new Error('boom'))
-    render(<ChatCard card={SAMPLES.device_list} />)
-    // Only the light is switchable; the door sensor gets no switch.
-    const switches = screen.getAllByRole('switch')
-    expect(switches).toHaveLength(1)
-    expect(switches[0]).toHaveAttribute('aria-checked', 'true')
-    fireEvent.click(switches[0])
-    expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.kitchen', action: 'off' }, 'en')
-    await waitFor(() => expect(switches[0]).toHaveAttribute('aria-checked', 'true'))
-    expect(screen.getByText(/chat\.card\.actionFailed/)).toBeInTheDocument()
-  })
-
-  it('device toggle keeps the optimistic state on success', async () => {
-    runAction.mockResolvedValueOnce({ ok: true })
-    const onAction = vi.fn()
-    render(<ChatCard card={SAMPLES.device_list} onAction={onAction} />)
-    const sw = screen.getAllByRole('switch')[0]
-    fireEvent.click(sw)
-    await waitFor(() => expect(onAction).toHaveBeenCalled())
-    expect(sw).toHaveAttribute('aria-checked', 'false')
-  })
-
-  it('automation switch calls toggle_automation with the name', async () => {
-    runAction.mockResolvedValueOnce({ ok: true })
-    render(<ChatCard card={SAMPLES.automations} />)
-    const [night] = screen.getAllByRole('switch')
-    fireEvent.click(night)
-    expect(runAction).toHaveBeenCalledWith('toggle_automation', { name: 'Night lights', enabled: false }, 'en')
-    await waitFor(() => expect(night).toHaveAttribute('aria-checked', 'false'))
   })
 
   it('why_not shows the verdict title and a fix button only with an entity id', async () => {
@@ -213,88 +197,197 @@ describe('ChatCard', () => {
     expect(verdictTitle(t, 'something_new')).toBe('something new')
   })
 
-  // ── Compact grid + collapse ────────────────────────────────────────────────
+  // ── device_list: rooms, not rows ───────────────────────────────────────────
 
-  describe('device_list grid', () => {
-    it('shows 8 cells on a narrow window and a show-all button that expands to 16', () => {
-      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(16) }} />)
-      expect(screen.getAllByRole('switch')).toHaveLength(8)
-      const more = screen.getByRole('button', { name: 'chat.card.showAll' })
-      expect(more).toHaveAttribute('aria-expanded', 'false')
-      fireEvent.click(more)
-      expect(screen.getAllByRole('switch')).toHaveLength(16)
-      const less = screen.getByRole('button', { name: 'chat.card.less' })
-      expect(less).toHaveAttribute('aria-expanded', 'true')
-      fireEvent.click(less)
-      expect(screen.getAllByRole('switch')).toHaveLength(8)
+  describe('device_list rooms', () => {
+    it('groups devices into one tile per room, Elsewhere last', () => {
+      const devices = [
+        { entity_id: 'light.a', name: 'A', room: 'kitchen', domain: 'light', on: false },
+        { entity_id: 'light.b', name: 'B', room: '', domain: 'light', on: true },
+        { entity_id: 'light.c', name: 'C', room: 'hall', domain: 'light', on: false },
+        { entity_id: 'light.d', name: 'D', room: 'kitchen', domain: 'light', on: false },
+      ]
+      render(<ChatCard card={{ kind: 'device_list', devices }} />)
+      const tiles = screen.getAllByTestId('room-tile')
+      expect(tiles).toHaveLength(3)
+      expect(tileNames()).toEqual(['hall', 'kitchen', ''])
+      expect(within(tiles[2]).getByText('chat.card.elsewhere')).toBeInTheDocument()
+      // Kitchen holds both of its chips.
+      expect(within(tiles[1]).getAllByTestId('device-chip')).toHaveLength(2)
     })
 
-    it('shows 12 cells on a wide window', () => {
-      setViewport(1280)
-      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(16) }} />)
-      expect(screen.getAllByRole('switch')).toHaveLength(12)
-      expect(screen.getByRole('button', { name: 'chat.card.showAll' })).toBeInTheDocument()
-    })
-
-    it('has no show-all button when everything fits', () => {
-      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(8) }} />)
-      expect(screen.getAllByRole('switch')).toHaveLength(8)
-      expect(screen.queryByRole('button', { name: 'chat.card.showAll' })).toBeNull()
-    })
-
-    it('lays the cells out as an auto-fill grid', () => {
-      const { container } = render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(3) }} />)
-      const grid = [...container.querySelectorAll('div')].find((el) => el.style.display === 'grid')
-      expect(grid).toBeTruthy()
-      // 150px keeps two columns on a phone; the wide text|card row raises the
-      // minimum through --zc-cell-min (chatCards.css) so names get room next
-      // to the icon and the toggle.
-      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(var(--zc-cell-min, 150px), 1fr))')
-    })
-
-    it('puts ON devices first, then sorts by room', () => {
+    it('orders rooms by how much is on, then by name; ON chips lead inside a room', () => {
       const devices = [
         { entity_id: 'light.a', name: 'A', room: 'kitchen', domain: 'light', on: false },
         { entity_id: 'light.b', name: 'B', room: 'hall', domain: 'light', on: true },
-        { entity_id: 'light.c', name: 'C', room: 'bedroom', domain: 'light', on: false },
+        { entity_id: 'light.c', name: 'C', room: 'bedroom', domain: 'light', on: true },
         { entity_id: 'light.d', name: 'D', room: 'kitchen', domain: 'light', on: true },
+        { entity_id: 'light.e', name: 'E', room: 'bedroom', domain: 'light', on: true },
       ]
-      expect(sortDevices(devices, 'en').map((d) => d.name)).toEqual(['B', 'D', 'C', 'A'])
+      const groups = groupByRoom(devices, 'en')
+      expect(groups.map((g) => [g.slug, g.on])).toEqual([['bedroom', 2], ['hall', 1], ['kitchen', 1]])
       render(<ChatCard card={{ kind: 'device_list', devices }} />)
-      const names = screen.getAllByRole('button').map((b) => b.textContent).filter((n) => /^[A-D]$/.test(n))
-      expect(names).toEqual(['B', 'D', 'C', 'A'])
+      expect(tileNames()).toEqual(['bedroom', 'hall', 'kitchen'])
+      const kitchen = screen.getAllByTestId('room-tile')[2]
+      expect(within(kitchen).getAllByTestId('device-chip').map((c) => c.textContent)).toEqual(['💡D', '💡A'])
+      // sortDevices still puts ON first, then by room name, for callers that
+      // use it directly.
+      expect(sortDevices(devices, 'en').map((d) => d.name)).toEqual(['C', 'E', 'B', 'D', 'A'])
+    })
+
+    it('shows an "n on" count only where something is on', () => {
+      const devices = [
+        { entity_id: 'light.a', name: 'A', room: 'kitchen', domain: 'light', on: true },
+        { entity_id: 'light.b', name: 'B', room: 'kitchen', domain: 'light', on: true },
+        { entity_id: 'light.c', name: 'C', room: 'hall', domain: 'light', on: false },
+        { entity_id: 'light.d', name: 'D', room: 'bedroom', domain: 'light', on: true },
+      ]
+      render(<ChatCard card={{ kind: 'device_list', devices }} />)
+      const [kitchen, bedroom, hall] = screen.getAllByTestId('room-tile')
+      expect(within(kitchen).getByText('chat.card.onCount')).toBeInTheDocument()
+      expect(within(bedroom).getByText('chat.card.onOne')).toBeInTheDocument()
+      expect(within(hall).queryByText(/chat\.card\.on/)).toBeNull()
+    })
+
+    it('the eyebrow reads "home · n devices" with no count pill', () => {
+      const { container } = render(<ChatCard card={SAMPLES.device_list} />)
+      expect(container.querySelector('.z-eyebrow').textContent).toBe('chat.card.home · chat.card.devices')
+      expect(container.querySelector('.z-mono')).toBeNull()
+    })
+
+    it('has no switch role, checkbox or underline anywhere in the card', () => {
+      const { container } = render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(6) }} />)
+      expect(screen.queryAllByRole('switch')).toHaveLength(0)
+      expect(container.querySelector('input')).toBeNull()
+      for (const el of container.querySelectorAll('*')) expect(el.style.textDecoration).not.toContain('underline')
+    })
+
+    it('folds a room past 8 chips behind a "+N" chip that expands it', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(11, ['kitchen']) }} />)
+      expect(screen.getAllByTestId('device-chip')).toHaveLength(CHIP_LIMIT)
+      const more = screen.getByTestId('more-chip')
+      expect(more.textContent).toBe('chat.card.more')
+      fireEvent.click(within(more).getByRole('button', { name: 'chat.card.showMore' }))
+      expect(screen.getAllByTestId('device-chip')).toHaveLength(11)
+      expect(screen.queryByTestId('more-chip')).toBeNull()
+    })
+
+    it('a room with exactly 8 chips shows them all with no "+N"', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(8, ['kitchen']) }} />)
+      expect(screen.getAllByTestId('device-chip')).toHaveLength(8)
+      expect(screen.queryByTestId('more-chip')).toBeNull()
+    })
+
+    it('lays the tiles out as an auto-fill grid of room tiles', () => {
+      const { container } = render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(3) }} />)
+      expect(container.querySelector('.zc-rooms')).toBeTruthy()
+      expect(container.querySelectorAll('.zc-room')).toHaveLength(3)
+    })
+  })
+
+  // ── Chip = switch ──────────────────────────────────────────────────────────
+
+  describe('device chip', () => {
+    it('tapping a switchable chip calls control_device with on/off and rolls back on failure', async () => {
+      runAction.mockRejectedValueOnce(new Error('boom'))
+      render(<ChatCard card={SAMPLES.device_list} />)
+      // Only the light is switchable; the door sensor is a static chip.
+      expect(toggles()).toHaveLength(1)
+      const light = chipButton('Kitchen light')
+      expect(light).toHaveAttribute('aria-pressed', 'true')
+      fireEvent.click(light)
+      expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.kitchen', action: 'off' }, 'en')
+      // Optimistic flip, then rollback with the quiet failure note.
+      await waitFor(() => expect(screen.getByText('chat.card.actionFailed')).toBeInTheDocument())
+      expect(light).toHaveAttribute('aria-pressed', 'true')
+      expect(light.closest('[data-testid="device-chip"]')).toHaveAttribute('data-on', 'true')
+    })
+
+    it('keeps the optimistic state on success and tints the chip', async () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      const onAction = vi.fn()
+      render(<ChatCard card={SAMPLES.device_list} onAction={onAction} />)
+      const chip = screen.getAllByTestId('device-chip')[0]
+      expect(chip).toHaveAttribute('data-on', 'true')
+      expect(chip.className).toContain('zc-chip--on')
+      fireEvent.click(chipButton('Kitchen light'))
+      await waitFor(() => expect(onAction).toHaveBeenCalled())
+      expect(chipButton('Kitchen light')).toHaveAttribute('aria-pressed', 'false')
+      expect(chip).toHaveAttribute('data-on', 'false')
+      expect(chip.className).not.toContain('zc-chip--on')
+    })
+
+    it('a sensor renders as a static chip with its state as a suffix', () => {
+      const devices = [
+        { entity_id: 'binary_sensor.door', name: 'Front door', room: 'hall', domain: 'binary_sensor', state: 'on', on: true },
+        { entity_id: 'sensor.temp', name: 'Temperature', room: 'hall', domain: 'sensor', device_class: 'temperature', state: '23.6' },
+      ]
+      render(<ChatCard card={{ kind: 'device_list', devices }} />)
+      expect(toggles()).toHaveLength(0)
+      const [door, temp] = screen.getAllByTestId('device-chip')
+      expect(within(door).getByText('chat.card.state.open')).toBeInTheDocument()
+      expect(within(temp).getByText('24°')).toBeInTheDocument()
+      // Tapping a static chip has nothing to flip: it opens the device.
+      fireEvent.click(within(door).getByRole('button', { name: /Front door/ }))
+      expect(runAction).not.toHaveBeenCalled()
+      expect(locPath()).toBe('/devices/binary_sensor.door')
+    })
+
+    it('stateSuffix reads binary states through the kind', () => {
+      const t = (k) => k
+      expect(stateSuffix({ domain: 'binary_sensor', state: 'off' }, 'door', t)).toBe('chat.card.state.closed')
+      expect(stateSuffix({ domain: 'binary_sensor', state: 'on' }, 'motion', t)).toBe('chat.card.state.motion')
+      expect(stateSuffix({ domain: 'binary_sensor', state: 'off' }, 'motion', t)).toBe('chat.card.state.clear')
+      expect(stateSuffix({ domain: 'sensor', state: '55.2' }, 'humidity', t)).toBe('55%')
+      expect(stateSuffix({ domain: 'sensor', state: 'unavailable' }, 'humidity', t)).toBe('')
+      expect(stateSuffix({ domain: 'cover', state: 'half_open' }, 'shutter', t)).toBe('half open')
+    })
+  })
+
+  // ── automations: same chip language ────────────────────────────────────────
+
+  describe('automations chips', () => {
+    it('each automation is a chip with the lightning glyph; tapping toggles it', async () => {
+      runAction.mockResolvedValueOnce({ ok: true })
+      render(<ChatCard card={SAMPLES.automations} />)
+      const [night, morning] = screen.getAllByTestId('automation-chip')
+      expect(night).toHaveAttribute('data-on', 'true')
+      expect(morning).toHaveAttribute('data-on', 'false')
+      expect(night.querySelector('svg.lucide-zap')).toBeTruthy()
+      expect(screen.queryAllByRole('switch')).toHaveLength(0)
+      fireEvent.click(chipButton('Night lights'))
+      expect(runAction).toHaveBeenCalledWith('toggle_automation', { name: 'Night lights', enabled: false }, 'en')
+      await waitFor(() => expect(chipButton('Night lights')).toHaveAttribute('aria-pressed', 'false'))
+      expect(night).toHaveAttribute('data-on', 'false')
+    })
+
+    it('folds past 8 behind "+N"', () => {
+      const automations = Array.from({ length: 10 }, (_, i) => ({ id: `a${i}`, name: `Auto ${i}`, enabled: true }))
+      render(<ChatCard card={{ kind: 'automations', automations }} />)
+      expect(screen.getAllByTestId('automation-chip')).toHaveLength(8)
+      fireEvent.click(within(screen.getByTestId('more-chip')).getByRole('button'))
+      expect(screen.getAllByTestId('automation-chip')).toHaveLength(10)
     })
   })
 
   // ── Icons + motion ─────────────────────────────────────────────────────────
 
-  describe('device cell icon and state', () => {
-    it('every cell carries the shared DeviceIcon for its kind (emoji style)', () => {
+  describe('device chip icon', () => {
+    it('every chip carries the shared DeviceIcon for its kind (emoji style)', () => {
       render(<ChatCard card={SAMPLES.device_list} />)
-      const cells = screen.getAllByTestId('device-cell')
-      expect(cells).toHaveLength(2)
+      // Kitchen (1 on) sorts before hall (0 on).
+      const chips = screen.getAllByTestId('device-chip')
+      expect(chips).toHaveLength(2)
       // light.kitchen → kind 'light' → 💡; binary_sensor "Front door" → 'door' → 🚪
-      expect(cells[0].querySelector('[aria-hidden="true"]').textContent).toBe('💡')
-      expect(cells[1].querySelector('[aria-hidden="true"]').textContent).toBe('🚪')
+      expect(chips[0].querySelector('.zc-chip-ico').textContent).toBe('💡')
+      expect(chips[1].querySelector('.zc-chip-ico').textContent).toBe('🚪')
     })
 
     it('follows the Settings → Display icon style (image mode renders an <img>)', () => {
       useUIStore.setState({ iconStyle: 'line' })
       render(<ChatCard card={SAMPLES.device_list} />)
-      const [light] = screen.getAllByTestId('device-cell')
+      const [light] = screen.getAllByTestId('device-chip')
       expect(light.querySelector('img[aria-hidden="true"]')).toBeTruthy()
-    })
-
-    it('marks on/off state on the cell and flips it with the toggle', async () => {
-      runAction.mockResolvedValueOnce({ ok: true })
-      render(<ChatCard card={SAMPLES.device_list} />)
-      const [light, door] = screen.getAllByTestId('device-cell')
-      expect(light).toHaveAttribute('data-on', 'true')
-      expect(light.className).toContain('zc-cell--on')
-      expect(door).toHaveAttribute('data-on', 'false')
-      fireEvent.click(screen.getAllByRole('switch')[0])
-      await waitFor(() => expect(light).toHaveAttribute('data-on', 'false'))
-      expect(light.className).not.toContain('zc-cell--on')
     })
 
     it('deviceKind resolves from the card payload shape', () => {
@@ -305,46 +398,26 @@ describe('ChatCard', () => {
       expect(deviceKind({ entity_id: 'sensor.temp', domain: 'sensor', name: 'Temp', device_class: 'temperature' })).toBe('temperature')
       expect(deviceKind({})).toBe('unknown')
     })
-
-    it('automation rows are tinted cells with the lightning glyph', () => {
-      render(<ChatCard card={SAMPLES.automations} />)
-      const [night, morning] = screen.getAllByTestId('automation-cell')
-      expect(night).toHaveAttribute('data-on', 'true')
-      expect(morning).toHaveAttribute('data-on', 'false')
-      expect(night.querySelector('svg.lucide-zap')).toBeTruthy()
-    })
-
-    it('lifts the count out of the translated title into a mono pill (en + he)', () => {
-      // The i18n mock returns bare keys, so exercise the splitter directly
-      // with the real strings' shapes.
-      const en = rtlRender(<CountTitle text="16 devices" n={16} />)
-      expect(en.container.querySelector('.z-mono').textContent).toBe('16')
-      expect(en.container.textContent).toBe('16 devices')
-      const he = rtlRender(<CountTitle text="16 מכשירים" n={16} />)
-      expect(he.container.querySelector('.z-mono').textContent).toBe('16')
-      expect(he.container.textContent).toBe('16 מכשירים')
-      // No number in the string → rendered untouched.
-      const plain = rtlRender(<CountTitle text="chat.card.devices" n={16} />)
-      expect(plain.container.querySelector('.z-mono')).toBeNull()
-      expect(plain.container.textContent).toBe('chat.card.devices')
-    })
   })
 
   describe('motion', () => {
-    it('cells stagger in: each cell gets initial/animate/transition, later cells later', () => {
+    it('tiles stagger in 30ms apart with a 4px rise; chips ride with their tile', () => {
       const props = [0, 1, 2, 9].map((i) => enterProps(false, i))
       for (const p of props) {
-        expect(p.initial).toEqual({ opacity: 0, y: 6 })
+        expect(p.initial).toEqual({ opacity: 0, y: 4 })
         expect(p.animate).toEqual({ opacity: 1, y: 0 })
-        expect(p.transition.duration).toBeLessThanOrEqual(0.25)
+        expect(p.transition.duration).toBeLessThanOrEqual(0.2)
       }
-      expect(props[1].transition.delay).toBeCloseTo(0.025)
-      expect(props[2].transition.delay).toBeCloseTo(0.05)
-      // Delay is capped so a full first page (12 cells) still lands under ~400ms.
-      expect(props[3].transition.delay + props[3].transition.duration).toBeLessThan(0.4)
-      render(<ChatCard card={SAMPLES.device_list} />)
-      for (const cell of screen.getAllByTestId('device-cell')) {
-        expect(cell.getAttribute('data-motion')).toBe('initial animate transition')
+      expect(props[1].transition.delay).toBeCloseTo(0.03)
+      expect(props[2].transition.delay).toBeCloseTo(0.06)
+      // Delay is capped so a home full of rooms still lands under ~450ms.
+      expect(props[3].transition.delay + props[3].transition.duration).toBeLessThan(0.45)
+      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(4) }} />)
+      for (const tile of screen.getAllByTestId('room-tile')) {
+        expect(tile.getAttribute('data-motion')).toBe('initial animate transition')
+      }
+      for (const chip of screen.getAllByTestId('device-chip')) {
+        expect(chip.getAttribute('data-motion')).toBeNull()
       }
     })
 
@@ -352,19 +425,11 @@ describe('ChatCard', () => {
       motionState.reduce = true
       expect(enterProps(true, 3)).toEqual({})
       render(<ChatCard card={SAMPLES.device_list} />)
-      for (const cell of screen.getAllByTestId('device-cell')) {
-        expect(cell.getAttribute('data-motion')).toBeNull()
+      for (const tile of screen.getAllByTestId('room-tile')) {
+        expect(tile.getAttribute('data-motion')).toBeNull()
       }
       render(<ChatCard card={SAMPLES.automations} />)
-      for (const cell of screen.getAllByTestId('automation-cell')) {
-        expect(cell.getAttribute('data-motion')).toBeNull()
-      }
-    })
-
-    it('newly revealed cells cascade from zero again after Show all', () => {
-      render(<ChatCard card={{ kind: 'device_list', devices: manyDevices(10) }} />)
-      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
-      expect(screen.getAllByTestId('device-cell')).toHaveLength(10)
+      expect(screen.getByTestId('automation-chips').getAttribute('data-motion')).toBeNull()
     })
   })
 
@@ -374,35 +439,37 @@ describe('ChatCard', () => {
       { entity_id: 'switch.plug', name: 'Plug', room: 'living_room', room_he: 'סלון', domain: 'switch', on: false, he_noun: 'המכשיר' },
     ]
 
-    it("card.lang === 'en' shows name, not he_noun", () => {
-      render(<ChatCard card={{ kind: 'device_list', lang: 'en', devices }} />)
-      expect(screen.getByRole('button', { name: 'Kitchen light' })).toBeInTheDocument()
+    it("card.lang === 'en' shows name, not he_noun, and lays out ltr", () => {
+      const { container } = render(<ChatCard card={{ kind: 'device_list', lang: 'en', devices }} />)
+      expect(chipButton('Kitchen light')).toBeInTheDocument()
       expect(screen.queryByText('אור במטבח')).toBeNull()
       expect(screen.getByText('Living room')).toBeInTheDocument()
+      expect(container.querySelector('.zc-card').getAttribute('dir')).toBe('ltr')
     })
 
-    it("card.lang === 'he' shows he_noun and room_he", () => {
-      render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
-      expect(screen.getByRole('button', { name: 'אור במטבח' })).toBeInTheDocument()
+    it("card.lang === 'he' shows he_noun and room_he, and lays out rtl", () => {
+      const { container } = render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
+      expect(chipButton('אור במטבח')).toBeInTheDocument()
       expect(screen.queryByText('Kitchen light')).toBeNull()
       expect(screen.getByText('מטבח')).toBeInTheDocument()
+      expect(container.querySelector('.zc-card').getAttribute('dir')).toBe('rtl')
     })
 
     it("'he' with the generic noun falls back to the real name", () => {
       render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
-      expect(screen.getByRole('button', { name: 'Plug' })).toBeInTheDocument()
+      expect(chipButton('Plug')).toBeInTheDocument()
       expect(screen.queryByText('המכשיר')).toBeNull()
     })
 
     it('falls back to the UI language when the card carries none', () => {
       render(<ChatCard card={{ kind: 'device_list', devices }} />)
-      expect(screen.getByRole('button', { name: 'Kitchen light' })).toBeInTheDocument()
+      expect(chipButton('Kitchen light')).toBeInTheDocument()
     })
 
     it('in-card actions run in the turn language', () => {
       runAction.mockResolvedValueOnce({ ok: true })
       render(<ChatCard card={{ kind: 'device_list', lang: 'he', devices }} />)
-      fireEvent.click(screen.getAllByRole('switch')[0])
+      fireEvent.click(chipButton('אור במטבח'))
       expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.kitchen', action: 'off' }, 'he')
     })
 
@@ -419,14 +486,6 @@ describe('ChatCard', () => {
   })
 
   describe('collapse on the other list cards', () => {
-    it('automations collapse to 8 and expand', () => {
-      const automations = Array.from({ length: 10 }, (_, i) => ({ id: `a${i}`, name: `Auto ${i}`, enabled: true }))
-      render(<ChatCard card={{ kind: 'automations', automations }} />)
-      expect(screen.getAllByRole('switch')).toHaveLength(8)
-      fireEvent.click(screen.getByRole('button', { name: 'chat.card.showAll' }))
-      expect(screen.getAllByRole('switch')).toHaveLength(10)
-    })
-
     it('capabilities render as a 2-column grid, collapse to 8 and expand', () => {
       const capabilities = Array.from({ length: 11 }, (_, i) => ({ name: `Cap ${i}`, pitch: `Pitch ${i}`, live: i % 2 === 0 }))
       const { container } = render(<ChatCard card={{ kind: 'capabilities', capabilities }} />)
@@ -452,20 +511,52 @@ describe('ChatCard', () => {
   // ── In-context navigation ──────────────────────────────────────────────────
 
   describe('deep links', () => {
-    it('device name opens /devices/<id> with state.fromChat', () => {
+    it('the chip chevron opens /devices/<id> with state.fromChat', () => {
       render(<ChatCard card={SAMPLES.device_list} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Kitchen light' }))
+      const [light] = screen.getAllByTestId('device-chip')
+      fireEvent.click(within(light).getByRole('button', { name: 'chat.card.open' }))
       expect(locPath()).toBe('/devices/light.kitchen')
       expect(locState()).toEqual({ fromChat: true })
     })
 
-    it('device toggle does NOT navigate', () => {
+    it('tapping the chip body toggles and does NOT navigate', () => {
       runAction.mockResolvedValueOnce({ ok: true })
       render(<ChatCard card={SAMPLES.device_list} />)
-      fireEvent.click(screen.getAllByRole('switch')[0])
+      fireEvent.click(chipButton('Kitchen light'))
       expect(runAction).toHaveBeenCalledWith('control_device', { entity_id: 'light.kitchen', action: 'off' }, 'en')
       expect(locPath()).toBe('/chat')
       expect(locState()).toBeNull()
+    })
+
+    it('the room title opens the room the app knows, by id or by slugged name', () => {
+      useDeviceStore.setState({ ziggyRooms: [
+        { id: 'kitchen', name: 'Kitchen', devices: [] },
+        { id: 'hall_1', name: 'Hall', devices: [] },
+      ] })
+      expect(roomPath('kitchen', useDeviceStore.getState().ziggyRooms)).toBe('/rooms/kitchen')
+      expect(roomPath('hall', useDeviceStore.getState().ziggyRooms)).toBe('/rooms/hall_1')
+      expect(roomPath('attic', useDeviceStore.getState().ziggyRooms)).toBe('/rooms')
+      expect(roomPath('', [])).toBeNull()
+      expect(slugifyRoom('  Living  Room ')).toBe('living_room')
+
+      render(<ChatCard card={SAMPLES.device_list} />)
+      const [kitchen, hall] = screen.getAllByTestId('room-tile')
+      fireEvent.click(within(hall).getByRole('button', { name: 'chat.card.openRoom' }))
+      expect(locPath()).toBe('/rooms/hall_1')
+      expect(locState()).toEqual({ fromChat: true })
+      fireEvent.click(within(kitchen).getByRole('button', { name: 'chat.card.openRoom' }))
+      expect(locPath()).toBe('/rooms/kitchen')
+    })
+
+    it('an unknown room slug falls back to the Rooms list; Elsewhere is not a link', () => {
+      render(<ChatCard card={{ kind: 'device_list', devices: [
+        { entity_id: 'light.a', name: 'A', room: 'attic', domain: 'light', on: true },
+        { entity_id: 'light.b', name: 'B', room: '', domain: 'light', on: true },
+      ] }} />)
+      const [attic, elsewhere] = screen.getAllByTestId('room-tile')
+      expect(within(elsewhere).queryByRole('button', { name: 'chat.card.openRoom' })).toBeNull()
+      fireEvent.click(within(attic).getByRole('button', { name: 'chat.card.openRoom' }))
+      expect(locPath()).toBe('/rooms')
     })
 
     // jsdom ships no matchMedia; stub it per test so the breakpoint is explicit.
@@ -477,35 +568,37 @@ describe('ChatCard', () => {
 
     it('does not dock the chat on a narrow screen', () => withViewport(false, () => {
       render(<ChatCard card={SAMPLES.device_list} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Kitchen light' }))
+      fireEvent.click(within(screen.getAllByTestId('device-chip')[0]).getByRole('button', { name: 'chat.card.open' }))
       expect(useChatStore.getState().chatDock).toBe(false)
       expect(locPath()).toBe('/devices/light.kitchen')
     }))
 
     it('docks the chat when the viewport is wide', () => withViewport(true, () => {
       render(<ChatCard card={SAMPLES.device_list} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Kitchen light' }))
+      fireEvent.click(within(screen.getAllByTestId('device-chip')[0]).getByRole('button', { name: 'chat.card.open' }))
       expect(useChatStore.getState().chatDock).toBe(true)
       expect(locPath()).toBe('/devices/light.kitchen')
     }))
 
-    it('automation name opens /actions?focus=<id>, or /actions without one', () => {
+    it('automation chevron opens /actions?focus=<id>, or /actions without one', () => {
       const { unmount } = render(<ChatCard card={SAMPLES.automations} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Night lights' }))
+      const [night] = screen.getAllByTestId('automation-chip')
+      fireEvent.click(within(night).getByRole('button', { name: 'chat.card.open' }))
       expect(locPath()).toBe('/actions?focus=a1')
       expect(locState()).toEqual({ fromChat: true })
       unmount()
 
       render(<ChatCard card={{ kind: 'automations', automations: [{ name: 'No id', enabled: true }] }} />)
-      fireEvent.click(screen.getByRole('button', { name: 'No id' }))
+      fireEvent.click(within(screen.getByTestId('automation-chip')).getByRole('button', { name: 'chat.card.open' }))
       expect(locPath()).toBe('/actions')
     })
 
-    it('automation switch does NOT navigate', () => {
+    it('automation chip body toggles and does NOT navigate', async () => {
       runAction.mockResolvedValueOnce({ ok: true })
       render(<ChatCard card={SAMPLES.automations} />)
-      fireEvent.click(screen.getAllByRole('switch')[0])
+      fireEvent.click(chipButton('Night lights'))
       expect(locPath()).toBe('/chat')
+      await waitFor(() => expect(chipButton('Night lights')).toHaveAttribute('aria-pressed', 'false'))
     })
 
     it('why_not verdict opens the device only when an entity id is known', () => {
@@ -515,7 +608,10 @@ describe('ChatCard', () => {
       unmount()
 
       render(<ChatCard card={{ ...SAMPLES.why_not, entity_id: 'light.hall' }} />)
-      fireEvent.click(screen.getByRole('button', { name: 'chat.card.verdict.deviceUnreachable' }))
+      const link = screen.getByRole('button', { name: 'chat.card.verdict.deviceUnreachable' })
+      expect(link.style.textDecoration).not.toContain('underline')
+      expect(link.querySelector('.zc-link-go')).toBeTruthy()
+      fireEvent.click(link)
       expect(locPath()).toBe('/devices/light.hall')
       expect(locState()).toEqual({ fromChat: true })
     })
