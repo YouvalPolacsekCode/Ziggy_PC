@@ -1858,10 +1858,31 @@ async def execute_device_command(
 # so the FE chart can render a clean line without per-point guards.
 # ---------------------------------------------------------------------------
 
+def _history_window(hours) -> tuple[str, dict]:
+    """(start, extra query params) covering the last `hours` hours.
+
+    HA's /api/history/period/{start} defaults end_time to start + ONE DAY.
+    Sending no end_time therefore answered every request longer than a day
+    with a one-day slice taken from the far end of the window, and the recent
+    part — the part someone actually opened the graph to see — was missing.
+    On 2026-09-06 that made a healthy recorder look like it had been dead for
+    a week. Always send an explicit end_time.
+
+    Hours is clamped to a week: HA's recorder pays for every row.
+    """
+    from datetime import datetime, timedelta, timezone
+    try:
+        hours = int(hours or 24)
+    except (TypeError, ValueError):
+        hours = 24
+    hours = max(1, min(hours, 168))
+    now = datetime.now(timezone.utc)
+    return (now - timedelta(hours=hours)).isoformat(), {"end_time": now.isoformat()}
+
+
 @router.get("/api/devices/{entity_id:path}/history")
 async def entity_history(entity_id: str, hours: int = 24):
     import requests
-    from datetime import datetime, timedelta, timezone
     from core.logger_module import log_error
 
     ha_url = settings.get("home_assistant", {}).get("url", "").rstrip("/")
@@ -1869,10 +1890,7 @@ async def entity_history(entity_id: str, hours: int = 24):
     if not ha_url or not ha_tok:
         return {"points": [], "unit": None}
 
-    # Clamp the window — protects against a misbehaving client asking for
-    # weeks of data (HA history is expensive on the recorder DB).
-    hours = max(1, min(int(hours or 24), 168))
-    start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    start, window_params = _history_window(hours)
 
     try:
         resp = requests.get(
@@ -1882,10 +1900,15 @@ async def entity_history(entity_id: str, hours: int = 24):
                 "filter_entity_id": entity_id,
                 "minimal_response": "true",
                 "no_attributes": "false",
+                **window_params,
             },
-            timeout=15,
+            # A full week of a chatty sensor is a lot more rows than a day.
+            timeout=15 if int(hours or 24) <= 24 else 30,
         )
         if not resp.ok:
+            # Silence here reads as "no data" in the graph, which is how a
+            # truncated window passed for a dead recorder. Say it out loud.
+            log_error(f"[History] HA {resp.status_code} for {entity_id} ({hours}h)")
             return {"points": [], "unit": None}
         data = resp.json() or []
         series = data[0] if data else []
