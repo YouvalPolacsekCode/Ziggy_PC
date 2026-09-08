@@ -2327,10 +2327,15 @@ export default {
   'chat.suggestMovie':            'זמן סרט',
   'chat.suggestWhoHome':          'מי בבית?',
   'chat.suggestMorning':          'בוקר טוב',
-  // ניווט מתוך הצ׳אט: כרטיס פתח דף; הצ׳אט נשאר בהישג יד (עמודת צד במסך רחב, כפתור חזרה בנייד).
-  'chat.backToChat':              'חזרה לצ׳אט',
+  // ניווט מתוך הצ׳אט: כרטיס פתח דף; הצ׳אט נשאר בהישג יד (עמודת צד במסך רחב, בועה וגיליון תחתון בנייד).
   'chat.dock.close':              'סגירת הצ׳אט',
   'chat.dock.expand':             'פתיחה במסך מלא',
+  // בועת הצ׳אט והגיליון בנייד (components/chat/ChatBubble.jsx, ChatSheet.jsx)
+  'chat.bubble.open':             'צ׳אט עם זיגי',
+  'chat.bubble.close':            'סגירת הצ׳אט',
+  'chat.bubble.openFull':         'פתיחה במסך מלא',
+  'chat.bubble.unreadOne':        'צ׳אט עם זיגי · תשובה חדשה',
+  'chat.bubble.unread':           'צ׳אט עם זיגי · {n} תשובות חדשות',
 
   // ── כרטיסים בצ׳אט (components/chat/ChatCards.jsx) ───────────────────
   'chat.card.devices':            '{n} מכשירים',

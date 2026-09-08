@@ -2744,10 +2744,15 @@ export default {
   'chat.suggestWhoHome':          'Who is home?',
   'chat.suggestMorning':          'Good morning',
   // In-context navigation: a chat card opened a page; the chat stays at hand
-  // (side dock on wide screens, back pill on phones).
-  'chat.backToChat':              'Back to chat',
+  // (side dock on wide screens, floating bubble + bottom sheet on phones).
   'chat.dock.close':              'Close chat',
   'chat.dock.expand':             'Open full',
+  // Phone bubble + sheet (components/chat/ChatBubble.jsx, ChatSheet.jsx)
+  'chat.bubble.open':             'Chat with Ziggy',
+  'chat.bubble.close':            'Close chat',
+  'chat.bubble.openFull':         'Open full',
+  'chat.bubble.unreadOne':        'Chat with Ziggy · 1 new reply',
+  'chat.bubble.unread':           'Chat with Ziggy · {n} new replies',
 
   // ── Chat cards (components/chat/ChatCards.jsx) ──────────────────────
   'chat.card.devices':            '{n} devices',

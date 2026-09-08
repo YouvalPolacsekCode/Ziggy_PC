@@ -10,6 +10,8 @@ import { useChatStore, CHAT_DOCK_QUERY } from '../../stores/chatStore'
 import { useMediaQuery } from '../../wall/useMediaQuery'
 import { useT } from '../../lib/i18n'
 import AIChat from '../../pages/AIChat'
+import { ChatBubble } from '../chat/ChatBubble'
+import { ChatSheet } from '../chat/ChatSheet'
 
 // Width of the wide-screen chat dock. Beside the 196px sidebar this leaves a
 // comfortable page column from the 1024px breakpoint (CHAT_DOCK_MIN_WIDTH) up.
@@ -83,33 +85,12 @@ function ChatDock() {
   )
 }
 
-// ── Back-to-chat pill (phones) ────────────────────────────────────────────────
-// A page opened from a chat card carries `state.fromChat`; on narrow screens
-// (no room for the dock) a slim pill offers the way back. It vanishes on the
-// next navigation that isn't fromChat because that location has no such state.
-function BackToChatPill() {
-  const t = useT()
-  const navigate = useNavigate()
-  return (
-    <div className="lg:hidden" style={{ display: 'flex', justifyContent: 'center', padding: '8px 12px 0' }}>
-      <button
-        type="button"
-        onClick={() => navigate('/chat')}
-        data-testid="back-to-chat"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '6px 14px', borderRadius: 999,
-          background: 'var(--surface)', border: '0.5px solid var(--line)',
-          boxShadow: 'var(--shadow-md)', color: 'var(--ink)',
-          fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-        }}
-      >
-        <span aria-hidden>↩</span>
-        <span>{t('chat.backToChat')}</span>
-      </button>
-    </div>
-  )
-}
+// ── Phones ────────────────────────────────────────────────────────────────────
+// No room for a dock below the breakpoint, so the chat folds into a floating
+// bubble (ChatBubble) that raises a bottom sheet (ChatSheet) over the page.
+// Both are mounted here, once, outside every page: they decide for themselves
+// (route + width) whether to exist, and the sheet is the only place besides
+// the /chat route and the dock that ever mounts AIChat — never two at once.
 
 export function AppShell({ connected }) {
   const location = useLocation()
@@ -118,7 +99,6 @@ export function AppShell({ connected }) {
   const chatDock = useChatStore((s) => s.chatDock)
   const wide = useMediaQuery(CHAT_DOCK_QUERY)
   const showDock = chatDock && wide && !isChatRoute
-  const fromChat = !!location.state?.fromChat && !isChatRoute
 
   // Reset the scroll container to the top on every route change. React Router
   // doesn't do this, so navigating from a scrolled list (e.g. the Devices
@@ -164,8 +144,6 @@ export function AppShell({ connected }) {
             useNetworkStatus (navigator.onLine + WS). */}
         <ConnectionStatus />
 
-        {fromChat && <BackToChatPill />}
-
         {/* No page-transition wrapper.
             Two prior attempts at a transition both failed:
               - mode="wait" + motion.div: AnimatePresence's exit→enter
@@ -190,6 +168,10 @@ export function AppShell({ connected }) {
       {showDock && <ChatDock />}
 
       <BottomNav connected={connected} />
+      {/* Phone chat surface. Fixed-position, so DOM order only matters for
+          stacking ties: after the nav (z-30), before toasts (z-60). */}
+      <ChatBubble />
+      <ChatSheet />
       <ToastContainer />
     </div>
   )

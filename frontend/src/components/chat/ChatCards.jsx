@@ -141,7 +141,7 @@ function useCardI18n(card) {
 
 // ── In-context navigation ─────────────────────────────────────────────────────
 // A card names a real object; opening it keeps the conversation at hand (see
-// chatNav.js: dock on wide screens, `fromChat` state for the back pill).
+// chatNav.js: dock on wide screens, sheet-collapses-to-bubble on phones).
 
 // Name-as-link: a real button (keyboard + screen reader) that looks like the
 // plain name it replaces — no underline; a chevron at the trailing edge says

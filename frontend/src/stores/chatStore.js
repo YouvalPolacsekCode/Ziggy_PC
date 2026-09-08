@@ -3,7 +3,8 @@ import { create } from 'zustand'
 // In-context navigation: tapping an object inside a chat card opens that
 // object's real page while the conversation stays at hand. On wide screens
 // the chat re-renders as a side dock beside the page (AppShell); on phones
-// the page shows a "back to chat" pill instead. One breakpoint decides both —
+// it collapses to a floating bubble that reopens as a bottom sheet
+// (components/chat/ChatBubble + ChatSheet). One breakpoint decides both —
 // 1024px, deliberately wider than the Sidebar's `md` (768px): sidebar (196px)
 // + dock (400px) leave nothing usable for the page at 768.
 export const CHAT_DOCK_MIN_WIDTH = 1024
@@ -28,6 +29,15 @@ export const useChatStore = create((set) => ({
   mode: null,              // 'diagnostic' | null — per-thread; the server owns it, we mirror it
   chatDock: false,         // wide screens: keep the chat open as a side column beside the page
   setChatDock: (chatDock) => set({ chatDock: !!chatDock }),
+  // Phones: the chat as a bottom sheet over the current page. Opening it is
+  // reading it, so the unread count resets in the same write.
+  chatSheet: false,
+  setChatSheet: (chatSheet) => set(chatSheet ? { chatSheet: true, chatUnread: 0 } : { chatSheet: false }),
+  // Replies (ziggy_response pushes) that landed while no chat surface was
+  // showing — shown as the bubble's badge. Counted by ChatBubble.
+  chatUnread: 0,
+  bumpChatUnread: (n = 1) => set((s) => ({ chatUnread: s.chatUnread + Math.max(0, n | 0) })),
+  clearChatUnread: () => set({ chatUnread: 0 }),
 
   addMessage: (role, text, ok = true, extras = {}) =>
     set((s) => ({
