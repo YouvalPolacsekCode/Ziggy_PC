@@ -621,6 +621,14 @@ html, body, #root {
   @media (min-width: 1024px) {
     .z-dashboard-rail {
       position: sticky;
+      /* Start level with the top of the room tiles rather than the top of the
+         page, so Alerts and Recent Activity read as a second column of the
+         rooms section instead of floating above it. Measured at 1440x1000:
+         the rail box starts at 24px and the first room tile at 149px, so the
+         offset is 125. It is the greeting block plus the ROOMS eyebrow:
+         eyebrow 16 + 4 + title 40 + status 20 + section gap 16 + eyebrow 16
+         + 10 margin. Sticky `top` below takes over once the page scrolls. */
+      margin-top: 128px;
       top: calc(var(--safe-top) + 24px);
       max-height: calc(var(--vh) - var(--safe-top) - 48px);
       overflow-y: auto;
