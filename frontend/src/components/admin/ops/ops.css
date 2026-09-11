@@ -8,64 +8,86 @@
  * The system's character: wireframe objects. Square corners, hairline borders,
  * transparent fills, registration marks at the corners of framed blocks, a
  * condensed face for headings and a utility sans for body.
- *
- * Colour comes from the app's tokens (index.css), not a second palette: the
- * console inherits light/dark from the one theme switch, and every word in a
- * status colour uses the AA-safe *-text token. What the Industry system keeps
- * is its *structure* — corners, marks, faces — not its own hexes.
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
 
 .zg-ops {
-  --color-bg: var(--bg);
-  --color-surface: var(--surface);
-  --color-text: var(--ink);
-  --color-accent: var(--info);
-  --color-divider: var(--line);
+  --color-bg: #f2f2f3;
+  --color-surface: #e9e9ea;
+  --color-text: #1d1f20;
+  --color-accent: #5980a6;
+  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
 
-  --color-neutral-100: var(--surface-2);
-  --color-neutral-200: var(--surface-3);
-  --color-neutral-300: var(--line);
-  --color-neutral-400: var(--line-2);
-  --color-neutral-500: var(--line-3);
-  --color-neutral-600: var(--ink-faint);
-  --color-neutral-700: var(--ink-mute);
-  --color-neutral-800: var(--ink-2);
-  --color-neutral-900: var(--ink);
+  --color-neutral-100: #f5f5f8;
+  --color-neutral-200: #e7e7ea;
+  --color-neutral-300: #d4d4d7;
+  --color-neutral-400: #b7b7ba;
+  --color-neutral-500: #98989b;
+  --color-neutral-600: #7a7a7d;
+  --color-neutral-700: #5d5d60;
+  --color-neutral-800: #424244;
+  --color-neutral-900: #2b2b2d;
 
-  --color-accent-100: color-mix(in srgb, var(--info) 10%, var(--surface));
-  --color-accent-200: color-mix(in srgb, var(--info) 20%, var(--surface));
-  --color-accent-300: color-mix(in srgb, var(--info) 32%, var(--surface));
-  --color-accent-400: color-mix(in srgb, var(--info) 55%, var(--surface));
-  --color-accent-500: var(--info);
-  --color-accent-600: color-mix(in srgb, var(--info) 85%, var(--ink));
-  --color-accent-700: color-mix(in srgb, var(--info) 70%, var(--ink));
-  --color-accent-800: color-mix(in srgb, var(--info) 45%, var(--ink));
-  --color-accent-900: color-mix(in srgb, var(--info) 25%, var(--ink));
+  --color-accent-100: #eef6ff;
+  --color-accent-200: #d6ebff;
+  --color-accent-300: #b5d9fd;
+  --color-accent-400: #94bce3;
+  --color-accent-500: #749dc4;
+  --color-accent-600: #597ea3;
+  --color-accent-700: #416180;
+  --color-accent-800: #2c455d;
+  --color-accent-900: #1d2d3d;
 
-  /* State roles. Only these carry colour; everything else is neutral.
-     *-100 is a fill, *-800 is the text that sits on it. */
-  --down: var(--err);
-  --down-100: color-mix(in srgb, var(--err) 10%, var(--surface));
-  --down-800: var(--err-text);
-  --warn: var(--warn);
-  --warn-100: color-mix(in srgb, var(--warn) 10%, var(--surface));
-  --warn-800: var(--warn-text);
+  /* State roles. Only these three carry colour; everything else is neutral. */
+  --down: #b0453a;
+  --down-100: #f8e7e4;
+  --down-800: #7c2e26;
+  --warn: #a97b23;
+  --warn-100: #f6edd8;
+  --warn-800: #75541a;
 
   --font-heading: "Barlow Condensed", system-ui, sans-serif;
   --font-body: "Barlow", system-ui, sans-serif;
 
-  --space-1: 4px; --space-2: 8px; --space-3: 12px;
-  --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --space-1: 3.4px; --space-2: 6.8px; --space-3: 10.2px;
+  --space-4: 13.6px; --space-6: 20.4px; --space-8: 27.2px;
+  --radius-md: 4px; --radius-lg: 7px;
 
-  /* --shadow-* are the app's own tokens, inherited from :root. */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2b2b2d 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
 
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.55;
+}
+
+/* The console follows the surrounding app's theme rather than its own toggle —
+ * one switch for the whole product, not a second one hidden in ops. */
+[data-palette="dark"] .zg-ops {
+  --color-bg: #17191c;
+  --color-surface: #1f2225;
+  --color-text: #e6e7e9;
+  --color-divider: color-mix(in srgb, #e6e7e9 16%, transparent);
+  --color-neutral-100: #232527; --color-neutral-200: #2c2e31;
+  --color-neutral-300: #3a3c3f; --color-neutral-400: #57595c;
+  --color-neutral-500: #828487; --color-neutral-600: #9fa1a4;
+  --color-neutral-700: #c0c1c4; --color-neutral-800: #dcdde0;
+  --color-neutral-900: #eff0f2;
+  --color-accent: #7ba1c4;
+  --color-accent-100: #1c2733; --color-accent-200: #233546;
+  --color-accent-300: #2e485f; --color-accent-400: #41637f;
+  --color-accent-500: #5d83a6; --color-accent-600: #7ba1c4;
+  --color-accent-700: #a3c2de; --color-accent-800: #cadff2;
+  --color-accent-900: #e7f2fc;
+  --down: #cf6a5c; --down-100: #3a231f; --down-800: #f0b3a9;
+  --warn: #c99b45; --warn-100: #332a18; --warn-800: #e8cf9a;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+  --shadow-md: 0 3px 10px rgba(0,0,0,.5);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,.6);
 }
 
 .zg-ops *, .zg-ops *::before, .zg-ops *::after { box-sizing: border-box; }
@@ -75,114 +97,97 @@
   line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 var(--space-2);
   color: var(--color-text);
 }
-.zg-ops h3 { font-size: 22px; }
+.zg-ops h3 { font-size: 25px; }
 .zg-ops h4 { font-size: 20px; }
 .zg-ops p { margin: 0 0 var(--space-3); }
-.zg-ops a { color: var(--color-text); text-underline-offset: 3px; }
-.zg-ops .text-muted { color: var(--ink-mute); }
+.zg-ops a { color: var(--color-accent); text-underline-offset: 3px; }
+.zg-ops .text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .zg-ops :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 /* — blueprint frame: the system's signature. Registration marks sit OUTSIDE
      the box, so framed blocks need room around them. — */
 .zg-ops .blueprint { position: relative; border: 1px solid var(--color-divider); border-radius: 0; }
 .zg-ops .blueprint > .corner {
-  position: absolute; width: 12px; height: 12px;
-  color: var(--ink-faint);
+  position: absolute; width: 11px; height: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
 }
 .zg-ops .blueprint > .corner::before,
 .zg-ops .blueprint > .corner::after { content: ""; position: absolute; background: currentColor; }
-.zg-ops .blueprint > .corner::before { left: 6px; top: 0; width: 1px; height: 100%; }
-.zg-ops .blueprint > .corner::after  { top: 6px; left: 0; width: 100%; height: 1px; }
+.zg-ops .blueprint > .corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
+.zg-ops .blueprint > .corner::after  { top: 5px; left: 0; width: 100%; height: 1px; }
 .zg-ops .blueprint > .corner.tl { top: -6px; left: -6px; }
 .zg-ops .blueprint > .corner.tr { top: -6px; right: -6px; }
 .zg-ops .blueprint > .corner.bl { bottom: -6px; left: -6px; }
 .zg-ops .blueprint > .corner.br { bottom: -6px; right: -6px; }
 
-/* — buttons. 36px is the dense desktop-only row control; nothing in the
-     console is meant for a thumb. — */
+/* — buttons — */
 .zg-ops .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   cursor: pointer; text-decoration: none;
   font-family: var(--font-heading); font-weight: 600;
-  font-size: 15px; line-height: 1.2; color: var(--color-text);
+  font-size: 14px; line-height: 1.2; color: var(--color-text);
   background: transparent; border: 1px solid var(--color-divider);
-  min-height: 36px; padding: var(--space-2) var(--space-4); border-radius: 0;
-  transition: background var(--dur-press) var(--ease-standard);
+  padding: var(--space-2) calc(var(--space-3) * 1.2); border-radius: 0;
 }
 .zg-ops .btn:disabled { opacity: .45; cursor: not-allowed; }
-.zg-ops .btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-.zg-ops .btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
-.zg-ops .btn-secondary:hover:not(:disabled) { background: var(--surface-2); }
-.zg-ops .btn-ghost { color: var(--color-text); border-color: transparent; padding-inline: var(--space-2); }
-.zg-ops .btn-ghost:hover:not(:disabled) { background: var(--surface-2); }
-.zg-ops .btn-danger { background: var(--down-100); color: var(--down-800); border-color: var(--down); }
-.zg-ops .btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 16%, var(--surface)); }
+.zg-ops .btn-primary { background: var(--color-accent); color: var(--color-bg); border-color: var(--color-accent); }
+.zg-ops .btn-primary:hover:not(:disabled) { background: var(--color-accent-600); }
+.zg-ops .btn-secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.zg-ops .btn-ghost { color: var(--color-accent); border-color: transparent; padding-inline: var(--space-1); }
+.zg-ops .btn-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .zg-ops .btn-block { width: 100%; margin-top: var(--space-2); }
 
 /* — forms — */
 .zg-ops .field > label {
-  display: block; font-size: 13px; margin-bottom: 4px;
-  color: var(--ink-mute);
+  display: block; font-size: 12px; margin-bottom: 5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
 }
 .zg-ops .input {
-  width: 100%; min-height: 44px; padding: 8px 12px; font: inherit; font-size: 17px;
+  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit; font-size: 14px;
   color: var(--color-text); caret-color: var(--color-accent);
   background: var(--color-surface);
   border: 1px solid var(--color-divider); border-radius: 0;
-  transition: border-color var(--dur-press) var(--ease-standard);
 }
-.zg-ops .input:hover { border-color: var(--line-3); }
+.zg-ops .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
 .zg-ops .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
-.zg-ops .radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 15px; min-height: 44px; }
+.zg-ops .radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
 .zg-ops .radio input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
 .zg-ops .radio .dot {
-  width: 20px; height: 20px; flex: none; border-radius: 50%;
-  border: 1.5px solid var(--line-2);
-  transition: background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard);
+  width: 16px; height: 16px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--color-divider);
 }
 .zg-ops .radio input:checked + .dot {
-  border-color: var(--ink); background: var(--ink);
+  border-color: var(--color-accent); background: var(--color-accent);
   box-shadow: inset 0 0 0 4px var(--color-bg);
 }
 
 /* — tags — */
 .zg-ops .tag {
-  display: inline-flex; align-items: center; font-size: 13px; line-height: 18px;
-  letter-spacing: .02em; padding: 4px 12px; border-radius: 0;
+  display: inline-flex; align-items: center; font-size: 11px;
+  letter-spacing: .02em; padding: 3px 10px; border-radius: 0;
 }
 .zg-ops .tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
-
-/* — segmented filter: the active segment is a raised fill with ink text,
-     never an inverted or accent block. — */
-.zg-ops .seg { display: inline-flex; border: 1px solid var(--color-divider); }
-.zg-ops .seg > button, .zg-ops .seg > span {
-  min-height: 36px; padding: 0 12px; font-size: 15px; border: none; cursor: pointer;
-  font-family: var(--font-body); background: transparent; color: var(--color-text);
-  display: inline-flex; align-items: center;
-  transition: background var(--dur-press) var(--ease-standard);
-}
-.zg-ops .seg > .on { background: var(--surface-3); font-weight: 600; }
 
 /* — dialog — */
 .zg-ops-backdrop {
   position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
-  padding: 16px; background: var(--backdrop);
+  padding: 13.6px; background: color-mix(in srgb, #2b2b2d 50%, transparent);
 }
 .zg-ops-dialog {
-  width: min(440px, 100%); display: flex; flex-direction: column; gap: 12px;
-  padding: 16px; border-radius: 0;
+  width: min(440px, 100%); display: flex; flex-direction: column; gap: 10.2px;
+  padding: 13.6px; border-radius: 0;
   background: var(--color-bg); border: 1px solid var(--color-divider);
   box-shadow: var(--shadow-lg);
 }
 .zg-ops-dialog .dialog-title { font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
-.zg-ops-dialog .dialog-body { font-size: 15px; color: var(--ink-2); }
-.zg-ops-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.zg-ops-dialog .dialog-body { font-size: 14px; opacity: .85; }
+.zg-ops-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 6.8px; margin-top: 6.8px; }
 
 /* — rows — */
-.zg-ops .zg-row { transition: background var(--dur-press) var(--ease-standard); }
-.zg-ops .zg-row:hover { background: var(--surface-2); }
+.zg-ops .zg-row:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
 
-/* Loading skeleton. Static: a pulse would be an ambient loop that signals
-   "waiting", not live data, and the console has exactly one thing that
-   should move — a spinner on an in-flight repair. */
-.zg-ops .zg-skel { background: var(--color-neutral-200); }
+@keyframes zg-pulse { 0%,100% { opacity: .4 } 50% { opacity: .85 } }
+.zg-ops .zg-skel { background: var(--color-neutral-200); animation: zg-pulse 1.3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .zg-ops .zg-skel { animation: none; }
+}

@@ -8,12 +8,12 @@ import { getIrDevices } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 const selectStyle = {
-  width: '100%', height: 44, padding: '0 16px',
+  width: '100%', height: 38, padding: '0 12px',
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 'var(--r-ctl)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 17,
+  borderRadius: 9, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13,
   outline: 'none', appearance: 'none',
   backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.4)' d='M0 0h10L5 6z'/></svg>")`,
-  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 16px center', paddingRight: 36,
+  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28,
 }
 
 export default function IRDeviceSelect({ value, onChange }) {
@@ -37,9 +37,9 @@ export default function IRDeviceSelect({ value, onChange }) {
     set({ ir_device_id: id, ir_device_name: dev?.name || '', ir_command: '', ir_sequence: '', ir_temperature: undefined, ir_mode: undefined })
   }
 
-  if (loading) return <p className="z-subhead" style={{ padding: '8px 0' }}>{t('irDeviceSelect.loading')}</p>
+  if (loading) return <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '6px 0' }}>{t('irDeviceSelect.loading')}</p>
   if (!devices.length) return (
-    <p className="z-subhead" style={{ padding: '8px 0' }}>{t('irDeviceSelect.noneConfigured')}</p>
+    <p style={{ fontSize: 12, color: 'var(--ink-mute)', padding: '6px 0' }}>{t('irDeviceSelect.noneConfigured')}</p>
   )
 
   const modeOptions = [
@@ -49,7 +49,7 @@ export default function IRDeviceSelect({ value, onChange }) {
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
       {/* Device picker */}
       <select style={selectStyle} value={value?.ir_device_id || ''} onChange={e => handleDeviceChange(e.target.value)}>
         <option value="">{t('irDeviceSelect.selectIrDevice')}</option>
@@ -62,7 +62,7 @@ export default function IRDeviceSelect({ value, onChange }) {
         <>
           {/* Mode tabs */}
           {modeOptions.length > 1 && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4 }}>
               {modeOptions.map(({ id, label }) => {
                 const active =
                   id === 'sequence'    ? !!value?.ir_sequence :
@@ -75,16 +75,13 @@ export default function IRDeviceSelect({ value, onChange }) {
                 }
                 return (
                   <button
-                    key={id} onClick={switchTo} type="button"
-                    aria-pressed={active}
-                    className="z-button"
+                    key={id} onClick={switchTo}
                     style={{
-                      minHeight: 36, padding: '8px 16px', borderRadius: 999, fontSize: 15, fontFamily: 'inherit',
-                      fontWeight: active ? 600 : 500, cursor: 'pointer',
-                      background: active ? 'var(--surface-2)' : 'var(--surface)',
-                      color: active ? 'var(--ink)' : 'var(--ink-mute)',
-                      border: `0.5px solid ${active ? 'var(--line-2)' : 'var(--line)'}`,
-                      transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
+                      padding: '4px 10px', borderRadius: 7, fontSize: 11.5, fontFamily: 'inherit',
+                      fontWeight: 500, cursor: 'pointer',
+                      background: active ? `color-mix(in srgb, var(--accent) 10%, var(--surface))` : 'var(--surface)',
+                      color: active ? 'var(--accent)' : 'var(--ink-mute)',
+                      border: active ? '0.5px solid var(--accent)' : '0.5px solid var(--line)',
                     }}
                   >
                     {label}
@@ -114,13 +111,12 @@ export default function IRDeviceSelect({ value, onChange }) {
 
           {/* AC temperature */}
           {isAC && value?.ir_temperature != null && (
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type="number" min={16} max={30}
                 value={value?.ir_temperature ?? 22}
                 onChange={e => set({ ir_temperature: parseInt(e.target.value) })}
-                className="z-mono"
-                style={{ ...selectStyle, width: 96, paddingRight: 16, backgroundImage: 'none' }}
+                style={{ ...selectStyle, width: 90, paddingRight: 12, backgroundImage: 'none' }}
                 placeholder="22"
               />
               <select style={selectStyle} value={value?.ir_mode || ''} onChange={e => set({ ir_mode: e.target.value || undefined })}>

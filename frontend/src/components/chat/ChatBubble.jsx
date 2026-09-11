@@ -1,8 +1,8 @@
 // Floating chat bubble — phones only.
 //
 // On a narrow screen the chat has no room to live beside a page the way the
-// wide-screen dock does, so it folds into this 56px FAB (ink fill, the
-// sparkle in the page colour) above the bottom nav. Tapping it raises the chat as a bottom sheet (ChatSheet) over whatever
+// wide-screen dock does, so it folds into this 52px button above the bottom
+// nav. Tapping it raises the chat as a bottom sheet (ChatSheet) over whatever
 // page is open; the conversation itself lives in chatStore, so it is the
 // same chat the /chat tab shows, not a second one.
 //
@@ -100,7 +100,7 @@ export function ChatBubble() {
       aria-haspopup="dialog"
       onClick={() => setChatSheet(true)}
     >
-      <ZIcon name="sparkle" size={24} stroke={1.75} color="var(--bg)" />
+      <ZIcon name="sparkle" size={24} stroke={1.8} color="var(--on-accent)" />
       {unread > 0 && (
         <span className="z-chat-bubble-badge" data-testid="chat-bubble-badge" aria-hidden="true">
           {unread > 9 ? '9+' : unread}

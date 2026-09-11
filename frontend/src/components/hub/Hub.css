@@ -6,9 +6,6 @@
  *
  * Grid breakpoints mirror Dashboard's 1024px cutoff: a 4-col mobile grid for
  * phones, 8-col tablet (the primary target), 12-col for desktop preview.
- *
- * Every length here sits on the 4px grid; every control is at least 44px —
- * this is a wall tablet, and a thumb is the only pointer it ever sees.
  */
 
 .z-hub-page {
@@ -26,57 +23,50 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 20px;
-  min-height: 68px;
+  padding: 14px 20px;
   background: var(--surface);
   border-bottom: 0.5px solid var(--line);
   position: sticky;
   top: 0;
   z-index: 10;
   /* Safe-area padding so it clears the iPad status bar in PWA mode. */
-  padding-top: max(12px, env(safe-area-inset-top, 0));
+  padding-top: max(14px, env(safe-area-inset-top, 0));
 }
 .z-hub-strip-left  { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.z-hub-strip-right { display: flex; align-items: center; gap: 12px; }
-.z-hub-strip-title { font-size: 17px; line-height: 22px; font-weight: 600; color: var(--ink); }
-.z-hub-strip-sub   { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink-mute); letter-spacing: 0.06em; text-transform: uppercase; }
+.z-hub-strip-right { display: flex; align-items: center; gap: 10px; }
+.z-hub-strip-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.z-hub-strip-sub   { font-size: 11px; color: var(--ink-faint); letter-spacing: 0.4px; text-transform: uppercase; }
 
 .z-hub-strip button {
   background: transparent;
   border: 0.5px solid var(--line);
   border-radius: 999px;
-  padding: 8px 16px;
+  padding: 8px 14px;
   cursor: pointer;
   color: var(--ink);
-  font-family: inherit;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
-  min-height: 44px;
-  transition: background var(--dur-press) var(--ease-standard);
+  min-height: 36px;
 }
-.z-hub-strip button:hover { background: var(--surface-2); }
-/* The one inverted control on the screen — Save while editing. */
 .z-hub-strip button.primary {
-  background: var(--ink);
+  background: var(--accent, #4f46e5);
   border-color: transparent;
-  color: var(--bg);
-  font-weight: 600;
+  color: white;
 }
-.z-hub-strip button.primary:hover { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
 
 /* Pair-this-tablet banner — only shown when localStorage has no tablet_id. */
 .z-hub-banner {
   margin: 16px 20px 0;
-  padding: 16px;
+  padding: 14px 16px;
   background: var(--surface);
   border: 0.5px dashed var(--line);
-  border-radius: var(--r-ctl);
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.z-hub-banner-text { font-size: 15px; line-height: 20px; color: var(--ink-mute); }
+.z-hub-banner-text { font-size: 13px; color: var(--ink-faint); }
 
 /* Grid — single source of truth for column counts at each breakpoint. */
 .z-hub-grid {
@@ -89,7 +79,7 @@
   padding-bottom: max(20px, env(safe-area-inset-bottom, 0));
 }
 @media (min-width: 768px) {
-  .z-hub-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 16px; }
+  .z-hub-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 18px; }
   .z-hub-section { grid-column: span var(--col-tablet) !important; }
 }
 @media (min-width: 1280px) {
@@ -109,21 +99,20 @@
    * iOS Home wiggles icons in edit mode (without the wiggle). */
   outline: 1px dashed var(--line-2, var(--line));
   outline-offset: 4px;
-  border-radius: var(--r-card);
+  border-radius: 14px;
   /* Smooth the grid reflow when a drag swap re-orders the layout. The
    * transform-based highlight on .is-dragging cancels its own transition so
    * the dragged tile snaps with the finger instead of lagging. */
-  transition: outline-color var(--dur-press) var(--ease-standard), transform var(--dur-state) var(--ease-standard);
+  transition: outline-color 0.15s ease, transform 0.18s ease;
 }
 
 /* The section being dragged — softened so the user sees the layout reflowing
  * around it, but stays in place visually (we don't position:absolute the
- * dragged tile; the swap-in-grid pattern below is the feedback). The outline
- * darkens to the strongest hairline; the brand accent is not a drag state. */
+ * dragged tile; the swap-in-grid pattern below is the feedback). */
 .z-hub-page.is-editing .z-hub-section.is-dragging {
   opacity: 0.45;
   transform: scale(0.97);
-  outline-color: var(--line-3);
+  outline-color: var(--accent, #4f46e5);
   transition: none;
 }
 
@@ -134,7 +123,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 8px;
+  padding: 6px;
   z-index: 5;
 }
 
@@ -146,81 +135,77 @@
   pointer-events: auto;
   background: var(--surface);
   border: 0.5px solid var(--line);
-  border-radius: var(--r-ctl);
-  padding: 0 12px;
-  color: var(--ink-mute);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink-faint);
+  letter-spacing: 2px;
   cursor: grab;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 40px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md);
 }
-.z-hub-edit-grip:active { cursor: grabbing; background: var(--surface-2); }
+.z-hub-edit-grip:active { cursor: grabbing; background: var(--bg); }
 
 .z-hub-edit-actions {
   pointer-events: auto;
   display: flex;
-  gap: 4px;
+  gap: 6px;
   background: var(--surface);
   border: 0.5px solid var(--line);
   border-radius: 999px;
   padding: 4px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 .z-hub-edit-actions button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
   background: transparent;
   border: none;
   border-radius: 999px;
   cursor: pointer;
   color: var(--ink);
-  font-family: inherit;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--dur-press) var(--ease-standard);
 }
-.z-hub-edit-actions button:hover { background: var(--surface-2); }
+.z-hub-edit-actions button:hover { background: var(--bg); }
 .z-hub-edit-actions button.danger { color: var(--err); }
 
-/* Floating add-section button — only visible while editing. Secondary, not
- * inverted: Save in the strip is the screen's one primary action. */
+/* Floating add-section button — only visible while editing. */
 .z-hub-add-fab {
   position: fixed;
-  inset-inline-end: 24px;
+  right: 24px;
   bottom: max(24px, env(safe-area-inset-bottom, 0));
   width: 56px;
   height: 56px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 0.5px solid var(--line);
+  border-radius: 28px;
+  background: var(--accent, #4f46e5);
+  color: white;
+  border: none;
   font-size: 28px;
   font-weight: 400;
   cursor: pointer;
-  box-shadow: var(--shadow-fab);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   z-index: 50;
   /* Override the .z-hub-page button { min-height: 44px } rule so 56px wins. */
   min-height: 56px;
-  transition: background var(--dur-press) var(--ease-standard);
 }
-.z-hub-add-fab:hover { background: var(--surface-2); }
 
 /* ── Section picker modal ─────────────────────────────────────────────────── */
 
 .z-hub-picker-backdrop {
   position: fixed;
   inset: 0;
-  background: var(--backdrop);
+  background: rgba(0, 0, 0, 0.55);
   z-index: 80;
   display: flex;
   align-items: flex-end;        /* bottom-sheet on mobile */
@@ -240,41 +225,38 @@
   max-height: 80vh;
   background: var(--surface);
   border: 0.5px solid var(--line);
-  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  border-radius: 18px 18px 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 @media (min-width: 768px) {
-  .z-hub-picker { border-radius: var(--r-sheet); max-height: 70vh; }
+  .z-hub-picker { border-radius: 18px; max-height: 70vh; }
 }
 
 .z-hub-picker-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 20px;
-  min-height: 68px;
+  padding: 16px 20px;
   border-bottom: 0.5px solid var(--line);
   flex: 0 0 auto;
 }
 .z-hub-picker-close {
-  background: var(--surface-2);
-  border: 0.5px solid var(--line);
+  background: transparent;
+  border: none;
+  font-size: 22px;
   cursor: pointer;
-  color: var(--ink-2);
-  width: 44px; height: 44px;
-  min-height: 44px;
-  border-radius: var(--r-ctl);
+  color: var(--ink-faint);
+  width: 32px; height: 32px;
+  min-height: 32px;
+  border-radius: 999px;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  transition: background var(--dur-press) var(--ease-standard);
 }
-.z-hub-picker-close:hover { background: var(--surface-3); color: var(--ink); }
+.z-hub-picker-close:hover { background: var(--bg); color: var(--ink); }
 
 .z-hub-picker-body {
-  padding: 16px 20px 24px;
+  padding: 18px 20px 24px;
   overflow-y: auto;
   flex: 1 1 auto;
 }
@@ -283,18 +265,16 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  padding: 12px 16px;
+  gap: 2px;
+  padding: 12px 14px;
   background: var(--bg);
   border: 0.5px solid var(--line);
-  border-radius: var(--r-ctl);
+  border-radius: 12px;
   cursor: pointer;
   text-align: start;
   min-height: 56px;
-  font-family: inherit;
-  transition: border-color var(--dur-press) var(--ease-standard);
 }
-.z-hub-picker-item:hover { border-color: var(--line-2); }
+.z-hub-picker-item:hover { border-color: var(--line-2, var(--accent)); }
 
 /* ── Camera live modal ────────────────────────────────────────────────────── */
 /* Fullscreen overlay holding an MJPEG <img>. Top bar shows the camera name +
@@ -319,14 +299,12 @@
   min-width: 0;
   min-height: 0;
 }
-/* Text over the video stage — white on a dark scrim, the photo rule. */
 .z-hub-cam-modal-bar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
+  padding: 12px 18px;
   padding-top: max(12px, env(safe-area-inset-top, 0));
   color: white;
   background: rgba(0, 0, 0, 0.4);
@@ -336,11 +314,11 @@
   border: none;
   border-radius: 999px;
   color: white;
-  width: 44px; height: 44px;
-  min-height: 44px;
+  font-size: 22px;
+  width: 36px; height: 36px;
+  min-height: 36px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background var(--dur-press) var(--ease-standard);
 }
 .z-hub-cam-modal-close:hover { background: rgba(255, 255, 255, 0.22); }
 

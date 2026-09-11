@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { IntentParamForm, validateIntentParams } from '../components/ui/IntentParamForm'
@@ -8,11 +7,10 @@ import { useQuickAskStore } from '../stores/quickAskStore'
 import { useUIStore } from '../stores/uiStore'
 import { sendDirectIntent } from '../lib/api'
 import { useT, useLang, translateNamePhrase } from '../lib/i18n'
-import { T_ENTER } from '../lib/motion'
-import { fieldLabelStyle, cardIconBtn } from '../lib/automations/styles'
 
 // Curated list of useful intents. Each group has a stable `kind` so the
-// chip label logic doesn't depend on the (now-translated) group label string.
+// chip-tint logic in KIND_LABEL doesn't depend on the (now-translated)
+// group label string.
 function getIntentOptions(t) {
   return [
     { kind: 'lights_global', group: t('quickAsks.group.lightsGlobal'), intents: [
@@ -69,7 +67,7 @@ function getIntentOptions(t) {
   ]
 }
 
-// Stable intent→kind map. Built once at module load so getKindLabel stays
+// Stable intent→kind map. Built once at module load so KIND_LABEL stays
 // cheap and works without a translator (e.g. for sort orderings).
 const INTENT_KIND = (() => {
   const map = new Map()
@@ -79,6 +77,16 @@ const INTENT_KIND = (() => {
   return map
 })()
 
+const KIND_TINT = {
+  lights_global: 'var(--warn)',
+  lights_room:   'var(--warn)',
+  climate:       'var(--info)',
+  media:         'var(--ok)',
+  cover:         'var(--ink-mute)',
+  presence:      'var(--ok)',
+  tasks:         'var(--accent)',
+  info:          'var(--info)',
+}
 const KIND_LABEL_KEY = {
   lights_global: 'quickAsks.kind.light',
   lights_room:   'quickAsks.kind.light',
@@ -90,17 +98,14 @@ const KIND_LABEL_KEY = {
   info:          'quickAsks.kind.info',
 }
 
-// The emoji here is the person's chosen identity for their own quick ask —
-// user content, so it stays. Only the UI's own glyphs became line icons.
 const EMOJI_OPTIONS = ['💡', '🌡️', '👤', '✅', '🌙', '📋', '🌤️', '📰', '🔒', '🛋️', '🌀', '🎵', '⚙️', '📦', '🏠', '⚡', '🔔', '🛒']
 const EMPTY_FORM   = { label: '', icon: '⚡', intent: 'turn_off_all_lights', params: {} }
 
-// Kind label for the chip — resolved against the active i18n table. One
-// neutral chip; the per-kind tint (which spent the accent on "tasks") is gone.
+// Kind label for chip rendering — resolved against the active i18n table.
 function getKindLabel(intent, t) {
   const kind = INTENT_KIND.get(intent)
-  if (!kind) return t('quickAsks.kind.action')
-  return t(KIND_LABEL_KEY[kind])
+  if (!kind) return { label: t('quickAsks.kind.action'), tint: 'var(--accent)' }
+  return { label: t(KIND_LABEL_KEY[kind]), tint: KIND_TINT[kind] }
 }
 
 // ── Quick ask form ────────────────────────────────────────────────────────────
@@ -126,26 +131,23 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Input label={t('quickAsks.labelField')} placeholder={t('quickAsks.labelPlaceholder')} value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} autoFocus dir="auto" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Input label={t('quickAsks.labelField')} placeholder={t('quickAsks.labelPlaceholder')} value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} autoFocus />
 
-      {/* Icon picker — 44px targets; the chosen one is ink-outlined, not accent. */}
+      {/* Icon picker */}
       <div>
-        <p style={{ ...fieldLabelStyle, marginBottom: 8 }}>{t('quickAsks.icon')}</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('quickAsks.icon')}</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {EMOJI_OPTIONS.map(e => (
             <button
               key={e} type="button"
               onClick={() => setForm(f => ({ ...f, icon: e }))}
-              aria-pressed={form.icon === e}
-              aria-label={e}
               style={{
-                width: 44, height: 44, borderRadius: 'var(--r-ctl)', fontSize: 20, lineHeight: 1,
+                width: 36, height: 36, borderRadius: 10, fontSize: 18,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: form.icon === e ? 'var(--surface-2)' : 'var(--surface)',
-                border: form.icon === e ? '1.5px solid var(--ink)' : '0.5px solid var(--line)',
+                background: form.icon === e ? `color-mix(in srgb, var(--accent) 12%, var(--surface))` : 'var(--bg-2)',
+                border: form.icon === e ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
                 cursor: 'pointer',
-                transition: 'background var(--dur-press) var(--ease-standard), border-color var(--dur-press) var(--ease-standard)',
               }}
             >{e}</button>
           ))}
@@ -154,12 +156,12 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 
       {/* Intent picker */}
       <div>
-        <p style={{ ...fieldLabelStyle, marginBottom: 8 }}>{t('quickAsks.intent')}</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>{t('quickAsks.intent')}</p>
         <select
           value={form.intent}
           onChange={handleIntentChange}
           className="z-input"
-          aria-label={t('quickAsks.intent')}
+          style={{ height: 40, padding: '0 12px' }}
         >
           {intentOptions.map(({ kind, group, intents }) => (
             <optgroup key={kind} label={group}>
@@ -171,19 +173,19 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
 
       {/* Params — structured form driven by intentParamSchema */}
       <div>
-        <p style={{ ...fieldLabelStyle, marginBottom: 8 }}>{t('quickAsks.parameters')}</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('quickAsks.parameters')}</p>
         <IntentParamForm
           intent={form.intent}
           value={form.params || {}}
           onChange={params => { setParamsError(null); setForm(f => ({ ...f, params })) }}
           onError={setParamsError}
         />
-        {paramsError && <p className="z-footnote" role="alert" style={{ color: 'var(--err-text)', marginTop: 8 }}>{paramsError}</p>}
+        {paramsError && <p style={{ fontSize: 11, color: 'var(--accent)', marginTop: 6 }}>{paramsError}</p>}
       </div>
 
       <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
         <button onClick={onCancel} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
-        <button onClick={validateAndSave} disabled={!form.label.trim() || saving} className="z-btn-primary" style={{ flex: 1, opacity: (!form.label.trim() || saving) ? 0.5 : 1 }}>
+        <button onClick={validateAndSave} disabled={!form.label.trim() || saving} className="z-btn-primary" style={{ flex: 1 }}>
           {saving ? t('common.saving') : t('common.save')}
         </button>
       </div>
@@ -225,43 +227,41 @@ export default function QuickAsks({ embedded = false }) {
   }
 
   return (
-    <div style={embedded ? {} : { maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      {/* Header — hidden when embedded in Settings. ONE trailing primary: the
-          44×44 "+" (the tagline is the Subhead under the title). */}
-      {!embedded && (<div className="z-page-head">
+    <div style={embedded ? {} : { maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+      {/* Header — hidden when embedded in Settings */}
+      {!embedded && (<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow">{t('quickAsks.eyebrow')}</p>
-          <h1 className="z-display" style={{ margin: 0 }}>{t('quickAsks.title')}</h1>
-          <p className="z-subhead" style={{ marginTop: 4 }}>{t('quickAsks.tagline')}</p>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('quickAsks.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('quickAsks.title')}</h1>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>{t('quickAsks.tagline')}</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="z-btn-primary" aria-label={t('quickAsks.newTitle')} title={t('quickAsks.newTitle')} style={{ width: 44, height: 44, padding: 0, flexShrink: 0 }}>
-          <Plus size={20} strokeWidth={2} aria-hidden="true" />
+        <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          {t('common.add')}
         </button>
       </div>)}
 
-      {/* Embedded add button — the one primary of the embedded panel. */}
+      {/* Embedded add button */}
       {embedded && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <button onClick={() => setShowCreate(true)} className="z-btn-primary">
-            <Plus size={18} strokeWidth={2} aria-hidden="true" />
-            {t('common.add')}
-          </button>
+          <button onClick={() => setShowCreate(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>+ {t('common.add')}</button>
         </div>
       )}
 
       {/* Loading — skeleton only on cold start; otherwise keep cached grid */}
       {loading && items.length === 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-          {[1,2,3,4].map(i => <div key={i} style={{ height: 120, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+          {[1,2,3,4].map(i => <div key={i} style={{ height: 100, borderRadius: 13, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
       {/* Empty */}
       {!loading && items.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 32 }}>
-          <p className="z-headline" style={{ margin: '0 0 4px' }}>{t('quickAsks.noneTitle')}</p>
-          <p className="z-subhead" style={{ margin: '0 0 16px' }}>{t('quickAsks.noneHint')}</p>
-          <button onClick={() => setShowCreate(true)} className="z-btn-secondary">{t('quickAsks.addFirst')}</button>
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 32, marginBottom: 12 }}>⚡</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('quickAsks.noneTitle')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('quickAsks.noneHint')}</p>
+          <button onClick={() => setShowCreate(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('quickAsks.addFirst')}</button>
         </div>
       )}
 
@@ -269,7 +269,7 @@ export default function QuickAsks({ embedded = false }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
         <AnimatePresence>
           {items.map(qa => {
-            const kindLabel = getKindLabel(qa.intent, t)
+            const kind = getKindLabel(qa.intent, t)
             return (
               <motion.div
                 key={qa.id}
@@ -278,27 +278,34 @@ export default function QuickAsks({ embedded = false }) {
                 onClick={(e) => { if (e.target.closest('[data-qa-stop]')) return; handleFire(qa) }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleFire(qa) }}
                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
-                transition={T_ENTER}
+                transition={{ duration: 0.15 }}
                 style={{
-                  padding: 16, borderRadius: 'var(--r-card)',
+                  padding: '16px 16px', borderRadius: 13,
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
                   display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                  gap: 12, minHeight: 120, cursor: 'pointer',
+                  gap: 10, minHeight: 120, cursor: 'pointer',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">{qa.icon || '⚡'}</span>
-                  <span className="z-chip">{kindLabel}</span>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 22 }}>{qa.icon || '⚡'}</span>
+                  <span style={{
+                    fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase',
+                    letterSpacing: '0.06em', color: kind.tint, fontWeight: 600,
+                  }}>
+                    {kind.label}
+                  </span>
                 </div>
-                <p dir="auto" className="z-body" style={{ fontWeight: 500, margin: 0 }}>
-                  “{translateNamePhrase(qa.label, lang)}”
-                </p>
-                <div data-qa-stop style={{ display: 'flex', gap: 0, justifyContent: 'flex-end', margin: '-8px -12px -12px 0' }}>
-                  <button onClick={() => setEditing({ ...qa, params: qa.params || {} })} aria-label={t('common.edit')} title={t('common.edit')} style={cardIconBtn()}>
-                    <Pencil size={18} strokeWidth={1.75} />
+                <div>
+                  <p dir="auto" style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, marginBottom: 4 }}>
+                    "{translateNamePhrase(qa.label, lang)}"
+                  </p>
+                </div>
+                <div data-qa-stop style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setEditing({ ...qa, params: qa.params || {} })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
-                  <button onClick={() => handleDelete(qa.id)} aria-label={t('common.delete')} title={t('common.delete')} style={cardIconBtn('var(--err-text)')}>
-                    <Trash2 size={18} strokeWidth={1.75} />
+                  <button onClick={() => handleDelete(qa.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
                   </button>
                 </div>
               </motion.div>

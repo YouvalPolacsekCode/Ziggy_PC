@@ -42,7 +42,7 @@ function ChatDock() {
     >
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-        padding: '12px 12px 8px', flexShrink: 0,
+        padding: '10px 12px 8px', flexShrink: 0,
         borderBlockEnd: '0.5px solid var(--line)',
       }}>
         <span className="z-eyebrow" style={{ margin: 0 }}>{t('chat.headerTitle')}</span>
@@ -53,7 +53,7 @@ function ChatDock() {
             title={t('chat.dock.expand')}
             aria-label={t('chat.dock.expand')}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 10,
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 8,
               background: 'transparent', border: '0.5px solid var(--line)', color: 'var(--ink-mute)',
               fontSize: 11, fontFamily: 'inherit', cursor: 'pointer',
             }}
@@ -68,7 +68,7 @@ function ChatDock() {
             aria-label={t('chat.dock.close')}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 28, height: 28, borderRadius: 10, background: 'transparent', border: 'none',
+              width: 28, height: 28, borderRadius: 8, background: 'transparent', border: 'none',
               color: 'var(--ink-mute)', cursor: 'pointer',
             }}
           >

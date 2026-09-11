@@ -16,7 +16,7 @@ import {
  *   3. What changed?                  → recent activity
  *
  * Written for someone who runs HOMES, not servers. Every home states its
- * condition as a sentence; the telemetry sits underneath in a quiet tabular
+ * condition as a sentence; the telemetry sits underneath in a quiet monospace
  * strip you can read when you care and ignore when you don't. That ordering is
  * the whole design: a wall of metrics would technically contain the same facts
  * and answer none of the questions.
@@ -26,12 +26,11 @@ import {
  * looking at.
  */
 
-// `fill` is for the rail and dots; `text` is the AA-safe word colour.
 const LEVEL = {
-  down:     { fill: 'var(--err)',       text: 'var(--err-text)',  label: 'down',     Icon: XCircle },
-  degraded: { fill: 'var(--warn)',      text: 'var(--warn-text)', label: 'degraded', Icon: AlertTriangle },
-  unknown:  { fill: 'var(--ink-faint)', text: 'var(--ink-mute)',  label: 'unknown',  Icon: HelpCircle },
-  ok:       { fill: 'var(--ok)',        text: 'var(--ok-text)',   label: 'ok',       Icon: CheckCircle2 },
+  down:     { color: '#D64545', label: 'down',     Icon: XCircle },
+  degraded: { color: 'var(--warn)', label: 'degraded', Icon: AlertTriangle },
+  unknown:  { color: 'var(--ink-faint)', label: 'unknown', Icon: HelpCircle },
+  ok:       { color: 'var(--ok)', label: 'ok',     Icon: CheckCircle2 },
 }
 
 const VERBS = {
@@ -46,6 +45,8 @@ const VERBS = {
     hint: 'Asks the hub to retry its Home Assistant and Zigbee connection.',
   },
 }
+
+const MONO = '"IBM Plex Mono", ui-monospace, monospace'
 
 // ── formatting ─────────────────────────────────────────────────────────────
 
@@ -89,9 +90,14 @@ function verdictLine(report) {
 
 // ── pieces ─────────────────────────────────────────────────────────────────
 
-function Dot({ level }) {
-  const c = (LEVEL[level] || LEVEL.unknown).fill
-  return <span className="z-dot" style={{ background: c }} />
+function Dot({ level, size = 7 }) {
+  const c = (LEVEL[level] || LEVEL.unknown).color
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: '50%', background: c,
+      display: 'inline-block', flexShrink: 0,
+    }} />
+  )
 }
 
 /** Version convergence. Drift is the failure that hides, so it gets a line of
@@ -105,9 +111,9 @@ function Convergence({ versions, total }) {
 
   if (versions.converged) {
     return (
-      <div className="z-subhead" style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ fontSize: 12, color: 'var(--ink-mute)', display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
         <span>All {total} on</span>
-        <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)' }}>{versions.majority}</span>
+        <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--ink)' }}>{versions.majority}</span>
         {/* Canary is meant to run ahead. Say so plainly instead of leaving a
             number that looks like a discrepancy. */}
         {ahead.length > 0 && (
@@ -119,10 +125,10 @@ function Convergence({ versions, total }) {
     )
   }
   return (
-    <div style={{ fontSize: 15, color: 'var(--warn-text)', display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ fontSize: 12, color: 'var(--warn)', display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
       <span>Split across {entries.length} versions:</span>
       {entries.map(([tag, n]) => (
-        <span key={tag} className="z-code" style={{ fontSize: 13 }}>
+        <span key={tag} style={{ fontFamily: MONO, fontSize: 11.5 }}>
           {tag}&nbsp;×{n}
         </span>
       ))}
@@ -160,15 +166,15 @@ function Vitals({ v }) {
   }
 
   return (
-    <div className="z-mono" style={{
+    <div style={{
       display: 'flex', gap: '4px 16px', flexWrap: 'wrap', alignItems: 'baseline',
-      fontSize: 13, color: 'var(--ink-faint)',
+      fontFamily: MONO, fontSize: 11, color: 'var(--ink-faint)',
     }}>
       {cells.map(([k, val]) => (
         <span key={k}>
           {k}{' '}
           <span style={{
-            color: k === 'release' && v.drifted ? 'var(--warn-text)' : 'var(--ink-mute)',
+            color: k === 'release' && v.drifted ? 'var(--warn)' : 'var(--ink-mute)',
           }}>
             {val}
           </span>
@@ -201,27 +207,27 @@ function HomeRow({ home, onChanged }) {
 
   return (
     <div style={{
-      display: 'flex', gap: 12, padding: '12px 0', alignItems: 'stretch',
+      display: 'flex', gap: 13, padding: '13px 0', alignItems: 'stretch',
       borderTop: '0.5px solid var(--line)',
     }}>
       {/* State rail — the one piece of colour that carries meaning. Full height
-          so it reads as the row's edge rather than a stray mark. A healthy
-          home's rail is the hairline colour, not a faded green. */}
+          so it reads as the row's edge rather than a stray mark. */}
       <div style={{
-        width: 4, borderRadius: 2, background: fine ? 'var(--line-2)' : ui.fill, flexShrink: 0,
+        width: 2.5, borderRadius: 2, background: ui.color, flexShrink: 0,
+        opacity: fine ? 0.5 : 1,
       }} />
 
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-          <span className="z-headline">
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, fontWeight: 650, color: 'var(--ink)' }}>
             {home.name || home.home_id}
           </span>
-          <span className="z-footnote z-mono">
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
             reported {ago(home.silent_for_s)}
           </span>
           <span style={{
-            marginInlineStart: 'auto', fontSize: 13, fontWeight: 600,
-            color: fine ? 'var(--ink-mute)' : ui.text,
+            marginInlineStart: 'auto', fontSize: 11, fontWeight: 600,
+            color: fine ? 'var(--ink-faint)' : ui.color,
           }}>
             {ui.label}
           </span>
@@ -229,17 +235,17 @@ function HomeRow({ home, onChanged }) {
 
         {/* What is true about this home, in words. */}
         {fine ? (
-          <p className="z-subhead" style={{ margin: 0 }}>All good.</p>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-mute)' }}>All good.</p>
         ) : (
           // A bullet in front of a single line is decoration, not structure —
           // markers only earn their place once there is a list to scan.
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
             {(home.issues || []).map((issue, i) => (
               <li key={i} style={{
-                fontSize: 15, color: 'var(--ink)', display: 'flex', gap: 8,
-                alignItems: 'center',
+                fontSize: 13, color: 'var(--ink)', display: 'flex', gap: 7,
+                alignItems: 'baseline',
               }}>
-                {(home.issues || []).length > 1 && <Dot level={issue.level} />}
+                {(home.issues || []).length > 1 && <Dot level={issue.level} size={5} />}
                 <span>{issue.message}</span>
               </li>
             ))}
@@ -249,7 +255,7 @@ function HomeRow({ home, onChanged }) {
         <Vitals v={home.vitals} />
 
         {(home.actionable || []).length > 0 && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
             {home.actionable.map(verb => {
               const spec = VERBS[verb]
               if (!spec) return null
@@ -259,18 +265,23 @@ function HomeRow({ home, onChanged }) {
                   onClick={() => run(verb)}
                   disabled={!!busy}
                   title={spec.hint}
-                  className="z-btn-secondary"
-                  style={{ cursor: busy ? 'progress' : 'pointer' }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    fontSize: 11.5, fontWeight: 600, padding: '5px 11px',
+                    borderRadius: 8, cursor: busy ? 'progress' : 'pointer',
+                    border: '0.5px solid var(--line)', background: 'var(--surface)',
+                    color: 'var(--ink)', fontFamily: 'inherit',
+                  }}
                 >
                   {busy === verb
-                    ? <RefreshCw size={18} strokeWidth={1.75} className="z-spin" />
-                    : <Wrench size={18} strokeWidth={1.75} />}
+                    ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                    : <Wrench size={12} />}
                   {spec.label}
                 </button>
               )
             })}
             {result && (
-              <span style={{ fontSize: 15, color: result.ok ? 'var(--ok-text)' : 'var(--err-text)' }}>
+              <span style={{ fontSize: 11.5, color: result.ok ? 'var(--ok)' : '#D64545' }}>
                 {result.text}
               </span>
             )}
@@ -326,7 +337,7 @@ function Activity({ rows }) {
   if (!rows) return null
   if (!rows.length) {
     return (
-      <p className="z-subhead" style={{ margin: 0 }}>
+      <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }}>
         Nothing yet. Updates, automatic repairs and new homes show up here.
       </p>
     )
@@ -344,23 +355,25 @@ function Activity({ rows }) {
         return (
           <div key={i}>
             {newDay && (
-              <div className="z-eyebrow" style={{
+              <div style={{
+                fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: 'var(--ink-faint)',
                 paddingTop: i === 0 ? 0 : 12, paddingBottom: 4,
               }}>
                 {day}
               </div>
             )}
             <div style={{
-              display: 'flex', gap: 12, padding: '8px 0', alignItems: 'baseline',
+              display: 'flex', gap: 12, padding: '6px 0', alignItems: 'baseline',
               borderTop: newDay ? 'none' : '0.5px dashed var(--line)',
             }}>
-              <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-faint)', flexShrink: 0 }}>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--ink-faint)', flexShrink: 0 }}>
                 {clockOf(r.ts)}
               </span>
-              <span style={{ fontSize: 15, color: 'var(--ink)', minWidth: 0 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--ink)', minWidth: 0 }}>
                 <span style={{ fontWeight: 600 }}>{activitySubject(r)}</span>
                 {' '}
-                <span style={{ color: r.ok === 0 ? 'var(--err-text)' : 'var(--ink-mute)' }}>
+                <span style={{ color: r.ok === 0 ? '#D64545' : 'var(--ink-mute)' }}>
                   {activityLine(r)}
                 </span>
               </span>
@@ -394,24 +407,26 @@ function SignIn({ relayUrl, onDone }) {
   }
 
   return (
-    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <p className="z-subhead" style={{ margin: 0 }}>
-        Sign in to <span className="z-code" style={{ fontSize: 13 }}>{relayUrl || 'the relay'}</span> to
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+        Sign in to <span style={{ fontFamily: MONO, fontSize: 11.5 }}>{relayUrl || 'the relay'}</span> to
         see every home. This browser will remember you.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Founder email"
           type="email" autoComplete="username" dir="auto" className="z-input"
-          style={{ flex: '1 1 200px', width: 'auto' }} />
+          style={{ flex: '1 1 200px', height: 34, padding: '0 11px', fontSize: 12.5 }} />
         <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
           type="password" autoComplete="current-password" dir="auto" className="z-input"
-          style={{ flex: '1 1 160px', width: 'auto' }} />
-        <button type="submit" disabled={busy || !email || !password} className="z-btn-primary">
-          {busy ? <RefreshCw size={18} strokeWidth={1.75} className="z-spin" /> : <LogIn size={18} strokeWidth={1.75} />}
+          style={{ flex: '1 1 150px', height: 34, padding: '0 11px', fontSize: 12.5 }} />
+        <button type="submit" disabled={busy || !email || !password} className="z-btn-primary"
+          style={{ height: 34, padding: '0 15px', borderRadius: 9, fontSize: 12.5,
+                   display: 'flex', alignItems: 'center', gap: 6 }}>
+          {busy ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <LogIn size={12} />}
           Sign in
         </button>
       </div>
-      {error && <span style={{ fontSize: 15, color: 'var(--err-text)' }}>{error}</span>}
+      {error && <span style={{ fontSize: 11.5, color: '#D64545' }}>{error}</span>}
     </form>
   )
 }
@@ -471,36 +486,48 @@ export default function FleetConsole() {
   const shown = homes.filter(h => !h.suspended)
 
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
       {/* ── 1. Is anything wrong? ───────────────────────────────────────── */}
-      <header style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="z-eyebrow">
+      <header style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <span style={{
+            fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em',
+            textTransform: 'uppercase', color: 'var(--ink-faint)',
+          }}>
             Fleet
           </span>
           <span style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {loadedAt && (
-              <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-faint)' }}>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--ink-faint)' }}>
                 {loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
-            <button onClick={load} title="Refresh now" aria-label="Refresh now" className="z-icon-btn">
-              <RefreshCw size={18} strokeWidth={1.75} className={loading ? 'z-spin' : undefined} />
+            <button
+              onClick={load} title="Refresh now" aria-label="Refresh now"
+              style={{
+                display: 'inline-flex', alignItems: 'center', background: 'transparent',
+                border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 2,
+              }}
+            >
+              <RefreshCw size={12} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} />
             </button>
           </span>
         </div>
 
         {!needsAuth && !error && (
           <>
-            <h2 className="z-title" style={{ margin: 0 }}>
+            <h2 style={{
+              margin: 0, fontSize: 21, fontWeight: 700, letterSpacing: '-0.02em',
+              color: 'var(--ink)', lineHeight: 1.2,
+            }}>
               {loading && !report ? 'Checking every home…' : verdictLine(report)}
             </h2>
             {report && (
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span className="z-subhead" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-mute)' }}>
                   {['ok', 'degraded', 'down', 'unknown'].map(k => (
                     counts[k] ? (
-                      <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         <Dot level={k} /> {counts[k]} {LEVEL[k].label === 'ok' ? 'healthy' : LEVEL[k].label}
                       </span>
                     ) : null
@@ -518,7 +545,7 @@ export default function FleetConsole() {
       {needsAuth && <SignIn relayUrl={relayUrl} onDone={load} />}
 
       {error && !needsAuth && (
-        <p style={{ margin: 0, fontSize: 15, color: 'var(--err-text)' }}>{error}</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: '#D64545' }}>{error}</p>
       )}
 
       {/* ── 2. How is each home? ────────────────────────────────────────── */}
@@ -526,7 +553,7 @@ export default function FleetConsole() {
         <div>
           {shown.map(h => <HomeRow key={h.home_id} home={h} onChanged={load} />)}
           {shown.length === 0 && (
-            <p className="z-subhead" style={{ margin: 0 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: 0 }}>
               No homes yet. Create one with New home above.
             </p>
           )}
@@ -535,8 +562,11 @@ export default function FleetConsole() {
 
       {/* ── 3. What changed? ────────────────────────────────────────────── */}
       {!needsAuth && activity && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <span className="z-eyebrow">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <span style={{
+            fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em',
+            textTransform: 'uppercase', color: 'var(--ink-faint)',
+          }}>
             Recent
           </span>
           <Activity rows={activity} />

@@ -12,7 +12,6 @@
 // premium-feeling "we'll get you back" surface.
 
 import { Component } from 'react'
-import { AlertTriangle } from 'lucide-react'
 import { t as i18nT } from '../../lib/i18n'
 import logger from '../../lib/logger'
 
@@ -63,32 +62,33 @@ export class ErrorBoundary extends Component {
         role="alert"
         style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: 16, padding: 32, textAlign: 'center',
+          justifyContent: 'center', gap: 14, padding: 32, textAlign: 'center',
           minHeight: this.props.fullHeight === false ? 240 : '60vh',
         }}
       >
         <div
           aria-hidden="true"
           style={{
-            width: 56, height: 56, borderRadius: '50%',
+            width: 44, height: 44, borderRadius: '50%',
             background: 'color-mix(in srgb, var(--warn) 12%, var(--surface))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--warn)',
+            color: 'var(--warn)', fontSize: 22, fontWeight: 600,
           }}
-        >
-          <AlertTriangle size={28} strokeWidth={1.75} />
-        </div>
-        <p className="z-title">
+        >!</div>
+        <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
           {i18nT('state.errorTitle')}
         </p>
-        <p className="z-body" style={{ color: 'var(--ink-mute)', maxWidth: 360 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-faint)', maxWidth: 320, lineHeight: 1.5 }}>
           {i18nT('errors.somethingWentWrong')}
         </p>
         <button
           type="button"
           onClick={this.handleRetry}
-          className="z-btn-secondary"
-          style={{ marginTop: 4 }}
+          style={{
+            marginTop: 4, padding: '8px 18px', fontSize: 13, fontWeight: 500,
+            borderRadius: 10, border: '0.5px solid var(--line)',
+            background: 'var(--bg-2)', color: 'var(--ink)', cursor: 'pointer',
+          }}
         >
           {i18nT('common.tryAgain')}
         </button>

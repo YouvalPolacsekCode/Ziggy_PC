@@ -81,7 +81,7 @@ function CountdownDial({ remainingMin, totalMin, isHeating, predicted }) {
     <div style={{
       position: 'relative', width: 160, height: 160,
       opacity: predicted ? 0.85 : 1,
-      transition: 'opacity var(--dur-state) var(--ease-standard)',
+      transition: 'opacity 0.15s',
     }}>
       <svg width="160" height="160" viewBox="0 0 160 160">
         <circle cx="80" cy="80" r={r} stroke="var(--surface-2)" strokeWidth="6" fill="none" />
@@ -93,7 +93,7 @@ function CountdownDial({ remainingMin, totalMin, isHeating, predicted }) {
             strokeDashoffset={offset}
             strokeLinecap="round"
             transform="rotate(-90 80 80)"
-            style={{ transition: 'stroke-dashoffset 1s linear' }} /* determinate progress: the one 1s tween allowed */
+            style={{ transition: 'stroke-dashoffset 1s linear' }}
           />
         )}
       </svg>
@@ -102,12 +102,17 @@ function CountdownDial({ remainingMin, totalMin, isHeating, predicted }) {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: 4, color: isHeating ? 'var(--err)' : 'var(--ink-mute)',
       }}>
-        <Flame size={26} strokeWidth={1.75} />
-        <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+        <Flame size={26} />
+        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>
           {isHeating ? i18nT('remote.heatingLabel') : i18nT('remote.heatingOff')}
         </div>
-        {remainingMin != null && isHeating && (
-          <div className="z-mono" style={{ fontSize: 22, lineHeight: '28px', color: 'var(--ink)', fontWeight: 600 }}>
+        {haveCountdown && isHeating && (
+          <div style={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+            {formatMmss(remainingMin)}
+          </div>
+        )}
+        {!haveCountdown && remainingMin != null && isHeating && (
+          <div style={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
             {formatMmss(remainingMin)}
           </div>
         )}
@@ -311,7 +316,7 @@ export default function BoilerRemote({ entity }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center' }}>
       <CountdownDial
         remainingMin={liveRemaining}
         totalMin={timerSetMinutes}
@@ -319,59 +324,60 @@ export default function BoilerRemote({ entity }) {
         predicted={predictedHeating != null}
       />
 
-      {/* ── Primary turn on/off — always visible, optimistic. The one
-            inverted button on this remote. ── */}
+      {/* ── Primary turn on/off — always visible, optimistic ── */}
       <button
         onClick={isHeating ? turnOff : turnOnPlain}
         disabled={busy != null}
-        className="z-btn-primary"
         style={{
-          width: '100%', maxWidth: 360,
+          width: '100%', maxWidth: 360, padding: '14px 22px', borderRadius: 14,
+          background: isHeating ? 'var(--err)' : 'var(--accent)',
+          color: 'white', border: 'none',
+          fontSize: 15, fontWeight: 600, fontFamily: 'inherit',
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           opacity: busy != null && busy !== 'off' && busy !== 'on' ? 0.5 : 1,
         }}
       >
         {(busy === 'off' || busy === 'on')
-          ? <Loader2 size={18} strokeWidth={1.75} className="z-spin" />
-          : <Power size={18} strokeWidth={1.75} />}
+          ? <Loader2 size={15} className="animate-spin" />
+          : <Power size={15} />}
         {isHeating ? i18nT('deviceCard.turnOff') : i18nT('deviceCard.turnOn')}
       </button>
 
       {/* ── Timer presets — additive ── */}
       {timerCmd && (
         <>
-          <div style={{ fontSize: 15, color: 'var(--ink-mute)' }}>
-            {i18nT('remote.heatForFixed')}
+          <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
+            …or heat for a fixed time:
           </div>
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(4, 1fr)',
             gap: 8, width: '100%', maxWidth: 360,
           }}>
-            {PRESET_MINUTES.map((m) => {
-              const selected = timerSetMinutes === m && isHeating
-              return (
-                <button
-                  key={m}
-                  onClick={() => heatFor(m)}
-                  disabled={busy != null}
-                  aria-pressed={selected}
-                  style={{
-                    minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-ctl)', boxSizing: 'border-box',
-                    background: selected ? 'var(--surface-2)' : 'var(--surface)',
-                    border: selected ? '2px solid var(--ink)' : '0.5px solid var(--line)',
-                    fontSize: 15, fontWeight: 600, fontFamily: 'inherit',
-                    color: 'var(--ink)',
-                    cursor: 'pointer',
-                    opacity: busy != null && busy !== m ? 0.4 : 1,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                    transition: 'border-color var(--dur-state) var(--ease-standard), background var(--dur-state) var(--ease-standard)',
-                  }}
-                >
-                  {busy === m ? <Loader2 size={16} strokeWidth={1.75} className="z-spin" /> : null}
-                  {i18nT('remote.minutesShort', { n: m })}
-                </button>
-              )
-            })}
+            {PRESET_MINUTES.map((m) => (
+              <button
+                key={m}
+                onClick={() => heatFor(m)}
+                disabled={busy != null}
+                style={{
+                  padding: '12px 0', borderRadius: 12,
+                  background: timerSetMinutes === m && isHeating
+                    ? 'color-mix(in srgb, var(--err) 14%, var(--surface))'
+                    : 'var(--surface)',
+                  border: '0.5px solid '
+                    + (timerSetMinutes === m && isHeating ? 'var(--err)' : 'var(--line)'),
+                  fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+                  color: timerSetMinutes === m && isHeating ? 'var(--err)' : 'var(--ink)',
+                  cursor: 'pointer',
+                  opacity: busy != null && busy !== m ? 0.4 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}
+              >
+                {busy === m ? <Loader2 size={12} className="animate-spin" /> : null}
+                {m}m
+              </button>
+            ))}
           </div>
         </>
       )}

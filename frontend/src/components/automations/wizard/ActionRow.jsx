@@ -1,6 +1,5 @@
 import React from 'react'
 import { Reorder, useDragControls } from 'framer-motion'
-import { GripVertical, Trash2 } from 'lucide-react'
 import { Input } from '../../ui/Input'
 import { Select } from '../../ui/Select'
 import { EntitySelect, getActionsForDomain, getActionLabel } from '../../ui/EntitySelect'
@@ -9,8 +8,7 @@ import { useDeviceStore } from '../../../stores/deviceStore'
 import { useFeature } from '../../../stores/featuresStore'
 import { CONTROLLABLE_DOMAINS } from '../../../lib/domainRegistry'
 import { getActionTypes } from '../../../lib/automations/types'
-import { actionSummary } from '../../../lib/automations/summaries'
-import { cardIconBtn } from '../../../lib/automations/styles'
+import { ACTION_TYPE_ICON, actionSummary } from '../../../lib/automations/summaries'
 import IRDeviceSelect from '../../IRDeviceSelect'
 import MediaPlayActionEditor from '../../media/MediaPlayActionEditor'
 import SendIntentEditor from './SendIntentEditor'
@@ -29,43 +27,34 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
 
   // Neutral look matching the Trigger / Conditions steps — no info tint, plain
   // surface + hairline. The drag handle and the small numeric badge are kept
-  // because reordering and "step N" labelling carry real meaning here. The
-  // emoji type glyph is gone: the summary already names the step type.
-  const dragHandle = (
-    <span
-      role="button" aria-label={t('automations.wizard.actionLabel', { n: index + 1 })}
-      style={{ color: 'var(--ink-faint)', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', width: 44, height: 44, margin: '0 -12px', flexShrink: 0 }}
-      onClick={e => e.stopPropagation()} {...dragHandleProps}
-    >
-      <GripVertical size={18} strokeWidth={1.75} aria-hidden="true" />
-    </span>
-  )
-  const removeBtn = (
-    <button type="button" onClick={e => { e.stopPropagation(); onRemove() }} aria-label={t('automations.removeStep')} title={t('automations.removeStep')} style={cardIconBtn('var(--err-text)')}>
-      <Trash2 size={18} strokeWidth={1.75} />
-    </button>
-  )
-
+  // because reordering and "step N" labelling carry real meaning here.
   if (collapsed) {
     return (
       <div onClick={onToggleCollapse} style={{
-        display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
-        padding: '6px 16px', borderRadius: 'var(--r-ctl)',
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 12px', borderRadius: 10,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         cursor: 'pointer',
       }}>
-        {dragHandle}
-        <span className="z-caption z-mono" style={{
-          width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-          background: 'var(--surface-2)', color: 'var(--ink-2)',
+        <span style={{ color: 'var(--ink-faint)', cursor: 'grab', display: 'flex', touchAction: 'none' }} onClick={e => e.stopPropagation()} {...dragHandleProps}>
+          <svg width="12" height="16" viewBox="0 0 9 13" fill="currentColor"><circle cx="2" cy="2" r="1.1"/><circle cx="7" cy="2" r="1.1"/><circle cx="2" cy="6.5" r="1.1"/><circle cx="7" cy="6.5" r="1.1"/><circle cx="2" cy="11" r="1.1"/><circle cx="7" cy="11" r="1.1"/></svg>
+        </span>
+        <span style={{
+          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+          background: 'var(--bg-2)', color: 'var(--ink-mute)',
+          fontSize: 10, fontWeight: 700,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: '"IBM Plex Mono", monospace',
         }}>
           {index + 1}
         </span>
-        <span className="z-subhead" style={{ flex: 1, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 13, flexShrink: 0 }}>{ACTION_TYPE_ICON[action.type] || '•'}</span>
+        <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {actionSummary(action)}
         </span>
-        {removeBtn}
+        <button onClick={e => { e.stopPropagation(); onRemove() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, flexShrink: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        </button>
       </div>
     )
   }
@@ -73,17 +62,21 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
   return (
     <div style={{
       border: '0.5px solid var(--line)',
-      borderRadius: 'var(--r-ctl)', padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 12,
+      borderRadius: 11, padding: 12, display: 'flex', flexDirection: 'column', gap: 10,
       background: 'var(--surface)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-          {dragHandle}
-          <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.wizard.actionLabel', { n: index + 1 })}</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--ink-faint)', cursor: 'grab', touchAction: 'none' }} {...dragHandleProps}>
+            <svg width="12" height="16" viewBox="0 0 9 13" fill="currentColor"><circle cx="2" cy="2" r="1.1"/><circle cx="7" cy="2" r="1.1"/><circle cx="2" cy="6.5" r="1.1"/><circle cx="7" cy="6.5" r="1.1"/><circle cx="2" cy="11" r="1.1"/><circle cx="7" cy="11" r="1.1"/></svg>
+          </span>
+          <p className="z-eyebrow">{t('automations.wizard.actionLabel', { n: index + 1 })}</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 0, margin: '0 -12px 0 0' }}>
-          <button type="button" onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', fontFamily: 'inherit', minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)' }}>{t('automations.wizard.collapse')}</button>
-          {removeBtn}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 7 }}>{t('automations.wizard.collapse')}</button>
+          <button onClick={onRemove} aria-label={t('automations.removeStep')} title={t('automations.removeStep')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+          </button>
         </div>
       </div>
 

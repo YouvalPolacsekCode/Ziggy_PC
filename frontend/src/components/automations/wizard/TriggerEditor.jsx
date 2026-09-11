@@ -13,7 +13,6 @@ import {
 import ZoneTriggerEditor from './ZoneTriggerEditor'
 import OccupancySensorForm from '../OccupancySensorForm'
 import { FieldHint } from './Atoms'
-import { chipStyle, fieldLabelStyle, noteBox, warnNoteBox } from '../../../lib/automations/styles'
 
 // binary_sensor device_classes that represent room presence.
 const PRESENCE_CLASSES = ['occupancy', 'presence']
@@ -226,11 +225,15 @@ function TriggerEditor({ trigger, onChange }) {
       )}
 
       {uiType === 'manual' && (
-        <div style={noteBox}>
-          <p className="z-subhead" style={{ fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px' }}>
+        <div style={{
+          padding: '10px 12px', borderRadius: 10,
+          background: `color-mix(in srgb, var(--info) 6%, var(--surface))`,
+          border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
+        }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--info)', marginBottom: 4 }}>
             {t('automations.editor.manualTitle')}
           </p>
-          <p className="z-subhead" style={{ margin: 0 }}>
+          <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
             {t('automations.editor.manualBody')}
           </p>
         </div>
@@ -264,19 +267,25 @@ function TriggerEditor({ trigger, onChange }) {
       {uiType === 'occupancy' && (
         <>
           <div>
-            <label style={{ ...fieldLabelStyle, marginBottom: 8 }} dir="auto">
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }} dir="auto">
               {t('automations.editor.occRoom')}
             </label>
             {occRoomOptions.length === 0 ? (
-              <p className="z-subhead" style={{ margin: 0 }} dir="auto">
+              <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }} dir="auto">
                 {t('automations.smartSensor.noneFound')}
               </p>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {occRoomOptions.map(r => {
                   const sel = r.id === occRoomId
                   return (
-                    <button key={r.id} type="button" onClick={() => selectOccRoom(r.id)} aria-pressed={sel} style={chipStyle(sel)} dir="auto">{r.name}</button>
+                    <button key={r.id} type="button" onClick={() => selectOccRoom(r.id)} style={{
+                      padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                      background: sel ? 'var(--ink)' : 'var(--surface)',
+                      color: sel ? 'var(--bg)' : 'var(--ink-mute)',
+                      border: sel ? 'none' : '0.5px solid var(--line)',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }} dir="auto">{r.name}</button>
                   )
                 })}
               </div>
@@ -284,11 +293,16 @@ function TriggerEditor({ trigger, onChange }) {
           </div>
 
           {occRoomId && !occSensor && (
-            <div style={{ ...warnNoteBox, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p className="z-subhead" style={{ margin: 0, color: 'var(--ink-2)' }} dir="auto">
+            <div style={{
+              padding: '10px 12px', borderRadius: 10,
+              background: `color-mix(in srgb, var(--warn) 6%, var(--surface))`,
+              border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`,
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.45 }} dir="auto">
                 {t('automations.editor.occNoSensor')}
               </p>
-              <button type="button" onClick={() => setShowSensorForm(true)} className="z-btn-secondary" style={{ alignSelf: 'flex-start' }}>
+              <button type="button" onClick={() => setShowSensorForm(true)} className="z-btn-secondary" style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, alignSelf: 'flex-start' }}>
                 {t('automations.editor.occCreate')}
               </button>
             </div>

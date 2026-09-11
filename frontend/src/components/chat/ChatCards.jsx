@@ -59,17 +59,13 @@ import { useLang, t as translateWithLang } from '../../lib/i18n'
 import { getKind } from '../../lib/devices'
 import { DeviceIcon } from '../../lib/deviceIcons'
 import { useDeviceStore } from '../../stores/deviceStore'
-import { EASE_ENTER, DUR_ENTER } from '../../lib/motion'
 import { useChatNav, isAppPath } from './chatNav'
 import './chatCards.css'
 
 // ── Motion ────────────────────────────────────────────────────────────────────
-// The app's one "enter" curve (lib/motion.js); the WAAPI height FLIPs below
-// use the same curve as a CSS string and the shared enter duration.
 
-const EASE_OUT = EASE_ENTER
-const CARD_EASE_CSS = `cubic-bezier(${EASE_ENTER.join(', ')})`
-const FLIP_MS = DUR_ENTER * 1000
+const EASE_OUT = [0.23, 1, 0.32, 1]
+const CARD_EASE_CSS = 'cubic-bezier(0.23, 1, 0.32, 1)'
 const STAGGER_S = 0.03
 const STAGGER_CAP = 8            // ≥ this index every tile shares one delay
 
@@ -99,7 +95,7 @@ function useHeightFlip(ref, dep, enabled) {
     if (to === from) return
     const anim = el.animate(
       [{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }],
-      { duration: FLIP_MS, easing: CARD_EASE_CSS },
+      { duration: 220, easing: CARD_EASE_CSS },
     )
     return () => { try { anim.cancel() } catch { /* already done */ } }
   }, [dep, enabled, ref])
@@ -122,7 +118,7 @@ function useHeightFollow(ref, dep, enabled) {
     if (!enabled || from == null || from === to || typeof el.animate !== 'function') return
     const anim = el.animate(
       [{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }],
-      { duration: FLIP_MS, easing: CARD_EASE_CSS },
+      { duration: 220, easing: CARD_EASE_CSS },
     )
     return () => { try { anim.cancel() } catch { /* already done */ } }
   }, [dep, enabled, ref])
@@ -163,7 +159,7 @@ function LinkName({ to, children, style, title }) {
       style={style}
     >
       <span style={{ minWidth: 0 }}>{children}</span>
-      <ChevronRight className="zc-link-go" size={16} strokeWidth={1.75} aria-hidden="true" />
+      <ChevronRight className="zc-link-go" size={13} strokeWidth={2} aria-hidden="true" />
     </button>
   )
 }
@@ -195,18 +191,12 @@ export function roomPath(slug, rooms) {
 
 // ── Shared chrome ─────────────────────────────────────────────────────────────
 
-// Card body is Subhead (15); the card's header is an eyebrow (13/600
-// uppercase, ink-mute) — a group label under the reply, not a headline that
-// would compete with the 17px bubble beside it; names of things inside the
-// card (a room, a verdict, one device) are 17/600; metadata is Footnote (13).
-// Nothing on a card is accent-coloured — a status tone only ever tints a
-// hairline, a dot, or a ≥20px glyph.
 const cardStyle = {
-  padding: '12px 16px',
-  borderRadius: 'var(--r-card)',
+  padding: '12px 14px',
+  borderRadius: 16,
   background: 'var(--surface)',
   border: '0.5px solid var(--line)',
-  fontSize: 15,
+  fontSize: 13,
   lineHeight: 1.4,
   color: 'var(--ink)',
   display: 'flex',
@@ -219,44 +209,37 @@ const rowStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: 12,
-  minHeight: 44,
-  padding: '8px 0',
+  gap: 10,
+  padding: '5px 0',
   borderBlockStart: '0.5px solid var(--line)',
   minWidth: 0,
 }
 
 // One cell of the capabilities grid: a head row (name over pitch, a live dot
 // on the trailing edge — the tap target) and, when open, a body under it.
-// Live sits on the surface with a green dot; not-yet-live steps back onto
-// surface-2. The padding lives on the head and body (chatCards.css) so the
-// box itself can animate height.
+// Live reads as a light accent tint; the rest sits flat. The padding lives
+// on the head and body (chatCards.css) so the box itself can animate height.
 const cellStyle = {
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'stretch',
   boxSizing: 'border-box',
-  borderRadius: 'var(--r-ctl)',
+  borderRadius: 12,
   border: '0.5px solid var(--line)',
   background: 'var(--surface)',
   minWidth: 0,
 }
 
-const cellSoonStyle = {
-  background: 'var(--surface-2)',
+const cellOnStyle = {
+  background: 'color-mix(in srgb, var(--accent) 8%, var(--surface))',
+  borderColor: 'color-mix(in srgb, var(--accent) 35%, var(--line))',
 }
 
-const muteStyle = { fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)' }
+const muteStyle = { fontSize: 11, color: 'var(--ink-mute)' }
 
 const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-// Tile names sit a step under the card title (15/600) so a 2-column grid of
-// them still fits a phone; the pitch under each is 13px metadata.
-const nameStyle = { fontSize: 15, fontWeight: 600, lineHeight: '20px', display: 'block', maxWidth: '100%', ...ellipsis }
-const detailStyle = { ...muteStyle, display: 'block', maxWidth: '100%', ...ellipsis }
-
-const STATUS_TONES = new Set(['accent', 'ok', 'warn', 'err', 'info'])
-// Text in a status colour under 18px uses the text-safe token.
-const toneText = (tone) => (STATUS_TONES.has(tone) ? `var(--${tone}-text)` : `var(--${tone})`)
+const nameStyle = { fontSize: 13, fontWeight: 600, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
+const detailStyle = { ...muteStyle, lineHeight: 1.25, display: 'block', maxWidth: '100%', ...ellipsis }
 
 function Card({ title, icon: Icon, children, tone, cardRef, lang }) {
   return (
@@ -271,10 +254,10 @@ function Card({ title, icon: Icon, children, tone, cardRef, lang }) {
     >
       {title && (
         <p className="z-eyebrow" style={{
-          margin: 0,
-          display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+          margin: 0, fontSize: 10, lineHeight: 1.5, color: 'var(--ink-mute)',
+          display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
         }}>
-          {Icon && <Icon size={16} strokeWidth={1.75} aria-hidden="true" style={{ flexShrink: 0, color: tone ? toneText(tone) : 'var(--ink-faint)' }} />}
+          {Icon && <Icon size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: tone ? `var(--${tone})` : 'var(--ink-faint)' }} />}
           <span style={{ minWidth: 0, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>{title}</span>
         </p>
       )}
@@ -286,8 +269,8 @@ function Card({ title, icon: Icon, children, tone, cardRef, lang }) {
 function Badge({ children, tone = 'ink-mute' }) {
   return (
     <span style={{
-      fontSize: 11, fontWeight: 500, lineHeight: '13px', padding: '4px 8px', borderRadius: 'var(--r-chip)', whiteSpace: 'nowrap',
-      color: toneText(tone),
+      fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap',
+      color: `var(--${tone})`,
       background: `color-mix(in srgb, var(--${tone}) 12%, transparent)`,
       border: `0.5px solid color-mix(in srgb, var(--${tone}) 35%, transparent)`,
     }}>
@@ -299,9 +282,9 @@ function Badge({ children, tone = 'ink-mute' }) {
 function Dot({ tone, title }) {
   return (
     <span aria-hidden={title ? undefined : true} title={title} role={title ? 'img' : undefined} aria-label={title} style={{
-      display: 'inline-block', width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+      display: 'inline-block', width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
       background: `var(--${tone})`,
-      boxShadow: `0 0 0 3px color-mix(in srgb, var(--${tone}) 22%, transparent)`,
+      boxShadow: `0 0 0 3px color-mix(in srgb, var(--${tone}) 18%, transparent)`,
     }} />
   )
 }
@@ -310,10 +293,17 @@ function SmallButton({ children, onClick, disabled, primary }) {
   return (
     <button
       type="button"
-      className={primary ? 'z-btn-primary' : 'z-btn-secondary'}
       onClick={onClick}
       disabled={disabled}
-      style={{ alignSelf: 'flex-start', cursor: disabled ? 'default' : 'pointer' }}
+      style={{
+        alignSelf: 'flex-start',
+        padding: '6px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+        cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
+        background: primary ? 'var(--ink)' : 'var(--surface-2)',
+        color: primary ? 'var(--bg)' : 'var(--ink)',
+        border: primary ? 'none' : '0.5px solid var(--line)',
+        opacity: disabled ? 0.6 : 1,
+      }}
     >
       {children}
     </button>
@@ -392,9 +382,8 @@ function TextButton({ children, onClick, ariaExpanded, testid, style }) {
       onClick={onClick}
       aria-expanded={ariaExpanded}
       style={{
-        background: 'none', border: 'none', padding: '8px 12px', margin: 0, borderRadius: 'var(--r-ctl)',
-        minHeight: 44, display: 'inline-flex', alignItems: 'center',
-        font: 'inherit', fontSize: 15, fontWeight: 600, color: 'var(--ink-mute)',
+        background: 'none', border: 'none', padding: '4px 8px', margin: 0, borderRadius: 8,
+        font: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--ink-mute)',
         cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
         ...style,
       }}
@@ -411,7 +400,7 @@ function ShowAll({ t, collapse }) {
     <TextButton
       onClick={collapse.toggle}
       ariaExpanded={collapse.expanded}
-      style={{ alignSelf: 'flex-end', marginBlockStart: 0, marginInlineEnd: -12 }}
+      style={{ alignSelf: 'flex-end', marginBlockStart: 2, marginInlineEnd: -8 }}
     >
       {collapse.expanded ? t('chat.card.less') : t('chat.card.showAll', { n: collapse.total })}
     </TextButton>
@@ -485,7 +474,7 @@ function Chip({ lit, on, busy, failed, icon, label, suffix, onPress, to, title, 
           aria-label={t('chat.card.open', { name: label })}
           onClick={(e) => { e.stopPropagation(); go(to) }}
         >
-          <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
+          <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
         </button>
       )}
     </div>
@@ -663,7 +652,7 @@ function DeviceChip({ device, lang, t, onAction, large, to }) {
       on={canToggle ? on : device.on === true}
       busy={busy}
       failed={failed}
-      icon={<DeviceIcon kind={kind} size={large ? 22 : 20} />}
+      icon={<DeviceIcon kind={kind} size={large ? 22 : 18} />}
       label={name}
       suffix={suffix}
       onPress={canToggle ? flip : undefined}
@@ -695,7 +684,7 @@ function RoomTile({ group, lang, t, onAction, order, reduce, rooms }) {
           ? (
             <button type="button" className="zc-room-title" onClick={() => go(path)} aria-label={t('chat.card.openRoom', { name: title })}>
               <span dir="auto">{title}</span>
-              <ChevronRight className="zc-room-go" size={16} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+              <ChevronRight className="zc-room-go" size={13} strokeWidth={2} aria-hidden="true" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
             </button>
           )
           : <span className="zc-room-title"><span dir="auto">{title}</span></span>}
@@ -837,7 +826,7 @@ function NavigateCard({ card }) {
   return (
     <Card lang={lang}>
       <div className="zc-nav" data-testid="navigate-card">
-        <ArrowUpRight className="zc-nav-ico" size={18} strokeWidth={1.75} aria-hidden="true" />
+        <ArrowUpRight className="zc-nav-ico" size={14} strokeWidth={2} aria-hidden="true" />
         <span className="zc-nav-text" dir="auto">{text}</span>
         {card.path && (
           <TextButton testid="open-again" onClick={() => go(card.path)}>
@@ -865,7 +854,7 @@ function AutomationChip({ auto, lang, t, onAction }) {
       on={on}
       busy={busy}
       failed={failed}
-      icon={<Zap size={18} strokeWidth={1.75} aria-hidden="true" fill={on ? 'currentColor' : 'none'} />}
+      icon={<Zap size={14} strokeWidth={2} aria-hidden="true" fill={on ? 'currentColor' : 'none'} />}
       label={auto.name}
       onPress={auto.name ? flip : undefined}
       to={automationPath(auto.id)}
@@ -928,7 +917,7 @@ function CapabilityTile({ cap, t, lang, order, reduce, expanded, onToggle, onAsk
       className={cls}
       data-testid="cap-tile"
       data-open={expanded ? 'true' : 'false'}
-      style={{ ...cellStyle, ...(live ? {} : cellSoonStyle), ...(expanded ? { gridColumn: '1 / -1' } : {}) }}
+      style={{ ...cellStyle, ...(live ? cellOnStyle : {}), ...(expanded ? { gridColumn: '1 / -1' } : {}) }}
       {...enterProps(reduce, order)}
     >
       <button
@@ -980,7 +969,7 @@ function CapabilitiesCard({ card, onAsk }) {
   return (
     <Card lang={lang} cardRef={cardRef} icon={Sparkles} title={card.overview ? t('chat.card.whatZiggyCanDo') : t('chat.card.capabilities')}>
       {caps.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, minWidth: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
           {collapse.shown.map((c, i) => {
             const key = keyOf(c, i)
             return (
@@ -1054,14 +1043,14 @@ function WhyNotCard({ card, entityId, onAction }) {
   return (
     <Card lang={lang} icon={Stethoscope} title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
       {primary && (
-        <p style={{ margin: 0, fontWeight: 600, fontSize: 17, lineHeight: '22px' }}>
-          <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 17, lineHeight: '22px' }}>{verdictTitle(t, primary)}</LinkName>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>
+          <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 14 }}>{verdictTitle(t, primary)}</LinkName>
         </p>
       )}
       {verdicts.length > 1 && (
         <p style={muteStyle}>{t('chat.card.alsoPossible')}: {verdicts.slice(1).map((v) => verdictTitle(t, v)).join(' · ')}</p>
       )}
-      {card.device_reachable === false && <p style={{ ...muteStyle, color: 'var(--err-text)' }}>{t('chat.card.deviceUnreachable')}</p>}
+      {card.device_reachable === false && <p style={{ ...muteStyle, color: 'var(--err)' }}>{t('chat.card.deviceUnreachable')}</p>}
       {occupancy && <p style={muteStyle}>{t('chat.card.roomOccupancy')}: {humanize(occupancy)}</p>}
 
       {card.routines?.length > 0 && (
@@ -1119,16 +1108,15 @@ function HomeHealthCard({ card }) {
     : t('chat.card.healthOk')
   return (
     <Card lang={lang} title={t('chat.card.homeHealth')}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* A 20px glyph in the status colour (the size at which the fill
-            tokens are allowed on an icon), on a soft tint. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span aria-hidden="true" style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          width: 32, height: 32, borderRadius: '50%',
+          width: 28, height: 28, borderRadius: '50%',
           color: `var(--${tone})`,
           background: `color-mix(in srgb, var(--${tone}) 14%, transparent)`,
+          boxShadow: `0 0 0 3px color-mix(in srgb, var(--${tone}) 10%, transparent)`,
         }}>
-          <HeartPulse size={20} strokeWidth={1.75} />
+          <HeartPulse size={15} strokeWidth={2.25} />
         </span>
         <span style={{ fontWeight: 600 }}>{label}</span>
         <span style={muteStyle}>· {t('chat.card.offlineCount', { n: card.offline_count ?? 0 })}</span>
@@ -1187,10 +1175,10 @@ function CameraLookCard({ card }) {
   const { t, lang } = useCardI18n(card)
   const title = [card.camera, card.room && humanize(card.room)].filter(Boolean).join(' · ') || t('chat.card.camera')
   return (
-    <Card lang={lang} icon={Camera} title={<LinkName to="/cameras">{title}</LinkName>}>
+    <Card lang={lang} icon={Camera} title={<LinkName to="/cameras" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>{title}</LinkName>}>
       {card.description && <p dir="auto" style={{ margin: 0 }}>{card.description}</p>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-        {typeof card.people_count === 'number' && <Badge>{t('chat.card.people', { n: card.people_count })}</Badge>}
+        {typeof card.people_count === 'number' && <Badge tone="accent">{t('chat.card.people', { n: card.people_count })}</Badge>}
         {(card.tags || []).map((tag, i) => <Badge key={i}>{String(tag)}</Badge>)}
       </div>
     </Card>

@@ -16,7 +16,7 @@ import { DeviceIcon } from '../lib/deviceIcons'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
-import { Pencil, Play, Sparkles, Check, ChevronRight, ChevronDown, Home, User, Zap } from 'lucide-react'
+import { Pencil, Play, Sparkles, Check, ChevronRight, ChevronDown } from 'lucide-react'
 import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18n'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
@@ -115,11 +115,7 @@ function formatActivity(entry, entityMap) {
   } else {
     label = prettifyIntent(intent) + (action && action !== intent ? ` · ${action}` : '')
   }
-  // A failure only earns the red dot while it is still actionable — a
-  // non-ok result older than a day is history, not an alert, and reads
-  // with the neutral dot like everything else.
-  const failed = entry.result !== 'ok' && diff < 1440
-  return { label, timeStr, ok: !failed }
+  return { label, timeStr, ok: entry.result === 'ok' }
 }
 
 const AVATAR_COLORS = ['oklch(0.62 0.12 32)', 'oklch(0.55 0.12 200)', 'oklch(0.62 0.10 140)', 'oklch(0.58 0.12 280)', 'oklch(0.60 0.11 60)']
@@ -151,46 +147,6 @@ function ZIcon({ name, size = 16, stroke = 1.6, color = 'currentColor' }) {
   }
 }
 
-// ── List rows shared by the phone cards and the desktop rail ─────────────────
-// One alert: severity dot · message · forward chevron. 44px so it is a real
-// target; the whole row opens /alerts.
-function AlertRow({ anomaly, onOpen, hover = false }) {
-  const dotColor = anomaly.severity === 'critical' ? 'var(--err)'
-                 : anomaly.severity === 'warning'  ? 'var(--warn)'
-                 : 'var(--info)'
-  return (
-    <button
-      onClick={onOpen}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        minHeight: 44, padding: '8px 8px', borderRadius: 'var(--r-ctl)',
-        background: 'transparent', border: 'none', cursor: 'pointer',
-        fontFamily: 'inherit', textAlign: 'start', width: '100%',
-        transition: 'background var(--dur-press) var(--ease-standard)',
-      }}
-      onMouseEnter={hover ? (e => { e.currentTarget.style.background = 'var(--surface-2)' }) : undefined}
-      onMouseLeave={hover ? (e => { e.currentTarget.style.background = 'transparent' }) : undefined}
-    >
-      <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{anomaly.message}</span>
-      <ZIcon name="fwd" size={16} color="var(--ink-faint)" />
-    </button>
-  )
-}
-
-// One activity entry: outcome dot · label · relative time. The dot is the
-// info colour for anything that went fine (or is old enough not to matter)
-// and err only for a recent failure — see formatActivity.
-function ActivityRow({ label, timeStr, ok }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '0 4px', flexShrink: 0 }}>
-      <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
-      <span style={{ fontSize: 15, color: 'var(--ink-2)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ fontSize: 13, color: 'var(--ink-mute)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
-    </div>
-  )
-}
-
 // ── Quick-control tile — the unified Pinned-devices vocabulary ───────────────
 // Matches the redesign's ControlTile (ziggy-atoms.jsx): icon-square top-left,
 // toggle pill top-right, label + sub on the bottom. Whole tile inverts to
@@ -213,7 +169,7 @@ function QuickControlTile({ entity }) {
     if (pending || !isToggleable) return
     setPending(true)
     try { await sendDeviceCommand(entity, 'toggle') }
-    catch (e) { addToast(e?.message || tt('common.failed'), 'error') }
+    catch (e) { addToast(e?.message || 'Failed', 'error') }
     finally { setPending(false) }
   }
 
@@ -230,7 +186,7 @@ function QuickControlTile({ entity }) {
   // the room view so both surfaces feel like the same control.
   const arrowBg    = on ? 'color-mix(in srgb, var(--bg) 14%, transparent)' : 'var(--surface-2)'
   const arrowColor = on ? 'var(--bg)' : 'var(--ink-mute)'
-  const subColor   = on ? 'color-mix(in srgb, var(--bg) 70%, transparent)' : 'var(--ink-mute)'
+  const subColor   = on ? 'color-mix(in srgb, var(--bg) 70%, transparent)' : 'var(--ink-faint)'
 
   const sub = (() => {
     if (!facts.isAvailable) return tt('common.offline')
@@ -256,33 +212,33 @@ function QuickControlTile({ entity }) {
       onClick={handleClick}
       style={{
         position: 'relative',
-        padding: 16, borderRadius: 'var(--r-card)', minHeight: 112,
+        padding: 14, borderRadius: 18, minHeight: 96,
         background: tileBg, color: tileFg,
         border: '0.5px solid var(--line)',
-        display: 'flex', flexDirection: 'column', gap: 16,
+        display: 'flex', flexDirection: 'column', gap: 14,
         textAlign: 'start', fontFamily: 'inherit', cursor: 'pointer',
-        transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
+        transition: 'background 0.16s, color 0.16s',
         opacity: pending ? 0.7 : 1,
       }}
     >
       <span style={{
-        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 32, height: 32, borderRadius: 10,
         background: iconBg, color: iconColor,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        lineHeight: 1,
+        fontSize: 18, lineHeight: 1,
       }} aria-hidden="true">
-        <DeviceIcon kind={facts.kind} size={22} fill />
+        <DeviceIcon kind={facts.kind} size={18} fill />
       </span>
 
       <div style={{ minWidth: 0 }}>
         <div style={{
-          fontSize: 17, fontWeight: 600, lineHeight: 1.2,
+          fontSize: 13, fontWeight: 600, lineHeight: 1.2,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {facts.name}
         </div>
         <div style={{
-          fontSize: 15, marginTop: 4, color: subColor,
+          fontSize: 11, marginTop: 2, color: subColor,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {sub}
@@ -300,135 +256,31 @@ function QuickControlTile({ entity }) {
         tabIndex={0}
         aria-label={tt('dashboard.openDetails')}
         style={{
-          position: 'absolute', top: 8, insetInlineEnd: 8,
-          width: 32, height: 32, borderRadius: 'var(--r-ctl)',
+          position: 'absolute', top: 10, insetInlineEnd: 10,
+          width: 24, height: 24, borderRadius: 8,
           background: arrowBg, color: arrowColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer',
         }}
       >
-        <ChevronRight size={18} className="icon-flip-rtl" />
+        <ChevronRight size={14} className="icon-flip-rtl" />
       </span>
     </button>
   )
 }
 
-// ── Room tile face — shared by the phone carousel and the desktop grid ────────
-// Two looks, one vocabulary. With a photo: the picture, a bottom scrim, white
-// name + status. Without one (getRoomPhoto → null): a flat `.z-room-plain`
-// surface with a line glyph top-left and the name in ink — no stock photo.
-// Both carry the same 8px activity dot and the same 13px sensor chips.
-function RoomTileFace({ room, summary, photo, showParts }) {
-  const t = useT()
-  const lang = useLang()
-  const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
-  const statusLine = (
-    <>
-      {summary.activeCount > 0
-        ? t('dashboard.activeShort', { n: summary.activeCount })
-        : summary.hasMotion
-          ? t('dashboard.motion')
-          : t('dashboard.idle')}
-      {showParts && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
-    </>
-  )
-  // Chip fills sit on a photo (dark wash) or on the plain surface (surface-2).
-  // Temperature is tinted by the same indoor-comfort thresholds as the Rooms
-  // page (<18°C cool, 18–25°C neutral, >25°C warm); the unit is sniffed from
-  // HA's unit_of_measurement so °F sensors get the same thresholds.
-  const chipNeutralBg = photo ? 'rgba(0,0,0,0.32)' : 'var(--surface)'
-  const chipFg        = photo ? '#fff' : 'var(--ink)'
-  const chipBase = {
-    fontSize: 13, lineHeight: '16px', color: chipFg, fontVariantNumeric: 'tabular-nums',
-    padding: '4px 8px', borderRadius: 999, backdropFilter: 'blur(8px)',
-    border: photo ? 'none' : '0.5px solid var(--line)',
-    display: 'inline-flex', alignItems: 'center', gap: 4,
-  }
-  const chips = (summary.tempSensor || summary.humSensor || summary.occupied) && (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center', minWidth: 0 }}>
-      {summary.occupied && (
-        <span title={t('rooms.occupied')} aria-label={t('rooms.occupied')} style={{ ...chipBase, background: 'color-mix(in srgb, var(--ok) 55%, transparent)', color: photo ? '#fff' : 'var(--ink)' }}>
-          <User size={14} strokeWidth={2} aria-hidden="true" />
-        </span>
-      )}
-      {summary.tempSensor && (() => {
-        const raw = parseFloat(summary.tempSensor.state)
-        const unit = summary.tempSensor.unit_of_measurement
-                  || summary.tempSensor.attributes?.unit_of_measurement
-                  || '°C'
-        const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
-        const bg = tempC < 18 ? 'color-mix(in srgb, var(--info) 55%, transparent)'
-                 : tempC > 25 ? 'color-mix(in srgb, var(--err) 55%, transparent)'
-                 : chipNeutralBg
-        return <span style={{ ...chipBase, background: bg }}>{raw.toFixed(1)}°</span>
-      })()}
-      {summary.humSensor && (
-        <span style={{ ...chipBase, background: chipNeutralBg }}>
-          {parseFloat(summary.humSensor.state).toFixed(0)}%
-        </span>
-      )}
-    </div>
-  )
-  // Activity dot — same criteria as the greeting's "N rooms active" count so
-  // the two never disagree (a room with motion but no on-devices is active).
-  const dot = (
-    <span style={{
-      flexShrink: 0,
-      width: 8, height: 8, borderRadius: '50%',
-      background: isActiveRoom ? 'var(--ok)' : (photo ? 'rgba(255,255,255,0.3)' : 'var(--line-2)'),
-      boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
-    }} />
-  )
-  // One top row carries the room mark, the sensor chips and the activity dot,
-  // so nothing can land in the same corner as anything else. On a photo the
-  // room mark is the photo itself, so that slot stays empty.
-  const topRow = (mark) => (
-    <div style={{
-      position: 'absolute', top: 12, insetInline: 12,
-      display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
-    }}>
-      {mark}
-      {chips}
-      <span style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center' }}>{dot}</span>
-    </div>
-  )
-  const name = translateNamePhrase(room.name, lang)
-
-  if (!photo) {
-    return (
-      <>
-        {topRow(<Home size={28} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />)}
-        <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
-          <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-          <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
-        </div>
-      </>
-    )
-  }
-  return (
-    <>
-      <img src={photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.72) 100%)' }} />
-      {topRow(null)}
-      <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
-        <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: '#fff', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
-      </div>
-    </>
-  )
-}
-
 // ── Rooms carousel — production-grade centered snap ───────────────────────────
-// One dominant card fills ~78% of the viewport. Neighbouring tiles peek each
-// side at full scale and opacity — the snap position alone says which tile
-// is current. All tiles are the same DOM width → snap points never shift.
+// One dominant card fills ~78% of the viewport. Neighbouring tiles peek ~24px
+// each side. All tiles are the same DOM width → snap points never shift.
+// Uniform scale() keeps photo proportions correct. Shadow lifts active tile.
 const C_W   = 300   // tile DOM width (px) — set once, never changes
-const C_H   = 208   // tile DOM height
-const C_GAP = 16    // gap between tiles
+const C_H   = 206   // tile DOM height
+const C_GAP = 14    // gap between tiles
 const C_PAD = 20    // horizontal padding inside scroll container
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const t = useT()
+  const lang = useLang()
   const navigate  = useNavigate()
   const scrollRef = useRef(null)
   const tileRefs  = useRef([])
@@ -466,12 +318,12 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
 
   if (!sortedRooms.length) return null
 
-  // Vertical breathing room above/below the row
-  const vPad = 16
+  // Vertical padding so the active-tile shadow doesn't clip
+  const vPad = 14
 
   return (
     <div>
-      <p className="z-eyebrow" style={{ marginBottom: 12 }}>{t('dashboard.rooms')}</p>
+      <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('dashboard.rooms')}</p>
       {/* outer clips left/right overflow.
           The `.z-carousel-bleed` class extends the carousel beyond the page
           padding on phones/tablets so tiles scroll to the screen edges
@@ -507,11 +359,10 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                 key={room.id}
                 ref={el => { tileRefs.current[idx] = el }}
                 onClick={() => navigate(`/rooms/${room.id}`)}
-                className={photo ? undefined : 'z-room-plain'}
                 style={{
                   position: 'relative', flexShrink: 0,
                   width: C_W, height: C_H,
-                  borderRadius: 'var(--r-card)', overflow: 'hidden', cursor: 'pointer',
+                  borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
                   scrollSnapAlign: 'center',
                   // `always` forces the browser to stop at the next snap
                   // point regardless of swipe velocity — one swipe = one
@@ -521,12 +372,93 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                   // touch emulation has no real momentum) but felt out of
                   // control on a real Samsung WebView.
                   scrollSnapStop: 'always',
+                  // Scale + opacity — no layout change, no jump
+                  transform: isActive ? 'scale(1)' : 'scale(0.88)',
+                  opacity:   isActive ? 1 : 0.6,
+                  // Elevation on active card. Derive from ink so the shadow
+                  // tints with the palette instead of staying flat-black on
+                  // a dark page background.
+                  boxShadow: isActive ? '0 10px 28px color-mix(in srgb, var(--ink) 32%, transparent)' : 'none',
+                  // Material ease-in-out, 300ms — matches platform expectations
+                  transition: 'transform 300ms cubic-bezier(0.4,0,0.2,1), opacity 300ms cubic-bezier(0.4,0,0.2,1), box-shadow 300ms cubic-bezier(0.4,0,0.2,1)',
+                  transformOrigin: 'center center',
                 }}
               >
-                {/* The centred tile additionally spells out its first
-                    active part ("Ceiling on"); neighbours keep the short
-                    status so the peeking edge stays a calm label. */}
-                <RoomTileFace room={room} summary={summary} photo={photo} showParts={isActive} />
+                <img src={photo} alt={translateNamePhrase(room.name, lang)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
+
+                {/* Active dot — same criteria as the greeting's "N rooms active"
+                    count so they never disagree. Previously the dot only checked
+                    activeCount > 0, while the greeting also counted hasMotion,
+                    so a room with motion but no on-devices was counted in the
+                    header but rendered as an "idle" tile with a grey dot. */}
+                {(() => {
+                  const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
+                  return (
+                    <span style={{
+                      position: 'absolute', top: 12, insetInlineEnd: 12,
+                      width: 8, height: 8, borderRadius: '50%',
+                      // Active dot reads --ok (palette-aware green); inactive
+                      // stays a white tint because it sits over a photo, not
+                      // the page surface.
+                      background: isActiveRoom ? 'var(--ok)' : 'rgba(255,255,255,0.3)',
+                      boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
+                    }} />
+                  )
+                })()}
+
+                {/* Sensor chips — active only. Temperature is tinted by the
+                    same indoor-comfort thresholds used on the Rooms page
+                    (<18°C cool blue, 18–25°C neutral, >25°C warm red) so
+                    the two surfaces read as the same design system. Unit is
+                    sniffed from HA's unit_of_measurement attribute so the
+                    threshold stays sensible whether the sensor reports °C or °F. */}
+                {isActive && (summary.tempSensor || summary.humSensor || summary.occupied) && (
+                  <div style={{ position: 'absolute', top: 11, insetInlineStart: 12, display: 'flex', gap: 5, alignItems: 'center' }}>
+                    {summary.occupied && (
+                      <span title={t('rooms.occupied')} style={{ fontSize: 10.5, background: 'color-mix(in srgb, var(--ok) 55%, transparent)', backdropFilter: 'blur(8px)', padding: '3px 6px', borderRadius: 999, lineHeight: 1 }}>👤</span>
+                    )}
+                    {summary.tempSensor && (() => {
+                      const raw = parseFloat(summary.tempSensor.state)
+                      const unit = summary.tempSensor.unit_of_measurement
+                                || summary.tempSensor.attributes?.unit_of_measurement
+                                || '°C'
+                      const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
+                      // Temperature tint chips. Cold/hot read from --info/--err
+                      // so dark mode picks up the lighter palette values; the
+                      // neutral chip stays a plain black wash because it sits
+                      // on a photo, not on the page bg.
+                      const bg = tempC < 18 ? 'color-mix(in srgb, var(--info) 55%, transparent)'
+                               : tempC > 25 ? 'color-mix(in srgb, var(--err) 55%, transparent)'
+                               : 'rgba(0, 0, 0, 0.32)'
+                      return (
+                        <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: bg, backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                          {raw.toFixed(1)}°
+                        </span>
+                      )
+                    })()}
+                    {summary.humSensor && (
+                      <span style={{ fontSize: 10.5, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '3px 7px', borderRadius: 999 }}>
+                        {parseFloat(summary.humSensor.state).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Name + status */}
+                <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14 }}>
+                  <p dir="auto" style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{translateNamePhrase(room.name, lang)}</p>
+                  <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace' }}>
+                    {/* Same condition as the dot and greeting count: a room with
+                        motion but zero on-devices is still "active" to the user. */}
+                    {summary.activeCount > 0
+                      ? t('dashboard.activeShort', { n: summary.activeCount })
+                      : summary.hasMotion
+                        ? t('dashboard.motion')
+                        : t('dashboard.idle')}
+                    {isActive && summary.parts.length > 0 && ` · ${summary.parts[0]}`}
+                  </p>
+                </div>
               </div>
             )
           })}
@@ -562,6 +494,7 @@ function roomsGridShape(n) {
 
 function RoomsGrid({ sortedRooms, ziggyRooms }) {
   const t = useT()
+  const lang = useLang()
   const navigate = useNavigate()
   if (!sortedRooms.length) return null
   const { cols, rows } = roomsGridShape(sortedRooms.length)
@@ -570,20 +503,20 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
   // grows enough to display every room up to 16, and 5×N beyond.
   const visibleRooms = sortedRooms.slice(0, cols * rows)
   return (
-    <div>
-      <p className="z-eyebrow" style={{ marginBottom: 12 }}>{t('dashboard.rooms')}</p>
-      {/* Fixed 200px rows — the page flows; the old viewport-clamp that
-          stretched tiles to fill the window is gone. */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <p className="z-eyebrow" style={{ marginBottom: 10, flexShrink: 0 }}>{t('dashboard.rooms')}</p>
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gridAutoRows: 200,
+        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
         gap: 12,
+        flex: 1, minHeight: 0,
       }}>
         {visibleRooms.map(summary => {
           const room = ziggyRooms.find(r => r.id === summary.id)
           if (!room) return null
           const photo = getRoomPhoto(room)
+          const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
           return (
             <div
               key={room.id}
@@ -591,15 +524,17 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
               role="button"
               tabIndex={0}
               onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/rooms/${room.id}`) }}
-              className={photo ? undefined : 'z-room-plain'}
               style={{
                 position: 'relative',
                 width: '100%', height: '100%',
-                borderRadius: 'var(--r-card)', overflow: 'hidden', cursor: 'pointer',
+                borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
+                background: 'var(--surface-2)',
                 border: '0.5px solid var(--line)',
-                // No translateY on hover — a soft shadow lift + border shift
-                // is the same affordance without clipping on the first row.
-                transition: 'box-shadow var(--dur-press) var(--ease-standard), border-color var(--dur-press) var(--ease-standard)',
+                // No translateY on hover — the outer container clips it
+                // against the viewport top on the first row. Soft shadow
+                // lift + subtle border-color shift is the same affordance
+                // without the clipping issue.
+                transition: 'box-shadow 0.16s, border-color 0.16s',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.boxShadow = 'var(--shadow-md)'
@@ -610,7 +545,55 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
                 e.currentTarget.style.borderColor = 'var(--line)'
               }}
             >
-              <RoomTileFace room={room} summary={summary} photo={photo} showParts />
+              <img src={photo} alt={translateNamePhrase(room.name, lang)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 0%, transparent 35%, rgba(0,0,0,0.68) 100%)' }} />
+
+              <span style={{
+                position: 'absolute', top: 10, insetInlineEnd: 10,
+                width: 7, height: 7, borderRadius: '50%',
+                background: isActiveRoom ? 'var(--ok)' : 'rgba(255,255,255,0.3)',
+                boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
+              }} />
+
+              {(summary.tempSensor || summary.humSensor || summary.occupied) && (
+                <div style={{ position: 'absolute', top: 9, insetInlineStart: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {summary.occupied && (
+                    <span title={t('rooms.occupied')} style={{ fontSize: 10, background: 'color-mix(in srgb, var(--ok) 55%, transparent)', backdropFilter: 'blur(8px)', padding: '2px 5px', borderRadius: 999, lineHeight: 1 }}>👤</span>
+                  )}
+                  {summary.tempSensor && (() => {
+                    const raw = parseFloat(summary.tempSensor.state)
+                    const unit = summary.tempSensor.unit_of_measurement
+                              || summary.tempSensor.attributes?.unit_of_measurement
+                              || '°C'
+                    const tempC = unit.includes('F') ? (raw - 32) * 5 / 9 : raw
+                    const bg = tempC < 18 ? 'color-mix(in srgb, var(--info) 55%, transparent)'
+                             : tempC > 25 ? 'color-mix(in srgb, var(--err) 55%, transparent)'
+                             : 'rgba(0, 0, 0, 0.32)'
+                    return (
+                      <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: bg, backdropFilter: 'blur(8px)', padding: '2px 6px', borderRadius: 999 }}>
+                        {raw.toFixed(1)}°
+                      </span>
+                    )
+                  })()}
+                  {summary.humSensor && (
+                    <span style={{ fontSize: 10, color: '#fff', fontFamily: '"IBM Plex Mono", monospace', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(8px)', padding: '2px 6px', borderRadius: 999 }}>
+                      {parseFloat(summary.humSensor.state).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
+                <p dir="auto" style={{ fontSize: 13, fontWeight: 650, color: '#fff', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>{translateNamePhrase(room.name, lang)}</p>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: 0, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {summary.activeCount > 0
+                    ? t('dashboard.activeShort', { n: summary.activeCount })
+                    : summary.hasMotion
+                      ? t('dashboard.motion')
+                      : t('dashboard.idle')}
+                  {summary.parts.length > 0 && ` · ${summary.parts[0]}`}
+                </p>
+              </div>
             </div>
           )
         })}
@@ -642,10 +625,17 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.shortcuts')}</p>
-        <button onClick={onEdit} style={sectionEditBtn}>
-          <Pencil size={16} strokeWidth={1.75} /> {t('dashboard.shortcutsEdit')}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+        <p className="z-eyebrow">{t('dashboard.shortcuts')}</p>
+        <button
+          onClick={onEdit}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit', padding: '2px 4px',
+          }}
+        >
+          <Pencil size={11} /> {t('dashboard.shortcutsEdit')}
         </button>
       </div>
       {/* Horizontal pill carousel — matches the redesign's Quick Routines
@@ -675,32 +665,18 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
   )
 }
 
-// Section-header edit link: a 44px-tall text button so the tap target is
-// real, with the glyph and label in ink-mute (it is not the screen's action).
-const sectionEditBtn = {
-  display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44,
-  background: 'none', border: 'none', cursor: 'pointer',
-  fontSize: 15, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '0 4px',
-}
-
-// Shortcut glyph: the person's own emoji when they chose one (it is their
-// icon, not ours), otherwise a line glyph by kind — a bolt for a routine,
-// sparkles for a saved ask.
-function ShortcutGlyph({ type, icon, size = 18 }) {
-  if (icon) return <span style={{ fontSize: size, lineHeight: 1 }} aria-hidden="true">{icon}</span>
-  return type === 'routine'
-    ? <Zap size={size} strokeWidth={1.75} aria-hidden="true" />
-    : <Sparkles size={size} strokeWidth={1.75} aria-hidden="true" />
-}
-
-// Horizontal pill — used in the Shortcuts row. Stateless surface, so
-// "active" only means "currently firing": the pill inverts (ink/bg) for the
-// press so the person sees the tap landed.
+// Horizontal pill — used in the mobile Shortcuts carousel. Stateless surface,
+// so "active" only means "currently firing". Icon picks up the kind's tint
+// (var(--ok) for routine, var(--accent) for ask) and stays tinted on both
+// inactive (surface bg) and active (inverted ink bg) so the personality of
+// the routine survives the press.
 function ShortcutPill({ type, record, onFire }) {
   const lang = useLang()
   const [pending, setPending] = useState(false)
+  const icon  = record.icon || (type === 'routine' ? '⚡' : '✦')
   const rawLabel = type === 'routine' ? record.name : record.label
   const label = translateNamePhrase(rawLabel, lang)
+  const tint  = type === 'routine' ? 'var(--ok)' : 'var(--accent)'
 
   const handle = async () => {
     if (pending) return
@@ -714,20 +690,18 @@ function ShortcutPill({ type, record, onFire }) {
       aria-label={label}
       style={{
         flexShrink: 0,
-        padding: '12px 16px', minHeight: 44, borderRadius: 'var(--r-card)',
+        padding: '10px 12px', borderRadius: 14,
         background: pending ? 'var(--ink)' : 'var(--surface)',
-        color:      pending ? 'var(--bg)'  : 'var(--ink)',
+        color:      pending ? 'var(--bg)'  : 'var(--ink-2)',
         border: '0.5px solid var(--line)',
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
         cursor: 'pointer',
-        transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
+        transition: 'background 0.18s, color 0.18s',
       }}
     >
-      <span style={{ display: 'inline-flex', color: pending ? 'var(--bg)' : 'var(--ink-mute)' }}>
-        <ShortcutGlyph type={type} icon={record.icon} />
-      </span>
-      <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 14, lineHeight: 1, color: tint }} aria-hidden="true">{icon}</span>
+      <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {label}
       </span>
     </button>
@@ -745,54 +719,48 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
     const isPinned = pinnedSet.has(key)
     const disabled = isFull && !isPinned
     const label    = type === 'routine' ? record.name : record.label
+    const icon     = record.icon || (type === 'routine' ? '⚡' : '✦')
     return (
       <button
         key={key}
         onClick={() => togglePinnedShortcut(type, record.id)}
         disabled={disabled}
-        aria-pressed={isPinned}
         style={{
-          display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-          padding: '12px 16px', minHeight: 56, borderRadius: 'var(--r-ctl)', cursor: disabled ? 'not-allowed' : 'pointer',
+          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+          padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
           background: isPinned ? 'color-mix(in srgb, var(--ok) 8%, var(--surface))' : 'var(--surface)',
           border: '0.5px solid ' + (isPinned ? 'color-mix(in srgb, var(--ok) 30%, var(--line))' : 'var(--line)'),
           opacity: disabled ? 0.4 : 1, fontFamily: 'inherit', textAlign: 'start',
         }}
       >
-        <span style={{ display: 'inline-flex', justifyContent: 'center', width: 24, color: 'var(--ink-mute)', flexShrink: 0 }}>
-          <ShortcutGlyph type={type} icon={record.icon} />
-        </span>
-        <span style={{ flex: 1, fontSize: 17, fontWeight: 500, color: 'var(--ink)',
+        <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{icon}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
-        {isPinned && <Check size={20} strokeWidth={2} style={{ color: 'var(--ok)', flexShrink: 0 }} aria-hidden="true" />}
+        {isPinned && <Check size={15} style={{ color: 'var(--ok)', flexShrink: 0 }} />}
       </button>
     )
   }
 
-  const sectionHead = (Icon, label, count) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <Icon size={16} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} aria-hidden="true" />
-      <p className="z-eyebrow" style={{ margin: 0 }}>{label}</p>
-      <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
-    </div>
-  )
-
   return (
     <Modal open={open} onClose={onClose} title={t('dashboard.editShortcutsTitle')}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: 0 }}>
+        <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', margin: 0 }}>
           {t('dashboard.pinnedSlash', { n: pinnedShortcuts.length, max: SHORTCUTS_MAX })}
         </p>
 
         {/* Routines */}
         <div>
-          {sectionHead(Play, t('dashboard.routines'), routines.length)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Play size={11} style={{ color: 'var(--ok)' }} />
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.routines')}</p>
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{routines.length}</span>
+          </div>
           {routines.length === 0 ? (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '8px 4px', margin: 0 }}>{t('dashboard.routinesEmpty')}</p>
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>{t('dashboard.routinesEmpty')}</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {routines.map(r => renderRow('routine', r))}
             </div>
           )}
@@ -800,17 +768,21 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
 
         {/* Quick Asks */}
         <div>
-          {sectionHead(Sparkles, t('dashboard.quickAsks'), asks.length)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Sparkles size={11} style={{ color: 'var(--accent)' }} />
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.quickAsks')}</p>
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{asks.length}</span>
+          </div>
           {asks.length === 0 ? (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '8px 4px', margin: 0 }}>{t('dashboard.asksEmpty')}</p>
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '8px 4px' }}>{t('dashboard.asksEmpty')}</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {asks.map(a => renderRow('ask', a))}
             </div>
           )}
         </div>
 
-        <button onClick={onClose} className="z-btn-primary" style={{ width: '100%' }}>
+        <button onClick={onClose} className="z-btn-primary" style={{ width: '100%', padding: '10px', borderRadius: 10 }}>
           {t('dashboard.done')}
         </button>
       </div>
@@ -1059,13 +1031,13 @@ export default function Dashboard() {
               card below surfaces the same data and the desktop right rail
               still owns it on lg+. */}
       <div>
-        <p className="z-eyebrow" style={{ margin: '0 0 4px' }}>{greetingByTime()}</p>
-        <h1 className="z-display" style={{ margin: '0 0 8px' }}>{statusText}</h1>
+        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{greetingByTime()}</p>
+        <h1 className="z-display" style={{ fontSize: 26, lineHeight: 1.1, margin: '0 0 6px' }}>{statusText}</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {activeRooms.length > 0
             ? <span className="z-dot z-dot-on" style={{ flexShrink: 0 }} />
             : <span className="z-dot" style={{ background: 'var(--line-2)', flexShrink: 0 }} />}
-          <span style={{ fontSize: 15, color: 'var(--ink-mute)' }}>
+          <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
             {activeRooms.length > 0
               ? (activeRooms.length === 1
                   ? t('dashboard.roomsActiveOne', { n: activeRooms.length })
@@ -1074,12 +1046,12 @@ export default function Dashboard() {
           </span>
           {homePersons.length > 0 && (
             <>
-              <span style={{ color: 'var(--ink-faint)', fontSize: 15 }} aria-hidden="true">·</span>
+              <span style={{ color: 'var(--ink-ghost)', fontSize: 12 }}>·</span>
               <button
                 onClick={() => navigate('/settings#presence')}
                 style={{
-                  background: 'none', border: 'none', padding: 0, minHeight: 44,
-                  fontSize: 15, color: 'var(--ink-mute)',
+                  background: 'none', border: 'none', padding: 0,
+                  fontSize: 12, color: 'var(--ink-mute)',
                   fontFamily: 'inherit', cursor: 'pointer',
                 }}
               >
@@ -1109,8 +1081,10 @@ export default function Dashboard() {
             <RoomsCarousel sortedRooms={sortedRooms} ziggyRooms={ziggyRooms} />
           </div>
           {/* Web/desktop (>=1024px): grid of room tiles — all rooms visible
-              at once, 200px rows, the page flows. */}
-          <div className="only-lg">
+              at once. `.z-dashboard-fill` makes this section absorb the
+              leftover vertical space in the no-scroll dashboard, and the
+              tiles inside RoomsGrid stretch to fill it. */}
+          <div className="only-lg z-dashboard-fill">
             <RoomsGrid sortedRooms={sortedRooms} ziggyRooms={ziggyRooms} />
           </div>
         </>
@@ -1138,7 +1112,7 @@ export default function Dashboard() {
             // pinned tile glowing "on" until the user manually navigated.
             try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
           }
-          catch { addToast(t('dashboard.failedToRun'), 'error') }
+          catch { addToast('Failed to run', 'error') }
         }}
         onFireAsk={async (qa) => {
           try {
@@ -1151,7 +1125,7 @@ export default function Dashboard() {
             // defensive belt-and-suspenders that closes the gap.
             try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
           }
-          catch (e) { addToast(e.message || t('common.failed'), 'error') }
+          catch (e) { addToast(e.message || 'Failed', 'error') }
         }}
         onEdit={() => setShowShortcutsPicker(true)}
       />
@@ -1161,28 +1135,45 @@ export default function Dashboard() {
       {pinnedShortcuts.length === 0 && (routines.length > 0 || quickAsks.length > 0) && (
         <button
           onClick={() => setShowShortcutsPicker(true)}
-          className="z-btn-secondary"
-          style={{ width: '100%', borderStyle: 'dashed', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)' }}
+          style={{
+            width: '100%', padding: '14px 12px', borderRadius: 14,
+            background: 'var(--surface-2)', border: '0.5px dashed var(--line-2)',
+            color: 'var(--ink-mute)', cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}
         >
-          <Pencil size={16} strokeWidth={1.75} aria-hidden="true" /> {t('dashboard.pinShortcutsHint')}
+          <Pencil size={12} /> {t('dashboard.pinShortcutsHint')}
         </button>
       )}
 
       {/* ── 4. Quick controls — user-pinned, up to 4. Falls back to auto-pick ── */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.pinnedDevicesLabel')}</p>
-          <button onClick={() => setShowQuickPicker(true)} style={sectionEditBtn}>
-            <Pencil size={16} strokeWidth={1.75} /> {t('common.edit')}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+          <p className="z-eyebrow">{t('dashboard.pinnedDevicesLabel')}</p>
+          <button
+            onClick={() => setShowQuickPicker(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'inherit',
+              padding: '2px 4px',
+            }}
+          >
+            <Pencil size={11} /> {t('common.edit')}
           </button>
         </div>
         {quickControlPicks.length === 0 ? (
           <button
             onClick={() => setShowQuickPicker(true)}
-            className="z-btn-secondary"
-            style={{ width: '100%', borderStyle: 'dashed', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)' }}
+            style={{
+              width: '100%', padding: '18px 12px', borderRadius: 14,
+              background: 'var(--surface-2)', border: '0.5px dashed var(--line-2)',
+              color: 'var(--ink-mute)', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+            }}
           >
-            {t('dashboard.pinUpTo4')}
+            + Pin up to 4 devices
           </button>
         ) : (
           /* Single QuickControlTile component across all viewports — same
@@ -1214,52 +1205,70 @@ export default function Dashboard() {
           desktop rail's Alerts card covers the same data — `.hide-lg` keeps
           this copy mobile/tablet-only to avoid duplication. */}
       {anomalies.length > 0 && (
-        <div className="hide-lg z-card" style={{ padding: '8px 16px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <div className="hide-lg z-card" style={{ padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
             <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.alertsLabel')}</p>
-            <button onClick={() => navigate('/alerts')} style={sectionEditBtn}>
-              {t('dashboard.seeAllN', { n: anomalies.length })}
+            <button
+              onClick={() => navigate('/alerts')}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 11, color: 'var(--ink-faint)',
+                padding: '2px 4px',
+              }}
+            >
+              See all {anomalies.length}
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {anomalies.slice(0, 3).map((a, i) => (
-              <AlertRow key={a.id || `${a.room_id}-${a.rule_id}-${i}`} anomaly={a} onOpen={() => navigate('/alerts')} />
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {anomalies.slice(0, 3).map((a, i) => {
+              const dotColor = a.severity === 'critical' ? 'var(--err)' : a.severity === 'warning' ? 'var(--warn)' : 'var(--info)'
+              return (
+                <button
+                  key={a.id || `${a.room_id}-${a.rule_id}-${i}`}
+                  onClick={() => navigate('/alerts')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 4px', borderRadius: 8,
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'inherit', textAlign: 'start', width: '100%',
+                  }}
+                >
+                  <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{a.message}</span>
+                  <ZIcon name="fwd" size={11} color="var(--ink-faint)" />
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
 
-      {/* ── 5. Tasks peek ── The icon box is a neutral surface (the single
-              accent on this screen belongs to the primary action, not to a
-              decoration); the outcome still speaks in status colour —
-              overdue flips the sub line to the err text token. */}
+      {/* ── 5. Tasks peek ── Icon-square uses --accent per the redesign
+              (peach tint reads as "today's thing to do"), even though the
+              section is semantically about completion. The redesign keeps
+              status colors (--ok / --err) for the actual outcome — overdue
+              flips the sub line to --err. */}
       {taskTrackingEnabled && pendingTasks.length > 0 && (
         <button
           onClick={() => navigate('/tasks')}
           style={{
             display: 'flex', alignItems: 'center', gap: 12,
-            padding: 16, borderRadius: 'var(--r-card)',
+            padding: '11px 14px', borderRadius: 13,
             background: 'var(--surface)', border: '0.5px solid var(--line)',
             cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%',
           }}
         >
-          <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0, background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ZIcon name="check" size={20} stroke={2} />
+          <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: 'color-mix(in srgb, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ZIcon name="check" size={14} stroke={2.5} color="var(--accent)" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
-              {pendingTasks.length === 1
-                ? t('dashboard.tasksTodayOne', { n: pendingTasks.length })
-                : t('dashboard.tasksTodayMany', { n: pendingTasks.length })}
-            </div>
-            <div style={{ fontSize: 15, color: overdueTasks.length > 0 ? 'var(--err-text)' : 'var(--ink-mute)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {overdueTasks.length > 0
-                ? t('dashboard.overdueN', { n: overdueTasks.length })
-                : t('dashboard.pendingN', { n: pendingTasks.length })}
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} today</div>
+            <div className="z-mono" style={{ fontSize: 10, color: overdueTasks.length > 0 ? 'var(--err)' : 'var(--ink-faint)', marginTop: 2 }}>
+              {overdueTasks.length > 0 ? `${overdueTasks.length} overdue` : `${pendingTasks.length} pending`}
               {pendingTasks[0]?.title && ` · ${pendingTasks[0].title}`}
             </div>
           </div>
-          <ZIcon name="fwd" size={16} color="var(--ink-faint)" />
+          <ZIcon name="fwd" size={12} color="var(--ink-faint)" />
         </button>
       )}
 
@@ -1280,17 +1289,17 @@ export default function Dashboard() {
             onClick={() => setRecentOpen(o => !o)}
             aria-expanded={recentOpen}
             style={{
-              background: 'none', border: 'none', padding: 0, marginBottom: 4, minHeight: 44,
-              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-              cursor: 'pointer', color: 'var(--ink-mute)', fontFamily: 'inherit',
+              background: 'none', border: 'none', padding: 0, marginBottom: 8,
+              width: '100%', display: 'flex', alignItems: 'center', gap: 6,
+              cursor: 'pointer', color: 'var(--ink-faint)',
             }}
           >
             {recentOpen
-              ? <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
-              : <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden="true" />}
+              ? <ChevronDown size={12} />
+              : <ChevronRight size={12} className="icon-flip-rtl" />}
             <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.justNow')}</p>
-            <span style={{ fontSize: 13, color: 'var(--ink-mute)', marginInlineStart: 'auto', fontVariantNumeric: 'tabular-nums' }}>
-              {activity.length}
+            <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginInlineStart: 'auto' }}>
+              · {activity.length}
             </span>
           </button>
           {recentOpen && (
@@ -1298,18 +1307,25 @@ export default function Dashboard() {
                directly above it. The clean redesign mock drew this surface
                without a wrapper, but in our actual page the adjacent Alerts
                card creates a box-vs-no-box asymmetry that reads as broken. */
-            <div className="z-card" style={{ padding: '4px 8px' }}>
+            <div className="z-card" style={{ padding: '4px 6px' }}>
               <div
                 className="scrollbar-thin"
                 style={{
-                  maxHeight: 220,
+                  maxHeight: 156,
                   overflowY: 'auto',
-                  display: 'flex', flexDirection: 'column',
+                  display: 'flex', flexDirection: 'column', gap: 4,
                 }}
               >
-                {activity.slice(0, 10).map((entry, i) => (
-                  <ActivityRow key={i} {...formatActivity(entry, entityMap)} />
-                ))}
+                {activity.slice(0, 10).map((entry, i) => {
+                  const { label, timeStr, ok } = formatActivity(entry, entityMap)
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px', flexShrink: 0 }}>
+                      <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                      <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -1334,20 +1350,46 @@ export default function Dashboard() {
             the mobile copy and the design mockup ("Front door unlocked 14m"
             style, not "1 critical alert"). */}
         {anomalies.length > 0 && (
-          <div className="z-card" style={{ padding: '8px 16px 12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div className="z-card" style={{ padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
               <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.alertsLabel')}</p>
-              {/* One "See all N" in the header carries the count and the
-                  link to /alerts — the old trailing "See all →" row after
-                  five items duplicated both. */}
-              <button onClick={() => navigate('/alerts')} style={sectionEditBtn}>
-                {t('dashboard.seeAllN', { n: anomalies.length })}
-              </button>
+              <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>· {anomalies.length}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {anomalies.slice(0, 5).map((a, i) => (
-                <AlertRow key={a.id || `${a.room_id}-${a.rule_id}-${i}`} anomaly={a} onOpen={() => navigate('/alerts')} hover />
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {anomalies.slice(0, 5).map((a, i) => {
+                const dotColor = a.severity === 'critical' ? 'var(--err)' : a.severity === 'warning' ? 'var(--warn)' : 'var(--info)'
+                return (
+                  <button
+                    key={a.id || `${a.room_id}-${a.rule_id}-${i}`}
+                    onClick={() => navigate('/alerts')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 6px', borderRadius: 8,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', textAlign: 'start', width: '100%',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.message}</span>
+                    <ZIcon name="fwd" size={11} color="var(--ink-faint)" />
+                  </button>
+                )
+              })}
+              {anomalies.length > 5 && (
+                <button
+                  onClick={() => navigate('/alerts')}
+                  style={{
+                    fontFamily: 'inherit', fontSize: 11, color: 'var(--ink-faint)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '6px', textAlign: 'start',
+                  }}
+                >
+                  See all {anomalies.length} →
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1360,42 +1402,43 @@ export default function Dashboard() {
           <div
             className="z-card"
             style={{
-              padding: '16px 16px',
+              padding: '14px 16px',
               background: 'color-mix(in srgb, var(--accent) 6%, var(--surface))',
               borderColor: 'color-mix(in srgb, var(--accent) 22%, var(--line))',
             }}
           >
-            {/* The one accent on the desktop home: this eyebrow. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: 'var(--accent-text)' }}>
-              <Sparkles size={16} strokeWidth={1.75} aria-hidden="true" />
-              <p className="z-eyebrow" style={{ margin: 0, color: 'var(--accent-text)' }}>{t('dashboard.suggestedLabel')}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+              <Sparkles size={11} style={{ color: 'var(--accent)' }} />
+              <p className="z-eyebrow" style={{ margin: 0, color: 'var(--accent-3)' }}>{t('dashboard.suggestedLabel')}</p>
             </div>
             <p style={{
-              fontSize: 17, lineHeight: 1.4, color: 'var(--ink)',
-              margin: '0 0 16px',
+              fontSize: 13, lineHeight: 1.45, color: 'var(--ink)',
+              margin: '0 0 12px',
               display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 4,
               overflow: 'hidden',
             }}>
               {topSuggestion.user_message}
             </p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={async () => {
-                  try { await acceptSuggestionAction(topSuggestion.id); addToast(t('dashboard.suggestionSaved'), 'success') }
-                  catch (e) { addToast(e.message || t('common.failed'), 'error') }
+                  try { await acceptSuggestionAction(topSuggestion.id); addToast('Suggestion saved', 'success') }
+                  catch (e) { addToast(e.message || 'Failed', 'error') }
                 }}
                 className="z-btn-primary"
+                style={{ padding: '7px 14px', fontSize: 12 }}
               >
-                {t('dashboard.save')}
+                Save
               </button>
               <button
                 onClick={async () => {
                   try { await rejectSuggestionAction(topSuggestion.id) }
-                  catch (e) { addToast(e.message || t('common.failed'), 'error') }
+                  catch (e) { addToast(e.message || 'Failed', 'error') }
                 }}
                 className="z-btn-secondary"
+                style={{ padding: '7px 14px', fontSize: 12 }}
               >
-                {t('dashboard.notNow')}
+                Not now
               </button>
             </div>
           </div>
@@ -1406,24 +1449,29 @@ export default function Dashboard() {
             scrolling). On mobile it stacks below main, same as before just
             without the "Just now" eyebrow change. */}
         {activity.length > 0 && (
-          <div className="z-card" style={{ padding: '16px 16px 8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.recentActivity')}</p>
-              <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{activity.length}</span>
-            </div>
-            {/* Rows are 44px; six fit before the list scrolls (6 × 44 = 264)
-                so the cut-off row is a visible scroll affordance. */}
+          <div className="z-card" style={{ padding: '14px 16px' }}>
+            <p className="z-eyebrow" style={{ margin: '0 0 10px' }}>Recent Activity</p>
+            {/* Row stride pinned to 28px so the scroll math is deterministic.
+                10 rows × 28 + 9 gaps × 4 = 316. Cap below that for a scroll
+                affordance; on desktop the sticky-rail max-height also applies. */}
             <div
               className="scrollbar-thin"
               style={{
-                maxHeight: 264,
+                maxHeight: 280,
                 overflowY: 'auto',
-                display: 'flex', flexDirection: 'column',
+                display: 'flex', flexDirection: 'column', gap: 4,
               }}
             >
-              {activity.slice(0, 10).map((entry, i) => (
-                <ActivityRow key={i} {...formatActivity(entry, entityMap)} />
-              ))}
+              {activity.slice(0, 10).map((entry, i) => {
+                const { label, timeStr, ok } = formatActivity(entry, entityMap)
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, height: 28, padding: '0 2px', flexShrink: 0 }}>
+                    <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                    <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>{timeStr}</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

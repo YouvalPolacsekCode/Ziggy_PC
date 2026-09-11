@@ -158,20 +158,24 @@ function IrFanRemote({ entity }) {
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center' }}>
-      <div className="z-display" style={{ color: facts.isOn ? 'var(--ink)' : 'var(--ink-mute)' }}>{facts.stateLabel}</div>
+      <div style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)' }}>{facts.stateLabel}</div>
       <div style={{ display: 'flex', gap: 8 }}>
         {['low', 'medium', 'high'].map((s) => (
           <button key={s}
             onClick={() => fire('set_speed_preset', { mode: s })}
-            className="z-btn-secondary"
-            style={{ textTransform: 'capitalize' }}
+            style={{
+              padding: '10px 18px', borderRadius: 10,
+              background: 'var(--surface)', border: '0.5px solid var(--line)',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              color: 'var(--ink-2)', textTransform: 'capitalize',
+            }}
           >{s}</button>
         ))}
       </div>
       <button
         onClick={() => fire('toggle')}
         className="z-btn-primary"
-        style={{ width: '100%' }}
+        style={{ width: '100%', height: 48, fontSize: 14 }}
       >
         {facts.isOn ? i18nT('deviceCard.turnOff') : i18nT('deviceCard.turnOn')}
       </button>
@@ -199,28 +203,28 @@ function SwitchRemote({ entity }) {
     try { await sendDeviceCommand(entity, cmd) }
     catch (e) {
       setPredictedOn(null)
-      addToast(e.message || i18nT('deviceRemote.commandFailed'), 'error')
+      addToast(e.message || 'Command failed', 'error')
     }
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center' }}>
       <div className="z-card" style={{
-        width: '100%', padding: 24, textAlign: 'center',
+        width: '100%', padding: '40px 24px', borderRadius: 18, textAlign: 'center',
         background: isOn ? 'color-mix(in srgb, var(--ok) 10%, var(--surface))' : 'var(--surface)',
         opacity: predictedOn != null ? 0.85 : 1,
-        transition: 'opacity var(--dur-state) var(--ease-standard), background var(--dur-state) var(--ease-standard)',
+        transition: 'opacity 0.15s',
       }}>
-        <div className="z-display" style={{ color: isOn ? 'var(--ok-text)' : 'var(--ink-mute)' }}>
+        <div style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-0.04em', color: isOn ? 'var(--ok)' : 'var(--ink-mute)' }}>
           {isOn ? i18nT('common.on') : i18nT('common.off')}
         </div>
-        <div style={{ fontSize: 15, marginTop: 4, color: 'var(--ink-mute)' }}>
-          {facts.meta.label}
+        <div className="z-mono" style={{ fontSize: 10.5, marginTop: 8, color: 'var(--ink-faint)', letterSpacing: '0.06em' }}>
+          {facts.meta.label.toUpperCase()}
         </div>
       </div>
       <button
         onClick={() => fire('toggle')}
         className="z-btn-primary"
-        style={{ width: '100%' }}
+        style={{ width: '100%', height: 52, fontSize: 14 }}
       >
         {isOn ? i18nT('deviceCard.turnOff') : i18nT('deviceCard.turnOn')}
       </button>

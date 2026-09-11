@@ -18,12 +18,9 @@ import LayoutRenderer from '../components/hub/LayoutRenderer'
 import { SectionPickerModal } from '../components/hub/EditOverlay'
 import { SectionConfigSheet } from '../components/hub/SectionConfigSheet'
 import { useT } from '../lib/i18n'
-import { Plus } from 'lucide-react'
-import { Input } from '../components/ui/Input'
 import '../components/hub/Hub.css'
 
 function PairDialog({ onClose, onPaired }) {
-  const t = useT()
   const [code,    setCode]    = useState('')
   const [name,    setName]    = useState('')
   const [room,    setRoom]    = useState('')
@@ -33,63 +30,67 @@ function PairDialog({ onClose, onPaired }) {
   const submit = async (e) => {
     e?.preventDefault?.()
     setError('')
-    if (!/^\d{6}$/.test(code.trim())) { setError(t('hub.pair.errCode')); return }
-    if (!name.trim())                  { setError(t('hub.pair.errName')); return }
+    if (!/^\d{6}$/.test(code.trim())) { setError('Enter the 6-digit code from Settings.'); return }
+    if (!name.trim())                  { setError('Give this tablet a name (e.g. "Kitchen Tablet").'); return }
     setBusy(true)
     try {
       const res = await claimHubPairCode(code.trim(), name.trim(), room.trim() || null)
       setTabletId(res.tablet_id)
       onPaired(res)
     } catch (err) {
-      setError(err?.userMessage || t('hub.pair.errFailed'))
+      setError(err?.userMessage || 'Pairing failed. Generate a fresh code and try again.')
     } finally { setBusy(false) }
   }
 
   return (
     <div role="dialog" aria-modal="true" style={{
-      position: 'fixed', inset: 0, background: 'var(--backdrop)',
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
       padding: 20,
     }}>
       <form onSubmit={submit} style={{
-        width: '100%', maxWidth: 400, background: 'var(--surface)',
-        border: '0.5px solid var(--line)', borderRadius: 'var(--r-sheet)', padding: 24,
-        display: 'flex', flexDirection: 'column', gap: 16,
+        width: '100%', maxWidth: 380, background: 'var(--surface)',
+        border: '0.5px solid var(--line)', borderRadius: 16, padding: 22,
+        display: 'flex', flexDirection: 'column', gap: 14,
       }}>
         <div>
-          <p className="z-eyebrow" style={{ margin: 0 }}>{t('hub.pair.eyebrow')}</p>
-          <h2 className="z-title" style={{ margin: '4px 0 0' }}>{t('hub.pair.title')}</h2>
-          <p className="z-subhead" style={{ margin: '8px 0 0' }}>
-            {t('hub.pair.help')}
+          <p className="z-eyebrow" style={{ margin: 0 }}>Pair this tablet</p>
+          <h2 style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 600 }}>Enter the 6-digit code</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-faint)' }}>
+            An admin generates the code in Settings → Tablets. Codes expire after 5 minutes.
           </p>
         </div>
         <input
           inputMode="numeric" autoFocus maxLength={6}
           placeholder="000000"
-          aria-label={t('hub.pair.codeLabel')}
-          className="z-code"
           value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
-          style={{ fontSize: 34, fontWeight: 700, lineHeight: '41px', letterSpacing: '0.2em', textAlign: 'center',
-                   padding: '12px 16px', minHeight: 44, borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)',
-                   background: 'var(--surface)', color: 'var(--ink)', outline: 'none', width: '100%', boxSizing: 'border-box' }}
+          style={{ fontSize: 28, letterSpacing: 8, textAlign: 'center',
+                   padding: '12px 14px', borderRadius: 10, border: '0.5px solid var(--line)',
+                   background: 'var(--bg)', color: 'var(--ink)' }}
         />
-        <Input
-          label={t('hub.pair.nameLabel')}
-          placeholder={t('hub.pair.namePlaceholder')}
+        <input
+          placeholder="Tablet name (e.g. Kitchen Tablet)"
           value={name} onChange={e => setName(e.target.value)}
+          style={{ padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)',
+                   background: 'var(--bg)', color: 'var(--ink)', fontSize: 14 }}
         />
-        <Input
-          label={t('hub.pair.roomLabel')}
-          placeholder={t('hub.pair.roomPlaceholder')}
+        <input
+          placeholder="Room (optional)"
           value={room} onChange={e => setRoom(e.target.value)}
+          style={{ padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)',
+                   background: 'var(--bg)', color: 'var(--ink)', fontSize: 14 }}
         />
-        {error && <div role="alert" style={{ color: 'var(--err-text)', fontSize: 15, lineHeight: '20px' }}>{error}</div>}
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} disabled={busy} className="z-btn-secondary z-button">
-            {t('common.cancel')}
-          </button>
-          <button type="submit" disabled={busy} className="z-btn-primary z-button">
-            {busy ? t('hub.pair.pairing') : t('hub.pair.pair')}
+        {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} disabled={busy}
+                  style={{ background: 'transparent', border: '0.5px solid var(--line)',
+                           borderRadius: 999, padding: '10px 18px', cursor: 'pointer',
+                           color: 'var(--ink)' }}>Cancel</button>
+          <button type="submit" disabled={busy}
+                  style={{ background: 'var(--accent, #4f46e5)', border: 'none',
+                           borderRadius: 999, padding: '10px 22px', cursor: 'pointer',
+                           color: 'white', fontWeight: 600 }}>
+            {busy ? 'Pairing…' : 'Pair'}
           </button>
         </div>
       </form>
@@ -98,51 +99,38 @@ function PairDialog({ onClose, onPaired }) {
 }
 
 function PairBanner({ onOpen }) {
-  const t = useT()
   return (
     <div className="z-hub-banner">
       <div className="z-hub-banner-text">
-        {t('hub.pair.bannerText')}
+        This device isn't paired as a tablet yet — editing is disabled.
       </div>
-      <button onClick={onOpen} className="z-btn-secondary z-button">{t('hub.pair.bannerAction')}</button>
+      <button onClick={onOpen}>Pair tablet</button>
     </div>
   )
 }
 
 // ─── Status strip ────────────────────────────────────────────────────────────
 
-// Hub.css styles `.z-hub-strip button` (capsule, 13px, accent primary) with
-// higher specificity than the shared button classes, so the strip's buttons
-// carry their tokens inline: secondary = surface + hairline, the one primary
-// (Done) = ink on bg. 36px tall on the strip; the page rule lifts to 44 on touch.
-const stripBtn = {
-  background: 'var(--surface)', color: 'var(--ink)', border: '0.5px solid var(--line)',
-  borderRadius: 'var(--r-ctl)', padding: '8px 16px', minHeight: 36,
-  fontSize: 15, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
-}
-const stripBtnPrimary = { ...stripBtn, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontWeight: 600 }
-
 function StatusStrip({ layoutName, error, onRetry, tabletId, editing, onEdit, onCancel, onDone }) {
-  const t = useT()
   return (
     <div className="z-hub-strip">
       <div className="z-hub-strip-left">
         <div>
-          <div className="z-hub-strip-sub" style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--ink-mute)' }}>{t('hub.strip.brand')}</div>
-          <div className="z-hub-strip-title" style={{ fontSize: 17, lineHeight: '22px' }}>{editing ? t('hub.strip.editing') : (layoutName || t('common.loading'))}</div>
+          <div className="z-hub-strip-sub">Ziggy Hub</div>
+          <div className="z-hub-strip-title">{editing ? 'Editing layout' : (layoutName || 'Loading…')}</div>
         </div>
       </div>
       <div className="z-hub-strip-right">
         {error && !editing && (
-          <button onClick={onRetry} title={error} style={stripBtn}>{t('common.retry')}</button>
+          <button onClick={onRetry} title={error}>Retry</button>
         )}
         {editing ? (
           <>
-            <button onClick={onCancel} style={stripBtn}>{t('common.cancel')}</button>
-            <button onClick={onDone} style={stripBtnPrimary}>{t('common.done')}</button>
+            <button onClick={onCancel}>Cancel</button>
+            <button onClick={onDone} className="primary">Done</button>
           </>
         ) : (
-          tabletId && <button onClick={onEdit} style={stripBtn}>{t('common.edit')}</button>
+          tabletId && <button onClick={onEdit}>Edit</button>
         )}
       </div>
     </div>
@@ -236,16 +224,14 @@ export default function Hub() {
       />
       {!tabletId && !editing && <PairBanner onOpen={() => setPairOpen(true)} />}
       {loading && !layout ? (
-        <p className="z-subhead" style={{ padding: 24 }}>{t('common.loading')}</p>
+        <p style={{ padding: 24, color: 'var(--ink-faint)', fontSize: 13 }}>Loading…</p>
       ) : (
         <div className="z-hub-grid">
           <LayoutRenderer />
         </div>
       )}
       {editing && (
-        <button className="z-hub-add-fab" onClick={() => setPickerOpen(true)} aria-label={t('hub.addSection')}>
-          <Plus size={24} strokeWidth={2} />
-        </button>
+        <button className="z-hub-add-fab" onClick={() => setPickerOpen(true)} aria-label={t('hub.addSection')}>+</button>
       )}
       <SectionPickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} />
       {editing && configuringSectionId && (

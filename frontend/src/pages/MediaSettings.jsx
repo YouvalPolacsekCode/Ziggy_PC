@@ -11,11 +11,9 @@
 // from automations and from the tablet hub widget.
 import { useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Pencil, Trash2, X } from 'lucide-react'
 import { useFeature } from '../stores/featuresStore'
 import { useUIStore } from '../stores/uiStore'
 import { useMediaStore } from '../stores/mediaStore'
-import { Toggle } from '../components/ui/Toggle'
 import {
   patchSpeaker,
   deleteSpeaker,
@@ -148,13 +146,13 @@ export default function MediaSettings() {
   const enabledCount = speakers.filter(s => s.enabled).length
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      <div className="z-page-head">
-        <div>
-          <h1 className="z-display" style={{ margin: 0 }}>{t('media.settingsTitle')}</h1>
-          <p className="z-footnote">{t('media.settingsSubtitle')}</p>
-        </div>
-      </div>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px 60px' }}>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>
+        {t('media.settingsTitle')}
+      </h1>
+      <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 18 }}>
+        {t('media.settingsSubtitle')}
+      </p>
 
       {justConnected && <Banner kind="ok">{t('media.spotifyConnectedBanner')}</Banner>}
       {capabilities && !capabilities.spotify_app_configured && (
@@ -186,27 +184,24 @@ export default function MediaSettings() {
         {profiles.map(p => (
           <div key={p.name} style={row}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="z-headline">{p.name}</div>
-              <div className="z-subhead" style={{ marginTop: 2 }}>
+              <div style={rowTitle}>{p.name}</div>
+              <div style={rowSub}>
                 {[
                   p.services?.spotify?.configured && 'Spotify',
                   p.services?.ytmusic?.configured && 'YT Music',
                 ].filter(Boolean).join(' · ') || t('media.noServicesConnected')}
               </div>
             </div>
-            {/* Connect and disconnect are both secondary here: a page with
-                several profiles would otherwise carry several inverted
-                buttons, and none of them is *the* action of the screen. */}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {p.services?.spotify?.configured ? (
-                <button className="z-btn-secondary" disabled={busy === `sp-disc:${p.name}`} onClick={() => onDisconnectSpotify(p.name)}>{t('media.disconnectSpotify')}</button>
+                <button style={btnGhost} disabled={busy === `sp-disc:${p.name}`} onClick={() => onDisconnectSpotify(p.name)}>{t('media.disconnectSpotify')}</button>
               ) : (
-                <button className="z-btn-secondary" disabled={busy === `sp-conn:${p.name}` || !capabilities?.spotify_app_configured} onClick={() => onConnectSpotify(p.name)}>{t('media.connectSpotify')}</button>
+                <button style={btnPrimarySm} disabled={busy === `sp-conn:${p.name}` || !capabilities?.spotify_app_configured} onClick={() => onConnectSpotify(p.name)}>{t('media.connectSpotify')}</button>
               )}
               {p.services?.ytmusic?.configured ? (
-                <button className="z-btn-secondary" disabled={busy === `ytm-disc:${p.name}`} onClick={() => onDisconnectYtm(p.name)}>{t('media.disconnectYtm')}</button>
+                <button style={btnGhost} disabled={busy === `ytm-disc:${p.name}`} onClick={() => onDisconnectYtm(p.name)}>{t('media.disconnectYtm')}</button>
               ) : (
-                <button className="z-btn-secondary" disabled={!capabilities?.ytmusic_app_configured} onClick={() => onConnectYtm(p.name)}>{t('media.connectYtm')}</button>
+                <button style={btnPrimarySm} disabled={!capabilities?.ytmusic_app_configured} onClick={() => onConnectYtm(p.name)}>{t('media.connectYtm')}</button>
               )}
             </div>
           </div>
@@ -238,41 +233,41 @@ function SpeakerRow({ sp, t, busy, onToggle, onRename, onForget }) {
   const friendlyState = sp.state && KNOWN_PLAYER_STATES.has(sp.state)
     ? t(`media.state.${sp.state}`)
     : null
-  // An unsupported speaker reads in the muted tokens rather than a dimmed
-  // copy of the supported row — the text stays legible, the hierarchy drops.
-  const inkColor = isSupported ? 'var(--ink)' : 'var(--ink-mute)'
   return (
-    <div style={row}>
+    <div style={{ ...row, opacity: isSupported ? 1 : 0.55 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="z-headline" style={{ color: inkColor }} dir="auto">{speakerName}</div>
-        <div className="z-subhead" style={{ marginTop: 2 }} dir="auto">
+        <div style={rowTitle} dir="auto">{speakerName}</div>
+        <div style={rowSub} dir="auto">
           <span>{t(CLASS_LABEL[sp.class] || CLASS_LABEL.unsupported)}</span>
           {sp.room && <span> · {roomName}</span>}
           {friendlyState && <span> · {friendlyState}</span>}
         </div>
-        {/* Third line earns its place: it says what the speaker can do,
-            which neither the name nor the class label already says. */}
-        <div className="z-footnote" style={{ marginTop: 2 }}>
+        <div style={{ ...rowSub, marginTop: 2, fontStyle: 'italic' }}>
           {t(CLASS_HINT[sp.class] || CLASS_HINT.unsupported)}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-        {sp.enabled && (
-          <button className="z-icon-btn" onClick={onRename} aria-label={t('common.rename')} title={t('common.rename')}>
-            <Pencil size={20} strokeWidth={1.75} />
-          </button>
-        )}
-        {sp.enabled && (
-          <button className="z-icon-btn" onClick={onForget} aria-label={t('common.forget')} title={t('common.forget')} style={{ color: 'var(--err)' }}>
-            <Trash2 size={20} strokeWidth={1.75} />
-          </button>
-        )}
-        <Toggle
-          checked={!!sp.enabled}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {sp.enabled && <button style={btnTiny} onClick={onRename}>{t('common.rename')}</button>}
+        {sp.enabled && <button style={btnTiny} onClick={onForget}>{t('common.forget')}</button>}
+        <button
+          type="button"
           disabled={!isSupported || busy}
-          onCheckedChange={(v) => onToggle(v)}
+          onClick={() => onToggle(!sp.enabled)}
+          style={{
+            width: 44, height: 26, borderRadius: 13,
+            background: sp.enabled ? 'var(--accent)' : 'var(--line)',
+            border: 'none', position: 'relative', cursor: isSupported ? 'pointer' : 'not-allowed',
+            transition: 'background 120ms',
+          }}
           aria-label={sp.enabled ? t('media.disableSpeaker') : t('media.enableSpeaker')}
-        />
+        >
+          <span style={{
+            position: 'absolute', top: 2,
+            [sp.enabled ? 'right' : 'left']: 2,
+            width: 22, height: 22, borderRadius: 11, background: 'white',
+            transition: 'all 120ms',
+          }} />
+        </button>
       </div>
     </div>
   )
@@ -286,21 +281,18 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
     <div style={overlay} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <div style={header}>
-          <span className="z-headline">{t('media.ytmConnectTitle', { name: member })}</span>
-          <button onClick={onClose} className="z-icon-btn" aria-label={t('common.close')}>
-            <X size={20} strokeWidth={1.75} />
-          </button>
+          <span>{t('media.ytmConnectTitle', { name: member })}</span>
+          <button onClick={onClose} style={closeBtn} aria-label="Close">×</button>
         </div>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="bg-warn-soft" style={{
-            display: 'flex', gap: 12, alignItems: 'flex-start',
-            color: 'var(--warn-text)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', fontSize: 15, lineHeight: '20px',
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{
+            background: 'rgba(220,150,40,0.10)', color: '#a06a18',
+            padding: '8px 12px', borderRadius: 8, fontSize: 11,
           }}>
-            <AlertTriangle size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
-            <span>{t('media.ytmAdvancedNotice')}</span>
+            ⚠ {t('media.ytmAdvancedNotice')}
           </div>
-          <p className="z-body" style={{ margin: 0 }}>{t('media.ytmHowTo1')}</p>
-          <ol className="z-subhead" style={{ margin: 0, paddingInlineStart: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0 }}>{t('media.ytmHowTo1')}</p>
+          <ol style={{ margin: 0, paddingInlineStart: 18, fontSize: 12, color: 'var(--ink-mute)', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <li>{t('media.ytmStep1')}</li>
             <li>{t('media.ytmStep2')}</li>
             <li>{t('media.ytmStep3')}</li>
@@ -312,12 +304,17 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
             onChange={e => setText(e.target.value)}
             placeholder='{"cookie": "...", "x-goog-authuser": "0", ...}'
             spellCheck={false}
-            className="z-input z-code"
-            style={{ fontSize: 13, lineHeight: '18px', height: 160, padding: 12, resize: 'vertical', boxSizing: 'border-box' }}
+            style={{
+              fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+              fontSize: 11, height: 160, padding: 10,
+              background: 'var(--surface-elev, var(--surface))',
+              border: '0.5px solid var(--line)', borderRadius: 10, color: 'var(--ink)',
+              resize: 'vertical',
+            }}
           />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="z-btn-secondary" style={{ flex: 1 }} onClick={onClose}>{t('common.cancel')}</button>
-            <button className="z-btn-primary" style={{ flex: 2 }} disabled={busy || !text.trim()} onClick={() => onSubmit(member, text.trim())}>
+            <button style={btnGhost} onClick={onClose}>{t('common.cancel')}</button>
+            <button style={btnPrimary} disabled={busy || !text.trim()} onClick={() => onSubmit(member, text.trim())}>
               {busy ? t('common.saving') : t('media.ytmSaveHeaders')}
             </button>
           </div>
@@ -329,27 +326,35 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
 
 function Section({ title, subtitle, children }) {
   return (
-    <section className="z-card" style={{ marginBottom: 24, padding: 16 }}>
-      <div style={{ marginBottom: 12 }}>
-        <h2 className="z-headline">{title}</h2>
-        {subtitle && <p className="z-footnote" style={{ marginTop: 2 }}>{subtitle}</p>}
+    <section style={{ marginBottom: 24, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: 14 }}>
+      <div style={{ marginBottom: 10 }}>
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{title}</h2>
+        {subtitle && <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2 }}>{subtitle}</p>}
       </div>
       {children}
     </section>
   )
 }
 function Empty({ text }) {
-  return <p className="z-body" style={{ color: 'var(--ink-mute)', textAlign: 'center', padding: 32 }}>{text}</p>
+  return <div style={{ fontSize: 12, color: 'var(--ink-faint)', textAlign: 'center', padding: 16 }}>{text}</div>
 }
 function Banner({ kind = 'ok', children }) {
-  return <div className={kind === 'ok' ? 'bg-ok-soft' : 'bg-warn-soft'} style={{
-    color: kind === 'ok' ? 'var(--ok-text)' : 'var(--warn-text)',
-    padding: '12px 16px', borderRadius: 'var(--r-ctl)', fontSize: 15, lineHeight: '20px', marginBottom: 16,
+  return <div style={{
+    background: kind === 'ok' ? 'rgba(60,164,80,0.12)' : 'rgba(220,150,40,0.12)',
+    color: kind === 'ok' ? '#3ca450' : '#a06a18',
+    padding: '10px 14px', borderRadius: 10, fontSize: 12, marginBottom: 14,
   }}>{children}</div>
 }
 
-const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', minHeight: 56, borderTop: '0.5px solid var(--line)' }
+const row = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '0.5px solid var(--line)' }
+const rowTitle = { fontSize: 13, fontWeight: 600, color: 'var(--ink)' }
+const rowSub = { fontSize: 11, color: 'var(--ink-mute)', marginTop: 2 }
+const btnPrimary = { padding: '10px 14px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer', flex: 1 }
+const btnPrimarySm = { padding: '6px 10px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: 'pointer' }
+const btnGhost = { padding: '6px 10px', background: 'transparent', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', borderRadius: 10, fontSize: 12, cursor: 'pointer' }
+const btnTiny = { padding: '4px 8px', background: 'transparent', color: 'var(--ink-faint)', border: '0.5px solid var(--line)', borderRadius: 8, fontSize: 10, cursor: 'pointer' }
 
-const overlay = { position: 'fixed', inset: 0, background: 'var(--backdrop)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 220 }
-const modal   = { width: '100%', maxWidth: 520, background: 'var(--surface)', borderStartStartRadius: 'var(--r-sheet)', borderStartEndRadius: 'var(--r-sheet)', paddingBottom: 'env(safe-area-inset-bottom, 0)', maxHeight: '90vh', overflow: 'auto' }
-const header  = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px', minHeight: 68, borderBottom: '0.5px solid var(--line)' }
+const overlay = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 220 }
+const modal   = { width: '100%', maxWidth: 520, background: 'var(--surface)', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 'env(safe-area-inset-bottom, 0)', maxHeight: '90vh', overflow: 'auto' }
+const header  = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '0.5px solid var(--line)', fontWeight: 700, color: 'var(--ink)' }
+const closeBtn = { background: 'transparent', border: 'none', fontSize: 24, color: 'var(--ink-mute)', cursor: 'pointer' }

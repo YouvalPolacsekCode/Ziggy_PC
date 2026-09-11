@@ -26,7 +26,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useT } from '../../lib/i18n'
 import { recoverHealth, acknowledgeOffline } from '../../lib/api'
-import { Button } from './Button'
 
 const SEVERITY_BY_PRIMARY = {
   ha_unreachable:                  'err',
@@ -38,13 +37,10 @@ const SEVERITY_BY_PRIMARY = {
 }
 
 // Banner palette. Maps to the global CSS vars used elsewhere on the dashboard.
-// The status colour lives in the 8px dot and the tinted fill only; the
-// actions are plain secondary buttons so the banner never competes with the
-// screen's one primary action.
 const PALETTE = {
-  err:  { bg: 'color-mix(in srgb, var(--err)  10%, var(--surface))', border: 'color-mix(in srgb, var(--err)  30%, var(--line))', dot: 'var(--err)'  },
-  warn: { bg: 'color-mix(in srgb, var(--warn) 10%, var(--surface))', border: 'color-mix(in srgb, var(--warn) 30%, var(--line))', dot: 'var(--warn)' },
-  info: { bg: 'var(--surface-2)', border: 'var(--line)', dot: 'var(--ink-mute)' },
+  err:  { bg: 'color-mix(in srgb, var(--err)  10%, var(--surface))', border: 'color-mix(in srgb, var(--err)  30%, transparent)', dot: 'var(--err)',  cta: 'var(--err)'  },
+  warn: { bg: 'color-mix(in srgb, var(--warn) 10%, var(--surface))', border: 'color-mix(in srgb, var(--warn) 30%, transparent)', dot: 'var(--warn)', cta: 'var(--warn)' },
+  info: { bg: 'color-mix(in srgb, var(--ink-mute) 8%, var(--surface))', border: 'color-mix(in srgb, var(--ink-mute) 20%, transparent)', dot: 'var(--ink-mute)', cta: 'var(--accent)' },
 }
 
 // i18n key naming convention: the singular/plural is baked into the key name
@@ -151,46 +147,83 @@ export function SystemHealthBanner({ health, onRefresh }) {
       role="status"
       aria-live="polite"
       style={{
-        display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',
-        padding: 16, borderRadius: 'var(--r-card)',
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        padding: '10px 14px', borderRadius: 12,
         background: pal.bg,
         border: `0.5px solid ${pal.border}`,
-        color: 'var(--ink)',
+        fontSize: 12, color: 'var(--ink)',
       }}
     >
       <span
         aria-hidden
-        className={inProgress ? 'z-dot z-pulse' : 'z-dot'}
-        style={{ flexShrink: 0, marginTop: 7, background: pal.dot }}
+        style={{
+          flexShrink: 0, marginTop: 4,
+          width: 8, height: 8, borderRadius: '50%',
+          background: pal.dot,
+          // pulse when actively recovering so the user sees it's working
+          animation: inProgress ? 'ziggy-health-pulse 1.4s ease-in-out infinite' : 'none',
+        }}
       />
+      <style>{`@keyframes ziggy-health-pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.35; }
+      }`}</style>
 
-      <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-        <div style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600 }}>{copy.title}</div>
-        <div style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 4 }}>{copy.body}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600 }}>{copy.title}</div>
+        <div style={{ color: 'var(--ink-mute)', marginTop: 2 }}>{copy.body}</div>
         {errMsg && (
-          <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--err-text)', marginTop: 4 }}>{errMsg}</div>
+          <div style={{ color: 'var(--err)', marginTop: 4, fontSize: 11 }}>{errMsg}</div>
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         {showReview && (
-          <Button variant="secondary" size="sm" onClick={handleReview} disabled={busy}>
+          <button
+            onClick={handleReview}
+            disabled={busy}
+            style={btnStyle(pal.cta, /*ghost*/ true)}
+          >
             {t('health.action.review')}
-          </Button>
+          </button>
         )}
         {canAck && (
-          <Button variant="secondary" size="sm" onClick={handleAck} disabled={busy}>
+          <button
+            onClick={handleAck}
+            disabled={busy}
+            style={btnStyle(pal.cta, /*ghost*/ true)}
+          >
             {t('health.action.itsOk')}
-          </Button>
+          </button>
         )}
         {showRetry && (
-          <Button variant="secondary" size="sm" onClick={handleRetry} disabled={busy || inProgress}>
+          <button
+            onClick={handleRetry}
+            disabled={busy || inProgress}
+            style={btnStyle(pal.cta, /*ghost*/ false)}
+          >
             {(busy || inProgress) ? t('health.action.retrying') : t('health.action.retry')}
-          </Button>
+          </button>
         )}
       </div>
     </div>
   )
+}
+
+function btnStyle(cta, ghost) {
+  return ghost
+    ? {
+        padding: '4px 10px', borderRadius: 7,
+        background: 'transparent', color: 'var(--ink)',
+        border: `0.5px solid color-mix(in srgb, ${cta} 40%, transparent)`,
+        cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
+      }
+    : {
+        padding: '4px 10px', borderRadius: 7,
+        background: cta, color: 'var(--on-accent)',
+        border: 'none', cursor: 'pointer',
+        fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
+      }
 }
 
 export default SystemHealthBanner

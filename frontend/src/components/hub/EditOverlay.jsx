@@ -8,7 +8,6 @@
 // category. Picking a type adds a default-sized instance to the end of the
 // draft and closes the picker.
 
-import { ArrowDown, ArrowUp, GripVertical, Settings, X } from 'lucide-react'
 import { useHubStore } from '../../stores/hubStore'
 
 // ─── Per-section overlay ─────────────────────────────────────────────────────
@@ -49,17 +48,15 @@ export function EditOverlay({ section }) {
         title="Drag to reorder"
         aria-label="Drag to reorder"
         role="button"
-      >
-        <GripVertical size={20} strokeWidth={1.75} />
-      </div>
+      >⋮⋮</div>
       <div className="z-hub-edit-actions" onPointerDown={e => e.stopPropagation()}>
-        <button onClick={() => moveSection(section.id, 'up')}   title="Move up"   aria-label="Move up"><ArrowUp size={20} strokeWidth={1.75} /></button>
-        <button onClick={() => moveSection(section.id, 'down')} title="Move down" aria-label="Move down"><ArrowDown size={20} strokeWidth={1.75} /></button>
+        <button onClick={() => moveSection(section.id, 'up')}   title="Move up">↑</button>
+        <button onClick={() => moveSection(section.id, 'down')} title="Move down">↓</button>
         <button onClick={() => cycleSectionSize(section.id)}    title="Cycle size">{section.size}</button>
         {hasConfig && (
-          <button onClick={() => openConfig(section.id)} title="Configure" aria-label="Configure"><Settings size={20} strokeWidth={1.75} /></button>
+          <button onClick={() => openConfig(section.id)} title="Configure" aria-label="Configure">⚙</button>
         )}
-        <button onClick={() => removeSection(section.id)} className="danger" title="Remove" aria-label="Remove"><X size={20} strokeWidth={1.75} /></button>
+        <button onClick={() => removeSection(section.id)}       className="danger" title="Remove">×</button>
       </div>
     </div>
   )
@@ -117,20 +114,19 @@ export function SectionPickerModal({ open, onClose }) {
     <div className="z-hub-picker-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="z-hub-picker" onClick={e => e.stopPropagation()}>
         <div className="z-hub-picker-head">
-          <p className="z-headline" style={{ margin: 0 }}>Add to layout</p>
-          <button onClick={onClose} aria-label="Close" className="z-hub-picker-close">
-            <X size={20} strokeWidth={1.75} />
-          </button>
+          <p className="z-eyebrow" style={{ margin: 0 }}>Add to layout</p>
+          <button onClick={onClose} aria-label="Close" className="z-hub-picker-close">×</button>
         </div>
         <div className="z-hub-picker-body">
           {CATALOG.map(group => (
-            <div key={group.group} style={{ marginBottom: 16 }}>
-              <p className="z-eyebrow" style={{ margin: '0 0 8px' }}>{group.group}</p>
+            <div key={group.group} style={{ marginBottom: 18 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--ink-faint)',
+                          textTransform: 'uppercase', letterSpacing: 0.5 }}>{group.group}</p>
               <div style={{ display: 'grid', gap: 8 }}>
                 {group.items.map(item => (
                   <button key={item.type} onClick={() => pick(item)} className="z-hub-picker-item">
-                    <span className="z-headline">{item.label}</span>
-                    <span className="z-footnote">{item.hint}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{item.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{item.hint}</span>
                   </button>
                 ))}
               </div>

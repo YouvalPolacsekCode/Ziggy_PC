@@ -1,64 +1,62 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { Sunrise, Play, Eye, Trash2 } from 'lucide-react'
 import { Toggle } from '../ui/Toggle'
 import { useT } from '../../lib/i18n'
-import { T_ENTER } from '../../lib/motion'
-import { cardIconBtn } from '../../lib/automations/styles'
 
 // ── CircadianGroupRow ─────────────────────────────────────────────────────────
 // The Smart Light Schedule as one feature row on the Automatic tab, sourced from
 // the continuous-ramp engine config (services/circadian_engine). Shows the live
-// ramp point and offers Sync-now, View, Delete + an enable/disable toggle. The
-// user never sees the underlying engine — just "one thing".
-//
-// Same anatomy as AutomationCard: 44px line glyph · Headline · one Subhead ·
-// one Footnote/chip · switch · 44px actions. The gold tint is gone.
+// ramp point and offers Sync-now (▶), View, Edit, Delete + an enable/disable
+// toggle. The user never sees the underlying engine — just "one thing".
 function CircadianGroupRow({ status, onToggle, onSync, onView, onEdit, onDelete }) {
   const t = useT()
   const enabled = !!status?.enabled
   const cur = status?.current || {}
   const lightCount = (status?.lights || []).length
   const manualCount = (status?.manual_lights || []).length
-  const title = t('automations.circadian.installedBadge')
+  const tint = enabled ? 'var(--gold)' : 'var(--ink-faint)'
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
-      <div style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-        <button onClick={onView} title={t('automations.circadian.view')} aria-label={t('automations.circadian.view')}
-          style={{ ...cardIconBtn(enabled ? 'var(--ink-2)' : 'var(--ink-faint)'), background: 'var(--surface-2)' }}>
-          <Sunrise size={22} strokeWidth={1.75} />
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
+      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <button onClick={onView} title={t('automations.circadian.view')}
+          style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 14%, var(--surface-2))`, fontSize: 18, border: 'none', cursor: 'pointer' }}>
+          🌅
         </button>
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onView}>
-          <p className="z-headline" style={{ margin: 0 }} dir="auto">{title}</p>
-          <p className="z-subhead z-mono" style={{ margin: '2px 0 0' }} dir="auto">
-            {enabled ? t('automations.circadian.nowValue', { k: cur.kelvin, p: cur.pct }) : t('automations.circadian.paused')}
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', margin: 0 }} dir="auto">
+            {t('automations.circadian.installedBadge')}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-            <span className="z-footnote z-mono" style={{ color: 'var(--ink-faint)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
+            {enabled ? (
+              <span style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>
+                {t('automations.circadian.nowValue', { k: cur.kelvin, p: cur.pct })}
+              </span>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('automations.circadian.paused')}</span>
+            )}
+            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
               {t('automations.circadian.lightCount', { n: lightCount })}
             </span>
             {manualCount > 0 && (
-              <span className="z-chip" style={{ color: 'var(--warn-text)' }}>
+              <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, background: 'color-mix(in srgb, var(--warn) 14%, transparent)', color: 'var(--warn)' }}>
                 {t('automations.circadian.nManual', { n: manualCount })}
               </span>
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0, margin: '-4px -8px -8px 0' }}>
-          <div style={{ padding: '8px 8px 0' }}>
-            <Toggle checked={enabled} onCheckedChange={() => onToggle(!enabled)} aria-label={title} />
-          </div>
-          <div style={{ display: 'flex', gap: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <Toggle checked={enabled} onCheckedChange={() => onToggle(!enabled)} />
+          <div style={{ display: 'flex', gap: 2 }}>
             <button onClick={onSync} title={t('automations.circadian.syncNow')} aria-label={t('automations.circadian.syncNow')} disabled={!enabled}
-              style={{ ...cardIconBtn(enabled ? 'var(--ink-mute)' : 'var(--ink-faint)'), cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.5 }}>
-              <Play size={18} strokeWidth={1.75} fill="currentColor" />
+              style={{ background: 'none', border: 'none', cursor: enabled ? 'pointer' : 'default', color: enabled ? 'var(--ok)' : 'var(--ink-faint)', opacity: enabled ? 1 : 0.4, padding: 4 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             </button>
-            <button onClick={onView} title={t('common.view')} aria-label={t('common.view')} style={cardIconBtn()}>
-              <Eye size={18} strokeWidth={1.75} />
+            <button onClick={onView} title={t('common.view')} aria-label={t('common.view')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 4 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></svg>
             </button>
-            <button onClick={onDelete} title={t('common.delete')} aria-label={t('common.delete')} style={cardIconBtn('var(--err-text)')}>
-              <Trash2 size={18} strokeWidth={1.75} />
+            <button onClick={onDelete} title={t('common.delete')} aria-label={t('common.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
             </button>
           </div>
         </div>

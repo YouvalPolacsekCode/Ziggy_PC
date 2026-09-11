@@ -20,9 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, ArrowRight, Check, Home, MapPin, Bell, Mic,
   Smartphone, Wifi, Zap, Loader2,
-  Sofa, Bed, CookingPot, Bath, Briefcase, Baby, Lightbulb, Tv,
 } from 'lucide-react'
-import { T_ENTER } from '../lib/motion'
 import { useAuthStore } from '../stores/authStore'
 import { useUIStore } from '../stores/uiStore'
 import { setLang, useT } from '../lib/i18n'
@@ -175,10 +173,10 @@ export default function Onboarding() {
         <AnimatePresence mode="wait">
           <motion.div
             key={currentId}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={T_ENTER}
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.18 }}
             style={{ width: '100%', maxWidth: 480 }}
           >
             <StepRouter
@@ -213,22 +211,21 @@ export default function Onboarding() {
 function FullScreenSpinner() {
   return (
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
-      <Loader2 size={24} className="z-spin" style={{ color: 'var(--ink-mute)' }} />
+      <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)' }} />
     </div>
   )
 }
 
 function ProgressBar({ current, total }) {
   return (
-    <div role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={current + 1}
-         style={{ display: 'flex', gap: 4, padding: '0 20px', maxWidth: 520, margin: '0 auto' }}>
+    <div style={{ display: 'flex', gap: 4, padding: '0 20px' }}>
       {Array.from({ length: total }).map((_, i) => (
         <div
           key={i}
           style={{
-            flex: 1, height: 8, borderRadius: 999,
-            background: i <= current ? 'var(--ink)' : 'var(--line)',
-            transition: 'background var(--dur-state) var(--ease-standard)',
+            flex: 1, height: 3, borderRadius: 2,
+            background: i <= current ? 'var(--accent)' : 'var(--surface-2)',
+            transition: 'background 0.18s',
           }}
         />
       ))}
@@ -289,19 +286,17 @@ function LangTile({ flag, label, selected, onSelect }) {
   return (
     <button
       onClick={onSelect}
-      aria-pressed={selected}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-        minHeight: 64, padding: '20px 12px', borderRadius: 'var(--r-card)',
-        background: selected ? 'var(--surface-2)' : 'var(--surface)',
-        border: `0.5px solid ${selected ? 'var(--line-2)' : 'var(--line)'}`,
+        padding: '20px 12px', borderRadius: 16,
+        background: 'var(--surface)',
+        border: selected ? '2px solid var(--accent)' : '1px solid var(--line)',
         cursor: 'pointer', fontFamily: 'inherit',
-        transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
+        transition: 'border-color 0.12s',
       }}
     >
-      {/* Country flags are the one emoji allowed as a glyph. */}
-      <span style={{ fontSize: 34, lineHeight: '41px' }} aria-hidden>{flag}</span>
-      <span style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
+      <span style={{ fontSize: 36 }}>{flag}</span>
+      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
     </button>
   )
 }
@@ -509,8 +504,7 @@ function StepConnectHA({ onNext, onBack, addToast, t }) {
           value={url}
           onChange={e => { setUrl(e.target.value); setProbe(null) }}
           dir="ltr"
-          className="z-code"
-          style={inputStyle}
+          style={{ ...inputStyle, fontFamily: '"IBM Plex Mono", monospace' }}
         />
       </FormField>
       <FormField
@@ -522,12 +516,12 @@ function StepConnectHA({ onNext, onBack, addToast, t }) {
           value={token}
           onChange={e => { setToken(e.target.value); setProbe(null) }}
           dir="ltr"
-          style={inputStyle}
+          style={{ ...inputStyle, fontFamily: '"IBM Plex Mono", monospace' }}
         />
       </FormField>
       {probe?.ok && (
         <div style={successBox}>
-          <Check size={20} strokeWidth={2} style={{ color: 'var(--ok)', flexShrink: 0 }} /> {t('onboarding.ha.connectedV', { v: probe.ha_version || '' }) || `Connected${probe.ha_version ? ` · HA ${probe.ha_version}` : ''}`}
+          <Check size={14} /> {t('onboarding.ha.connectedV', { v: probe.ha_version || '' }) || `Connected${probe.ha_version ? ` · HA ${probe.ha_version}` : ''}`}
         </div>
       )}
       {error && <ErrorText>{error}</ErrorText>}
@@ -564,31 +558,31 @@ function StepCoordinator({ onNext, onBack, t }) {
       title={t('onboarding.coord.title') || 'Zigbee coordinator'}
       subtitle={t('onboarding.coord.subtitle') || 'Optional — needed only for Zigbee devices (sensors, bulbs, switches).'}
     >
-      <div className="z-card" style={{ padding: 16 }}>
+      <div style={{ padding: 16, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--line)' }}>
         {loading ? (
-          <Loader2 size={20} className="z-spin" style={{ color: 'var(--ink-mute)' }} />
+          <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--ink-faint)' }} />
         ) : !haOnline ? (
-          <p className="z-body" style={{ color: 'var(--ink-mute)' }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-faint)' }}>
             {t('onboarding.coord.haOffline') || "Your hub is offline — we can't check for a coordinator right now."}
           </p>
         ) : connected ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Check size={24} strokeWidth={2} style={{ color: 'var(--ok)', flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Check size={18} style={{ color: 'var(--ok)' }} />
             <div>
-              <p className="z-headline">
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
                 {health.coordinator_title}
               </p>
-              <p className="z-subhead">
+              <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
                 {t('onboarding.coord.detected') || 'Detected and ready for pairing.'}
               </p>
             </div>
           </div>
         ) : (
           <div>
-            <p className="z-body" style={{ marginBottom: 8 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 8 }}>
               {t('onboarding.coord.notFound') || 'No Zigbee coordinator detected.'}
             </p>
-            <p className="z-subhead">
+            <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
               {t('onboarding.coord.howTo') || "For Zigbee devices, plug in a coordinator (SMLIGHT, Sonoff, ConBee). Don't have one yet? Skip — Ziggy will pick it up the moment you add one."}
             </p>
           </div>
@@ -679,12 +673,12 @@ function StepHomeZone({ onNext, onBack, addToast, t }) {
 }
 
 const ROOM_PRESETS = [
-  { icon: Sofa,       key: 'rooms.preset.living',  default: 'Living Room' },
-  { icon: Bed,        key: 'rooms.preset.bedroom', default: 'Bedroom' },
-  { icon: CookingPot, key: 'rooms.preset.kitchen', default: 'Kitchen' },
-  { icon: Bath,       key: 'rooms.preset.bathroom', default: 'Bathroom' },
-  { icon: Briefcase,  key: 'rooms.preset.office',  default: 'Office' },
-  { icon: Baby,       key: 'rooms.preset.kids',    default: "Kid's Room" },
+  { icon: '🛋️', key: 'rooms.preset.living',  default: 'Living Room' },
+  { icon: '🛏️', key: 'rooms.preset.bedroom', default: 'Bedroom' },
+  { icon: '🍳', key: 'rooms.preset.kitchen', default: 'Kitchen' },
+  { icon: '🛁', key: 'rooms.preset.bathroom', default: 'Bathroom' },
+  { icon: '💼', key: 'rooms.preset.office',  default: 'Office' },
+  { icon: '🧒', key: 'rooms.preset.kids',    default: "Kid's Room" },
 ]
 
 function StepRooms({ onNext, onBack, addToast, t }) {
@@ -740,24 +734,21 @@ function StepRooms({ onNext, onBack, addToast, t }) {
         {ROOM_PRESETS.map(p => {
           const name = t(p.key) || p.default
           const on = selected.has(name)
-          const RoomIcon = p.icon
           return (
             <button
               key={p.default}
               onClick={() => toggle(name)}
-              aria-pressed={on}
               style={{
-                display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
-                padding: '12px 16px', borderRadius: 'var(--r-ctl)',
-                background: on ? 'var(--surface-2)' : 'var(--surface)',
-                border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '12px 14px', borderRadius: 12,
+                background: on ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface)',
+                border: on ? '1.5px solid var(--accent)' : '1px solid var(--line)',
                 cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start',
-                transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
               }}
             >
-              <RoomIcon size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)', flexShrink: 0 }} />
-              <span style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{name}</span>
-              {on && <Check size={20} strokeWidth={2} style={{ color: 'var(--ink)', flexShrink: 0 }} />}
+              <span style={{ fontSize: 22 }}>{p.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{name}</span>
+              {on && <Check size={14} style={{ marginInlineStart: 'auto', color: 'var(--accent)' }} />}
             </button>
           )
         })}
@@ -775,7 +766,7 @@ function StepRooms({ onNext, onBack, addToast, t }) {
           {t('onboarding.rooms.add') || 'Add'}
         </SecondaryBtn>
       </Row>
-      <p className="z-footnote z-mono" style={{ marginTop: 4 }}>
+      <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 4 }}>
         {t('onboarding.rooms.selectedN', { n: selected.size }) || `${selected.size} selected`}
       </p>
       <Row>
@@ -788,13 +779,11 @@ function StepRooms({ onNext, onBack, addToast, t }) {
   )
 }
 
-// `icon` is a Lucide component; `flag` is a country flag (the one emoji
-// allowed as a glyph) for the Israel-only Switcher category.
 const DEVICE_CATEGORIES = [
-  { id: 'zigbee',   icon: Lightbulb, key: 'onboarding.cat.zigbee',   defaultLabel: 'Zigbee (bulbs, sensors)' },
-  { id: 'wifi',     icon: Wifi,      key: 'onboarding.cat.wifi',     defaultLabel: 'Wi-Fi devices' },
-  { id: 'ir',       icon: Tv,        key: 'onboarding.cat.ir',       defaultLabel: 'TV / AC (IR)' },
-  { id: 'switcher', flag: '🇮🇱',     key: 'onboarding.cat.switcher', defaultLabel: 'Switcher (Israel)' },
+  { id: 'zigbee',   icon: '🔆', key: 'onboarding.cat.zigbee',   defaultLabel: 'Zigbee (bulbs, sensors)' },
+  { id: 'wifi',     icon: '📶', key: 'onboarding.cat.wifi',     defaultLabel: 'Wi-Fi devices' },
+  { id: 'ir',       icon: '📺', key: 'onboarding.cat.ir',       defaultLabel: 'TV / AC (IR)' },
+  { id: 'switcher', icon: '🇮🇱', key: 'onboarding.cat.switcher', defaultLabel: 'Switcher (Israel)' },
 ]
 
 function StepDeviceCategories({ onNext, onBack, draft, onDraftChange, t }) {
@@ -812,28 +801,23 @@ function StepDeviceCategories({ onNext, onBack, draft, onDraftChange, t }) {
       title={t('onboarding.cat.title') || 'What do you want to add?'}
       subtitle={t('onboarding.cat.subtitle') || 'You can skip and add devices later.'}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {DEVICE_CATEGORIES.map(c => {
           const on = picked.has(c.id)
-          const CatIcon = c.icon
           return (
             <button
               key={c.id}
               onClick={() => toggle(c.id)}
-              aria-pressed={on}
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                minHeight: 64, padding: '20px 12px', borderRadius: 'var(--r-card)',
-                background: on ? 'var(--surface-2)' : 'var(--surface)',
-                border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
+                padding: '20px 12px', borderRadius: 12,
+                background: on ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface)',
+                border: on ? '1.5px solid var(--accent)' : '1px solid var(--line)',
                 cursor: 'pointer', fontFamily: 'inherit',
-                transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
               }}
             >
-              {CatIcon
-                ? <CatIcon size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)' }} />
-                : <span style={{ fontSize: 22, lineHeight: '24px' }} aria-hidden>{c.flag}</span>}
-              <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', textAlign: 'center' }}>
+              <span style={{ fontSize: 28 }}>{c.icon}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', textAlign: 'center' }}>
                 {t(c.key) || c.defaultLabel}
               </span>
             </button>
@@ -878,7 +862,7 @@ function StepDevices({ onNext, onBack, draft, t }) {
       subtitle={t('onboarding.devices.subtitle') || 'Pair as many as you want — you can always come back to /devices for more.'}
       icon={Zap}
     >
-      <Suspense fallback={<Loader2 size={20} className="z-spin" style={{ color: 'var(--ink-mute)' }} />}>
+      <Suspense fallback={<Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />}>
         <PairingWizard
           open={open}
           onClose={() => setOpen(false)}
@@ -923,8 +907,8 @@ function StepNotifications({ onNext, onBack, addToast, t }) {
       subtitle={t('onboarding.notif.subtitle') || 'Get push alerts for motion, doors, leaks, and offline devices.'}
       icon={Bell}
     >
-      <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
-        <p className="z-body">
+      <div style={{ padding: 16, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--line)', marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink)' }}>
           {status === 'granted'
             ? (t('onboarding.notif.allowed') || 'Notifications allowed ✓')
             : status === 'denied'
@@ -960,28 +944,28 @@ function StepSuggestedAutomations({ onNext, onBack, t }) {
       icon={Zap}
     >
       {items === null ? (
-        <Loader2 size={20} className="z-spin" style={{ color: 'var(--ink-mute)' }} />
+        <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', color: 'var(--ink-faint)' }} />
       ) : items.length === 0 ? (
-        <p className="z-body" style={{ color: 'var(--ink-mute)' }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-faint)' }}>
           {t('onboarding.autom.none') || 'Nothing to suggest yet — pair more devices to unlock automations.'}
         </p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.map(it => (
-            <div key={it.id || it.name} className="z-card-sm" style={{
-              minHeight: 56, padding: '12px 16px',
+            <div key={it.id || it.name} style={{
+              padding: 14, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--line)',
               display: 'flex', alignItems: 'center', gap: 12,
             }}>
-              <Zap size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)', flexShrink: 0 }} />
+              <span style={{ fontSize: 22 }}>{it.icon || '⚡'}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{it.name}</p>
-                <p className="z-subhead" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{it.name}</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.description}
                 </p>
               </div>
             </div>
           ))}
-          <p className="z-footnote">
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
             {t('onboarding.autom.openLater') || 'Open Automations later to enable these.'}
           </p>
         </div>
@@ -1042,22 +1026,20 @@ function ChoiceCard({ title, body, selected, onClick }) {
   return (
     <button
       onClick={onClick}
-      aria-pressed={selected}
       style={{
-        width: '100%', textAlign: 'start', minHeight: 64,
-        padding: '12px 16px', borderRadius: 'var(--r-card)',
-        background: selected ? 'var(--surface-2)' : 'var(--surface)',
-        border: `0.5px solid ${selected ? 'var(--line-2)' : 'var(--line)'}`,
+        width: '100%', textAlign: 'start',
+        padding: 14, borderRadius: 12,
+        background: selected ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface)',
+        border: selected ? '1.5px solid var(--accent)' : '1px solid var(--line)',
         cursor: 'pointer', fontFamily: 'inherit',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-        transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
       }}
     >
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{title}</p>
-        <p className="z-subhead" style={{ marginTop: 2 }}>{body}</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{title}</p>
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 2 }}>{body}</p>
       </div>
-      {selected && <Check size={20} strokeWidth={2} style={{ color: 'var(--ink)', flexShrink: 0 }} />}
+      {selected && <Check size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
     </button>
   )
 }
@@ -1092,16 +1074,16 @@ function StepDone({ onFinish, t }) {
       title={t('onboarding.done.title') || "You're all set!"}
       subtitle={t('onboarding.done.subtitle') || 'Opening your home…'}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 16px 16px', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 16px 16px', gap: 18 }}>
         <div style={{
           width: 88, height: 88, borderRadius: '50%',
           background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Check size={44} style={{ color: 'var(--on-accent)' }} strokeWidth={2.5} />
+          <Check size={44} color="white" strokeWidth={3} />
         </div>
         {showWhatsNext && (
-          <p className="z-body" style={{ color: 'var(--ink-mute)', textAlign: 'center', maxWidth: 360 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center', maxWidth: 320, lineHeight: 1.55 }}>
             {whatsNext}
           </p>
         )}
@@ -1114,15 +1096,15 @@ function StepDone({ onFinish, t }) {
 
 function StepLayout({ title, subtitle, icon: Icon, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <header style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <header style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
         {Icon && (
-          <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <Icon size={20} strokeWidth={1.75} style={{ color: 'var(--ink-2)' }} aria-hidden />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'color-mix(in srgb, var(--accent) 14%, var(--surface))', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+            <Icon size={18} style={{ color: 'var(--accent)' }} />
           </div>
         )}
-        <h1 className="z-display" style={{ margin: 0 }}>{title}</h1>
-        {subtitle && <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>{subtitle}</p>}
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--ink)' }}>{title}</h1>
+        {subtitle && <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)', lineHeight: 1.45 }}>{subtitle}</p>}
       </header>
       {children}
     </div>
@@ -1132,9 +1114,9 @@ function StepLayout({ title, subtitle, icon: Icon, children }) {
 function FormField({ label, hint, children, style }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, ...(style || {}) }}>
-      <label style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>{label}</label>
+      <label style={{ fontSize: 12, color: 'var(--ink-faint)', fontWeight: 500 }}>{label}</label>
       {children}
-      {hint && <p className="z-footnote" style={{ marginTop: 2 }}>{hint}</p>}
+      {hint && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{hint}</p>}
     </div>
   )
 }
@@ -1144,40 +1126,52 @@ function Row({ children }) {
 }
 
 function ErrorText({ children }) {
-  return <p role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)', margin: '4px 0 0' }}>{children}</p>
+  return <p style={{ fontSize: 12, color: 'var(--err)', margin: '4px 0 0' }}>{children}</p>
 }
 
-// The one inverted (ink-on-bg) element per step; `.z-button` supplies the
-// disabled dim and the 44px touch floor.
-function PrimaryBtn({ children, style, className, ...rest }) {
+function PrimaryBtn({ children, style, ...rest }) {
   return (
-    <button {...rest} className={`z-btn-primary z-button ${className || ''}`} style={{ flex: 1, ...(style || {}) }}>
+    <button {...rest} style={{
+      flex: 1, padding: '12px 16px', borderRadius: 10,
+      background: 'var(--accent)', color: 'white',
+      border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14,
+      fontFamily: 'inherit',
+      ...(rest.disabled ? { opacity: 0.55, cursor: 'not-allowed' } : {}),
+      ...(style || {}),
+    }}>
       {children}
     </button>
   )
 }
 
-function SecondaryBtn({ children, style, className, ...rest }) {
+function SecondaryBtn({ children, style, ...rest }) {
   return (
-    <button {...rest} className={`z-btn-secondary z-button ${className || ''}`} style={style}>
+    <button {...rest} style={{
+      padding: '12px 14px', borderRadius: 10,
+      background: 'transparent', color: 'var(--ink)',
+      border: '1px solid var(--line)', cursor: 'pointer', fontWeight: 500, fontSize: 13,
+      fontFamily: 'inherit',
+      ...(rest.disabled ? { opacity: 0.55, cursor: 'not-allowed' } : {}),
+      ...(style || {}),
+    }}>
       {children}
     </button>
   )
 }
 
 const inputStyle = {
-  width: '100%', boxSizing: 'border-box', minHeight: 44,
-  padding: '12px 16px', borderRadius: 'var(--r-ctl)',
-  border: '0.5px solid var(--line)', background: 'var(--surface)',
-  color: 'var(--ink)', fontSize: 17, lineHeight: 1.3, fontFamily: 'inherit',
+  width: '100%', boxSizing: 'border-box',
+  padding: '11px 13px', borderRadius: 10,
+  border: '1px solid var(--line)', background: 'var(--surface)',
+  color: 'var(--ink)', fontSize: 14, fontFamily: 'inherit',
   outline: 'none',
 }
 
 const successBox = {
   display: 'flex', alignItems: 'center', gap: 8,
-  padding: '12px 16px', borderRadius: 'var(--r-ctl)',
+  padding: '10px 12px', borderRadius: 10,
   background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))',
-  color: 'var(--ok-text)', fontSize: 15, lineHeight: '20px', fontWeight: 500,
+  color: 'var(--ok)', fontSize: 13, fontWeight: 500,
 }
 
 const shellStyles = {
@@ -1187,12 +1181,12 @@ const shellStyles = {
     fontFamily: 'inherit',
   },
   header: {
-    padding: 'max(24px, env(safe-area-inset-top, 0px)) 0 12px',
+    padding: '24px 0 12px',
     flexShrink: 0,
   },
   main: {
     flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-    padding: '12px 20px 24px',
+    padding: '20px',
     overflowY: 'auto',
   },
   footer: {
@@ -1202,8 +1196,8 @@ const shellStyles = {
   },
   skipBtn: {
     background: 'transparent', border: 'none',
-    color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500, minHeight: 44,
+    color: 'var(--ink-faint)', fontSize: 13,
     cursor: 'pointer', fontFamily: 'inherit',
-    padding: '8px 16px',
+    padding: '8px 12px',
   },
 }

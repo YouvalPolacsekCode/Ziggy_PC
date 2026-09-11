@@ -2,9 +2,7 @@
 // bubble draw from this one set so "Ziggy" looks the same everywhere it is
 // tapped. Kept free of store imports on purpose: the chat bubble (and its
 // tests) reuse the glyph without dragging BottomNav's auth/feature stores in.
-// Default stroke 1.75 — the line weight every Lucide glyph carries at 18–24px,
-// so the shell's own icons sit at the same weight as the rest of the app.
-export function ZIcon({ name, size = 24, stroke = 1.75, color = 'currentColor' }) {
+export function ZIcon({ name, size = 24, stroke = 1.6, color = 'currentColor' }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round' }
   switch (name) {
     case 'home':    return <svg {...p}><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>

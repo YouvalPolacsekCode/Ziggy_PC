@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X } from 'lucide-react'
 import { useWsMessages } from '../hooks/useWebSocket'
 import { useAuthStore } from '../stores/authStore'
 import { useUIStore } from '../stores/uiStore'
-import { Button } from '../components/ui/Button'
 import {
   getDebugConfig, setDebugConfig, getDebugEvents,
   clearDebugEvents, exportDebugReport, getDebugStatus,
@@ -13,58 +11,46 @@ import feLogger from '../lib/logger'
 import { useT } from '../lib/i18n'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-//
-// Colour is carried by an 8px dot next to the word, never by the word itself:
-// the scope/level/result vocabularies are far bigger than the four status
-// tones that have AA-safe text variants, so a coloured badge label at 13px
-// would either fail contrast or collapse every scope into one hue. The dot
-// keeps the at-a-glance scan; the text stays ink.
 
 const LEVEL_ORDER = { off: 0, basic: 1, verbose: 2, trace: 3 }
-const LEVEL_DOT = {
+const LEVEL_COLOR = {
   off:     'var(--ink-faint)',
-  basic:   'var(--ok)',
-  verbose: 'var(--warn)',
-  trace:   'var(--info)',
+  basic:   'var(--accent)',
+  verbose: '#e0a020',
+  trace:   '#c050e0',
 }
-const SCOPE_DOT = {
-  intent:     'var(--info)',
-  ha:         'var(--ok)',
-  ir:         'var(--warn)',
-  automation: 'var(--info)',
-  sensor:     'var(--err)',
-  presence:   'var(--gold)',
-  ws:         'var(--info)',
-  voice:      'var(--gold)',
-  scheduler:  'var(--ok)',
-  api:        'var(--info)',
-  device:     'var(--gold)',
-  frontend:   'var(--err)',
-  settings:   'var(--warn)',
+const SCOPE_COLORS = {
+  intent:     '#3b82f6',
+  ha:         '#10b981',
+  ir:         '#f59e0b',
+  automation: '#8b5cf6',
+  sensor:     '#ef4444',
+  presence:   '#06b6d4',
+  ws:         '#6366f1',
+  voice:      '#ec4899',
+  scheduler:  '#84cc16',
+  api:        '#22d3ee',
+  device:     '#a855f7',
+  frontend:   '#f43f5e',
+  settings:   '#eab308',
   general:    'var(--ink-mute)',
 }
-// Result tones: `dot` is the fill, `text` the AA-safe word colour.
-const RESULT_TONE = {
-  ok:              { dot: 'var(--ok)',        text: 'var(--ok-text)',   soft: 'bg-ok-soft' },
-  error:           { dot: 'var(--err)',       text: 'var(--err-text)',  soft: 'bg-err-soft' },
-  exception:       { dot: 'var(--err)',       text: 'var(--err-text)',  soft: 'bg-err-soft' },
-  not_found:       { dot: 'var(--warn)',      text: 'var(--warn-text)', soft: 'bg-warn-soft' },
-  unrecognized:    { dot: 'var(--warn)',      text: 'var(--warn-text)', soft: 'bg-warn-soft' },
-  skipped:         { dot: 'var(--ink-faint)', text: 'var(--ink-mute)',  soft: 'z-card-soft' },
-  cancelled:       { dot: 'var(--ink-faint)', text: 'var(--ink-mute)',  soft: 'z-card-soft' },
-  partial_failure: { dot: 'var(--warn)',      text: 'var(--warn-text)', soft: 'bg-warn-soft' },
+const RESULT_COLOR = {
+  ok:              '#10b981',
+  error:           '#ef4444',
+  exception:       '#ef4444',
+  not_found:       '#f59e0b',
+  unrecognized:    '#f59e0b',
+  skipped:         'var(--ink-faint)',
+  cancelled:       'var(--ink-faint)',
+  partial_failure: '#f59e0b',
 }
-const NEUTRAL_TONE = { dot: 'var(--ink-faint)', text: 'var(--ink-mute)', soft: 'z-card-soft' }
 
 const ALL_SCOPES = [
   'intent','ha','ir','automation','sensor','presence','ws','voice','scheduler',
   'api','device','frontend','settings',
 ]
 const ALL_LEVELS = ['off','basic','verbose','trace']
-
-// Time · scope · level · step · result. Sized for 13px tabular time
-// ("09:40:52.123") and 13px chips with a dot.
-const GRID = '110px 112px 96px 1fr 16px'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -83,54 +69,45 @@ function truncate(str, n = 80) {
 
 // ─── Subcomponents ───────────────────────────────────────────────────────────
 
-function Dot({ color }) {
-  return <span className="z-dot" style={{ background: color, boxShadow: 'none' }} />
-}
-
 function LevelBadge({ level }) {
   return (
-    <span className="z-chip" style={{ gap: 6 }}>
-      <Dot color={LEVEL_DOT[level] || 'var(--ink-faint)'} />
+    <span style={{
+      fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+      fontFamily: '"IBM Plex Mono", monospace',
+      background: LEVEL_COLOR[level] + '22',
+      color: LEVEL_COLOR[level],
+      padding: '1px 6px', borderRadius: 4,
+      border: `1px solid ${LEVEL_COLOR[level]}44`,
+      textTransform: 'uppercase',
+    }}>
       {level}
     </span>
   )
 }
 
 function ScopeBadge({ scope }) {
+  const c = SCOPE_COLORS[scope] || 'var(--ink-faint)'
   return (
-    <span className="z-chip" style={{ gap: 6 }}>
-      <Dot color={SCOPE_DOT[scope] || 'var(--ink-faint)'} />
+    <span style={{
+      fontSize: 9, fontWeight: 600,
+      fontFamily: '"IBM Plex Mono", monospace',
+      color: c, background: c + '18',
+      padding: '1px 6px', borderRadius: 4,
+      border: `1px solid ${c}33`,
+    }}>
       {scope}
     </span>
   )
 }
 
 function ResultDot({ result }) {
-  const tone = RESULT_TONE[result] || NEUTRAL_TONE
-  return <span className="z-dot" style={{ background: tone.dot }} title={result} />
-}
-
-function SidePanel({ width = 420, children }) {
+  const c = RESULT_COLOR[result] || 'var(--ink-faint)'
   return (
-    <div style={{
-      position: 'fixed', top: 0, insetInlineEnd: 0, width: `min(${width}px, 100vw)`, height: '100dvh',
-      background: 'var(--surface)', borderInlineStart: '0.5px solid var(--line)',
-      zIndex: 50, display: 'flex', flexDirection: 'column',
-      boxShadow: 'var(--shadow-lg)',
-    }}>
-      {children}
-    </div>
-  )
-}
-
-function PanelHead({ children, onClose, closeLabel }) {
-  return (
-    <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8, minHeight: 68 }}>
-      {children}
-      <button onClick={onClose} className="z-icon-btn" aria-label={closeLabel}>
-        <X size={20} strokeWidth={1.75} />
-      </button>
-    </div>
+    <span style={{
+      display: 'inline-block', width: 6, height: 6,
+      borderRadius: '50%', background: c, flexShrink: 0,
+      marginTop: 1,
+    }} title={result} />
   )
 }
 
@@ -145,33 +122,33 @@ function EventRow({ event, onSelect, selected, onFilterReqId }) {
       onClick={() => onSelect(isSelected ? null : event)}
       style={{
         display: 'grid',
-        gridTemplateColumns: GRID,
+        gridTemplateColumns: '90px 60px 90px 1fr auto',
         gap: 8,
         alignItems: 'center',
-        minHeight: 36,
-        padding: '4px 12px',
+        padding: '5px 12px',
         borderBottom: '0.5px solid var(--line)',
         cursor: 'pointer',
-        background: isSelected ? 'var(--surface-2)' : 'transparent',
-        transition: 'background var(--dur-press) var(--ease-standard)',
+        background: isSelected ? 'var(--bg-2)' : 'transparent',
+        fontSize: 11,
+        fontFamily: '"IBM Plex Mono", monospace',
       }}
     >
-      <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
+      <span style={{ color: 'var(--ink-faint)', fontSize: 10 }}>
         {fmtTime(event.ts)}
       </span>
-      <span><ScopeBadge scope={event.scope} /></span>
-      <span><LevelBadge level={event.level} /></span>
-      <span style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <ScopeBadge scope={event.scope} />
+      <LevelBadge level={event.level} />
+      <span style={{ color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {event.step}
-        {data.intent && <span style={{ fontSize: 13, color: 'var(--ink-mute)', marginInlineStart: 8 }}>{data.intent}</span>}
-        {data.message && <span style={{ fontSize: 13, color: 'var(--ink-faint)', marginInlineStart: 8 }}>{truncate(data.message, 60)}</span>}
+        {data.intent && <span style={{ color: 'var(--ink-mute)', marginLeft: 6 }}>{data.intent}</span>}
+        {data.message && <span style={{ color: 'var(--ink-faint)', marginLeft: 6 }}>{truncate(data.message, 60)}</span>}
         {event.request_id && (
           <span
             onClick={e => { e.stopPropagation(); onFilterReqId(event.request_id) }}
             title={t('debug.filterTo', { id: event.request_id })}
-            className="z-code"
             style={{
-              marginInlineStart: 8, fontSize: 13, color: 'var(--ink-mute)',
+              marginLeft: 8, fontSize: 9, color: 'var(--ink-faint)',
+              fontFamily: '"IBM Plex Mono", monospace',
               cursor: 'pointer', textDecoration: 'underline dotted',
             }}
           >
@@ -179,7 +156,7 @@ function EventRow({ event, onSelect, selected, onFilterReqId }) {
           </span>
         )}
       </span>
-      {result ? <ResultDot result={result} /> : <span />}
+      {result && <ResultDot result={result} />}
     </div>
   )
 }
@@ -188,17 +165,22 @@ function EventDetail({ event, onClose }) {
   const t = useT()
   if (!event) return null
   const data = event.data || {}
-  const tone = RESULT_TONE[data.result] || NEUTRAL_TONE
 
   return (
-    <SidePanel>
-      <PanelHead onClose={onClose} closeLabel={t('common.close')}>
+    <div style={{
+      position: 'fixed', top: 0, right: 0, width: 420, height: '100dvh',
+      background: 'var(--surface)', borderLeft: '0.5px solid var(--line)',
+      zIndex: 50, display: 'flex', flexDirection: 'column',
+      boxShadow: '-8px 0 32px rgba(0,0,0,0.15)',
+    }}>
+      <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <ScopeBadge scope={event.scope} />
         <LevelBadge level={event.level} />
-        <span className="z-headline" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace' }}>
           {event.step}
         </span>
-      </PanelHead>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 18 }}>×</button>
+      </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         <Row label={t('debug.detailTime')}       value={fmtTime(event.ts)} />
@@ -206,34 +188,34 @@ function EventDetail({ event, onClose }) {
         <Row label={t('debug.detailEventId')}   value={event.id} mono />
 
         {data.result && (
-          <div className={tone.soft} style={{ margin: '12px 0', padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: tone.text }}>
+          <div style={{ margin: '12px 0', padding: '8px 12px', borderRadius: 8, background: (RESULT_COLOR[data.result] || 'var(--ink-faint)') + '18', border: `1px solid ${(RESULT_COLOR[data.result] || 'var(--ink-faint)')}33` }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: RESULT_COLOR[data.result] || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase' }}>
               {t('debug.detailResult', { result: data.result })}
             </p>
-            {data.message && <p style={{ fontSize: 15, color: 'var(--ink)', marginTop: 4 }}>{data.message}</p>}
+            {data.message && <p style={{ fontSize: 12, color: 'var(--ink)', marginTop: 4 }}>{data.message}</p>}
           </div>
         )}
 
         {data.suggestion && (
-          <div className="bg-info-soft" style={{ margin: '8px 0', padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('debug.detailSuggestion')}</p>
-            <p style={{ fontSize: 15, color: 'var(--ink)' }}>{data.suggestion}</p>
+          <div style={{ margin: '8px 0', padding: '8px 12px', borderRadius: 8, background: '#3b82f618', border: '1px solid #3b82f633' }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', marginBottom: 4 }}>{t('debug.detailSuggestion')}</p>
+            <p style={{ fontSize: 12, color: 'var(--ink)' }}>{data.suggestion}</p>
           </div>
         )}
 
         {data.error && (
-          <div className="bg-err-soft" style={{ margin: '8px 0', padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--err-text)', marginBottom: 4 }}>{t('debug.detailErrorLabel', { type: data.error_type })}</p>
-            <p className="z-code" style={{ fontSize: 13, color: 'var(--err-text)', wordBreak: 'break-all' }}>{data.error}</p>
+          <div style={{ margin: '8px 0', padding: '8px 12px', borderRadius: 8, background: '#ef444418', border: '1px solid #ef444433' }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>{t('debug.detailErrorLabel', { type: data.error_type })}</p>
+            <p style={{ fontSize: 11, color: '#ef4444', fontFamily: '"IBM Plex Mono", monospace', wordBreak: 'break-all' }}>{data.error}</p>
           </div>
         )}
 
-        <div style={{ marginTop: 16 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('debug.detailData')}</p>
-          <pre className="z-code" style={{
-            fontSize: 13, color: 'var(--ink)', background: 'var(--surface-2)',
-            padding: 12, borderRadius: 'var(--r-ctl)', overflow: 'auto',
-            lineHeight: '18px', margin: 0,
+        <div style={{ marginTop: 12 }}>
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t('debug.detailData')}</p>
+          <pre style={{
+            fontSize: 10, color: 'var(--ink)', background: 'var(--bg-2)',
+            padding: 10, borderRadius: 8, overflow: 'auto',
+            fontFamily: '"IBM Plex Mono", monospace', lineHeight: 1.6,
             maxHeight: 400, border: '0.5px solid var(--line)',
             whiteSpace: 'pre-wrap', wordBreak: 'break-all',
           }}>
@@ -241,16 +223,16 @@ function EventDetail({ event, onClose }) {
           </pre>
         </div>
       </div>
-    </SidePanel>
+    </div>
   )
 }
 
 function Row({ label, value, mono }) {
   if (!value) return null
   return (
-    <div style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'baseline' }}>
-      <span className="z-footnote" style={{ minWidth: 88, flexShrink: 0 }}>{label}</span>
-      <span className={mono ? 'z-code' : undefined} style={{ fontSize: mono ? 13 : 15, color: 'var(--ink)', wordBreak: 'break-all' }}>{value}</span>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
+      <span style={{ fontSize: 10, color: 'var(--ink-faint)', minWidth: 80, paddingTop: 1, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 11, color: 'var(--ink)', fontFamily: mono ? '"IBM Plex Mono", monospace' : 'inherit', wordBreak: 'break-all' }}>{value}</span>
     </div>
   )
 }
@@ -277,12 +259,18 @@ function SimulatePanel({ onClose }) {
   }
 
   return (
-    <SidePanel width={480}>
-      <PanelHead onClose={onClose} closeLabel={t('common.close')}>
-        <span className="z-headline" style={{ flex: 1 }}>{t('debug.simTitle')}</span>
-      </PanelHead>
+    <div style={{
+      position: 'fixed', top: 0, right: 0, width: 480, height: '100dvh',
+      background: 'var(--surface)', borderLeft: '0.5px solid var(--line)',
+      zIndex: 50, display: 'flex', flexDirection: 'column',
+      boxShadow: '-8px 0 32px rgba(0,0,0,0.15)',
+    }}>
+      <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('debug.simTitle')}</span>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 18 }}>×</button>
+      </div>
       <div style={{ padding: 16, flex: 1, overflow: 'auto' }}>
-        <p className="z-subhead" style={{ marginBottom: 12 }}>
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 12 }}>
           {t('debug.simHelp')}
         </p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -293,12 +281,13 @@ function SimulatePanel({ onClose }) {
             placeholder={t('debug.simPlaceholder')}
             dir="auto"
             className="z-input"
-            style={{ flex: 1 }}
+            style={{ flex: 1, height: 36, padding: '0 12px', fontSize: 13 }}
           />
           <button
             onClick={run}
             disabled={loading || !input.trim()}
             className="z-btn-primary"
+            style={{ padding: '0 16px', height: 36, fontSize: 13, borderRadius: 9 }}
           >
             {loading ? '…' : t('debug.simRun')}
           </button>
@@ -306,12 +295,12 @@ function SimulatePanel({ onClose }) {
 
         {result && (
           <div>
-            <div className="z-card-soft" style={{ padding: '12px 16px', marginBottom: 16 }}>
-              <p className="z-footnote" style={{ marginBottom: 4 }}>{t('debug.simParsed')}</p>
-              <p className="z-headline">{result.parsed_intent}</p>
-              <p className="z-subhead" style={{ marginTop: 4 }}>{result.reply}</p>
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', marginBottom: 12 }}>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('debug.simParsed')}</p>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace' }}>{result.parsed_intent}</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 4 }}>{result.reply}</p>
               {result.params && Object.keys(result.params).length > 0 && (
-                <pre className="z-code" style={{ fontSize: 13, lineHeight: '18px', marginTop: 8, marginBottom: 0, color: 'var(--ink-mute)', whiteSpace: 'pre-wrap' }}>
+                <pre style={{ fontSize: 10, marginTop: 8, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-mute)' }}>
                   {JSON.stringify(result.params, null, 2)}
                 </pre>
               )}
@@ -319,11 +308,11 @@ function SimulatePanel({ onClose }) {
 
             {result.events?.length > 0 && (
               <div>
-                <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('debug.simTrace', { n: result.events.length })}</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase' }}>{t('debug.simTrace', { n: result.events.length })}</p>
                 {result.events.map(ev => (
-                  <div key={ev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 36, padding: '4px 0', borderBottom: '0.5px solid var(--line)' }}>
+                  <div key={ev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 0', borderBottom: '0.5px solid var(--line)' }}>
                     <ScopeBadge scope={ev.scope} />
-                    <span style={{ fontSize: 15, color: 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.step}</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace', flex: 1 }}>{ev.step}</span>
                     {ev.data?.result && <ResultDot result={ev.data.result} />}
                   </div>
                 ))}
@@ -332,7 +321,7 @@ function SimulatePanel({ onClose }) {
           </div>
         )}
       </div>
-    </SidePanel>
+    </div>
   )
 }
 
@@ -363,7 +352,7 @@ export default function DebugPage() {
   if (role !== 'super_admin') {
     return (
       <div style={{ padding: 32, textAlign: 'center' }}>
-        <p className="z-body" style={{ color: 'var(--ink-mute)' }}>{t('debug.notAvailable')}</p>
+        <p style={{ color: 'var(--ink-faint)' }}>{t('debug.notAvailable')}</p>
       </div>
     )
   }
@@ -483,142 +472,164 @@ export default function DebugPage() {
   }
 
   const isActive = config && config.level !== 'off'
-  const selfTestOk = selfTestResult && !selfTestResult.error && selfTestResult.ws_callback_wired
-
-  // Active selector rows: surface-2 fill + ink + hairline, never inverted.
-  const optionRow = (active, dense) => ({
-    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-    textAlign: 'start', padding: '0 12px', minHeight: dense ? 36 : 44,
-    borderRadius: 'var(--r-ctl)', cursor: 'pointer', fontFamily: 'inherit',
-    background: active ? 'var(--surface-2)' : 'transparent',
-    border: `0.5px solid ${active ? 'var(--line)' : 'transparent'}`,
-    color: active ? 'var(--ink)' : 'var(--ink-mute)',
-    fontSize: 15, fontWeight: active ? 600 : 400,
-    transition: 'background var(--dur-press) var(--ease-standard)',
-  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="z-page-head" style={{
-        padding: '24px 20px 16px', margin: 0, borderBottom: '0.5px solid var(--line)',
-        alignItems: 'center', flexShrink: 0, background: 'var(--bg)', flexWrap: 'wrap',
+      <div style={{
+        padding: '12px 16px', borderBottom: '0.5px solid var(--line)',
+        display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        background: 'var(--bg)',
       }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <h1 className="z-display" style={{ margin: 0 }}>{t('debug.title')}</h1>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{t('debug.title')}</span>
             {config && (
-              <span className="z-chip" style={{ gap: 6 }}>
-                <Dot color={isActive ? 'var(--ok)' : 'var(--ink-faint)'} />
-                {isActive ? config.level.toUpperCase() : t('debug.statusOff')}
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                background: isActive ? '#10b98122' : 'var(--bg-2)',
+                color: isActive ? '#10b981' : 'var(--ink-faint)',
+                border: `1px solid ${isActive ? '#10b98144' : 'var(--line)'}`,
+                fontFamily: '"IBM Plex Mono", monospace',
+              }}>
+                {isActive ? `● ${config.level.toUpperCase()}` : t('debug.statusOff')}
               </span>
             )}
           </div>
-          <p className="z-footnote">
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
             {t('debug.subtitle', { n: filtered.length, live: liveMode ? t('debug.liveTag') : '' })}
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            onClick={async () => {
-              try {
-                const r = await debugSelfTest()
-                setSelfTestResult(r)
-              } catch (e) {
-                // This is the admin Debug page — show the normalized error code
-                // + sanitized message + request_id so the operator can correlate
-                // with backend logs. Raw e.message used to be raw HTTP/HA text.
-                const code  = e?.code || 'unknown'
-                const msg   = e?.userMessage || e?.message || 'request failed'
-                const refId = e?.requestId ? ` (ref ${e.requestId})` : ''
-                setSelfTestResult({ error: `${msg} [${code}]${refId}` })
-              }
-            }}
-            className="z-btn-secondary"
-          >
-            {t('debug.selfTest')}
-          </button>
-          <button onClick={() => setShowSimulate(true)} className="z-btn-secondary">
-            {t('debug.simulate')}
-          </button>
-          <button onClick={exportReport} className="z-btn-secondary">
-            {t('debug.export')}
-          </button>
-          <Button variant="danger" onClick={clearEvents}>
-            {t('debug.clear')}
-          </Button>
-        </div>
+        <button
+          onClick={async () => {
+            try {
+              const r = await debugSelfTest()
+              setSelfTestResult(r)
+            } catch (e) {
+              // This is the admin Debug page — show the normalized error code
+              // + sanitized message + request_id so the operator can correlate
+              // with backend logs. Raw e.message used to be raw HTTP/HA text.
+              const code  = e?.code || 'unknown'
+              const msg   = e?.userMessage || e?.message || 'request failed'
+              const refId = e?.requestId ? ` (ref ${e.requestId})` : ''
+              setSelfTestResult({ error: `${msg} [${code}]${refId}` })
+            }
+          }}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
+        >
+          {t('debug.selfTest')}
+        </button>
+        <button
+          onClick={() => setShowSimulate(true)}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
+        >
+          {t('debug.simulate')}
+        </button>
+        <button
+          onClick={exportReport}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: 'var(--ink)' }}
+        >
+          {t('debug.export')}
+        </button>
+        <button
+          onClick={clearEvents}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '0.5px solid var(--line)', cursor: 'pointer', color: '#ef4444' }}
+        >
+          {t('debug.clear')}
+        </button>
       </div>
 
       {selfTestResult && (
-        <div className={selfTestOk ? 'bg-ok-soft' : 'z-alert-err'} style={{
-          padding: '12px 20px', flexShrink: 0,
+        <div style={{
+          padding: '10px 16px', flexShrink: 0,
+          background: selfTestResult.error || !selfTestResult.ws_callback_wired
+            ? '#ef444418' : '#10b98118',
           borderBottom: '0.5px solid var(--line)',
           display: 'flex', alignItems: 'flex-start', gap: 12,
         }}>
-          <div style={{ flex: 1, paddingTop: 12 }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: selfTestOk ? 'var(--ok-text)' : 'var(--err-text)' }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: selfTestResult.error ? '#ef4444' : (selfTestResult.ws_callback_wired ? '#10b981' : '#ef4444') }}>
               {selfTestResult.error
                 ? t('debug.errorPrefix', { msg: selfTestResult.error })
                 : selfTestResult.diagnosis}
             </p>
             {selfTestResult.ws_callback_wired === false && (
-              <p style={{ fontSize: 13, color: 'var(--err-text)', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>
                 {t('debug.wsNotWired')}
               </p>
             )}
             {selfTestResult.ws_callback_wired && !selfTestResult.was_active_before && (
-              <p style={{ fontSize: 13, color: 'var(--warn-text)', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: '#e0a020', marginTop: 4 }}>
                 {t('debug.busNotActive')}
               </p>
             )}
             {selfTestResult.ws_callback_wired && (
-              <p className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
                 buffer={selfTestResult.buffer_size} · ws={selfTestResult.ws_callback_wired ? 'wired' : 'NOT wired'} · loop={selfTestResult.event_loop_stored ? 'stored' : 'missing'} · level={selfTestResult.config?.level}
               </p>
             )}
           </div>
-          <button onClick={() => setSelfTestResult(null)} className="z-icon-btn" aria-label={t('common.close')}>
-            <X size={20} strokeWidth={1.75} />
-          </button>
+          <button onClick={() => setSelfTestResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 16, flexShrink: 0 }}>×</button>
         </div>
       )}
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left sidebar — config + filters */}
         <div style={{
-          width: 240, flexShrink: 0, borderInlineEnd: '0.5px solid var(--line)',
-          overflow: 'auto', background: 'var(--bg-2)', padding: 16,
+          width: 220, flexShrink: 0, borderRight: '0.5px solid var(--line)',
+          overflow: 'auto', background: 'var(--bg-2)', padding: 12,
         }}>
           {/* Level selector */}
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
             {t('debug.debugLevel')}
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 14 }}>
             {ALL_LEVELS.map(lvl => (
-              <button key={lvl} onClick={() => setPendingLevel(lvl)} style={optionRow(pendingLevel === lvl)}>
-                <Dot color={LEVEL_DOT[lvl]} />
+              <button
+                key={lvl}
+                onClick={() => setPendingLevel(lvl)}
+                style={{
+                  textAlign: 'left', padding: '5px 8px', borderRadius: 7, cursor: 'pointer',
+                  background: pendingLevel === lvl ? (LEVEL_COLOR[lvl] + '22') : 'transparent',
+                  border: pendingLevel === lvl ? `1px solid ${LEVEL_COLOR[lvl]}44` : '1px solid transparent',
+                  color: pendingLevel === lvl ? LEVEL_COLOR[lvl] : 'var(--ink-mute)',
+                  fontSize: 12, fontWeight: 500, fontFamily: '"IBM Plex Mono", monospace',
+                }}
+              >
                 {lvl}
               </button>
             ))}
           </div>
 
-          {/* Scopes — thirteen rows on a desktop-only page, so the dense 36px row. */}
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>
+          {/* Scopes */}
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
             {t('debug.scopes')} {(pendingScopes?.length ?? 0) === 0 ? t('debug.scopesAll') : `(${pendingScopes.length})`}
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 14 }}>
             {ALL_SCOPES.map(scope => {
+              const c = SCOPE_COLORS[scope]
               const active = !pendingScopes || pendingScopes.length === 0 || pendingScopes.includes(scope)
               return (
-                <button key={scope} onClick={() => toggleScope(scope)} style={optionRow(active, true)}>
-                  <Dot color={active ? SCOPE_DOT[scope] : 'var(--ink-faint)'} />
+                <button
+                  key={scope}
+                  onClick={() => toggleScope(scope)}
+                  style={{
+                    textAlign: 'left', padding: '4px 8px', borderRadius: 7, cursor: 'pointer',
+                    background: active ? (c + '18') : 'transparent',
+                    border: active ? `1px solid ${c}33` : '1px solid transparent',
+                    color: active ? c : 'var(--ink-faint)',
+                    fontSize: 11, fontFamily: '"IBM Plex Mono", monospace',
+                  }}
+                >
                   {scope}
                 </button>
               )
             })}
-            <button onClick={() => setPendingScopes([])} style={optionRow(false, true)}>
+            <button
+              onClick={() => setPendingScopes([])}
+              style={{ textAlign: 'left', padding: '4px 8px', borderRadius: 7, cursor: 'pointer', border: '1px solid transparent', background: 'transparent', color: 'var(--ink-faint)', fontSize: 10 }}
+            >
               {t('debug.allScopes')}
             </button>
           </div>
@@ -627,20 +638,20 @@ export default function DebugPage() {
             onClick={saveConfig}
             disabled={configSaving}
             className="z-btn-primary"
-            style={{ width: '100%', marginBottom: 24 }}
+            style={{ width: '100%', height: 34, fontSize: 12, borderRadius: 8, marginBottom: 16 }}
           >
             {configSaving ? '…' : t('debug.apply')}
           </button>
 
           {/* Filters */}
-          <p className="z-eyebrow" style={{ marginBottom: 8 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
             {t('debug.filterEvents')}
           </p>
           <select
             value={filterScope}
             onChange={e => setFilterScope(e.target.value)}
             className="z-input"
-            style={{ marginBottom: 8 }}
+            style={{ width: '100%', height: 32, fontSize: 11, marginBottom: 6 }}
           >
             <option value="">{t('debug.allScopesOpt')}</option>
             {ALL_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -649,7 +660,7 @@ export default function DebugPage() {
             value={filterResult}
             onChange={e => setFilterResult(e.target.value)}
             className="z-input"
-            style={{ marginBottom: 8 }}
+            style={{ width: '100%', height: 32, fontSize: 11, marginBottom: 6 }}
           >
             <option value="">{t('debug.allResults')}</option>
             {['ok','error','exception','not_found','unrecognized','skipped'].map(r => <option key={r} value={r}>{r}</option>)}
@@ -660,40 +671,44 @@ export default function DebugPage() {
             placeholder={t('debug.filterReqIdPh')}
             dir="auto"
             className="z-input"
-            style={{ marginBottom: 12, boxSizing: 'border-box' }}
+            style={{ width: '100%', height: 32, fontSize: 11, marginBottom: 12 }}
           />
 
-          {/* Live vs stored — a segmented filter: the active side gets the
-              surface-2 fill + hairline, not an inverted or accent fill. */}
-          <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
-            {[[true, t('debug.live')], [false, t('debug.buffered')]].map(([mode, label]) => {
-              const on = liveMode === mode
-              return (
-                <button
-                  key={String(mode)}
-                  onClick={() => { setLiveMode(mode); if (!mode) loadEvents() }}
-                  style={{
-                    flex: 1, minHeight: 36, borderRadius: 'var(--r-chip)', fontSize: 15, cursor: 'pointer',
-                    fontFamily: 'inherit', fontWeight: on ? 600 : 400,
-                    background: on ? 'var(--surface-2)' : 'transparent',
-                    color: on ? 'var(--ink)' : 'var(--ink-mute)',
-                    border: `0.5px solid ${on ? 'var(--line)' : 'transparent'}`,
-                    transition: 'background var(--dur-press) var(--ease-standard)',
-                  }}
-                >
-                  {label}
-                </button>
-              )
-            })}
+          {/* Live vs stored toggle */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button
+              onClick={() => setLiveMode(true)}
+              style={{
+                flex: 1, height: 28, borderRadius: 7, fontSize: 11, cursor: 'pointer',
+                background: liveMode ? 'var(--accent)' : 'var(--bg)',
+                color: liveMode ? '#fff' : 'var(--ink-mute)',
+                border: '0.5px solid var(--line)',
+              }}
+            >
+              {t('debug.live')}
+            </button>
+            <button
+              onClick={() => { setLiveMode(false); loadEvents() }}
+              style={{
+                flex: 1, height: 28, borderRadius: 7, fontSize: 11, cursor: 'pointer',
+                background: !liveMode ? 'var(--accent)' : 'var(--bg)',
+                color: !liveMode ? '#fff' : 'var(--ink-mute)',
+                border: '0.5px solid var(--line)',
+              }}
+            >
+              {t('debug.buffered')}
+            </button>
           </div>
         </div>
 
         {/* Main event list */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {/* Column headers */}
-          <div className="z-eyebrow" style={{
-            display: 'grid', gridTemplateColumns: GRID,
-            gap: 8, padding: '8px 12px', borderBottom: '0.5px solid var(--line)', flexShrink: 0,
+          <div style={{
+            display: 'grid', gridTemplateColumns: '90px 60px 90px 1fr auto',
+            gap: 8, padding: '6px 12px', borderBottom: '0.5px solid var(--line)',
+            fontSize: 9, fontWeight: 700, color: 'var(--ink-faint)',
+            textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0,
           }}>
             <span>{t('debug.colTime')}</span>
             <span>{t('debug.colScope')}</span>
@@ -704,22 +719,25 @@ export default function DebugPage() {
 
           <div ref={listRef} style={{ flex: 1, overflow: 'auto' }}>
             {filterReqId && (
-              <div className="bg-info-soft" style={{
-                padding: '8px 12px',
+              <div style={{
+                padding: '6px 12px', background: '#3b82f611',
                 borderBottom: '0.5px solid var(--line)',
-                display: 'flex', alignItems: 'center', gap: 8, minHeight: 44,
+                display: 'flex', alignItems: 'center', gap: 8,
               }}>
-                <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>
+                <span style={{ fontSize: 11, color: '#3b82f6', fontFamily: '"IBM Plex Mono", monospace', flex: 1 }}>
                   {t('debug.tracing', { id: filterReqId })}
                 </span>
-                <Button variant="ghost" size="sm" onClick={() => setFilterReqId('')}>
+                <button
+                  onClick={() => setFilterReqId('')}
+                  style={{ fontSize: 10, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
                   {t('debug.clearFilter')}
-                </Button>
+                </button>
               </div>
             )}
             {filtered.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center' }}>
-                <p className="z-body" style={{ color: 'var(--ink-mute)' }}>
+                <p style={{ color: 'var(--ink-faint)', fontSize: 13 }}>
                   {isActive ? (liveMode ? t('debug.waitingEvents') : t('debug.noEvents')) : t('debug.debugOff')}
                 </p>
               </div>

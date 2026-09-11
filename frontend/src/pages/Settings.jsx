@@ -17,10 +17,8 @@ import {
   Sun, Moon, User, Lock, LogOut, RefreshCw,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
-  Smartphone, Bell, ArrowLeft, ChevronRight, ChevronDown, CheckCircle2,
-  Volume2, Monitor, Bot,
+  Smartphone, Bell, ChevronLeft, Volume2, Monitor, Bot,
 } from 'lucide-react'
-import { T_STATE, T_ENTER } from '../lib/motion'
 import { PairWithPhone } from '../components/PairWithPhone'
 import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { MobileDevicesList } from '../components/MobileDevicesList'
@@ -31,7 +29,6 @@ import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { Modal } from '../components/ui/Modal'
-import { Button } from '../components/ui/Button'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
 import {
@@ -60,14 +57,11 @@ const TIMEZONES = [
   'America/Los_Angeles', 'Asia/Tokyo', 'Australia/Sydney',
 ]
 const LANGUAGES = LANGS
-// Role tint is read at 13px inside a chip, so only text-safe tokens: the
-// owner is plain ink (no accent for decoration), a user is ok-text, a guest
-// is muted. Admin sits between owner and user as ink-2.
 const ROLE_LABELS = {
-  super_admin: { label: 'Super Admin', color: 'var(--ink)' },
-  admin:       { label: 'Admin',       color: 'var(--ink-2)' },
-  user:        { label: 'User',        color: 'var(--ok-text)' },
-  guest:       { label: 'Guest',       color: 'var(--ink-mute)' },
+  super_admin: { label: 'Super Admin', color: 'var(--accent)' },
+  admin:       { label: 'Admin',       color: '#8b5cf6'       },
+  user:        { label: 'User',        color: 'var(--ok)'     },
+  guest:       { label: 'Guest',       color: 'var(--ink-faint)' },
 }
 const ROLE_ORDER_FE = { guest: 0, user: 1, admin: 2, super_admin: 3 }
 
@@ -96,27 +90,10 @@ function _isStale(p) {
 }
 
 function presenceStateColor(p) {
-  if (_isStale(p) || p.effective_state === 'unknown') return 'var(--ink-mute)'
-  if (p.effective_state === 'home') return 'var(--ok-text)'
-  if (p.effective_state === 'not_home') return 'var(--warn-text)'
-  return 'var(--ink-mute)'
-}
-
-// Shared row + button geometry for this file.
-//   ghostIcon — borderless 44×44 target for a row-level icon action
-//   ghostText — borderless 44-tall 15px text action in ink ("Edit", "use…")
-const ghostIcon = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
-  cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-}
-const ghostText = {
-  minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
-  cursor: 'pointer', color: 'var(--ink)', fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
-  display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
-}
-const spinnerStyle = {
-  width: 20, height: 20, borderRadius: '50%',
-  border: '2px solid var(--line-2)', borderTopColor: 'var(--ink)',
+  if (_isStale(p) || p.effective_state === 'unknown') return 'var(--ink-faint)'
+  if (p.effective_state === 'home') return 'var(--ok)'
+  if (p.effective_state === 'not_home') return 'var(--warn)'
+  return 'var(--ink-faint)'
 }
 
 function presenceStateLabel(p) {
@@ -130,8 +107,8 @@ function presenceStateLabel(p) {
 
 function SectionTitle({ icon: Icon, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-      {Icon && <Icon size={16} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, paddingLeft: 2 }}>
+      {Icon && <Icon size={12} style={{ color: 'var(--ink-faint)' }} />}
       <p className="z-eyebrow">{children}</p>
     </div>
   )
@@ -139,12 +116,12 @@ function SectionTitle({ icon: Icon, children }) {
 
 function SettingRow({ icon: Icon, label, subtitle, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, padding: '8px 16px', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-        {Icon && <Icon size={20} strokeWidth={1.75} style={{ flexShrink: 0, color: 'var(--ink-mute)' }} />}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        {Icon && <Icon size={16} style={{ flexShrink: 0, color: 'var(--ink-faint)' }} />}
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
-          {subtitle && <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
+          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
+          {subtitle && <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
         </div>
       </div>
       {children}
@@ -162,24 +139,22 @@ function SettingsPageWrapper({ title, eyebrow, children }) {
     return () => { document.title = 'Ziggy' }
   }, [title])
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
       <button
         onClick={() => navigate('/settings')}
         style={{
-          background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-          color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500,
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          minHeight: 44, padding: 0, marginBottom: 8,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--ink-faint)', fontSize: 12, fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '4px 0', marginBottom: 14,
         }}
       >
-        <ArrowLeft size={18} className="icon-flip-rtl" />
+        <ChevronLeft size={13} className="icon-flip-rtl" />
         {t('settings.title')}
       </button>
-      <div className="z-page-head">
-        <div>
-          {eyebrow && <p className="z-eyebrow">{eyebrow}</p>}
-          <h1 className="z-display" style={{ margin: 0 }}>{title}</h1>
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        {eyebrow && <p className="z-eyebrow" style={{ marginBottom: 4 }}>{eyebrow}</p>}
+        <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{title}</h1>
       </div>
       {children}
     </div>
@@ -193,38 +168,42 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
     <Link
       to={to}
       style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-        padding: 16, minHeight: 56, textDecoration: 'none', color: 'var(--ink)',
-        background: 'var(--surface)', borderRadius: 'var(--r-card)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 16px', textDecoration: 'none', color: 'var(--ink)',
+        background: 'var(--surface)', borderRadius: 13,
         border: '0.5px solid var(--line)',
-        transition: 'border-color var(--dur-press) var(--ease-standard)',
+        transition: 'border-color 0.12s',
       }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--ink-mute)'}
       onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {Icon && (
           <div style={{
-            width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+            width: 30, height: 30, borderRadius: 9, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--surface-2)',
+            background: 'var(--bg-2)',
           }}>
-            <Icon size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
+            <Icon size={15} style={{ color: 'var(--ink-mute)' }} />
           </div>
         )}
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
             {title}
-            {badge && <span className="z-chip">{badge}</span>}
+            {badge && (
+              <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
+                {badge}
+              </span>
+            )}
           </p>
           {subtitle && (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {subtitle}
             </p>
           )}
         </div>
       </div>
-      <ChevronRight size={18} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+      <span style={{ color: 'var(--ink-faint)', fontSize: 18, flexShrink: 0, marginLeft: 8 }}>›</span>
     </Link>
   )
 }
@@ -233,10 +212,10 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
 
 function StatusRow({ icon: Icon, label, value, valueColor }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 16px' }}>
-      <Icon size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-      <span style={{ fontSize: 17, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{label}</span>
-      <span style={{ fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: valueColor || 'var(--ink-2)', textAlign: 'end' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+      <Icon size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', color: valueColor || 'var(--ink-2)' }}>
         {value}
       </span>
     </div>
@@ -270,7 +249,7 @@ function SystemStatusCard() {
     return (
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 64 }}>
-          <div className="z-spin" style={spinnerStyle} />
+          <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
         </div>
       </Card>
     )
@@ -278,47 +257,47 @@ function SystemStatusCard() {
 
   const bridgeOk     = health?.ha_connected ?? false
   const offlineCount = health?.offline_count ?? 0
-  const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 15, minHeight: 44, display: 'inline-flex', alignItems: 'center' }
+  const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', fontSize: 12 }
   const sh           = health?.system_health
   const coordState   = sh?.zigbee?.coordinator_state || null
   const coordRawTitle = sh?.zigbee?.coordinator_raw_title || null
   const lastRecovery = sh?.recovery?.last_attempt_at || null
   const recoveryResult = sh?.recovery?.last_result || null
-  const coordStateColor = coordState === 'loaded' ? 'var(--ok-text)' :
-                          coordState === 'setup_in_progress' ? 'var(--warn-text)' :
-                          coordState && coordState !== 'unknown' ? 'var(--err-text)' : 'var(--ink-mute)'
+  const coordStateColor = coordState === 'loaded' ? 'var(--ok)' :
+                          coordState === 'setup_in_progress' ? 'var(--warn)' :
+                          coordState && coordState !== 'unknown' ? 'var(--err)' : 'var(--ink-mute)'
 
   return (
     <Card>
       <div className="divide-y divide-line">
-        <StatusRow icon={Cloud}    label={t('systemStatus.ziggyLabel')}  value={t('systemStatus.online')}                                                            valueColor="var(--ok-text)" />
-        <StatusRow icon={Wifi}     label={t('systemStatus.bridgeLabel')} value={bridgeOk ? t('systemStatus.bridgeConnected') : t('systemStatus.bridgeOffline')}     valueColor={bridgeOk ? 'var(--ok-text)' : 'var(--err-text)'} />
+        <StatusRow icon={Cloud}    label={t('systemStatus.ziggyLabel')}  value={t('systemStatus.online')}                                                            valueColor="var(--ok)" />
+        <StatusRow icon={Wifi}     label={t('systemStatus.bridgeLabel')} value={bridgeOk ? t('systemStatus.bridgeConnected') : t('systemStatus.bridgeOffline')}     valueColor={bridgeOk ? 'var(--ok)' : 'var(--accent)'} />
         {coordState && coordRawTitle && (
           <StatusRow icon={Radio} label={coordRawTitle} value={coordState} valueColor={coordStateColor} />
         )}
         {lastRecovery && (
-          <StatusRow icon={Activity} label={t('systemStatus.lastRecovery')} value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok-text)' : 'var(--ink-mute)'} />
+          <StatusRow icon={Activity} label={t('systemStatus.lastRecovery')} value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok)' : 'var(--ink-mute)'} />
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '0 16px' }}>
-          <Radio size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-          <span style={{ fontSize: 17, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{t('systemStatus.zigbeeLabel')}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+          <Radio size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>{t('systemStatus.zigbeeLabel')}</span>
           {deviceCount !== null ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Link to="/devices" style={{ ...linkStyle, color: 'var(--ink-2)' }}>
                 {deviceCount === 1 ? t('systemStatus.deviceCount', { n: deviceCount }) : t('systemStatus.deviceCountPlural', { n: deviceCount })}
               </Link>
               {offlineCount > 0 && (
                 <>
-                  <span style={{ fontSize: 15, color: 'var(--ink-faint)' }}>·</span>
-                  <Link to="/devices?filter=offline" style={{ ...linkStyle, color: 'var(--warn-text)' }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>·</span>
+                  <Link to="/devices?filter=offline" style={{ ...linkStyle, color: 'var(--warn)' }}>
                     {t('systemStatus.offlineCount', { n: offlineCount })}
                   </Link>
                 </>
               )}
             </span>
           ) : (
-            <span style={{ fontSize: 15, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{t('systemStatus.unavailable')}</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('systemStatus.unavailable')}</span>
           )}
         </div>
 
@@ -378,43 +357,47 @@ function ZigbeeBridgeSection({ isAdmin }) {
     <Card>
       <div className="divide-y divide-line">
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, padding: '8px 16px', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            <Wifi size={20} strokeWidth={1.75} style={{ color: connected ? 'var(--ok)' : 'var(--ink-mute)', flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <Wifi size={16} style={{ color: connected ? 'var(--ok)' : 'var(--ink-faint)', flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.coordinatorLabel')}</p>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.coordinatorLabel')}</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }} dir="auto">
                 {coordinatorName ?? t('zigbeeBridge.notDetected')}
               </p>
             </div>
           </div>
-          <span className="z-chip" style={{ color: connected ? 'var(--ok-text)' : 'var(--ink-mute)', flexShrink: 0 }}>
+          <span style={{
+            fontSize: 10, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600,
+            padding: '2px 8px', borderRadius: 6, flexShrink: 0,
+            color:      connected ? 'var(--ok)' : 'var(--ink-faint)',
+            background: connected ? 'color-mix(in srgb, var(--ok) 12%, var(--surface))' : 'var(--bg-2)',
+          }}>
             {connected ? t('zigbeeBridge.statusPaired') : t('zigbeeBridge.statusOffline')}
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, padding: '0 16px', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            <Radio size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.devicesOnNetwork')}</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Radio size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.devicesOnNetwork')}</p>
           </div>
           {deviceCount !== null ? (
-            <Link to="/devices" style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-2)', textDecoration: 'none', fontWeight: 600, minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>
+            <Link to="/devices" style={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-2)', textDecoration: 'none', fontWeight: 600 }}>
               {deviceCount}
             </Link>
           ) : (
-            <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-mute)' }}>—</span>
+            <span style={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-faint)' }}>—</span>
           )}
         </div>
 
         {isAdmin && (
-          <div style={{ minHeight: 56, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              {/* The one accent element on this screen, and only while pairing means something. */}
-              <Zap size={20} strokeWidth={1.75} style={{ color: pairingActive ? 'var(--accent)' : 'var(--ink-mute)', flexShrink: 0 }} />
+          <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <Zap size={16} style={{ color: pairingActive ? 'var(--accent)' : 'var(--ink-faint)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.pairingMode')}</p>
-                <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.pairingMode')}</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
                   {pairingActive
                     ? t('zigbeeBridge.pairingActive', { n: countdown })
                     : t('zigbeeBridge.pairingIdle')}
@@ -425,7 +408,7 @@ function ZigbeeBridgeSection({ isAdmin }) {
               onClick={handlePermitJoin}
               disabled={pairing || pairingActive || !connected}
               className={pairingActive ? 'z-btn-primary' : 'z-btn-secondary'}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
+              style={{ padding: '5px 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               {pairing ? '…' : pairingActive ? `${countdown}s` : t('zigbeeBridge.addDevice')}
             </button>
@@ -634,20 +617,20 @@ function PresenceSection() {
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 64 }}>
-        <div className="z-spin" style={spinnerStyle} />
+        <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
       {/* Track my location card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px' }}>
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.trackMe.title')}</p>
-            <p style={{ fontSize: 15, color: trackMe ? 'var(--ok-text)' : 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.trackMe.title')}</p>
+            <p style={{ fontSize: 11, color: trackMe ? 'var(--ok)' : 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
               {trackMe
                 ? (trackMeStatus === 'home'  ? `${t('homeSensing.trackMe.activeHome')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
                   : trackMeStatus === 'away'  ? `${t('homeSensing.trackMe.activeAway')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
@@ -660,52 +643,52 @@ function PresenceSection() {
                 : t('homeSensing.trackMe.off')}
             </p>
           </div>
-          <Toggle checked={trackMe} onCheckedChange={toggleTrackMe} aria-label={t('homeSensing.trackMe.title')} />
+          <Toggle checked={trackMe} onCheckedChange={toggleTrackMe} />
         </div>
       </div>
 
       {/* Phone-at-home (LAN reachability) card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ padding: '11px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.phoneAtHome.title')}</p>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.phoneAtHome.title')}</p>
+            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1, lineHeight: 1.5 }} dir="auto">
               {t('homeSensing.phoneAtHome.desc')}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Input
-                value={lanHost}
-                onChange={e => setLanHost(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') saveLanHost() }}
-                dir="ltr"
-                placeholder={t('homeSensing.phoneAtHome.placeholder')}
-                aria-label={t('homeSensing.phoneAtHome.title')}
-              />
-            </div>
-            <button onClick={() => saveLanHost()} disabled={lanSaving} className="z-btn-primary" style={{ flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              value={lanHost}
+              onChange={e => setLanHost(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveLanHost() }}
+              className="z-input" dir="ltr"
+              placeholder={t('homeSensing.phoneAtHome.placeholder')}
+              style={{ flex: 1, height: 32, padding: '0 10px', fontSize: 12, boxSizing: 'border-box' }}
+            />
+            <button onClick={() => saveLanHost()} disabled={lanSaving} className="z-btn-primary"
+                    style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12 }}>
               {lanSaving ? '…' : t('homeSensing.phoneAtHome.save')}
             </button>
           </div>
           {lanSuggestion && lanSuggestion !== lanHost && (
             <button onClick={() => saveLanHost(lanSuggestion)} disabled={lanSaving}
-                    style={{ ...ghostText, alignSelf: 'flex-start', padding: 0 }} dir="auto">
+                    style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', cursor: 'pointer',
+                             color: 'var(--accent)', fontSize: 11, padding: '2px 0' }} dir="auto">
               {t('homeSensing.phoneAtHome.useSuggestion', { ip: lanSuggestion })}
             </button>
           )}
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }} dir="auto">
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }} dir="auto">
             {t('homeSensing.phoneAtHome.tip')}
           </p>
         </div>
       </div>
 
       {/* Home zone card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', minHeight: 56, padding: '8px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.homeZone.title')}</p>
-            <p style={{ fontSize: 15, color: zone?.configured ? 'var(--ok-text)' : 'var(--warn-text)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }} dir="auto">
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.homeZone.title')}</p>
+            <p style={{ fontSize: 11, color: zone?.configured ? 'var(--ok)' : 'var(--warn)', marginTop: 1 }} dir="auto">
               {zone?.configured
                 ? t('homeSensing.homeZone.summary', { lat: zone.lat?.toFixed(4), lon: zone.lon?.toFixed(4), radius: zone.radius })
                 : zone?.lat != null
@@ -713,39 +696,42 @@ function PresenceSection() {
                   : t('homeSensing.homeZone.notConfigured')}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button onClick={useMyLocation} disabled={locating} className="z-btn-secondary">
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button onClick={useMyLocation} disabled={locating} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
               {locating ? '…' : t('homeSensing.useMyLocation')}
             </button>
             {!zoneEdit && (
-              <button onClick={() => setZoneEdit(true)} style={ghostText}>
+              <button onClick={() => setZoneEdit(true)} className="z-btn-secondary" style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12 }}>
                 {t('homeSensing.edit')}
               </button>
             )}
           </div>
         </div>
         {zoneEdit && (
-          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <Input label={t('homeSensing.latitude')} value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} dir="ltr" placeholder="32.0853" />
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>{t('homeSensing.latitude')}</p>
+                <input value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="32.0853" />
               </div>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <Input label={t('homeSensing.longitude')} value={zoneDraft.lon} onChange={e => setZoneDraft(d => ({ ...d, lon: e.target.value }))} dir="ltr" placeholder="34.7818" />
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>{t('homeSensing.longitude')}</p>
+                <input value={zoneDraft.lon} onChange={e => setZoneDraft(d => ({ ...d, lon: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} placeholder="34.7818" />
               </div>
-              <div style={{ width: 112 }}>
-                <Input label={t('homeSensing.radiusM')} type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} dir="ltr" />
+              <div style={{ width: 90 }}>
+                <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3 }}>{t('homeSensing.radiusM')}</p>
+                <input type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} className="z-input" style={{ width: '100%', height: 32, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }} />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={saveZone} disabled={zoneSaving || !zoneDraft.lat || !zoneDraft.lon} className="z-btn-primary">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={saveZone} disabled={zoneSaving || !zoneDraft.lat || !zoneDraft.lon} className="z-btn-primary" style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12 }}>
                 {zoneSaving ? '…' : t('homeSensing.saveZone')}
               </button>
-              <button onClick={() => setZoneEdit(false)} className="z-btn-secondary">
+              <button onClick={() => setZoneEdit(false)} className="z-btn-secondary" style={{ height: 32, padding: '0 10px', borderRadius: 8, fontSize: 12 }}>
                 {t('homeSensing.cancel')}
               </button>
             </div>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
               {t('homeSensing.zoneTip')}
             </p>
           </div>
@@ -753,70 +739,61 @@ function PresenceSection() {
       </div>
 
       {/* Additional zones card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ padding: 16, borderBottom: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
-          <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.extraZones.title')}</p>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 13, overflow: 'hidden' }}>
+        <div style={{ padding: '11px 16px', borderBottom: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.extraZones.title')}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
             {t('homeSensing.extraZones.desc')}
           </p>
         </div>
         {extraZones.map((z, i) => (
-          <div key={z.id} style={{ padding: '8px 16px', borderBottom: i < extraZones.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+          <div key={z.id} style={{ padding: '10px 16px', borderBottom: i < extraZones.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
             {editingZoneId === z.id ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBlock: 8 }}>
-                <Input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))} dir="auto"
-                       placeholder={t('homeSensing.extraZones.namePh')} aria-label={t('homeSensing.extraZones.namePh')} />
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <Input value={zoneEditDraft.lat} onChange={e => setZoneEditDraft(d => ({ ...d, lat: e.target.value }))} dir="ltr"
-                           placeholder={t('homeSensing.extraZones.latPh')} aria-label={t('homeSensing.extraZones.latPh')} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <Input value={zoneEditDraft.lon} onChange={e => setZoneEditDraft(d => ({ ...d, lon: e.target.value }))} dir="ltr"
-                           placeholder={t('homeSensing.extraZones.lonPh')} aria-label={t('homeSensing.extraZones.lonPh')} />
-                  </div>
-                  <div style={{ width: 112 }}>
-                    <Input type="number" value={zoneEditDraft.radius_m} onChange={e => setZoneEditDraft(d => ({ ...d, radius_m: e.target.value }))} dir="ltr"
-                           placeholder={t('homeSensing.extraZones.radiusPh')} aria-label={t('homeSensing.extraZones.radiusPh')} />
-                  </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))} dir="auto"
+                       className="z-input" placeholder={t('homeSensing.extraZones.namePh')} style={{ height: 28, padding: '0 8px', fontSize: 12 }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input value={zoneEditDraft.lat} onChange={e => setZoneEditDraft(d => ({ ...d, lat: e.target.value }))}
+                         className="z-input" placeholder={t('homeSensing.extraZones.latPh')} style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
+                  <input value={zoneEditDraft.lon} onChange={e => setZoneEditDraft(d => ({ ...d, lon: e.target.value }))}
+                         className="z-input" placeholder={t('homeSensing.extraZones.lonPh')} style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 12 }} />
+                  <input type="number" value={zoneEditDraft.radius_m} onChange={e => setZoneEditDraft(d => ({ ...d, radius_m: e.target.value }))}
+                         className="z-input" placeholder={t('homeSensing.extraZones.radiusPh')} style={{ width: 100, height: 28, padding: '0 8px', fontSize: 12 }} />
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => saveZoneEdit(z)} className="z-btn-primary">{t('homeSensing.extraZones.save')}</button>
-                  <button onClick={() => setEditingZoneId(null)} className="z-btn-secondary">{t('homeSensing.extraZones.cancel')}</button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => saveZoneEdit(z)} className="z-btn-primary" style={{ height: 28, padding: '0 12px', borderRadius: 7, fontSize: 12 }}>{t('homeSensing.extraZones.save')}</button>
+                  <button onClick={() => setEditingZoneId(null)} className="z-btn-secondary" style={{ height: 28, padding: '0 10px', borderRadius: 7, fontSize: 12 }}>{t('homeSensing.extraZones.cancel')}</button>
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 56 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }} dir="auto">{z.name}</p>
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }} dir="auto">{z.name}</p>
+                  <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
                     {z.lat?.toFixed(4)}, {z.lon?.toFixed(4)} · {z.radius_m}m
                   </p>
                 </div>
-                <button onClick={() => beginEditZone(z)} style={ghostText}>{t('homeSensing.extraZones.editAction')}</button>
-                <button onClick={() => removeZone(z)} style={{ ...ghostIcon, color: 'var(--err-text)' }} title={t('homeSensing.extraZones.deleteAria')} aria-label={t('homeSensing.extraZones.deleteAria')}>
-                  <Trash2 size={18} />
+                <button onClick={() => beginEditZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 11, padding: '4px 8px' }}>{t('homeSensing.extraZones.editAction')}</button>
+                <button onClick={() => removeZone(z)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }} title={t('homeSensing.extraZones.deleteAria')}>
+                  <Trash2 size={13} />
                 </button>
               </div>
             )}
           </div>
         ))}
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, borderTop: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 160 }}>
-              <Input value={zoneNewName} onChange={e => setZoneNewName(e.target.value)} dir="auto"
-                     onKeyDown={e => e.key === 'Enter' && addZone()}
-                     placeholder={t('homeSensing.extraZones.newNamePh')} aria-label={t('homeSensing.extraZones.newNamePh')} />
-            </div>
-            <div style={{ width: 112 }}>
-              <Input type="number" min={50} max={50000} value={zoneNewRadius} onChange={e => setZoneNewRadius(e.target.value)} dir="ltr"
-                     placeholder={t('homeSensing.extraZones.radiusPh')} aria-label={t('homeSensing.extraZones.radiusPh')} />
-            </div>
-            <button onClick={addZone} disabled={zoneAdding || !zoneNewName.trim()} className="z-btn-primary" style={{ flexShrink: 0 }}>
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input value={zoneNewName} onChange={e => setZoneNewName(e.target.value)} dir="auto"
+                   onKeyDown={e => e.key === 'Enter' && addZone()}
+                   className="z-input" placeholder={t('homeSensing.extraZones.newNamePh')} style={{ flex: 1, height: 32, padding: '0 10px', fontSize: 12 }} />
+            <input type="number" min={50} max={50000} value={zoneNewRadius} onChange={e => setZoneNewRadius(e.target.value)}
+                   className="z-input" placeholder={t('homeSensing.extraZones.radiusPh')} style={{ width: 100, height: 32, padding: '0 10px', fontSize: 12 }} />
+            <button onClick={addZone} disabled={zoneAdding || !zoneNewName.trim()} className="z-btn-primary"
+                    style={{ height: 32, padding: '0 12px', borderRadius: 8, fontSize: 12 }}>
               {zoneAdding ? '…' : t('homeSensing.extraZones.add')}
             </button>
           </div>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
             {t('homeSensing.extraZones.help')}
           </p>
         </div>
@@ -852,7 +829,7 @@ function PresenceDebugCard() {
 
   if (!debug) {
     return (
-      <div style={{ padding: 16, fontSize: 15, color: 'var(--ink-mute)' }}>{t('common.loading')}</div>
+      <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-faint)' }}>{t('common.loading')}</div>
     )
   }
 
@@ -864,31 +841,29 @@ function PresenceDebugCard() {
   })
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Tunables: a two-column 13/13 tabular grid — key in mute, value in ink. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 16px', fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+    <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4, fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
         {Object.entries(debug.tunables || {}).map(([k, v]) => (
-          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</span>
-            <span style={{ color: 'var(--ink)', flexShrink: 0 }}>{String(v)}</span>
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+            <span>{k}</span><span style={{ color: 'var(--ink)' }}>{String(v)}</span>
           </div>
         ))}
       </div>
       {merged.map(p => (
-        <div key={p.id} style={{ borderTop: '0.5px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 15, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{p.name || p.id}</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums', color: presenceStateColor(p) }}>
+        <div key={p.id} style={{ borderTop: '0.5px solid var(--line)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+            <span style={{ fontWeight: 600 }}>{p.name || p.id}</span>
+            <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: presenceStateColor(p) }}>
               {presenceStateLabel(p)} · {p.last_distance_m != null ? `${p.last_distance_m}m` : '—'} · acc {p.last_accuracy != null ? `${Math.round(p.last_accuracy)}m` : '—'}
             </span>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
             cand: {p.candidate_state ?? '—'} since {p.candidate_since ? new Date(p.candidate_since).toLocaleTimeString() : '—'}
             {' · '}
             last txn: {p.last_transition_to ?? '—'} at {p.last_transition_at ? new Date(p.last_transition_at).toLocaleTimeString() : '—'}
           </div>
           {(p.history ?? []).slice().reverse().slice(0, 6).map((h, idx) => (
-            <div key={idx} style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div key={idx} style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {new Date(h.ts).toLocaleTimeString()} · {h.src} · raw={h.raw} · d={h.dist ?? '—'}m · {h.result} · {h.reason}
             </div>
           ))}
@@ -966,26 +941,29 @@ function UsersAndAccessSection({ currentUsername }) {
           const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.user
           const isSelf = u.username.toLowerCase() === currentUsername?.toLowerCase()
           return (
-            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, padding: '8px 16px' }}>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
-                {isSelf && <span className="z-chip" style={{ flexShrink: 0 }}>YOU</span>}
+            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px' }}>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {u.username}
+                {isSelf && <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600 }}>YOU</span>}
               </span>
               {isSelf ? (
-                <span className="z-chip" style={{ color: roleInfo.color, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: roleInfo.color, fontFamily: '"IBM Plex Mono", monospace' }}>
                   {roleInfo.label}
                 </span>
               ) : (
-                <Select
+                <select
                   value={u.role}
                   onChange={e => handleUpdateRole(u.username, e.target.value)}
-                  aria-label={u.username}
-                  options={Object.entries(ROLE_OPT_LABELS).map(([val, label]) => ({ value: val, label }))}
-                />
+                  style={{ fontSize: 11, padding: '3px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: roleInfo.color, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {Object.entries(ROLE_OPT_LABELS).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
               )}
               {!isSelf && (
-                <button onClick={() => handleDeleteUser(u.username)} style={{ ...ghostIcon, color: 'var(--err-text)' }} title={t('common.remove')} aria-label={t('common.remove')}>
-                  <Trash2 size={18} />
+                <button onClick={() => handleDeleteUser(u.username)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }} title="Remove">
+                  <Trash2 size={13} />
                 </button>
               )}
             </div>
@@ -993,60 +971,59 @@ function UsersAndAccessSection({ currentUsername }) {
         })}
 
         {invites.map(inv => (
-          <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, padding: '8px 16px' }}>
-            <span style={{ flex: 1, fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+          <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', opacity: 0.75 }}>
+            <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
               {inv.email || '(open invite)'} · {ROLE_OPT_LABELS[inv.role] || inv.role}
             </span>
-            <span className="z-chip" style={{ color: 'var(--warn-text)', flexShrink: 0 }}>{t('members.pending')}</span>
-            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(() => {}); addToast(t('members.linkCopied'), 'success') }} className="z-icon-btn" title={t('members.copy')} aria-label={t('members.copy')}>
-              <Copy size={18} />
+            <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>{t('members.pending')}</span>
+            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(() => {}); addToast(t('members.linkCopied'), 'success') }} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 6, cursor: 'pointer', padding: '4px 6px', color: 'var(--ink-faint)', display: 'flex' }}>
+              <Copy size={11} />
             </button>
-            <button onClick={() => handleRevokeInvite(inv.token)} style={{ ...ghostIcon, color: 'var(--err-text)' }} title={t('common.remove')} aria-label={t('common.remove')}>
-              <Trash2 size={18} />
+            <button onClick={() => handleRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6, display: 'flex' }}>
+              <Trash2 size={12} />
             </button>
           </div>
         ))}
 
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('members.inviteUser')}</p>
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 2 }}>{t('members.inviteUser')}</p>
           {inviteLink ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('members.linkShare')}</p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 160, background: 'var(--bg-2)', borderRadius: 'var(--r-ctl)', padding: '0 16px', minHeight: 44, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-                  <span className="z-code" style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('members.linkShare')}</p>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ flex: 1, background: 'var(--bg-2)', borderRadius: 9, padding: '0 10px', height: 34, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                  <span style={{ fontSize: 11, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
                 </div>
-                <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast(t('members.copied'), 'success') }} className="z-btn-secondary">
-                  <Copy size={18} /> {t('members.copy')}
+                <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast(t('members.copied'), 'success') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Copy size={12} /> {t('members.copy')}
                 </button>
-                <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary">{t('members.newLink')}</button>
+                <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary" style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 12 }}>{t('members.newLink')}</button>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ flex: 2, minWidth: 180 }}>
-                <Input
-                  type="email"
-                  placeholder={t('members.emailPh')}
-                  aria-label={t('members.emailPh')}
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
-                  dir="ltr"
-                />
-              </div>
-              <Select
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="email"
+                placeholder={t('members.emailPh')}
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                className="z-input"
+                style={{ flex: 2, height: 34, padding: '0 10px', fontSize: 12 }}
+              />
+              <select
                 value={inviteRole}
                 onChange={e => setInviteRole(e.target.value)}
-                aria-label={t('members.invite')}
-                options={Object.entries(ROLE_OPT_LABELS).map(([val, label]) => ({ value: val, label }))}
-              />
+                style={{ height: 34, padding: '0 6px', borderRadius: 9, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12, cursor: 'pointer' }}
+              >
+                {Object.entries(ROLE_OPT_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+              </select>
               <button
                 onClick={handleCreateInvite}
                 disabled={inviteSaving}
                 className="z-btn-primary"
-                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                style={{ height: 34, padding: '0 12px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
               >
-                {inviteSaving ? '…' : <><Plus size={18} /> {t('members.invite')}</>}
+                {inviteSaving ? '…' : <><Plus size={12} /> {t('members.invite')}</>}
               </button>
             </div>
           )}
@@ -1111,11 +1088,18 @@ function DeleteAccountModal({ open, onClose, logout }) {
     }
   }
 
-  // Destructive = the err family, via the shared Button (tinted fill +
-  // err-text). Never a solid red with white text, never the brand accent.
-  const full = { width: '100%' }
-  const body = { fontSize: 17, color: 'var(--ink-2)', margin: 0, lineHeight: 1.45 }
-  const errLine = { fontSize: 15, color: 'var(--err-text)', margin: 0 }
+  const danger = { background: 'var(--danger, #dc2626)', color: '#fff' }
+  const dangerBtn = {
+    width: '100%', padding: '12px 16px', borderRadius: 10, border: 'none',
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    ...danger,
+  }
+  const secondaryBtn = {
+    width: '100%', padding: '12px 16px', borderRadius: 10,
+    border: '0.5px solid var(--line)', background: 'transparent',
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 500, cursor: 'pointer',
+    color: 'var(--ink)',
+  }
 
   const title = ({
     'confirm': t('settings.deleteAccountConfirmTitle'),
@@ -1128,70 +1112,79 @@ function DeleteAccountModal({ open, onClose, logout }) {
     <Modal open={open} onClose={busy ? undefined : onClose} title={title} maxWidth={440}>
       {stage === 'confirm' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <p style={body}>
+          <p style={{ fontSize: 14, color: 'var(--ink-dim)', margin: 0, lineHeight: 1.55 }}>
             {t('settings.deleteAccountConfirmBody')}
           </p>
-          {err && <p style={errLine}>{err}</p>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Button variant="danger" onClick={doDelete} disabled={busy} style={full}>
+          {err && <p style={{ fontSize: 13, color: 'var(--danger, #dc2626)', margin: 0 }}>{err}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={doDelete} disabled={busy} style={dangerBtn}>
               {busy ? t('settings.deleting') : t('settings.deleteAccountBtn')}
-            </Button>
-            <Button variant="secondary" onClick={onClose} disabled={busy} style={full}>
+            </button>
+            <button onClick={onClose} disabled={busy} style={secondaryBtn}>
               {t('common.cancel')}
-            </Button>
+            </button>
           </div>
         </div>
       )}
 
       {stage === 'owner' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <p style={body}>
+          <p style={{ fontSize: 14, color: 'var(--ink-dim)', margin: 0, lineHeight: 1.55 }}>
             {t('settings.deleteAccountOwnerBody')}
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Button variant="danger" onClick={() => setStage('factory')} style={full}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={() => setStage('factory')} style={dangerBtn}>
               {t('settings.goToFactoryReset')}
-            </Button>
-            <Button variant="secondary" onClick={onClose} style={full}>
+            </button>
+            <button onClick={onClose} style={secondaryBtn}>
               {t('common.cancel')}
-            </Button>
+            </button>
           </div>
         </div>
       )}
 
       {stage === 'factory' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <p style={body}>
+          <p style={{ fontSize: 14, color: 'var(--ink-dim)', margin: 0, lineHeight: 1.55 }}>
             {t('settings.factoryResetBody')}
           </p>
-          <Input
-            label={t('settings.factoryResetTypePrompt')}
-            placeholder={t('settings.factoryResetTypeWord')}
-            value={factoryWord}
-            onChange={e => setFactoryWord(e.target.value)}
-            autoFocus
-          />
-          {err && <p style={errLine}>{err}</p>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Button
-              variant="danger"
+          <div>
+            <p style={{ fontSize: 13, color: 'var(--ink-dim)', margin: '0 0 6px 0' }}>
+              {t('settings.factoryResetTypePrompt')}
+            </p>
+            <Input
+              placeholder={t('settings.factoryResetTypeWord')}
+              value={factoryWord}
+              onChange={e => setFactoryWord(e.target.value)}
+              autoFocus
+            />
+          </div>
+          {err && <p style={{ fontSize: 13, color: 'var(--danger, #dc2626)', margin: 0 }}>{err}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
               onClick={doFactoryReset}
               disabled={busy || factoryWord.trim() !== t('settings.factoryResetTypeWord')}
-              style={full}
+              style={{ ...dangerBtn, opacity: (busy || factoryWord.trim() !== t('settings.factoryResetTypeWord')) ? 0.5 : 1 }}
             >
               {busy ? t('settings.wiping') : t('settings.factoryResetBtn')}
-            </Button>
-            <Button variant="secondary" onClick={onClose} disabled={busy} style={full}>
+            </button>
+            <button onClick={onClose} disabled={busy} style={secondaryBtn}>
               {t('common.cancel')}
-            </Button>
+            </button>
           </div>
         </div>
       )}
 
       {stage === 'done' && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0' }}>
-          <CheckCircle2 size={32} strokeWidth={1.75} style={{ color: 'var(--ok)' }} />
-          <p style={{ fontSize: 17, color: 'var(--ink)', margin: 0, textAlign: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '8px 0' }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 999,
+            background: 'var(--ok, #16a34a)', color: '#fff',
+            display: 'grid', placeItems: 'center',
+          }}>
+            <Check size={26} />
+          </div>
+          <p style={{ fontSize: 15, color: 'var(--ink)', margin: 0, textAlign: 'center' }}>
             {t('common.signOut')}…
           </p>
         </div>
@@ -1233,32 +1226,33 @@ function AccountForms({ username, role, logout }) {
     <Card>
       <div>
         <SettingRow icon={User} label={t('settings.profile')} subtitle={username || t('settings.account')}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {role && (
-              <span className="z-chip" style={{ color: ROLE_LABELS[role]?.color || 'var(--ink-mute)' }}>
+              <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: ROLE_LABELS[role]?.color || 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>
                 {ROLE_LABELS[role]?.label || role}
               </span>
             )}
-            <span className="z-chip">{t('members.local')}</span>
+            <span style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 999, background: 'var(--bg-2)', color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase' }}>{t('members.local')}</span>
           </div>
         </SettingRow>
 
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
           <button
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
             onClick={() => { setShowChangePw(v => !v); setPwError('') }}
-            aria-expanded={showChangePw}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Lock size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Lock size={16} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
             </div>
-            <ChevronDown size={18} style={{ color: 'var(--ink-faint)', flexShrink: 0, transform: showChangePw ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
+            <span style={{ color: 'var(--ink-faint)', transform: showChangePw ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
           </button>
           <AnimatePresence>
             {showChangePw && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={T_STATE} style={{ overflow: 'hidden' }}>
-                <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
+                <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <Input label={t('common.username')} placeholder={t('common.username')} value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
                   <Input label={t('settings.newPassword')} type="password" placeholder="••••••••" value={pwForm.password} onChange={e => setPwForm(s => ({ ...s, password: e.target.value }))} />
                   <Input label={t('common.confirmPassword')} type="password" placeholder="••••••••" value={pwForm.confirm} onChange={e => setPwForm(s => ({ ...s, confirm: e.target.value }))} error={pwError} />
@@ -1272,9 +1266,9 @@ function AccountForms({ username, role, logout }) {
         </div>
 
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
-          <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--err-text)', textAlign: 'start' }}>
-            <LogOut size={20} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 17, fontWeight: 500 }}>{t('common.signOut')}</span>
+          <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--accent)' }}>
+            <LogOut size={16} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{t('common.signOut')}</span>
           </button>
         </div>
 
@@ -1282,10 +1276,10 @@ function AccountForms({ username, role, logout }) {
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
           <button
             onClick={() => setDeleteOpen(true)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--err-text)', textAlign: 'start' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--danger, #dc2626)' }}
           >
-            <Trash2 size={20} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 17, fontWeight: 500 }}>{t('settings.deleteAccount')}</span>
+            <Trash2 size={16} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{t('settings.deleteAccount')}</span>
           </button>
         </div>
       </div>
@@ -1337,7 +1331,7 @@ export function DisplayPage() {
         <SettingRow icon={theme === 'dark' ? Moon : Sun} label={theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight')} subtitle={t('common.toggleTheme')}>
           <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
         </SettingRow>
-        <div style={{ padding: '16px 16px', borderTop: '0.5px solid var(--line)' }}>
+        <div style={{ padding: '14px 16px', borderTop: '0.5px solid var(--line)' }}>
           <Select
             label="Device icons"
             value={iconStyle}
@@ -1350,10 +1344,10 @@ export function DisplayPage() {
           />
         </div>
       </Card>
-      <div style={{ marginTop: 24 }}>
+      <div style={{ marginTop: 22 }}>
         <SectionTitle icon={MapPin}>{t('settings.languageRegion')}</SectionTitle>
         <Card>
-          <div style={{ padding: '16px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select
               label={t('settings.language')}
               value={general.language}
@@ -1410,7 +1404,7 @@ export function LocationPage() {
   return (
     <SettingsPageWrapper title={t('settings.location')}>
       <PresenceSection />
-      <div style={{ marginTop: 24 }}>
+      <div style={{ marginTop: 22 }}>
         <SectionTitle icon={Smartphone}>{t('settings.mobileApp')}</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <PairWithPhone />
@@ -1431,7 +1425,7 @@ export function UsersPage() {
   if (!hasRole(role, 'super_admin')) {
     return (
       <SettingsPageWrapper title={t('settings.usersAndAccess')}>
-        <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: 16 }}>{t('adminSettings.superAdminOnly')}</p>
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: 16 }}>Restricted to super admins.</p>
       </SettingsPageWrapper>
     )
   }
@@ -1446,7 +1440,7 @@ export function MemoryPage() {
   const t = useT()
   return (
     <SettingsPageWrapper title={t('settings.memory')}>
-      <div style={{ borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
+      <div style={{ borderRadius: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
         <MemoryPanel />
       </div>
     </SettingsPageWrapper>
@@ -1497,9 +1491,9 @@ function CopyButton({ text, label, copiedLabel }) {
       type="button"
       onClick={async () => { await _copyText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
       className="z-btn-secondary"
-      style={{ flexShrink: 0 }}
+      style={{ height: 32, padding: '0 10px', borderRadius: 9, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}
     >
-      {copied ? <Check size={18} /> : <Copy size={18} />}
+      {copied ? <Check size={12} /> : <Copy size={12} />}
       {copied ? copiedLabel : label}
     </button>
   )
@@ -1556,43 +1550,42 @@ function ExternalAssistantsSection() {
     } finally { setRevoking(null) }
   }
 
-  // Real code (a URL, a token) — .z-code carries the family + ltr isolation.
-  const code = { fontSize: 15, overflowWrap: 'anywhere' }
+  const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, direction: 'ltr', unicodeBidi: 'isolate', overflowWrap: 'anywhere' }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.45, margin: 0 }}>{t('settings.assistants.intro')}</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }}>{t('settings.assistants.intro')}</p>
 
       {/* Connection address */}
       <Card>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.mcpUrl')}</p>
           {mcpUrl ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <span className="z-code" style={{ ...code, color: 'var(--ink)', minWidth: 0 }}>{mcpUrl}</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <span style={{ ...mono, color: 'var(--ink)', minWidth: 0 }}>{mcpUrl}</span>
               <CopyButton text={mcpUrl} label={t('common.copy')} copiedLabel={t('common.copied')} />
             </div>
           ) : (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0 }}>
               {loadState === 'loading' ? '…' : t('settings.assistants.mcpUrlUnavailable')}
             </p>
           )}
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: 0 }}>{t('settings.assistants.howTo')}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: 0 }}>{t('settings.assistants.howTo')}</p>
         </div>
       </Card>
 
       {/* Freshly minted token — shown once */}
       <AnimatePresence>
         {fresh && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={T_ENTER}>
-            <div style={{ borderRadius: 'var(--r-card)', padding: 16, background: 'var(--surface)', border: '0.5px solid color-mix(in srgb, var(--warn) 55%, var(--line))', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('settings.assistants.newTokenTitle', { name: fresh.name })}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <span className="z-code" style={{ ...code, color: 'var(--ink)', minWidth: 0, background: 'var(--surface-2)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', flex: 1 }}>{fresh.token || '—'}</span>
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <div style={{ borderRadius: 18, padding: '12px 16px', background: 'var(--surface)', border: '0.5px solid color-mix(in srgb, var(--warn) 55%, var(--line))', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{t('settings.assistants.newTokenTitle', { name: fresh.name })}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ ...mono, color: 'var(--ink)', minWidth: 0, background: 'var(--surface-2)', padding: '8px 10px', borderRadius: 9, flex: 1 }}>{fresh.token || '—'}</span>
                 {fresh.token && <CopyButton text={fresh.token} label={t('common.copy')} copiedLabel={t('common.copied')} />}
               </div>
-              <p style={{ fontSize: 15, color: 'var(--warn-text)', margin: 0 }}>{t('settings.assistants.newTokenWarn')}</p>
-              <button type="button" onClick={() => setFresh(null)} className="z-btn-secondary" style={{ alignSelf: 'flex-start' }}>
+              <p style={{ fontSize: 12, color: 'var(--warn)', margin: 0 }}>{t('settings.assistants.newTokenWarn')}</p>
+              <button type="button" onClick={() => setFresh(null)} className="z-btn-secondary" style={{ alignSelf: 'flex-start', height: 30, padding: '0 12px', borderRadius: 9, fontSize: 12 }}>
                 {t('common.done')}
               </button>
             </div>
@@ -1602,31 +1595,30 @@ function ExternalAssistantsSection() {
 
       {/* Token list */}
       <Card>
-        <div style={{ padding: '16px 16px 8px' }}>
+        <div style={{ padding: '12px 16px 4px' }}>
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.tokens')}</p>
         </div>
         {loadState === 'error' && (
-          <div style={{ padding: '0 16px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <p style={{ fontSize: 15, color: 'var(--err-text)', margin: 0 }}>{t('settings.assistants.loadFailed')}</p>
-            <button type="button" onClick={load} className="z-btn-secondary">{t('common.tryAgain')}</button>
+          <div style={{ padding: '8px 16px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <p style={{ fontSize: 12, color: 'var(--err)', margin: 0 }}>{t('settings.assistants.loadFailed')}</p>
+            <button type="button" onClick={load} className="z-btn-secondary" style={{ height: 28, padding: '0 10px', borderRadius: 8, fontSize: 11 }}>{t('common.tryAgain')}</button>
           </div>
         )}
         {loadState === 'ok' && tokens.length === 0 && (
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '0 16px 16px', margin: 0 }}>{t('settings.assistants.noTokens')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '8px 16px 14px', margin: 0 }}>{t('settings.assistants.noTokens')}</p>
         )}
         {tokens.map((tok) => {
           const revoked = !!(tok.revoked || tok.revoked_at)
           const created = _when(tok.created_at ?? tok.created)
           const used = _when(tok.last_used_at ?? tok.last_used)
           return (
-            <div key={tok.id || tok.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px', borderBlockStart: '0.5px solid var(--line)' }}>
+            <div key={tok.id || tok.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', borderBlockStart: '0.5px solid var(--line)', opacity: revoked ? 0.55 : 1 }}>
               <div style={{ minWidth: 0 }}>
-                {/* A revoked token reads in ink-mute rather than being dimmed with opacity. */}
-                <p dir="auto" style={{ fontSize: 17, fontWeight: 500, color: revoked ? 'var(--ink-mute)' : 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p dir="auto" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {tok.name || '—'}
-                  {revoked && <span style={{ fontSize: 15, color: 'var(--ink-mute)', fontWeight: 400 }}> · {t('settings.assistants.revoked')}</span>}
+                  {revoked && <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontWeight: 400 }}> · {t('settings.assistants.revoked')}</span>}
                 </p>
-                <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '2px 0 0', fontVariantNumeric: 'tabular-nums' }}>
+                <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '1px 0 0' }}>
                   {[created && t('settings.assistants.created', { when: created }),
                     used ? t('settings.assistants.lastUsed', { when: used }) : t('settings.assistants.neverUsed')]
                     .filter(Boolean).join(' · ')}
@@ -1637,10 +1629,9 @@ function ExternalAssistantsSection() {
                   type="button"
                   onClick={() => revoke(tok)}
                   disabled={revoking === tok.id}
-                  className="z-btn-secondary"
-                  style={{ color: 'var(--err-text)', flexShrink: 0 }}
+                  style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, cursor: 'pointer', padding: '5px 9px', color: 'var(--err)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, fontFamily: 'inherit' }}
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={12} />
                   {t('settings.assistants.revoke')}
                 </button>
               )}
@@ -1651,10 +1642,10 @@ function ExternalAssistantsSection() {
 
       {/* Create */}
       <Card>
-        <form onSubmit={create} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <form onSubmit={create} style={{ padding: '12px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.create')}</p>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -1663,8 +1654,8 @@ function ExternalAssistantsSection() {
                 aria-label={t('settings.assistants.nameLabel')}
               />
             </div>
-            <button type="submit" disabled={creating || !name.trim()} className="z-btn-primary" style={{ flexShrink: 0 }}>
-              <Plus size={18} />
+            <button type="submit" disabled={creating || !name.trim()} className="z-btn-primary" style={{ height: 40, padding: '0 14px', borderRadius: 10, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              <Plus size={13} />
               {t('settings.assistants.create')}
             </button>
           </div>
@@ -1699,8 +1690,8 @@ export function SystemDiagnosticsPage() {
   const role = useAuthStore(s => s.role)
   const isAdmin = hasRole(role, 'admin')
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      <div style={{ marginBottom: 24 }}>
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <div style={{ marginBottom: 22 }}>
         <SectionTitle icon={Activity}>{t('opsPage.systemStatus')}</SectionTitle>
         <SystemStatusCard />
       </div>
@@ -1715,8 +1706,10 @@ export function SystemDiagnosticsPage() {
 export function PresenceDebugPage() {
   const t = useT()
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      <SectionTitle icon={MapPin}>{t('opsPage.presenceInternals')}</SectionTitle>
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <div style={{ marginBottom: 8 }}>
+        <SectionTitle icon={MapPin}>{t('opsPage.presenceInternals')}</SectionTitle>
+      </div>
       <Card>
         <PresenceDebugCard />
       </Card>
@@ -1736,31 +1729,33 @@ function WallModeCard() {
   const [on, setOn] = useState(() => isWallMode())
   const navigate = useNavigate()
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, minHeight: 56,
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
-                  borderRadius: 'var(--r-card)' }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--surface-2)',
-      }}>
-        <Monitor size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
-      </div>
+                  borderRadius: 13 }}>
+      <Monitor size={15} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Use as wall dashboard</div>
-        <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Use as wall dashboard</div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>
           This device opens straight into the wall view. Use the exit button in the
           wall header (or long-press the Ziggy mark) to come back.
         </div>
       </div>
-      <Toggle
-        checked={on}
-        aria-label="Use as wall dashboard"
-        onCheckedChange={(next) => {
+      <button
+        type="button" role="switch" aria-checked={on}
+        onClick={() => {
+          const next = !on
           setWallModeFlag(next); setOn(next)
           if (next) navigate('/wall')
         }}
-      />
+        style={{ width: 42, height: 26, borderRadius: 999, border: 'none', flexShrink: 0,
+                 background: on ? 'var(--ok)' : 'var(--line-2)', position: 'relative',
+                 cursor: 'pointer', transition: 'background .2s ease' }}
+      >
+        <span style={{ position: 'absolute', top: 3, insetInlineStart: on ? 19 : 3,
+                       width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                       transition: 'inset-inline-start .2s ease',
+                       boxShadow: '0 1px 3px rgba(0,0,0,.25)' }} />
+      </button>
     </div>
   )
 }
@@ -1778,27 +1773,21 @@ export default function Settings() {
     getAuthStatus().then(a => { if (a?.role) setRole(a.role) }).catch(() => {})
   }, [setRole])
 
-  // Refresh re-reads the session (role gates what the hub shows) and spins
-  // until that fetch actually settles — no fixed timer.
-  const handleRefresh = async () => {
+  const handleRefresh = () => {
     setRefreshing(true)
-    try {
-      const a = await getAuthStatus()
-      if (a?.role) setRole(a.role)
-    } catch {}
-    finally { setRefreshing(false) }
+    setTimeout(() => setRefreshing(false), 600)
   }
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
+    <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 20px 48px' }}>
 
-      <div className="z-page-head">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow">{t('settings.eyebrow')}</p>
-          <h1 className="z-display" style={{ margin: 0 }}>{t('settings.title')}</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('settings.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('settings.title')}</h1>
         </div>
-        <button onClick={handleRefresh} disabled={refreshing} className="z-icon-btn" aria-label={t('common.refresh')} title={t('common.refresh')}>
-          <RefreshCw size={18} className={refreshing ? 'z-spin' : undefined} />
+        <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
+          <RefreshCw size={14} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
         </button>
       </div>
 
@@ -1823,10 +1812,16 @@ export default function Settings() {
       </div>
 
       {isSuperAdmin && (
-        <div style={{ marginTop: 24 }}>
+        <div style={{ marginTop: 22 }}>
           <SectionTitle icon={Shield}>{t('settings.advanced')}</SectionTitle>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 12 }}>{t('settings.advancedHint')}</p>
-          <HubCard icon={Shield} title={t('nav.opsConsole')} to="/ops" />
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 10 }}>{t('settings.advancedHint')}</p>
+          <Link to="/ops" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 13, textDecoration: 'none', color: 'var(--ink)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Shield size={14} style={{ color: 'var(--ink-mute)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{t('nav.opsConsole')}</span>
+            </div>
+            <span style={{ color: 'var(--ink-faint)', fontSize: 18 }}>›</span>
+          </Link>
         </div>
       )}
 

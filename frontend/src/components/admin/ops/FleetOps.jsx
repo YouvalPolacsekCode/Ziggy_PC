@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
 import './ops.css'
 import {
   relayFleetHealth, relayFleetActivity,
@@ -19,10 +18,6 @@ import {
  *
  * Structure follows the design: a fleet list sorted so a broken home is always
  * first, an events log, and a per-home detail view.
- *
- * Type sizes follow the app's scale (13 for table values and metadata, 15 for
- * labels and sentences, 17 for names, 20 for the vital numbers); nothing here
- * renders under 13px.
  */
 
 const REPAIRS = {
@@ -71,8 +66,8 @@ const shortRelease = (tag) => {
 
 // Square state marks. The design uses shape as well as colour — a dashed
 // outline for unknown, a hairline square for healthy — so state survives
-// greyscale and colour-blindness. 8px, like every status dot in the app.
-function Mark({ sev, size = 8 }) {
+// greyscale and colour-blindness.
+function Mark({ sev, size = 9 }) {
   const base = { display: 'inline-block', width: size, height: size, flex: 'none' }
   const style =
     sev === 'down' ? { ...base, background: 'var(--down)' } :
@@ -86,9 +81,6 @@ function Mark({ sev, size = 8 }) {
 function Corners() {
   return <><i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" /></>
 }
-
-const EYEBROW = { fontSize: 13, lineHeight: '18px', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 600 }
-const MONO = { fontVariantNumeric: 'tabular-nums' }
 
 // ── issues ─────────────────────────────────────────────────────────────────
 
@@ -115,18 +107,18 @@ function IssueRow({ issue, homeId, disabled, disabledNote, onDone, toast }) {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 15, flexWrap: 'wrap', minHeight: 36 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, flexWrap: 'wrap' }}>
       <Mark sev={issue.level} />
       <span style={{ flex: 1, minWidth: 200 }}>{issue.message}</span>
       {spec && (
         <>
           {result && (
-            <span style={{ fontSize: 13, color: result.ok ? 'var(--color-text)' : 'var(--down-800)' }}>
+            <span style={{ fontSize: 12, color: result.ok ? 'var(--color-text)' : 'var(--down-800)' }}>
               {result.text}
             </span>
           )}
           <button
-            className="btn btn-secondary"
+            className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: 12 }}
             onClick={run} disabled={state === 'running' || disabled}
             title={disabled ? disabledNote : undefined}
           >
@@ -135,10 +127,10 @@ function IssueRow({ issue, homeId, disabled, disabledNote, onDone, toast }) {
         </>
       )}
       {issue.kind === 'human' && (
-        <span style={{ fontSize: 13 }} className="text-muted">no safe repair — needs a human</span>
+        <span style={{ fontSize: 11 }} className="text-muted">no safe repair — needs a human</span>
       )}
       {issue.kind === 'context' && (
-        <span style={{ fontSize: 13 }} className="text-muted">context, not actionable</span>
+        <span style={{ fontSize: 11 }} className="text-muted">context, not actionable</span>
       )}
     </div>
   )
@@ -146,7 +138,7 @@ function IssueRow({ issue, homeId, disabled, disabledNote, onDone, toast }) {
 
 // ── fleet table ────────────────────────────────────────────────────────────
 
-const GRID = '112px 1.15fr 112px 1.5fr 64px 64px 160px 36px'
+const GRID = '104px 1.15fr 110px 1.5fr 64px 56px 150px 34px'
 
 function FleetRow({ home, expanded, onToggle, onOpen, onRepaired, toast }) {
   const v = home.vitals || {}
@@ -154,7 +146,7 @@ function FleetRow({ home, expanded, onToggle, onOpen, onRepaired, toast }) {
   const silent = st === 'down'
   const stColor = st === 'down' ? 'var(--down-800)'
     : st === 'degraded' ? 'var(--warn-800)'
-    : 'var(--ink-mute)'
+    : 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
   const issues = home.issues || []
   const summary = issues.length === 0 ? '—'
@@ -162,10 +154,10 @@ function FleetRow({ home, expanded, onToggle, onOpen, onRepaired, toast }) {
     : `${issues.length} issues — ${issues.map(i => i.message.split('—')[0].trim().toLowerCase()).join(', ')}`
 
   const rel = shortRelease(v.release_tag)
-  const relStyle = !rel ? { fontSize: 13, color: 'var(--ink-faint)' }
-    : v.cohort === 'canary' ? { background: 'var(--color-accent-100)', color: 'var(--color-accent-800)', fontSize: 13, padding: '2px 8px' }
-    : v.drifted ? { background: 'var(--warn-100)', color: 'var(--warn-800)', border: '1px solid var(--warn)', fontSize: 13, padding: '2px 8px' }
-    : { background: 'var(--color-neutral-100)', color: 'var(--color-neutral-800)', fontSize: 13, padding: '2px 8px' }
+  const relStyle = !rel ? { fontSize: 12, color: 'color-mix(in srgb, var(--color-text) 45%, transparent)' }
+    : v.cohort === 'canary' ? { background: 'var(--color-accent-100)', color: 'var(--color-accent-800)', fontSize: 11, padding: '2px 8px' }
+    : v.drifted ? { background: 'var(--warn-100)', color: 'var(--warn-800)', border: '1px solid var(--warn)', fontSize: 11, padding: '2px 8px' }
+    : { background: 'var(--color-neutral-100)', color: 'var(--color-neutral-800)', fontSize: 11, padding: '2px 8px' }
 
   return (
     <div>
@@ -174,49 +166,43 @@ function FleetRow({ home, expanded, onToggle, onOpen, onRepaired, toast }) {
         onClick={onOpen}
         style={{
           display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 8,
-          cursor: 'pointer', padding: '4px 8px', minHeight: 44,
-          borderBottom: '1px solid var(--color-divider)',
+          cursor: 'pointer', padding: '8px', borderBottom: '1px solid color-mix(in srgb, var(--color-text) 8%, transparent)',
           background: st === 'down' ? 'var(--down-100)' : 'transparent',
         }}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: st === 'down' ? 700 : st === 'degraded' ? 600 : 400, color: stColor }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: st === 'down' ? 700 : st === 'degraded' ? 600 : 400, color: stColor }}>
           <Mark sev={st} /> {STATE_WORD[st] || 'UNKNOWN'}
         </span>
-        <span style={{ fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 14, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           <strong>{home.name}</strong>{' '}
-          <span style={{ fontSize: 13 }} className="text-muted">{(home.owner_email || '').split('@')[0]}</span>
+          <span style={{ fontSize: 12 }} className="text-muted">{(home.owner_email || '').split('@')[0]}</span>
         </span>
-        <span style={{ ...MONO, fontSize: 13, color: silent ? 'var(--down-800)' : 'var(--ink-mute)', fontWeight: silent ? 600 : 400 }}>
+        <span style={{ fontSize: 13, color: silent ? 'var(--down-800)' : 'color-mix(in srgb, var(--color-text) 60%, transparent)', fontWeight: silent ? 600 : 400 }}>
           {home.silent_for_s == null ? 'never' : fmtAgo(home.silent_for_s)}
         </span>
-        <span style={{ fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: issues.length ? 'var(--color-text)' : 'var(--ink-faint)' }}>
+        <span style={{ fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: issues.length ? 'var(--color-text)' : 'color-mix(in srgb, var(--color-text) 45%, transparent)' }}>
           {summary}
         </span>
-        <span style={{ ...MONO, fontSize: 13 }}>
+        <span style={{ fontSize: 13 }}>
           {v.devices_total == null ? '—' : (v.devices_offline ? `${v.devices_total - v.devices_offline}/${v.devices_total}` : v.devices_total)}
         </span>
-        <span style={{ ...MONO, fontSize: 13, color: v.disk_pct >= 85 ? 'var(--warn-800)' : 'inherit' }}>
+        <span style={{ fontSize: 13, color: v.disk_pct >= 85 ? 'var(--warn-800)' : 'inherit' }}>
           {v.disk_pct == null ? '—' : `${Math.round(v.disk_pct)}%`}
         </span>
-        <span><span style={{ ...MONO, ...relStyle }}>{rel || '—'}{v.cohort === 'canary' ? ' · canary' : ''}</span></span>
+        <span><span style={relStyle}>{rel || '—'}{v.cohort === 'canary' ? ' · canary' : ''}</span></span>
         <button
           onClick={(e) => { e.stopPropagation(); onToggle() }}
           aria-label={expanded ? 'Collapse' : 'Expand'}
-          style={{
-            width: 36, height: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0,
-          }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: .6, fontSize: 12, padding: 4 }}
         >
-          {expanded
-            ? <ChevronDown size={18} strokeWidth={1.75} />
-            : <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" />}
+          {expanded ? '▾' : '▸'}
         </button>
       </div>
 
       {expanded && (
         <div style={{
-          padding: '12px 16px 16px', background: 'var(--surface-2)',
-          borderBottom: '1px solid var(--color-divider)', display: 'flex', flexDirection: 'column', gap: 8,
+          padding: '12px 16px 14px', background: 'color-mix(in srgb, var(--color-text) 3%, transparent)',
+          borderBottom: '1px solid var(--color-divider)', display: 'flex', flexDirection: 'column', gap: 9,
         }}>
           {issues.map((iss, i) => (
             <IssueRow
@@ -225,14 +211,14 @@ function FleetRow({ home, expanded, onToggle, onOpen, onRepaired, toast }) {
               onDone={onRepaired} toast={toast}
             />
           ))}
-          {issues.length === 0 && <div style={{ fontSize: 15 }} className="text-muted">No issues.</div>}
+          {issues.length === 0 && <div style={{ fontSize: 12 }} className="text-muted">No issues.</div>}
           {silent && (
-            <div style={{ fontSize: 13, borderTop: '1px solid var(--color-divider)', paddingTop: 8 }} className="text-muted">
+            <div style={{ fontSize: 11, borderTop: '1px solid var(--color-divider)', paddingTop: 8 }} className="text-muted">
               Repairs disabled — the hub can't hear us while it's silent.
             </div>
           )}
           <div>
-            <a href="#" onClick={(e) => { e.preventDefault(); onOpen() }} style={{ fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', minHeight: 36 }}>Open home →</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); onOpen() }} style={{ fontSize: 12, textDecoration: 'none' }}>Open home →</a>
           </div>
         </div>
       )}
@@ -244,12 +230,12 @@ function FleetRow({ home, expanded, onToggle, onOpen, onRepaired, toast }) {
 
 function Section({ title, children, titleColor }) {
   return (
-    <div className="blueprint" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="blueprint" style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <Corners />
       <div style={{
-        ...EYEBROW, letterSpacing: '.12em',
-        fontFamily: 'var(--font-heading)',
-        color: titleColor || 'var(--ink-mute)',
+        fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase',
+        fontFamily: 'var(--font-heading)', fontWeight: 600,
+        color: titleColor || 'color-mix(in srgb, var(--color-text) 55%, transparent)',
       }}>
         {title}
       </div>
@@ -297,7 +283,7 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
   const barPeak = bars ? Math.max(0, ...bars.filter(b => typeof b === 'number')) : 0
   const barScale = Math.max(10, Math.ceil(barPeak * 1.25))
 
-  const tagStyle = home.level === 'down' ? { background: 'var(--down-100)', color: 'var(--down-800)', border: '1px solid var(--down)' }
+  const tagStyle = home.level === 'down' ? { background: 'var(--down)', color: 'var(--color-bg)' }
     : home.level === 'degraded' ? { background: 'var(--warn-100)', color: 'var(--warn-800)', border: '1px solid var(--warn)' }
     : home.level === 'unknown' ? { border: '1px dashed var(--color-neutral-500)', color: 'var(--color-neutral-700)' }
     : { border: '1px solid var(--color-divider)', color: 'var(--color-neutral-700)' }
@@ -319,26 +305,26 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
   const backupOk = backup === 'error' ? false : (backup?.outcome ? backup.outcome === 'success' : true)
 
   return (
-    <div style={{ padding: mobile ? '16px 16px 24px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div><a href="#" onClick={(e) => { e.preventDefault(); onBack() }} style={{ fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', minHeight: 36 }}>← Fleet</a></div>
+    <div style={{ padding: mobile ? '14px 16px 28px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div><a href="#" onClick={(e) => { e.preventDefault(); onBack() }} style={{ fontSize: 13, textDecoration: 'none' }}>← Fleet</a></div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <Mark sev={home.level} size={12} />
+        <Mark sev={home.level} size={11} />
         <h3 style={{ margin: 0 }}>{home.name}</h3>
-        <span style={{ ...tagStyle, ...EYEBROW, fontFamily: 'var(--font-heading)', letterSpacing: '.12em', padding: '4px 8px' }}>
+        <span style={{ ...tagStyle, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 10, letterSpacing: '.12em', padding: '3px 8px' }}>
           {STATE_WORD[home.level]}
         </span>
-        <span style={{ fontSize: 15 }} className="text-muted">
+        <span style={{ fontSize: 13 }} className="text-muted">
           {home.owner_email || 'no owner'} · {shortRelease(v.release_tag) || 'unknown release'} · {v.cohort || 'no channel'}
         </span>
         <span style={home.subscription_state === 'active'
-          ? { fontSize: 13, color: 'var(--ink-mute)' }
-          : { background: 'var(--warn-100)', color: 'var(--warn-800)', border: '1px solid var(--warn)', fontSize: 13, fontWeight: 600, letterSpacing: '.08em', padding: '2px 8px' }}>
+          ? { fontSize: 11, color: 'color-mix(in srgb, var(--color-text) 50%, transparent)' }
+          : { background: 'var(--warn-100)', color: 'var(--warn-800)', border: '1px solid var(--warn)', fontSize: 10, fontWeight: 600, letterSpacing: '.1em', padding: '2px 8px' }}>
           {home.subscription_state === 'active' ? 'subscription active' : String(home.subscription_state || '').toUpperCase()}
         </span>
-        <span style={{ marginInlineStart: 'auto' }} />
+        <span style={{ marginLeft: 'auto' }} />
         <button
-          className="btn btn-secondary"
+          className="btn btn-secondary" style={{ fontSize: 13 }}
           onClick={async () => {
             try {
               const r = await relayOpenSupportSession(home.home_id, 'ops console')
@@ -351,7 +337,7 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
       </div>
 
       {silent && (
-        <div style={{ border: '1px solid var(--down)', background: 'var(--down-100)', padding: '12px 16px', fontSize: 15, color: 'var(--down-800)' }}>
+        <div style={{ border: '1px solid var(--down)', background: 'var(--down-100)', padding: '10px 14px', fontSize: 13, color: 'var(--down-800)' }}>
           <strong>Silent for {fmtAgo(home.silent_for_s)}.</strong> Hubs report every 5 minutes and nothing has arrived.
           A silent hub is usually power or broadband at the house — telemetry can't tell you which. Vitals below are last-known.
         </div>
@@ -364,36 +350,34 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
               disabledNote="The hub can't hear us while it's silent." onDone={onRepaired} toast={toast} />
           ))}
           {silent && (
-            <div style={{ fontSize: 13, borderTop: '1px solid var(--color-divider)', paddingTop: 8 }} className="text-muted">
+            <div style={{ fontSize: 11, borderTop: '1px solid var(--color-divider)', paddingTop: 8 }} className="text-muted">
               Repairs disabled — the hub can't hear us while it's silent.
             </div>
           )}
         </Section>
       )}
 
-      {/* Last-known vitals on a silent hub read in the muted tokens rather
-          than a dimmed copy — the numbers stay legible, the hierarchy drops. */}
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(3,1fr)' : 'repeat(6,1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(3,1fr)' : 'repeat(6,1fr)', gap: 12, opacity: silent ? .5 : 1 }}>
         {vitals.map(([label, value, color]) => (
           <div key={label}>
-            <div style={EYEBROW} className="text-muted">{label}</div>
-            <div style={{ ...MONO, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 20, color: silent && color === 'inherit' ? 'var(--ink-mute)' : color }}>{value}</div>
+            <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase' }} className="text-muted">{label}</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 18, color }}>{value}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,1fr)', gap: mobile ? 12 : 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,1fr)', gap: mobile ? 12 : 18 }}>
         <Section title="CPU · last 24 h">
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 44 }}>
             {(bars || Array.from({ length: 24 })).map((val, i) => (
               <span key={i} style={{
-                width: 8,
+                width: 7,
                 height: val == null ? 1 : Math.max(3, Math.round((val / barScale) * 44)),
                 background: val == null ? 'var(--color-neutral-300)' : 'var(--color-accent-400)',
               }} />
             ))}
           </div>
-          <div style={{ fontSize: 13 }} className="text-muted">
+          <div style={{ fontSize: 11 }} className="text-muted">
             {bars == null ? 'Loading telemetry…'
               : bars.every(b => b == null) ? 'No samples — missing bars are missing data, drawn as absence.'
               : `Averaged from 5-minute telemetry samples · peak ${barPeak.toFixed(0)}%`}
@@ -401,94 +385,96 @@ function HomeDetail({ home, onBack, onRepaired, toast, onInvite, onRemove, mobil
         </Section>
 
         <Section title="Backups">
-          <div style={{ fontSize: 15, color: backupOk ? 'inherit' : 'var(--warn-800)' }}>{backupText}</div>
-          <div style={{ fontSize: 13 }} className="text-muted">
+          <div style={{ fontSize: 13, color: backupOk ? 'inherit' : 'var(--warn-800)' }}>{backupText}</div>
+          <div style={{ fontSize: 11 }} className="text-muted">
             {backup !== 'error' && backup?.uploaded_bytes ? `${(backup.uploaded_bytes / 1048576).toFixed(1)} MB uploaded. ` : ''}
             Nightly, encrypted, to Backblaze.
           </div>
         </Section>
 
         <Section title="Updates">
-          <div style={{ fontSize: 15 }}>Running <strong style={MONO}>{shortRelease(v.release_tag) || '—'}</strong></div>
-          {/* Read-only channel indicator, drawn as the same segmented control
-              the filter uses so the "on" segment reads the same everywhere. */}
-          <div className="seg" style={{ alignSelf: 'flex-start' }} aria-disabled="true">
+          <div style={{ fontSize: 13 }}>Running <strong>{shortRelease(v.release_tag) || '—'}</strong></div>
+          <div style={{ display: 'inline-flex', border: '1px solid var(--color-divider)', alignSelf: 'flex-start', opacity: .55 }}>
             {['production', 'canary'].map(c => (
-              <span key={c} className={v.cohort === c ? 'on' : undefined} style={{ cursor: 'default' }}>{c}</span>
+              <span key={c} style={{
+                padding: '5px 12px', fontSize: 12,
+                background: v.cohort === c ? 'var(--color-accent)' : 'transparent',
+                color: v.cohort === c ? 'var(--color-bg)' : 'var(--color-text)',
+              }}>{c}</span>
             ))}
           </div>
-          <div style={{ fontSize: 13, color: v.drifted ? 'var(--warn-800)' : 'var(--ink-mute)' }}>
+          <div style={{ fontSize: 11, color: v.drifted ? 'var(--warn-800)' : 'color-mix(in srgb, var(--color-text) 55%, transparent)' }}>
             {v.drifted ? 'Off channel — not receiving fixes.'
               : v.cohort === 'canary' ? 'Canary — deliberately ahead of the fleet.'
               : 'On channel. Updates itself within minutes of a release.'}
           </div>
-          <div style={{ fontSize: 13 }} className="text-muted">
+          <div style={{ fontSize: 11 }} className="text-muted">
             Read-only: the channel is set on the hub itself (/etc/ziggy/ziggy.env), which the cloud cannot write.
           </div>
         </Section>
 
         <Section title="Paired phones">
-          {detail.phones == null && <div style={{ fontSize: 15 }} className="text-muted">Loading…</div>}
+          {detail.phones == null && <div style={{ fontSize: 12 }} className="text-muted">Loading…</div>}
           {detail.phones === 'error' && (
-            <div style={{ fontSize: 15, color: 'var(--warn-800)' }}>
+            <div style={{ fontSize: 12, color: 'var(--warn-800)' }}>
               Couldn't reach the hub for this list.
             </div>
           )}
           {Array.isArray(detail.phones) && detail.phones.length === 0 && (
-            <div style={{ fontSize: 15 }} className="text-muted">No phones paired.</div>
+            <div style={{ fontSize: 12 }} className="text-muted">No phones paired.</div>
           )}
           {(Array.isArray(detail.phones) ? detail.phones : []).map((p, i) => (
-            <div key={i} style={{ display: 'flex', fontSize: 15, gap: 8 }}>
+            <div key={i} style={{ display: 'flex', fontSize: 13, gap: 8 }}>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {p.device_name || p.name || p.device_id || 'device'}
               </span>
-              <span className="text-muted" style={{ fontSize: 13 }}>{p.platform || p.push_provider || ''}</span>
+              <span className="text-muted" style={{ fontSize: 12 }}>{p.platform || p.push_provider || ''}</span>
             </div>
           ))}
         </Section>
 
         <Section title={<>Users</>}>
-          <div style={{ display: 'flex', alignItems: 'center', marginTop: -28, marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginTop: -26, marginBottom: 4 }}>
             <span style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={onInvite}>+ Invite</button>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={onInvite}>+ Invite</button>
           </div>
-          {detail.users == null && <div style={{ fontSize: 15 }} className="text-muted">Loading…</div>}
+          {detail.users == null && <div style={{ fontSize: 12 }} className="text-muted">Loading…</div>}
           {detail.users === 'error' && (
-            <div style={{ fontSize: 15, color: 'var(--warn-800)' }}>Couldn't load users.</div>
+            <div style={{ fontSize: 12, color: 'var(--warn-800)' }}>Couldn't load users.</div>
           )}
           {Array.isArray(detail.users) && detail.users.length === 0 && (
             <>
               {home.owner_email ? (
                 <>
-                  <div style={{ display: 'flex', fontSize: 15, gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', fontSize: 13, gap: 8, alignItems: 'center' }}>
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {home.owner_email}
                     </span>
-                    <span className="tag tag-neutral">owner</span>
+                    <span className="tag tag-neutral" style={{ fontSize: 10 }}>owner</span>
                   </div>
-                  <div style={{ fontSize: 13 }} className="text-muted">
+                  <div style={{ fontSize: 11 }} className="text-muted">
                     On record as the owner, but no relay account has been linked to this home yet.
                   </div>
                 </>
               ) : (
-                <div style={{ fontSize: 15 }} className="text-muted">No users yet.</div>
+                <div style={{ fontSize: 12 }} className="text-muted">No users yet.</div>
               )}
             </>
           )}
           {(Array.isArray(detail.users) ? detail.users : []).map((u, i) => (
-            <div key={i} style={{ display: 'flex', fontSize: 15, gap: 8, alignItems: 'center' }}>
+            <div key={i} style={{ display: 'flex', fontSize: 13, gap: 8, alignItems: 'center' }}>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
-              <span className="tag tag-neutral">{u.role}</span>
+              <span className="tag tag-neutral" style={{ fontSize: 10 }}>{u.role}</span>
             </div>
           ))}
         </Section>
 
         <Section title="Danger zone" titleColor="var(--down-800)">
-          <div style={{ fontSize: 13 }} className="text-muted">
+          <div style={{ fontSize: 12 }} className="text-muted">
             Deprovisioning removes the home record and revokes the hub's relay key. The hub keeps working locally.
           </div>
           <div>
-            <button className="btn btn-danger" onClick={onRemove}>
+            <button className="btn btn-secondary" style={{ fontSize: 12, color: 'var(--down-800)', borderColor: 'var(--down)' }} onClick={onRemove}>
               Deprovision home…
             </button>
           </div>
@@ -639,12 +625,12 @@ export default function FleetOps({ onExit }) {
   if (needsAuth) {
     return (
       <div className="zg-ops" style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', padding: 24 }}>
-        <form onSubmit={signIn} className="blueprint" style={{ width: 'min(360px,100%)', padding: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form onSubmit={signIn} className="blueprint" style={{ width: 'min(360px,100%)', padding: 28, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Corners />
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 20, letterSpacing: '.14em' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 18, letterSpacing: '.14em' }}>
             ZIGGY <span style={{ color: 'var(--color-accent)' }}>OPS</span>
           </div>
-          <div style={{ fontSize: 15 }} className="text-muted">Operations console. Sign in with your Ziggy staff account.</div>
+          <div style={{ fontSize: 13 }} className="text-muted">Operations console. Sign in with your Ziggy staff account.</div>
           <div className="field">
             <label>Email</label>
             <input className="input" autoComplete="username" value={creds.email}
@@ -658,7 +644,7 @@ export default function FleetOps({ onExit }) {
           <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
-          <div style={{ fontSize: 13 }} className="text-muted">No fleet data is shown before sign-in — not even counts.</div>
+          <div style={{ fontSize: 12 }} className="text-muted">No fleet data is shown before sign-in — not even counts.</div>
         </form>
       </div>
     )
@@ -670,14 +656,14 @@ export default function FleetOps({ onExit }) {
   return (
     <div className="zg-ops" style={{ border: '1px solid var(--color-divider)' }}>
       {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '8px 20px', minHeight: 56, borderBottom: '1px solid var(--color-divider)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '11px 20px', borderBottom: '1px solid var(--color-divider)' }}>
         <button
           onClick={onExit} disabled={!onExit}
           title={onExit ? 'Back to the admin console' : undefined}
           style={{
-            fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 17,
+            fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 16,
             letterSpacing: '.14em', whiteSpace: 'nowrap', background: 'none',
-            border: 'none', padding: 0, minHeight: 36, color: 'inherit',
+            border: 'none', padding: 0, color: 'inherit',
             cursor: onExit ? 'pointer' : 'default',
           }}
         >
@@ -689,60 +675,59 @@ export default function FleetOps({ onExit }) {
             return (
               <button key={k} onClick={() => { setView(k); if (k === 'fleet') setHomeId(null) }}
                 style={{
-                  background: 'none', border: 'none', borderBottom: on ? '2px solid var(--color-text)' : '2px solid transparent',
-                  color: on ? 'var(--color-text)' : 'var(--ink-mute)', fontFamily: 'var(--font-body)',
-                  fontSize: 15, fontWeight: on ? 600 : 400, cursor: 'pointer', padding: '0 8px', minHeight: 36,
-                  transition: 'color var(--dur-press) var(--ease-standard), border-color var(--dur-press) var(--ease-standard)',
+                  background: 'none', border: 'none', borderBottom: on ? '2px solid var(--color-accent)' : '2px solid transparent',
+                  color: on ? 'var(--color-accent)' : 'inherit', fontFamily: 'var(--font-body)',
+                  fontSize: 14, fontWeight: on ? 600 : 400, cursor: 'pointer', padding: '4px 8px',
                 }}>
                 {label}
               </button>
             )
           })}
         </div>
-        <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, whiteSpace: 'nowrap' }} className="text-muted">
-          <Mark sev={error ? 'down' : 'acc'} />
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, whiteSpace: 'nowrap' }} className="text-muted">
+          <Mark sev={error ? 'down' : 'acc'} size={7} />
           {error ? 'Relay unreachable' : `Relay connected · swept ${lastOk ? clock(lastOk.toISOString()) : '—'}`}
         </div>
       </div>
 
       {/* stale-data banner */}
       {stale && (
-        <div style={{ margin: '16px 20px 0', border: '1px solid var(--down)', background: 'var(--down-100)', padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Mark sev="down" />
-          <span style={{ fontSize: 15, color: 'var(--down-800)' }}>
+        <div style={{ margin: '16px 20px 0', border: '1px solid var(--down)', background: 'var(--down-100)', padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Mark sev="down" size={10} />
+          <span style={{ fontSize: 13, color: 'var(--down-800)' }}>
             <strong>Cloud relay unreachable since {clock(lastOk.toISOString())}.</strong>{' '}
             Everything below is last-known data — homes may have changed state since.
           </span>
-          <button className="btn btn-secondary" style={{ marginInlineStart: 'auto' }} onClick={load}>Retry</button>
+          <button className="btn btn-secondary" style={{ fontSize: 12, padding: '3px 10px', marginLeft: 'auto' }} onClick={load}>Retry</button>
         </div>
       )}
       {error && !lastOk && (
-        <div style={{ padding: 20, fontSize: 15, color: 'var(--down-800)' }}>{error}</div>
+        <div style={{ padding: 20, fontSize: 13, color: 'var(--down-800)' }}>{error}</div>
       )}
 
       {/* loading skeleton — rows appear in place, the layout never jumps */}
       {loading && !report && !error && (
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            <div className="zg-skel" style={{ width: 92, height: 24 }} />
-            <div className="zg-skel" style={{ width: 200, height: 16 }} />
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+            <div className="zg-skel" style={{ width: 90, height: 24 }} />
+            <div className="zg-skel" style={{ width: 200, height: 14 }} />
           </div>
           {[1, 2, 3, 4, 5].map(k => (
-            <div key={k} className="zg-skel" style={{ height: 40, borderBottom: '1px solid var(--color-divider)' }} />
+            <div key={k} className="zg-skel" style={{ height: 38, borderBottom: '1px solid var(--color-divider)' }} />
           ))}
-          <div style={{ fontSize: 13 }} className="text-muted">Contacting relay…</div>
+          <div style={{ fontSize: 12 }} className="text-muted">Contacting relay…</div>
         </div>
       )}
 
       {/* fleet */}
       {report && view === 'fleet' && !current && (
-        <div style={{ padding: mobile ? '16px 16px 24px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: mobile ? '14px 16px 28px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {homes.length === 0 ? (
             <div style={{ minHeight: '40vh', display: 'grid', placeItems: 'center' }}>
-              <div className="blueprint" style={{ width: 'min(420px,100%)', padding: 32, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="blueprint" style={{ width: 'min(420px,100%)', padding: 28, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Corners />
                 <h3 style={{ margin: 0 }}>No homes yet</h3>
-                <p style={{ fontSize: 15, margin: 0 }} className="text-muted">
+                <p style={{ fontSize: 13, margin: 0 }} className="text-muted">
                   Create the first home record, invite its owner, and the hub will appear here as
                   {' '}<span style={{ whiteSpace: 'nowrap' }}>"unknown — waiting for first report"</span> until it phones in.
                 </p>
@@ -754,11 +739,11 @@ export default function FleetOps({ onExit }) {
               {allHealthy && (
                 <div className="blueprint" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <Corners />
-                  <Mark sev="ok" />
-                  <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 17 }}>
+                  <Mark sev="ok" size={10} />
+                  <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 16 }}>
                     All {homes.length} homes healthy
                   </span>
-                  <span style={{ fontSize: 15 }} className="text-muted">
+                  <span style={{ fontSize: 13 }} className="text-muted">
                     {report.versions?.converged
                       ? `stable ${shortRelease(report.versions.majority)}${Object.keys(report.versions.ahead || {}).length ? ' · canary ahead as intended' : ''}`
                       : 'versions split — see Release column'}
@@ -773,20 +758,25 @@ export default function FleetOps({ onExit }) {
                   </span>
                 </h3>
                 {[['down', 'down', 'var(--down-800)', 700], ['degraded', 'degraded', 'var(--warn-800)', 400],
-                  ['unknown', 'unknown', 'var(--ink-mute)', 400],
-                  ['ok', 'healthy', 'var(--ink-mute)', 400]]
+                  ['unknown', 'unknown', 'color-mix(in srgb, var(--color-text) 55%, transparent)', 400],
+                  ['ok', 'healthy', 'color-mix(in srgb, var(--color-text) 55%, transparent)', 400]]
                   .filter(([k]) => counts[k])
                   .map(([k, label, color, weight]) => (
-                    <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, color, fontWeight: weight }}>
+                    <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color, fontWeight: weight }}>
                       <Mark sev={k} /> {counts[k]} {label}
                     </span>
                   ))}
-                <span style={{ marginInlineStart: 'auto' }} />
-                <input className="input" style={{ width: 240 }} placeholder="Search homes or owners…"
+                <span style={{ marginLeft: 'auto' }} />
+                <input className="input" style={{ width: 220 }} placeholder="Search homes or owners…"
                   value={query} onChange={e => setQuery(e.target.value)} />
-                <div className="seg">
+                <div style={{ display: 'inline-flex', border: '1px solid var(--color-divider)' }}>
                   {[['all', 'All'], ['prob', 'Problems'], ['behind', 'Behind']].map(([k, label]) => (
-                    <button key={k} onClick={() => setFilter(k)} className={filter === k ? 'on' : undefined}>{label}</button>
+                    <button key={k} onClick={() => setFilter(k)} style={{
+                      padding: '6px 12px', fontSize: 13, border: 'none', cursor: 'pointer',
+                      fontFamily: 'var(--font-body)',
+                      background: filter === k ? 'var(--color-accent)' : 'transparent',
+                      color: filter === k ? 'var(--color-bg)' : 'var(--color-text)',
+                    }}>{label}</button>
                   ))}
                 </div>
                 <button className="btn btn-primary" onClick={() => setDialog('add')}>Add home</button>
@@ -795,9 +785,9 @@ export default function FleetOps({ onExit }) {
               {!mobile && (
                 <div>
                   <div style={{
-                    ...EYEBROW,
-                    display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 8px',
-                    color: 'var(--ink-mute)',
+                    display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '6px 8px',
+                    fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
+                    color: 'color-mix(in srgb, var(--color-text) 60%, transparent)',
                     borderBottom: '1px solid var(--color-divider)',
                   }}>
                     <span>State</span><span>Home</span><span>Last report</span><span>Issues</span>
@@ -817,17 +807,17 @@ export default function FleetOps({ onExit }) {
                   {rows.map(h => (
                     <div key={h.home_id} onClick={() => { setHomeId(h.home_id); setView('home') }}
                       style={{
-                        display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 4px', minHeight: 56, cursor: 'pointer',
-                        borderBottom: '1px solid var(--color-divider)',
+                        display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 4px', cursor: 'pointer',
+                        borderBottom: '1px solid color-mix(in srgb, var(--color-text) 8%, transparent)',
                         background: h.level === 'down' ? 'var(--down-100)' : 'transparent',
                       }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                         <Mark sev={h.level} />
-                        <strong style={{ flex: 1, fontSize: 17 }}>{h.name}</strong>
-                        <span style={{ fontSize: 13 }} className="text-muted">{STATE_WORD[h.level]}</span>
+                        <strong style={{ flex: 1, fontSize: 15 }}>{h.name}</strong>
+                        <span style={{ fontSize: 12 }} className="text-muted">{STATE_WORD[h.level]}</span>
                       </div>
-                      <div style={{ display: 'flex', gap: 12, fontSize: 13, paddingInlineStart: 16 }}>
-                        <span className="text-muted" style={MONO}>{fmtAgo(h.silent_for_s)}</span>
+                      <div style={{ display: 'flex', gap: 10, fontSize: 12, paddingLeft: 19 }}>
+                        <span className="text-muted">{fmtAgo(h.silent_for_s)}</span>
                         <span className="text-muted" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {(h.issues || [])[0]?.message || 'All good.'}
                         </span>
@@ -838,11 +828,11 @@ export default function FleetOps({ onExit }) {
               )}
 
               {rows.length === 0 && (
-                <div style={{ padding: 24, fontSize: 15, textAlign: 'center' }} className="text-muted">
+                <div style={{ padding: 24, fontSize: 13, textAlign: 'center' }} className="text-muted">
                   {query ? `No homes match "${query}".` : 'No homes match this filter.'}
                 </div>
               )}
-              <div style={{ fontSize: 13 }} className="text-muted">
+              <div style={{ fontSize: 11 }} className="text-muted">
                 Sorted by severity, then staleness — a broken home is always first.
                 "Behind" answers "is everyone on the release?"
               </div>
@@ -853,22 +843,22 @@ export default function FleetOps({ onExit }) {
 
       {/* events */}
       {report && view === 'events' && (
-        <div style={{ padding: mobile ? '16px 16px 24px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: mobile ? '14px 16px 28px' : 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={{ margin: 0 }}>Events</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', fontSize: 15, maxWidth: 760 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', fontSize: 13, maxWidth: 760 }}>
             {eventGroups.length === 0 && (
-              <span style={{ fontSize: 15 }} className="text-muted">
+              <span style={{ fontSize: 12 }} className="text-muted">
                 Nothing yet. Updates, automatic repairs and new homes show up here.
               </span>
             )}
             {eventGroups.map(g => (
               <div key={g.label}>
-                <div style={{ ...EYEBROW, padding: '16px 0 8px' }} className="text-muted">
+                <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', padding: '14px 0 6px' }} className="text-muted">
                   {g.label}
                 </div>
                 {g.items.map((e, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 12, padding: '8px 0', minHeight: 36, alignItems: 'baseline', borderTop: '1px solid var(--color-divider)' }}>
-                    <span style={{ ...MONO, width: 48, flex: 'none', fontSize: 13 }} className="text-muted">{clock(e.ts)}</span>
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: '1px solid color-mix(in srgb, var(--color-text) 8%, transparent)' }}>
+                    <span style={{ width: 42, flex: 'none' }} className="text-muted">{clock(e.ts)}</span>
                     <Mark sev={e.ok === 0 ? 'down' : e.event === 'home_version_changed' ? 'acc' : 'ok'} />
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <strong>{eventSubject(e)}</strong> {eventText(e)}
@@ -919,7 +909,7 @@ export default function FleetOps({ onExit }) {
                   <input className="input" placeholder="owner@example.com" value={form.email}
                     onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
                 </div>
-                <div style={{ display: 'flex', gap: 16 }}>
+                <div style={{ display: 'flex', gap: 14 }}>
                   {['Owner', 'Member'].map(r => (
                     <label key={r} className="radio">
                       <input type="radio" name="zg-role" checked={form.role === r}
@@ -932,7 +922,8 @@ export default function FleetOps({ onExit }) {
             )}
             <div className="dialog-actions">
               <button className="btn btn-secondary" onClick={() => setDialog(null)}>Cancel</button>
-              <button className={dialog === 'remove' ? 'btn btn-danger' : 'btn btn-primary'} disabled={busy}
+              <button className="btn btn-primary" disabled={busy}
+                style={dialog === 'remove' ? { background: 'var(--down)', borderColor: 'var(--down)' } : undefined}
                 onClick={confirmDialog}>
                 {busy ? 'Working…' : dialog === 'add' ? 'Create & invite' : dialog === 'invite' ? 'Send invite' : 'Deprovision'}
               </button>
@@ -943,10 +934,9 @@ export default function FleetOps({ onExit }) {
 
       {toastMsg && (
         <div style={{
-          position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 70,
-          background: 'var(--inverse)', color: 'var(--on-inverse)', padding: '12px 16px', minHeight: 44,
-          display: 'flex', alignItems: 'center',
-          fontSize: 15, boxShadow: 'var(--shadow-md)', maxWidth: '80vw',
+          position: 'fixed', left: '50%', bottom: 22, transform: 'translateX(-50%)', zIndex: 70,
+          background: 'var(--color-neutral-900)', color: 'var(--color-bg)', padding: '9px 16px',
+          fontSize: 13, boxShadow: 'var(--shadow-md)', maxWidth: '80vw',
         }}>
           {toastMsg}
         </div>

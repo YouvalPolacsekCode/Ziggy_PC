@@ -1,10 +1,4 @@
-/* Heebo carries the whole app. IBM Plex Mono is kept ONLY for the wall-tablet
-   dashboard (src/wall/), which was out of scope for the design pass and still
-   sets it explicitly in nine places — dropping the load would have silently
-   restyled a kiosk surface nobody reviewed. The app itself no longer uses it:
-   numbers are tabular Heebo via .z-mono, and real code uses .z-code's system
-   mono stack. Inter used to be loaded here too and was referenced nowhere. */
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -54,49 +48,30 @@ html, body, #root {
 
   /* Shell geometry — kept in sync with the JS constants in BottomNav.jsx
      (ROW_H) and Sidebar.jsx (width). Change them together. */
-  --nav-h: 56px;
-  --sidebar-w: 240px;
+  --nav-h: 60px;
+  --sidebar-w: 196px;
 
   /* Bottom padding for any scrollable page so content never hides under
      the floating bottom nav. Includes a gesture-bar floor for Android
      3-button mode where env(safe-area-inset-bottom) reports 0. */
   --nav-clearance: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 8px);
 
-  /* Page container max-widths — two, not seven.
-     --page-max-w        : list/grid pages (Rooms, Devices, Actions…).
-     --page-max-w-narrow : reading + form pages (Settings, Device detail,
-                            Chat) where line length matters more than
-                            horizontal space utilization.
-     --page-max-w-wide   : the Dashboard with right rail. */
-  --page-max-w:        1120px;
-  --page-max-w-narrow: 720px;
+  /* Page container max-widths.
+     --page-max-w        : list/grid pages (Dashboard, Rooms, Devices, etc.).
+                            Mobile inherits the value but viewports < 1100px
+                            never hit the cap, so layout looks identical.
+     --page-max-w-narrow : form/settings pages where line length matters more
+                            than horizontal space utilization.
+     --page-max-w-wide   : the Dashboard with right rail. Wider so main+rail
+                            fits on a 1280px laptop with sidebar.
+  */
+  --page-max-w:        1100px;
+  --page-max-w-narrow: 760px;
   --page-max-w-wide:   1240px;
 
   /* Room tile height — bumped on desktop via media query below so anchor
      cards don't look like phone thumbs stretched wide. */
-  --rooms-tile-h: 160px;
-
-  /* ── Spacing + shape + motion tokens ────────────────────────────────────
-     4px grid, 8px rhythm. Four corner radii. Three durations, two curves.
-     Every component reads these; nothing declares its own curve. */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-
-  --r-chip:  6px;    /* badges, small tags (capsules use 999) */
-  --r-ctl:   10px;   /* buttons, inputs, icon buttons */
-  --r-card:  16px;   /* cards, tiles, rows */
-  --r-sheet: 24px;   /* sheets, modals, popovers */
-
-  --dur-press: 120ms;   /* hover / press feedback */
-  --dur-state: 200ms;   /* a value changing in place */
-  --dur-enter: 240ms;   /* something appearing or leaving */
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-enter:    cubic-bezier(0.16, 1, 0.3, 1);
+  --rooms-tile-h: 156px;
 }
 
 @media (min-width: 1024px) {
@@ -112,45 +87,60 @@ html, body, #root {
 .z-rooms-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 @media (min-width: 768px) {
   .z-rooms-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
+    gap: 14px;
   }
+}
+@media (min-width: 1024px) {
+  .z-rooms-grid { gap: 16px; }
 }
 
 /* Dashboard Pinned Devices / Quick Controls grid.
-   2 columns on phone, 4 columns on tablet+ so the wider main column
-   doesn't leave half the row empty. A single pinned device spans the
-   row so the home never shows one half-width tile beside a hole. */
+   2 columns on phone (the redesign's drawn layout), 4 columns on tablet+
+   so the wider main column doesn't leave half the row empty. Same
+   QuickControlTile renders in every cell — only the column count changes,
+   tile sizing follows the column width. */
 .z-quick-controls-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-.z-quick-controls-grid > :only-child { grid-column: 1 / -1; }
 @media (min-width: 768px) {
   .z-quick-controls-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    gap: 10px;
   }
-  .z-quick-controls-grid > :only-child { grid-column: span 2; }
 }
 
-/* Dashboard outer frame. The desktop "no-scroll" viewport clamp that used
-   to live here is gone: it capped the rooms area at 560px and left the
-   bottom third of a 1000px window empty. The page flows now. */
+/* Web/desktop "no-scroll dashboard" frame.
+   On lg+ (>=1024px) the dashboard clamps to the visible viewport and hides
+   overflow, then distributes vertical space inside via flex. The rooms
+   section absorbs the leftover height (flex: 1, min-height: 0) so room
+   tiles re-scale automatically when the user resizes the window or
+   adds/removes rooms — the page is never tall enough to need scrolling.
+   On phone/tablet the dashboard stays a natural-flow document that
+   scrolls normally; none of these rules apply. */
 .z-dashboard-outer {
   max-width: var(--page-max-w-wide);
   margin: 0 auto;
-  padding: 24px 20px 96px;
+  padding: 20px 20px 100px;
 }
 @media (min-width: 1024px) {
-  .z-dashboard-outer { padding-bottom: 32px; }
-  .z-dashboard-grid { align-items: start; }
-  .z-dashboard-main-col { min-height: 0; }
+  .z-dashboard-outer {
+    height: calc(var(--vh) - var(--safe-top));
+    padding-bottom: 20px;
+    overflow: hidden;
+  }
+  /* Override the rail-stretch behavior so both columns share the same
+     fixed height. The main column becomes a vertical flex container so
+     its `.z-dashboard-fill` child can grow. */
+  .z-dashboard-grid { height: 100%; align-items: stretch; }
+  .z-dashboard-main-col { height: 100%; min-height: 0; }
+  .z-dashboard-fill { flex: 1; min-height: 0; }
 }
 
 /* ── Warm-light palette (default + explicit) ─────────────────────────────── */
@@ -165,7 +155,7 @@ html, body, #root {
   --ink:        #1E1812;
   --ink-2:      #3A2E22;
   --ink-mute:   #6E5A48;
-  --ink-faint:  #74614F;
+  --ink-faint:  #9E8B78;
   --ink-ghost:  #C7BAA9;
   --line:       #DDD6CA;
   --line-2:     #CABFAE;
@@ -178,22 +168,13 @@ html, body, #root {
   --err:        #C24530;
   --info:       #3D6A9E;
   --gold:       #C99845;
-  /* Text-safe status colours. The fill colours above sit at 3.5–3.9:1 on
-     the page, fine for a 44px switch, not for a 13px word. These pass
-     4.5:1 on every surface incl. --surface-3 (measured: accent 5.34/4.75,
-     ok 5.15/4.59, warn 5.14/4.57, err 5.09/4.53). Use them for ANY text
-     under 18px in a status colour; keep --accent/--ok/… for fills. */
-  --accent-text: #A14F31;
-  --ok-text:     #347551;
-  --warn-text:   #8D601A;
-  --err-text:    #B8422E;
   /* Tile base for cozy tinted device tiles — darker than page bg in light
      mode so a tint mix reads as warm/grounded, not washed-out pastel. */
   --tile-base:  #E8E4DC;
   /* Intent tokens — text/scrim/backdrop/shadow values that depend on the
      active palette. Using a token instead of a raw literal means any future
      palette tweak (or a third palette) cascades automatically. */
-  --on-accent:  #1E1812;
+  --on-accent:  #FFFFFF;
   --scrim:      color-mix(in srgb, var(--ink) 22%, transparent);
   --backdrop:   rgba(0, 0, 0, 0.40);
   --shadow-sm:  0 1px 0 rgba(0,0,0,0.04);
@@ -214,7 +195,7 @@ html, body, #root {
   --ink:        #F2EBDE;
   --ink-2:      #D8CFBE;
   --ink-mute:   #9A907F;
-  --ink-faint:  #A99D8B;
+  --ink-faint:  #645B4E;
   --ink-ghost:  #3D3730;
   --line:       #2A241D;
   --line-2:     #3A3327;
@@ -227,20 +208,14 @@ html, body, #root {
   --err:        #E27A55;
   --info:       #7AAEE0;
   --gold:       #D7AE6A;
-  /* In dark every status fill already clears 4.5:1 as text (accent 6.62,
-     ok 8.77, warn 9.47, err 6.62 on --bg), so the text tokens alias them. */
-  --accent-text: #E27A55;
-  --ok-text:     #6CBF8C;
-  --warn-text:   #E0AC5C;
-  --err-text:    #E27A55;
   /* In dark mode tile sits LIGHTER than page bg — a tint mix on this base
      reads as a warm glow, not a flat shadow. Inverse of the light-mode goal. */
   --tile-base:  #20262C;
-  /* Dark intent tokens. --on-accent stays near-black: white on the dark
-     --accent (#E27A55) is 2.94:1, near-black is 5.98:1. --scrim derives
-     from ink so it reads as a warm wash instead of a flat black. --backdrop
-     sits deeper than light to push modals off the near-black bg. */
-  --on-accent:  #1E1812;
+  /* Dark intent tokens. --on-accent stays white because --accent in dark
+     (#E27A55 salmon) keeps WCAG-AA contrast with white. --scrim derives from
+     ink so it reads as a warm wash instead of a flat black. --backdrop sits
+     deeper than light to push modals off the near-black bg. */
+  --on-accent:  #FFFFFF;
   --scrim:      color-mix(in srgb, var(--ink) 14%, transparent);
   --backdrop:   rgba(0, 0, 0, 0.62);
   --shadow-sm:  0 1px 0 rgba(0,0,0,0.4);
@@ -259,16 +234,12 @@ html, body, #root {
      blocking inner scroll containers. */
   html, body { overflow-x: hidden; overscroll-behavior-y: none; }
   /* Tap response: kill the 300ms delay and the gray flash on iOS/Android. */
-  html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+  html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   body {
     background: var(--bg);
     color: var(--ink);
     font-family: 'Heebo', system-ui, -apple-system, sans-serif;
-    /* Body role = 17/22, the iOS default reading size. Everything that
-       does not set its own size inherits this instead of the browser's 16. */
-    font-size: 17px;
-    line-height: 1.3;
-    transition: background-color var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard);
+    transition: background-color 0.2s, color 0.2s;
     /* iOS 16 sometimes ignores body min-height: 100% from html; this guarantees
        the page paints to the bottom of the dynamic viewport. */
     min-height: var(--vh);
@@ -276,9 +247,7 @@ html, body, #root {
   button:focus-visible,
   input:focus-visible,
   select:focus-visible,
-  textarea:focus-visible,
-  a:focus-visible,
-  [role="button"]:focus-visible {
+  textarea:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -287,70 +256,48 @@ html, body, #root {
 /* ── Components ─────────────────────────────────────────────────────────────── */
 @layer components {
 
-  /* ── Type roles ─────────────────────────────────────────────────────────
-     One scale, mapped to Apple's Large Dynamic Type styles (1pt = 1px on the
-     web). Nothing renders under .z-caption (11px, the iOS minimum).
-
-       .z-display   Large Title  34 / 700 / 41
-       .z-title     Title 2      22 / 600 / 28
-       .z-title3    Title 3      20 / 600 / 25
-       .z-headline  Headline     17 / 600 / 22
-       .z-body      Body         17 / 400 / 22
-       .z-subhead   Subhead      15 / 400 / 20
-       .z-footnote  Footnote     13 / 400 / 18
-       .z-caption   Caption      11 / 500 / 13
-       .z-eyebrow   Footnote, uppercase, secondary — a grouped-list header */
-  .z-display  { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
-  .z-title    { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
-  .z-title3   { font-size: 20px; line-height: 25px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
-  .z-headline { font-size: 17px; line-height: 22px; font-weight: 600; color: var(--ink); }
-  .z-body     { font-size: 17px; line-height: 22px; font-weight: 400; color: var(--ink); }
-  .z-subhead  { font-size: 15px; line-height: 20px; font-weight: 400; color: var(--ink-mute); }
-  .z-footnote { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--ink-mute); }
-  .z-caption  { font-size: 11px; line-height: 13px; font-weight: 500; color: var(--ink-mute); }
+  /* Type roles */
+  .z-display { font-weight: 700; letter-spacing: -0.025em; line-height: 1.04; color: var(--ink); }
+  .z-title   { font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
   .z-eyebrow {
-    font-size: 13px; line-height: 18px; font-weight: 600;
-    letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--ink-mute);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 500;
   }
 
   /* ── Hebrew-specific typography overrides ──────────────────────────────
-     Heebo is drawn for a `letter-spacing: 0` baseline. Negative tracking on
-     the display/title roles crushes Hebrew letters into each other and
+     Heebo (the Hebrew font) is drawn for an `letter-spacing: 0` baseline.
+     Negative tracking that flatters Inter ("-0.025em" on the display face,
+     "-0.015em" on titles) crushes Hebrew letters into each other and
      destroys the visual rhythm of stems like ב/ד/ה/ם that rely on internal
-     whitespace. Positive tracking on the eyebrow similarly disconnects
-     Hebrew letters that don't ligate the way Latin spacing assumes.
+     whitespace. Positive tracking on the eyebrow (.14em) similarly
+     disconnects Hebrew letters that don't ligate the way Latin spacing
+     assumes.
 
      Hebrew also has no case, so `text-transform: uppercase` is a no-op for
      pure Hebrew strings. It still affects mixed content (an English token
      embedded in a Hebrew eyebrow), so we leave it on — the inconsistency
      reads as intentional emphasis on the Latin tokens.
 
-     Line-height: Heebo's descenders sit low, so Hebrew gets a small bump
-     per role to restore comfortable rhythm without breaking hierarchy. */
-  [dir="rtl"] .z-display { letter-spacing: 0; line-height: 44px; }
-  [dir="rtl"] .z-title,
-  [dir="rtl"] .z-title3  { letter-spacing: 0; }
-  [dir="rtl"] .z-eyebrow { letter-spacing: 0.03em; }
+     Line-height: Heebo's descenders sit lower than Inter's, so the same
+     1.04 / 1.5 values feel cramped in Hebrew. A small bump per role
+     restores comfortable rhythm without breaking the visual hierarchy. */
+  [dir="rtl"] .z-display { letter-spacing: 0; line-height: 1.12; }
+  [dir="rtl"] .z-title   { letter-spacing: 0; }
+  [dir="rtl"] .z-eyebrow { letter-spacing: 0.04em; }
+  /* Tracking on inline tags & long body copy can use a touch of positive
+     tracking for legibility, but stays much lower than the eyebrow. */
   [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3 { letter-spacing: 0; }
-  [dir="rtl"] body  { line-height: 1.45; }
+  [dir="rtl"] body  { line-height: 1.55; }
   [dir="rtl"] p     { line-height: 1.55; }
-
-  /* Numbers. The old .z-mono switched to IBM Plex Mono for every count,
-     timestamp and status line, which made the whole app read as a terminal.
-     Same class name, new meaning: Heebo with tabular figures so columns of
-     numbers still align, and bidi isolation so digits never reorder inside
-     Hebrew. Real code (entity ids, versions, IPs) uses .z-code. */
   .z-mono {
-    font-family: inherit;
-    font-variant-numeric: tabular-nums;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-feature-settings: "ss01", "tnum";
+    /* Mono blocks are timestamps / versions / counts / IDs — content that
+       always reads left-to-right regardless of the surrounding paragraph
+       direction. `isolate` keeps the surrounding RTL bidi context from
+       reordering the digits and punctuation inside the mono span. */
     unicode-bidi: isolate;
-  }
-  .z-code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.92em;
-    unicode-bidi: isolate;
-    direction: ltr;
   }
 
   /* ── Bidi isolation utilities ────────────────────────────────────────────
@@ -374,7 +321,7 @@ html, body, #root {
      the mono class. Adding `dir="ltr"` in JSX is more explicit, but tagging
      `data-num` is a lighter touch when the surrounding flexbox layout is
      already correct. */
-  [data-num] { unicode-bidi: isolate; direction: ltr; font-variant-numeric: tabular-nums; }
+  [data-num] { unicode-bidi: isolate; direction: ltr; }
 
   /* ── Directional icon flipping ─────────────────────────────────────────
      Lucide ChevronRight, ArrowRight, ArrowLeft, etc. encode their
@@ -394,27 +341,31 @@ html, body, #root {
   /* Placeholder text — global tint so every input across the app reads
      clearly as "example / hint" vs actual user-entered text. Browser
      defaults render placeholder at ~50% ink opacity, which in dark mode
-     looks nearly identical to a real value. --ink-faint (5.9:1 on white)
-     unambiguously separates the two roles and still passes AA. */
+     looks nearly identical to a real value (a customer on a fresh "New
+     IR device" form couldn't tell whether "Living Room TV" was the
+     example or something already there). --ink-faint + reduced opacity
+     unambiguously separates the two roles. */
   input::placeholder,
   textarea::placeholder {
     color: var(--ink-faint);
-    opacity: 1;
+    opacity: 0.55;
   }
+  /* Older WebKit syntax for Capacitor's UIWebView (still around on some
+     long-tail iOS PWA installs that haven't migrated to WKWebView). */
   input::-webkit-input-placeholder,
   textarea::-webkit-input-placeholder {
     color: var(--ink-faint);
-    opacity: 1;
+    opacity: 0.55;
   }
 
-  /* Surface cards — one radius */
-  .z-card      { background: var(--surface);   border: 0.5px solid var(--line); border-radius: var(--r-card); }
-  .z-card-soft { background: var(--surface-2); border: 0.5px solid var(--line); border-radius: var(--r-card); }
-  .z-card-sm   { background: var(--surface);   border: 0.5px solid var(--line); border-radius: var(--r-ctl); }
+  /* Surface cards */
+  .z-card      { background: var(--surface);   border: 0.5px solid var(--line); border-radius: 18px; }
+  .z-card-soft { background: var(--surface-2); border: 0.5px solid var(--line); border-radius: 16px; }
+  .z-card-sm   { background: var(--surface);   border: 0.5px solid var(--line); border-radius: 10px; }
   .z-hairline  { border-color: var(--line); }
 
   /* Status dots */
-  .z-dot      { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+  .z-dot      { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
   .z-dot-on   { background: var(--ok);   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok)   22%, transparent); }
   .z-dot-ok   { background: var(--ok);   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok)   22%, transparent); }
   .z-dot-warn { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
@@ -426,9 +377,12 @@ html, body, #root {
   .z-alert-warn { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
   .z-alert-info { background: var(--surface); }
 
-  /* Soft tint utilities — palette-aware fills. Pair them with the *-text
-     tokens (text-ok-text etc. below) so tinted chips pass 4.5:1; the raw
-     fill colours on a 12% fill of themselves measure 3.3–3.7:1. */
+  /* Soft tint utilities — palette-aware replacements for the old
+     bg-violet-50 / bg-emerald-50 / bg-amber-50 / bg-red-50 patterns.
+     Tailwind's `/N` opacity modifier doesn't compose with CSS variables,
+     so we use color-mix here and expose simple class names so consumers
+     stay Tailwind-ergonomic. Border-soft mirrors the same percentage so
+     a chip's fill + border stay in the same family. */
   .bg-accent-soft     { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
   .bg-ok-soft         { background: color-mix(in srgb, var(--ok)     12%, var(--surface)); }
   .bg-warn-soft       { background: color-mix(in srgb, var(--warn)   12%, var(--surface)); }
@@ -441,104 +395,93 @@ html, body, #root {
   .border-info-soft   { border-color: color-mix(in srgb, var(--info)   30%, var(--line)); }
   .hover\:bg-accent-soft:hover { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
   .hover\:border-accent-soft:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
-  .hover\:text-accent:hover { color: var(--accent-text); }
-  /* Text-safe status colours as utilities. `text-accent` etc. (Tailwind,
-     from the config) remain for ≥18px / icon use; these are for words. */
-  .text-accent-text { color: var(--accent-text); }
-  .text-ok-text     { color: var(--ok-text); }
-  .text-warn-text   { color: var(--warn-text); }
-  .text-err-text    { color: var(--err-text); }
+  .hover\:text-accent:hover { color: var(--accent); }
 
-  /* Chip — the one small tag. 13px, 4/12 padding, capsule. */
+  /* Chip */
   .z-chip {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 4px 12px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; border-radius: 999px;
     background: var(--surface-2); border: 0.5px solid var(--line);
-    font-size: 13px; font-weight: 500; color: var(--ink-2); line-height: 18px;
+    font-size: 11.5px; font-weight: 500; color: var(--ink-2); line-height: 1;
   }
   .z-chip-accent {
-    background: var(--accent-2); color: var(--accent-text);
+    background: var(--accent-2); color: var(--accent-3);
     border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
   }
-  /* Pill: alias of chip. Kept so old call sites keep working. */
+  [data-palette="dark"] .z-chip-accent { color: var(--accent); }
+
+  /* Pill badge (legacy alias) */
   .z-pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 4px 12px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px;
     background: var(--surface); border: 0.5px solid var(--line);
-    font-size: 13px; font-weight: 500; color: var(--ink-2); line-height: 18px;
+    font-size: 11px; font-weight: 500; color: var(--ink-2); line-height: 1;
   }
 
-  /* Icon button — 44px target, always */
+  /* Icon button */
   .z-icon-btn {
-    width: 44px; height: 44px; border-radius: var(--r-ctl);
+    width: 36px; height: 36px; border-radius: 12px;
     background: var(--surface-2); border: 0.5px solid var(--line);
     display: flex; align-items: center; justify-content: center;
-    color: var(--ink-2); cursor: pointer; flex-shrink: 0;
-    transition: background var(--dur-press) var(--ease-standard);
+    color: var(--ink-2); cursor: pointer;
   }
-  .z-icon-btn:hover { background: var(--surface-3); }
 
   /* Slider track */
-  .z-slider-track { height: 8px; border-radius: 999px; background: var(--line); position: relative; overflow: hidden; }
+  .z-slider-track { height: 6px; border-radius: 999px; background: var(--line); position: relative; overflow: hidden; }
   .z-slider-fill  { position: absolute; inset: 0 auto 0 0; background: var(--ink); border-radius: 999px; }
   [dir="rtl"] .z-slider-fill { inset: 0 0 0 auto; }
 
-  /* Buttons — Body size, 44px min target, no opacity-dim on hover */
+  /* Buttons */
   .z-btn-primary {
     background: var(--ink); color: var(--bg);
-    border: none; border-radius: var(--r-ctl); padding: 12px 20px; min-height: 44px;
-    font-family: inherit; font-size: 17px; font-weight: 600; line-height: 1.2; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    transition: background var(--dur-press) var(--ease-standard);
+    border: none; border-radius: 10px; padding: 10px 16px;
+    font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: opacity 0.12s;
   }
-  .z-btn-primary:hover { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
+  .z-btn-primary:hover { opacity: 0.88; }
 
   .z-btn-secondary {
     background: var(--surface); color: var(--ink);
-    border: 0.5px solid var(--line); border-radius: var(--r-ctl); padding: 12px 20px; min-height: 44px;
-    font-family: inherit; font-size: 17px; font-weight: 600; line-height: 1.2; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    transition: background var(--dur-press) var(--ease-standard);
+    border: 0.5px solid var(--line); border-radius: 10px; padding: 10px 16px;
+    font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 0.12s;
   }
   .z-btn-secondary:hover { background: var(--surface-2); }
 
-  /* Input — 17px so iOS Safari never zooms on focus */
+  /* Input */
   .z-input {
     background: var(--surface); border: 0.5px solid var(--line);
-    border-radius: var(--r-ctl); color: var(--ink); font-family: inherit;
-    font-size: 17px; line-height: 1.3; padding: 12px 16px; min-height: 44px; outline: none; width: 100%;
-    transition: border-color var(--dur-press) var(--ease-standard);
+    border-radius: 10px; color: var(--ink); font-family: inherit;
+    font-size: 13px; padding: 10px 14px; outline: none; width: 100%;
+    transition: border-color 0.12s;
   }
   .z-input:focus { border-color: var(--ink-mute); }
 
-  /* Toggle track — CSS twin of components/ui/Toggle.jsx (44×26, 22px knob) */
+  /* Toggle track */
   .z-toggle {
-    position: relative; width: 44px; height: 26px;
+    position: relative; width: 36px; height: 20px;
     border-radius: 999px; background: var(--line-2);
-    transition: background var(--dur-state) var(--ease-standard); border: none; padding: 0; cursor: pointer;
-    flex-shrink: 0;
+    transition: background 0.15s; border: none; padding: 0; cursor: pointer;
   }
   .z-toggle[aria-checked="true"] { background: var(--ok); }
   .z-toggle::after {
     content: ''; position: absolute; top: 2px; left: 2px;
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--surface);
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--on-accent);
     box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 22%, transparent);
-    transition: transform var(--dur-state) var(--ease-standard);
+    transition: transform 0.15s;
   }
-  .z-toggle[aria-checked="true"]::after { transform: translateX(18px); }
-  [dir="rtl"] .z-toggle::after { left: auto; right: 2px; }
-  [dir="rtl"] .z-toggle[aria-checked="true"]::after { transform: translateX(-18px); }
+  .z-toggle[aria-checked="true"]::after { transform: translateX(16px); }
 
   /* Voice wave */
-  .z-wave-bar { width: 3px; background: var(--accent); border-radius: 2px; }
+  .z-wave-bar { width: 2.5px; background: var(--accent); border-radius: 2px; }
 
-  /* Nav items (desktop sidebar) */
+  /* Nav items */
   .z-nav-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 12px; border-radius: var(--r-ctl); min-height: 44px;
-    font-size: 15px; font-weight: 500; cursor: pointer;
-    transition: background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard); color: var(--ink-mute);
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background 0.12s, color 0.12s; color: var(--ink-mute);
     background: transparent; border: 0.5px solid transparent;
     text-decoration: none; width: 100%;
   }
@@ -552,21 +495,13 @@ html, body, #root {
      Horizontal env() padding so content clears notches in landscape on iPhone /
      Galaxy with curved edges; vertical stays tight to the safe top. */
   .z-page {
-    max-width: var(--page-max-w-narrow);
+    max-width: 800px;
     margin: 0 auto;
     padding-top: 24px;
-    padding-bottom: 24px;
+    padding-bottom: 16px;
     padding-left: max(20px, var(--safe-left));
     padding-right: max(20px, var(--safe-right));
   }
-  .z-page-wide { max-width: var(--page-max-w); }
-
-  /* Page header — eyebrow, Large Title, optional one-line footnote, and one
-     trailing action. Every list page opens with this block. */
-  .z-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-  .z-page-head > div:first-child { min-width: 0; }
-  .z-page-head .z-eyebrow { margin-bottom: 4px; }
-  .z-page-head .z-footnote { margin-top: 4px; }
 
   /* Full dynamic viewport height. Use instead of h-screen / min-h-screen on
      any shell-level container. */
@@ -604,7 +539,7 @@ html, body, #root {
   .z-dashboard-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
+    gap: 18px;
     align-items: start;
   }
   @media (min-width: 1024px) {
@@ -614,15 +549,20 @@ html, body, #root {
     }
   }
   /* Right rail can stick while main scrolls — feels more "desktop app",
-     less "long mobile page". The rail starts level with the greeting; the
-     old 110px magic margin that tried to align it with the room photos is
-     gone. */
+     less "long mobile page". Top offset = page padding so the rail aligns
+     to the greeting block on first paint. */
   .z-dashboard-rail {
     display: flex; flex-direction: column; gap: 16px;
   }
   @media (min-width: 1024px) {
     .z-dashboard-rail {
       position: sticky;
+      /* margin-top (not padding-top) so the rail's initial top edge aligns
+         with the ROOM PHOTO tops in the main column. Padding would have left
+         empty space ABOVE the Alerts card even after the rail goes sticky,
+         wasting vertical real estate on long pages. Greeting block + main-
+         column gap + ROOMS eyebrow ≈ 110px. */
+      margin-top: 110px;
       top: calc(var(--safe-top) + 24px);
       max-height: calc(var(--vh) - var(--safe-top) - 48px);
       overflow-y: auto;
@@ -642,11 +582,17 @@ html, body, #root {
   }
 
   /* Visibility utilities tied to the same breakpoints as the dashboard split.
-     `hide-lg`: visible <1024px, hidden ≥1024px.
+     `hide-lg`: visible <1024px, hidden ≥1024px — for things like the alert
+                chips inline with the Dashboard greeting that get a fuller
+                home in the right rail on desktop.
      `only-lg`: inverse — hidden <1024px, visible ≥1024px.
 
      Both rules are wrapped in a media query rather than setting a default
-     display value, so they don't clobber the element's existing `display`. */
+     display value, so they don't clobber the element's existing `display`
+     (e.g. an `<aside class="z-dashboard-rail only-lg">` needs to keep its
+     `display: flex` on desktop — if `.only-lg` set `display: initial` at lg+,
+     the aside would render as block and the rail items would stop being a
+     vertical flex column). */
   @media (max-width: 1023px) {
     .only-lg { display: none !important; }
   }
@@ -654,27 +600,16 @@ html, body, #root {
     .hide-lg { display: none !important; }
   }
 
-  .z-bottom-split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+  .z-bottom-split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
 
   /* Section heading */
   .z-section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
-  .z-section-title { font-size: 17px; line-height: 22px; font-weight: 600; color: var(--ink); }
-
-  /* Room tile without a photo. Rooms are flat surfaces with a glyph until
-     the person adds their own picture — no stock sofa. */
-  .z-room-plain {
-    background: var(--surface-2);
-    border: 0.5px solid var(--line);
-    color: var(--ink);
-  }
-  [data-palette="dark"] .z-room-plain { background: var(--surface); }
+  .z-section-title { font-size: 13px; font-weight: 600; color: var(--ink-mute); letter-spacing: -0.01em; }
 
   /* Animations */
   @keyframes spin    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @keyframes zPulse  { 0%,100% { opacity: 0.4 } 50% { opacity: 1 } }
-  @keyframes waveBar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
   .z-pulse { animation: zPulse 2.4s ease-in-out infinite; }
-  .z-spin  { animation: spin 1s linear infinite; }
 }
 
 /* ── Wall dashboard tokens ───────────────────────────────────────────────────
@@ -694,22 +629,4 @@ html, body, #root {
 [data-palette="dark"] {
   --inverse:    var(--surface-3);
   --on-inverse: var(--ink);
-}
-
-/* Shared controls keep their silhouette while providing comfortable touch targets. */
-.z-button:active:not(:disabled) { transform: scale(.98); }
-.z-button:disabled { opacity: .45; cursor: not-allowed; }
-@media (pointer: coarse) { .z-button { min-height: 44px; } }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
-}
-
-.z-chat-conversation, .z-chat-composer { width: 100%; max-width: var(--page-max-w-narrow); margin-inline: auto; }
-.z-diagnostics-layout { min-height: 0; }
-@media (max-width: 767px) {
-  .z-diagnostics { height: auto !important; min-height: calc(100dvh - 48px); overflow: visible !important; }
-  .z-diagnostics > div:first-child { flex-wrap: wrap; gap: 12px !important; }
-  .z-diagnostics-layout { flex-direction: column; overflow: visible !important; }
-  .z-diagnostics-filters { width: 100% !important; border-inline-end: 0 !important; border-bottom: 1px solid var(--line); max-height: 320px; }
-  .z-diagnostics-layout > div:last-child { min-height: 360px; overflow: auto !important; }
 }

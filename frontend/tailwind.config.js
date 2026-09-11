@@ -12,35 +12,6 @@ export default {
         sans: ['Heebo', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
       },
-      // Type roles — one scale for the whole app, mapped to Apple's Large
-      // Dynamic Type styles (1pt = 1px on the web). Nothing renders below
-      // `caption` (11px), the iOS minimum. See index.css `.z-*` type roles
-      // for the same scale in plain CSS.
-      fontSize: {
-        caption:  ['11px', { lineHeight: '13px', fontWeight: '500' }],
-        footnote: ['13px', { lineHeight: '18px' }],
-        subhead:  ['15px', { lineHeight: '20px' }],
-        body:     ['17px', { lineHeight: '22px' }],
-        headline: ['17px', { lineHeight: '22px', fontWeight: '600' }],
-        title3:   ['20px', { lineHeight: '25px', fontWeight: '600' }],
-        title2:   ['22px', { lineHeight: '28px', fontWeight: '600' }],
-        large:    ['34px', { lineHeight: '41px', fontWeight: '700', letterSpacing: '-0.02em' }],
-      },
-      borderRadius: {
-        chip:  '6px',
-        ctl:   '10px',
-        card:  '16px',
-        sheet: '24px',
-      },
-      transitionTimingFunction: {
-        standard: 'cubic-bezier(0.2, 0, 0, 1)',
-        enter:    'cubic-bezier(0.16, 1, 0.3, 1)',
-      },
-      transitionDuration: {
-        press: '120ms',
-        state: '200ms',
-        enter: '240ms',
-      },
       colors: {
         bg:          'var(--bg)',
         'bg-2':      'var(--bg-2)',

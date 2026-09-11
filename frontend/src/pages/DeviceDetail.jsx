@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef, createContext, useContext } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Zap, Check, ChevronRight, ChevronDown, RefreshCw, EyeOff, Eye, Pencil, Home, Trash2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowLeft, Zap, ChevronRight, ChevronDown, RefreshCw, EyeOff, Eye, Pencil, Home, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
+import { TOGGLEABLE_DOMAINS, isEntityOn } from '../components/ui/DeviceControls'
 import { DeviceRemote } from '../components/device/DeviceRemote'
 import SensorHistoryChart from '../components/device/SensorHistoryChart'
 import { deviceFacts, getKind, KIND, sendDeviceCommand } from '../lib/devices'
@@ -13,6 +15,8 @@ import { Input } from '../components/ui/Input'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
+import { domainIcon, formatEntityState } from '../lib/utils'
+import { DOMAIN_REGISTRY, domainLabel } from '../lib/domainRegistry'
 import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, setClassification, getClassifyOptions, selfHealRefresh, whoCanDo } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
@@ -70,7 +74,7 @@ function FoldSection({ title, children }) {
   if (!embedded) {
     return (
       <Card className="p-4 mb-3">
-        <p className="z-headline" style={{ marginBottom: 12 }}>{title}</p>
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{title}</p>
         {children}
       </Card>
     )
@@ -81,26 +85,18 @@ function FoldSection({ title, children }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center justify-between w-full"
-        style={{ background: 'none', border: 'none', padding: 0, minHeight: 44, cursor: 'pointer', textAlign: 'start' }}
-        aria-expanded={open}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'start' }}
       >
-        <p className="z-headline">{title}</p>
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider">{title}</p>
         <ChevronDown
-          size={18}
-          strokeWidth={1.75}
-          className="text-ink-mute"
-          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)', flex: 'none' }}
+          size={15}
+          className="text-ink-faint"
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease', flex: 'none' }}
         />
       </button>
       {open && <div style={{ marginTop: 12 }}>{children}</div>}
     </Card>
   )
-}
-
-// Card section title — Info-tab cards all open with one Headline (17/600)
-// instead of a 12px uppercase eyebrow.
-function SectionTitle({ children, style }) {
-  return <p className="z-headline" style={{ marginBottom: 12, ...style }}>{children}</p>
 }
 
 function BatteryBar({ level, unit = '%' }) {
@@ -111,7 +107,7 @@ function BatteryBar({ level, unit = '%' }) {
       <div className="z-slider-track" style={{ flex: 1 }}>
         <div className="z-slider-fill" style={{ width: `${level}%`, background: barColor }} />
       </div>
-      <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', width: 44, textAlign: 'end' }}>
+      <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink-mute)', width: 36, textAlign: 'right' }}>
         {level}{unit}
       </span>
     </div>
@@ -119,7 +115,6 @@ function BatteryBar({ level, unit = '%' }) {
 }
 
 function SignalBars({ lqi, rssi }) {
-  const t = useT()
   if (lqi == null && rssi == null) return null
   const strength = lqi != null
     ? Math.round((lqi / 255) * 100)
@@ -128,10 +123,7 @@ function SignalBars({ lqi, rssi }) {
   const bars = Math.ceil(strength / 25)
   // Friendly label instead of "LQI 187" / "-68 dBm". Raw value still
   // available on hover for support/debugging via the title attribute.
-  const friendly = bars >= 4 ? t('deviceDetail.signalStrong')
-    : bars >= 3 ? t('deviceDetail.signalGood')
-    : bars >= 2 ? t('deviceDetail.signalFair')
-    : t('deviceDetail.signalWeak')
+  const friendly = bars >= 4 ? 'Strong' : bars >= 3 ? 'Good' : bars >= 2 ? 'Fair' : 'Weak'
   const rawTitle = lqi != null ? `LQI ${lqi}` : `${rssi} dBm`
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 16 }} title={rawTitle}>
@@ -144,7 +136,7 @@ function SignalBars({ lqi, rssi }) {
           }}
         />
       ))}
-      <span style={{ marginInlineStart: 8, fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1 }}>
+      <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--ink-faint)', lineHeight: 1 }}>
         {friendly}
       </span>
     </div>
@@ -154,10 +146,10 @@ function SignalBars({ lqi, rssi }) {
 function DiagRow({ label, value, children }) {
   if (value == null && !children) return null
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}
       className="last:border-0">
-      <span style={{ fontSize: 15, color: 'var(--ink-mute)', flexShrink: 0 }}>{label}</span>
-      {children ?? <span className="z-mono" style={{ fontSize: 15, color: 'var(--ink)', textAlign: 'end', wordBreak: 'break-all' }}>{value}</span>}
+      <span style={{ fontSize: 11, color: 'var(--ink-faint)', flexShrink: 0 }}>{label}</span>
+      {children ?? <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink)', textAlign: 'right', wordBreak: 'break-all' }}>{value}</span>}
     </div>
   )
 }
@@ -210,30 +202,31 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
   }
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      <div style={{ marginBottom: 16 }}>
-        <button onClick={() => navigate(-1)} className="z-icon-btn" aria-label={t('deviceDetail.back')}>
-          <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <button onClick={() => navigate(-1)} className="z-icon-btn"
+          style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }} aria-label={t('deviceDetail.back')}>
+          <ArrowLeft size={16} className="icon-flip-rtl" />
         </button>
-        <h1 dir="auto" className="z-display" style={{
-          margin: '12px 0 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-        }}>
-          {name}
-        </h1>
-        <p style={{ fontSize: 15, color: 'var(--warn-text)', margin: '4px 0 0' }}>{t('deviceDetail.ghost.eyebrow')}</p>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="z-eyebrow" style={{ color: 'var(--warn)' }}>{t('deviceDetail.ghost.eyebrow')}</p>
+          <h1 dir="auto" style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }} className="truncate">
+            {name}
+          </h1>
+        </div>
       </div>
 
-      <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
-        <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.4, margin: 0 }}>
+      <div className="z-card" style={{ padding: 18, marginBottom: 14, borderRadius: 18 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 10 }}>
           {t('deviceDetail.ghost.description')}
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 8, fontSize: 15, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 6, fontSize: 12, marginTop: 12 }}>
           {room && (<>
-            <span style={{ color: 'var(--ink-mute)' }}>{t('deviceDetail.ghost.room')}</span>
+            <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.room')}</span>
             <span style={{ color: 'var(--ink)' }}>{room.replace(/_/g, ' ')}</span>
           </>)}
-          <span style={{ color: 'var(--ink-mute)' }}>{t('deviceDetail.ghost.status')}</span>
-          <span style={{ color: 'var(--warn-text)' }}>{status}</span>
+          <span style={{ color: 'var(--ink-faint)' }}>{t('deviceDetail.ghost.status')}</span>
+          <span style={{ color: 'var(--warn)' }}>{status}</span>
         </div>
       </div>
 
@@ -242,14 +235,14 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
         disabled={removing}
         className="z-btn-primary"
         style={{
-          width: '100%',
-          background: 'var(--err)', color: 'var(--on-accent)',
+          width: '100%', height: 48, fontSize: 14, letterSpacing: '0.02em',
+          background: 'var(--err)', color: 'var(--bg)', border: 'none',
           opacity: removing ? 0.6 : 1, cursor: removing ? 'default' : 'pointer',
         }}
       >
         {removing ? t('deviceDetail.ghost.removing') : t('deviceDetail.ghost.remove')}
       </button>
-      <p style={{ fontSize: 15, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 12, lineHeight: 1.4 }}>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)', textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
         {t('deviceDetail.ghost.hint')}
       </p>
     </div>
@@ -272,23 +265,23 @@ function DeleteDeviceModal({ open, deviceName, hasParentDevice, isIr, deleting, 
   useEffect(() => { if (open) setAlsoDeleteDevice(true) }, [open])
   return (
     <Modal open={open} onClose={onClose} title={t('deviceDetail.deleteTitle')}>
-      <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.4, marginBottom: 16 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 14 }}>
         {isIr
           ? t('deviceDetail.deleteIrDescription', { name: deviceName })
           : t('deviceDetail.deleteHaDescription', { name: deviceName })
         }
       </p>
       {hasParentDevice && (
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 12, minHeight: 56, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', cursor: 'pointer', marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', cursor: 'pointer', marginBottom: 14 }}>
           <input
             type="checkbox"
             checked={alsoDeleteDevice}
             onChange={(e) => setAlsoDeleteDevice(e.target.checked)}
-            style={{ marginTop: 2, width: 20, height: 20, accentColor: 'var(--ink)', flexShrink: 0 }}
+            style={{ marginTop: 2 }}
           />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceDetail.alsoRemoveDevice')}</div>
-            <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceDetail.alsoRemoveDevice')}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
               {t('deviceDetail.alsoRemoveHint')}
             </div>
           </div>
@@ -299,10 +292,9 @@ function DeleteDeviceModal({ open, deviceName, hasParentDevice, isIr, deleting, 
         <button
           onClick={() => onConfirm(alsoDeleteDevice)}
           disabled={deleting}
-          className="z-btn-primary"
           style={{
-            flex: 1, cursor: deleting ? 'default' : 'pointer',
-            background: 'var(--err)', color: 'var(--on-accent)',
+            flex: 1, height: 40, borderRadius: 10, border: 'none', cursor: deleting ? 'default' : 'pointer',
+            background: 'var(--err)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
             opacity: deleting ? 0.6 : 1,
           }}
         >
@@ -369,19 +361,22 @@ function CameraPanel({ entityId, navigate }) {
 
   return (
     <Card className="p-4 mb-3">
-      <div className="flex items-center justify-between gap-3 mb-3" style={{ flexWrap: 'wrap' }}>
-        <p className="z-headline">{t('deviceDetail.camera')}</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider">{t('deviceDetail.camera')}</p>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setLive(v => !v)}
-            className="z-btn-secondary"
-            style={{ minHeight: 44 }}
+            style={{
+              padding: '3px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+              background: live ? 'var(--err)' : 'var(--ink)', color: 'var(--bg)',
+              border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+            }}
           >
             {live ? t('deviceDetail.cameraStop') : t('deviceDetail.cameraLive')}
           </button>
           <button
             onClick={() => navigate('/cameras')}
-            style={{ fontSize: 15, minHeight: 44, padding: '0 8px', color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{ fontSize: 11, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
           >
             {t('deviceDetail.cameraFullView')}
           </button>
@@ -389,7 +384,7 @@ function CameraPanel({ entityId, navigate }) {
       </div>
 
       {/* Feed */}
-      <div style={{ borderRadius: 'var(--r-ctl)', overflow: 'hidden', background: 'var(--bg-2)', aspectRatio: '16/9', position: 'relative' }}>
+      <div style={{ borderRadius: 10, overflow: 'hidden', background: 'var(--bg-2)', aspectRatio: '16/9', position: 'relative' }}>
         {live ? (
           <img
             ref={imgRef}
@@ -405,16 +400,16 @@ function CameraPanel({ entityId, navigate }) {
             onLoad={() => setLoaded(true)}
             style={{
               width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-              opacity: loaded ? 1 : 0, transition: 'opacity var(--dur-state) var(--ease-standard)',
+              opacity: loaded ? 1 : 0, transition: 'opacity 0.2s',
             }}
           />
         )}
         {live && (
           <div style={{
-            position: 'absolute', top: 8, insetInlineStart: 8,
+            position: 'absolute', top: 8, left: 8,
             padding: '2px 8px', borderRadius: 999,
-            background: 'rgba(0,0,0,0.6)', color: '#fff',
-            fontSize: 11, fontWeight: 500, lineHeight: '13px',
+            background: 'rgba(239,68,68,0.85)', color: '#fff',
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
           }}>
             {t('deviceDetail.cameraLiveBadge')}
           </div>
@@ -424,19 +419,19 @@ function CameraPanel({ entityId, navigate }) {
       {/* Recent motion */}
       {camMotion.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('deviceDetail.recentMotion')}</p>
+          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{t('deviceDetail.recentMotion')}</p>
           {camMotion.map((ev, i) => {
             const diff = Math.floor((Date.now() - new Date(ev.timestamp)) / 1000)
             const ago = diff < 60 ? t('deviceDetail.secondsAgo', { n: diff })
               : diff < 3600 ? t('deviceDetail.minutesAgo', { n: Math.floor(diff / 60) })
               : t('deviceDetail.hoursAgo', { n: Math.floor(diff / 3600) })
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, borderBottom: i < camMotion.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
-                <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < camMotion.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--err)', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 11, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {ev.name || ev.entity_id.split('.')[1]?.replace(/_/g, ' ')}
                 </span>
-                <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{ago}</span>
+                <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', flexShrink: 0 }}>{ago}</span>
               </div>
             )
           })}
@@ -460,7 +455,6 @@ const DOMAIN_PRIMARY_ACTION = {
 // viewer isn't an admin — the endpoint is admin-gated), so it never disturbs
 // the device page for anyone who isn't managing access.
 function WhoCanUse({ entityId }) {
-  const t = useT()
   const [people, setPeople] = useState(null)
   useEffect(() => {
     if (!entityId) return
@@ -476,15 +470,62 @@ function WhoCanUse({ entityId }) {
   const names = people.map(p => p.split(':')[1])
   return (
     <Card className="p-4 mb-3">
-      <SectionTitle>{t('deviceDetail.whoCanUse')}</SectionTitle>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">Who can use this</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {names.map(n => (
-          <span key={n} className="z-chip">{n}</span>
+          <span key={n} style={{ fontSize: 12.5, fontWeight: 550, color: 'var(--ink)',
+            background: 'var(--surface-2, var(--ground))', border: '1px solid var(--line)',
+            borderRadius: 999, padding: '4px 11px' }}>{n}</span>
         ))}
       </div>
-      <PageLink to="/settings/people" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, marginTop: 4, fontSize: 15,
-        fontWeight: 500, color: 'var(--ink)', textDecoration: 'none' }}>{t('deviceDetail.manageAccess')}</PageLink>
+      <PageLink to="/settings/people" style={{ display: 'inline-block', marginTop: 11, fontSize: 12,
+        fontWeight: 550, color: 'var(--accent)', textDecoration: 'none' }}>Manage access →</PageLink>
     </Card>
+  )
+}
+
+// A gentle "there's more below" nudge — a floating pill that appears only when
+// the page's scroll container has meaningfully more content beneath the fold
+// and the user is still near the top, and fades the moment they scroll. Helps
+// on device pages whose controls fit the first screen, hiding the info/tabs
+// below. Reads the AppShell <main> via closest() (the real scroll container).
+function ScrollDownHint({ label }) {
+  const [show, setShow] = useState(false)
+  const anchorRef = useRef(null)
+  useEffect(() => {
+    const main = anchorRef.current?.closest('main')
+    if (!main) return
+    const check = () => {
+      const below = main.scrollHeight - main.clientHeight - main.scrollTop
+      setShow(below > 140 && main.scrollTop < 48)
+    }
+    check()
+    main.addEventListener('scroll', check, { passive: true })
+    let ro
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(check); ro.observe(main) }
+    return () => { main.removeEventListener('scroll', check); ro?.disconnect() }
+  }, [])
+  return (
+    <div ref={anchorRef} aria-hidden="true">
+      <AnimatePresence>
+        {show && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+              bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', zIndex: 30, pointerEvents: 'none',
+              display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999,
+              background: 'var(--ink)', color: 'var(--bg)', fontSize: 12, fontWeight: 600,
+              boxShadow: '0 4px 18px rgba(0,0,0,0.20)' }}>
+            <motion.span animate={{ y: [0, 2, 0] }} transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ display: 'flex' }}>
+              <ChevronDown size={14} />
+            </motion.span>
+            {label}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 
@@ -847,43 +888,42 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   if (!liveEntity && !details) {
     if (detailsLoadFailed) {
       return (
-        <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-          <div style={{ marginBottom: 16 }}>
-            <button onClick={() => navigate(-1)} className="z-icon-btn" aria-label={t('deviceDetail.back')}>
-              <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
+        <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+            <button onClick={() => navigate(-1)} className="z-icon-btn"
+              style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }} aria-label={t('deviceDetail.back')}>
+              <ArrowLeft size={16} className="icon-flip-rtl" />
             </button>
-            <h1 className="z-display" style={{ margin: '12px 0 0', overflowWrap: 'anywhere' }}>
-              {t('deviceDetail.couldntLoad')}
-            </h1>
-            <p className="z-code" style={{ fontSize: 15, color: 'var(--ink-mute)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {entityId}
-            </p>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="z-eyebrow" style={{ color: 'var(--warn)' }}>{t('deviceDetail.couldntLoad')}</p>
+              <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', margin: 0 }} className="truncate">
+                {entityId}
+              </h1>
+            </div>
           </div>
-          <div className="z-card" style={{ padding: 16 }}>
-            <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.4, margin: 0 }}>
+          <div className="z-card" style={{ padding: 18, borderRadius: 18 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 }}>
               {t('deviceDetail.couldntLoadHint')}
             </p>
             <button
               onClick={() => navigate('/devices')}
               className="z-btn-secondary"
-              style={{ marginTop: 16 }}
+              style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13 }}
             >{t('deviceDetail.backToDevices')}</button>
           </div>
         </div>
       )
     }
-    // Skeleton — static placeholders, no pulse loop; the page fills in within
-    // a network round-trip so an ambient animation buys nothing.
     return (
-      <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-        <div style={{ marginBottom: 24 }}>
-          <button onClick={() => navigate(-1)} className="z-icon-btn" aria-label={t('deviceDetail.back')}>
-            <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px' }}>
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-surface-2 text-ink-mute transition-colors">
+            <ArrowLeft size={18} className="icon-flip-rtl" />
           </button>
-          <div style={{ height: 34, width: 160, marginTop: 12, borderRadius: 'var(--r-chip)', background: 'var(--surface-2)' }} />
+          <div className="h-5 w-32 bg-surface-2 rounded animate-pulse" />
         </div>
         {[1, 2, 3].map(i => (
-          <div key={i} style={{ height: 96, marginBottom: 12, borderRadius: 'var(--r-card)', background: 'var(--surface-2)' }} />
+          <div key={i} className="h-24 mb-3 rounded-2xl bg-surface-2 animate-pulse" />
         ))}
       </div>
     )
@@ -976,96 +1016,73 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   const showControls  = !hasControls || activeTab === 'controls'
   const showData      = !hasControls || activeTab === 'data'
 
-  // One 15px line under the title: room · kind. Skips whichever half is
-  // missing so it never reads "· Light".
-  const subtitle = [currentRoom?.name, meta?.label].filter(Boolean).join(' · ')
-
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px 48px' }}>
+      <ScrollDownHint label={t('deviceDetail.moreBelow')} />
 
-      {/* ── Header — back / refresh row, then ONE Large Title with the
-            room · kind line under it. ── */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <button
-            onClick={() => navigate(-1)}
-            className="z-icon-btn"
-            aria-label={t('deviceDetail.back')}
-          >
-            <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
-          </button>
-          <button
-            onClick={handleRefresh}
-            className="z-icon-btn"
-            aria-label={t('deviceDetail.refresh')}
-            title={t('deviceDetail.refresh')}
-            disabled={refreshing}
-          >
-            <RefreshCw size={20} strokeWidth={1.75} className={refreshing ? 'z-spin' : undefined} />
-          </button>
-        </div>
-
-        {/* Parent-device crumb when viewing a non-primary sibling. Tapping
-            jumps to the primary entity's page — the canonical control
-            surface for the physical device. */}
-        {isSiblingView && group?.primary_entity_id && (
-          <button
-            onClick={() => navigate(`/devices/${encodeURIComponent(group.primary_entity_id)}`)}
-            style={{
-              fontSize: 15, color: 'var(--ink-mute)', fontFamily: 'inherit',
-              background: 'transparent', border: 'none', padding: 0, minHeight: 44, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
-            }}
-            title={t('devices.openParentDevice')}
-          >
-            <ArrowLeft size={16} strokeWidth={1.75} className="icon-flip-rtl" />
-            <span dir="auto">{groupName || t('devices.parentDevice')}</span>
-          </button>
-        )}
-        <h1 dir="auto" className="z-display" style={{
-          margin: isSiblingView && group?.primary_entity_id ? 0 : '12px 0 0',
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-          overflowWrap: 'anywhere',
-        }}>
-          {displayName}
-        </h1>
-        {subtitle && (
-          <p dir="auto" style={{
-            fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', margin: '4px 0 0',
+      {/* ── Header — centered title with room subtitle, design-matched ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
+        <button
+          onClick={() => navigate(-1)}
+          className="z-icon-btn"
+          style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
+          aria-label={t('deviceDetail.back')}
+        >
+          <ArrowLeft size={16} className="icon-flip-rtl" />
+        </button>
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
+          {/* Parent-device crumb when viewing a non-primary sibling. Tapping
+              jumps to the primary entity's page — the canonical control
+              surface for the physical device. */}
+          {isSiblingView && group?.primary_entity_id && (
+            <button
+              onClick={() => navigate(`/devices/${encodeURIComponent(group.primary_entity_id)}`)}
+              className="z-mono"
+              style={{
+                fontSize: 10, color: 'var(--ink-faint)', letterSpacing: '0.05em',
+                background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 1,
+              }}
+              title={t('devices.openParentDevice')}
+            >
+              <ArrowLeft size={9} className="icon-flip-rtl" />
+              {groupName || t('devices.parentDevice')}
+            </button>
+          )}
+          <div dir="auto" style={{
+            fontSize: 15, fontWeight: 600, letterSpacing: '-0.015em', color: 'var(--ink)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {subtitle}
-          </p>
-        )}
+            {displayName}
+          </div>
+          {(currentRoom || facts.isIr || facts.hasIr) && (
+            <div className="z-mono" style={{
+              fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2, letterSpacing: '0.04em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {[currentRoom?.name, facts.isIr ? 'IR' : facts.hasIr ? t('deviceDetail.irPlusWifi') : null]
+                .filter(Boolean).join(' · ')}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={handleRefresh}
+          className={cn('z-icon-btn', refreshing && 'animate-spin')}
+          style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0 }}
+          aria-label={t('deviceDetail.refresh')}
+          title={t('deviceDetail.refresh')}
+        >
+          <RefreshCw size={15} />
+        </button>
       </div>
 
-      {/* ── Primary control — the one thing most people came to do. A
-            toggleable device gets its switch right under the title, before the
-            tabs; everything else starts at the tabs. Disabled (not hidden)
-            when the device can't be reached, so the layout doesn't jump. ── */}
-      {isToggleable && (
-        <div className="z-card" style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-          minHeight: 56, padding: '12px 16px', marginBottom: 16,
-        }}>
-          <span dir="auto" style={{ fontSize: 17, fontWeight: 600, color: facts.isAvailable ? 'var(--ink)' : 'var(--ink-mute)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {facts.isAvailable ? stateLabel : t('deviceDetail.unavailable')}
-          </span>
-          <Toggle
-            checked={!!isOn}
-            onCheckedChange={handleToggle}
-            disabled={!facts.isAvailable}
-            aria-label={displayName}
-          />
-        </div>
-      )}
-
-      {/* ── Tab switcher (only when there's something to control). Segmented
-            control: 44px buttons, active = surface + hairline, no inversion. ── */}
+      {/* ── Tab switcher (only when there's something to control). Same
+            segmented-pill design as the Automations page — soft white active
+            pill with a faint shadow, no stark inversion. ── */}
       {hasControls && (
-        <div role="tablist" style={{
-          display: 'flex', gap: 4, padding: 4, marginBottom: 16,
-          background: 'var(--surface-2)', borderRadius: 'var(--r-card)',
+        <div style={{
+          display: 'flex', gap: 4, padding: 3, marginBottom: 16,
+          background: 'var(--surface-2)', borderRadius: 13,
         }}>
           {[
             { id: 'controls', label: t('deviceDetail.tabControls') },
@@ -1075,18 +1092,16 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             return (
               <button
                 key={tab.id}
-                role="tab"
-                aria-selected={active}
                 onClick={() => setActiveTab(tab.id)}
                 style={{
-                  flex: 1, minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)',
+                  flex: 1, padding: '8px 0', borderRadius: 10,
                   background: active ? 'var(--surface)' : 'transparent',
                   color: active ? 'var(--ink)' : 'var(--ink-mute)',
-                  border: '0.5px solid ' + (active ? 'var(--line)' : 'transparent'),
-                  cursor: 'pointer',
-                  fontFamily: 'inherit', fontSize: 15, fontWeight: 600,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
+                  border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  transition: 'background 0.15s',
                 }}
               >
                 {tab.label}
@@ -1099,41 +1114,43 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Identity strip + Control surface ── */}
       {showControls && (
         <>
-          <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="z-card" style={{ padding: 16, marginBottom: 14, borderRadius: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <div style={{
-                width: 48, height: 48, borderRadius: 'var(--r-ctl)',
+                width: 48, height: 48, borderRadius: 14,
                 background: isOn
                   ? `color-mix(in srgb, ${facts.tint} 14%, var(--surface-2))`
                   : 'var(--surface-2)',
                 color: isOn ? facts.tint : 'var(--ink-mute)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
+                fontSize: 22, flexShrink: 0,
               }}>
-                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={24} fill />
+                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={22} fill />
               </div>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {(facts.isIr || facts.hasIr || !facts.isAvailable) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {facts.isIr && <span className="z-chip">IR</span>}
-                    {facts.hasIr && !facts.isIr && <span className="z-chip">{t('deviceDetail.irPlusWifi')}</span>}
-                    {!facts.isAvailable && <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('deviceDetail.unavailable')}</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span className="z-eyebrow">{domainLabel(entity.domain)}</span>
+                  {facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>IR</span>}
+                  {facts.hasIr && !facts.isIr && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10 }}>{t('deviceDetail.irPlusWifi')}</span>}
+                  {!facts.isAvailable && <span className="z-chip" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--warn)' }}>{t('deviceDetail.unavailable')}</span>}
+                </div>
+                <h2 dir="auto" style={{ fontSize: 20, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em', margin: '2px 0 0' }}>
+                  {displayName}
+                </h2>
+                {currentRoom && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                    <Home size={11} style={{ color: 'var(--ink-faint)' }} />
+                    <span className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>{currentRoom.name}</span>
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-                  <span dir="auto" style={{ fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {currentRoom?.name || t('deviceDetail.noRoom')}
-                  </span>
-                </div>
               </div>
               <button
                 onClick={() => setShowRename(true)}
                 className="z-icon-btn"
+                style={{ width: 32, height: 32, borderRadius: 10 }}
                 title={t('deviceDetail.rename')}
-                aria-label={t('deviceDetail.rename')}
               >
-                <Pencil size={18} strokeWidth={1.75} />
+                <Pencil size={13} />
               </button>
             </div>
 
@@ -1143,16 +1160,18 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             {!onExit && (
               <button
                 onClick={handleAskFixer}
-                className="z-btn-secondary"
                 style={{
-                  marginTop: 12, width: '100%',
+                  marginTop: 12, width: '100%', padding: '9px 12px', borderRadius: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  border: '1px solid var(--line)',
                   background: facts.isAvailable
-                    ? undefined
-                    : 'color-mix(in srgb, var(--warn) 12%, var(--surface))',
-                  color: facts.isAvailable ? 'var(--ink-mute)' : 'var(--warn-text)',
+                    ? 'transparent'
+                    : 'color-mix(in srgb, var(--warn) 10%, var(--surface-2))',
+                  color: facts.isAvailable ? 'var(--ink-mute)' : 'var(--warn)',
+                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
                 }}
               >
-                <Zap size={18} strokeWidth={1.75} />
+                <Zap size={13} />
                 {t('deviceDetail.askFixer')}
               </button>
             )}
@@ -1188,7 +1207,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                      (lowerRoom && msg.includes(lowerRoom))
             })
             return (
-              <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
+              <div className="z-card" style={{ padding: 18, marginBottom: 14, borderRadius: 18 }}>
                 <DeviceRemote
                   entity={{ ...attributes, ...entity, entity_id: entityId }}
                   automations={scheduledAutos}
@@ -1207,7 +1226,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
 
           {/* Entity ID footer */}
-          <p className="z-code" style={{ marginTop: 4, fontSize: 13, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ marginTop: 4, fontSize: 10, color: 'var(--ink-ghost)', fontFamily: 'IBM Plex Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {entityId}{facts.irId ? ` · ir:${facts.irId}` : ''}
           </p>
         </>
@@ -1216,31 +1235,33 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Diagnostics ── */}
       {showData && hasDiagnostics && (
         <Card className="p-4 mb-3">
-          <SectionTitle>{t('deviceDetail.diagnostics')}</SectionTitle>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.diagnostics')}</p>
 
           {diagnostics.battery != null && (
             <div className="mb-3">
-              <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.battery')}</div>
+              <div className="flex justify-between text-[11px] text-ink-mute mb-1.5">
+                <span>{t('deviceDetail.battery')}</span>
+              </div>
               <BatteryBar level={diagnostics.battery} unit={diagnostics.battery_unit} />
             </div>
           )}
 
           {(diagnostics.lqi != null || diagnostics.rssi != null) && (
             <div className="mb-3">
-              <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.signal')}</div>
+              <span className="text-[11px] text-ink-mute block mb-1">{t('deviceDetail.signal')}</span>
               <SignalBars lqi={diagnostics.lqi} rssi={diagnostics.rssi} />
             </div>
           )}
 
           <div className="divide-y divide-line">
             <DiagRow label={t('deviceDetail.lastChanged')}>
-              <span className="z-mono" style={{ fontSize: 15, color: 'var(--ink)' }}>
+              <span className="text-xs font-medium text-ink-2">
                 <TimeAgo iso={diagnostics.last_changed} />
               </span>
             </DiagRow>
             <DiagRow label={t('deviceDetail.lastSeen')}>
               {diagnostics.last_seen && (
-                <span className="z-mono" style={{ fontSize: 15, color: 'var(--ink)' }}>
+                <span className="text-xs font-medium text-ink-2">
                   <TimeAgo iso={diagnostics.last_seen} />
                 </span>
               )}
@@ -1266,7 +1287,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── HA Device info ── */}
       {showData && ha_device && (ha_device.manufacturer || ha_device.model) && (
         <Card className="p-4 mb-3">
-          <SectionTitle>{t('deviceDetail.hardware')}</SectionTitle>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.hardware')}</p>
           <div className="divide-y divide-line">
             <DiagRow label={t('deviceDetail.manufacturer')} value={ha_device.manufacturer} />
             <DiagRow label={t('deviceDetail.model')} value={ha_device.model} />
@@ -1279,28 +1300,36 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── IR codeset info — shown for both pure IR and IR+HA hybrid ── */}
       {showData && facts.linkedIr && (
         <Card className="p-4 mb-3">
-          <SectionTitle>{t('deviceDetail.irCodeset')}</SectionTitle>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">
+            {t('deviceDetail.irCodeset')}
+          </p>
           <div className="divide-y divide-line">
             {/* Parent blaster row — only renders once the registry lookup
                 resolves (lazy). Status chip mirrors the Blasters admin UI
                 so the same green/yellow/red signals appear in both surfaces.
                 Tapping the row could deep-link to admin in a later pass. */}
             {parentBlaster && (
-              <DiagRow label={t('deviceDetail.blaster')}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <span dir="auto" style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <DiagRow label="Blaster">
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--ink)', fontWeight: 500 }}>
                     {parentBlaster.name}
                   </span>
-                  <span className="z-chip" style={{
-                    flexShrink: 0,
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    padding: '1px 6px', borderRadius: 999,
                     color:
-                      parentBlaster.status === 'online' ? 'var(--ok-text)'   :
-                      parentBlaster.status === 'stale'  ? 'var(--warn-text)' :
-                                                          'var(--err-text)',
+                      parentBlaster.status === 'online'      ? 'var(--ok)'   :
+                      parentBlaster.status === 'stale'       ? 'var(--warn)' :
+                                                               'var(--err)',
+                    background:
+                      parentBlaster.status === 'online'      ? 'color-mix(in srgb, var(--ok) 14%, transparent)'   :
+                      parentBlaster.status === 'stale'       ? 'color-mix(in srgb, var(--warn) 14%, transparent)' :
+                                                               'color-mix(in srgb, var(--err) 14%, transparent)',
                   }}>
-                    {parentBlaster.status === 'online' ? t('deviceDetail.blasterOnline')
-                      : parentBlaster.status === 'stale' ? t('deviceDetail.blasterStale')
-                      : t('deviceDetail.blasterUnreachable')}
+                    {parentBlaster.status === 'online' ? 'online'
+                      : parentBlaster.status === 'stale' ? 'stale'
+                      : 'unreachable'}
                   </span>
                 </span>
               </DiagRow>
@@ -1309,7 +1338,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             <DiagRow label={t('deviceDetail.brand')} value={facts.linkedIr.brand || '—'} />
             <DiagRow label={t('deviceDetail.commandsLearned')} value={`${(facts.linkedIr.learned_commands || []).length}`} />
             <DiagRow label={t('deviceDetail.irId')}>
-              <span className="z-code" style={{ fontSize: 15, color: 'var(--ink)' }}>{facts.linkedIr.id}</span>
+              <span className="z-mono" style={{ fontSize: 11, color: 'var(--ink)' }}>{facts.linkedIr.id}</span>
             </DiagRow>
             {facts.linkedIr.assumed_state && (
               <DiagRow label={t('deviceDetail.assumedState')} value={facts.linkedIr.assumed_state} />
@@ -1321,10 +1350,10 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Capability list — what this device can actually do ── */}
       {showData && facts.capabilities.size > 0 && (
         <Card className="p-4 mb-3">
-          <SectionTitle>{t('deviceDetail.capabilities')}</SectionTitle>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.capabilities')}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {[...facts.capabilities].map(c => (
-              <span key={c} className="z-chip">{c.replace(/_/g, ' ')}</span>
+              <span key={c} className="z-chip" style={{ padding: '4px 9px', fontSize: 10.5 }}>{c.replace(/_/g, ' ')}</span>
             ))}
           </div>
         </Card>
@@ -1335,36 +1364,34 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             knows which one drives the main card / control surface. ── */}
       {showData && usefulSiblings.length > 0 && (
         <FoldSection title={groupName ? t('deviceDetail.siblingsOn', { name: groupName }) : t('deviceDetail.alsoOnDevice')}>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {usefulSiblings.map(sib => (
               <PageLink
                 key={sib.entity_id}
                 to={`/devices/${encodeURIComponent(sib.entity_id)}`}
-                className="flex items-center justify-between gap-3 hover:bg-surface-2 transition-colors group"
-                style={{ minHeight: 56, padding: '8px 12px', borderRadius: 'var(--r-ctl)', textDecoration: 'none' }}
+                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
               >
-                <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-                  <span style={{ color: 'var(--ink-mute)', display: 'flex', flexShrink: 0 }}>
-                    <DeviceIcon
-                      kind={getKind({ entity_id: sib.entity_id, domain: sib.domain, device_class: sib.device_class, friendly_name: sib.friendly_name })}
-                      customIcon={sib.icon}
-                      size={20}
-                    />
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sib.friendly_name}</span>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base">{domainIcon(sib.domain, sib.device_class)}</span>
+                  <div>
+                    <p dir="auto" className="text-sm font-medium text-ink">
+                      {sib.friendly_name}
                       {sib.isPrimary && (
-                        <span className="z-chip">{t('deviceDetail.primary')}</span>
+                        <span style={{
+                          marginLeft: 6, padding: '1px 6px', borderRadius: 999,
+                          fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+                          background: 'color-mix(in srgb, var(--info) 14%, var(--surface-2))',
+                          color: 'var(--info)', textTransform: 'uppercase',
+                        }}>{t('deviceDetail.primary')}</span>
                       )}
                     </p>
-                    <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+                    <p className="text-[11px] text-ink-mute">
                       {sib.state ?? '—'}{sib.unit ? ` ${sib.unit}` : ''}
                       {sib.device_class ? ` · ${sib.device_class}` : ''}
                     </p>
                   </div>
                 </div>
-                <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" style={{ flexShrink: 0 }} />
+                <ChevronRight size={14} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
               </PageLink>
             ))}
           </div>
@@ -1374,24 +1401,25 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Automations using this device ── */}
       {showData && automations_using.length > 0 && (
         <Card className="p-4 mb-3">
-          <SectionTitle>{t('deviceDetail.usedInAutomations')}</SectionTitle>
-          <div className="space-y-1">
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">
+            {t('deviceDetail.usedInAutomations')}
+          </p>
+          <div className="space-y-1.5">
             {automations_using.map(auto => (
               <PageLink
                 key={auto.id}
                 to="/actions"
-                className="flex items-center justify-between gap-3 hover:bg-surface-2 transition-colors group"
-                style={{ minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', textDecoration: 'none' }}
+                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors group"
               >
-                <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-                  <Zap size={18} strokeWidth={1.75} className={cn('shrink-0', auto.enabled ? 'text-ink' : 'text-ink-faint')} />
-                  <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auto.name}</p>
+                <div className="flex items-center gap-2.5">
+                  <Zap size={14} className={cn('shrink-0', auto.enabled ? 'text-accent' : 'text-ink-faint')} />
+                  <p dir="auto" className="text-sm font-medium text-ink">{auto.name}</p>
                 </div>
-                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                <div className="flex items-center gap-2">
                   <Badge variant={auto.enabled ? 'success' : 'default'} size="sm">
                     {auto.enabled ? t('deviceDetail.autoOn') : t('deviceDetail.autoOff')}
                   </Badge>
-                  <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
+                  <ChevronRight size={14} className="icon-flip-rtl text-ink-faint group-hover:text-ink-mute transition-colors" />
                 </div>
               </PageLink>
             ))}
@@ -1403,66 +1431,64 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           reassignment. Tap the lock to enter edit mode. ── */}
       {showData && (
       <Card className="p-4 mb-3">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44, marginBottom: 12 }}>
-          <p className="z-headline">{t('deviceDetail.room')}</p>
-          {/* The lock is a switch: off = read-only summary, on = the radio
-              list. Label stays "Edit" in both states; the list itself is
-              the feedback. */}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, cursor: 'pointer', minHeight: 44 }}
-            title={editingRoom ? t('deviceDetail.editRoomLock') : t('deviceDetail.editRoomUnlock')}>
-            <span style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('deviceDetail.editRoomEdit')}</span>
-            <Toggle
-              checked={editingRoom}
-              onCheckedChange={(v) => setEditingRoom(!!v)}
-              aria-label={editingRoom ? t('deviceDetail.editRoomLock') : t('deviceDetail.editRoomUnlock')}
-            />
-          </label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider">{t('deviceDetail.room')}</p>
+          <button
+            onClick={() => setEditingRoom(v => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 9px', borderRadius: 8,
+              background: editingRoom ? 'var(--ink)' : 'var(--surface-2)',
+              color: editingRoom ? 'var(--bg)' : 'var(--ink-mute)',
+              border: '0.5px solid ' + (editingRoom ? 'var(--ink)' : 'var(--line)'),
+              fontSize: 10.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+            title={editingRoom ? t('deviceDetail.editRoomLock') : t('deviceDetail.editRoomUnlock')}
+          >
+            {editingRoom ? <><LockOpen size={11} /> {t('deviceDetail.editRoomDone')}</> : <><Lock size={11} /> {t('deviceDetail.editRoomEdit')}</>}
+          </button>
         </div>
 
         {!editingRoom ? (
           // Locked: read-only summary of the current assignment
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 12px', borderRadius: 11,
             background: 'var(--surface-2)', border: '0.5px solid var(--line)',
           }}>
-            <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-            <span dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+            <Home size={13} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+            <span dir="auto" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
               {currentRoom?.name || t('deviceDetail.noRoom')}
             </span>
           </div>
         ) : (
-          // Unlocked: full radio list. Selected = surface-2 fill + ink text,
-          // never the accent.
-          <div className="space-y-1" role="radiogroup">
-            {[{ id: null, name: t('deviceDetail.noRoom'), none: true }, ...rooms].map(r => {
-              const selected = r.none ? !currentRoom : currentRoom?.id === r.id
-              return (
-                <button
-                  key={r.id ?? '__none'}
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => handleAssignRoom(r.none ? null : r.id)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                    minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
-                    background: selected ? 'var(--surface-2)' : 'transparent',
-                    border: '0.5px solid ' + (selected ? 'var(--line)' : 'transparent'),
-                    color: selected ? 'var(--ink)' : 'var(--ink-2)',
-                    fontSize: 17, fontWeight: selected ? 600 : 400, fontFamily: 'inherit',
-                    cursor: 'pointer', textAlign: 'start',
-                    transition: 'background var(--dur-state) var(--ease-standard)',
-                  }}
-                  className={selected ? undefined : 'hover:bg-surface-2'}
-                >
-                  {r.none
-                    ? <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-                    : <span className="z-dot" style={{ background: selected ? 'var(--ink)' : 'var(--line-2)', flexShrink: 0 }} />}
-                  <span dir="auto" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-                  {selected && <Check size={18} strokeWidth={1.75} style={{ color: 'var(--ink)', flexShrink: 0 }} />}
-                </button>
-              )
-            })}
+          // Unlocked: full radio list
+          <div className="space-y-1">
+            <button
+              onClick={() => handleAssignRoom(null)}
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
+                !currentRoom ? 'bg-accent-soft text-accent font-medium' : 'text-ink-mute hover:bg-surface-2',
+              )}
+            >
+              <Home size={13} /> {t('deviceDetail.noRoom')}
+            </button>
+            {rooms.map(r => (
+              <button
+                key={r.id}
+                onClick={() => handleAssignRoom(r.id)}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors',
+                  currentRoom?.id === r.id
+                    ? 'bg-accent-soft text-accent font-medium'
+                    : 'text-ink-2 hover:bg-surface-2',
+                )}
+              >
+                <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-accent' : 'bg-line')} />
+                <span dir="auto">{r.name}</span>
+                {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
+              </button>
+            ))}
           </div>
         )}
       </Card>
@@ -1471,27 +1497,26 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Manage tiles (B: user curation — icon + promote siblings) ── */}
       {showData && group && (
       <FoldSection title={t('deviceDetail.tilesTitle')}>
-        <div style={{ marginBottom: 16 }}>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {ICON_CHOICES.map(name => {
               const tok = `icon:${name}`
               const active = (liveEntity?.icon || '') === tok
               return (
                 <button key={name}
                   onClick={() => applyTilePref(entityId, { icon: tok })}
-                  aria-pressed={active}
-                  style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', cursor: 'pointer', padding: 0, overflow: 'hidden',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box',
-                    border: active ? '2px solid var(--ink)' : '0.5px solid var(--line)',
-                    background: 'var(--surface-2)', color: 'var(--ink)',
-                    transition: 'border-color var(--dur-state) var(--ease-standard)' }}
+                  style={{ width: 40, height: 40, borderRadius: 10, cursor: 'pointer', padding: 0, overflow: 'hidden',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: active ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
+                    background: active ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)' }}
                 ><DeviceIcon customIcon={tok} size={22} fill /></button>
               )
             })}
             <button
               onClick={() => applyTilePref(entityId, { clear_icon: true })}
-              className="z-btn-secondary"
+              style={{ height: 34, padding: '0 10px', borderRadius: 9, fontSize: 11, cursor: 'pointer',
+                border: '0.5px solid var(--line)', background: 'var(--surface-2)', color: 'var(--ink-mute)' }}
             >{t('deviceDetail.tileIconDefault')}</button>
           </div>
         </div>
@@ -1503,23 +1528,18 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
               const mains = allSiblings.filter(s => CTRL.includes(s.domain) || s.entity_id === group.primary_entity_id)
               if (mains.length < 2) return null
               return (
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.mainControlHint')}</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} role="radiogroup">
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.mainControlHint')}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {mains.map(s => {
                       const isMain = s.entity_id === group.primary_entity_id
                       return (
                         <button key={s.entity_id} onClick={() => { if (!isMain) applyClassification({ main_entity: s.entity_id }) }}
-                          role="radio" aria-checked={isMain}
-                          style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
-                            cursor: isMain ? 'default' : 'pointer', textAlign: 'start', boxSizing: 'border-box', fontFamily: 'inherit',
-                            background: 'var(--surface-2)',
-                            border: isMain ? '2px solid var(--ink)' : '0.5px solid var(--line)',
-                            transition: 'border-color var(--dur-state) var(--ease-standard)' }}>
-                          <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
-                          {isMain
-                            ? <span className="z-chip" style={{ flexShrink: 0 }}>{t('deviceDetail.mainBadge')}</span>
-                            : <span style={{ fontSize: 15, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('deviceDetail.setAsMain')}</span>}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, cursor: isMain ? 'default' : 'pointer', textAlign: 'start',
+                            background: isMain ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'var(--surface-2)',
+                            border: isMain ? '1.5px solid var(--accent)' : '0.5px solid var(--line)' }}>
+                          <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
+                          <span style={{ fontSize: 11, color: isMain ? 'var(--accent)' : 'var(--ink-ghost)' }}>{isMain ? `★ ${t('deviceDetail.mainBadge')}` : t('deviceDetail.setAsMain')}</span>
                         </button>
                       )
                     })}
@@ -1528,30 +1548,29 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
               )
             })()}
             {/* Device type (card kind) */}
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.deviceTypeHint')}</p>
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.deviceTypeHint')}</p>
               <select value={group.card_kind || 'generic'} onChange={e => applyClassification({ card_kind: e.target.value })}
-                className="z-input" style={{ background: 'var(--surface-2)' }}>
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 10, fontSize: 13, background: 'var(--surface-2)', color: 'var(--ink)', border: '0.5px solid var(--line)' }}>
                 {['irrigation','valve','light','switch','outlet','climate','cover','lock','fan','media','sensor','vacuum','humidifier','generic'].map(k => (
                   <option key={k} value={k}>{k}</option>
                 ))}
               </select>
               {group.classified_by && group.classified_by !== 'heuristic' && (
-                <p className="z-footnote" style={{ marginTop: 4 }}>{t('deviceDetail.classifiedBy', { by: group.classified_by })}</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-ghost)', marginTop: 4 }}>{t('deviceDetail.classifiedBy', { by: group.classified_by })}</p>
               )}
             </div>
           </div>
         )}
         {usefulSiblings.filter(s => !s.isPrimary).length > 0 && (
           <div>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.showAsTileHint')}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.showAsTileHint')}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {usefulSiblings.filter(s => !s.isPrimary).map(s => (
-                <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 12px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
-                  <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
+                <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
+                  <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
                   <Toggle checked={pendingTile[s.entity_id] ?? !!s.is_tile}
-                    onCheckedChange={(checked) => toggleTile(s.entity_id, checked)}
-                    aria-label={s.friendly_name} />
+                    onCheckedChange={(checked) => toggleTile(s.entity_id, checked)} />
                 </div>
               ))}
             </div>
@@ -1568,15 +1587,14 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Danger zone ── */}
       {showData && (
       <Card className="p-4">
-        <SectionTitle>{t('deviceDetail.actions')}</SectionTitle>
+        <p className="text-xs font-semibold text-ink-mute uppercase tracking-wider mb-3">{t('deviceDetail.actions')}</p>
         <button
           onClick={handleToggleHide}
-          className="w-full flex items-center gap-3 hover:bg-surface-2 transition-colors"
-          style={{ minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 17, color: 'var(--ink)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-ink-mute hover:bg-surface-2 transition-colors"
         >
           {isHidden
-            ? <><Eye size={18} strokeWidth={1.75} /> {t('deviceDetail.showDevice')}</>
-            : <><EyeOff size={18} strokeWidth={1.75} /> {t('deviceDetail.hideFromZiggy')}</>
+            ? <><Eye size={13} /> {t('deviceDetail.showDevice')}</>
+            : <><EyeOff size={13} /> {t('deviceDetail.hideFromZiggy')}</>
           }
         </button>
         {/* Delete — for HA entities this removes from BOTH Ziggy AND HA.
@@ -1585,10 +1603,10 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             shows. */}
         <button
           onClick={() => setShowDelete(true)}
-          className="w-full flex items-center gap-3 hover:bg-surface-2 transition-colors"
-          style={{ minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 17, color: 'var(--err-text)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors"
+          style={{ color: 'var(--err)' }}
         >
-          <Trash2 size={18} strokeWidth={1.75} /> {t('deviceDetail.deleteDevice')}
+          <Trash2 size={13} /> {t('deviceDetail.deleteDevice')}
         </button>
       </Card>
       )}

@@ -35,11 +35,11 @@ function PairPreview({ values, ctx, t }) {
   if (groups.length <= 1) return null
   const roomLabel = (r) => (r === ctx.NO_ROOM ? t('automations.motionLight.otherRoom') : r)
   return (
-    <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', background: 'var(--surface)', padding: '12px 16px' }}>
-      <p className="z-footnote" style={{ margin: '0 0 8px' }} dir="auto">{t('automations.motionLight.pairsBy')}</p>
+    <div style={{ border: '0.5px solid var(--line)', borderRadius: 12, background: 'var(--surface)', padding: '10px 12px' }}>
+      <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', margin: '0 0 6px' }} dir="auto">{t('automations.motionLight.pairsBy')}</p>
       {groups.map((g) => (
-        <p key={g.room} className="z-subhead" style={{ margin: '2px 0' }} dir="auto">
-          {roomLabel(g.room)} → {t('automations.motionLight.nLights', { n: g.lights.length })}
+        <p key={g.room} style={{ fontSize: 12, color: 'var(--ink-mute)', margin: '2px 0' }} dir="auto">
+          🚶 {roomLabel(g.room)} → 💡 {t('automations.motionLight.nLights', { n: g.lights.length })}
         </p>
       ))}
     </div>

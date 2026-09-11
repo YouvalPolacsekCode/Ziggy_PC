@@ -126,7 +126,7 @@ function OpsPageWrapper({ title }) {
             background: 'none', border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', gap: 4,
             fontSize: 11, color: 'var(--ink-faint)', fontWeight: 500,
-            padding: '2px 8px', borderRadius: 6,
+            padding: '2px 6px', borderRadius: 5,
           }}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

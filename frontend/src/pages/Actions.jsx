@@ -1,17 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Zap, Hand, BookOpen } from 'lucide-react'
 import { Modal } from '../components/ui/Modal'
 import { useAutomationStore } from '../stores/automationStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
-import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom, getClimate, toggleClimate, syncClimate, deleteClimate, getAutomationTemplates } from '../lib/api'
+import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom, getClimate, toggleClimate, syncClimate, deleteClimate } from '../lib/api'
 import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
-import { FADE_UP } from '../lib/motion'
-import TemplateCard from '../components/automations/templates/TemplateCard'
 import { useZiggyActions, AUTOMATION_ACTIONS } from '../hooks/useZiggyActions'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
 import AutomationViewModal from '../components/automations/AutomationViewModal'
@@ -84,10 +81,6 @@ export default function Automations() {
   // delete path — nothing gets removed without a second, explicit yes.
   const [confirmState,      setConfirmState]      = useState(null)   // { label, resolve }
   const confirmDelete = (label) => new Promise((resolve) => setConfirmState({ label, resolve }))
-  // "Start with one of these": when the home has fewer than 3 automations the
-  // list is thin, so the first three library recipes render inline as
-  // TemplateCards (same add flow as the Library modal). Fetched once, lazily.
-  const [starterTemplates,  setStarterTemplates]  = useState(null)
 
   const roomNameMap = Object.fromEntries(ziggyRooms.map(r => [r.id, r.name]))
 
@@ -198,28 +191,6 @@ export default function Automations() {
       })
       .catch(() => { fetchSuggestions() })
   }, [])
-
-  // Starter recipes only matter for a thin list; fetch them once we know the
-  // list is thin, and refresh after a successful add so an added recipe drops
-  // out (the backend flags `already_exists`).
-  const listIsThin = !loading && circadianStatus !== null && automations.length < 3
-  useEffect(() => {
-    if (!listIsThin) return
-    let alive = true
-    getAutomationTemplates()
-      .then(r => { if (alive) setStarterTemplates(Array.isArray(r?.templates) ? r.templates : []) })
-      .catch(() => { if (alive) setStarterTemplates([]) })
-    return () => { alive = false }
-  }, [listIsThin, automations.length])
-  const starters = useMemo(() => {
-    if (!starterTemplates) return []
-    // First three the person can still add — ready ones first so the Add
-    // button is live, then the rest of the library in its own order.
-    const notAdded = starterTemplates.filter(tpl => !tpl.already_exists)
-    const ready = notAdded.filter(tpl => tpl.tier === 'ready' && tpl.wizard_prefill)
-    const others = notAdded.filter(tpl => !(tpl.tier === 'ready' && tpl.wizard_prefill))
-    return [...ready, ...others].slice(0, 3)
-  }, [starterTemplates])
 
   const handleConfigureTemplate = (template) => {
     if (!template.wizard_prefill) return
@@ -421,58 +392,68 @@ export default function Automations() {
   const enabled = automations.filter(a => a.enabled).length
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      {/* Header — eyebrow + Large Title and ONE trailing primary: the 44×44
-          "+" that opens the create chooser (Automatic · On-demand · Library).
-          The "n of m enabled" line is gone — the tab counts already say it. */}
-      <div className="z-page-head">
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <p className="z-eyebrow">{t('automations.eyebrow')}</p>
-          <h1 className="z-display" style={{ margin: 0 }}>{t('automations.title')}</h1>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('automations.eyebrow')}</p>
+          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('automations.title')}</h1>
+          <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
+            {t('automations.countSummary', { enabled, total: automations.length })}
+          </p>
         </div>
-        <button
-          onClick={() => setShowCreateChooser(true)}
-          className="z-btn-primary"
-          aria-label={t('automations.createChooserTitle')}
-          title={t('automations.createChooserTitle')}
-          style={{ width: 44, height: 44, padding: 0, flexShrink: 0 }}
-        >
-          <Plus size={20} strokeWidth={2} aria-hidden="true" />
-        </button>
+        {/* Library is page-level (serves both tabs); the ➕ is the custom-create
+            path — it asks Automatic vs On-demand, then opens the blank wizard. */}
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+          <button onClick={() => setShowLibrary(true)} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>
+            {t('automations.library')}
+          </button>
+          <button
+            onClick={() => setShowCreateChooser(true)}
+            className="z-btn-primary"
+            aria-label={t('automations.createChooserTitle')}
+            style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
       </div>
 
       {/* Tab switcher — two tabs on one conceptual line: what runs
           automatically (Automations) vs what you trigger (Routines). Library
           and Suggested moved into the Automations tab as a modal + inline
           nudges; Quick-asks split out to Chat/Dashboard chips. */}
-      <div role="tablist" style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', marginBottom: 20, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 13, marginBottom: 20, overflowX: 'auto' }}>
         {[
           { id: 'automations', label: t('automations.tabAutomatic'),  count: enabled },
           { id: 'routines',    label: t('automations.tabOnDemand'),   count: routines.length },
-        ].map(tabDef => {
-          const active = tab === tabDef.id
-          return (
-            <button key={tabDef.id} role="tab" aria-selected={active} onClick={() => setTab(tabDef.id)} style={{
-              flex: '1 0 auto', minHeight: 44, padding: '0 16px', borderRadius: 'var(--r-ctl)', fontFamily: 'inherit', cursor: 'pointer',
-              background: active ? 'var(--surface)' : 'transparent',
-              border: `0.5px solid ${active ? 'var(--line)' : 'transparent'}`,
-              fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap',
-              color: active ? 'var(--ink)' : 'var(--ink-mute)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
-            }}>
-              {tabDef.label}
-              {tabDef.count > 0 && <span className="z-mono" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-faint)' }}>{tabDef.count}</span>}
-            </button>
-          )
-        })}
+        ].map(tabDef => (
+          <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
+            flex: '1 0 auto', padding: '8px 12px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+            background: tab === tabDef.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+            color: tab === tabDef.id ? 'var(--ink)' : 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            boxShadow: tab === tabDef.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+            transition: 'background 0.15s',
+          }}>
+            {tabDef.label}
+            {tabDef.count > 0 && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{tabDef.count}</span>}
+          </button>
+        ))}
       </div>
 
       <AnimatePresence mode="wait">
 
       {/* ─── Automations tab ─── */}
       {tab === 'automations' && (
-        <motion.div key="automations" {...FADE_UP}>
+        <motion.div
+          key="automations"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+        >
 
       {/* Habit-learned suggestions — inline nudges here, full list in the
           Suggestions inbox modal. "Later" snoozes (stays in the inbox), ✕
@@ -490,17 +471,19 @@ export default function Automations() {
           rest instead of jumping in after its separate fetch resolves. */}
       {(circadianStatus === null || (loading && automations.length === 0)) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+          {[1,2,3].map(i => <div key={i} style={{ height: 82, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
-      {/* Empty state — one line, one hint, one secondary. The Library is one
-          tap away through the header "+" and the starter recipes below. */}
+      {/* Empty state — nudge toward the Templates tab for a first automation. */}
       {!loading && circadianStatus !== null && automations.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 32 }}>
-          <p className="z-headline" style={{ margin: '0 0 4px' }}>{t('automations.empty')}</p>
-          <p className="z-subhead" style={{ margin: '0 0 16px' }}>{t('automations.emptyHint')}</p>
-          <button onClick={() => { setEditTarget(null); setShowWizard(true) }} className="z-btn-secondary">{t('automations.createAutomation')}</button>
+        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('automations.empty')}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('automations.emptyHint')}</p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.createAutomation')}</button>
+            <button onClick={() => setShowLibrary(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('automations.library')}</button>
+          </div>
         </div>
       )}
 
@@ -509,9 +492,9 @@ export default function Automations() {
           list, not after it (no reflow / jump-into-position). */}
       {automations.length > 0 && circadianStatus !== null && (
         <div style={{ marginBottom: 24 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 12 }}>{t('automations.myAutomations')}</p>
+          <p className="z-eyebrow" style={{ marginBottom: 10 }}>{t('automations.myAutomations')}</p>
           <AnimatePresence mode="popLayout">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {circadianStatus && (circadianStatus.lights || []).length > 0 && (
                 <CircadianGroupRow
                   status={circadianStatus}
@@ -554,26 +537,18 @@ export default function Automations() {
         </div>
       )}
 
-      {/* Start with one of these — the first three library recipes, shown
-          only while the list is thin (< 3). Same TemplateCard + add flow as
-          the Library modal, so nothing is learned twice. */}
-      {listIsThin && starters.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <p className="z-eyebrow" style={{ marginBottom: 12 }}>{t('automations.startWithOne')}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {starters.map(tpl => (
-              <TemplateCard key={tpl.id} template={tpl} showTriggerChip={false} onConfigure={handleConfigureTemplate} />
-            ))}
-          </div>
-        </div>
-      )}
-
         </motion.div>
       )}
 
       {/* ─── Routines tab ─── */}
       {tab === 'routines' && (
-        <motion.div key="routines" {...FADE_UP}>
+        <motion.div
+          key="routines"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+        >
           <RoutinesListPanel embedded />
         </motion.div>
       )}
@@ -593,28 +568,24 @@ export default function Automations() {
         />
       </Modal>
 
-      {/* Header "+" chooser — the one create entry point: a blank Automatic
-          wizard, a blank On-demand wizard, or the Library of ready recipes. */}
+      {/* Header ➕ chooser — the one custom-create entry point for both kinds. */}
       <Modal open={showCreateChooser} onClose={() => setShowCreateChooser(false)} title={t('automations.createChooserTitle')} maxWidth={420}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            { Icon: Zap,      label: t('automations.tabAutomatic'),    desc: t('automations.createAutomaticDesc'),
+            { icon: '⚡', label: t('automations.tabAutomatic'), desc: t('automations.createAutomaticDesc'),
               onPick: () => { setShowCreateChooser(false); setEditTarget(null); setShowWizard(true) } },
-            { Icon: Hand,     label: t('automations.tabOnDemand'),     desc: t('automations.createOnDemandDesc'),
+            { icon: '👆', label: t('automations.tabOnDemand'), desc: t('automations.createOnDemandDesc'),
               onPick: () => { setShowCreateChooser(false); setRoutineTarget({ name: '', description: '', icon: '⚡', steps: [] }) } },
-            { Icon: BookOpen, label: t('automations.createFromLibrary'), desc: t('automations.createFromLibraryDesc'),
-              onPick: () => { setShowCreateChooser(false); setShowLibrary(true) } },
-          ].map(({ Icon, label, desc, onPick }) => (
-            <button key={label} onClick={onPick} style={{
-              display: 'flex', alignItems: 'center', gap: 16, textAlign: 'start', cursor: 'pointer',
-              minHeight: 64, padding: 16, borderRadius: 'var(--r-card)', fontFamily: 'inherit',
-              background: 'var(--surface-2)', border: '0.5px solid var(--line)', color: 'var(--ink)',
-              transition: 'background var(--dur-press) var(--ease-standard)',
+          ].map(opt => (
+            <button key={opt.label} onClick={opt.onPick} style={{
+              display: 'flex', alignItems: 'center', gap: 14, textAlign: 'start', cursor: 'pointer',
+              padding: '16px 18px', borderRadius: 14, fontFamily: 'inherit',
+              background: 'var(--surface-2)', border: '0.5px solid var(--line)',
             }} dir="auto">
-              <Icon size={24} strokeWidth={1.75} aria-hidden="true" style={{ flexShrink: 0, color: 'var(--ink-2)' }} />
+              <span style={{ fontSize: 24, flexShrink: 0 }} aria-hidden="true">{opt.icon}</span>
               <span style={{ minWidth: 0 }}>
-                <span className="z-headline" style={{ display: 'block' }}>{label}</span>
-                <span className="z-subhead" style={{ display: 'block', marginTop: 2 }}>{desc}</span>
+                <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{opt.label}</span>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{opt.desc}</span>
               </span>
             </button>
           ))}
@@ -699,12 +670,11 @@ export default function Automations() {
       {/* Delete confirmation — shared by every delete path (card, view, wizard). */}
       <Modal open={!!confirmState} onClose={() => { const r = confirmState?.resolve; setConfirmState(null); r?.(false) }} title={t('automations.confirmDelete.title')} maxWidth={380}>
         {confirmState && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 2px' }} dir="auto">
-            <p className="z-body" style={{ margin: 0, color: 'var(--ink-2)' }} dir="auto">{t('automations.confirmDelete.body', { name: confirmState.label })}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px' }} dir="auto">
+            <p style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }} dir="auto">{t('automations.confirmDelete.body', { name: confirmState.label })}</p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => { const r = confirmState.resolve; setConfirmState(null); r(false) }} className="z-btn-secondary">{t('common.cancel')}</button>
-              {/* Destructive = the --err family, never the brand accent. */}
-              <button type="button" onClick={() => { const r = confirmState.resolve; setConfirmState(null); r(true) }} className="z-btn-primary" style={{ background: 'var(--err)', color: 'var(--on-accent)' }}>{t('automations.confirmDelete.confirm')}</button>
+              <button type="button" onClick={() => { const r = confirmState.resolve; setConfirmState(null); r(false) }} className="z-btn-secondary" style={{ padding: '9px 14px', borderRadius: 10, fontSize: 13 }}>{t('common.cancel')}</button>
+              <button type="button" onClick={() => { const r = confirmState.resolve; setConfirmState(null); r(true) }} className="z-btn-primary" style={{ padding: '9px 16px', borderRadius: 10, fontSize: 13, background: 'var(--accent)' }}>{t('automations.confirmDelete.confirm')}</button>
             </div>
           </div>
         )}

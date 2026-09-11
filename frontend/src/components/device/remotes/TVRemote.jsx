@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Power, Volume2, VolumeX, ChevronLeft, ChevronRight,
-  ChevronUp, ChevronDown, Home, Menu, Tv2, ListVideo, Hash, Zap,
+  ChevronUp, ChevronDown, Home, Menu, Tv2, ListVideo, Hash,
 } from 'lucide-react'
 import { commandAvailable, deviceFacts, extrasForRemote, irLearned, sendDeviceCommand } from '../../../lib/devices'
 import { bumpSourceUse, rankSources } from '../../../lib/sourceUsage'
@@ -96,12 +96,12 @@ export function TVRemote({ entity }) {
   // the inline toggle pill in NavRow on the main view).
   if (view === 'numpad') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <NowPlayingCard facts={facts} />
         <NumPad fireSmart={fireSmart} />
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <PillBtn onClick={() => setView('main')}>
-            <ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" /> {i18nT('remote.backToRemote')}
+            <ChevronLeft size={13} /> Back to remote
           </PillBtn>
         </div>
       </div>
@@ -109,7 +109,7 @@ export function TVRemote({ entity }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
       {/* Now-playing card */}
       <NowPlayingCard facts={facts} />
@@ -128,32 +128,30 @@ export function TVRemote({ entity }) {
         gap: 8,
       }}>
         <BigButton label={i18nT('remote.power')} onClick={() => fire('toggle')} tone="err" disabled={!commandAvailable(entity, 'toggle')}>
-          <Power size={20} strokeWidth={1.75} />
+          <Power size={18} strokeWidth={2} />
         </BigButton>
         <BigButton label={facts.muted ? i18nT('remote.unmute') : i18nT('remote.mute')} onClick={() => fire('mute_toggle', { muted: !facts.muted })} disabled={!commandAvailable(entity, 'mute_toggle')}>
-          {facts.muted ? <VolumeX size={20} strokeWidth={1.75} /> : <Volume2 size={20} strokeWidth={1.75} />}
+          {facts.muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
         </BigButton>
         <BigButton label={i18nT('remote.source')} onClick={() => fire('next_source')} disabled={!commandAvailable(entity, 'next_source') && !sources.length}>
-          <ListVideo size={20} strokeWidth={1.75} />
+          <ListVideo size={18} />
         </BigButton>
         {numpadOk && (
-          <BigButton label={i18nT('remote.numpad')} onClick={() => setView('numpad')}>
-            <Hash size={20} strokeWidth={1.75} />
+          <BigButton label="1-9" onClick={() => setView('numpad')}>
+            <Hash size={18} />
           </BigButton>
         )}
       </div>
 
       {/* Discrete Force On / Force Off — shown only when learned. Lets the
-          user recover from drift in assumed_state by firing the raw code.
-          The i18n strings carry a legacy ⚡ prefix; strip it and draw the
-          bolt as a line icon instead. */}
+          user recover from drift in assumed_state by firing the raw code. */}
       {(discreteOn || discreteOff) && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           {discreteOn && (
-            <PillBtn onClick={() => fire('power_on')}><Zap size={18} strokeWidth={1.75} /> {stripBolt(i18nT('remote.forceOn'))}</PillBtn>
+            <PillBtn onClick={() => fire('power_on')}>⚡ Force On</PillBtn>
           )}
           {discreteOff && (
-            <PillBtn onClick={() => fire('power_off')}><Zap size={18} strokeWidth={1.75} /> {stripBolt(i18nT('remote.forceOff'))}</PillBtn>
+            <PillBtn onClick={() => fire('power_off')}>⚡ Force Off</PillBtn>
           )}
         </div>
       )}
@@ -202,7 +200,7 @@ export function TVRemote({ entity }) {
           )}
           {caps.has('repeat') && (
             <PillBtn onClick={() => fire('set_repeat', { repeat: facts.repeat === 'off' ? 'all' : 'off' })} active={facts.repeat && facts.repeat !== 'off'}>
-              {i18nT('remote.repeat')}
+              Repeat
             </PillBtn>
           )}
         </div>
@@ -212,11 +210,16 @@ export function TVRemote({ entity }) {
           settings, color keys, sound modes, custom buttons…). */}
       {extras.length > 0 && (
         <div>
-          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{i18nT('remote.extras')}</span>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Extras</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {extras.map((x) => (
               <button key={x.id} onClick={() => fire('ir_raw', { name: x.id })}
-                className="z-chip" style={chipStyle()}
+                style={{
+                  padding: '7px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 500,
+                  background: 'var(--surface-2)', color: 'var(--ink-2)',
+                  border: '0.5px solid var(--line)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
               >{x.label}</button>
             ))}
           </div>
@@ -283,10 +286,17 @@ function SourceRow({ sources, facts, entity, fire }) {
           fire('set_source', { source: cmd })
         }}
         disabled={!enabled}
-        aria-pressed={active}
-        title={enabled ? '' : i18nT('remote.notLearned', { name: label })}
-        className="z-chip"
-        style={{ ...chipStyle({ active, enabled }), flexShrink: 0, textTransform: 'none' }}
+        title={enabled ? '' : `${label} not learned`}
+        style={{
+          padding: '8px 12px', borderRadius: 10, flexShrink: 0,
+          background: active ? 'var(--ink)' : 'var(--surface)',
+          color: active ? 'var(--bg)' : 'var(--ink-2)',
+          border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
+          fontSize: 11.5, fontWeight: 500,
+          cursor: enabled ? 'pointer' : 'not-allowed',
+          fontFamily: 'inherit',
+          opacity: enabled ? 1 : 0.4,
+        }}
       >{label.replace?.(/_/g, ' ') ?? label}</button>
     )
   }
@@ -294,15 +304,19 @@ function SourceRow({ sources, facts, entity, fire }) {
   return (
     <div>
       <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>
-        {overflowing ? i18nT('remote.sourceCount', { n: ranked.length }) : i18nT('remote.source')}
+        Source{overflowing ? ` · ${ranked.length}` : ''}
       </span>
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, flexWrap: 'wrap' }} className="scrollbar-thin">
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, flexWrap: 'wrap' }} className="scrollbar-thin">
         {visible.map(renderBtn)}
         {overflowing && (
           <button
             onClick={() => setShowAll(v => !v)}
-            className="z-chip"
-            style={{ ...chipStyle(), flexShrink: 0, color: 'var(--ink-mute)', border: '0.5px dashed var(--line)', textTransform: 'none' }}
+            style={{
+              padding: '8px 12px', borderRadius: 10, flexShrink: 0,
+              background: 'var(--surface-2)', color: 'var(--ink-mute)',
+              border: '0.5px dashed var(--line)',
+              fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+            }}
           >{showAll ? i18nT('remote.showLess') : i18nT('remote.showMore', { n: hiddenCount })}</button>
         )}
       </div>
@@ -313,59 +327,33 @@ function SourceRow({ sources, facts, entity, fire }) {
 
 // ─── Building blocks ────────────────────────────────────────────────────────
 
-// Legacy i18n values for Force On/Off start with a "⚡ " — the glyph is now a
-// Lucide Zap next to the text, so drop it from the string.
-function stripBolt(s) {
-  return (s || '').replace(/^⚡\s*/, '')
-}
-
-// One chip style for source / sound / extras buttons: `.z-chip` type (13/500,
-// capsule) stretched to a 44px target. Selected = surface-2 + ink text +
-// 0.5px ink line — never inverted. The OK puck is this remote's one
-// inverted control.
-function chipStyle({ active = false, enabled = true } = {}) {
-  return {
-    minHeight: 44, padding: '0 16px', boxSizing: 'border-box',
-    background: 'var(--surface-2)',
-    color: active ? 'var(--ink)' : 'var(--ink-2)',
-    border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
-    fontWeight: active ? 600 : 500,
-    cursor: enabled ? 'pointer' : 'not-allowed',
-    fontFamily: 'inherit', textTransform: 'capitalize',
-    opacity: enabled ? 1 : 0.4,
-    transition: 'border-color var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
-  }
-}
-
 function NowPlayingCard({ facts }) {
   const title = facts.mediaTitle || facts.source || facts.name
-  const subtitle = facts.mediaArtist || (facts.isOn ? facts.stateLabel : i18nT('common.off'))
+  const subtitle = facts.mediaArtist || (facts.isOn ? facts.stateLabel : 'Off')
   return (
     <div className="z-card" style={{
-      padding: '8px 16px', minHeight: 56, display: 'flex', alignItems: 'center', gap: 12,
+      padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, borderRadius: 14,
     }}>
       <div style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', flexShrink: 0,
+        width: 44, height: 44, borderRadius: 9, background: 'var(--surface-2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)',
       }}>
-        <Tv2 size={20} strokeWidth={1.75} />
+        <Tv2 size={20} strokeWidth={1.6} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </div>
-        <div dir="auto" style={{ fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {subtitle}{facts.isIr ? i18nT('remote.metaIr') : facts.linkedIr ? i18nT('remote.metaIrWifi') : ''}
+        <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>
+          {subtitle}{facts.isIr ? ' · IR' : facts.linkedIr ? ' · IR + WiFi' : ''}
         </div>
       </div>
-      <span className={facts.isOn ? 'z-dot z-dot-on' : 'z-dot'} style={facts.isOn ? {} : { background: 'var(--ink-faint)' }} />
+      <span className={facts.isOn ? 'z-dot z-dot-on' : 'z-dot'} style={facts.isOn ? {} : { background: 'var(--ink-ghost)' }} />
     </div>
   )
 }
 
-// Square action tile. The Power glyph is the one status-coloured icon on the
-// remote (20px, so the raw --err token is allowed); labels stay ink.
 function BigButton({ children, label, onClick, tone, disabled }) {
   return (
     <button
@@ -373,17 +361,16 @@ function BigButton({ children, label, onClick, tone, disabled }) {
       disabled={disabled}
       className="z-card"
       style={{
-        minHeight: 44, padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-        background: 'var(--surface)',
+        padding: '14px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+        background: 'var(--surface)', borderRadius: 14,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.35 : 1,
         color: tone === 'err' ? 'var(--err)' : 'var(--ink-2)',
         fontFamily: 'inherit',
-        transition: 'background var(--dur-press) var(--ease-standard)',
       }}
     >
       {children}
-      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-2)' }}>{label}</span>
     </button>
   )
 }
@@ -431,11 +418,11 @@ function VolChSpinners({ entity, facts, fire }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 8 }}>
       {volShown && (
-        <Spinner label={i18nT('remote.volumeHeading')} value={volLocal} upOk={volUpOk} downOk={volDownOk}
+        <Spinner label="Vol" value={volLocal} upOk={volUpOk} downOk={volDownOk}
           onUp={() => bumpVol(+1)} onDown={() => bumpVol(-1)} />
       )}
       {chShown && (
-        <Spinner label={i18nT('remote.channelHeading')} value={chLocal} upOk={chUpOk} downOk={chDownOk}
+        <Spinner label="Ch" value={chLocal} upOk={chUpOk} downOk={chDownOk}
           onUp={() => bumpCh(+1)} onDown={() => bumpCh(-1)} />
       )}
     </div>
@@ -467,10 +454,10 @@ function NavRow({ entity, fire, addToast, pairedRemoteId }) {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-      {backOk && <PillBtn onClick={() => fireSmart('back')}><ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" /> {i18nT('remote.back')}</PillBtn>}
-      {homeOk && <PillBtn onClick={() => fireSmart('home')}><Home size={18} strokeWidth={1.75} /> {i18nT('remote.home')}</PillBtn>}
-      {menuOk && <PillBtn onClick={() => fireSmart('menu')}><Menu size={18} strokeWidth={1.75} /> {i18nT('remote.menu')}</PillBtn>}
+    <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+      {backOk && <PillBtn onClick={() => fireSmart('back')}><ChevronLeft size={13} /> Back</PillBtn>}
+      {homeOk && <PillBtn onClick={() => fireSmart('home')}><Home size={13} /> Home</PillBtn>}
+      {menuOk && <PillBtn onClick={() => fireSmart('menu')}><Menu size={13} /> Menu</PillBtn>}
     </div>
   )
 }
@@ -505,45 +492,40 @@ function DPad({ entity, fire, pairedRemoteId, addToast }) {
         width: 200, height: 200, borderRadius: '50%',
         position: 'relative', background: 'var(--surface)',
       }}>
-        {/* Centered OK — the one inverted control on this remote */}
+        {/* Centered OK — big black puck dominating the dial, design-matched */}
         <button
           onClick={() => okOk && fireSmart('nav_ok')}
           disabled={!okOk}
-          aria-label={i18nT('remote.ok')}
-          title={okOk ? '' : i18nT('remote.okNotAvailable')}
+          title={okOk ? '' : 'OK not available'}
           style={{
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
             width: 108, height: 108, borderRadius: '50%',
             background: 'var(--ink)', color: 'var(--bg)', border: 'none',
-            fontSize: 17, fontWeight: 700, letterSpacing: '0.02em', fontFamily: 'inherit',
+            fontSize: 16, fontWeight: 700, letterSpacing: '0.02em',
             boxShadow: okOk ? 'var(--shadow-md)' : 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: okOk ? 'pointer' : 'not-allowed',
             opacity: okOk ? 1 : 0.28,
           }}
-        >{i18nT('remote.ok')}</button>
-        {/* 44×44 arrow targets at the four cardinal edges. The ring between
-            the 108px puck and the 200px rim is 46px, so a 44px button at
-            offset 2 sits fully inside it. */}
+        >OK</button>
+        {/* Chevrons at the four cardinal edges, between the OK puck and the white rim */}
         {[
-          { dir: 'up',    cmd: 'nav_up',    ok: upOk,    label: i18nT('remote.up'),    style: { top: 2, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronUp },
-          { dir: 'down',  cmd: 'nav_down',  ok: downOk,  label: i18nT('remote.down'),  style: { bottom: 2, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronDown },
-          { dir: 'left',  cmd: 'nav_left',  ok: leftOk,  label: i18nT('remote.left'),  style: { left: 2, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronLeft },
-          { dir: 'right', cmd: 'nav_right', ok: rightOk, label: i18nT('remote.right'), style: { right: 2, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronRight },
-        ].map(({ dir, cmd, ok, label, style, Icon }) => (
+          { dir: 'up',    cmd: 'nav_up',    ok: upOk,    style: { top: 12, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronUp },
+          { dir: 'down',  cmd: 'nav_down',  ok: downOk,  style: { bottom: 12, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronDown },
+          { dir: 'left',  cmd: 'nav_left',  ok: leftOk,  style: { left: 12, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronLeft },
+          { dir: 'right', cmd: 'nav_right', ok: rightOk, style: { right: 12, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronRight },
+        ].map(({ dir, cmd, ok, style, Icon }) => (
           <button
-            key={dir} onClick={() => ok && fireSmart(cmd)} aria-label={label} disabled={!ok}
-            title={ok ? '' : i18nT('remote.notAvailable', { name: label })}
+            key={dir} onClick={() => ok && fireSmart(cmd)} aria-label={dir} disabled={!ok}
+            title={ok ? '' : `${dir} not available`}
             style={{
               position: 'absolute', background: 'none', border: 'none',
-              width: 44, height: 44, borderRadius: '50%', padding: 0, lineHeight: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--ink-mute)',
+              color: 'var(--ink-mute)', padding: 6, lineHeight: 0,
               cursor: ok ? 'pointer' : 'not-allowed',
               opacity: ok ? 1 : 0.3,
               ...style,
             }}
-          ><Icon size={20} strokeWidth={1.75} /></button>
+          ><Icon size={20} strokeWidth={2} /></button>
         ))}
       </div>
     </div>
@@ -565,9 +547,8 @@ function NumPad({ fireSmart, entity, fire }) {
     <button
       key={n}
       onClick={() => ok(`digit_${n}`)}
-      className="z-mono"
       style={{
-        height: 56, borderRadius: 'var(--r-card)',
+        height: 56, borderRadius: 14,
         background: 'var(--surface)', color: 'var(--ink)',
         border: '0.5px solid var(--line)',
         fontSize: 22, fontWeight: 600, fontFamily: 'inherit',
@@ -577,7 +558,7 @@ function NumPad({ fireSmart, entity, fire }) {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
         maxWidth: 320, margin: '0 auto', width: '100%',
@@ -586,47 +567,43 @@ function NumPad({ fireSmart, entity, fire }) {
         <button
           onClick={() => ok('back')}
           title={i18nT('common.back')}
-          aria-label={i18nT('common.back')}
           style={{
-            height: 56, borderRadius: 'var(--r-card)',
+            height: 56, borderRadius: 14,
             background: 'var(--surface-2)', color: 'var(--ink-mute)',
             border: '0.5px solid var(--line)', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontFamily: 'inherit',
           }}
-        ><ChevronLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" /></button>
+        ><ChevronLeft size={18} /></button>
         {digitBtn(0)}
-        {/* The numpad view has no d-pad, so this OK is its one inverted control. */}
         <button
           onClick={() => ok('nav_ok')}
-          title={i18nT('remote.ok')}
+          title="OK"
           style={{
-            height: 56, borderRadius: 'var(--r-card)',
+            height: 56, borderRadius: 14,
             background: 'var(--ink)', color: 'var(--bg)',
             border: 'none', cursor: 'pointer',
-            fontSize: 17, fontWeight: 700, letterSpacing: '0.02em',
+            fontSize: 14, fontWeight: 700, letterSpacing: '0.02em',
             fontFamily: 'inherit',
           }}
-        >{i18nT('remote.ok')}</button>
+        >OK</button>
       </div>
     </div>
   )
 }
 
-// Secondary pill. Active (shuffle / repeat on) = surface-2 + ink + 0.5px ink
-// line, not inverted.
 function PillBtn({ children, onClick, active, disabled }) {
   return (
-    <button onClick={onClick} disabled={disabled} aria-pressed={active ? true : undefined}
-      className="z-btn-secondary"
-      style={{
-        padding: '0 16px', fontSize: 15,
-        background: active ? 'var(--surface-2)' : undefined,
-        borderColor: active ? 'var(--ink)' : undefined,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.35 : 1,
-        transition: 'background var(--dur-press) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
-      }}>{children}</button>
+    <button onClick={onClick} disabled={disabled} style={{
+      padding: '8px 14px', borderRadius: 10,
+      background: active ? 'var(--ink)' : 'var(--surface)',
+      color: active ? 'var(--bg)' : 'var(--ink-2)',
+      border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
+      fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit',
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.35 : 1,
+    }}>{children}</button>
   )
 }
 
@@ -634,31 +611,28 @@ function Spinner({ label, value, onUp, onDown, upOk = true, downOk = true }) {
   const shown = upOk || downOk
   return (
     <div className="z-card" style={{
-      padding: '8px 0', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'space-between', gap: 4, minHeight: 120,
+      padding: '14px 0', borderRadius: 16, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'space-between', gap: 6, minHeight: 110,
       opacity: shown ? 1 : 0.4,
     }}>
       <button onClick={() => upOk && onUp()} disabled={!upOk} style={spinnerBtn(!upOk)}
-        title={upOk ? '' : i18nT('remote.notLearned', { name: i18nT('remote.volumeUpAria', { label }) })}
-        aria-label={i18nT('remote.volumeUpAria', { label })}>
-        <ChevronUp size={20} strokeWidth={1.75} />
+        title={upOk ? '' : `${label} up not learned`} aria-label={`${label} up`}>
+        <ChevronUp size={18} strokeWidth={2} />
       </button>
-      <span className="z-mono" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
         {label}{value != null ? ` ${value}` : ''}
       </span>
       <button onClick={() => downOk && onDown()} disabled={!downOk} style={spinnerBtn(!downOk)}
-        title={downOk ? '' : i18nT('remote.notLearned', { name: i18nT('remote.volumeDownAria', { label }) })}
-        aria-label={i18nT('remote.volumeDownAria', { label })}>
-        <ChevronDown size={20} strokeWidth={1.75} />
+        title={downOk ? '' : `${label} down not learned`} aria-label={`${label} down`}>
+        <ChevronDown size={18} strokeWidth={2} />
       </button>
     </div>
   )
 }
 function spinnerBtn(disabled) {
   return {
-    background: 'none', border: 'none', color: disabled ? 'var(--ink-faint)' : 'var(--ink-2)',
-    width: 44, height: 44, padding: 0, borderRadius: 'var(--r-ctl)',
-    cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'none', border: 'none', color: disabled ? 'var(--ink-ghost)' : 'var(--ink-2)', padding: 4,
+    cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex',
     opacity: disabled ? 0.4 : 1,
   }
 }
@@ -667,16 +641,21 @@ function ChipRow({ label, items, current, isEnabled, onPick }) {
   return (
     <div>
       <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{label}</span>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {items.map((m) => {
           const enabled = isEnabled ? isEnabled(m) : true
-          const active = current === m
           return (
             <button key={m} onClick={() => enabled && onPick(m)} disabled={!enabled}
-              aria-pressed={active}
-              title={enabled ? '' : i18nT('remote.notLearned', { name: m })}
-              className="z-chip"
-              style={chipStyle({ active, enabled })}>{m.replace(/_/g, ' ')}</button>
+              title={enabled ? '' : `${m} not learned`}
+              style={{
+                padding: '7px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 500,
+                background: current === m ? 'var(--ink)' : 'var(--surface-2)',
+                color:      current === m ? 'var(--bg)'  : 'var(--ink-2)',
+                border: '0.5px solid ' + (current === m ? 'var(--ink)' : 'var(--line)'),
+                cursor: enabled ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit', textTransform: 'capitalize',
+                opacity: enabled ? 1 : 0.4,
+              }}>{m.replace(/_/g, ' ')}</button>
           )
         })}
       </div>
@@ -693,22 +672,20 @@ function hasIrCmd(facts, cmd) {
   return (ir.learned_commands || []).includes(cmd)
 }
 
-// Not rendered today (the numpad view replaced it); kept on the shared type
-// scale so it is ready if it comes back.
 function ChannelEntry({ value, onChange, onSubmit }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
-      <Hash size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
-      <span className="z-eyebrow" style={{ flexShrink: 0 }}>{i18nT('remote.channel')}</span>
+      <Hash size={14} style={{ color: 'var(--ink-faint)' }} />
+      <span className="z-eyebrow" style={{ flexShrink: 0 }}>Channel</span>
       <input
         type="number" min={0} max={9999} value={value}
         onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
         onKeyDown={(e) => e.key === 'Enter' && value && onSubmit(parseInt(value, 10))}
         placeholder="12" className="z-input"
-        style={{ flex: 1, width: 'auto' }}
+        style={{ height: 36, padding: '0 12px', flex: 1, fontSize: 13 }}
       />
       <button onClick={() => value && onSubmit(parseInt(value, 10))}
-        className="z-btn-secondary" style={{ flexShrink: 0 }}>{i18nT('remote.go')}</button>
+        className="z-btn-primary" style={{ padding: '0 16px', height: 36, borderRadius: 10, flexShrink: 0 }}>Go</button>
     </div>
   )
 }

@@ -51,22 +51,24 @@ export default function FeatureFlags() {
   }
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      <div className="z-page-head">
-        <div>
-          <h1 className="z-display" style={{ margin: 0 }}>{t('featureFlags.title')}</h1>
-          <p className="z-subhead" style={{ marginTop: 4 }}>{t('featureFlags.subtitle')}</p>
-        </div>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 20px 60px' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em', marginBottom: 6 }}>
+          {t('featureFlags.title')}
+        </h1>
+        <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.55 }}>
+          {t('featureFlags.subtitle')}
+        </p>
       </div>
 
       <div style={{
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
-        borderRadius: 'var(--r-card)',
+        borderRadius: 16,
         overflow: 'hidden',
       }}>
         {!loaded && (
-          <div style={{ padding: '24px 16px', fontSize: 15, color: 'var(--ink-mute)', textAlign: 'center' }}>
+          <div style={{ padding: '24px 16px', fontSize: 12, color: 'var(--ink-faint)', textAlign: 'center' }}>
             {t('featureFlags.loading')}
           </div>
         )}
@@ -75,19 +77,18 @@ export default function FeatureFlags() {
             key={key}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              minHeight: 56, padding: '12px 16px', gap: 12,
+              padding: '14px 18px', gap: 12,
               borderBottom: idx === arr.length - 1 ? 'none' : '0.5px solid var(--line)',
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t(label)}</p>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{t(subtitle)}</p>
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{t(label)}</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{t(subtitle)}</p>
             </div>
             <Toggle
               checked={!!features[key]}
               onCheckedChange={v => onToggle(key, v)}
               disabled={saving === key}
-              aria-label={t(label)}
             />
           </div>
         ))}

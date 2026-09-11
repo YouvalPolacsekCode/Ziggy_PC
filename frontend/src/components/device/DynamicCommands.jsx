@@ -21,6 +21,7 @@ const VERB_FILTER = new Set(['turn_on', 'turn_off', 'toggle'])
 
 function FieldInput({ field, value, onChange }) {
   const placeholder = field.description || field.label
+  const common = { onChange, style: { width: '100%' } }
 
   switch (field.kind) {
     case 'number': {
@@ -37,8 +38,7 @@ function FieldInput({ field, value, onChange }) {
               min={min} max={max} step={step}
               value={value ?? field.default ?? min}
               onChange={(e) => onChange(Number(e.target.value))}
-              aria-label={field.label}
-              style={{ flex: 1, height: 44, accentColor: 'var(--ink)' }}
+              style={{ flex: 1 }}
             />
           )}
           <input
@@ -47,24 +47,26 @@ function FieldInput({ field, value, onChange }) {
             value={value ?? field.default ?? ''}
             placeholder={placeholder}
             onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-            className="z-input z-mono"
-            style={{ width: 104, textAlign: 'end' }}
+            style={{
+              width: 88, padding: '6px 8px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--ink)', fontSize: 13, textAlign: 'right',
+            }}
           />
-          {unit && <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{unit.trim()}</span>}
+          {unit && <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{unit.trim()}</span>}
         </div>
       )
     }
 
     case 'boolean':
       return (
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, minHeight: 44, cursor: 'pointer' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
             checked={Boolean(value ?? field.default ?? false)}
             onChange={(e) => onChange(e.target.checked)}
-            style={{ width: 20, height: 20, accentColor: 'var(--ink)' }}
           />
-          <span style={{ fontSize: 17, color: 'var(--ink)' }}>{field.label}</span>
+          <span style={{ fontSize: 12 }}>{field.label}</span>
         </label>
       )
 
@@ -73,7 +75,10 @@ function FieldInput({ field, value, onChange }) {
         <select
           value={value ?? field.default ?? ''}
           onChange={(e) => onChange(e.target.value)}
-          className="z-input"
+          style={{
+            padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, ...common.style,
+          }}
         >
           <option value="">{i18nT('dynCmd.select')}</option>
           {(field.options || []).map((opt) => {
@@ -90,7 +95,10 @@ function FieldInput({ field, value, onChange }) {
           type="time"
           value={value ?? field.default ?? ''}
           onChange={(e) => onChange(e.target.value)}
-          className="z-input"
+          style={{
+            padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, ...common.style,
+          }}
         />
       )
 
@@ -99,15 +107,18 @@ function FieldInput({ field, value, onChange }) {
       // We render a single "minutes" input as the common case; user can refine later.
       const minutes = (value && typeof value === 'object') ? value.minutes : (value ?? field.default ?? 0)
       return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="number" min={0} max={1440}
             value={minutes ?? 0}
             onChange={(e) => onChange({ minutes: Number(e.target.value) })}
-            className="z-input z-mono"
-            style={{ width: 104, textAlign: 'end' }}
+            style={{
+              width: 80, padding: '6px 8px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--ink)', fontSize: 13, textAlign: 'right',
+            }}
           />
-          <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{i18nT('dynCmd.minutes')}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>min</span>
         </div>
       )
     }
@@ -120,7 +131,10 @@ function FieldInput({ field, value, onChange }) {
           value={value ?? field.default ?? ''}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          className="z-input"
+          style={{
+            padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, ...common.style,
+          }}
         />
       )
   }
@@ -150,45 +164,46 @@ function CommandRow({ entityId, cmd, onExecuted }) {
 
   return (
     <div style={{
-      borderTop: '0.5px solid var(--line)',
-      padding: '8px 0',
+      borderTop: '1px solid var(--border)',
+      padding: '10px 0',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <button
           onClick={() => (hasFields ? setOpen(o => !o) : fire())}
           disabled={busy}
-          aria-expanded={hasFields ? open : undefined}
-          className="z-btn-secondary"
           style={{
-            flex: 1, textAlign: 'start', justifyContent: 'space-between', fontWeight: 500,
+            flex: 1, textAlign: 'left', padding: '6px 10px', borderRadius: 10,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--ink)', cursor: 'pointer', fontSize: 13,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             opacity: busy ? 0.5 : 1,
           }}
         >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{cmd.label}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {cmd.label}
             {cmd.source === 'ir' && (
-              <span className="z-chip">{i18nT('dynCmd.irBadge')}</span>
+              <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--ink-mute)', verticalAlign: 'middle' }}>IR</span>
             )}
           </span>
           {hasFields
-            ? <ChevronDown size={18} strokeWidth={1.75} style={{ flexShrink: 0, color: 'var(--ink-mute)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
-            : (busy ? <Loader2 size={18} strokeWidth={1.75} className="z-spin" style={{ flexShrink: 0 }} /> : <Send size={18} strokeWidth={1.75} style={{ flexShrink: 0, color: 'var(--ink-mute)' }} />)
+            ? <ChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+            : (busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />)
           }
         </button>
       </div>
 
       {hasFields && open && (
         <div style={{
-          marginTop: 8, padding: 12, borderRadius: 'var(--r-ctl)',
+          marginTop: 8, padding: 10, borderRadius: 10,
           background: 'var(--surface-2)',
-          display: 'flex', flexDirection: 'column', gap: 12,
+          display: 'flex', flexDirection: 'column', gap: 10,
         }}>
           {cmd.description && (
-            <div style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{cmd.description}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{cmd.description}</div>
           )}
           {cmd.fields.map((f) => (
             <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
                 {f.label}{f.required ? ' *' : ''}
               </span>
               <FieldInput
@@ -201,18 +216,22 @@ function CommandRow({ entityId, cmd, onExecuted }) {
           <button
             onClick={fire}
             disabled={busy}
-            className="z-btn-primary"
-            style={{ alignSelf: 'flex-end', opacity: busy ? 0.5 : 1 }}
+            style={{
+              alignSelf: 'flex-end', padding: '6px 14px', borderRadius: 10,
+              background: 'var(--accent)', color: 'white', border: 'none',
+              cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              opacity: busy ? 0.5 : 1,
+            }}
           >
-            {busy ? i18nT('dynCmd.running') : i18nT('dynCmd.run')}
+            {busy ? 'Running…' : 'Run'}
           </button>
         </div>
       )}
 
       {result && (
         <div style={{
-          marginTop: 8, fontSize: 13,
-          color: result.ok ? 'var(--ok-text)' : 'var(--err-text)',
+          marginTop: 6, fontSize: 11,
+          color: result.ok ? 'var(--ok)' : 'var(--err)',
         }}>
           {result.message}
         </div>
@@ -267,31 +286,28 @@ export default function DynamicCommands({ entityId, hideVerbs }) {
   if (commands != null && visible.length === 0) return null
 
   return (
-    <div className="z-card" style={{ padding: '4px 16px', marginBottom: 16 }}>
+    <div className="z-card" style={{ padding: 12, marginBottom: 14, borderRadius: 18 }}>
       <button
         onClick={() => setExpanded(x => !x)}
-        aria-expanded={expanded}
-        className="z-headline"
         style={{
-          width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 0, background: 'transparent', border: 'none',
-          cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start',
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '6px 4px', background: 'transparent', border: 'none', color: 'var(--ink)',
+          cursor: 'pointer', fontSize: 13, fontWeight: 600,
         }}
       >
-        <span>{i18nT('dynCmd.moreCommands')}{commands == null ? '' : ` (${visible.length})`}</span>
+        <span>More Commands{commands == null ? '' : ` (${visible.length})`}</span>
         <ChevronDown
-          size={18}
-          strokeWidth={1.75}
+          size={14}
           style={{
             transform: expanded ? 'rotate(180deg)' : 'none',
-            transition: 'transform var(--dur-state) var(--ease-standard)',
+            transition: 'transform 0.15s',
             color: 'var(--ink-mute)',
           }}
         />
       </button>
 
       {expanded && (
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 6 }}>
           {visible.map((cmd) => (
             <CommandRow key={cmd.id} entityId={entityId} cmd={cmd} />
           ))}

@@ -3,21 +3,10 @@ import { motion } from 'framer-motion'
 import { Toggle } from '../ui/Toggle'
 import { useT, useTranslatedName } from '../../lib/i18n'
 import { getTriggerTypes } from '../../lib/automations/types'
+import { libraryEmoji } from '../../lib/automations/libraryIdentity'
 import { behaviorSummary } from '../../lib/automations/summaries'
-import { T_ENTER } from '../../lib/motion'
 
 // ── AutomationCard ────────────────────────────────────────────────────────────
-// One row = glyph · name · one footnote line · switch · actions.
-//
-// What changed in the HIG pass and why:
-//   - the 19px emoji is gone; the trigger type draws a 22px line glyph so the
-//     icon matches the text weight and renders the same on every OS.
-//   - name is Headline (17/600), the summary is Subhead (15), and the
-//     trigger/time/rooms metadata is ONE Footnote line (13) with no tint —
-//     the blue "At a specific time" chip made every card shout.
-//   - action buttons are 44×44 targets; delete is --err-text, not the
-//     brand accent (one colour, one meaning).
-//
 // React.memo'd so a state_changed WS bump that doesn't touch this card's
 // action entities can't drag it through a re-render. With 100+ automations
 // on the page that was the dominant cost on every device toggle.
@@ -33,6 +22,7 @@ const AutomationCard = React.memo(function AutomationCard({
   // the automation actually does — never leave it as a bare "N steps".
   const rawSummary = automation.description || behaviorSummary(automation)
   const automationDesc = useTranslatedName(rawSummary)
+  const emoji = libraryEmoji(automation)
   const triggerLabel = getTriggerTypes().find(tt => tt.value === automation.trigger?.type)?.label
 
   // Check if any action entity is currently unavailable. offlineEntityIds is
@@ -46,75 +36,68 @@ const AutomationCard = React.memo(function AutomationCard({
   }, [automation.actions, offlineEntityIds])
   const hasOfflineDep = automation.enabled && offlineEntities.length > 0
 
-  const triggerType = automation.trigger?.type || 'time'
-  const iconMap = {
-    time: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-    sunrise: <><circle cx="12" cy="13" r="3"/><path d="M12 4v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20"/></>,
-    sunset: <><circle cx="12" cy="13" r="3"/><path d="M12 3v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20M12 19v3"/></>,
-    zone: <><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></>,
-    state: <><path d="M4 12l5 5L20 6"/></>,
-    webhook: <><circle cx="12" cy="12" r="3"/><path d="M12 9V5a2 2 0 0 0-4 0M9 12H5a2 2 0 0 0 0 4M12 15v4a2 2 0 0 0 4 0M15 12h4a2 2 0 0 0 0-4"/></>,
-    manual: <><path d="M8 13V5a2 2 0 1 1 4 0v6"/><path d="M12 11V9a2 2 0 1 1 4 0v3"/><path d="M16 12a2 2 0 1 1 4 0v3a7 7 0 0 1-7 7h-1a7 7 0 0 1-6-3.4L4 15a2 2 0 1 1 3.4-2.1L8 14"/></>,
-  }
-
-  const meta = [
-    triggerLabel,
-    automation.trigger?.time,
-    (automation.rooms || []).length > 0 ? t('automations.card.roomsCount', { n: automation.rooms.length }) : null,
-  ].filter(Boolean).join(' · ')
-
-  const actions = [
-    { onClick: () => onTrigger(automation.id), color: 'var(--ink-mute)', title: t('automations.view.runNow'), path: <path d="M6 4l14 8-14 8V4z" fill="currentColor" stroke="none"/> },
-    { onClick: () => onView(automation),       color: 'var(--ink-mute)', title: t('automations.card.view'),  path: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></> },
-    { onClick: () => onDelete(automation.id),  color: 'var(--err-text)', title: t('common.delete'),          path: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></> },
-  ]
-
   return (
-    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER} data-automation-id={automation.id}>
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} data-automation-id={automation.id}>
       <div style={{
-        padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)',
+        padding: '14px 16px', borderRadius: 12, background: 'var(--surface)',
         border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`,
         boxShadow: highlighted ? '0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent)' : 'none',
-        transition: 'box-shadow var(--dur-state) var(--ease-standard)',
-        display: 'flex', alignItems: 'flex-start', gap: 16,
+        transition: 'box-shadow 0.4s ease',
+        display: 'flex', alignItems: 'flex-start', gap: 12,
       }}>
-        <div aria-hidden="true" style={{
-          width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--surface-2)', color: automation.enabled ? 'var(--ink-2)' : 'var(--ink-faint)',
-        }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            {iconMap[triggerType] || iconMap.state}
-          </svg>
-        </div>
-
+        {(() => {
+          const triggerType = automation.trigger?.type || 'time'
+          const tintMap = { time: 'var(--info)', state: 'var(--ok)', zone: 'var(--accent)', sunrise: 'var(--gold)', sunset: 'var(--accent)', webhook: 'var(--warn)', manual: 'var(--ink-mute)' }
+          const tint = automation.enabled ? (tintMap[triggerType] || 'var(--info)') : 'var(--ink-faint)'
+          const iconMap = {
+            time: <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>,
+            sunrise: <><circle cx="12" cy="13" r="3"/><path d="M12 4v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20"/></>,
+            sunset: <><circle cx="12" cy="13" r="3"/><path d="M12 3v3M5 13H2M22 13h-3M5.6 6.6l2.1 2.1M16.3 8.7l2.1-2.1M2 19h20M12 19v3"/></>,
+            zone: <><path d="M12 2L4 14h7l-1 8 9-12h-7l1-8z"/></>,
+            state: <><path d="M4 12l5 5L20 6"/></>,
+            webhook: <><circle cx="12" cy="12" r="3"/><path d="M12 9V5a2 2 0 0 0-4 0M9 12H5a2 2 0 0 0 0 4M12 15v4a2 2 0 0 0 4 0M15 12h4a2 2 0 0 0 0-4"/></>,
+          }
+          return (
+            <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`, opacity: automation.enabled ? 1 : 0.55 }}>
+              {emoji ? (
+                <span style={{ fontSize: 19, lineHeight: 1 }}>{emoji}</span>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? tint : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  {iconMap[triggerType] || <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>}
+                </svg>
+              )}
+            </div>
+          )
+        })()}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="z-headline" style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationName}</p>
-          <p className="z-subhead" style={{ margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
-            {automationDesc || t('automations.card.notConfigured')}
-          </p>
-          {meta && (
-            <p className="z-footnote z-mono" style={{ margin: '4px 0 0', color: 'var(--ink-faint)' }} dir="auto">{meta}</p>
-          )}
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationName}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{automationDesc || t('automations.card.notConfigured')}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            {triggerLabel && (
+              <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--info)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--info)' : 'var(--ink-faint)' }}>
+                {triggerLabel}
+              </span>
+            )}
+            {automation.trigger?.time && <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{automation.trigger.time}</span>}
+            {(automation.rooms || []).length > 0 && <span style={{ fontSize: 10.5, color: 'var(--ink-mute)' }}>{t('automations.card.roomsCount', { n: (automation.rooms || []).length })}</span>}
+          </div>
           {hasOfflineDep && (
-            <p className="z-footnote" style={{ margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--warn-text)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--warn)', fontFamily: '"IBM Plex Mono", monospace' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               {t(offlineEntities.length === 1 ? 'automations.suggested.offlineDepsOne' : 'automations.suggested.offlineDeps', { n: offlineEntities.length })}
-            </p>
+            </div>
           )}
         </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0, margin: '-4px -8px -8px 0' }}>
-          <div style={{ padding: '8px 8px 0' }}>
-            <Toggle checked={automation.enabled} onCheckedChange={() => onToggle(automation.id)} aria-label={automationName} />
-          </div>
-          <div style={{ display: 'flex', gap: 0 }}>
-            {actions.map(({ onClick, color, title, path }) => (
-              <button
-                key={title} onClick={onClick} title={title} aria-label={title}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color, width: 44, height: 44, padding: 0, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <Toggle checked={automation.enabled} onCheckedChange={() => onToggle(automation.id)} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            {[
+              { onClick: () => onTrigger(automation.id), color: 'var(--ok)', title: t('automations.view.runNow'), path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
+              { onClick: () => onView(automation),       color: 'var(--ink-mute)', title: t('automations.card.view'), path: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></> },
+              { onClick: () => onDelete(automation.id),  color: 'var(--accent)',   title: t('common.delete'),  path: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></> },
+            ].map(({ onClick, color, title, path }) => (
+              <button key={title} onClick={onClick} title={title} aria-label={title} style={{ background: 'none', border: 'none', cursor: 'pointer', color, padding: 4 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
               </button>
             ))}
           </div>

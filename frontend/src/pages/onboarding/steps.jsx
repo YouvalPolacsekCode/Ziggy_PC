@@ -9,7 +9,6 @@
 // either. See docs/superpowers/specs/2026-07-29-web-onboarding-path-design.md.
 
 import { useEffect, useRef, useState } from 'react'
-import { Check } from 'lucide-react'
 import { requestNotificationPermission } from '../../lib/native'
 import {
   registerDevice,
@@ -118,15 +117,15 @@ export function SensorsStep({ onDone, onError, authToken = null }) {
   if (loading) {
     return (
       <section style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="z-subhead">{t('common.loading') || '…'}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>{t('common.loading') || '…'}</div>
       </section>
     )
   }
 
   if (haUnreachable) {
     return (
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)' }}>
           {t('mobileOnboard.sensors.haDown')}
         </p>
         <button onClick={() => onDone(0)} style={primaryBtn}>{t('mobileOnboard.sensors.next')}</button>
@@ -136,8 +135,8 @@ export function SensorsStep({ onDone, onError, authToken = null }) {
 
   if (total === 0) {
     return (
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>{t('mobileOnboard.sensors.empty')}</p>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)' }}>{t('mobileOnboard.sensors.empty')}</p>
         <button onClick={() => onDone(0)} style={primaryBtn}>{t('mobileOnboard.sensors.next')}</button>
       </section>
     )
@@ -151,16 +150,16 @@ export function SensorsStep({ onDone, onError, authToken = null }) {
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 className="z-title" style={{ margin: 0 }}>{t('mobileOnboard.sensors.title')}</h2>
-      <p className="z-subhead" style={{ margin: 0 }}>{t('mobileOnboard.sensors.intro')}</p>
-      <p className="z-footnote z-mono" style={{ margin: 0 }}>{progressLabel}</p>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{t('mobileOnboard.sensors.title')}</h2>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-faint)' }}>{t('mobileOnboard.sensors.intro')}</p>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--ink-faint)' }}>{progressLabel}</p>
       <div style={{
-        padding: '12px 16px', borderRadius: 'var(--r-ctl)',
-        border: '0.5px solid var(--line)', background: 'var(--surface-2)',
-        fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)',
+        padding: 12, borderRadius: 10,
+        border: '1px solid var(--line)', background: 'var(--bg-2)',
+        fontSize: 12, color: 'var(--ink-faint)',
       }}>
         <div>{current.vendor_model || current.device_type}</div>
-        {current.zigbee_mac && <div className="z-code" style={{ fontSize: 13, marginTop: 4 }}>{current.zigbee_mac}</div>}
+        {current.zigbee_mac && <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{current.zigbee_mac}</div>}
       </div>
       <label style={fieldLabel}>{t('mobileOnboard.sensors.nameLabel')}</label>
       <input
@@ -178,7 +177,7 @@ export function SensorsStep({ onDone, onError, authToken = null }) {
         style={textInput}
         dir="auto"
       />
-      <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
         <button onClick={handleSkipOne} disabled={saving} style={{ ...secondaryBtn, flex: 1 }}>
           {t('mobileOnboard.sensors.skip')}
         </button>
@@ -258,22 +257,22 @@ export function StarterStep({ userToken, onDone, onError, authToken = null }) {
   if (loading) {
     return (
       <section style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="z-subhead">{t('common.loading') || '…'}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>{t('common.loading') || '…'}</div>
       </section>
     )
   }
   if (haUnreachable) {
     return (
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>{t('mobileOnboard.starter.haDown')}</p>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)' }}>{t('mobileOnboard.starter.haDown')}</p>
         <button onClick={skipAll} style={primaryBtn}>{t('mobileOnboard.starter.skipAll')}</button>
       </section>
     )
   }
   if (starters.length === 0) {
     return (
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>{t('mobileOnboard.starter.empty')}</p>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)' }}>{t('mobileOnboard.starter.empty')}</p>
         <button onClick={skipAll} style={primaryBtn}>{t('mobileOnboard.starter.skipAll')}</button>
       </section>
     )
@@ -281,9 +280,9 @@ export function StarterStep({ userToken, onDone, onError, authToken = null }) {
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 className="z-title" style={{ margin: 0 }}>{t('mobileOnboard.starter.title')}</h2>
-      <p className="z-subhead" style={{ margin: 0 }}>{t('mobileOnboard.starter.intro')}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{t('mobileOnboard.starter.title')}</h2>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-faint)' }}>{t('mobileOnboard.starter.intro')}</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
         {starters.map(s => {
           const on = selected.has(s.id)
           return (
@@ -291,42 +290,27 @@ export function StarterStep({ userToken, onDone, onError, authToken = null }) {
               key={s.id}
               onClick={() => toggle(s.id)}
               disabled={installing}
-              role="checkbox"
-              aria-checked={on}
               style={{
-                textAlign: 'start', fontFamily: 'inherit',
-                minHeight: 64, padding: '12px 16px', borderRadius: 'var(--r-card)',
-                background: on ? 'var(--surface-2)' : 'var(--surface)',
-                border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
+                textAlign: 'start',
+                padding: '12px 14px', borderRadius: 10,
+                background: on ? 'color-mix(in srgb, var(--accent) 10%, var(--bg-2))' : 'var(--bg-2)',
+                border: on ? '1.5px solid var(--accent)' : '1px solid var(--line)',
                 color: 'var(--ink)',
                 cursor: installing ? 'wait' : 'pointer',
-                display: 'flex', alignItems: 'center', gap: 12,
-                transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
+                display: 'flex', flexDirection: 'column', gap: 4,
               }}
             >
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600 }}>
-                  {langIsHe ? (s.label_he || s.label_en) : (s.label_en || s.label_he)}
-                </div>
-                <div style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)' }}>
-                  {langIsHe ? (s.description_he || s.description_en) : (s.description_en || s.description_he)}
-                </div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>
+                {langIsHe ? (s.label_he || s.label_en) : (s.label_en || s.label_he)}
               </div>
-              <span aria-hidden style={{
-                width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: on ? 'var(--ink)' : 'transparent',
-                border: on ? 'none' : '0.5px solid var(--line-2)',
-                color: 'var(--bg)',
-                transition: 'background var(--dur-state) var(--ease-standard)',
-              }}>
-                {on && <Check size={16} strokeWidth={2.25} />}
-              </span>
+              <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
+                {langIsHe ? (s.description_he || s.description_en) : (s.description_en || s.description_he)}
+              </div>
             </button>
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
         <button onClick={skipAll} disabled={installing} style={{ ...secondaryBtn, flex: 1 }}>
           {t('mobileOnboard.starter.skipAll')}
         </button>
@@ -398,16 +382,14 @@ export function DoneStep({
   }, [onDone])
   return (
     <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-      <div aria-hidden style={{
-        width: 64, height: 64, borderRadius: '50%',
-        background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', color: 'var(--ok)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Check size={32} strokeWidth={2} />
-      </div>
-      <div className="z-title">{t('mobileOnboard.allSet')}</div>
+      <div style={{ fontSize: 48 }}>✓</div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>{t('mobileOnboard.allSet')}</div>
       {showButton && (
-        <button onClick={onDone} className="z-btn-primary z-button" style={{ marginTop: 8 }}>
+        <button onClick={onDone} style={{
+          marginTop: 8, padding: '12px 20px', borderRadius: 10, border: 'none',
+          background: 'var(--accent)', color: 'white', fontWeight: 600,
+          fontSize: 14, cursor: 'pointer',
+        }}>
           {t('common.continue')}
         </button>
       )}
@@ -421,8 +403,8 @@ export function PermissionScreen({ title, body, onAllow, onSkip, busy }) {
   const t = useT()
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h2 className="z-title" style={{ margin: 0 }}>{title}</h2>
-      <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>{body}</p>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>
+      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)', lineHeight: 1.5 }}>{body}</p>
       <button onClick={onAllow} disabled={busy} style={primaryBtn}>
         {busy ? t('mobileOnboard.confirmPlease') : t('mobileOnboard.allow')}
       </button>

@@ -57,12 +57,11 @@ export default function SubscriptionGateBanner() {
       role="status"
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9000,
-        padding: '12px 16px', textAlign: 'center', minHeight: 44,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        // Solid --warn fill so var(--on-accent) (dark ink) keeps its contrast
-        // in both palettes; the strip reads as "heads up, action recommended".
-        background: 'var(--warn)',
-        color: 'var(--on-accent)', fontSize: 15, lineHeight: '20px', fontWeight: 500,
+        padding: '8px 16px', textAlign: 'center',
+        // Warm-amber wash tied to --warn. Reads as "heads up, action recommended"
+        // in both palettes without falling out of the Ziggy color system.
+        background: 'color-mix(in srgb, var(--warn) 70%, var(--ink))',
+        color: 'var(--on-accent)', fontSize: 13, lineHeight: 1.3,
         boxShadow: '0 1px 0 color-mix(in srgb, var(--ink) 20%, transparent)',
       }}
     >

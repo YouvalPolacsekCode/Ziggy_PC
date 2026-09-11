@@ -173,12 +173,8 @@ export function computeHealth(home, latestTelemetry) {
 
 // Display-side colour mapping. Kept here so a future theme swap is one
 // edit. Maps to existing CSS variables — no new tokens.
-//
-//   fg   — text. The *-text tokens are the AA-safe variants for words under
-//          18px; the raw fills measure 3.3–3.7:1 on a tinted chip.
-//   dot  — the 8px status dot / icon fill, where the raw colour is fine.
 export const HEALTH_COLORS = {
-  green:  { fg: 'var(--ok-text)',   dot: 'var(--ok)',   bg: 'color-mix(in srgb, var(--ok) 12%, var(--surface))',   border: 'color-mix(in srgb, var(--ok) 30%, var(--line))' },
-  yellow: { fg: 'var(--warn-text)', dot: 'var(--warn)', bg: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', border: 'color-mix(in srgb, var(--warn) 30%, var(--line))' },
-  red:    { fg: 'var(--err-text)',  dot: 'var(--err)',  bg: 'color-mix(in srgb, var(--err) 12%, var(--surface))',  border: 'color-mix(in srgb, var(--err) 30%, var(--line))' },
+  green:  { fg: 'var(--ok)',   bg: 'color-mix(in srgb, var(--ok) 14%, var(--surface))',   border: 'color-mix(in srgb, var(--ok) 30%, transparent)' },
+  yellow: { fg: 'var(--warn)', bg: 'color-mix(in srgb, var(--warn) 14%, var(--surface))', border: 'color-mix(in srgb, var(--warn) 30%, transparent)' },
+  red:    { fg: '#ef4444',     bg: 'color-mix(in srgb, #ef4444 14%, var(--surface))',     border: 'color-mix(in srgb, #ef4444 30%, transparent)' },
 }

@@ -31,7 +31,7 @@ function DefaultSkeleton() {
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         minHeight: 120, padding: 24,
-        color: 'var(--ink-mute)', fontSize: 15,
+        color: 'var(--ink-faint)', fontSize: 13,
       }}
     >
       {i18nT('state.loading')}
@@ -45,7 +45,7 @@ function DefaultEmpty({ message }) {
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: 8, minHeight: 120, padding: 24,
-        color: 'var(--ink-mute)', fontSize: 15, textAlign: 'center',
+        color: 'var(--ink-faint)', fontSize: 13, textAlign: 'center',
       }}
     >
       <p>{message || i18nT('state.empty')}</p>
@@ -59,24 +59,33 @@ function DefaultError({ message, requestId, retryable, onRetry }) {
       role="alert"
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', gap: 12, minHeight: 160, padding: 24,
+        justifyContent: 'center', gap: 10, minHeight: 160, padding: 24,
         textAlign: 'center',
       }}
     >
-      <p className="z-headline" style={{ margin: 0 }}>
+      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
         {i18nT('state.errorTitle')}
       </p>
-      <p className="z-subhead" style={{ margin: 0, maxWidth: 320, lineHeight: 1.5 }}>
+      <p style={{ fontSize: 12, color: 'var(--ink-faint)', maxWidth: 320, lineHeight: 1.5 }}>
         {message}
       </p>
       {retryable && onRetry && (
-        <button type="button" onClick={onRetry} className="z-btn-secondary" style={{ marginTop: 4 }}>
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            marginTop: 4, padding: '6px 14px', fontSize: 12, fontWeight: 500,
+            borderRadius: 8, border: '0.5px solid var(--line)',
+            background: 'var(--bg-2)', color: 'var(--ink)', cursor: 'pointer',
+          }}
+        >
           {i18nT('common.tryAgain')}
         </button>
       )}
       {requestId && (
-        // Small but still AA: --ink-faint at full opacity is 5.9:1 on white.
-        <p className="z-footnote z-code" style={{ margin: 0, color: 'var(--ink-faint)' }}>
+        // Tiny, low-contrast — useful when a user reports a problem ("paste
+        // this code") without competing with the friendly message.
+        <p style={{ fontSize: 10, color: 'var(--ink-faint)', opacity: 0.6, fontFamily: '"IBM Plex Mono", monospace' }}>
           {i18nT('errors.requestId', { id: requestId })}
         </p>
       )}
